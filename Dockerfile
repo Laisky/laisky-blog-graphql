@@ -1,6 +1,4 @@
-# docker build . -f ./.docker/gobase.Dockerfile -t registry:5000/gobase:1.12.1-alpine3.9
-# docker push registry:5000/gobase:1.12.1-alpine3.9
-FROM golang:1.12.1-alpine3.9
+FROM golang:1.12.1-alpine3.9 AS gobuild
 
 # run dependencies
 RUN apk update && apk upgrade && \
