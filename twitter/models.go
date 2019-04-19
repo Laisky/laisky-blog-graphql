@@ -1,6 +1,7 @@
 package twitter
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Laisky/go-utils"
@@ -49,6 +50,11 @@ func (t *TwitterDB) LoadTweets(page, size int, topic, regexp string) (results []
 		zap.String("topic", topic),
 		zap.String("regexp", regexp),
 	)
+
+	if size > 100 || size < 0 {
+		return nil, fmt.Errorf("size shoule in [0~100]")
+	}
+
 	results = []Tweet{}
 	var query = bson.M{}
 	if topic != "" {
