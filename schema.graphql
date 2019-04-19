@@ -1,0 +1,8 @@
+input Pagination {
+    page: Int!
+    size: Int!
+}
+
+type Query {
+  tweets(page: Pagination = {page: 0, size: 20}, topic: String! = "", regexp: String! = ""): [Tweet!]!
+}
