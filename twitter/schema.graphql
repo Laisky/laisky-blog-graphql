@@ -1,0 +1,17 @@
+scalar Date
+
+type Tweet {
+    mongo_id: String!
+    tweet_id: Int!
+    created_at: Date!
+    text: String!
+    topics: [String!]
+    user: TwitterUser
+}
+
+type TwitterUser {
+    id: Int!
+    screen_name: String!
+    name: String!
+    description: String
+}
