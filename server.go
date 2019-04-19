@@ -22,7 +22,7 @@ func RunServer(addr string) {
 
 	utils.Logger.Info("listening on http", zap.String("addr", addr))
 	utils.Logger.Panic("httpserver exit", zap.Error(Server.Run(iris.Addr(addr), iris.WithConfiguration(iris.Configuration{
-		DisablePathCorrection:            true,
+		DisablePathCorrection:            false,
 		DisablePathCorrectionRedirection: true,
 	}))))
 }
