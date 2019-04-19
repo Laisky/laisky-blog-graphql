@@ -9,7 +9,6 @@ ADD . /goapp
 WORKDIR /goapp
 
 # static build
-RUN go mod download
 RUN go build -a --ldflags '-extldflags "-static"' entrypoints/main.go
 
 

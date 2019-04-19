@@ -21,5 +21,8 @@ func RunServer(addr string) {
 	Server.Any("/admin/pprof/{action:path}", pprof.New())
 
 	utils.Logger.Info("listening on http", zap.String("addr", addr))
-	utils.Logger.Panic("httpserver exit", zap.Error(Server.Run(iris.Addr(addr))))
+	utils.Logger.Panic("httpserver exit", zap.Error(Server.Run(iris.Addr(addr), iris.WithConfiguration(iris.Configuration{
+		DisablePathCorrection:            true,
+		DisablePathCorrectionRedirection: true,
+	}))))
 }
