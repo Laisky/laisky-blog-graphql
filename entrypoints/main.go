@@ -47,8 +47,8 @@ func main() {
 
 	laisky_blog_graphql.DialDB(utils.Settings.GetString("dbaddr"))
 
-	laisky_blog_graphql.Server.Handle("ANY", "/ui/", OriginHandle2IrisHandle(handler.Playground("GraphQL playground", "/graphql")))
-	laisky_blog_graphql.Server.Handle("ANY", "/graphql/", OriginHandle2IrisHandle(handler.GraphQL(laisky_blog_graphql.NewExecutableSchema(laisky_blog_graphql.Config{Resolvers: &laisky_blog_graphql.Resolver{}}))))
+	laisky_blog_graphql.Server.Handle("ANY", "/ui/", OriginHandle2IrisHandle(handler.Playground("GraphQL playground", "/graphql/query/")))
+	laisky_blog_graphql.Server.Handle("ANY", "/query/", OriginHandle2IrisHandle(handler.GraphQL(laisky_blog_graphql.NewExecutableSchema(laisky_blog_graphql.Config{Resolvers: &laisky_blog_graphql.Resolver{}}))))
 
 	laisky_blog_graphql.RunServer(utils.Settings.GetString("addr"))
 }
