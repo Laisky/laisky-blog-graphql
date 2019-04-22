@@ -4,5 +4,6 @@ input Pagination {
 }
 
 type Query {
+  benchmark: String!
   tweets(page: Pagination = {page: 0, size: 20}, topic: String! = "", regexp: String! = ""): [Tweet!]!
 }

@@ -33,6 +33,10 @@ func (t *twitterUserResolver) Description(ctx context.Context, obj *twitter.User
 	return &obj.Dscription, nil
 }
 
+func (q *queryResolver) Benchmark(ctx context.Context) (string, error) {
+	return "hello, world", nil
+}
+
 func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, topic, regexp string) ([]twitter.Tweet, error) {
 	if results, err := twitterDB.LoadTweets(page.Page, page.Size, topic, regexp); err != nil {
 		return nil, err
