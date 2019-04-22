@@ -1,6 +1,10 @@
 # laisky-blog-graphql
 
-graphql backend for laisky-blog
+graphql backend for laisky-blog depends on gqlgen & iris.
+
+Example: <https://app.laisky.com/graphql/ui/>
+
+介绍: <https://blog.laisky.com/p/gqlgen/>
 
 
 Run:
