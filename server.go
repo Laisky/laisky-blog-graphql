@@ -12,6 +12,8 @@ var (
 )
 
 func RunServer(addr string) {
+	Server.UseGlobal(LoggerMiddleware)
+
 	Server.Any("/health", func(ctx iris.Context) {
 		ctx.Write([]byte("Hello, World"))
 	})
@@ -25,4 +27,12 @@ func RunServer(addr string) {
 		DisablePathCorrection:            false,
 		DisablePathCorrectionRedirection: true,
 	}))))
+}
+
+func LoggerMiddleware(ctx iris.Context) {
+	utils.Logger.Debug("request",
+		zap.String("path", ctx.Path()),
+		zap.String("method", ctx.Method()),
+	)
+	ctx.Next()
 }

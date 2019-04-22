@@ -44,7 +44,8 @@ type DirectiveRoot struct {
 
 type ComplexityRoot struct {
 	Query struct {
-		Tweets func(childComplexity int, page *Pagination, topic string, regexp string) int
+		Benchmark func(childComplexity int) int
+		Tweets    func(childComplexity int, page *Pagination, topic string, regexp string) int
 	}
 
 	Tweet struct {
@@ -65,6 +66,7 @@ type ComplexityRoot struct {
 }
 
 type QueryResolver interface {
+	Benchmark(ctx context.Context) (string, error)
 	Tweets(ctx context.Context, page *Pagination, topic string, regexp string) ([]twitter.Tweet, error)
 }
 type TweetResolver interface {
@@ -90,6 +92,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 	ec := executionContext{nil, e}
 	_ = ec
 	switch typeName + "." + field {
+
+	case "Query.Benchmark":
+		if e.complexity.Query.Benchmark == nil {
+			break
+		}
+
+		return e.complexity.Query.Benchmark(childComplexity), true
 
 	case "Query.Tweets":
 		if e.complexity.Query.Tweets == nil {
@@ -261,6 +270,7 @@ type TwitterUser {
 }
 
 type Query {
+  benchmark: String!
   tweets(page: Pagination = {page: 0, size: 20}, topic: String! = "", regexp: String! = ""): [Tweet!]!
 }
 `},
@@ -345,6 +355,33 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ***************************** args.gotpl *****************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _Query_benchmark(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Query",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Benchmark(rctx)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
 
 func (ec *executionContext) _Query_tweets(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
@@ -1574,6 +1611,20 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Query")
+		case "benchmark":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_benchmark(ctx, field)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
 		case "tweets":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
