@@ -8,10 +8,6 @@ RUN apk update && apk upgrade && \
 ENV GO111MODULE=on
 WORKDIR /goapp
 
-ENV HTTP_PROXY=http://172.16.4.26:17777
-ENV HTTPS_PROXY=http://172.16.4.26:17777
-
-
 COPY go.mod .
 COPY go.sum .
 RUN go mod download
