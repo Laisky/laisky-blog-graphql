@@ -1,3 +1,5 @@
+scalar Date
+
 input Pagination {
     page: Int!
     size: Int!
@@ -5,5 +7,6 @@ input Pagination {
 
 type Query {
   benchmark: String!
-  tweets(page: Pagination = {page: 0, size: 20}, topic: String! = "", regexp: String! = ""): [Tweet!]!
+  tweets(page: Pagination = {page: 0, size: 20}, topic: String! = "", regexp: String! = ""): [Tweet]!
+  posts(page: Pagination = {page: 0, size: 10}, tag: String! = "", regexp: String! = ""): [BlogPost]!
 }

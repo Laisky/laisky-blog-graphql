@@ -1,0 +1,13 @@
+type BlogPost {
+    mongo_id: String!
+    author: BlogUser
+    created_at: Date!
+    modified_at: Date!
+    title: String!
+    content: String!
+}
+
+type BlogUser {
+    mongo_id: String!
+    username: String!
+}

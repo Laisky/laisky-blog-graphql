@@ -32,19 +32,24 @@ type User struct {
 	Dscription string `bson:"dscription" json:"dscription"`
 }
 
-func NewTwitterDB(addr, dbName, tweetsColName string) (db *TwitterDB, err error) {
+const (
+	DB_NAME        = "twitter"
+	TWEET_COL_NAME = "tweets"
+)
+
+func NewTwitterDB(addr string) (db *TwitterDB, err error) {
 	db = &TwitterDB{
 		DB: &models.DB{},
 	}
-	if err = db.Dial(addr, dbName); err != nil {
+	if err = db.Dial(addr, DB_NAME); err != nil {
 		return nil, err
 	}
 
-	db.tweets = db.GetCol(tweetsColName)
+	db.tweets = db.GetCol(TWEET_COL_NAME)
 	return db, nil
 }
 
-func (t *TwitterDB) LoadTweets(page, size int, topic, regexp string) (results []Tweet, err error) {
+func (t *TwitterDB) LoadTweets(page, size int, topic, regexp string) (results []*Tweet, err error) {
 	utils.Logger.Debug("LoadTweets",
 		zap.Int("page", page), zap.Int("size", size),
 		zap.String("topic", topic),
@@ -55,7 +60,7 @@ func (t *TwitterDB) LoadTweets(page, size int, topic, regexp string) (results []
 		return nil, fmt.Errorf("size shoule in [0~100]")
 	}
 
-	results = []Tweet{}
+	results = []*Tweet{}
 	var query = bson.M{}
 	if topic != "" {
 		query["topics"] = topic

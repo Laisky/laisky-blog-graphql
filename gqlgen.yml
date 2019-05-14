@@ -6,6 +6,7 @@
 schema:
 - schema.graphql
 - ./twitter/schema.graphql
+- ./blog/schema.graphql
 exec:
   filename: generated.go
 model:
@@ -18,3 +19,7 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/twitter.Tweet
   TwitterUser:
     model: github.com/Laisky/laisky-blog-graphql/twitter.User
+  BlogPost:
+    model: github.com/Laisky/laisky-blog-graphql/blog.Post
+  BlogUser:
+    model: github.com/Laisky/laisky-blog-graphql/blog.User
