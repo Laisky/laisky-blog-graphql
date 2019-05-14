@@ -5,10 +5,15 @@ RUN apk update && apk upgrade && \
     apk add --no-cache gcc git build-base ca-certificates curl && \
     update-ca-certificates
 
-ADD . /goapp
+ENV GO111MODULE=on
 WORKDIR /goapp
 
+COPY go.mod .
+COPY go.sum .
+RUN go mod download
+
 # static build
+ADD . .
 RUN go build -a --ldflags '-extldflags "-static"' entrypoints/main.go
 
 
