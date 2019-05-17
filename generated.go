@@ -58,6 +58,7 @@ type ComplexityRoot struct {
 		CreatedAt  func(childComplexity int) int
 		Markdown   func(childComplexity int) int
 		ModifiedAt func(childComplexity int) int
+		Name       func(childComplexity int) int
 		Tags       func(childComplexity int) int
 		Title      func(childComplexity int) int
 	}
@@ -69,7 +70,7 @@ type ComplexityRoot struct {
 
 	Query struct {
 		Benchmark func(childComplexity int) int
-		Posts     func(childComplexity int, page *Pagination, tag string, category string, length int, regexp string) int
+		Posts     func(childComplexity int, page *Pagination, tag string, category string, length int, name string, regexp string) int
 		Tweets    func(childComplexity int, page *Pagination, topic string, regexp string) int
 	}
 
@@ -103,7 +104,7 @@ type BlogUserResolver interface {
 type QueryResolver interface {
 	Benchmark(ctx context.Context) (string, error)
 	Tweets(ctx context.Context, page *Pagination, topic string, regexp string) ([]*twitter.Tweet, error)
-	Posts(ctx context.Context, page *Pagination, tag string, category string, length int, regexp string) ([]*blog.Post, error)
+	Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error)
 }
 type TweetResolver interface {
 	MongoID(ctx context.Context, obj *twitter.Tweet) (string, error)
@@ -185,6 +186,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.BlogPost.ModifiedAt(childComplexity), true
 
+	case "BlogPost.Name":
+		if e.complexity.BlogPost.Name == nil {
+			break
+		}
+
+		return e.complexity.BlogPost.Name(childComplexity), true
+
 	case "BlogPost.Tags":
 		if e.complexity.BlogPost.Tags == nil {
 			break
@@ -230,7 +238,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.Posts(childComplexity, args["page"].(*Pagination), args["tag"].(string), args["category"].(string), args["length"].(int), args["regexp"].(string)), true
+		return e.complexity.Query.Posts(childComplexity, args["page"].(*Pagination), args["tag"].(string), args["category"].(string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
 
 	case "Query.Tweets":
 		if e.complexity.Query.Tweets == nil {
@@ -385,6 +393,7 @@ var parsedSchema = gqlparser.MustLoadSchema(
     modified_at: Date!
     title: String!
     content: String!
+    name: String!
     markdown: String
     tags: [String!]!
     category: BlogCategory
@@ -432,8 +441,8 @@ type Query {
     tag: String! = "",
     category: String! = "",
     length: Int! = 0,  # content length, 0 means total
+    name: String! = "",
     regexp: String! = ""): [BlogPost]!
-
 }
 `},
 )
@@ -492,13 +501,21 @@ func (ec *executionContext) field_Query_posts_args(ctx context.Context, rawArgs 
 	}
 	args["length"] = arg3
 	var arg4 string
-	if tmp, ok := rawArgs["regexp"]; ok {
+	if tmp, ok := rawArgs["name"]; ok {
 		arg4, err = ec.unmarshalNString2string(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["regexp"] = arg4
+	args["name"] = arg4
+	var arg5 string
+	if tmp, ok := rawArgs["regexp"]; ok {
+		arg5, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["regexp"] = arg5
 	return args, nil
 }
 
@@ -753,6 +770,33 @@ func (ec *executionContext) _BlogPost_content(ctx context.Context, field graphql
 	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
+func (ec *executionContext) _BlogPost_name(ctx context.Context, field graphql.CollectedField, obj *blog.Post) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "BlogPost",
+		Field:    field,
+		Args:     nil,
+		IsMethod: false,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
 func (ec *executionContext) _BlogPost_markdown(ctx context.Context, field graphql.CollectedField, obj *blog.Post) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
@@ -963,7 +1007,7 @@ func (ec *executionContext) _Query_posts(ctx context.Context, field graphql.Coll
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Posts(rctx, args["page"].(*Pagination), args["tag"].(string), args["category"].(string), args["length"].(int), args["regexp"].(string))
+		return ec.resolvers.Query().Posts(rctx, args["page"].(*Pagination), args["tag"].(string), args["category"].(string), args["length"].(int), args["name"].(string), args["regexp"].(string))
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -2248,6 +2292,11 @@ func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet,
 			}
 		case "content":
 			out.Values[i] = ec._BlogPost_content(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "name":
+			out.Values[i] = ec._BlogPost_name(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}

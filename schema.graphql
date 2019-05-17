@@ -14,6 +14,6 @@ type Query {
     tag: String! = "",
     category: String! = "",
     length: Int! = 0,  # content length, 0 means total
+    name: String! = "",
     regexp: String! = ""): [BlogPost]!
-
 }

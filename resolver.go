@@ -54,7 +54,7 @@ func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, topic, reg
 	}
 }
 
-func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string, category string, length int, regexp string) ([]*blog.Post, error) {
+func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error) {
 	cfg := &blog.BlogPostCfg{
 		Page:     page.Page,
 		Size:     page.Size,
@@ -62,6 +62,7 @@ func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string,
 		Tag:      tag,
 		Regexp:   regexp,
 		Category: category,
+		Name:     name,
 	}
 	if results, err := blogDB.LoadPosts(cfg); err != nil {
 		return nil, err

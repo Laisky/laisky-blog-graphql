@@ -22,6 +22,7 @@ type Post struct {
 	CreatedAt  time.Time     `bson:"post_created_at" json:"created_at"`
 	ModifiedAt time.Time     `bson:"post_modified_gmt" json:"modified_at"`
 	Title      string        `bson:"post_title" json:"title"`
+	Name       string        `bson:"post_name" json:"name"`
 	Content    string        `bson:"post_content" json:"content"`
 	Markdown   string        `bson:"post_markdown" json:"markdown"`
 	Author     bson.ObjectId `bson:"post_author" json:"author"`
@@ -63,8 +64,8 @@ func NewBlogDB(addr string) (db *BlogDB, err error) {
 }
 
 type BlogPostCfg struct {
-	Page, Size, Length    int
-	Tag, Regexp, Category string
+	Page, Size, Length          int
+	Name, Tag, Regexp, Category string
 }
 
 func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
@@ -92,20 +93,23 @@ func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
 func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 	utils.Logger.Debug("makeQuery",
 		zap.String("category", cfg.Category),
+		zap.String("name", cfg.Name),
+		zap.String("tag", cfg.Tag),
+		zap.String("regexp", cfg.Regexp),
 	)
 	query = bson.M{}
+	if cfg.Name != "" {
+		query["post_name"] = cfg.Name
+	}
 
-	// query tags
 	if cfg.Tag != "" {
 		query["post_tags"] = cfg.Tag
 	}
 
-	// query regexp
 	if cfg.Regexp != "" {
 		query["post_content"] = bson.M{"$regex": bson.RegEx{cfg.Regexp, "im"}}
 	}
 
-	// query category
 	var cate *Category
 	if cate, err = t.LoadCategoryByName(cfg.Category); err != nil {
 		return nil, errors.Wrap(err, "category error")
@@ -118,19 +122,24 @@ func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 
 func (t *BlogDB) filtersPipeline(cfg *BlogPostCfg, iter *mgo.Iter) (results []*Post) {
 	result := &Post{}
+	isValidate := true
 	for iter.Next(result) {
-		for _, f := range []func(*Post) bool{
+		for _, f := range [...]func(*Post) bool{
 			// filters pipeline
 			passwordFilter,
 			getContentLengthFilter(cfg.Length),
 		} {
 			if !f(result) {
+				isValidate = false
 				break
 			}
 		}
 
-		results = append(results, result)
-		result = &Post{}
+		if isValidate {
+			results = append(results, result)
+			result = &Post{}
+			isValidate = true
+		}
 	}
 
 	return results
