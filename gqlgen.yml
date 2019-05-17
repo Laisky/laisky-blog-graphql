@@ -23,3 +23,5 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/blog.Post
   BlogUser:
     model: github.com/Laisky/laisky-blog-graphql/blog.User
+  BlogCategory:
+    model: github.com/Laisky/laisky-blog-graphql/blog.Category
