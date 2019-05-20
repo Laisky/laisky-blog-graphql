@@ -6,14 +6,17 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
+	"github.com/pkg/errors"
 )
-
-// THIS CODE IS A STARTING POINT ONLY. IT WILL NOT BE UPDATED WITH SCHEMA CHANGES.
 
 type Resolver struct{}
 
 func (r *Resolver) Query() QueryResolver {
 	return &queryResolver{r}
+}
+
+func (r *Resolver) Mutation() MutationResolver {
+	return &mutationResolver{r}
 }
 
 func (r *Resolver) Tweet() TweetResolver {
@@ -29,8 +32,8 @@ func (r *Resolver) BlogUser() BlogUserResolver {
 	return &blogUserResolver{r}
 }
 
-// implement resolver
-type mutationResolver struct{ *Resolver }
+// query
+// ===========================
 
 type queryResolver struct{ *Resolver }
 type tweetResolver struct{ *Resolver }
@@ -54,7 +57,7 @@ func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, topic, reg
 	}
 }
 
-func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string, category string, length int, regexp string) ([]*blog.Post, error) {
+func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error) {
 	cfg := &blog.BlogPostCfg{
 		Page:     page.Page,
 		Size:     page.Size,
@@ -62,6 +65,7 @@ func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string,
 		Tag:      tag,
 		Regexp:   regexp,
 		Category: category,
+		Name:     name,
 	}
 	if results, err := blogDB.LoadPosts(cfg); err != nil {
 		return nil, err
@@ -96,6 +100,40 @@ func (r *blogPostResolver) Category(ctx context.Context, obj *blog.Post) (*blog.
 	return blogDB.LoadCategoryById(obj.Category)
 }
 
-func (r *blogUserResolver) MongoID(ctx context.Context, obj *blog.User) (string, error) {
+func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, error) {
 	return obj.ID.Hex(), nil
+}
+
+// mutations
+// =========
+type mutationResolver struct{ *Resolver }
+
+func (r *mutationResolver) CreateBlogPost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
+	user, err := validateAndGetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return blogDB.NewPost(user.ID, input.Title, input.Name, input.Markdown)
+}
+
+func (r *mutationResolver) Login(ctx context.Context, account string, password string) (user *blog.User, err error) {
+	if user, err = blogDB.ValidateLogin(account, password); err != nil {
+		return nil, err
+	}
+
+	if err = setLoginCookie(ctx, user); err != nil {
+		return nil, errors.Wrap(err, "try to set cookies got error")
+	}
+
+	return user, nil
+}
+
+func (r *mutationResolver) AmendBlogPost(ctx context.Context, name string, title string, markdown string, typeArg string) (*blog.Post, error) {
+	user, err := validateAndGetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return blogDB.UpdatePost(user, name, title, markdown, typeArg)
 }

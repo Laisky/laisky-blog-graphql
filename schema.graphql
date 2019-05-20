@@ -14,6 +14,20 @@ type Query {
     tag: String! = "",
     category: String! = "",
     length: Int! = 0,  # content length, 0 means total
+    name: String! = "",
     regexp: String! = ""): [BlogPost]!
+}
 
+
+input NewBlogPost {
+  name: String!
+  title: String!
+  markdown: String!
+  type: String!
+}
+
+type Mutation {
+  createBlogPost(post: NewBlogPost!): BlogPost!
+  login(account: String!, password: String!): BlogUser!
+  amendBlogPost(name: String!, title: String!, markdown: String!, type: String! = "markdown"): BlogPost!
 }

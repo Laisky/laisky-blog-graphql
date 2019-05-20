@@ -1,5 +1,5 @@
 type Tweet {
-    mongo_id: String!
+    # mongo_id: String!
     tweet_id: Int!
     created_at: Date!
     text: String!

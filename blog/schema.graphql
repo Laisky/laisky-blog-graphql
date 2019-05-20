@@ -3,15 +3,17 @@ type BlogPost {
     author: BlogUser!
     created_at: Date!
     modified_at: Date!
+    type: String!
     title: String!
     content: String!
+    name: String!
     markdown: String
     tags: [String!]!
     category: BlogCategory
 }
 
 type BlogUser {
-    mongo_id: String!
+    id: String!
     username: String!
 }
 

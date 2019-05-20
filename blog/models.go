@@ -7,6 +7,7 @@ import (
 	"github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/zap"
+	"github.com/gomarkdown/markdown"
 	"github.com/pkg/errors"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -18,21 +19,25 @@ type BlogDB struct {
 }
 
 type Post struct {
-	ID         bson.ObjectId `bson:"_id" json:"mongo_id"`
+	ID         bson.ObjectId `bson:"_id,omitempty" json:"mongo_id"`
 	CreatedAt  time.Time     `bson:"post_created_at" json:"created_at"`
 	ModifiedAt time.Time     `bson:"post_modified_gmt" json:"modified_at"`
 	Title      string        `bson:"post_title" json:"title"`
+	Type       string        `bson:"post_type" json:"type"`
+	Name       string        `bson:"post_name" json:"name"`
 	Content    string        `bson:"post_content" json:"content"`
 	Markdown   string        `bson:"post_markdown" json:"markdown"`
 	Author     bson.ObjectId `bson:"post_author" json:"author"`
 	Password   string        `bson:"post_password", json:"password"`
-	Category   bson.ObjectId `bson:"category", json:"category"`
+	Category   bson.ObjectId `bson:"category,omitempty", json:"category"`
 	Tags       []string      `bson:"post_tags", json:"tags"`
 }
 
 type User struct {
-	ID       bson.ObjectId `bson:"_id" json:"mongo_id"`
+	ID       bson.ObjectId `bson:"_id" json:"id"`
 	Username string        `bson:"username" json:"username"`
+	Account  string        `bson:"account" json:"account"`
+	Password string        `bson:"password" json:"password"`
 }
 
 type Category struct {
@@ -63,8 +68,8 @@ func NewBlogDB(addr string) (db *BlogDB, err error) {
 }
 
 type BlogPostCfg struct {
-	Page, Size, Length    int
-	Tag, Regexp, Category string
+	Page, Size, Length          int
+	Name, Tag, Regexp, Category string
 }
 
 func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
@@ -92,20 +97,23 @@ func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
 func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 	utils.Logger.Debug("makeQuery",
 		zap.String("category", cfg.Category),
+		zap.String("name", cfg.Name),
+		zap.String("tag", cfg.Tag),
+		zap.String("regexp", cfg.Regexp),
 	)
 	query = bson.M{}
+	if cfg.Name != "" {
+		query["post_name"] = cfg.Name
+	}
 
-	// query tags
 	if cfg.Tag != "" {
 		query["post_tags"] = cfg.Tag
 	}
 
-	// query regexp
 	if cfg.Regexp != "" {
 		query["post_content"] = bson.M{"$regex": bson.RegEx{cfg.Regexp, "im"}}
 	}
 
-	// query category
 	var cate *Category
 	if cate, err = t.LoadCategoryByName(cfg.Category); err != nil {
 		return nil, errors.Wrap(err, "category error")
@@ -118,19 +126,24 @@ func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 
 func (t *BlogDB) filtersPipeline(cfg *BlogPostCfg, iter *mgo.Iter) (results []*Post) {
 	result := &Post{}
+	isValidate := true
 	for iter.Next(result) {
-		for _, f := range []func(*Post) bool{
+		for _, f := range [...]func(*Post) bool{
 			// filters pipeline
 			passwordFilter,
 			getContentLengthFilter(cfg.Length),
 		} {
 			if !f(result) {
+				isValidate = false
 				break
 			}
 		}
 
-		results = append(results, result)
-		result = &Post{}
+		if isValidate {
+			results = append(results, result)
+			result = &Post{}
+			isValidate = true
+		}
 	}
 
 	return results
@@ -190,4 +203,91 @@ func (t *BlogDB) LoadCategoryByName(name string) (cate *Category, err error) {
 	}
 
 	return cate, nil
+}
+
+func (t *BlogDB) IsNameExists(name string) (bool, error) {
+	n, err := t.posts.Find(bson.M{"post_name": name}).Count()
+	if err != nil {
+		utils.Logger.Error("try to count post_name got error", zap.Error(err))
+		return false, err
+	}
+
+	return n != 0, nil
+}
+
+// NewPost insert new post
+func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md string) (post *Post, err error) {
+	if isExists, err := t.IsNameExists(name); err != nil {
+		return nil, err
+	} else if isExists {
+		return nil, fmt.Errorf("post name `%v` already exists", name)
+	}
+
+	ts := time.Now()
+	p := &Post{
+		Markdown:   md,
+		Content:    string(markdown.ToHTML([]byte(md), nil, nil)),
+		ModifiedAt: ts,
+		CreatedAt:  ts,
+		Title:      title,
+		Name:       name,
+		Author:     authorID,
+	}
+
+	if utils.Settings.GetBool("dry") {
+		utils.Logger.Info("insert post",
+			zap.String("title", p.Title),
+			zap.String("name", p.Name),
+			zap.String("markdown", p.Markdown),
+			zap.String("content", p.Content),
+		)
+	} else {
+		if err = t.posts.Insert(p); err != nil {
+			return nil, errors.Wrap(err, "try to insert post got error")
+		}
+	}
+
+	return p, nil
+}
+
+var IncorrectErr = errors.New("Password Or Username Incorrect")
+
+func (t *BlogDB) ValidateLogin(account, password string) (u *User, err error) {
+	utils.Logger.Debug("ValidateLogin", zap.String("account", account))
+	u = &User{}
+	if err := t.users.Find(bson.M{"account": account}).One(u); err != nil && err != mgo.ErrNotFound {
+		utils.Logger.Error("try to load user got error", zap.Error(err))
+	} else if utils.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
+		return u, nil
+	}
+	return nil, IncorrectErr
+}
+
+var supporttedTypes = map[string]struct{}{
+	"markdown": struct{}{},
+}
+
+func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, typeArg string) (p *Post, err error) {
+	p = &Post{}
+	if _, ok := supporttedTypes[typeArg]; !ok {
+		return nil, fmt.Errorf("type `%v` not supportted", typeArg)
+	}
+	if err = t.posts.Find(bson.M{"post_name": name}).One(p); err == mgo.ErrNotFound {
+		return nil, errors.Wrap(err, "post not exists")
+	}
+	if p.Author != user.ID {
+		return nil, fmt.Errorf("post do not belong to this user")
+	}
+
+	p.Title = title
+	p.Markdown = md
+	p.Content = string(markdown.ToHTML([]byte(md), nil, nil))
+	p.ModifiedAt = time.Now()
+	p.Type = typeArg
+
+	if err = t.posts.UpdateId(p.ID, p); err != nil {
+		return nil, errors.Wrap(err, "try to update post got error")
+	}
+
+	return p, nil
 }
