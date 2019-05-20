@@ -269,5 +269,10 @@ func GeneratePasswordHash(password []byte) ([]byte, error) {
 }
 
 func ValidatePasswordHash(hashedPassword, password []byte) bool {
-	return bcrypt.CompareHashAndPassword(hashedPassword, password) == nil
+	if err := bcrypt.CompareHashAndPassword(hashedPassword, password); err != nil {
+		utils.Logger.Debug("password invalidate", zap.Error(err))
+		return false
+	}
+
+	return true
 }

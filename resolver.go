@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
 	"github.com/pkg/errors"

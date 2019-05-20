@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/Laisky/zap"
+
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2/bson"
 
@@ -41,6 +43,7 @@ func validateAndGetUser(ctx context.Context) (user *blog.User, err error) {
 }
 
 func setLoginCookie(ctx context.Context, user *blog.User) (err error) {
+	utils.Logger.Info("user login", zap.String("user", user.Account))
 	ctx2 := getIrisCtxFromStdCtx(ctx)
 	payload := map[string]interface{}{
 		"display_name": user.Username,
