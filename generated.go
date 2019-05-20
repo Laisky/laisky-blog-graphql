@@ -37,6 +37,7 @@ type Config struct {
 type ResolverRoot interface {
 	BlogPost() BlogPostResolver
 	BlogUser() BlogUserResolver
+	Mutation() MutationResolver
 	Query() QueryResolver
 	Tweet() TweetResolver
 	TwitterUser() TwitterUserResolver
@@ -66,6 +67,10 @@ type ComplexityRoot struct {
 	BlogUser struct {
 		MongoID  func(childComplexity int) int
 		Username func(childComplexity int) int
+	}
+
+	Mutation struct {
+		CreateBlogPost func(childComplexity int, post NewBlogPost) int
 	}
 
 	Query struct {
@@ -100,6 +105,9 @@ type BlogPostResolver interface {
 }
 type BlogUserResolver interface {
 	MongoID(ctx context.Context, obj *blog.User) (string, error)
+}
+type MutationResolver interface {
+	CreateBlogPost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
 }
 type QueryResolver interface {
 	Benchmark(ctx context.Context) (string, error)
@@ -220,6 +228,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.BlogUser.Username(childComplexity), true
+
+	case "Mutation.CreateBlogPost":
+		if e.complexity.Mutation.CreateBlogPost == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createBlogPost_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateBlogPost(childComplexity, args["post"].(NewBlogPost)), true
 
 	case "Query.Benchmark":
 		if e.complexity.Query.Benchmark == nil {
@@ -344,7 +364,20 @@ func (e *executableSchema) Query(ctx context.Context, op *ast.OperationDefinitio
 }
 
 func (e *executableSchema) Mutation(ctx context.Context, op *ast.OperationDefinition) *graphql.Response {
-	return graphql.ErrorResponse(ctx, "mutations are not supported")
+	ec := executionContext{graphql.GetRequestContext(ctx), e}
+
+	buf := ec.RequestMiddleware(ctx, func(ctx context.Context) []byte {
+		data := ec._Mutation(ctx, op.SelectionSet)
+		var buf bytes.Buffer
+		data.MarshalGQL(&buf)
+		return buf.Bytes()
+	})
+
+	return &graphql.Response{
+		Data:       buf,
+		Errors:     ec.Errors,
+		Extensions: ec.Extensions,
+	}
 }
 
 func (e *executableSchema) Subscription(ctx context.Context, op *ast.OperationDefinition) func() *graphql.Response {
@@ -444,12 +477,37 @@ type Query {
     name: String! = "",
     regexp: String! = ""): [BlogPost]!
 }
+
+
+input NewBlogPost {
+  name: String!
+  title: String!
+  markdown: String!
+}
+
+type Mutation {
+  createBlogPost(post: NewBlogPost!): BlogPost!
+}
 `},
 )
 
 // endregion ************************** generated!.gotpl **************************
 
 // region    ***************************** args.gotpl *****************************
+
+func (ec *executionContext) field_Mutation_createBlogPost_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 NewBlogPost
+	if tmp, ok := rawArgs["post"]; ok {
+		arg0, err = ec.unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐNewBlogPost(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["post"] = arg0
+	return args, nil
+}
 
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
@@ -924,6 +982,40 @@ func (ec *executionContext) _BlogUser_username(ctx context.Context, field graphq
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Mutation_createBlogPost(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Mutation",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Mutation_createBlogPost_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	rctx.Args = args
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateBlogPost(rctx, args["post"].(NewBlogPost))
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*blog.Post)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_benchmark(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
@@ -2168,6 +2260,36 @@ func (ec *executionContext) ___Type_ofType(ctx context.Context, field graphql.Co
 
 // region    **************************** input.gotpl *****************************
 
+func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, v interface{}) (NewBlogPost, error) {
+	var it NewBlogPost
+	var asMap = v.(map[string]interface{})
+
+	for k, v := range asMap {
+		switch k {
+		case "name":
+			var err error
+			it.Name, err = ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+		case "title":
+			var err error
+			it.Title, err = ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+		case "markdown":
+			var err error
+			it.Markdown, err = ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputPagination(ctx context.Context, v interface{}) (Pagination, error) {
 	var it Pagination
 	var asMap = v.(map[string]interface{})
@@ -2356,6 +2478,37 @@ func (ec *executionContext) _BlogUser(ctx context.Context, sel ast.SelectionSet,
 			})
 		case "username":
 			out.Values[i] = ec._BlogUser_username(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalid {
+		return graphql.Null
+	}
+	return out
+}
+
+var mutationImplementors = []string{"Mutation"}
+
+func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
+	fields := graphql.CollectFields(ctx, sel, mutationImplementors)
+
+	ctx = graphql.WithResolverContext(ctx, &graphql.ResolverContext{
+		Object: "Mutation",
+	})
+
+	out := graphql.NewFieldSet(fields)
+	invalid := false
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Mutation")
+		case "createBlogPost":
+			out.Values[i] = ec._Mutation_createBlogPost(ctx, field)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}
@@ -2808,6 +2961,10 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
+func (ec *executionContext) marshalNBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v blog.Post) graphql.Marshaler {
+	return ec._BlogPost(ctx, sel, &v)
+}
+
 func (ec *executionContext) marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v []*blog.Post) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -2843,6 +3000,16 @@ func (ec *executionContext) marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaisk
 	}
 	wg.Wait()
 	return ret
+}
+
+func (ec *executionContext) marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v *blog.Post) graphql.Marshaler {
+	if v == nil {
+		if !ec.HasError(graphql.GetResolverContext(ctx)) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	return ec._BlogPost(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNBlogUser2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐUser(ctx context.Context, sel ast.SelectionSet, v blog.User) graphql.Marshaler {
@@ -2889,6 +3056,10 @@ func (ec *executionContext) unmarshalNInt2int32(ctx context.Context, v interface
 
 func (ec *executionContext) marshalNInt2int32(ctx context.Context, sel ast.SelectionSet, v int32) graphql.Marshaler {
 	return graphql.MarshalInt32(v)
+}
+
+func (ec *executionContext) unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐNewBlogPost(ctx context.Context, v interface{}) (NewBlogPost, error) {
+	return ec.unmarshalInputNewBlogPost(ctx, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v interface{}) (string, error) {

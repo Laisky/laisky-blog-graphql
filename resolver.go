@@ -8,12 +8,14 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/twitter"
 )
 
-// THIS CODE IS A STARTING POINT ONLY. IT WILL NOT BE UPDATED WITH SCHEMA CHANGES.
-
 type Resolver struct{}
 
 func (r *Resolver) Query() QueryResolver {
 	return &queryResolver{r}
+}
+
+func (r *Resolver) Mutation() MutationResolver {
+	return &mutationResolver{r}
 }
 
 func (r *Resolver) Tweet() TweetResolver {
@@ -29,8 +31,8 @@ func (r *Resolver) BlogUser() BlogUserResolver {
 	return &blogUserResolver{r}
 }
 
-// implement resolver
-type mutationResolver struct{ *Resolver }
+// query
+// ===========================
 
 type queryResolver struct{ *Resolver }
 type tweetResolver struct{ *Resolver }
@@ -99,4 +101,17 @@ func (r *blogPostResolver) Category(ctx context.Context, obj *blog.Post) (*blog.
 
 func (r *blogUserResolver) MongoID(ctx context.Context, obj *blog.User) (string, error) {
 	return obj.ID.Hex(), nil
+}
+
+// mutations
+// =========
+type mutationResolver struct{ *Resolver }
+
+func (r *mutationResolver) CreateBlogPost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
+	user, err := ValidateAndGetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return blogDB.NewPost(user.ID, input.Title, input.Name, input.Markdown)
 }

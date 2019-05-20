@@ -8,6 +8,7 @@ require (
 	github.com/Laisky/zap v1.9.2
 	github.com/ajg/form v1.5.1 // indirect
 	github.com/gavv/monotime v0.0.0-20171021193802-6f8212e8d10d // indirect
+	github.com/gomarkdown/markdown v0.0.0-20190222000725-ee6a7931a1e4
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/imkira/go-interpol v1.1.0 // indirect
 	github.com/iris-contrib/httpexpect v0.0.0-20180314041918-ebe99fcebbce // indirect
