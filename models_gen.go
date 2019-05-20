@@ -2,6 +2,12 @@
 
 package laisky_blog_graphql
 
+type NewBlogPost struct {
+	Name     string `json:"name"`
+	Title    string `json:"title"`
+	Markdown string `json:"markdown"`
+}
+
 type Pagination struct {
 	Page int `json:"page"`
 	Size int `json:"size"`
