@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/zap"
@@ -33,8 +35,10 @@ type Post struct {
 }
 
 type User struct {
-	ID       bson.ObjectId `bson:"_id" json:"mongo_id"`
+	ID       bson.ObjectId `bson:"_id" json:"id"`
 	Username string        `bson:"username" json:"username"`
+	Account  string        `bson:"account" json:"account"`
+	Password string        `bson:"password" json:"password"`
 }
 
 type Category struct {
@@ -245,4 +249,25 @@ func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md string) (post *
 	}
 
 	return p, nil
+}
+
+var IncorrectErr = errors.New("Password Or Username Incorrect")
+
+func (t *BlogDB) ValidateLogin(account, password string) (u *User, err error) {
+	utils.Logger.Debug("ValidateLogin", zap.String("account", account))
+	u = &User{}
+	if err := t.users.Find(bson.M{"account": account}).One(u); err != nil && err != mgo.ErrNotFound {
+		utils.Logger.Error("try to load user got error", zap.Error(err))
+	} else if ValidatePasswordHash([]byte(u.Password), []byte(password)) {
+		return u, nil
+	}
+	return nil, IncorrectErr
+}
+
+func GeneratePasswordHash(password []byte) ([]byte, error) {
+	return bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+}
+
+func ValidatePasswordHash(hashedPassword, password []byte) bool {
+	return bcrypt.CompareHashAndPassword(hashedPassword, password) == nil
 }

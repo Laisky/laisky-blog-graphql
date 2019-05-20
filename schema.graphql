@@ -27,4 +27,5 @@ input NewBlogPost {
 
 type Mutation {
   createBlogPost(post: NewBlogPost!): BlogPost!
+  login(account: String!, password: String!): BlogUser!
 }

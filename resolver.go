@@ -4,8 +4,10 @@ import (
 	"context"
 	"time"
 
+	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
+	"github.com/pkg/errors"
 )
 
 type Resolver struct{}
@@ -99,7 +101,7 @@ func (r *blogPostResolver) Category(ctx context.Context, obj *blog.Post) (*blog.
 	return blogDB.LoadCategoryById(obj.Category)
 }
 
-func (r *blogUserResolver) MongoID(ctx context.Context, obj *blog.User) (string, error) {
+func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, error) {
 	return obj.ID.Hex(), nil
 }
 
@@ -108,10 +110,22 @@ func (r *blogUserResolver) MongoID(ctx context.Context, obj *blog.User) (string,
 type mutationResolver struct{ *Resolver }
 
 func (r *mutationResolver) CreateBlogPost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
-	user, err := ValidateAndGetUser(ctx)
+	user, err := validateAndGetUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	return blogDB.NewPost(user.ID, input.Title, input.Name, input.Markdown)
+}
+
+func (r *mutationResolver) Login(ctx context.Context, account string, password string) (user *blog.User, err error) {
+	if user, err = blogDB.ValidateLogin(account, password); err != nil {
+		return nil, err
+	}
+
+	if err = setLoginCookie(ctx, user); err != nil {
+		return nil, errors.Wrap(err, "try to set cookies got error")
+	}
+
+	return user, nil
 }

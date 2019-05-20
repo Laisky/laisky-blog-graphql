@@ -42,7 +42,7 @@ func RunServer(addr string) {
 	}))))
 }
 
-const IrisCtxKey = "ctx"
+const IrisCtxKey = "irisctx"
 
 // FromStd convert std handler to iris.Handler, with iris context embedded
 func FromStd(handler http.HandlerFunc) iris.Handler {

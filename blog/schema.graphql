@@ -12,7 +12,7 @@ type BlogPost {
 }
 
 type BlogUser {
-    mongo_id: String!
+    id: String!
     username: String!
 }
 

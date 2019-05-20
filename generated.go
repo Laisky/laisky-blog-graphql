@@ -65,12 +65,13 @@ type ComplexityRoot struct {
 	}
 
 	BlogUser struct {
-		MongoID  func(childComplexity int) int
+		ID       func(childComplexity int) int
 		Username func(childComplexity int) int
 	}
 
 	Mutation struct {
 		CreateBlogPost func(childComplexity int, post NewBlogPost) int
+		Login          func(childComplexity int, account string, password string) int
 	}
 
 	Query struct {
@@ -81,7 +82,6 @@ type ComplexityRoot struct {
 
 	Tweet struct {
 		CreatedAt func(childComplexity int) int
-		MongoID   func(childComplexity int) int
 		Text      func(childComplexity int) int
 		Topics    func(childComplexity int) int
 		TweetID   func(childComplexity int) int
@@ -104,10 +104,11 @@ type BlogPostResolver interface {
 	Category(ctx context.Context, obj *blog.Post) (*blog.Category, error)
 }
 type BlogUserResolver interface {
-	MongoID(ctx context.Context, obj *blog.User) (string, error)
+	ID(ctx context.Context, obj *blog.User) (string, error)
 }
 type MutationResolver interface {
 	CreateBlogPost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
+	Login(ctx context.Context, account string, password string) (*blog.User, error)
 }
 type QueryResolver interface {
 	Benchmark(ctx context.Context) (string, error)
@@ -115,7 +116,6 @@ type QueryResolver interface {
 	Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error)
 }
 type TweetResolver interface {
-	MongoID(ctx context.Context, obj *twitter.Tweet) (string, error)
 	TweetID(ctx context.Context, obj *twitter.Tweet) (int, error)
 	CreatedAt(ctx context.Context, obj *twitter.Tweet) (string, error)
 }
@@ -215,12 +215,12 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.BlogPost.Title(childComplexity), true
 
-	case "BlogUser.MongoID":
-		if e.complexity.BlogUser.MongoID == nil {
+	case "BlogUser.ID":
+		if e.complexity.BlogUser.ID == nil {
 			break
 		}
 
-		return e.complexity.BlogUser.MongoID(childComplexity), true
+		return e.complexity.BlogUser.ID(childComplexity), true
 
 	case "BlogUser.Username":
 		if e.complexity.BlogUser.Username == nil {
@@ -240,6 +240,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Mutation.CreateBlogPost(childComplexity, args["post"].(NewBlogPost)), true
+
+	case "Mutation.Login":
+		if e.complexity.Mutation.Login == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_login_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.Login(childComplexity, args["account"].(string), args["password"].(string)), true
 
 	case "Query.Benchmark":
 		if e.complexity.Query.Benchmark == nil {
@@ -278,13 +290,6 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Tweet.CreatedAt(childComplexity), true
-
-	case "Tweet.MongoID":
-		if e.complexity.Tweet.MongoID == nil {
-			break
-		}
-
-		return e.complexity.Tweet.MongoID(childComplexity), true
 
 	case "Tweet.Text":
 		if e.complexity.Tweet.Text == nil {
@@ -433,7 +438,7 @@ var parsedSchema = gqlparser.MustLoadSchema(
 }
 
 type BlogUser {
-    mongo_id: String!
+    id: String!
     username: String!
 }
 
@@ -443,7 +448,7 @@ type BlogCategory {
 }
 `},
 	&ast.Source{Name: "./twitter/schema.graphql", Input: `type Tweet {
-    mongo_id: String!
+    # mongo_id: String!
     tweet_id: Int!
     created_at: Date!
     text: String!
@@ -487,6 +492,7 @@ input NewBlogPost {
 
 type Mutation {
   createBlogPost(post: NewBlogPost!): BlogPost!
+  login(account: String!, password: String!): BlogUser!
 }
 `},
 )
@@ -506,6 +512,28 @@ func (ec *executionContext) field_Mutation_createBlogPost_args(ctx context.Conte
 		}
 	}
 	args["post"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_login_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["account"]; ok {
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["account"] = arg0
+	var arg1 string
+	if tmp, ok := rawArgs["password"]; ok {
+		arg1, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["password"] = arg1
 	return args, nil
 }
 
@@ -930,7 +958,7 @@ func (ec *executionContext) _BlogPost_category(ctx context.Context, field graphq
 	return ec.marshalOBlogCategory2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐCategory(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _BlogUser_mongo_id(ctx context.Context, field graphql.CollectedField, obj *blog.User) graphql.Marshaler {
+func (ec *executionContext) _BlogUser_id(ctx context.Context, field graphql.CollectedField, obj *blog.User) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -943,7 +971,7 @@ func (ec *executionContext) _BlogUser_mongo_id(ctx context.Context, field graphq
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogUser().MongoID(rctx, obj)
+		return ec.resolvers.BlogUser().ID(rctx, obj)
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1016,6 +1044,40 @@ func (ec *executionContext) _Mutation_createBlogPost(ctx context.Context, field 
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Mutation_login(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Mutation",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Mutation_login_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	rctx.Args = args
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().Login(rctx, args["account"].(string), args["password"].(string))
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*blog.User)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐUser(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_benchmark(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
@@ -1166,33 +1228,6 @@ func (ec *executionContext) _Query___schema(ctx context.Context, field graphql.C
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalO__Schema2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐSchema(ctx, field.Selections, res)
-}
-
-func (ec *executionContext) _Tweet_mongo_id(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
-	ctx = ec.Tracer.StartFieldExecution(ctx, field)
-	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
-	rctx := &graphql.ResolverContext{
-		Object:   "Tweet",
-		Field:    field,
-		Args:     nil,
-		IsMethod: true,
-	}
-	ctx = graphql.WithResolverContext(ctx, rctx)
-	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
-	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().MongoID(rctx, obj)
-	})
-	if resTmp == nil {
-		if !ec.HasError(rctx) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	rctx.Result = res
-	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_tweet_id(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
@@ -2462,7 +2497,7 @@ func (ec *executionContext) _BlogUser(ctx context.Context, sel ast.SelectionSet,
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("BlogUser")
-		case "mongo_id":
+		case "id":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
 				defer func() {
@@ -2470,7 +2505,7 @@ func (ec *executionContext) _BlogUser(ctx context.Context, sel ast.SelectionSet,
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._BlogUser_mongo_id(ctx, field, obj)
+				res = ec._BlogUser_id(ctx, field, obj)
 				if res == graphql.Null {
 					invalid = true
 				}
@@ -2509,6 +2544,11 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			out.Values[i] = graphql.MarshalString("Mutation")
 		case "createBlogPost":
 			out.Values[i] = ec._Mutation_createBlogPost(ctx, field)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "login":
+			out.Values[i] = ec._Mutation_login(ctx, field)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}
@@ -2606,20 +2646,6 @@ func (ec *executionContext) _Tweet(ctx context.Context, sel ast.SelectionSet, ob
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Tweet")
-		case "mongo_id":
-			field := field
-			out.Concurrently(i, func() (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Tweet_mongo_id(ctx, field, obj)
-				if res == graphql.Null {
-					invalid = true
-				}
-				return res
-			})
 		case "tweet_id":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
