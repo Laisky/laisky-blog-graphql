@@ -62,6 +62,7 @@ type ComplexityRoot struct {
 		Name       func(childComplexity int) int
 		Tags       func(childComplexity int) int
 		Title      func(childComplexity int) int
+		Type       func(childComplexity int) int
 	}
 
 	BlogUser struct {
@@ -70,6 +71,7 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
+		AmendBlogPost  func(childComplexity int, name string, title string, markdown string, typeArg string) int
 		CreateBlogPost func(childComplexity int, post NewBlogPost) int
 		Login          func(childComplexity int, account string, password string) int
 	}
@@ -109,6 +111,7 @@ type BlogUserResolver interface {
 type MutationResolver interface {
 	CreateBlogPost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
 	Login(ctx context.Context, account string, password string) (*blog.User, error)
+	AmendBlogPost(ctx context.Context, name string, title string, markdown string, typeArg string) (*blog.Post, error)
 }
 type QueryResolver interface {
 	Benchmark(ctx context.Context) (string, error)
@@ -215,6 +218,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.BlogPost.Title(childComplexity), true
 
+	case "BlogPost.Type":
+		if e.complexity.BlogPost.Type == nil {
+			break
+		}
+
+		return e.complexity.BlogPost.Type(childComplexity), true
+
 	case "BlogUser.ID":
 		if e.complexity.BlogUser.ID == nil {
 			break
@@ -228,6 +238,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.BlogUser.Username(childComplexity), true
+
+	case "Mutation.AmendBlogPost":
+		if e.complexity.Mutation.AmendBlogPost == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_amendBlogPost_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AmendBlogPost(childComplexity, args["name"].(string), args["title"].(string), args["markdown"].(string), args["type"].(string)), true
 
 	case "Mutation.CreateBlogPost":
 		if e.complexity.Mutation.CreateBlogPost == nil {
@@ -429,6 +451,7 @@ var parsedSchema = gqlparser.MustLoadSchema(
     author: BlogUser!
     created_at: Date!
     modified_at: Date!
+    type: String!
     title: String!
     content: String!
     name: String!
@@ -488,11 +511,13 @@ input NewBlogPost {
   name: String!
   title: String!
   markdown: String!
+  type: String!
 }
 
 type Mutation {
   createBlogPost(post: NewBlogPost!): BlogPost!
   login(account: String!, password: String!): BlogUser!
+  amendBlogPost(name: String!, title: String!, markdown: String!, type: String! = "markdown"): BlogPost!
 }
 `},
 )
@@ -500,6 +525,44 @@ type Mutation {
 // endregion ************************** generated!.gotpl **************************
 
 // region    ***************************** args.gotpl *****************************
+
+func (ec *executionContext) field_Mutation_amendBlogPost_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["name"]; ok {
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["name"] = arg0
+	var arg1 string
+	if tmp, ok := rawArgs["title"]; ok {
+		arg1, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["title"] = arg1
+	var arg2 string
+	if tmp, ok := rawArgs["markdown"]; ok {
+		arg2, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["markdown"] = arg2
+	var arg3 string
+	if tmp, ok := rawArgs["type"]; ok {
+		arg3, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["type"] = arg3
+	return args, nil
+}
 
 func (ec *executionContext) field_Mutation_createBlogPost_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
@@ -802,6 +865,33 @@ func (ec *executionContext) _BlogPost_modified_at(ctx context.Context, field gra
 	return ec.marshalNDate2string(ctx, field.Selections, res)
 }
 
+func (ec *executionContext) _BlogPost_type(ctx context.Context, field graphql.CollectedField, obj *blog.Post) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "BlogPost",
+		Field:    field,
+		Args:     nil,
+		IsMethod: false,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Type, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
 func (ec *executionContext) _BlogPost_title(ctx context.Context, field graphql.CollectedField, obj *blog.Post) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
@@ -1078,6 +1168,40 @@ func (ec *executionContext) _Mutation_login(ctx context.Context, field graphql.C
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐUser(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Mutation_amendBlogPost(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Mutation",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Mutation_amendBlogPost_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	rctx.Args = args
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AmendBlogPost(rctx, args["name"].(string), args["title"].(string), args["markdown"].(string), args["type"].(string))
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*blog.Post)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_benchmark(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
@@ -2319,6 +2443,12 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, v int
 			if err != nil {
 				return it, err
 			}
+		case "type":
+			var err error
+			it.Type, err = ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
 		}
 	}
 
@@ -2442,6 +2572,11 @@ func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet,
 				}
 				return res
 			})
+		case "type":
+			out.Values[i] = ec._BlogPost_type(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
 		case "title":
 			out.Values[i] = ec._BlogPost_title(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -2549,6 +2684,11 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			}
 		case "login":
 			out.Values[i] = ec._Mutation_login(ctx, field)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "amendBlogPost":
+			out.Values[i] = ec._Mutation_amendBlogPost(ctx, field)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}

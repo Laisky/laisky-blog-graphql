@@ -6,6 +6,7 @@ type NewBlogPost struct {
 	Name     string `json:"name"`
 	Title    string `json:"title"`
 	Markdown string `json:"markdown"`
+	Type     string `json:"type"`
 }
 
 type Pagination struct {

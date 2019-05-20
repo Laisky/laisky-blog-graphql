@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/zap"
@@ -25,6 +23,7 @@ type Post struct {
 	CreatedAt  time.Time     `bson:"post_created_at" json:"created_at"`
 	ModifiedAt time.Time     `bson:"post_modified_gmt" json:"modified_at"`
 	Title      string        `bson:"post_title" json:"title"`
+	Type       string        `bson:"post_type" json:"type"`
 	Name       string        `bson:"post_name" json:"name"`
 	Content    string        `bson:"post_content" json:"content"`
 	Markdown   string        `bson:"post_markdown" json:"markdown"`
@@ -258,21 +257,37 @@ func (t *BlogDB) ValidateLogin(account, password string) (u *User, err error) {
 	u = &User{}
 	if err := t.users.Find(bson.M{"account": account}).One(u); err != nil && err != mgo.ErrNotFound {
 		utils.Logger.Error("try to load user got error", zap.Error(err))
-	} else if ValidatePasswordHash([]byte(u.Password), []byte(password)) {
+	} else if utils.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
 		return u, nil
 	}
 	return nil, IncorrectErr
 }
 
-func GeneratePasswordHash(password []byte) ([]byte, error) {
-	return bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+var supporttedTypes = map[string]struct{}{
+	"markdown": struct{}{},
 }
 
-func ValidatePasswordHash(hashedPassword, password []byte) bool {
-	if err := bcrypt.CompareHashAndPassword(hashedPassword, password); err != nil {
-		utils.Logger.Debug("password invalidate", zap.Error(err))
-		return false
+func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, typeArg string) (p *Post, err error) {
+	p = &Post{}
+	if _, ok := supporttedTypes[typeArg]; !ok {
+		return nil, fmt.Errorf("type `%v` not supportted", typeArg)
+	}
+	if err = t.posts.Find(bson.M{"post_name": name}).One(p); err == mgo.ErrNotFound {
+		return nil, errors.Wrap(err, "post not exists")
+	}
+	if p.Author != user.ID {
+		return nil, fmt.Errorf("post do not belong to this user")
 	}
 
-	return true
+	p.Title = title
+	p.Markdown = md
+	p.Content = string(markdown.ToHTML([]byte(md), nil, nil))
+	p.ModifiedAt = time.Now()
+	p.Type = typeArg
+
+	if err = t.posts.UpdateId(p.ID, p); err != nil {
+		return nil, errors.Wrap(err, "try to update post got error")
+	}
+
+	return p, nil
 }

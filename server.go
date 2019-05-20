@@ -1,8 +1,7 @@
 package laisky_blog_graphql
 
 import (
-	"context"
-	"net/http"
+	irisMiddlewares "github.com/Laisky/go-utils/iris-middlewares"
 
 	"github.com/99designs/gqlgen/handler"
 	prometheusMiddleware "github.com/iris-contrib/middleware/prometheus"
@@ -32,8 +31,8 @@ func RunServer(addr string) {
 	Server.Any("/pprof/{action:path}", pprof.New())
 	Server.Get("/metrics", iris.FromStd(promhttp.Handler()))
 
-	Server.Handle("ANY", "/ui/", FromStd(handler.Playground("GraphQL playground", "/graphql/query/")))
-	Server.Handle("ANY", "/query/", FromStd(handler.GraphQL(NewExecutableSchema(Config{Resolvers: &Resolver{}}))))
+	Server.Handle("ANY", "/ui/", irisMiddlewares.FromStd(handler.Playground("GraphQL playground", "/graphql/query/")))
+	Server.Handle("ANY", "/query/", irisMiddlewares.FromStd(handler.GraphQL(NewExecutableSchema(Config{Resolvers: &Resolver{}}))))
 
 	utils.Logger.Info("listening on http", zap.String("addr", addr))
 	utils.Logger.Panic("httpserver exit", zap.Error(Server.Run(iris.Addr(addr), iris.WithConfiguration(iris.Configuration{
@@ -43,18 +42,6 @@ func RunServer(addr string) {
 }
 
 const IrisCtxKey = "irisctx"
-
-// FromStd convert std handler to iris.Handler, with iris context embedded
-func FromStd(handler http.HandlerFunc) iris.Handler {
-	return func(ctx iris.Context) {
-		r2 := ctx.Request().WithContext(context.WithValue(ctx.Request().Context(), IrisCtxKey, ctx))
-		handler(ctx.ResponseWriter(), r2)
-	}
-}
-
-func getIrisCtxFromStdCtx(ctx context.Context) iris.Context {
-	return ctx.Value(IrisCtxKey).(iris.Context)
-}
 
 func LoggerMiddleware(ctx iris.Context) {
 	utils.Logger.Debug("request",

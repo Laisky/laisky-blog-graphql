@@ -128,3 +128,12 @@ func (r *mutationResolver) Login(ctx context.Context, account string, password s
 
 	return user, nil
 }
+
+func (r *mutationResolver) AmendBlogPost(ctx context.Context, name string, title string, markdown string, typeArg string) (*blog.Post, error) {
+	user, err := validateAndGetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return blogDB.UpdatePost(user, name, title, markdown, typeArg)
+}

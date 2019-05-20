@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	irisMiddlewares "github.com/Laisky/go-utils/iris-middlewares"
+
 	"github.com/Laisky/zap"
 
 	"github.com/pkg/errors"
@@ -28,7 +30,7 @@ func SetupAuth(secret string) {
 }
 
 func validateAndGetUser(ctx context.Context) (user *blog.User, err error) {
-	token := getIrisCtxFromStdCtx(ctx).GetCookie(AuthTokenName)
+	token := irisMiddlewares.GetIrisCtxFromStdCtx(ctx).GetCookie(AuthTokenName)
 	payload, err := Auth.Validate(token)
 	if err != nil {
 		return nil, errors.Wrap(err, "token invalidate")
@@ -44,7 +46,7 @@ func validateAndGetUser(ctx context.Context) (user *blog.User, err error) {
 
 func setLoginCookie(ctx context.Context, user *blog.User) (err error) {
 	utils.Logger.Info("user login", zap.String("user", user.Account))
-	ctx2 := getIrisCtxFromStdCtx(ctx)
+	ctx2 := irisMiddlewares.GetIrisCtxFromStdCtx(ctx)
 	payload := map[string]interface{}{
 		"display_name": user.Username,
 		"account":      user.Account,

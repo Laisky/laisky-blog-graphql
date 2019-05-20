@@ -3,6 +3,7 @@ type BlogPost {
     author: BlogUser!
     created_at: Date!
     modified_at: Date!
+    type: String!
     title: String!
     content: String!
     name: String!

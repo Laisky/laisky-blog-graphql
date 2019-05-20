@@ -23,9 +23,11 @@ input NewBlogPost {
   name: String!
   title: String!
   markdown: String!
+  type: String!
 }
 
 type Mutation {
   createBlogPost(post: NewBlogPost!): BlogPost!
   login(account: String!, password: String!): BlogUser!
+  amendBlogPost(name: String!, title: String!, markdown: String!, type: String! = "markdown"): BlogPost!
 }

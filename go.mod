@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/99designs/gqlgen v0.8.3
-	github.com/Laisky/go-utils v1.2.0
+	github.com/Laisky/go-utils v1.2.1
 	github.com/Laisky/zap v1.9.2
 	github.com/gomarkdown/markdown v0.0.0-20190222000725-ee6a7931a1e4
 	github.com/iris-contrib/middleware v0.0.0-20181021162728-8bd5d51b3c2e
@@ -14,6 +14,5 @@ require (
 	github.com/spf13/pflag v1.0.3
 	github.com/spf13/viper v1.1.1
 	github.com/vektah/gqlparser v1.1.2
-	golang.org/x/crypto v0.0.0-20190411191339-88737f569e3a
 	gopkg.in/mgo.v2 v2.0.0-20180705113604-9856a29383ce
 )
