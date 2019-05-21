@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/99designs/gqlgen v0.8.3
-	github.com/Laisky/go-utils v1.2.2
+	github.com/Laisky/go-utils v1.2.3
 	github.com/Laisky/zap v1.9.2
 	github.com/gomarkdown/markdown v0.0.0-20190222000725-ee6a7931a1e4
 	github.com/iris-contrib/middleware v0.0.0-20181021162728-8bd5d51b3c2e

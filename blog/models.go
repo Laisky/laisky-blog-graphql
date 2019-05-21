@@ -53,6 +53,17 @@ const (
 	CATEGORY_COL_NAME = "categories"
 )
 
+func (u *User) GetID() string {
+	return u.ID.Hex()
+}
+
+func (u *User) GetPayload() map[string]interface{} {
+	return map[string]interface{}{
+		"display_name": u.Username,
+		"account":      u.Account,
+	}
+}
+
 func NewBlogDB(addr string) (db *BlogDB, err error) {
 	db = &BlogDB{
 		DB: &models.DB{},
