@@ -14,28 +14,36 @@ import (
 )
 
 var (
-	Server = iris.New()
+	server = iris.New()
+	auth   *irisMiddlewares.Auth
 )
 
-func RunServer(addr string) {
-	Server.UseGlobal(LoggerMiddleware)
+func setupAuth() {
+	cfg := irisMiddlewares.AuthCfg
+	cfg.Secret = utils.Settings.GetString("settings.secret")
+	auth = irisMiddlewares.NewAuth(cfg)
+}
 
-	Server.Any("/health", func(ctx iris.Context) {
+func RunServer(addr string) {
+	setupAuth()
+	server.UseGlobal(LoggerMiddleware)
+
+	server.Any("/health", func(ctx iris.Context) {
 		ctx.Write([]byte("Hello, World"))
 	})
 
 	m := prometheusMiddleware.New("serviceName", 0.3, 1.2, 5.0)
-	Server.Use(m.ServeHTTP)
+	server.Use(m.ServeHTTP)
 	// supported action:
 	// cmdline, profile, symbol, goroutine, heap, threadcreate, debug/block
-	Server.Any("/pprof/{action:path}", pprof.New())
-	Server.Get("/metrics", iris.FromStd(promhttp.Handler()))
+	server.Any("/pprof/{action:path}", pprof.New())
+	server.Get("/metrics", iris.FromStd(promhttp.Handler()))
 
-	Server.Handle("ANY", "/ui/", irisMiddlewares.FromStd(handler.Playground("GraphQL playground", "/graphql/query/")))
-	Server.Handle("ANY", "/query/", irisMiddlewares.FromStd(handler.GraphQL(NewExecutableSchema(Config{Resolvers: &Resolver{}}))))
+	server.Handle("ANY", "/ui/", irisMiddlewares.FromStd(handler.Playground("GraphQL playground", "/graphql/query/")))
+	server.Handle("ANY", "/query/", irisMiddlewares.FromStd(handler.GraphQL(NewExecutableSchema(Config{Resolvers: &Resolver{}}))))
 
 	utils.Logger.Info("listening on http", zap.String("addr", addr))
-	utils.Logger.Panic("httpserver exit", zap.Error(Server.Run(iris.Addr(addr), iris.WithConfiguration(iris.Configuration{
+	utils.Logger.Panic("httpServer exit", zap.Error(server.Run(iris.Addr(addr), iris.WithConfiguration(iris.Configuration{
 		DisablePathCorrection:            false,
 		DisablePathCorrectionRedirection: true,
 	}))))

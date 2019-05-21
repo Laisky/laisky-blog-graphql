@@ -54,7 +54,6 @@ func main() {
 	defer utils.Logger.Sync()
 	SetupArgs()
 	SetupSettings()
-	laisky_blog_graphql.SetupAuth(utils.Settings.GetString("settings.secret"))
 
 	laisky_blog_graphql.DialDB(utils.Settings.GetString("dbaddr"))
 	laisky_blog_graphql.RunServer(utils.Settings.GetString("addr"))

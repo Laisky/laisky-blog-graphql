@@ -114,3 +114,4 @@ cpu.pprof
 
 # temporary
 # docs
+.coverage.txt
