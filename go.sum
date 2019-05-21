@@ -10,6 +10,8 @@ github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be h1:7Rxhm6IjOtDA
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be/go.mod h1:1mdzaETo0kjvCQICPSePsoaatJN4l7JvEA1200lyevo=
 github.com/Laisky/go-utils v1.2.1 h1:CMV0HNiwxCloECjS2b/N4d8Bpeoh+ttx7SFHrgiN630=
 github.com/Laisky/go-utils v1.2.1/go.mod h1:5Te3i5lzI/Si37oncqKRrV0cyvSj+dfZVcVdmJIhuo4=
+github.com/Laisky/go-utils v1.2.2 h1:s8RAMRZnh8HIbeXjLf/pqVg/QDYDZzscxkhBHx4POaw=
+github.com/Laisky/go-utils v1.2.2/go.mod h1:5Te3i5lzI/Si37oncqKRrV0cyvSj+dfZVcVdmJIhuo4=
 github.com/Laisky/zap v1.9.2 h1:7dTtABboHk8DnT0d6Dc8A9Opu2cyIEaMlL9JO11zvag=
 github.com/Laisky/zap v1.9.2/go.mod h1:CQdLb2wEfqBvoNLmfOp7wnKTOMvhc4DQRc3xfshL4EQ=
 github.com/RoaringBitmap/roaring v0.4.16/go.mod h1:8khRDP4HmeXns4xIj9oGrKSz7XTQiJx2zgh7AcNke4w=

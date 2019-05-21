@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/kataras/iris"
+
 	irisMiddlewares "github.com/Laisky/go-utils/iris-middlewares"
 
 	"github.com/Laisky/zap"
@@ -44,6 +46,8 @@ func validateAndGetUser(ctx context.Context) (user *blog.User, err error) {
 	return user, nil
 }
 
+const tokenCookieDuration = 7 * 24 * time.Hour
+
 func setLoginCookie(ctx context.Context, user *blog.User) (err error) {
 	utils.Logger.Info("user login", zap.String("user", user.Account))
 	ctx2 := irisMiddlewares.GetIrisCtxFromStdCtx(ctx)
@@ -52,10 +56,10 @@ func setLoginCookie(ctx context.Context, user *blog.User) (err error) {
 		"account":      user.Account,
 	}
 	var token string
-	if token, err = Auth.GenerateToken(user.ID.Hex(), time.Now().Add(7*24*time.Hour), payload); err != nil {
+	if token, err = Auth.GenerateToken(user.ID.Hex(), time.Now().Add(tokenCookieDuration), payload); err != nil {
 		return errors.Wrap(err, "try to generate token got error")
 	}
 
-	ctx2.SetCookieKV(AuthTokenName, token)
+	ctx2.SetCookieKV(AuthTokenName, token, iris.CookieExpires(tokenCookieDuration))
 	return nil
 }
