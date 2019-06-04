@@ -275,7 +275,7 @@ func (t *BlogDB) ValidateLogin(account, password string) (u *User, err error) {
 }
 
 var supporttedTypes = map[string]struct{}{
-	"markdown": struct{}{},
+	"markdown": {},
 }
 
 func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, typeArg string) (p *Post, err error) {
