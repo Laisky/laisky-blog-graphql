@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/99designs/gqlgen v0.8.3
-	github.com/Laisky/go-utils v1.3.9-0.20190604052253-ffe7e5430644
+	github.com/Laisky/go-utils v1.4.0
 	github.com/Laisky/zap v1.9.2
 	github.com/gin-contrib/pprof v1.2.0
 	github.com/gin-gonic/gin v1.4.0
