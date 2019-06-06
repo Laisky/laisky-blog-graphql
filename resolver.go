@@ -122,7 +122,7 @@ func (r *mutationResolver) Login(ctx context.Context, account string, password s
 		return nil, err
 	}
 
-	if err = auth.SetLoginCookie(ctx, user); err != nil {
+	if err = auth.SetLoginCookie(ctx, user, nil); err != nil {
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}
 

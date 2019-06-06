@@ -24,6 +24,7 @@ type Post struct {
 	ModifiedAt time.Time     `bson:"post_modified_gmt" json:"modified_at"`
 	Title      string        `bson:"post_title" json:"title"`
 	Type       string        `bson:"post_type" json:"type"`
+	Status     string        `bson:"post_status" json:"status"`
 	Name       string        `bson:"post_name" json:"name"`
 	Content    string        `bson:"post_content" json:"content"`
 	Markdown   string        `bson:"post_markdown" json:"markdown"`
@@ -242,6 +243,7 @@ func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md string) (post *
 		CreatedAt:  ts,
 		Title:      title,
 		Name:       name,
+		Status:     "publish",
 		Author:     authorID,
 	}
 
@@ -249,8 +251,8 @@ func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md string) (post *
 		utils.Logger.Info("insert post",
 			zap.String("title", p.Title),
 			zap.String("name", p.Name),
-			zap.String("markdown", p.Markdown),
-			zap.String("content", p.Content),
+			// zap.String("markdown", p.Markdown),
+			// zap.String("content", p.Content),
 		)
 	} else {
 		if err = t.posts.Insert(p); err != nil {
