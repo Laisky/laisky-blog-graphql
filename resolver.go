@@ -2,7 +2,13 @@ package laisky_blog_graphql
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"time"
+
+	"github.com/Laisky/zap"
+
+	"github.com/Laisky/go-utils"
 
 	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
@@ -75,13 +81,30 @@ func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string,
 }
 
 func (t *tweetResolver) MongoID(ctx context.Context, obj *twitter.Tweet) (string, error) {
-	return obj.ID.Hex(), nil
+	return obj.MongoID.Hex(), nil
 }
 func (t *tweetResolver) TweetID(ctx context.Context, obj *twitter.Tweet) (int, error) {
-	return int(obj.TID), nil
+	return int(obj.ID), nil
 }
 func (t *tweetResolver) CreatedAt(ctx context.Context, obj *twitter.Tweet) (string, error) {
 	return obj.CreatedAt.Format(time.RFC3339Nano), nil
+}
+func (t *tweetResolver) URL(ctx context.Context, obj *twitter.Tweet) (string, error) {
+	return "https://twitter.com/" + obj.User.ScreenName + "/status/" + strconv.FormatInt(obj.ID, 10), nil
+}
+func (t *tweetResolver) ReplyTo(ctx context.Context, obj *twitter.Tweet) (tweet *twitter.Tweet, err error) {
+	if obj.ReplyToStatusID == 0 {
+		return nil, nil
+	}
+
+	if tweet, err = twitterDB.LoadTweetByTwitterID(obj.ReplyToStatusID); err != nil {
+		utils.Logger.Warn("try to load tweet by id got error",
+			zap.Int64("tid", obj.ReplyToStatusID),
+			zap.Error(err))
+		return nil, fmt.Errorf("can not load tweet by tid: %v", obj.ReplyToStatusID)
+	}
+
+	return tweet, nil
 }
 
 func (r *blogPostResolver) MongoID(ctx context.Context, obj *blog.Post) (string, error) {
