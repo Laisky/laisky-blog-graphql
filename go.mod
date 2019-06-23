@@ -17,3 +17,4 @@ require (
 )
 
 replace github.com/ugorji/go v1.1.4 => github.com/ugorji/go/codec v0.0.0-20190204201341-e444a5086c43
+replace github.com/appleboy/gofight v2.0.0+incompatible => github.com/appleboy/gofight/v2 v2.1.1
