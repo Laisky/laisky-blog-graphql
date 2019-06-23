@@ -1,4 +1,4 @@
-FROM golang:1.12.5-alpine3.9 AS gobuild
+FROM golang:1.12.6-alpine3.9 AS gobuild
 
 # run dependencies
 RUN apk update && apk upgrade && \
