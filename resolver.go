@@ -58,6 +58,7 @@ func (q *queryResolver) Benchmark(ctx context.Context) (string, error) {
 func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error) {
 	if results, err := twitterDB.LoadTweets(&twitter.TweetLoadCfg{
 		Page:      page.Page,
+		Regexp:    regexp,
 		Size:      page.Size,
 		Username:  username,
 		SortBy:    sort.SortBy,
