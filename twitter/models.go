@@ -37,7 +37,9 @@ type Tweet struct {
 	ReplyToStatusID int64         `bson:"in_reply_to_status_id" json:"in_reply_to_status_id"`
 	Entities        *Entities     `bson:"entities" json:"entities"`
 	IsRetweeted     bool          `bson:"retweeted" json:"is_retweeted"`
-	RetweetedTweet  *Tweet        `bson:"retweeted_status,omitempty" json:"retweeted_tweet,omitempty"`
+	RetweetedTweet  *Tweet        `bson:"retweeted_status,omitempty" json:"retweeted_tweet"`
+	IsQuoted        bool          `bson:"is_quote_status" json:"is_quote_status"`
+	QuotedTweet     *Tweet        `bson:"quoted_status,omitempty" json:"quoted_status"`
 }
 
 type User struct {
@@ -67,7 +69,7 @@ func NewTwitterDB(addr string) (db *TwitterDB, err error) {
 func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
 	tweet = &Tweet{}
 	if err = t.tweets.Find(bson.M{"id": id}).One(tweet); err == mgo.ErrNotFound {
-		utils.Logger.Warn("tweet not found", zap.Int64("id", id))
+		utils.Logger.Debug("tweet not found", zap.Int64("id", id))
 		return &Tweet{ID: id}, nil
 	} else if err != nil {
 		return nil, errors.Wrap(err, "try to load tweet by id got error")

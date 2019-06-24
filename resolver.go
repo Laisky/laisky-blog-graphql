@@ -47,8 +47,8 @@ type twitterUserResolver struct{ *Resolver }
 type blogPostResolver struct{ *Resolver }
 type blogUserResolver struct{ *Resolver }
 
-func (t *twitterUserResolver) Description(ctx context.Context, obj *twitter.User) (*string, error) {
-	return &obj.Dscription, nil
+func (t *twitterUserResolver) Description(ctx context.Context, obj *twitter.User) (string, error) {
+	return obj.Dscription, nil
 }
 
 func (q *queryResolver) Benchmark(ctx context.Context) (string, error) {
@@ -87,17 +87,24 @@ func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string,
 	}
 }
 
+func (t *tweetResolver) IsQuoteStatus(ctx context.Context, obj *twitter.Tweet) (bool, error) {
+	return obj.IsQuoted, nil
+}
+func (t *tweetResolver) QuotedStatus(ctx context.Context, obj *twitter.Tweet) (*twitter.Tweet, error) {
+	return obj.QuotedTweet, nil
+}
 func (t *tweetResolver) MongoID(ctx context.Context, obj *twitter.Tweet) (string, error) {
 	return obj.MongoID.Hex(), nil
 }
 func (t *tweetResolver) TweetID(ctx context.Context, obj *twitter.Tweet) (int, error) {
 	return int(obj.ID), nil
 }
-func (t *tweetResolver) CreatedAt(ctx context.Context, obj *twitter.Tweet) (string, error) {
+func (t *tweetResolver) CreatedAt(ctx context.Context, obj *twitter.Tweet) (*string, error) {
 	if obj.CreatedAt == nil {
-		return "", nil
+		return nil, nil
 	}
-	return obj.CreatedAt.Format(time.RFC3339Nano), nil
+	s := obj.CreatedAt.Format(time.RFC3339Nano)
+	return &s, nil
 }
 func (t *tweetResolver) URL(ctx context.Context, obj *twitter.Tweet) (string, error) {
 	if obj.User == nil {

@@ -85,7 +85,9 @@ type ComplexityRoot struct {
 	Tweet struct {
 		CreatedAt      func(childComplexity int) int
 		ID             func(childComplexity int) int
+		IsQuoteStatus  func(childComplexity int) int
 		IsRetweeted    func(childComplexity int) int
+		QuotedStatus   func(childComplexity int) int
 		ReplyTo        func(childComplexity int) int
 		RetweetedTweet func(childComplexity int) int
 		Text           func(childComplexity int) int
@@ -123,14 +125,16 @@ type QueryResolver interface {
 	Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error)
 }
 type TweetResolver interface {
-	CreatedAt(ctx context.Context, obj *twitter.Tweet) (string, error)
+	CreatedAt(ctx context.Context, obj *twitter.Tweet) (*string, error)
 
 	ReplyTo(ctx context.Context, obj *twitter.Tweet) (*twitter.Tweet, error)
+	IsQuoteStatus(ctx context.Context, obj *twitter.Tweet) (bool, error)
+	QuotedStatus(ctx context.Context, obj *twitter.Tweet) (*twitter.Tweet, error)
 
 	URL(ctx context.Context, obj *twitter.Tweet) (string, error)
 }
 type TwitterUserResolver interface {
-	Description(ctx context.Context, obj *twitter.User) (*string, error)
+	Description(ctx context.Context, obj *twitter.User) (string, error)
 }
 
 type executableSchema struct {
@@ -327,12 +331,26 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Tweet.ID(childComplexity), true
 
+	case "Tweet.IsQuoteStatus":
+		if e.complexity.Tweet.IsQuoteStatus == nil {
+			break
+		}
+
+		return e.complexity.Tweet.IsQuoteStatus(childComplexity), true
+
 	case "Tweet.IsRetweeted":
 		if e.complexity.Tweet.IsRetweeted == nil {
 			break
 		}
 
 		return e.complexity.Tweet.IsRetweeted(childComplexity), true
+
+	case "Tweet.QuotedStatus":
+		if e.complexity.Tweet.QuotedStatus == nil {
+			break
+		}
+
+		return e.complexity.Tweet.QuotedStatus(childComplexity), true
 
 	case "Tweet.ReplyTo":
 		if e.complexity.Tweet.ReplyTo == nil {
@@ -508,21 +526,23 @@ type BlogCategory {
 	&ast.Source{Name: "./twitter/schema.graphql", Input: `type Tweet {
     # mongo_id: String!
     id: Int!
-    created_at: Date!
+    created_at: Date
     text: String!
     topics: [String!]
     user: TwitterUser
     reply_to: Tweet
-    is_retweeted: Boolean
+    is_quote_status: Boolean!
+    quoted_status: Tweet
+    is_retweeted: Boolean!
     retweeted_tweet: Tweet
     url: String!
 }
 
 type TwitterUser {
     id: Int!
-    screen_name: String
-    name: String
-    description: String
+    screen_name: String!
+    name: String!
+    description: String!
 }
 `},
 	&ast.Source{Name: "schema.graphql", Input: `scalar Date
@@ -1464,15 +1484,12 @@ func (ec *executionContext) _Tweet_created_at(ctx context.Context, field graphql
 		return ec.resolvers.Tweet().CreatedAt(rctx, obj)
 	})
 	if resTmp == nil {
-		if !ec.HasError(rctx) {
-			ec.Errorf(ctx, "must not be null")
-		}
 		return graphql.Null
 	}
-	res := resTmp.(string)
+	res := resTmp.(*string)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalNDate2string(ctx, field.Selections, res)
+	return ec.marshalODate2ᚖstring(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_text(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
@@ -1574,6 +1591,57 @@ func (ec *executionContext) _Tweet_reply_to(ctx context.Context, field graphql.C
 	return ec.marshalOTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐTweet(ctx, field.Selections, res)
 }
 
+func (ec *executionContext) _Tweet_is_quote_status(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Tweet",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Tweet().IsQuoteStatus(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Tweet_quoted_status(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Tweet",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Tweet().QuotedStatus(rctx, obj)
+	})
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*twitter.Tweet)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalOTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐTweet(ctx, field.Selections, res)
+}
+
 func (ec *executionContext) _Tweet_is_retweeted(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
@@ -1590,12 +1658,15 @@ func (ec *executionContext) _Tweet_is_retweeted(ctx context.Context, field graph
 		return obj.IsRetweeted, nil
 	})
 	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
 		return graphql.Null
 	}
 	res := resTmp.(bool)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalOBoolean2bool(ctx, field.Selections, res)
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_retweeted_tweet(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
@@ -1692,12 +1763,15 @@ func (ec *executionContext) _TwitterUser_screen_name(ctx context.Context, field 
 		return obj.ScreenName, nil
 	})
 	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
 		return graphql.Null
 	}
 	res := resTmp.(string)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalOString2string(ctx, field.Selections, res)
+	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TwitterUser_name(ctx context.Context, field graphql.CollectedField, obj *twitter.User) graphql.Marshaler {
@@ -1716,12 +1790,15 @@ func (ec *executionContext) _TwitterUser_name(ctx context.Context, field graphql
 		return obj.Name, nil
 	})
 	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
 		return graphql.Null
 	}
 	res := resTmp.(string)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalOString2string(ctx, field.Selections, res)
+	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TwitterUser_description(ctx context.Context, field graphql.CollectedField, obj *twitter.User) graphql.Marshaler {
@@ -1740,12 +1817,15 @@ func (ec *executionContext) _TwitterUser_description(ctx context.Context, field 
 		return ec.resolvers.TwitterUser().Description(rctx, obj)
 	})
 	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
 		return graphql.Null
 	}
-	res := resTmp.(*string)
+	res := resTmp.(string)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) ___Directive_name(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) graphql.Marshaler {
@@ -2988,9 +3068,6 @@ func (ec *executionContext) _Tweet(ctx context.Context, sel ast.SelectionSet, ob
 					}
 				}()
 				res = ec._Tweet_created_at(ctx, field, obj)
-				if res == graphql.Null {
-					invalid = true
-				}
 				return res
 			})
 		case "text":
@@ -3013,8 +3090,36 @@ func (ec *executionContext) _Tweet(ctx context.Context, sel ast.SelectionSet, ob
 				res = ec._Tweet_reply_to(ctx, field, obj)
 				return res
 			})
+		case "is_quote_status":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Tweet_is_quote_status(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "quoted_status":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Tweet_quoted_status(ctx, field, obj)
+				return res
+			})
 		case "is_retweeted":
 			out.Values[i] = ec._Tweet_is_retweeted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
 		case "retweeted_tweet":
 			out.Values[i] = ec._Tweet_retweeted_tweet(ctx, field, obj)
 		case "url":
@@ -3060,8 +3165,14 @@ func (ec *executionContext) _TwitterUser(ctx context.Context, sel ast.SelectionS
 			}
 		case "screen_name":
 			out.Values[i] = ec._TwitterUser_screen_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
 		case "name":
 			out.Values[i] = ec._TwitterUser_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
 		case "description":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
@@ -3071,6 +3182,9 @@ func (ec *executionContext) _TwitterUser(ctx context.Context, sel ast.SelectionS
 					}
 				}()
 				res = ec._TwitterUser_description(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
 				return res
 			})
 		default:
@@ -3778,6 +3892,29 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 		return graphql.Null
 	}
 	return ec.marshalOBoolean2bool(ctx, sel, *v)
+}
+
+func (ec *executionContext) unmarshalODate2string(ctx context.Context, v interface{}) (string, error) {
+	return graphql.UnmarshalString(v)
+}
+
+func (ec *executionContext) marshalODate2string(ctx context.Context, sel ast.SelectionSet, v string) graphql.Marshaler {
+	return graphql.MarshalString(v)
+}
+
+func (ec *executionContext) unmarshalODate2ᚖstring(ctx context.Context, v interface{}) (*string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalODate2string(ctx, v)
+	return &res, err
+}
+
+func (ec *executionContext) marshalODate2ᚖstring(ctx context.Context, sel ast.SelectionSet, v *string) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec.marshalODate2string(ctx, sel, *v)
 }
 
 func (ec *executionContext) unmarshalOPagination2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐPagination(ctx context.Context, v interface{}) (Pagination, error) {
