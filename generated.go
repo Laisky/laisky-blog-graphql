@@ -79,17 +79,17 @@ type ComplexityRoot struct {
 	Query struct {
 		Benchmark func(childComplexity int) int
 		Posts     func(childComplexity int, page *Pagination, tag string, category string, length int, name string, regexp string) int
-		Tweets    func(childComplexity int, page *Pagination, topic string, regexp string) int
+		Tweets    func(childComplexity int, page *Pagination, username string, sort *Sort, topic string, regexp string) int
 	}
 
 	Tweet struct {
 		CreatedAt      func(childComplexity int) int
+		ID             func(childComplexity int) int
 		IsRetweeted    func(childComplexity int) int
 		ReplyTo        func(childComplexity int) int
 		RetweetedTweet func(childComplexity int) int
 		Text           func(childComplexity int) int
 		Topics         func(childComplexity int) int
-		TweetID        func(childComplexity int) int
 		URL            func(childComplexity int) int
 		User           func(childComplexity int) int
 	}
@@ -119,11 +119,10 @@ type MutationResolver interface {
 }
 type QueryResolver interface {
 	Benchmark(ctx context.Context) (string, error)
-	Tweets(ctx context.Context, page *Pagination, topic string, regexp string) ([]*twitter.Tweet, error)
+	Tweets(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error)
 	Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error)
 }
 type TweetResolver interface {
-	TweetID(ctx context.Context, obj *twitter.Tweet) (int, error)
 	CreatedAt(ctx context.Context, obj *twitter.Tweet) (string, error)
 
 	ReplyTo(ctx context.Context, obj *twitter.Tweet) (*twitter.Tweet, error)
@@ -312,7 +311,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.Tweets(childComplexity, args["page"].(*Pagination), args["topic"].(string), args["regexp"].(string)), true
+		return e.complexity.Query.Tweets(childComplexity, args["page"].(*Pagination), args["username"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string)), true
 
 	case "Tweet.CreatedAt":
 		if e.complexity.Tweet.CreatedAt == nil {
@@ -320,6 +319,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Tweet.CreatedAt(childComplexity), true
+
+	case "Tweet.ID":
+		if e.complexity.Tweet.ID == nil {
+			break
+		}
+
+		return e.complexity.Tweet.ID(childComplexity), true
 
 	case "Tweet.IsRetweeted":
 		if e.complexity.Tweet.IsRetweeted == nil {
@@ -355,13 +361,6 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Tweet.Topics(childComplexity), true
-
-	case "Tweet.TweetID":
-		if e.complexity.Tweet.TweetID == nil {
-			break
-		}
-
-		return e.complexity.Tweet.TweetID(childComplexity), true
 
 	case "Tweet.URL":
 		if e.complexity.Tweet.URL == nil {
@@ -508,21 +507,21 @@ type BlogCategory {
 `},
 	&ast.Source{Name: "./twitter/schema.graphql", Input: `type Tweet {
     # mongo_id: String!
-    tweet_id: Int!
+    id: Int!
     created_at: Date!
     text: String!
     topics: [String!]
-    user: TwitterUser!
+    user: TwitterUser
     reply_to: Tweet
-    is_retweeted: Boolean!
+    is_retweeted: Boolean
     retweeted_tweet: Tweet
     url: String!
 }
 
 type TwitterUser {
     id: Int!
-    screen_name: String!
-    name: String!
+    screen_name: String
+    name: String
     description: String
 }
 `},
@@ -533,9 +532,21 @@ input Pagination {
     size: Int!
 }
 
+enum SortOrder {
+  ASC
+  DESC
+}
+
+input Sort {
+  sort_by: String!
+  order: SortOrder! = DESC
+}
+
 type Query {
   benchmark: String!
   tweets(page: Pagination = {page: 0, size: 20},
+    username: String! = "ppcelery",
+    sort: Sort = {sort_by: "id", order: DESC},
     topic: String! = "",
     regexp: String! = ""): [Tweet]!
   posts(page: Pagination = {page: 0, size: 10},
@@ -720,21 +731,37 @@ func (ec *executionContext) field_Query_tweets_args(ctx context.Context, rawArgs
 	}
 	args["page"] = arg0
 	var arg1 string
-	if tmp, ok := rawArgs["topic"]; ok {
+	if tmp, ok := rawArgs["username"]; ok {
 		arg1, err = ec.unmarshalNString2string(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["topic"] = arg1
-	var arg2 string
-	if tmp, ok := rawArgs["regexp"]; ok {
-		arg2, err = ec.unmarshalNString2string(ctx, tmp)
+	args["username"] = arg1
+	var arg2 *Sort
+	if tmp, ok := rawArgs["sort"]; ok {
+		arg2, err = ec.unmarshalOSort2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSort(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["regexp"] = arg2
+	args["sort"] = arg2
+	var arg3 string
+	if tmp, ok := rawArgs["topic"]; ok {
+		arg3, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["topic"] = arg3
+	var arg4 string
+	if tmp, ok := rawArgs["regexp"]; ok {
+		arg4, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["regexp"] = arg4
 	return args, nil
 }
 
@@ -1291,7 +1318,7 @@ func (ec *executionContext) _Query_tweets(ctx context.Context, field graphql.Col
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Tweets(rctx, args["page"].(*Pagination), args["topic"].(string), args["regexp"].(string))
+		return ec.resolvers.Query().Tweets(rctx, args["page"].(*Pagination), args["username"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string))
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1394,20 +1421,20 @@ func (ec *executionContext) _Query___schema(ctx context.Context, field graphql.C
 	return ec.marshalO__Schema2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐSchema(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Tweet_tweet_id(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
+func (ec *executionContext) _Tweet_id(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
 		Object:   "Tweet",
 		Field:    field,
 		Args:     nil,
-		IsMethod: true,
+		IsMethod: false,
 	}
 	ctx = graphql.WithResolverContext(ctx, rctx)
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().TweetID(rctx, obj)
+		return obj.ID, nil
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1415,10 +1442,10 @@ func (ec *executionContext) _Tweet_tweet_id(ctx context.Context, field graphql.C
 		}
 		return graphql.Null
 	}
-	res := resTmp.(int)
+	res := resTmp.(int64)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalNInt2int(ctx, field.Selections, res)
+	return ec.marshalNInt2int64(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_created_at(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
@@ -1515,15 +1542,12 @@ func (ec *executionContext) _Tweet_user(ctx context.Context, field graphql.Colle
 		return obj.User, nil
 	})
 	if resTmp == nil {
-		if !ec.HasError(rctx) {
-			ec.Errorf(ctx, "must not be null")
-		}
 		return graphql.Null
 	}
 	res := resTmp.(*twitter.User)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalNTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐUser(ctx, field.Selections, res)
+	return ec.marshalOTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐUser(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_reply_to(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
@@ -1566,15 +1590,12 @@ func (ec *executionContext) _Tweet_is_retweeted(ctx context.Context, field graph
 		return obj.IsRetweeted, nil
 	})
 	if resTmp == nil {
-		if !ec.HasError(rctx) {
-			ec.Errorf(ctx, "must not be null")
-		}
 		return graphql.Null
 	}
 	res := resTmp.(bool)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return ec.marshalOBoolean2bool(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_retweeted_tweet(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
@@ -1671,15 +1692,12 @@ func (ec *executionContext) _TwitterUser_screen_name(ctx context.Context, field 
 		return obj.ScreenName, nil
 	})
 	if resTmp == nil {
-		if !ec.HasError(rctx) {
-			ec.Errorf(ctx, "must not be null")
-		}
 		return graphql.Null
 	}
 	res := resTmp.(string)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return ec.marshalOString2string(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TwitterUser_name(ctx context.Context, field graphql.CollectedField, obj *twitter.User) graphql.Marshaler {
@@ -1698,15 +1716,12 @@ func (ec *executionContext) _TwitterUser_name(ctx context.Context, field graphql
 		return obj.Name, nil
 	})
 	if resTmp == nil {
-		if !ec.HasError(rctx) {
-			ec.Errorf(ctx, "must not be null")
-		}
 		return graphql.Null
 	}
 	res := resTmp.(string)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return ec.marshalOString2string(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TwitterUser_description(ctx context.Context, field graphql.CollectedField, obj *twitter.User) graphql.Marshaler {
@@ -2624,6 +2639,34 @@ func (ec *executionContext) unmarshalInputPagination(ctx context.Context, v inte
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputSort(ctx context.Context, v interface{}) (Sort, error) {
+	var it Sort
+	var asMap = v.(map[string]interface{})
+
+	if _, present := asMap["order"]; !present {
+		asMap["order"] = "DESC"
+	}
+
+	for k, v := range asMap {
+		switch k {
+		case "sort_by":
+			var err error
+			it.SortBy, err = ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+		case "order":
+			var err error
+			it.Order, err = ec.unmarshalNSortOrder2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSortOrder(ctx, v)
+			if err != nil {
+				return it, err
+			}
+		}
+	}
+
+	return it, nil
+}
+
 // endregion **************************** input.gotpl *****************************
 
 // region    ************************** interface.gotpl ***************************
@@ -2931,20 +2974,11 @@ func (ec *executionContext) _Tweet(ctx context.Context, sel ast.SelectionSet, ob
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Tweet")
-		case "tweet_id":
-			field := field
-			out.Concurrently(i, func() (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Tweet_tweet_id(ctx, field, obj)
-				if res == graphql.Null {
-					invalid = true
-				}
-				return res
-			})
+		case "id":
+			out.Values[i] = ec._Tweet_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
 		case "created_at":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
@@ -2968,9 +3002,6 @@ func (ec *executionContext) _Tweet(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Tweet_topics(ctx, field, obj)
 		case "user":
 			out.Values[i] = ec._Tweet_user(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				invalid = true
-			}
 		case "reply_to":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
@@ -2984,9 +3015,6 @@ func (ec *executionContext) _Tweet(ctx context.Context, sel ast.SelectionSet, ob
 			})
 		case "is_retweeted":
 			out.Values[i] = ec._Tweet_is_retweeted(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				invalid = true
-			}
 		case "retweeted_tweet":
 			out.Values[i] = ec._Tweet_retweeted_tweet(ctx, field, obj)
 		case "url":
@@ -3032,14 +3060,8 @@ func (ec *executionContext) _TwitterUser(ctx context.Context, sel ast.SelectionS
 			}
 		case "screen_name":
 			out.Values[i] = ec._TwitterUser_screen_name(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				invalid = true
-			}
 		case "name":
 			out.Values[i] = ec._TwitterUser_name(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				invalid = true
-			}
 		case "description":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
@@ -3404,8 +3426,25 @@ func (ec *executionContext) marshalNInt2int32(ctx context.Context, sel ast.Selec
 	return graphql.MarshalInt32(v)
 }
 
+func (ec *executionContext) unmarshalNInt2int64(ctx context.Context, v interface{}) (int64, error) {
+	return graphql.UnmarshalInt64(v)
+}
+
+func (ec *executionContext) marshalNInt2int64(ctx context.Context, sel ast.SelectionSet, v int64) graphql.Marshaler {
+	return graphql.MarshalInt64(v)
+}
+
 func (ec *executionContext) unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐNewBlogPost(ctx context.Context, v interface{}) (NewBlogPost, error) {
 	return ec.unmarshalInputNewBlogPost(ctx, v)
+}
+
+func (ec *executionContext) unmarshalNSortOrder2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSortOrder(ctx context.Context, v interface{}) (SortOrder, error) {
+	var res SortOrder
+	return res, res.UnmarshalGQL(v)
+}
+
+func (ec *executionContext) marshalNSortOrder2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSortOrder(ctx context.Context, sel ast.SelectionSet, v SortOrder) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v interface{}) (string, error) {
@@ -3480,20 +3519,6 @@ func (ec *executionContext) marshalNTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaisky�
 	}
 	wg.Wait()
 	return ret
-}
-
-func (ec *executionContext) marshalNTwitterUser2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐUser(ctx context.Context, sel ast.SelectionSet, v twitter.User) graphql.Marshaler {
-	return ec._TwitterUser(ctx, sel, &v)
-}
-
-func (ec *executionContext) marshalNTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐUser(ctx context.Context, sel ast.SelectionSet, v *twitter.User) graphql.Marshaler {
-	if v == nil {
-		if !ec.HasError(graphql.GetResolverContext(ctx)) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	return ec._TwitterUser(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalN__Directive2githubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐDirective(ctx context.Context, sel ast.SelectionSet, v introspection.Directive) graphql.Marshaler {
@@ -3767,6 +3792,18 @@ func (ec *executionContext) unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlais
 	return &res, err
 }
 
+func (ec *executionContext) unmarshalOSort2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSort(ctx context.Context, v interface{}) (Sort, error) {
+	return ec.unmarshalInputSort(ctx, v)
+}
+
+func (ec *executionContext) unmarshalOSort2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSort(ctx context.Context, v interface{}) (*Sort, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalOSort2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSort(ctx, v)
+	return &res, err
+}
+
 func (ec *executionContext) unmarshalOString2string(ctx context.Context, v interface{}) (string, error) {
 	return graphql.UnmarshalString(v)
 }
@@ -3831,6 +3868,17 @@ func (ec *executionContext) marshalOTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑbl
 		return graphql.Null
 	}
 	return ec._Tweet(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOTwitterUser2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐUser(ctx context.Context, sel ast.SelectionSet, v twitter.User) graphql.Marshaler {
+	return ec._TwitterUser(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalOTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐUser(ctx context.Context, sel ast.SelectionSet, v *twitter.User) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._TwitterUser(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalO__EnumValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐEnumValue(ctx context.Context, sel ast.SelectionSet, v []introspection.EnumValue) graphql.Marshaler {

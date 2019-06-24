@@ -29,13 +29,13 @@ type Entities struct {
 
 type Tweet struct {
 	MongoID         bson.ObjectId `bson:"_id" json:"mongo_id"`
-	ID              int64         `bson:"id" json:"tweet_id"`
-	CreatedAt       time.Time     `bson:"created_at" json:"created_at"`
+	ID              int64         `bson:"id" json:"id"`
+	CreatedAt       *time.Time    `bson:"created_at" json:"created_at"`
 	Text            string        `bson:"text" json:"text"`
 	Topics          []string      `bson:"topics" json:"topics"`
 	User            *User         `bson:"user" json:"user"`
 	ReplyToStatusID int64         `bson:"in_reply_to_status_id" json:"in_reply_to_status_id"`
-	Entities        Entities      `bson:"entities" json:"entities"`
+	Entities        *Entities     `bson:"entities" json:"entities"`
 	IsRetweeted     bool          `bson:"retweeted" json:"is_retweeted"`
 	RetweetedTweet  *Tweet        `bson:"retweeted_status,omitempty" json:"retweeted_tweet,omitempty"`
 }
@@ -76,30 +76,48 @@ func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
 	return tweet, nil
 }
 
-func (t *TwitterDB) LoadTweets(page, size int, topic, regexp string) (results []*Tweet, err error) {
-	utils.Logger.Debug("LoadTweets",
-		zap.Int("page", page), zap.Int("size", size),
-		zap.String("topic", topic),
-		zap.String("regexp", regexp),
-	)
+type TweetLoadCfg struct {
+	Page, Size              int
+	Topic, Regexp, Username string
+	SortBy, SortOrder       string
+}
 
-	if size > 100 || size < 0 {
+func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) {
+	utils.Logger.Debug("LoadTweets",
+		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
+		zap.String("topic", cfg.Topic),
+		zap.String("regexp", cfg.Regexp),
+		zap.String("sort_by", cfg.SortBy),
+		zap.String("sort_order", cfg.SortOrder),
+	)
+	if cfg.Size > 100 || cfg.Size < 0 {
 		return nil, fmt.Errorf("size shoule in [0~100]")
 	}
-
 	results = []*Tweet{}
 	var query = bson.M{}
-	if topic != "" {
-		query["topics"] = topic
+	if cfg.Topic != "" {
+		query["topics"] = cfg.Topic
+	}
+	if cfg.Regexp != "" {
+		query["text"] = bson.M{"$regex": bson.RegEx{cfg.Regexp, "im"}}
+	}
+	sort := "-_id"
+	if cfg.SortBy != "" {
+		sort = cfg.SortBy
+		switch cfg.SortOrder {
+		case "ASC":
+		case "DESC":
+			sort = "-" + sort
+		default:
+			return nil, fmt.Errorf("SortOrder must in `ASC/DESC`, but got %v", cfg.SortOrder)
+		}
+	}
+	if cfg.Username != "" {
+		query["user.screen_name"] = cfg.Username
 	}
 
-	if regexp != "" {
-		query["text"] = bson.M{"$regex": bson.RegEx{regexp, "im"}}
-	}
-
-	if err = t.tweets.Find(query).Sort("-_id").Skip(page * size).Limit(size).All(&results); err != nil {
+	if err = t.tweets.Find(query).Sort(sort).Skip(cfg.Page * cfg.Size).Limit(cfg.Size).All(&results); err != nil {
 		return nil, err
 	}
-
 	return results, nil
 }
