@@ -5,9 +5,21 @@ input Pagination {
     size: Int!
 }
 
+enum SortOrder {
+  ASC
+  DESC
+}
+
+input Sort {
+  sort_by: String!
+  order: SortOrder! = DESC
+}
+
 type Query {
   benchmark: String!
   tweets(page: Pagination = {page: 0, size: 20},
+    username: String! = "ppcelery",
+    sort: Sort = {sort_by: "id", order: DESC},
     topic: String! = "",
     regexp: String! = ""): [Tweet]!
   posts(page: Pagination = {page: 0, size: 10},

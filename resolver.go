@@ -55,8 +55,14 @@ func (q *queryResolver) Benchmark(ctx context.Context) (string, error) {
 	return "hello, world", nil
 }
 
-func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, topic, regexp string) ([]*twitter.Tweet, error) {
-	if results, err := twitterDB.LoadTweets(page.Page, page.Size, topic, regexp); err != nil {
+func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error) {
+	if results, err := twitterDB.LoadTweets(&twitter.TweetLoadCfg{
+		Page:      page.Page,
+		Size:      page.Size,
+		Username:  username,
+		SortBy:    sort.SortBy,
+		SortOrder: string(sort.Order),
+	}); err != nil {
 		return nil, err
 	} else {
 		return results, nil
@@ -87,9 +93,15 @@ func (t *tweetResolver) TweetID(ctx context.Context, obj *twitter.Tweet) (int, e
 	return int(obj.ID), nil
 }
 func (t *tweetResolver) CreatedAt(ctx context.Context, obj *twitter.Tweet) (string, error) {
+	if obj.CreatedAt == nil {
+		return "", nil
+	}
 	return obj.CreatedAt.Format(time.RFC3339Nano), nil
 }
 func (t *tweetResolver) URL(ctx context.Context, obj *twitter.Tweet) (string, error) {
+	if obj.User == nil {
+		return "", nil
+	}
 	return "https://twitter.com/" + obj.User.ScreenName + "/status/" + strconv.FormatInt(obj.ID, 10), nil
 }
 func (t *tweetResolver) ReplyTo(ctx context.Context, obj *twitter.Tweet) (tweet *twitter.Tweet, err error) {

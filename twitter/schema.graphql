@@ -1,19 +1,19 @@
 type Tweet {
     # mongo_id: String!
-    tweet_id: Int!
+    id: Int!
     created_at: Date!
     text: String!
     topics: [String!]
-    user: TwitterUser!
+    user: TwitterUser
     reply_to: Tweet
-    is_retweeted: Boolean!
+    is_retweeted: Boolean
     retweeted_tweet: Tweet
     url: String!
 }
 
 type TwitterUser {
     id: Int!
-    screen_name: String!
-    name: String!
+    screen_name: String
+    name: String
     description: String
 }
