@@ -1,6 +1,6 @@
 type Tweet {
     # mongo_id: String!
-    id: Int!
+    id: String!
     created_at: Date
     text: String!
     topics: [String!]
@@ -14,7 +14,7 @@ type Tweet {
 }
 
 type TwitterUser {
-    id: Int!
+    id: String!
     screen_name: String!
     name: String!
     description: String!

@@ -1,4 +1,6 @@
 scalar Date
+scalar QuotedString
+scalar JSONString
 
 input Pagination {
     page: Int!
@@ -33,13 +35,13 @@ type Query {
 
 input NewBlogPost {
   name: String!
-  title: String!
-  markdown: String!
-  type: String!
+  title: JSONString!
+  markdown: JSONString!
+  type: BlogPostType!
 }
 
 type Mutation {
   createBlogPost(post: NewBlogPost!): BlogPost!
   login(account: String!, password: String!): BlogUser!
-  amendBlogPost(name: String!, title: String!, markdown: String!, type: String! = "markdown"): BlogPost!
+  amendBlogPost(post: NewBlogPost!): BlogPost!
 }

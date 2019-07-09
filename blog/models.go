@@ -2,6 +2,7 @@ package blog
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Laisky/go-utils"
@@ -282,6 +283,7 @@ var supporttedTypes = map[string]struct{}{
 
 func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, typeArg string) (p *Post, err error) {
 	p = &Post{}
+	typeArg = strings.ToLower(typeArg)
 	if _, ok := supporttedTypes[typeArg]; !ok {
 		return nil, fmt.Errorf("type `%v` not supportted", typeArg)
 	}

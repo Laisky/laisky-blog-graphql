@@ -25,3 +25,9 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/blog.User
   BlogCategory:
     model: github.com/Laisky/laisky-blog-graphql/blog.Category
+  Date:
+    model: github.com/Laisky/laisky-blog-graphql/types.Datetime
+  QuotedString:
+    model: github.com/Laisky/laisky-blog-graphql/types.QuotedString
+  JSONString:
+    model: github.com/Laisky/laisky-blog-graphql/types.JSONString

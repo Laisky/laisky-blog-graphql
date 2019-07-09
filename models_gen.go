@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+
+	"github.com/Laisky/laisky-blog-graphql/types"
 )
 
 type NewBlogPost struct {
-	Name     string `json:"name"`
-	Title    string `json:"title"`
-	Markdown string `json:"markdown"`
-	Type     string `json:"type"`
+	Name     string           `json:"name"`
+	Title    types.JSONString `json:"title"`
+	Markdown types.JSONString `json:"markdown"`
+	Type     BlogPostType     `json:"type"`
 }
 
 type Pagination struct {
@@ -23,6 +25,47 @@ type Pagination struct {
 type Sort struct {
 	SortBy string    `json:"sort_by"`
 	Order  SortOrder `json:"order"`
+}
+
+type BlogPostType string
+
+const (
+	BlogPostTypeMarkdown BlogPostType = "markdown"
+	BlogPostTypeSlide    BlogPostType = "slide"
+)
+
+var AllBlogPostType = []BlogPostType{
+	BlogPostTypeMarkdown,
+	BlogPostTypeSlide,
+}
+
+func (e BlogPostType) IsValid() bool {
+	switch e {
+	case BlogPostTypeMarkdown, BlogPostTypeSlide:
+		return true
+	}
+	return false
+}
+
+func (e BlogPostType) String() string {
+	return string(e)
+}
+
+func (e *BlogPostType) UnmarshalGQL(v interface{}) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = BlogPostType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid BlogPostType", str)
+	}
+	return nil
+}
+
+func (e BlogPostType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
 type SortOrder string
