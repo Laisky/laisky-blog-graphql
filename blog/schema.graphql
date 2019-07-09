@@ -1,9 +1,14 @@
+enum BlogPostType {
+    markdown
+    slide
+}
+
 type BlogPost {
     # mongo_id: String!
     author: BlogUser!
     created_at: Date!
     modified_at: Date!
-    type: String!
+    type: BlogPostType!
     title: String!
     content: String!
     name: String!

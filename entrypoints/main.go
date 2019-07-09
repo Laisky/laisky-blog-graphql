@@ -12,7 +12,7 @@ import (
 	"github.com/Laisky/zap"
 )
 
-func SetupSettings() {
+func setupSettings() {
 	// mode
 	if utils.Settings.GetBool("debug") {
 		fmt.Println("run in debug mode")
@@ -38,7 +38,7 @@ func SetupSettings() {
 	}
 }
 
-func SetupArgs() {
+func setupArgs() {
 	pflag.Bool("debug", false, "run in debug mode")
 	pflag.Bool("dry", false, "run in dry mode")
 	pflag.String("addr", "localhost:8080", "like `localhost:8080`")
@@ -52,8 +52,8 @@ func SetupArgs() {
 
 func main() {
 	defer utils.Logger.Sync()
-	SetupArgs()
-	SetupSettings()
+	setupArgs()
+	setupSettings()
 
 	laisky_blog_graphql.DialDB(utils.Settings.GetString("dbaddr"))
 	laisky_blog_graphql.RunServer(utils.Settings.GetString("addr"))

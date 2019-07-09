@@ -1,0 +1,32 @@
+version: '3'
+
+services:
+  nginx:
+    image: nginx:1.15.6-alpine
+    restart: always
+    network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "30m"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+
+  mongodb:
+    image: mongo:3.6
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "30m"
+    networks:
+      - test
+    ports:
+      - 37017:27017
+    volumes:
+      - ./mongodb:/data/db
+
+
+networks:
+  test:
+    driver: bridge
