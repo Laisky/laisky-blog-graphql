@@ -22,6 +22,10 @@ func NewDatetimeFromTime(t time.Time) *Datetime {
 	}
 }
 
+func (d *Datetime) GetTime() time.Time {
+	return d.t
+}
+
 func (d *Datetime) UnmarshalGQL(vi interface{}) (err error) {
 	v, ok := vi.(string)
 	if !ok {

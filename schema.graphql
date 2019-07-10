@@ -35,8 +35,8 @@ type Query {
 
 input NewBlogPost {
   name: String!
-  title: JSONString!
-  markdown: JSONString!
+  title: String!
+  markdown: String!
   type: BlogPostType!
 }
 
