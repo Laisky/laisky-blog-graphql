@@ -592,8 +592,8 @@ type Query {
 
 input NewBlogPost {
   name: String!
-  title: JSONString!
-  markdown: JSONString!
+  title: String!
+  markdown: String!
   type: BlogPostType!
 }
 
@@ -2661,13 +2661,13 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, v int
 			}
 		case "title":
 			var err error
-			it.Title, err = ec.unmarshalNJSONString2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐJSONString(ctx, v)
+			it.Title, err = ec.unmarshalNString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
 		case "markdown":
 			var err error
-			it.Markdown, err = ec.unmarshalNJSONString2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐJSONString(ctx, v)
+			it.Markdown, err = ec.unmarshalNString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -3573,15 +3573,6 @@ func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v interface{}
 
 func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.SelectionSet, v int) graphql.Marshaler {
 	return graphql.MarshalInt(v)
-}
-
-func (ec *executionContext) unmarshalNJSONString2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐJSONString(ctx context.Context, v interface{}) (types.JSONString, error) {
-	var res types.JSONString
-	return res, res.UnmarshalGQL(v)
-}
-
-func (ec *executionContext) marshalNJSONString2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐJSONString(ctx context.Context, sel ast.SelectionSet, v types.JSONString) graphql.Marshaler {
-	return v
 }
 
 func (ec *executionContext) unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐNewBlogPost(ctx context.Context, v interface{}) (NewBlogPost, error) {

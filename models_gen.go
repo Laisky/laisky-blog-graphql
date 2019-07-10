@@ -6,15 +6,13 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-
-	"github.com/Laisky/laisky-blog-graphql/types"
 )
 
 type NewBlogPost struct {
-	Name     string           `json:"name"`
-	Title    types.JSONString `json:"title"`
-	Markdown types.JSONString `json:"markdown"`
-	Type     BlogPostType     `json:"type"`
+	Name     string       `json:"name"`
+	Title    string       `json:"title"`
+	Markdown string       `json:"markdown"`
+	Type     BlogPostType `json:"type"`
 }
 
 type Pagination struct {
