@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gomarkdown/markdown/html"
+
 	"github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/zap"
@@ -296,7 +298,7 @@ func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, ty
 
 	p.Title = title
 	p.Markdown = md
-	p.Content = string(markdown.ToHTML([]byte(md), nil, nil))
+	p.Content = string(ParseMarkdown([]byte(md)))
 	p.ModifiedAt = time.Now()
 	p.Type = typeArg
 
@@ -306,3 +308,15 @@ func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, ty
 
 	return p, nil
 }
+
+// ParseMarkdown parse markdown to string
+func ParseMarkdown(md []byte) []byte {
+	htmlFlags := html.CommonFlags | html.HrefTargetBlank
+	opts := html.RendererOptions{Flags: htmlFlags}
+	renderer := html.NewRenderer(opts)
+	return markdown.ToHTML(md, nil, renderer)
+}
+
+// func ParseMarkdown(md []byte) []byte {
+// 	return blackfriday.Run(md)
+// }

@@ -9,7 +9,6 @@ require (
 	github.com/agnivade/levenshtein v1.0.2 // indirect
 	github.com/gin-contrib/pprof v1.2.0
 	github.com/gin-gonic/gin v1.4.0
-	github.com/go-logfmt/logfmt v0.4.0 // indirect
 	github.com/gomarkdown/markdown v0.0.0-20190222000725-ee6a7931a1e4
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
 	github.com/json-iterator/go v1.1.6
