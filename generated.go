@@ -59,6 +59,7 @@ type ComplexityRoot struct {
 		Content    func(childComplexity int) int
 		CreatedAt  func(childComplexity int) int
 		Markdown   func(childComplexity int) int
+		Menu       func(childComplexity int) int
 		ModifiedAt func(childComplexity int) int
 		Name       func(childComplexity int) int
 		Tags       func(childComplexity int) int
@@ -205,6 +206,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.BlogPost.Markdown(childComplexity), true
+
+	case "BlogPost.Menu":
+		if e.complexity.BlogPost.Menu == nil {
+			break
+		}
+
+		return e.complexity.BlogPost.Menu(childComplexity), true
 
 	case "BlogPost.ModifiedAt":
 		if e.complexity.BlogPost.ModifiedAt == nil {
@@ -516,6 +524,7 @@ type BlogPost {
     modified_at: Date!
     type: BlogPostType!
     title: String!
+    menu: String!
     content: String!
     name: String!
     markdown: String
@@ -981,6 +990,33 @@ func (ec *executionContext) _BlogPost_title(ctx context.Context, field graphql.C
 	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
 		return obj.Title, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _BlogPost_menu(ctx context.Context, field graphql.CollectedField, obj *blog.Post) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "BlogPost",
+		Field:    field,
+		Args:     nil,
+		IsMethod: false,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Menu, nil
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -2844,6 +2880,11 @@ func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet,
 			})
 		case "title":
 			out.Values[i] = ec._BlogPost_title(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "menu":
+			out.Values[i] = ec._BlogPost_menu(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}

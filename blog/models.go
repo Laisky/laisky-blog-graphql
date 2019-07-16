@@ -30,6 +30,7 @@ type Post struct {
 	Content    string        `bson:"post_content" json:"content"`
 	Markdown   string        `bson:"post_markdown" json:"markdown"`
 	Author     bson.ObjectId `bson:"post_author" json:"author"`
+	Menu       string        `bson:"post_menu" json:"menu"`
 	Password   string        `bson:"post_password", json:"password"`
 	Category   bson.ObjectId `bson:"category,omitempty", json:"category"`
 	Tags       []string      `bson:"post_tags", json:"tags"`
@@ -296,7 +297,8 @@ func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, ty
 
 	p.Title = title
 	p.Markdown = md
-	p.Content = string(markdown.ToHTML([]byte(md), nil, nil))
+	p.Content = string(ParseMarkdown2HTML([]byte(md)))
+	p.Menu = ExtractMenu(p.Content)
 	p.ModifiedAt = time.Now()
 	p.Type = typeArg
 
