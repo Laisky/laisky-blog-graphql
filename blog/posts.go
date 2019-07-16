@@ -1,7 +1,6 @@
 package blog
 
 import (
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -69,7 +68,8 @@ func ParseMarkdown2HTML(md []byte) (cnt string) {
 			utils.Logger.Error("unknown title level", zap.String("lev", tlev))
 		}
 
-		tid = url.QueryEscape(tid)
+		// tid = url.QueryEscape(tid) + utils.RandomStringWithLength(5)
+		tid = utils.RandomStringWithLength(15)
 		cnt = strings.ReplaceAll(cnt, tl, `<`+tlev+` id="`+tid+`">`+ttext+`</`+tlev+`>`)
 	}
 	return cnt
@@ -89,12 +89,12 @@ func ExtractMenu(html string) string {
 			if l2cnt != "" {
 				if l3cnt != "" {
 					l2cnt += l3cnt + `</ul></li>`
-					l3cnt = ""
 				} else {
 					l2cnt += `</li>`
 				}
 				menu += l2cnt
 			}
+			l3cnt = ""
 			l2cnt = `<li><a href="#` + escapedTl + `">` + tl + `</a>`
 		} else if level == "h3" {
 			if l3cnt == "" {
