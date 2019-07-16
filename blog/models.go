@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gomarkdown/markdown/html"
-
 	"github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/zap"
@@ -32,6 +30,7 @@ type Post struct {
 	Content    string        `bson:"post_content" json:"content"`
 	Markdown   string        `bson:"post_markdown" json:"markdown"`
 	Author     bson.ObjectId `bson:"post_author" json:"author"`
+	Menu       string        `bson:"post_menu" json:"menu"`
 	Password   string        `bson:"post_password", json:"password"`
 	Category   bson.ObjectId `bson:"category,omitempty", json:"category"`
 	Tags       []string      `bson:"post_tags", json:"tags"`
@@ -298,7 +297,8 @@ func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, ty
 
 	p.Title = title
 	p.Markdown = md
-	p.Content = string(ParseMarkdown([]byte(md)))
+	p.Content = string(ParseMarkdown2HTML([]byte(md)))
+	p.Menu = ExtractMenu(p.Content)
 	p.ModifiedAt = time.Now()
 	p.Type = typeArg
 
@@ -308,15 +308,3 @@ func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, ty
 
 	return p, nil
 }
-
-// ParseMarkdown parse markdown to string
-func ParseMarkdown(md []byte) []byte {
-	htmlFlags := html.CommonFlags | html.HrefTargetBlank
-	opts := html.RendererOptions{Flags: htmlFlags}
-	renderer := html.NewRenderer(opts)
-	return markdown.ToHTML(md, nil, renderer)
-}
-
-// func ParseMarkdown(md []byte) []byte {
-// 	return blackfriday.Run(md)
-// }
