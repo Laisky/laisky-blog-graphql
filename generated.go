@@ -78,8 +78,13 @@ type ComplexityRoot struct {
 		Login          func(childComplexity int, account string, password string) int
 	}
 
+	PostInfo struct {
+		Total func(childComplexity int) int
+	}
+
 	Query struct {
 		Benchmark func(childComplexity int) int
+		Postinfo  func(childComplexity int) int
 		Posts     func(childComplexity int, page *Pagination, tag string, category string, length int, name string, regexp string) int
 		Tweets    func(childComplexity int, page *Pagination, username string, sort *Sort, topic string, regexp string) int
 	}
@@ -126,6 +131,7 @@ type QueryResolver interface {
 	Benchmark(ctx context.Context) (string, error)
 	Tweets(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error)
 	Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error)
+	Postinfo(ctx context.Context) (*blog.PostInfo, error)
 }
 type TweetResolver interface {
 	ID(ctx context.Context, obj *twitter.Tweet) (string, error)
@@ -299,12 +305,26 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Mutation.Login(childComplexity, args["account"].(string), args["password"].(string)), true
 
+	case "PostInfo.Total":
+		if e.complexity.PostInfo.Total == nil {
+			break
+		}
+
+		return e.complexity.PostInfo.Total(childComplexity), true
+
 	case "Query.Benchmark":
 		if e.complexity.Query.Benchmark == nil {
 			break
 		}
 
 		return e.complexity.Query.Benchmark(childComplexity), true
+
+	case "Query.Postinfo":
+		if e.complexity.Query.Postinfo == nil {
+			break
+		}
+
+		return e.complexity.Query.Postinfo(childComplexity), true
 
 	case "Query.Posts":
 		if e.complexity.Query.Posts == nil {
@@ -517,6 +537,10 @@ var parsedSchema = gqlparser.MustLoadSchema(
     slide
 }
 
+type PostInfo {
+    total: Int!
+}
+
 type BlogPost {
     # mongo_id: String!
     author: BlogUser!
@@ -585,17 +609,22 @@ input Sort {
 
 type Query {
   benchmark: String!
+
+  # twitter
   tweets(page: Pagination = {page: 0, size: 20},
     username: String! = "ppcelery",
     sort: Sort = {sort_by: "id", order: DESC},
     topic: String! = "",
     regexp: String! = ""): [Tweet]!
+
+  # blog
   posts(page: Pagination = {page: 0, size: 10},
     tag: String! = "",
     category: String! = "",
     length: Int! = 0,  # content length, 0 means total
     name: String! = "",
     regexp: String! = ""): [BlogPost]!
+  postinfo: PostInfo!
 }
 
 
@@ -1315,6 +1344,33 @@ func (ec *executionContext) _Mutation_amendBlogPost(ctx context.Context, field g
 	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, field.Selections, res)
 }
 
+func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *blog.PostInfo) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "PostInfo",
+		Field:    field,
+		Args:     nil,
+		IsMethod: false,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Total, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
 func (ec *executionContext) _Query_benchmark(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
@@ -1408,6 +1464,33 @@ func (ec *executionContext) _Query_posts(ctx context.Context, field graphql.Coll
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_postinfo(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Query",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Postinfo(rctx)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*blog.PostInfo)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostInfo(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
@@ -3009,6 +3092,33 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 	return out
 }
 
+var postInfoImplementors = []string{"PostInfo"}
+
+func (ec *executionContext) _PostInfo(ctx context.Context, sel ast.SelectionSet, obj *blog.PostInfo) graphql.Marshaler {
+	fields := graphql.CollectFields(ctx, sel, postInfoImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	invalid := false
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PostInfo")
+		case "total":
+			out.Values[i] = ec._PostInfo_total(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalid {
+		return graphql.Null
+	}
+	return out
+}
+
 var queryImplementors = []string{"Query"}
 
 func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -3061,6 +3171,20 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_posts(ctx, field)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "postinfo":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_postinfo(ctx, field)
 				if res == graphql.Null {
 					invalid = true
 				}
@@ -3618,6 +3742,20 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 
 func (ec *executionContext) unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐNewBlogPost(ctx context.Context, v interface{}) (NewBlogPost, error) {
 	return ec.unmarshalInputNewBlogPost(ctx, v)
+}
+
+func (ec *executionContext) marshalNPostInfo2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v blog.PostInfo) graphql.Marshaler {
+	return ec._PostInfo(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v *blog.PostInfo) graphql.Marshaler {
+	if v == nil {
+		if !ec.HasError(graphql.GetResolverContext(ctx)) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	return ec._PostInfo(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNSortOrder2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSortOrder(ctx context.Context, v interface{}) (SortOrder, error) {

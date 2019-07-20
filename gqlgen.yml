@@ -21,6 +21,8 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/twitter.User
   BlogPost:
     model: github.com/Laisky/laisky-blog-graphql/blog.Post
+  PostInfo:
+    model: github.com/Laisky/laisky-blog-graphql/blog.PostInfo
   BlogUser:
     model: github.com/Laisky/laisky-blog-graphql/blog.User
   BlogCategory:
