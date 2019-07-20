@@ -36,6 +36,10 @@ type Post struct {
 	Tags       []string      `bson:"post_tags", json:"tags"`
 }
 
+type PostInfo struct {
+	Total int `json:"total"`
+}
+
 type User struct {
 	ID       bson.ObjectId `bson:"_id" json:"id"`
 	Username string        `bson:"username" json:"username"`
@@ -103,9 +107,20 @@ func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
 	}
 
 	iter := t.posts.Find(query).Sort("-_id").Skip(cfg.Page * cfg.Size).Limit(cfg.Size).Iter()
-	results = t.filtersPipeline(cfg, iter)
+	results = t.filterPosts(cfg, iter)
 
 	return results, nil
+}
+
+func (t *BlogDB) LoadPostInfo() (*PostInfo, error) {
+	cnt, err := t.posts.Count()
+	if err != nil {
+		return nil, errors.Wrap(err, "try to count posts got error")
+	}
+
+	return &PostInfo{
+		Total: cnt,
+	}, nil
 }
 
 func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
@@ -138,7 +153,7 @@ func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 	return query, nil
 }
 
-func (t *BlogDB) filtersPipeline(cfg *BlogPostCfg, iter *mgo.Iter) (results []*Post) {
+func (t *BlogDB) filterPosts(cfg *BlogPostCfg, iter *mgo.Iter) (results []*Post) {
 	result := &Post{}
 	isValidate := true
 	for iter.Next(result) {
@@ -173,8 +188,13 @@ func passwordFilter(docu *Post) bool {
 
 func getContentLengthFilter(length int) func(*Post) bool {
 	return func(docu *Post) bool {
-		if length > 0 && len(docu.Content) > length {
-			docu.Content = docu.Content[:length]
+		if length > 0 {
+			if len([]rune(docu.Content)) > length {
+				docu.Content = string([]rune(docu.Content)[:length])
+			}
+			if len([]rune(docu.Markdown)) > length {
+				docu.Markdown = string([]rune(docu.Markdown)[:length])
+			}
 		}
 		return true
 	}

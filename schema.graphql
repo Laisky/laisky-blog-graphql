@@ -19,17 +19,22 @@ input Sort {
 
 type Query {
   benchmark: String!
+
+  # twitter
   tweets(page: Pagination = {page: 0, size: 20},
     username: String! = "ppcelery",
     sort: Sort = {sort_by: "id", order: DESC},
     topic: String! = "",
     regexp: String! = ""): [Tweet]!
+
+  # blog
   posts(page: Pagination = {page: 0, size: 10},
     tag: String! = "",
     category: String! = "",
     length: Int! = 0,  # content length, 0 means total
     name: String! = "",
     regexp: String! = ""): [BlogPost]!
+  postinfo: PostInfo!
 }
 
 

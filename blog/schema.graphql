@@ -3,6 +3,10 @@ enum BlogPostType {
     slide
 }
 
+type PostInfo {
+    total: Int!
+}
+
 type BlogPost {
     # mongo_id: String!
     author: BlogUser!
