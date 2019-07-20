@@ -57,7 +57,9 @@ func (t *twitterUserResolver) Description(ctx context.Context, obj *twitter.User
 func (q *queryResolver) Benchmark(ctx context.Context) (string, error) {
 	return "hello, world", nil
 }
-
+func (q *queryResolver) Postinfo(ctx context.Context) (*blog.PostInfo, error) {
+	return blogDB.LoadPostInfo()
+}
 func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error) {
 	if results, err := twitterDB.LoadTweets(&twitter.TweetLoadCfg{
 		Page:      page.Page,
@@ -72,7 +74,6 @@ func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, username s
 		return results, nil
 	}
 }
-
 func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error) {
 	cfg := &blog.BlogPostCfg{
 		Page:     page.Page,
