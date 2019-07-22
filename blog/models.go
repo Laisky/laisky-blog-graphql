@@ -86,8 +86,9 @@ func NewBlogDB(addr string) (db *BlogDB, err error) {
 }
 
 type BlogPostCfg struct {
-	Page, Size, Length          int
-	Name, Tag, Regexp, Category string
+	Page, Size, Length int
+	Name, Tag, Regexp  string
+	CategoryURL        *string
 }
 
 func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
@@ -97,8 +98,8 @@ func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
 		zap.String("regexp", cfg.Regexp),
 	)
 
-	if cfg.Size > 100 || cfg.Size < 0 {
-		return nil, fmt.Errorf("size shoule in [0~100]")
+	if cfg.Size > 200 || cfg.Size < 0 {
+		return nil, fmt.Errorf("size shoule in [0~200]")
 	}
 
 	var query bson.M
@@ -106,9 +107,14 @@ func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
 		return nil, errors.Wrap(err, "try to make query got error")
 	}
 
-	iter := t.posts.Find(query).Sort("-_id").Skip(cfg.Page * cfg.Size).Limit(cfg.Size).Iter()
+	// utils.Logger.Debug("load blog posts", zap.String("query", fmt.Sprint(query)))
+	iter := t.posts.Find(query).
+		Sort("-_id").
+		Skip(cfg.Page * cfg.Size).
+		Limit(cfg.Size).
+		Iter()
 	results = t.filterPosts(cfg, iter)
-
+	utils.Logger.Debug("load posts done", zap.Int("n", len(results)))
 	return results, nil
 }
 
@@ -125,7 +131,6 @@ func (t *BlogDB) LoadPostInfo() (*PostInfo, error) {
 
 func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 	utils.Logger.Debug("makeQuery",
-		zap.String("category", cfg.Category),
 		zap.String("name", cfg.Name),
 		zap.String("tag", cfg.Tag),
 		zap.String("regexp", cfg.Regexp),
@@ -143,11 +148,23 @@ func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 		query["post_content"] = bson.M{"$regex": bson.RegEx{cfg.Regexp, "im"}}
 	}
 
-	var cate *Category
-	if cate, err = t.LoadCategoryByName(cfg.Category); err != nil {
-		return nil, errors.Wrap(err, "category error")
-	} else if cate != nil {
-		query["category"] = cate.ID
+	// "" means empty, nil means ignore
+	if cfg.CategoryURL != nil {
+		utils.Logger.Debug("post category", zap.String("category_url", *cfg.CategoryURL))
+		if *cfg.CategoryURL == "" {
+			query["category"] = nil
+		} else {
+			var cate *Category
+			if cate, err = t.LoadCategoryByURL(*cfg.CategoryURL); err != nil {
+				utils.Logger.Error("try to load posts by category url got error",
+					zap.Error(err),
+					zap.String("category_url", *cfg.CategoryURL),
+				)
+			} else if cate != nil {
+				utils.Logger.Debug("set post filter", zap.String("category", cate.ID.Hex()))
+				query["category"] = cate.ID
+			}
+		}
 	}
 
 	return query, nil
@@ -171,8 +188,8 @@ func (t *BlogDB) filterPosts(cfg *BlogPostCfg, iter *mgo.Iter) (results []*Post)
 		if isValidate {
 			results = append(results, result)
 			result = &Post{}
-			isValidate = true
 		}
+		isValidate = true
 	}
 
 	return results
@@ -188,7 +205,7 @@ func passwordFilter(docu *Post) bool {
 
 func getContentLengthFilter(length int) func(*Post) bool {
 	return func(docu *Post) bool {
-		if length > 0 {
+		if length >= 0 {
 			if len([]rune(docu.Content)) > length {
 				docu.Content = string([]rune(docu.Content)[:length])
 			}
@@ -226,6 +243,15 @@ func (t *BlogDB) LoadCategoryById(cateid bson.ObjectId) (cate *Category, err err
 	return cate, nil
 }
 
+func (t *BlogDB) LoadAllCategories() (cates []*Category, err error) {
+	cates = []*Category{}
+	if err = t.categories.Find(bson.M{}).All(&cates); err != nil {
+		return nil, errors.Wrap(err, "try to load all categories got error")
+	}
+
+	return cates, nil
+}
+
 func (t *BlogDB) LoadCategoryByName(name string) (cate *Category, err error) {
 	if name == "" {
 		return nil, nil
@@ -233,6 +259,19 @@ func (t *BlogDB) LoadCategoryByName(name string) (cate *Category, err error) {
 
 	cate = &Category{}
 	if err = t.categories.Find(bson.M{"name": name}).One(cate); err != nil && err != mgo.ErrNotFound {
+		return nil, err
+	}
+
+	return cate, nil
+}
+
+func (t *BlogDB) LoadCategoryByURL(url string) (cate *Category, err error) {
+	if url == "" {
+		return nil, nil
+	}
+
+	cate = &Category{}
+	if err = t.categories.Find(bson.M{"url": url}).One(cate); err != nil && err != mgo.ErrNotFound {
 		return nil, err
 	}
 

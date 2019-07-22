@@ -30,11 +30,12 @@ type Query {
   # blog
   posts(page: Pagination = {page: 0, size: 10},
     tag: String! = "",
-    category: String! = "",
+    category_url: String,  # "" means empty, nil means ignore
     length: Int! = 0,  # content length, 0 means total
     name: String! = "",
     regexp: String! = ""): [BlogPost]!
   postinfo: PostInfo!
+  post_categories: [BlogCategory]!
 }
 
 

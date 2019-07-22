@@ -74,21 +74,24 @@ func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, username s
 		return results, nil
 	}
 }
-func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error) {
+func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error) {
 	cfg := &blog.BlogPostCfg{
-		Page:     page.Page,
-		Size:     page.Size,
-		Length:   length,
-		Tag:      tag,
-		Regexp:   regexp,
-		Category: category,
-		Name:     name,
+		Page:        page.Page,
+		Size:        page.Size,
+		Length:      length,
+		Tag:         tag,
+		Regexp:      regexp,
+		CategoryURL: categoryURL,
+		Name:        name,
 	}
 	if results, err := blogDB.LoadPosts(cfg); err != nil {
 		return nil, err
 	} else {
 		return results, nil
 	}
+}
+func (q *queryResolver) PostCategories(ctx context.Context) ([]*blog.Category, error) {
+	return blogDB.LoadAllCategories()
 }
 
 func (t *tweetResolver) ID(ctx context.Context, obj *twitter.Tweet) (string, error) {

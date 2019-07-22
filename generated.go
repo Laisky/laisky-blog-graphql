@@ -83,10 +83,11 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		Benchmark func(childComplexity int) int
-		Postinfo  func(childComplexity int) int
-		Posts     func(childComplexity int, page *Pagination, tag string, category string, length int, name string, regexp string) int
-		Tweets    func(childComplexity int, page *Pagination, username string, sort *Sort, topic string, regexp string) int
+		Benchmark      func(childComplexity int) int
+		PostCategories func(childComplexity int) int
+		Postinfo       func(childComplexity int) int
+		Posts          func(childComplexity int, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) int
+		Tweets         func(childComplexity int, page *Pagination, username string, sort *Sort, topic string, regexp string) int
 	}
 
 	Tweet struct {
@@ -130,8 +131,9 @@ type MutationResolver interface {
 type QueryResolver interface {
 	Benchmark(ctx context.Context) (string, error)
 	Tweets(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error)
-	Posts(ctx context.Context, page *Pagination, tag string, category string, length int, name string, regexp string) ([]*blog.Post, error)
+	Posts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error)
 	Postinfo(ctx context.Context) (*blog.PostInfo, error)
+	PostCategories(ctx context.Context) ([]*blog.Category, error)
 }
 type TweetResolver interface {
 	ID(ctx context.Context, obj *twitter.Tweet) (string, error)
@@ -319,6 +321,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Query.Benchmark(childComplexity), true
 
+	case "Query.PostCategories":
+		if e.complexity.Query.PostCategories == nil {
+			break
+		}
+
+		return e.complexity.Query.PostCategories(childComplexity), true
+
 	case "Query.Postinfo":
 		if e.complexity.Query.Postinfo == nil {
 			break
@@ -336,7 +345,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.Posts(childComplexity, args["page"].(*Pagination), args["tag"].(string), args["category"].(string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
+		return e.complexity.Query.Posts(childComplexity, args["page"].(*Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
 
 	case "Query.Tweets":
 		if e.complexity.Query.Tweets == nil {
@@ -620,11 +629,12 @@ type Query {
   # blog
   posts(page: Pagination = {page: 0, size: 10},
     tag: String! = "",
-    category: String! = "",
+    category_url: String,  # "" means empty, nil means ignore
     length: Int! = 0,  # content length, 0 means total
     name: String! = "",
     regexp: String! = ""): [BlogPost]!
   postinfo: PostInfo!
+  post_categories: [BlogCategory]!
 }
 
 
@@ -730,14 +740,14 @@ func (ec *executionContext) field_Query_posts_args(ctx context.Context, rawArgs 
 		}
 	}
 	args["tag"] = arg1
-	var arg2 string
-	if tmp, ok := rawArgs["category"]; ok {
-		arg2, err = ec.unmarshalNString2string(ctx, tmp)
+	var arg2 *string
+	if tmp, ok := rawArgs["category_url"]; ok {
+		arg2, err = ec.unmarshalOString2ᚖstring(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["category"] = arg2
+	args["category_url"] = arg2
 	var arg3 int
 	if tmp, ok := rawArgs["length"]; ok {
 		arg3, err = ec.unmarshalNInt2int(ctx, tmp)
@@ -1452,7 +1462,7 @@ func (ec *executionContext) _Query_posts(ctx context.Context, field graphql.Coll
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Posts(rctx, args["page"].(*Pagination), args["tag"].(string), args["category"].(string), args["length"].(int), args["name"].(string), args["regexp"].(string))
+		return ec.resolvers.Query().Posts(rctx, args["page"].(*Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string))
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1491,6 +1501,33 @@ func (ec *executionContext) _Query_postinfo(ctx context.Context, field graphql.C
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostInfo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_post_categories(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Query",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().PostCategories(rctx)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*blog.Category)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐCategory(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
@@ -3190,6 +3227,20 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 				}
 				return res
 			})
+		case "post_categories":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_post_categories(ctx, field)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
 		case "__type":
 			out.Values[i] = ec._Query___type(ctx, field)
 		case "__schema":
@@ -3622,6 +3673,43 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 // endregion **************************** object.gotpl ****************************
 
 // region    ***************************** type.gotpl *****************************
+
+func (ec *executionContext) marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐCategory(ctx context.Context, sel ast.SelectionSet, v []*blog.Category) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		rctx := &graphql.ResolverContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithResolverContext(ctx, rctx)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalOBlogCategory2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐCategory(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+	return ret
+}
 
 func (ec *executionContext) marshalNBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v blog.Post) graphql.Marshaler {
 	return ec._BlogPost(ctx, sel, &v)
