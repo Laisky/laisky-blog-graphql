@@ -2,6 +2,7 @@ package blog
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -205,7 +206,7 @@ func passwordFilter(docu *Post) bool {
 
 func getContentLengthFilter(length int) func(*Post) bool {
 	return func(docu *Post) bool {
-		if length >= 0 {
+		if length > 0 { // 0 means full
 			if len([]rune(docu.Content)) > length {
 				docu.Content = string([]rune(docu.Content)[:length])
 			}
@@ -289,7 +290,7 @@ func (t *BlogDB) IsNameExists(name string) (bool, error) {
 }
 
 // NewPost insert new post
-func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md string) (post *Post, err error) {
+func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md, ptype string) (post *Post, err error) {
 	if isExists, err := t.IsNameExists(name); err != nil {
 		return nil, err
 	} else if isExists {
@@ -298,12 +299,13 @@ func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md string) (post *
 
 	ts := time.Now()
 	p := &Post{
+		Type:       strings.ToLower(ptype),
 		Markdown:   md,
 		Content:    string(markdown.ToHTML([]byte(md), nil, nil)),
 		ModifiedAt: ts,
 		CreatedAt:  ts,
 		Title:      title,
-		Name:       name,
+		Name:       url.QueryEscape(name),
 		Status:     "publish",
 		Author:     authorID,
 	}
