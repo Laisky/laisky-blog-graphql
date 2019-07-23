@@ -178,7 +178,7 @@ func (r *mutationResolver) CreateBlogPost(ctx context.Context, input NewBlogPost
 		return nil, err
 	}
 
-	return blogDB.NewPost(user.ID, string(input.Title), input.Name, string(input.Markdown))
+	return blogDB.NewPost(user.ID, string(input.Title), input.Name, string(input.Markdown), input.Type.String())
 }
 
 func (r *mutationResolver) Login(ctx context.Context, account string, password string) (user *blog.User, err error) {
