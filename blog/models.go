@@ -9,7 +9,6 @@ import (
 	"github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/zap"
-	"github.com/gomarkdown/markdown"
 	"github.com/pkg/errors"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -314,14 +313,15 @@ func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md, ptype string) 
 	p := &Post{
 		Type:       strings.ToLower(ptype),
 		Markdown:   md,
-		Content:    string(markdown.ToHTML([]byte(md), nil, nil)),
+		Content:    string(ParseMarkdown2HTML([]byte(md))),
 		ModifiedAt: ts,
 		CreatedAt:  ts,
 		Title:      title,
-		Name:       url.QueryEscape(name),
+		Name:       strings.ToLower(url.QueryEscape(name)),
 		Status:     "publish",
 		Author:     authorID,
 	}
+	p.Menu = ExtractMenu(p.Content)
 
 	if utils.Settings.GetBool("dry") {
 		utils.Logger.Info("insert post",
