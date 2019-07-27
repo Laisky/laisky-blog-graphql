@@ -158,6 +158,8 @@ func (r *blogPostResolver) Type(ctx context.Context, obj *blog.Post) (BlogPostTy
 		return BlogPostTypeMarkdown, nil
 	case "slide":
 		return BlogPostTypeSlide, nil
+	case "html":
+		return BlogPostTypeHTML, nil
 	}
 
 	return "", fmt.Errorf("unknown blog post type: `%+v`", obj.Type)

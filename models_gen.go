@@ -30,16 +30,18 @@ type BlogPostType string
 const (
 	BlogPostTypeMarkdown BlogPostType = "markdown"
 	BlogPostTypeSlide    BlogPostType = "slide"
+	BlogPostTypeHTML     BlogPostType = "html"
 )
 
 var AllBlogPostType = []BlogPostType{
 	BlogPostTypeMarkdown,
 	BlogPostTypeSlide,
+	BlogPostTypeHTML,
 }
 
 func (e BlogPostType) IsValid() bool {
 	switch e {
-	case BlogPostTypeMarkdown, BlogPostTypeSlide:
+	case BlogPostTypeMarkdown, BlogPostTypeSlide, BlogPostTypeHTML:
 		return true
 	}
 	return false

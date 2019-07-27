@@ -1,6 +1,7 @@
 enum BlogPostType {
     markdown
     slide
+    html  # legacy posts
 }
 
 type PostInfo {

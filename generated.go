@@ -544,6 +544,7 @@ var parsedSchema = gqlparser.MustLoadSchema(
 	&ast.Source{Name: "./blog/schema.graphql", Input: `enum BlogPostType {
     markdown
     slide
+    html  # legacy posts
 }
 
 type PostInfo {
