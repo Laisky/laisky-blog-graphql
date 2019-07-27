@@ -138,7 +138,7 @@ func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 	)
 	query = bson.M{}
 	if cfg.Name != "" {
-		query["post_name"] = cfg.Name
+		query["post_name"] = strings.ToLower(url.QueryEscape(cfg.Name))
 	}
 
 	if cfg.Tag != "" {
@@ -168,6 +168,7 @@ func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 		}
 	}
 
+	utils.Logger.Debug("generate query", zap.String("query", fmt.Sprint(query)))
 	return query, nil
 }
 
@@ -175,6 +176,7 @@ func (t *BlogDB) filterPosts(cfg *BlogPostCfg, iter *mgo.Iter) (results []*Post)
 	result := &Post{}
 	isValidate := true
 	for iter.Next(result) {
+		utils.Logger.Debug("filter post", zap.String("post", fmt.Sprintf("%+v", result)))
 		for _, f := range [...]func(*Post) bool{
 			// filters pipeline
 			passwordFilter,
