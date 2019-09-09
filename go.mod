@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/99designs/gqlgen v0.8.3
-	github.com/Laisky/go-utils v1.5.1
+	github.com/Laisky/go-utils v1.7.6
 	github.com/Laisky/zap v1.9.2
 	github.com/agnivade/levenshtein v1.0.2 // indirect
 	github.com/gin-contrib/pprof v1.2.0
@@ -17,6 +17,5 @@ require (
 	github.com/spf13/pflag v1.0.3
 	github.com/spf13/viper v1.4.0
 	github.com/vektah/gqlparser v1.1.2
-	golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4
 	gopkg.in/mgo.v2 v2.0.0-20180705113604-9856a29383ce
 )
