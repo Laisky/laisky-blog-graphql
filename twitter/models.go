@@ -14,8 +14,7 @@ import (
 )
 
 type TwitterDB struct {
-	*models.DB
-	tweets *mgo.Collection
+	dbcli *models.DB
 }
 
 type Media struct {
@@ -54,21 +53,17 @@ const (
 	TWEET_COL_NAME = "tweets"
 )
 
-func NewTwitterDB(addr string) (db *TwitterDB, err error) {
-	db = &TwitterDB{
-		DB: &models.DB{},
+func NewTwitterDB(dbcli *models.DB) *TwitterDB {
+	return &TwitterDB{
+		dbcli: dbcli,
 	}
-	if err = db.Dial(addr, DB_NAME); err != nil {
-		return nil, err
-	}
-
-	db.tweets = db.GetCol(TWEET_COL_NAME)
-	return db, nil
 }
 
 func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
 	tweet = &Tweet{}
-	if err = t.tweets.Find(bson.M{"id": id}).One(tweet); err == mgo.ErrNotFound {
+	if err = t.dbcli.GetCol(DB_NAME, TWEET_COL_NAME).
+		Find(bson.M{"id": id}).
+		One(tweet); err == mgo.ErrNotFound {
 		utils.Logger.Debug("tweet not found", zap.Int64("id", id))
 		return &Tweet{ID: id}, nil
 	} else if err != nil {
@@ -118,7 +113,12 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 		query["user.screen_name"] = cfg.Username
 	}
 
-	if err = t.tweets.Find(query).Sort(sort).Skip(cfg.Page * cfg.Size).Limit(cfg.Size).All(&results); err != nil {
+	if err = t.dbcli.GetCol(DB_NAME, TWEET_COL_NAME).
+		Find(query).
+		Sort(sort).
+		Skip(cfg.Page * cfg.Size).
+		Limit(cfg.Size).
+		All(&results); err != nil {
 		return nil, err
 	}
 	return results, nil
