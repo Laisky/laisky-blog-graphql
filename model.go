@@ -16,7 +16,7 @@ var (
 )
 
 func DialDB(ctx context.Context) {
-	utils.Logger.Info("dial mongodb", zap.String("addr", addr))
+	utils.Logger.Info("dial mongodb")
 	var (
 		blogDBCli, twitterDBCli *models.DB
 		err                     error
