@@ -16,25 +16,42 @@ const (
 	reconnectCheckInterval = 5 * time.Second
 )
 
-func NewMongoDB(ctx context.Context, addr string) (db *DB, err error) {
-	db = &DB{}
-	if err = db.dial(addr); err != nil {
+type DB struct {
+	sync.RWMutex
+	s      *mgo.Session
+	dbName string
+}
+
+func NewMongoDB(ctx context.Context, addr, dbName, user, pwd string) (db *DB, err error) {
+	utils.Logger.Info("try to connect to mongodb",
+		zap.String("addr", addr),
+		zap.String("db", dbName),
+	)
+	db = &DB{
+		dbName: dbName,
+	}
+	dialInfo := &mgo.DialInfo{
+		Addrs:     []string{addr},
+		Direct:    true,
+		Timeout:   defaultTimeout,
+		Database:  dbName,
+		Username:  user,
+		Password:  pwd,
+		PoolLimit: 1000,
+	}
+
+	if err = db.dial(dialInfo); err != nil {
 		return nil, err
 	}
-	go db.runReconnectCheck(ctx, addr)
+	go db.runReconnectCheck(ctx, dialInfo)
 	return db, nil
 }
 
-type DB struct {
-	sync.RWMutex
-	s *mgo.Session
-}
-
-func (d *DB) dial(addr string) error {
+func (d *DB) dial(dialInfo *mgo.DialInfo) error {
 	d.Lock()
 	defer d.Unlock()
 
-	s, err := mgo.DialWithTimeout(addr, defaultTimeout)
+	s, err := mgo.DialWithInfo(dialInfo)
 	if err != nil {
 		return errors.Wrap(err, "can not connect to db")
 	}
@@ -43,14 +60,14 @@ func (d *DB) dial(addr string) error {
 	return nil
 }
 
-func (d *DB) GetDB(name string) *mgo.Database {
+func (d *DB) GetDB() *mgo.Database {
 	d.RLock()
 	defer d.RUnlock()
 
-	return d.s.DB(name)
+	return d.s.DB("")
 }
 
-func (d *DB) runReconnectCheck(ctx context.Context, addr string) {
+func (d *DB) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
 	var err error
 	ticker := time.Tick(reconnectCheckInterval)
 	for {
@@ -61,12 +78,12 @@ func (d *DB) runReconnectCheck(ctx context.Context, addr string) {
 		}
 
 		if err = d.s.Ping(); err != nil {
-			utils.Logger.Error("db connection got error", zap.Error(err), zap.String("db", addr))
-			if err = d.dial(addr); err != nil {
-				utils.Logger.Error("can not reconnect to db", zap.Error(err), zap.String("db", addr))
+			utils.Logger.Error("db connection got error", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
+			if err = d.dial(dialInfo); err != nil {
+				utils.Logger.Error("can not reconnect to db", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
 				continue
 			}
-			utils.Logger.Info("success reconnect to db", zap.String("db", addr))
+			utils.Logger.Info("success reconnect to db", zap.Strings("db", dialInfo.Addrs))
 		}
 	}
 }
@@ -75,6 +92,6 @@ func (d *DB) Close() {
 	d.s.Close()
 }
 
-func (d *DB) GetCol(dbName, colName string) *mgo.Collection {
-	return d.GetDB(dbName).C(colName)
+func (d *DB) GetCol(colName string) *mgo.Collection {
+	return d.GetDB().C(colName)
 }

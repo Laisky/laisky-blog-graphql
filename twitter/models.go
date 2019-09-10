@@ -61,7 +61,7 @@ func NewTwitterDB(dbcli *models.DB) *TwitterDB {
 
 func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
 	tweet = &Tweet{}
-	if err = t.dbcli.GetCol(DB_NAME, TWEET_COL_NAME).
+	if err = t.dbcli.GetCol(TWEET_COL_NAME).
 		Find(bson.M{"id": id}).
 		One(tweet); err == mgo.ErrNotFound {
 		utils.Logger.Debug("tweet not found", zap.Int64("id", id))
@@ -113,7 +113,7 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 		query["user.screen_name"] = cfg.Username
 	}
 
-	if err = t.dbcli.GetCol(DB_NAME, TWEET_COL_NAME).
+	if err = t.dbcli.GetCol(TWEET_COL_NAME).
 		Find(query).
 		Sort(sort).
 		Skip(cfg.Page * cfg.Size).

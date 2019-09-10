@@ -15,16 +15,29 @@ var (
 	blogDB    *blog.BlogDB
 )
 
-func DialDB(ctx context.Context, addr string) {
-	utils.Logger.Info("dial mongodb", zap.String("addr", addr))
+func DialDB(ctx context.Context) {
+	utils.Logger.Info("dial mongodb")
 	var (
-		dbcli *models.DB
-		err   error
+		blogDBCli, twitterDBCli *models.DB
+		err                     error
 	)
-	if dbcli, err = models.NewMongoDB(ctx, addr); err != nil {
-		utils.Logger.Panic("connect to db got error", zap.Error(err))
+	if blogDBCli, err = models.NewMongoDB(ctx,
+		utils.Settings.GetString("settings.db.blog.addr"),
+		utils.Settings.GetString("settings.db.blog.db"),
+		utils.Settings.GetString("settings.db.blog.user"),
+		utils.Settings.GetString("settings.db.blog.pwd"),
+	); err != nil {
+		utils.Logger.Panic("connect to blog db got error", zap.Error(err))
 	}
+	blogDB = blog.NewBlogDB(blogDBCli)
 
-	twitterDB = twitter.NewTwitterDB(dbcli)
-	blogDB = blog.NewBlogDB(dbcli)
+	if twitterDBCli, err = models.NewMongoDB(ctx,
+		utils.Settings.GetString("settings.db.twitter.addr"),
+		utils.Settings.GetString("settings.db.twitter.db"),
+		utils.Settings.GetString("settings.db.twitter.user"),
+		utils.Settings.GetString("settings.db.twitter.pwd"),
+	); err != nil {
+		utils.Logger.Panic("connect to twitter db got error", zap.Error(err))
+	}
+	twitterDB = twitter.NewTwitterDB(twitterDBCli)
 }
