@@ -77,13 +77,13 @@ func NewBlogDB(dbcli *models.DB) *BlogDB {
 }
 
 func (db *BlogDB) GetPostsCol() *mgo.Collection {
-	return db.dbcli.GetCol(DB_NAME, POST_COL_NAME)
+	return db.dbcli.GetCol(POST_COL_NAME)
 }
 func (db *BlogDB) GetUsersCol() *mgo.Collection {
-	return db.dbcli.GetCol(DB_NAME, USER_COL_NAME)
+	return db.dbcli.GetCol(USER_COL_NAME)
 }
 func (db *BlogDB) GetCategoriesCol() *mgo.Collection {
-	return db.dbcli.GetCol(DB_NAME, CATEGORY_COL_NAME)
+	return db.dbcli.GetCol(CATEGORY_COL_NAME)
 }
 
 type BlogPostCfg struct {
@@ -109,7 +109,7 @@ func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
 	}
 
 	// utils.Logger.Debug("load blog posts", zap.String("query", fmt.Sprint(query)))
-	iter := t.dbcli.GetCol(DB_NAME, POST_COL_NAME).Find(query).
+	iter := t.dbcli.GetCol(POST_COL_NAME).Find(query).
 		Sort("-_id").
 		Skip(cfg.Page * cfg.Size).
 		Limit(cfg.Size).
@@ -120,7 +120,7 @@ func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
 }
 
 func (t *BlogDB) LoadPostInfo() (*PostInfo, error) {
-	cnt, err := t.dbcli.GetCol(DB_NAME, POST_COL_NAME).Count()
+	cnt, err := t.dbcli.GetCol(POST_COL_NAME).Count()
 	if err != nil {
 		return nil, errors.Wrap(err, "try to count posts got error")
 	}
@@ -238,7 +238,7 @@ func (t *BlogDB) LoadUserById(uid bson.ObjectId) (user *User, err error) {
 	}
 
 	user = &User{}
-	if err = t.dbcli.GetCol(DB_NAME, USER_COL_NAME).FindId(uid).One(user); err != nil {
+	if err = t.dbcli.GetCol(USER_COL_NAME).FindId(uid).One(user); err != nil {
 		return nil, err
 	}
 	return user, nil
@@ -251,7 +251,7 @@ func (t *BlogDB) LoadCategoryById(cateid bson.ObjectId) (cate *Category, err err
 	}
 
 	cate = &Category{}
-	if err = t.dbcli.GetCol(DB_NAME, CATEGORY_COL_NAME).FindId(cateid).One(cate); err != nil {
+	if err = t.dbcli.GetCol(CATEGORY_COL_NAME).FindId(cateid).One(cate); err != nil {
 		return nil, err
 	}
 	return cate, nil
@@ -259,7 +259,7 @@ func (t *BlogDB) LoadCategoryById(cateid bson.ObjectId) (cate *Category, err err
 
 func (t *BlogDB) LoadAllCategories() (cates []*Category, err error) {
 	cates = []*Category{}
-	if err = t.dbcli.GetCol(DB_NAME, CATEGORY_COL_NAME).Find(bson.M{}).All(&cates); err != nil {
+	if err = t.dbcli.GetCol(CATEGORY_COL_NAME).Find(bson.M{}).All(&cates); err != nil {
 		return nil, errors.Wrap(err, "try to load all categories got error")
 	}
 
@@ -272,7 +272,7 @@ func (t *BlogDB) LoadCategoryByName(name string) (cate *Category, err error) {
 	}
 
 	cate = &Category{}
-	if err = t.dbcli.GetCol(DB_NAME, CATEGORY_COL_NAME).Find(bson.M{"name": name}).One(cate); err != nil && err != mgo.ErrNotFound {
+	if err = t.dbcli.GetCol(CATEGORY_COL_NAME).Find(bson.M{"name": name}).One(cate); err != nil && err != mgo.ErrNotFound {
 		return nil, err
 	}
 
@@ -285,7 +285,7 @@ func (t *BlogDB) LoadCategoryByURL(url string) (cate *Category, err error) {
 	}
 
 	cate = &Category{}
-	if err = t.dbcli.GetCol(DB_NAME, CATEGORY_COL_NAME).Find(bson.M{"url": url}).One(cate); err != nil && err != mgo.ErrNotFound {
+	if err = t.dbcli.GetCol(CATEGORY_COL_NAME).Find(bson.M{"url": url}).One(cate); err != nil && err != mgo.ErrNotFound {
 		return nil, err
 	}
 
@@ -293,7 +293,7 @@ func (t *BlogDB) LoadCategoryByURL(url string) (cate *Category, err error) {
 }
 
 func (t *BlogDB) IsNameExists(name string) (bool, error) {
-	n, err := t.dbcli.GetCol(DB_NAME, POST_COL_NAME).Find(bson.M{"post_name": name}).Count()
+	n, err := t.dbcli.GetCol(POST_COL_NAME).Find(bson.M{"post_name": name}).Count()
 	if err != nil {
 		utils.Logger.Error("try to count post_name got error", zap.Error(err))
 		return false, err
@@ -332,7 +332,7 @@ func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md, ptype string) 
 			// zap.String("content", p.Content),
 		)
 	} else {
-		if err = t.dbcli.GetCol(DB_NAME, POST_COL_NAME).Insert(p); err != nil {
+		if err = t.dbcli.GetCol(POST_COL_NAME).Insert(p); err != nil {
 			return nil, errors.Wrap(err, "try to insert post got error")
 		}
 	}
@@ -345,7 +345,7 @@ var IncorrectErr = errors.New("Password Or Username Incorrect")
 func (t *BlogDB) ValidateLogin(account, password string) (u *User, err error) {
 	utils.Logger.Debug("ValidateLogin", zap.String("account", account))
 	u = &User{}
-	if err := t.dbcli.GetCol(DB_NAME, USER_COL_NAME).Find(bson.M{"account": account}).One(u); err != nil && err != mgo.ErrNotFound {
+	if err := t.dbcli.GetCol(USER_COL_NAME).Find(bson.M{"account": account}).One(u); err != nil && err != mgo.ErrNotFound {
 		utils.Logger.Error("try to load user got error", zap.Error(err))
 	} else if utils.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
 		return u, nil
@@ -363,7 +363,7 @@ func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, ty
 	if _, ok := supporttedTypes[typeArg]; !ok {
 		return nil, fmt.Errorf("type `%v` not supportted", typeArg)
 	}
-	if err = t.dbcli.GetCol(DB_NAME, POST_COL_NAME).Find(bson.M{"post_name": name}).One(p); err == mgo.ErrNotFound {
+	if err = t.dbcli.GetCol(POST_COL_NAME).Find(bson.M{"post_name": name}).One(p); err == mgo.ErrNotFound {
 		return nil, errors.Wrap(err, "post not exists")
 	}
 	if p.Author != user.ID {
@@ -377,7 +377,7 @@ func (t *BlogDB) UpdatePost(user *User, name string, title string, md string, ty
 	p.ModifiedAt = time.Now()
 	p.Type = typeArg
 
-	if err = t.dbcli.GetCol(DB_NAME, POST_COL_NAME).UpdateId(p.ID, p); err != nil {
+	if err = t.dbcli.GetCol(POST_COL_NAME).UpdateId(p.ID, p); err != nil {
 		return nil, errors.Wrap(err, "try to update post got error")
 	}
 

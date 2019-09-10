@@ -56,6 +56,6 @@ func main() {
 	setupArgs()
 	setupSettings()
 
-	laisky_blog_graphql.DialDB(context.Background(), utils.Settings.GetString("dbaddr"))
+	laisky_blog_graphql.DialDB(context.Background())
 	laisky_blog_graphql.RunServer(utils.Settings.GetString("addr"))
 }
