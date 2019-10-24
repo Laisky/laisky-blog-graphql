@@ -6,7 +6,6 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-
 func appendQuote(v []byte) []byte {
 	r := []byte("\"")
 	r = append(r, v...)
