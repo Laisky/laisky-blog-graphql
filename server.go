@@ -26,6 +26,7 @@ func setupAuth() (err error) {
 }
 
 func RunServer(addr string) {
+	server.Use(gin.Recovery())
 	if !utils.Settings.GetBool("debug") {
 		gin.SetMode(gin.ReleaseMode)
 	}

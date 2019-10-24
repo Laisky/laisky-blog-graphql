@@ -96,7 +96,10 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 		query["topics"] = cfg.Topic
 	}
 	if cfg.Regexp != "" {
-		query["text"] = bson.M{"$regex": bson.RegEx{cfg.Regexp, "im"}}
+		query["text"] = bson.M{"$regex": bson.RegEx{
+			Pattern: cfg.Regexp,
+			Options: "im",
+		}}
 	}
 	sort := "-_id"
 	if cfg.SortBy != "" {

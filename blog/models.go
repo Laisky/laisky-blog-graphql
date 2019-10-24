@@ -30,9 +30,9 @@ type Post struct {
 	Markdown   string        `bson:"post_markdown" json:"markdown"`
 	Author     bson.ObjectId `bson:"post_author" json:"author"`
 	Menu       string        `bson:"post_menu" json:"menu"`
-	Password   string        `bson:"post_password", json:"password"`
-	Category   bson.ObjectId `bson:"category,omitempty", json:"category"`
-	Tags       []string      `bson:"post_tags", json:"tags"`
+	Password   string        `bson:"post_password" json:"password"`
+	Category   bson.ObjectId `bson:"category,omitempty" json:"category"`
+	Tags       []string      `bson:"post_tags" json:"tags"`
 }
 
 type PostInfo struct {
@@ -146,7 +146,10 @@ func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 	}
 
 	if cfg.Regexp != "" {
-		query["post_content"] = bson.M{"$regex": bson.RegEx{cfg.Regexp, "im"}}
+		query["post_content"] = bson.M{"$regex": bson.RegEx{
+			Pattern: cfg.Regexp,
+			Options: "im",
+		}}
 	}
 
 	// "" means empty, nil means ignore
@@ -210,11 +213,7 @@ func defaultTypeFilter(docu *Post) bool {
 }
 
 func passwordFilter(docu *Post) bool {
-	if docu.Password != "" {
-		return false
-	}
-
-	return true
+	return docu.Password == ""
 }
 
 func getContentLengthFilter(length int) func(*Post) bool {

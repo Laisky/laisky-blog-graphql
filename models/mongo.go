@@ -69,12 +69,13 @@ func (d *DB) GetDB() *mgo.Database {
 
 func (d *DB) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
 	var err error
-	ticker := time.Tick(reconnectCheckInterval)
+	ticker := time.NewTicker(reconnectCheckInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker:
+		case <-ticker.C:
 		}
 
 		if err = d.s.Ping(); err != nil {

@@ -39,7 +39,9 @@ func (d *Datetime) UnmarshalGQL(vi interface{}) (err error) {
 }
 
 func (d Datetime) MarshalGQL(w io.Writer) {
-	w.Write(appendQuote([]byte(d.t.Format(TimeLayout))))
+	if _, err := w.Write(appendQuote([]byte(d.t.Format(TimeLayout)))); err != nil {
+		utils.Logger.Error("write datetime bytes", zap.Error(err))
+	}
 }
 
 type QuotedString string
@@ -48,7 +50,7 @@ func (qs *QuotedString) UnmarshalGQL(vi interface{}) (err error) {
 	switch v := vi.(type) {
 	case string:
 		if v, err = url.QueryUnescape(v); err != nil {
-			utils.Logger.Debug("try to unquote string got error", zap.String("quoted", v), zap.Error(err))
+			utils.Logger.Debug("unquote string", zap.String("quoted", v), zap.Error(err))
 			return err
 		}
 		*qs = QuotedString(v)
@@ -60,7 +62,9 @@ func (qs *QuotedString) UnmarshalGQL(vi interface{}) (err error) {
 }
 
 func (qs QuotedString) MarshalGQL(w io.Writer) {
-	w.Write(appendQuote([]byte(qs)))
+	if _, err := w.Write(appendQuote([]byte(qs))); err != nil {
+		utils.Logger.Error("write bytes", zap.Error(err))
+	}
 }
 
 type JSONString string
@@ -72,7 +76,7 @@ func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 	}
 	// var v string
 	if err = json.UnmarshalFromString(v, &v); err != nil {
-		utils.Logger.Debug("try to decode string got error", zap.String("quoted", v), zap.Error(err))
+		utils.Logger.Debug("decode string", zap.String("quoted", v), zap.Error(err))
 		return err
 	}
 
@@ -82,8 +86,10 @@ func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 
 func (qs JSONString) MarshalGQL(w io.Writer) {
 	if vb, err := json.Marshal(qs); err != nil {
-		utils.Logger.Error("try to marshal json got error", zap.Error(err))
+		utils.Logger.Error("marshal json", zap.Error(err))
 	} else {
-		w.Write(vb)
+		if _, err = w.Write(vb); err != nil {
+			utils.Logger.Error("write bytes", zap.Error(err))
+		}
 	}
 }

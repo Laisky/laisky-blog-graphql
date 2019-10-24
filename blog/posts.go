@@ -1,6 +1,7 @@
 package blog
 
 import (
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -68,8 +69,8 @@ func ParseMarkdown2HTML(md []byte) (cnt string) {
 			utils.Logger.Error("unknown title level", zap.String("lev", tlev))
 		}
 
-		// tid = url.QueryEscape(tid) + utils.RandomStringWithLength(5)
-		tid = utils.RandomStringWithLength(15)
+		tid = url.QueryEscape(tid) + "-" + utils.RandomStringWithLength(5)
+		// tid = utils.RandomStringWithLength(15)
 		cnt = strings.ReplaceAll(cnt, tl, `<`+tlev+` id="`+tid+`">`+ttext+`</`+tlev+`>`)
 	}
 	return cnt

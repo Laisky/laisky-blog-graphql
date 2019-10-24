@@ -14,6 +14,7 @@ import (
 )
 
 func setupSettings() {
+	var err error
 	// mode
 	if utils.Settings.GetBool("debug") {
 		fmt.Println("run in debug mode")
@@ -23,14 +24,16 @@ func setupSettings() {
 	}
 
 	// log
-	utils.SetupLogger(utils.Settings.GetString("log-level"))
+	if err = utils.Logger.ChangeLevel(utils.Settings.GetString("log-level")); err != nil {
+		utils.Logger.Panic("set log level", zap.Error(err))
+	}
 
 	// clock
 	utils.SetupClock(100 * time.Millisecond)
 
 	// load configuration
 	cfgDirPath := utils.Settings.GetString("config")
-	if err := utils.Settings.Setup(cfgDirPath); err != nil {
+	if err = utils.Settings.Setup(cfgDirPath); err != nil {
 		utils.Logger.Panic("can not load config from disk",
 			zap.String("dirpath", cfgDirPath))
 	} else {
@@ -48,11 +51,12 @@ func setupArgs() {
 	pflag.String("log-level", "info", "`debug/info/error`")
 	pflag.Int("heartbeat", 60, "heartbeat seconds")
 	pflag.Parse()
-	viper.BindPFlags(pflag.CommandLine)
+	if err := viper.BindPFlags(pflag.CommandLine); err != nil {
+		utils.Logger.Panic("parse command args", zap.Error(err))
+	}
 }
 
 func main() {
-	defer utils.Logger.Sync()
 	setupArgs()
 	setupSettings()
 
