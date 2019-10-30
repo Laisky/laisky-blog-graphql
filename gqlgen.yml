@@ -7,6 +7,7 @@ schema:
 - schema.graphql
 - ./twitter/schema.graphql
 - ./blog/schema.graphql
+- ./telegram/schema.graphql
 exec:
   filename: generated.go
 model:
@@ -15,10 +16,19 @@ resolver:
   filename: resolver.go
   type: Resolver
 models:
+  # general
+  Date:
+    model: github.com/Laisky/laisky-blog-graphql/types.Datetime
+  QuotedString:
+    model: github.com/Laisky/laisky-blog-graphql/types.QuotedString
+  JSONString:
+    model: github.com/Laisky/laisky-blog-graphql/types.JSONString
+  # twitter
   Tweet:
     model: github.com/Laisky/laisky-blog-graphql/twitter.Tweet
   TwitterUser:
     model: github.com/Laisky/laisky-blog-graphql/twitter.User
+  # blog
   BlogPost:
     model: github.com/Laisky/laisky-blog-graphql/blog.Post
   PostInfo:
@@ -27,9 +37,8 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/blog.User
   BlogCategory:
     model: github.com/Laisky/laisky-blog-graphql/blog.Category
-  Date:
-    model: github.com/Laisky/laisky-blog-graphql/types.Datetime
-  QuotedString:
-    model: github.com/Laisky/laisky-blog-graphql/types.QuotedString
-  JSONString:
-    model: github.com/Laisky/laisky-blog-graphql/types.JSONString
+  # telegram
+  TelegramUser:
+    model: github.com/Laisky/laisky-blog-graphql/telegram.Users
+  TelegramAlertType:
+    model: github.com/Laisky/laisky-blog-graphql/telegram.AlertTypes

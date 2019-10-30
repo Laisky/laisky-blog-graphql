@@ -3,9 +3,12 @@ package laisky_blog_graphql
 import (
 	"context"
 
+	"github.com/Laisky/laisky-blog-graphql/models"
+
+	"github.com/Laisky/laisky-blog-graphql/telegram"
+
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
-	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
 	"github.com/Laisky/zap"
 )
@@ -13,13 +16,14 @@ import (
 var (
 	twitterDB *twitter.TwitterDB
 	blogDB    *blog.BlogDB
+	monitorDB *telegram.MonitorDB
 )
 
-func DialDB(ctx context.Context) {
+func setupDB(ctx context.Context) {
 	utils.Logger.Info("dial mongodb")
 	var (
-		blogDBCli, twitterDBCli *models.DB
-		err                     error
+		blogDBCli, twitterDBCli, monitorDBCli *models.DB
+		err                                   error
 	)
 	if blogDBCli, err = models.NewMongoDB(ctx,
 		utils.Settings.GetString("settings.db.blog.addr"),
@@ -27,7 +31,7 @@ func DialDB(ctx context.Context) {
 		utils.Settings.GetString("settings.db.blog.user"),
 		utils.Settings.GetString("settings.db.blog.pwd"),
 	); err != nil {
-		utils.Logger.Panic("connect to blog db got error", zap.Error(err))
+		utils.Logger.Panic("connect to blog db", zap.Error(err))
 	}
 	blogDB = blog.NewBlogDB(blogDBCli)
 
@@ -37,7 +41,17 @@ func DialDB(ctx context.Context) {
 		utils.Settings.GetString("settings.db.twitter.user"),
 		utils.Settings.GetString("settings.db.twitter.pwd"),
 	); err != nil {
-		utils.Logger.Panic("connect to twitter db got error", zap.Error(err))
+		utils.Logger.Panic("connect to twitter db", zap.Error(err))
 	}
 	twitterDB = twitter.NewTwitterDB(twitterDBCli)
+
+	if monitorDBCli, err = models.NewMongoDB(ctx,
+		utils.Settings.GetString("settings.db.monitor.addr"),
+		utils.Settings.GetString("settings.db.monitor.db"),
+		utils.Settings.GetString("settings.db.monitor.user"),
+		utils.Settings.GetString("settings.db.monitor.pwd"),
+	); err != nil {
+		utils.Logger.Panic("connect to monitor db", zap.Error(err))
+	}
+	monitorDB = telegram.NewMonitorDB(monitorDBCli)
 }
