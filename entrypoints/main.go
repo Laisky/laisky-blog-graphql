@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	laisky_blog_graphql "github.com/Laisky/laisky-blog-graphql"
+
 	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
 
 	"github.com/Laisky/go-utils"
-	laisky_blog_graphql "github.com/Laisky/laisky-blog-graphql"
 	"github.com/Laisky/zap"
 )
 
@@ -49,9 +49,10 @@ func setupArgs() {
 	pflag.String("dbaddr", "localhost:8080", "like `localhost:8080`")
 	pflag.String("config", "/etc/laisky-blog-graphql/settings", "config file directory path")
 	pflag.String("log-level", "info", "`debug/info/error`")
+	pflag.StringSliceP("tasks", "t", []string{}, "which tasks want to runnning, like\n ./main -t t1,t2,heartbeat")
 	pflag.Int("heartbeat", 60, "heartbeat seconds")
 	pflag.Parse()
-	if err := viper.BindPFlags(pflag.CommandLine); err != nil {
+	if err := utils.Settings.BindPFlags(pflag.CommandLine); err != nil {
 		utils.Logger.Panic("parse command args", zap.Error(err))
 	}
 }
@@ -60,6 +61,8 @@ func main() {
 	setupArgs()
 	setupSettings()
 
-	laisky_blog_graphql.DialDB(context.Background())
-	laisky_blog_graphql.RunServer(utils.Settings.GetString("addr"))
+	ctx := context.Background()
+
+	c := laisky_blog_graphql.NewControllor()
+	c.Run(ctx)
 }

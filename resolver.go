@@ -10,6 +10,7 @@ import (
 	"github.com/Laisky/go-utils"
 
 	"github.com/Laisky/laisky-blog-graphql/blog"
+	"github.com/Laisky/laisky-blog-graphql/telegram"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
 	"github.com/Laisky/laisky-blog-graphql/types"
 	"github.com/pkg/errors"
@@ -37,7 +38,14 @@ func (r *Resolver) BlogPost() BlogPostResolver {
 func (r *Resolver) BlogUser() BlogUserResolver {
 	return &blogUserResolver{r}
 }
+func (r *Resolver) TelegramAlertType() TelegramAlertTypeResolver {
+	return &telegramAlertTypeResolver{r}
+}
+func (r *Resolver) TelegramUser() TelegramUserResolver {
+	return &telegramUserResolver{r}
+}
 
+// ===========================
 // query
 // ===========================
 
@@ -46,6 +54,11 @@ type tweetResolver struct{ *Resolver }
 type twitterUserResolver struct{ *Resolver }
 type blogPostResolver struct{ *Resolver }
 type blogUserResolver struct{ *Resolver }
+type telegramAlertTypeResolver struct{ *Resolver }
+type telegramUserResolver struct{ *Resolver }
+
+// query resolver
+// --------------
 
 func (t *twitterUserResolver) ID(ctx context.Context, obj *twitter.User) (string, error) {
 	return strconv.FormatInt(int64(obj.ID), 10), nil
@@ -54,13 +67,13 @@ func (t *twitterUserResolver) Description(ctx context.Context, obj *twitter.User
 	return obj.Dscription, nil
 }
 
-func (q *queryResolver) Benchmark(ctx context.Context) (string, error) {
+func (q *queryResolver) Hello(ctx context.Context) (string, error) {
 	return "hello, world", nil
 }
-func (q *queryResolver) Postinfo(ctx context.Context) (*blog.PostInfo, error) {
+func (q *queryResolver) BlogPostInfo(ctx context.Context) (*blog.PostInfo, error) {
 	return blogDB.LoadPostInfo()
 }
-func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error) {
+func (q *queryResolver) TwitterStatues(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error) {
 	if results, err := twitterDB.LoadTweets(&twitter.TweetLoadCfg{
 		Page:      page.Page,
 		Regexp:    regexp,
@@ -74,7 +87,7 @@ func (q *queryResolver) Tweets(ctx context.Context, page *Pagination, username s
 		return results, nil
 	}
 }
-func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error) {
+func (q *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error) {
 	cfg := &blog.BlogPostCfg{
 		Page:        page.Page,
 		Size:        page.Size,
@@ -90,9 +103,61 @@ func (q *queryResolver) Posts(ctx context.Context, page *Pagination, tag string,
 		return results, nil
 	}
 }
-func (q *queryResolver) PostCategories(ctx context.Context) ([]*blog.Category, error) {
+func (q *queryResolver) BlogPostCategories(ctx context.Context) ([]*blog.Category, error) {
 	return blogDB.LoadAllCategories()
 }
+func (q *queryResolver) TelegramMonitorUsers(ctx context.Context, page *Pagination, name string) ([]*telegram.Users, error) {
+	cfg := &telegram.TelegramQueryCfg{
+		Page: page.Page,
+		Size: page.Size,
+		Name: name,
+	}
+	return monitorDB.LoadUsers(cfg)
+}
+func (q *queryResolver) TelegramAlertTypes(ctx context.Context, page *Pagination, name string) ([]*telegram.AlertTypes, error) {
+	cfg := &telegram.TelegramQueryCfg{
+		Page: page.Page,
+		Size: page.Size,
+		Name: name,
+	}
+	return monitorDB.LoadAlertTypes(cfg)
+}
+
+// ----------------
+// telegram monitor resolver
+// ----------------
+func (t *telegramUserResolver) ID(ctx context.Context, obj *telegram.Users) (string, error) {
+	return obj.ID.Hex(), nil
+}
+func (t *telegramUserResolver) CreatedAt(ctx context.Context, obj *telegram.Users) (*types.Datetime, error) {
+	return types.NewDatetimeFromTime(obj.CreatedAt), nil
+}
+func (t *telegramUserResolver) ModifiedAt(ctx context.Context, obj *telegram.Users) (*types.Datetime, error) {
+	return types.NewDatetimeFromTime(obj.ModifiedAt), nil
+}
+func (t *telegramUserResolver) TelegramID(ctx context.Context, obj *telegram.Users) (string, error) {
+	return strconv.FormatInt(int64(obj.UID), 10), nil
+}
+func (t *telegramUserResolver) SubAlerts(ctx context.Context, obj *telegram.Users) ([]*telegram.AlertTypes, error) {
+	return monitorDB.LoadAlertTypesByUser(obj)
+}
+
+func (t *telegramAlertTypeResolver) ID(ctx context.Context, obj *telegram.AlertTypes) (string, error) {
+	return obj.ID.Hex(), nil
+}
+func (t *telegramAlertTypeResolver) CreatedAt(ctx context.Context, obj *telegram.AlertTypes) (*types.Datetime, error) {
+	return types.NewDatetimeFromTime(obj.CreatedAt), nil
+}
+func (t *telegramAlertTypeResolver) ModifiedAt(ctx context.Context, obj *telegram.AlertTypes) (*types.Datetime, error) {
+	return types.NewDatetimeFromTime(obj.ModifiedAt), nil
+}
+func (t *telegramAlertTypeResolver) SubUsers(ctx context.Context, obj *telegram.AlertTypes) ([]*telegram.Users, error) {
+	return monitorDB.LoadUsersByAlertType(obj)
+}
+
+// ----------------
+// twitter resolver
+// ----------------
 
 func (t *tweetResolver) ID(ctx context.Context, obj *twitter.Tweet) (string, error) {
 	return strconv.FormatInt(obj.ID, 10), nil
@@ -137,6 +202,10 @@ func (t *tweetResolver) ReplyTo(ctx context.Context, obj *twitter.Tweet) (tweet 
 	return tweet, nil
 }
 
+// ----------------
+// blog resolver
+// ----------------
+
 func (r *blogPostResolver) MongoID(ctx context.Context, obj *blog.Post) (string, error) {
 	return obj.ID.Hex(), nil
 }
@@ -169,11 +238,12 @@ func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, erro
 	return obj.ID.Hex(), nil
 }
 
+// =========
 // mutations
 // =========
 type mutationResolver struct{ *Resolver }
 
-func (r *mutationResolver) CreateBlogPost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
+func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
 		utils.Logger.Debug("user invalidate", zap.Error(err))
@@ -182,8 +252,7 @@ func (r *mutationResolver) CreateBlogPost(ctx context.Context, input NewBlogPost
 
 	return blogDB.NewPost(user.ID, string(input.Title), input.Name, string(input.Markdown), input.Type.String())
 }
-
-func (r *mutationResolver) Login(ctx context.Context, account string, password string) (user *blog.User, err error) {
+func (r *mutationResolver) BlogLogin(ctx context.Context, account string, password string) (user *blog.User, err error) {
 	if user, err = blogDB.ValidateLogin(account, password); err != nil {
 		utils.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
@@ -196,8 +265,7 @@ func (r *mutationResolver) Login(ctx context.Context, account string, password s
 
 	return user, nil
 }
-
-func (r *mutationResolver) AmendBlogPost(ctx context.Context, post NewBlogPost) (*blog.Post, error) {
+func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
 		utils.Logger.Debug("user invalidate", zap.Error(err))
@@ -205,4 +273,29 @@ func (r *mutationResolver) AmendBlogPost(ctx context.Context, post NewBlogPost) 
 	}
 
 	return blogDB.UpdatePost(user, post.Name, string(post.Title), string(post.Markdown), string(post.Type))
+}
+func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*telegram.AlertTypes, error) {
+	alert, err := monitorDB.ValidateTokenForAlertType(token, typeArg)
+	if err != nil {
+		return nil, err
+	}
+	users, err := monitorDB.LoadUsersByAlertType(alert)
+	if err != nil {
+		return nil, err
+	}
+
+	errMsg := ""
+	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
+	for _, user := range users {
+		if err = telegramCli.SendMsgToUser(user.UID, msg); err != nil {
+			utils.Logger.Error("send msg to user", zap.Error(err), zap.Int("uid", user.UID), zap.String("msg", msg))
+			errMsg += err.Error()
+		}
+	}
+
+	if errMsg != "" {
+		err = fmt.Errorf(errMsg)
+	}
+
+	return alert, err
 }

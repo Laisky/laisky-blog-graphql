@@ -12,6 +12,7 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
 	"github.com/Laisky/laisky-blog-graphql/blog"
+	"github.com/Laisky/laisky-blog-graphql/telegram"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
 	"github.com/Laisky/laisky-blog-graphql/types"
 	"github.com/vektah/gqlparser"
@@ -40,6 +41,8 @@ type ResolverRoot interface {
 	BlogUser() BlogUserResolver
 	Mutation() MutationResolver
 	Query() QueryResolver
+	TelegramAlertType() TelegramAlertTypeResolver
+	TelegramUser() TelegramUserResolver
 	Tweet() TweetResolver
 	TwitterUser() TwitterUserResolver
 }
@@ -73,9 +76,10 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		AmendBlogPost  func(childComplexity int, post NewBlogPost) int
-		CreateBlogPost func(childComplexity int, post NewBlogPost) int
-		Login          func(childComplexity int, account string, password string) int
+		BlogAmendPost        func(childComplexity int, post NewBlogPost) int
+		BlogCreatePost       func(childComplexity int, post NewBlogPost) int
+		BlogLogin            func(childComplexity int, account string, password string) int
+		TelegramMonitorAlert func(childComplexity int, typeArg string, token string, msg string) int
 	}
 
 	PostInfo struct {
@@ -83,11 +87,30 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		Benchmark      func(childComplexity int) int
-		PostCategories func(childComplexity int) int
-		Postinfo       func(childComplexity int) int
-		Posts          func(childComplexity int, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) int
-		Tweets         func(childComplexity int, page *Pagination, username string, sort *Sort, topic string, regexp string) int
+		BlogPostCategories   func(childComplexity int) int
+		BlogPostInfo         func(childComplexity int) int
+		BlogPosts            func(childComplexity int, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) int
+		Hello                func(childComplexity int) int
+		TelegramAlertTypes   func(childComplexity int, page *Pagination, name string) int
+		TelegramMonitorUsers func(childComplexity int, page *Pagination, name string) int
+		TwitterStatues       func(childComplexity int, page *Pagination, username string, sort *Sort, topic string, regexp string) int
+	}
+
+	TelegramAlertType struct {
+		CreatedAt  func(childComplexity int) int
+		ID         func(childComplexity int) int
+		ModifiedAt func(childComplexity int) int
+		Name       func(childComplexity int) int
+		SubUsers   func(childComplexity int) int
+	}
+
+	TelegramUser struct {
+		CreatedAt  func(childComplexity int) int
+		ID         func(childComplexity int) int
+		ModifiedAt func(childComplexity int) int
+		Name       func(childComplexity int) int
+		SubAlerts  func(childComplexity int) int
+		TelegramID func(childComplexity int) int
 	}
 
 	Tweet struct {
@@ -124,16 +147,34 @@ type BlogUserResolver interface {
 	ID(ctx context.Context, obj *blog.User) (string, error)
 }
 type MutationResolver interface {
-	CreateBlogPost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
-	Login(ctx context.Context, account string, password string) (*blog.User, error)
-	AmendBlogPost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
+	BlogCreatePost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
+	BlogLogin(ctx context.Context, account string, password string) (*blog.User, error)
+	BlogAmendPost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
+	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*telegram.AlertTypes, error)
 }
 type QueryResolver interface {
-	Benchmark(ctx context.Context) (string, error)
-	Tweets(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error)
-	Posts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error)
-	Postinfo(ctx context.Context) (*blog.PostInfo, error)
-	PostCategories(ctx context.Context) ([]*blog.Category, error)
+	Hello(ctx context.Context) (string, error)
+	TwitterStatues(ctx context.Context, page *Pagination, username string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error)
+	BlogPosts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error)
+	BlogPostInfo(ctx context.Context) (*blog.PostInfo, error)
+	BlogPostCategories(ctx context.Context) ([]*blog.Category, error)
+	TelegramMonitorUsers(ctx context.Context, page *Pagination, name string) ([]*telegram.Users, error)
+	TelegramAlertTypes(ctx context.Context, page *Pagination, name string) ([]*telegram.AlertTypes, error)
+}
+type TelegramAlertTypeResolver interface {
+	ID(ctx context.Context, obj *telegram.AlertTypes) (string, error)
+	CreatedAt(ctx context.Context, obj *telegram.AlertTypes) (*types.Datetime, error)
+	ModifiedAt(ctx context.Context, obj *telegram.AlertTypes) (*types.Datetime, error)
+
+	SubUsers(ctx context.Context, obj *telegram.AlertTypes) ([]*telegram.Users, error)
+}
+type TelegramUserResolver interface {
+	ID(ctx context.Context, obj *telegram.Users) (string, error)
+	CreatedAt(ctx context.Context, obj *telegram.Users) (*types.Datetime, error)
+	ModifiedAt(ctx context.Context, obj *telegram.Users) (*types.Datetime, error)
+	TelegramID(ctx context.Context, obj *telegram.Users) (string, error)
+
+	SubAlerts(ctx context.Context, obj *telegram.Users) ([]*telegram.AlertTypes, error)
 }
 type TweetResolver interface {
 	ID(ctx context.Context, obj *twitter.Tweet) (string, error)
@@ -271,41 +312,53 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.BlogUser.Username(childComplexity), true
 
-	case "Mutation.AmendBlogPost":
-		if e.complexity.Mutation.AmendBlogPost == nil {
+	case "Mutation.BlogAmendPost":
+		if e.complexity.Mutation.BlogAmendPost == nil {
 			break
 		}
 
-		args, err := ec.field_Mutation_amendBlogPost_args(context.TODO(), rawArgs)
+		args, err := ec.field_Mutation_BlogAmendPost_args(context.TODO(), rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Mutation.AmendBlogPost(childComplexity, args["post"].(NewBlogPost)), true
+		return e.complexity.Mutation.BlogAmendPost(childComplexity, args["post"].(NewBlogPost)), true
 
-	case "Mutation.CreateBlogPost":
-		if e.complexity.Mutation.CreateBlogPost == nil {
+	case "Mutation.BlogCreatePost":
+		if e.complexity.Mutation.BlogCreatePost == nil {
 			break
 		}
 
-		args, err := ec.field_Mutation_createBlogPost_args(context.TODO(), rawArgs)
+		args, err := ec.field_Mutation_BlogCreatePost_args(context.TODO(), rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Mutation.CreateBlogPost(childComplexity, args["post"].(NewBlogPost)), true
+		return e.complexity.Mutation.BlogCreatePost(childComplexity, args["post"].(NewBlogPost)), true
 
-	case "Mutation.Login":
-		if e.complexity.Mutation.Login == nil {
+	case "Mutation.BlogLogin":
+		if e.complexity.Mutation.BlogLogin == nil {
 			break
 		}
 
-		args, err := ec.field_Mutation_login_args(context.TODO(), rawArgs)
+		args, err := ec.field_Mutation_BlogLogin_args(context.TODO(), rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Mutation.Login(childComplexity, args["account"].(string), args["password"].(string)), true
+		return e.complexity.Mutation.BlogLogin(childComplexity, args["account"].(string), args["password"].(string)), true
+
+	case "Mutation.TelegramMonitorAlert":
+		if e.complexity.Mutation.TelegramMonitorAlert == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_TelegramMonitorAlert_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.TelegramMonitorAlert(childComplexity, args["type"].(string), args["token"].(string), args["msg"].(string)), true
 
 	case "PostInfo.Total":
 		if e.complexity.PostInfo.Total == nil {
@@ -314,50 +367,151 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.PostInfo.Total(childComplexity), true
 
-	case "Query.Benchmark":
-		if e.complexity.Query.Benchmark == nil {
+	case "Query.BlogPostCategories":
+		if e.complexity.Query.BlogPostCategories == nil {
 			break
 		}
 
-		return e.complexity.Query.Benchmark(childComplexity), true
+		return e.complexity.Query.BlogPostCategories(childComplexity), true
 
-	case "Query.PostCategories":
-		if e.complexity.Query.PostCategories == nil {
+	case "Query.BlogPostInfo":
+		if e.complexity.Query.BlogPostInfo == nil {
 			break
 		}
 
-		return e.complexity.Query.PostCategories(childComplexity), true
+		return e.complexity.Query.BlogPostInfo(childComplexity), true
 
-	case "Query.Postinfo":
-		if e.complexity.Query.Postinfo == nil {
+	case "Query.BlogPosts":
+		if e.complexity.Query.BlogPosts == nil {
 			break
 		}
 
-		return e.complexity.Query.Postinfo(childComplexity), true
-
-	case "Query.Posts":
-		if e.complexity.Query.Posts == nil {
-			break
-		}
-
-		args, err := ec.field_Query_posts_args(context.TODO(), rawArgs)
+		args, err := ec.field_Query_BlogPosts_args(context.TODO(), rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Query.Posts(childComplexity, args["page"].(*Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
+		return e.complexity.Query.BlogPosts(childComplexity, args["page"].(*Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
 
-	case "Query.Tweets":
-		if e.complexity.Query.Tweets == nil {
+	case "Query.Hello":
+		if e.complexity.Query.Hello == nil {
 			break
 		}
 
-		args, err := ec.field_Query_tweets_args(context.TODO(), rawArgs)
+		return e.complexity.Query.Hello(childComplexity), true
+
+	case "Query.TelegramAlertTypes":
+		if e.complexity.Query.TelegramAlertTypes == nil {
+			break
+		}
+
+		args, err := ec.field_Query_TelegramAlertTypes_args(context.TODO(), rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Query.Tweets(childComplexity, args["page"].(*Pagination), args["username"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string)), true
+		return e.complexity.Query.TelegramAlertTypes(childComplexity, args["page"].(*Pagination), args["name"].(string)), true
+
+	case "Query.TelegramMonitorUsers":
+		if e.complexity.Query.TelegramMonitorUsers == nil {
+			break
+		}
+
+		args, err := ec.field_Query_TelegramMonitorUsers_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.TelegramMonitorUsers(childComplexity, args["page"].(*Pagination), args["name"].(string)), true
+
+	case "Query.TwitterStatues":
+		if e.complexity.Query.TwitterStatues == nil {
+			break
+		}
+
+		args, err := ec.field_Query_TwitterStatues_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.TwitterStatues(childComplexity, args["page"].(*Pagination), args["username"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string)), true
+
+	case "TelegramAlertType.CreatedAt":
+		if e.complexity.TelegramAlertType.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.TelegramAlertType.CreatedAt(childComplexity), true
+
+	case "TelegramAlertType.ID":
+		if e.complexity.TelegramAlertType.ID == nil {
+			break
+		}
+
+		return e.complexity.TelegramAlertType.ID(childComplexity), true
+
+	case "TelegramAlertType.ModifiedAt":
+		if e.complexity.TelegramAlertType.ModifiedAt == nil {
+			break
+		}
+
+		return e.complexity.TelegramAlertType.ModifiedAt(childComplexity), true
+
+	case "TelegramAlertType.Name":
+		if e.complexity.TelegramAlertType.Name == nil {
+			break
+		}
+
+		return e.complexity.TelegramAlertType.Name(childComplexity), true
+
+	case "TelegramAlertType.SubUsers":
+		if e.complexity.TelegramAlertType.SubUsers == nil {
+			break
+		}
+
+		return e.complexity.TelegramAlertType.SubUsers(childComplexity), true
+
+	case "TelegramUser.CreatedAt":
+		if e.complexity.TelegramUser.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.TelegramUser.CreatedAt(childComplexity), true
+
+	case "TelegramUser.ID":
+		if e.complexity.TelegramUser.ID == nil {
+			break
+		}
+
+		return e.complexity.TelegramUser.ID(childComplexity), true
+
+	case "TelegramUser.ModifiedAt":
+		if e.complexity.TelegramUser.ModifiedAt == nil {
+			break
+		}
+
+		return e.complexity.TelegramUser.ModifiedAt(childComplexity), true
+
+	case "TelegramUser.Name":
+		if e.complexity.TelegramUser.Name == nil {
+			break
+		}
+
+		return e.complexity.TelegramUser.Name(childComplexity), true
+
+	case "TelegramUser.SubAlerts":
+		if e.complexity.TelegramUser.SubAlerts == nil {
+			break
+		}
+
+		return e.complexity.TelegramUser.SubAlerts(childComplexity), true
+
+	case "TelegramUser.TelegramID":
+		if e.complexity.TelegramUser.TelegramID == nil {
+			break
+		}
+
+		return e.complexity.TelegramUser.TelegramID(childComplexity), true
 
 	case "Tweet.CreatedAt":
 		if e.complexity.Tweet.CreatedAt == nil {
@@ -575,6 +729,31 @@ type BlogCategory {
     name: String!
     url: String!
 }
+
+input NewBlogPost {
+  name: String!
+  title: String!
+  markdown: String!
+  type: BlogPostType!
+}
+`},
+	&ast.Source{Name: "./telegram/schema.graphql", Input: `type TelegramUser {
+    id: String!
+    created_at: Date!
+    modified_at: Date!
+    telegram_id: String!
+    name: String!
+    sub_alerts: [TelegramAlertType]!
+}
+
+type TelegramAlertType {
+    id: String!
+    created_at: Date!
+    modified_at: Date!
+    name: String!
+    sub_users: [TelegramUser]!
+}
+
 `},
 	&ast.Source{Name: "./twitter/schema.graphql", Input: `type Tweet {
     # mongo_id: String!
@@ -618,38 +797,45 @@ input Sort {
 }
 
 type Query {
-  benchmark: String!
+  Hello: String!
 
   # twitter
-  tweets(page: Pagination = {page: 0, size: 20},
+  TwitterStatues(page: Pagination = {page: 0, size: 20},
     username: String! = "ppcelery",
     sort: Sort = {sort_by: "id", order: DESC},
     topic: String! = "",
-    regexp: String! = ""): [Tweet]!
+    regexp: String! = "",
+  ): [Tweet]!
 
   # blog
-  posts(page: Pagination = {page: 0, size: 10},
+  BlogPosts(page: Pagination = {page: 0, size: 10},
     tag: String! = "",
     category_url: String,  # "" means empty, nil means ignore
     length: Int! = 0,  # content length, 0 means total
     name: String! = "",
-    regexp: String! = ""): [BlogPost]!
-  postinfo: PostInfo!
-  post_categories: [BlogCategory]!
+    regexp: String! = "",
+  ): [BlogPost]!
+  BlogPostInfo: PostInfo!
+  BlogPostCategories: [BlogCategory]!
+
+  # telegram monitor
+  TelegramMonitorUsers(page: Pagination = {page: 0, size: 10},
+    name: String! = "",
+  ): [TelegramUser]!
+  TelegramAlertTypes(page: Pagination = {page: 0, size: 10},
+    name: String! = "",
+  ): [TelegramAlertType]!
 }
 
-
-input NewBlogPost {
-  name: String!
-  title: String!
-  markdown: String!
-  type: BlogPostType!
-}
 
 type Mutation {
-  createBlogPost(post: NewBlogPost!): BlogPost!
-  login(account: String!, password: String!): BlogUser!
-  amendBlogPost(post: NewBlogPost!): BlogPost!
+  # blog
+  BlogCreatePost(post: NewBlogPost!): BlogPost!
+  BlogLogin(account: String!, password: String!): BlogUser!
+  BlogAmendPost(post: NewBlogPost!): BlogPost!
+
+  # telegram monitor
+  TelegramMonitorAlert(type: String!, token: String!, msg: String!): TelegramAlertType!
 }
 `},
 )
@@ -658,7 +844,7 @@ type Mutation {
 
 // region    ***************************** args.gotpl *****************************
 
-func (ec *executionContext) field_Mutation_amendBlogPost_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+func (ec *executionContext) field_Mutation_BlogAmendPost_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
 	var arg0 NewBlogPost
@@ -672,7 +858,7 @@ func (ec *executionContext) field_Mutation_amendBlogPost_args(ctx context.Contex
 	return args, nil
 }
 
-func (ec *executionContext) field_Mutation_createBlogPost_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+func (ec *executionContext) field_Mutation_BlogCreatePost_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
 	var arg0 NewBlogPost
@@ -686,7 +872,7 @@ func (ec *executionContext) field_Mutation_createBlogPost_args(ctx context.Conte
 	return args, nil
 }
 
-func (ec *executionContext) field_Mutation_login_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+func (ec *executionContext) field_Mutation_BlogLogin_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
 	var arg0 string
@@ -708,21 +894,37 @@ func (ec *executionContext) field_Mutation_login_args(ctx context.Context, rawAr
 	return args, nil
 }
 
-func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+func (ec *executionContext) field_Mutation_TelegramMonitorAlert_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
 	var arg0 string
-	if tmp, ok := rawArgs["name"]; ok {
+	if tmp, ok := rawArgs["type"]; ok {
 		arg0, err = ec.unmarshalNString2string(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["name"] = arg0
+	args["type"] = arg0
+	var arg1 string
+	if tmp, ok := rawArgs["token"]; ok {
+		arg1, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["token"] = arg1
+	var arg2 string
+	if tmp, ok := rawArgs["msg"]; ok {
+		arg2, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["msg"] = arg2
 	return args, nil
 }
 
-func (ec *executionContext) field_Query_posts_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+func (ec *executionContext) field_Query_BlogPosts_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
 	var arg0 *Pagination
@@ -776,7 +978,51 @@ func (ec *executionContext) field_Query_posts_args(ctx context.Context, rawArgs 
 	return args, nil
 }
 
-func (ec *executionContext) field_Query_tweets_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+func (ec *executionContext) field_Query_TelegramAlertTypes_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 *Pagination
+	if tmp, ok := rawArgs["page"]; ok {
+		arg0, err = ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐPagination(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["page"] = arg0
+	var arg1 string
+	if tmp, ok := rawArgs["name"]; ok {
+		arg1, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["name"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_TelegramMonitorUsers_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 *Pagination
+	if tmp, ok := rawArgs["page"]; ok {
+		arg0, err = ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐPagination(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["page"] = arg0
+	var arg1 string
+	if tmp, ok := rawArgs["name"]; ok {
+		arg1, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["name"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_TwitterStatues_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
 	var arg0 *Pagination
@@ -819,6 +1065,20 @@ func (ec *executionContext) field_Query_tweets_args(ctx context.Context, rawArgs
 		}
 	}
 	args["regexp"] = arg4
+	return args, nil
+}
+
+func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["name"]; ok {
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["name"] = arg0
 	return args, nil
 }
 
@@ -1253,7 +1513,7 @@ func (ec *executionContext) _BlogUser_username(ctx context.Context, field graphq
 	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Mutation_createBlogPost(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Mutation_BlogCreatePost(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -1264,7 +1524,7 @@ func (ec *executionContext) _Mutation_createBlogPost(ctx context.Context, field 
 	}
 	ctx = graphql.WithResolverContext(ctx, rctx)
 	rawArgs := field.ArgumentMap(ec.Variables)
-	args, err := ec.field_Mutation_createBlogPost_args(ctx, rawArgs)
+	args, err := ec.field_Mutation_BlogCreatePost_args(ctx, rawArgs)
 	if err != nil {
 		ec.Error(ctx, err)
 		return graphql.Null
@@ -1273,7 +1533,7 @@ func (ec *executionContext) _Mutation_createBlogPost(ctx context.Context, field 
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().CreateBlogPost(rctx, args["post"].(NewBlogPost))
+		return ec.resolvers.Mutation().BlogCreatePost(rctx, args["post"].(NewBlogPost))
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1287,7 +1547,7 @@ func (ec *executionContext) _Mutation_createBlogPost(ctx context.Context, field 
 	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Mutation_login(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Mutation_BlogLogin(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -1298,7 +1558,7 @@ func (ec *executionContext) _Mutation_login(ctx context.Context, field graphql.C
 	}
 	ctx = graphql.WithResolverContext(ctx, rctx)
 	rawArgs := field.ArgumentMap(ec.Variables)
-	args, err := ec.field_Mutation_login_args(ctx, rawArgs)
+	args, err := ec.field_Mutation_BlogLogin_args(ctx, rawArgs)
 	if err != nil {
 		ec.Error(ctx, err)
 		return graphql.Null
@@ -1307,7 +1567,7 @@ func (ec *executionContext) _Mutation_login(ctx context.Context, field graphql.C
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().Login(rctx, args["account"].(string), args["password"].(string))
+		return ec.resolvers.Mutation().BlogLogin(rctx, args["account"].(string), args["password"].(string))
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1321,7 +1581,7 @@ func (ec *executionContext) _Mutation_login(ctx context.Context, field graphql.C
 	return ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐUser(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Mutation_amendBlogPost(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Mutation_BlogAmendPost(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -1332,7 +1592,7 @@ func (ec *executionContext) _Mutation_amendBlogPost(ctx context.Context, field g
 	}
 	ctx = graphql.WithResolverContext(ctx, rctx)
 	rawArgs := field.ArgumentMap(ec.Variables)
-	args, err := ec.field_Mutation_amendBlogPost_args(ctx, rawArgs)
+	args, err := ec.field_Mutation_BlogAmendPost_args(ctx, rawArgs)
 	if err != nil {
 		ec.Error(ctx, err)
 		return graphql.Null
@@ -1341,7 +1601,7 @@ func (ec *executionContext) _Mutation_amendBlogPost(ctx context.Context, field g
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().AmendBlogPost(rctx, args["post"].(NewBlogPost))
+		return ec.resolvers.Mutation().BlogAmendPost(rctx, args["post"].(NewBlogPost))
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1353,6 +1613,40 @@ func (ec *executionContext) _Mutation_amendBlogPost(ctx context.Context, field g
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Mutation_TelegramMonitorAlert(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Mutation",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Mutation_TelegramMonitorAlert_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	rctx.Args = args
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().TelegramMonitorAlert(rctx, args["type"].(string), args["token"].(string), args["msg"].(string))
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*telegram.AlertTypes)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNTelegramAlertType2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *blog.PostInfo) graphql.Marshaler {
@@ -1382,7 +1676,7 @@ func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.C
 	return ec.marshalNInt2int(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Query_benchmark(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Query_Hello(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -1395,7 +1689,7 @@ func (ec *executionContext) _Query_benchmark(ctx context.Context, field graphql.
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Benchmark(rctx)
+		return ec.resolvers.Query().Hello(rctx)
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1409,7 +1703,7 @@ func (ec *executionContext) _Query_benchmark(ctx context.Context, field graphql.
 	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Query_tweets(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Query_TwitterStatues(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -1420,7 +1714,7 @@ func (ec *executionContext) _Query_tweets(ctx context.Context, field graphql.Col
 	}
 	ctx = graphql.WithResolverContext(ctx, rctx)
 	rawArgs := field.ArgumentMap(ec.Variables)
-	args, err := ec.field_Query_tweets_args(ctx, rawArgs)
+	args, err := ec.field_Query_TwitterStatues_args(ctx, rawArgs)
 	if err != nil {
 		ec.Error(ctx, err)
 		return graphql.Null
@@ -1429,7 +1723,7 @@ func (ec *executionContext) _Query_tweets(ctx context.Context, field graphql.Col
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Tweets(rctx, args["page"].(*Pagination), args["username"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string))
+		return ec.resolvers.Query().TwitterStatues(rctx, args["page"].(*Pagination), args["username"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string))
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1443,7 +1737,7 @@ func (ec *executionContext) _Query_tweets(ctx context.Context, field graphql.Col
 	return ec.marshalNTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐTweet(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Query_posts(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Query_BlogPosts(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -1454,7 +1748,7 @@ func (ec *executionContext) _Query_posts(ctx context.Context, field graphql.Coll
 	}
 	ctx = graphql.WithResolverContext(ctx, rctx)
 	rawArgs := field.ArgumentMap(ec.Variables)
-	args, err := ec.field_Query_posts_args(ctx, rawArgs)
+	args, err := ec.field_Query_BlogPosts_args(ctx, rawArgs)
 	if err != nil {
 		ec.Error(ctx, err)
 		return graphql.Null
@@ -1463,7 +1757,7 @@ func (ec *executionContext) _Query_posts(ctx context.Context, field graphql.Coll
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Posts(rctx, args["page"].(*Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string))
+		return ec.resolvers.Query().BlogPosts(rctx, args["page"].(*Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string))
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1477,7 +1771,7 @@ func (ec *executionContext) _Query_posts(ctx context.Context, field graphql.Coll
 	return ec.marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Query_postinfo(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Query_BlogPostInfo(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -1490,7 +1784,7 @@ func (ec *executionContext) _Query_postinfo(ctx context.Context, field graphql.C
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Postinfo(rctx)
+		return ec.resolvers.Query().BlogPostInfo(rctx)
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1504,7 +1798,7 @@ func (ec *executionContext) _Query_postinfo(ctx context.Context, field graphql.C
 	return ec.marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostInfo(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Query_post_categories(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Query_BlogPostCategories(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
 	rctx := &graphql.ResolverContext{
@@ -1517,7 +1811,7 @@ func (ec *executionContext) _Query_post_categories(ctx context.Context, field gr
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().PostCategories(rctx)
+		return ec.resolvers.Query().BlogPostCategories(rctx)
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -1529,6 +1823,74 @@ func (ec *executionContext) _Query_post_categories(ctx context.Context, field gr
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐCategory(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_TelegramMonitorUsers(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Query",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_TelegramMonitorUsers_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	rctx.Args = args
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().TelegramMonitorUsers(rctx, args["page"].(*Pagination), args["name"].(string))
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*telegram.Users)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNTelegramUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐUsers(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_TelegramAlertTypes(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "Query",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_TelegramAlertTypes_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	rctx.Args = args
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().TelegramAlertTypes(rctx, args["page"].(*Pagination), args["name"].(string))
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*telegram.AlertTypes)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
@@ -1584,6 +1946,303 @@ func (ec *executionContext) _Query___schema(ctx context.Context, field graphql.C
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalO__Schema2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐSchema(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramAlertType_id(ctx context.Context, field graphql.CollectedField, obj *telegram.AlertTypes) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramAlertType",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramAlertType().ID(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramAlertType_created_at(ctx context.Context, field graphql.CollectedField, obj *telegram.AlertTypes) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramAlertType",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramAlertType().CreatedAt(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*types.Datetime)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramAlertType_modified_at(ctx context.Context, field graphql.CollectedField, obj *telegram.AlertTypes) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramAlertType",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramAlertType().ModifiedAt(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*types.Datetime)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramAlertType_name(ctx context.Context, field graphql.CollectedField, obj *telegram.AlertTypes) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramAlertType",
+		Field:    field,
+		Args:     nil,
+		IsMethod: false,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramAlertType_sub_users(ctx context.Context, field graphql.CollectedField, obj *telegram.AlertTypes) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramAlertType",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramAlertType().SubUsers(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*telegram.Users)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNTelegramUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐUsers(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramUser_id(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramUser",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramUser().ID(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramUser_created_at(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramUser",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramUser().CreatedAt(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*types.Datetime)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramUser_modified_at(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramUser",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramUser().ModifiedAt(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*types.Datetime)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramUser_telegram_id(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramUser",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramUser().TelegramID(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramUser_name(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramUser",
+		Field:    field,
+		Args:     nil,
+		IsMethod: false,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _TelegramUser_sub_alerts(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() { ec.Tracer.EndFieldExecution(ctx) }()
+	rctx := &graphql.ResolverContext{
+		Object:   "TelegramUser",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.TelegramUser().SubAlerts(rctx, obj)
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*telegram.AlertTypes)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_id(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) graphql.Marshaler {
@@ -3104,18 +3763,23 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Mutation")
-		case "createBlogPost":
-			out.Values[i] = ec._Mutation_createBlogPost(ctx, field)
+		case "BlogCreatePost":
+			out.Values[i] = ec._Mutation_BlogCreatePost(ctx, field)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}
-		case "login":
-			out.Values[i] = ec._Mutation_login(ctx, field)
+		case "BlogLogin":
+			out.Values[i] = ec._Mutation_BlogLogin(ctx, field)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}
-		case "amendBlogPost":
-			out.Values[i] = ec._Mutation_amendBlogPost(ctx, field)
+		case "BlogAmendPost":
+			out.Values[i] = ec._Mutation_BlogAmendPost(ctx, field)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "TelegramMonitorAlert":
+			out.Values[i] = ec._Mutation_TelegramMonitorAlert(ctx, field)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}
@@ -3172,7 +3836,7 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Query")
-		case "benchmark":
+		case "Hello":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
 				defer func() {
@@ -3180,13 +3844,13 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Query_benchmark(ctx, field)
+				res = ec._Query_Hello(ctx, field)
 				if res == graphql.Null {
 					invalid = true
 				}
 				return res
 			})
-		case "tweets":
+		case "TwitterStatues":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
 				defer func() {
@@ -3194,13 +3858,13 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Query_tweets(ctx, field)
+				res = ec._Query_TwitterStatues(ctx, field)
 				if res == graphql.Null {
 					invalid = true
 				}
 				return res
 			})
-		case "posts":
+		case "BlogPosts":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
 				defer func() {
@@ -3208,13 +3872,13 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Query_posts(ctx, field)
+				res = ec._Query_BlogPosts(ctx, field)
 				if res == graphql.Null {
 					invalid = true
 				}
 				return res
 			})
-		case "postinfo":
+		case "BlogPostInfo":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
 				defer func() {
@@ -3222,13 +3886,13 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Query_postinfo(ctx, field)
+				res = ec._Query_BlogPostInfo(ctx, field)
 				if res == graphql.Null {
 					invalid = true
 				}
 				return res
 			})
-		case "post_categories":
+		case "BlogPostCategories":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
 				defer func() {
@@ -3236,7 +3900,35 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Query_post_categories(ctx, field)
+				res = ec._Query_BlogPostCategories(ctx, field)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "TelegramMonitorUsers":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_TelegramMonitorUsers(ctx, field)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "TelegramAlertTypes":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_TelegramAlertTypes(ctx, field)
 				if res == graphql.Null {
 					invalid = true
 				}
@@ -3246,6 +3938,186 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			out.Values[i] = ec._Query___type(ctx, field)
 		case "__schema":
 			out.Values[i] = ec._Query___schema(ctx, field)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalid {
+		return graphql.Null
+	}
+	return out
+}
+
+var telegramAlertTypeImplementors = []string{"TelegramAlertType"}
+
+func (ec *executionContext) _TelegramAlertType(ctx context.Context, sel ast.SelectionSet, obj *telegram.AlertTypes) graphql.Marshaler {
+	fields := graphql.CollectFields(ctx, sel, telegramAlertTypeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	invalid := false
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("TelegramAlertType")
+		case "id":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramAlertType_id(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "created_at":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramAlertType_created_at(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "modified_at":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramAlertType_modified_at(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "name":
+			out.Values[i] = ec._TelegramAlertType_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "sub_users":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramAlertType_sub_users(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalid {
+		return graphql.Null
+	}
+	return out
+}
+
+var telegramUserImplementors = []string{"TelegramUser"}
+
+func (ec *executionContext) _TelegramUser(ctx context.Context, sel ast.SelectionSet, obj *telegram.Users) graphql.Marshaler {
+	fields := graphql.CollectFields(ctx, sel, telegramUserImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	invalid := false
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("TelegramUser")
+		case "id":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramUser_id(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "created_at":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramUser_created_at(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "modified_at":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramUser_modified_at(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "telegram_id":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramUser_telegram_id(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
+		case "name":
+			out.Values[i] = ec._TelegramUser_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "sub_alerts":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._TelegramUser_sub_alerts(ctx, field, obj)
+				if res == graphql.Null {
+					invalid = true
+				}
+				return res
+			})
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -3893,6 +4765,94 @@ func (ec *executionContext) marshalNString2ᚕstring(ctx context.Context, sel as
 	return ret
 }
 
+func (ec *executionContext) marshalNTelegramAlertType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v telegram.AlertTypes) graphql.Marshaler {
+	return ec._TelegramAlertType(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v []*telegram.AlertTypes) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		rctx := &graphql.ResolverContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithResolverContext(ctx, rctx)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalOTelegramAlertType2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+	return ret
+}
+
+func (ec *executionContext) marshalNTelegramAlertType2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v *telegram.AlertTypes) graphql.Marshaler {
+	if v == nil {
+		if !ec.HasError(graphql.GetResolverContext(ctx)) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	return ec._TelegramAlertType(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNTelegramUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐUsers(ctx context.Context, sel ast.SelectionSet, v []*telegram.Users) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		rctx := &graphql.ResolverContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithResolverContext(ctx, rctx)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalOTelegramUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐUsers(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+	return ret
+}
+
 func (ec *executionContext) marshalNTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐTweet(ctx context.Context, sel ast.SelectionSet, v []*twitter.Tweet) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -4290,6 +5250,28 @@ func (ec *executionContext) marshalOString2ᚖstring(ctx context.Context, sel as
 		return graphql.Null
 	}
 	return ec.marshalOString2string(ctx, sel, *v)
+}
+
+func (ec *executionContext) marshalOTelegramAlertType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v telegram.AlertTypes) graphql.Marshaler {
+	return ec._TelegramAlertType(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalOTelegramAlertType2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v *telegram.AlertTypes) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._TelegramAlertType(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOTelegramUser2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐUsers(ctx context.Context, sel ast.SelectionSet, v telegram.Users) graphql.Marshaler {
+	return ec._TelegramUser(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalOTelegramUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtelegramᚐUsers(ctx context.Context, sel ast.SelectionSet, v *telegram.Users) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._TelegramUser(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOTweet2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐTweet(ctx context.Context, sel ast.SelectionSet, v twitter.Tweet) graphql.Marshaler {

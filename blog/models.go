@@ -202,11 +202,11 @@ func (t *BlogDB) filterPosts(cfg *BlogPostCfg, iter *mgo.Iter) (results []*Post)
 	return results
 }
 
-const DefaultPostType = "html"
+const defaultPostType = "html"
 
 func defaultTypeFilter(docu *Post) bool {
 	if docu.Type == "" {
-		docu.Type = DefaultPostType
+		docu.Type = defaultPostType
 	}
 
 	return true

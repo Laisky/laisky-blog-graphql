@@ -18,36 +18,43 @@ input Sort {
 }
 
 type Query {
-  benchmark: String!
+  Hello: String!
 
   # twitter
-  tweets(page: Pagination = {page: 0, size: 20},
+  TwitterStatues(page: Pagination = {page: 0, size: 20},
     username: String! = "ppcelery",
     sort: Sort = {sort_by: "id", order: DESC},
     topic: String! = "",
-    regexp: String! = ""): [Tweet]!
+    regexp: String! = "",
+  ): [Tweet]!
 
   # blog
-  posts(page: Pagination = {page: 0, size: 10},
+  BlogPosts(page: Pagination = {page: 0, size: 10},
     tag: String! = "",
     category_url: String,  # "" means empty, nil means ignore
     length: Int! = 0,  # content length, 0 means total
     name: String! = "",
-    regexp: String! = ""): [BlogPost]!
-  postinfo: PostInfo!
-  post_categories: [BlogCategory]!
+    regexp: String! = "",
+  ): [BlogPost]!
+  BlogPostInfo: PostInfo!
+  BlogPostCategories: [BlogCategory]!
+
+  # telegram monitor
+  TelegramMonitorUsers(page: Pagination = {page: 0, size: 10},
+    name: String! = "",
+  ): [TelegramUser]!
+  TelegramAlertTypes(page: Pagination = {page: 0, size: 10},
+    name: String! = "",
+  ): [TelegramAlertType]!
 }
 
-
-input NewBlogPost {
-  name: String!
-  title: String!
-  markdown: String!
-  type: BlogPostType!
-}
 
 type Mutation {
-  createBlogPost(post: NewBlogPost!): BlogPost!
-  login(account: String!, password: String!): BlogUser!
-  amendBlogPost(post: NewBlogPost!): BlogPost!
+  # blog
+  BlogCreatePost(post: NewBlogPost!): BlogPost!
+  BlogLogin(account: String!, password: String!): BlogUser!
+  BlogAmendPost(post: NewBlogPost!): BlogPost!
+
+  # telegram monitor
+  TelegramMonitorAlert(type: String!, token: String!, msg: String!): TelegramAlertType!
 }
