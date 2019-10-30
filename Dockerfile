@@ -1,8 +1,4 @@
-FROM golang:1.13.0-alpine3.10 AS gobuild
-
-# http proxy
-# ENV http_proxy=http://127.0.0.1:10874
-# ENV https_proxy=http://127.0.0.1:10874
+FROM golang:1.13.3-alpine3.10 AS gobuild
 
 # run dependencies
 RUN apk update && apk upgrade && \
