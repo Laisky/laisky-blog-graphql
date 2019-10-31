@@ -14,7 +14,7 @@ but does not provide any guarantees.
 Summary:
 
 * bot name: `laisky_alert_bot`
-* Repo: <https://github.com/Laisky/laisky-blog-graphql/tree/f55462466afadd77171c42c3a872f52d6a5ebfb8/telegram>
+* Repo: <https://github.com/Laisky/laisky-blog-graphql/tree/master/telegram>
 * GraphQL UI: <https://blog.laisky.com/graphql/ui/>
 * GraphQL API: <https://blog.laisky.com/graphql/query/>
 
@@ -83,6 +83,11 @@ mutation push_msg {
 ```
 
 ![telegram-bot](https://s2.laisky.com/uploads/2019/10/bot-4.jpg)
+
+
+receive msg:
+
+![telegram-bot](https://s2.laisky.com/uploads/2019/10/bot-10.jpg)
 
 
 ### Quit a channel
