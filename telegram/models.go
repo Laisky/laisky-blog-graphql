@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/Laisky/go-utils"
@@ -297,15 +296,8 @@ func (db *MonitorDB) ValidateTokenForAlertType(token, alert_type string) (alert 
 	return alert, nil
 }
 
-func (db *MonitorDB) RegisterUserAlertRelation(uid int, alertName string, joinKey string) (uar *UserAlertRelations, err error) {
-	utils.Logger.Info("RegisterUserAlertRelation", zap.Int("uid", uid), zap.String("alert", alertName))
-	u := new(Users)
-	if err = db.GetUsersCol().Find(bson.M{"uid": uid}).One(u); err == mgo.ErrNotFound {
-		return nil, fmt.Errorf("user not found")
-	} else if err != nil {
-		return nil, errors.Wrap(err, "load user by uid: "+strconv.FormatInt(int64(uid), 10))
-	}
-
+func (db *MonitorDB) RegisterUserAlertRelation(u *Users, alertName string, joinKey string) (uar *UserAlertRelations, err error) {
+	utils.Logger.Info("RegisterUserAlertRelation", zap.Int("uid", u.UID), zap.String("alert", alertName))
 	alert := new(AlertTypes)
 	if err = db.GetAlertTypesCol().Find(bson.M{"name": alertName}).One(alert); err == mgo.ErrNotFound {
 		return nil, fmt.Errorf("alert_type not found")

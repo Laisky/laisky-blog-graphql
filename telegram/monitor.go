@@ -203,7 +203,12 @@ func (b *Telegram) joinAlertGroup(us *userStat, kt string) (err error) {
 	alert := ans[0]
 	joinKey := ans[1]
 
-	uar, err := b.db.RegisterUserAlertRelation(us.user.ID, alert, joinKey)
+	user, err := b.db.CreateOrGetUser(us.user)
+	if err != nil {
+		return err
+	}
+
+	uar, err := b.db.RegisterUserAlertRelation(user, alert, joinKey)
 	if err != nil {
 		return err
 	}
