@@ -4,7 +4,6 @@ package telegram
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -17,20 +16,6 @@ import (
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
-// GetTelegramCli return telegram client
-func GetTelegramCli() *Telegram {
-	switch r := utils.Settings.Get(TelegramCliKey).(type) {
-	case *Telegram:
-		return r
-	case nil:
-		return nil
-	default:
-		utils.Logger.Panic("unknow type of telegram cli", zap.String("val", fmt.Sprint(r)))
-	}
-
-	return nil
-}
-
 // Telegram client
 type Telegram struct {
 	stop chan struct{}
@@ -39,10 +24,6 @@ type Telegram struct {
 	db        *MonitorDB
 	userStats *sync.Map
 }
-
-const (
-	userWaitChooseMonitorCmd = "userWaitChooseMonitorCmd"
-)
 
 type userStat struct {
 	user  *tb.User
@@ -118,19 +99,21 @@ func (b *Telegram) dispatcher(msg *tb.Message) {
 		b.chooseMonitor(us.(*userStat), msg)
 	default:
 		utils.Logger.Warn("unknown msg")
-		b.bot.Send(msg.Sender, "unknown msg, please retry")
+		if _, err := b.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {
+			utils.Logger.Error("send msg by telegram", zap.Error(err))
+		}
 	}
 }
 
 // PleaseRetry echo retry
 func (b *Telegram) PleaseRetry(sender *tb.User, msg string) {
 	utils.Logger.Warn("unknown msg", zap.String("msg", msg))
-	b.bot.Send(sender, "[Error] unknown msg, please retry")
+	if _, err := b.bot.Send(sender, "[Error] unknown msg, please retry"); err != nil {
+		utils.Logger.Error("send msg by telegram", zap.Error(err))
+	}
 }
 
 func (b *Telegram) SendMsgToUser(uid int, msg string) (err error) {
-	_, err = b.bot.Send(&tb.User{
-		ID: uid,
-	}, msg)
+	_, err = b.bot.Send(&tb.User{ID: uid}, msg)
 	return err
 }

@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	monitorDBName            = "monitor"
 	alertTypeColName         = "alert_types"
 	usersColName             = "users"
 	userAlertRelationColName = "user_alert_relations"

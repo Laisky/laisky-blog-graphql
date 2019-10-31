@@ -56,32 +56,44 @@ func (b *Telegram) chooseMonitor(us *userStat, msg *tb.Message) {
 	case "1": // create new monitor
 		if err = b.createNewMonitor(us, ans[1]); err != nil {
 			utils.Logger.Warn("createNewMonitor", zap.Error(err))
-			b.bot.Send(us.user, "[Error] "+err.Error())
+			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+				utils.Logger.Error("send msg by telegram", zap.Error(err))
+			}
 		}
 	case "2":
 		if err = b.listAllMonitorAlerts(us); err != nil {
 			utils.Logger.Warn("listAllMonitorAlerts", zap.Error(err))
-			b.bot.Send(us.user, "[Error] "+err.Error())
+			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+				utils.Logger.Error("send msg by telegram", zap.Error(err))
+			}
 		}
 	case "3":
 		if err = b.joinAlertGroup(us, ans[1]); err != nil {
 			utils.Logger.Warn("joinAlertGroup", zap.Error(err))
-			b.bot.Send(us.user, "[Error] "+err.Error())
+			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+				utils.Logger.Error("send msg by telegram", zap.Error(err))
+			}
 		}
 	case "4":
 		if err = b.refreshAlertTokenAndKey(us, ans[1]); err != nil {
 			utils.Logger.Warn("refreshAlertTokenAndKey", zap.Error(err))
-			b.bot.Send(us.user, "[Error] "+err.Error())
+			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+				utils.Logger.Error("send msg by telegram", zap.Error(err))
+			}
 		}
 	case "5":
 		if err = b.userQuitAlert(us, ans[1]); err != nil {
 			utils.Logger.Warn("userQuitAlert", zap.Error(err))
-			b.bot.Send(us.user, "[Error] "+err.Error())
+			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+				utils.Logger.Error("send msg by telegram", zap.Error(err))
+			}
 		}
 	case "6":
 		if err = b.kickUser(us, ans[1]); err != nil {
 			utils.Logger.Warn("kickUser", zap.Error(err))
-			b.bot.Send(us.user, "[Error] "+err.Error())
+			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+				utils.Logger.Error("send msg by telegram", zap.Error(err))
+			}
 		}
 	default:
 		b.PleaseRetry(us.user, msg.Text)
