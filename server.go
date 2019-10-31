@@ -5,7 +5,6 @@ import (
 
 	ginMiddlewares "github.com/Laisky/go-utils/gin-middlewares"
 
-	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
 
 	"github.com/99designs/gqlgen/handler"
@@ -34,14 +33,11 @@ func RunServer(addr string) {
 		utils.Logger.Panic("try to setup auth got error", zap.Error(err))
 	}
 	server.Use(LoggerMiddleware)
+	ginMiddlewares.EnableMetric(server)
 
 	server.Any("/health", func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "hello, world")
 	})
-
-	// supported action:
-	// cmdline, profile, symbol, goroutine, heap, threadcreate, block
-	pprof.Register(server, "pprof")
 
 	server.Any("/ui/", ginMiddlewares.FromStd(handler.Playground("GraphQL playground", "/graphql/query/")))
 	server.Any("/query/", ginMiddlewares.FromStd(handler.GraphQL(NewExecutableSchema(Config{Resolvers: &Resolver{}}))))

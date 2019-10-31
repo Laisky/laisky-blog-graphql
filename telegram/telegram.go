@@ -37,7 +37,7 @@ func NewTelegram(ctx context.Context, db *MonitorDB, token, api string) (*Telegr
 		Token: token,
 		URL:   api,
 		Poller: &tb.LongPoller{
-			Timeout: 5 * time.Second,
+			Timeout: 1 * time.Second,
 		},
 	})
 	if err != nil {
