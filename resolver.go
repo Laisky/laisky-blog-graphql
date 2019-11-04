@@ -275,6 +275,10 @@ func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) 
 	return blogDB.UpdatePost(user, post.Name, string(post.Title), string(post.Markdown), string(post.Type))
 }
 func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*telegram.AlertTypes, error) {
+	if !telegramThrottle.Allow(typeArg) {
+		return nil, fmt.Errorf("deny by throttle")
+	}
+
 	alert, err := monitorDB.ValidateTokenForAlertType(token, typeArg)
 	if err != nil {
 		return nil, err

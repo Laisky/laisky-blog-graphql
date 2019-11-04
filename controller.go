@@ -10,8 +10,26 @@ import (
 )
 
 var (
-	telegramCli *telegram.Telegram
+	telegramCli      *telegram.Telegram
+	telegramThrottle *TelegramThrottle
 )
+
+func setupTelegramThrottle(ctx context.Context) {
+	var err error
+	if telegramThrottle, err = NewTelegramThrottle(ctx, &TelegramThrottleCfg{
+		TotleBurst:       utils.Settings.GetInt("settings.telegram.throttle.total_burst"),
+		TotleNPerSec:     utils.Settings.GetInt("settings.telegram.throttle.total_per_sec"),
+		EachTitleNPerSec: utils.Settings.GetInt("settings.telegram.throttle.each_title_per_sec"),
+		EachTitleBurst:   utils.Settings.GetInt("settings.telegram.throttle.each_title_burst"),
+	}); err != nil {
+		utils.Logger.Panic("create telegramThrottle", zap.Error(err),
+			zap.Int("TotleBurst", utils.Settings.GetInt("settings.telegram.throttle.total_burst")),
+			zap.Int("TotleNPerSec", utils.Settings.GetInt("settings.telegram.throttle.total_per_sec")),
+			zap.Int("EachTitleNPerSec", utils.Settings.GetInt("settings.telegram.throttle.each_title_per_sec")),
+			zap.Int("EachTitleBurst", utils.Settings.GetInt("settings.telegram.throttle.each_title_burst")),
+		)
+	}
+}
 
 func setupTasks(ctx context.Context) {
 	var err error
@@ -43,5 +61,6 @@ func NewControllor() *Controllor {
 func (c *Controllor) Run(ctx context.Context) {
 	setupDB(ctx)
 	setupTasks(ctx)
+	setupTelegramThrottle(ctx)
 	RunServer(utils.Settings.GetString("addr"))
 }
