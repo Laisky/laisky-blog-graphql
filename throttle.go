@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/Laisky/zap"
+
 	"github.com/Laisky/go-utils"
+	"github.com/pkg/errors"
 )
 
 // TelegramThrottleCfg configuration for TelegramThrottle
@@ -31,11 +34,16 @@ func NewTelegramThrottle(ctx context.Context, cfg *TelegramThrottleCfg) (t *Tele
 		return nil, fmt.Errorf("burst must bigger than NPerSec")
 	}
 
+	var tt *utils.Throttle
+	if tt, err = utils.NewThrottleWithCtx(ctx, &utils.ThrottleCfg{
+		Max:     cfg.TotleBurst,
+		NPerSec: cfg.TotleNPerSec,
+	}); err != nil {
+		return nil, errors.Wrap(err, "create totle throttle")
+	}
+
 	t = &TelegramThrottle{
-		totleThrottle: utils.NewThrottleWithCtx(ctx, &utils.ThrottleCfg{
-			Max:     cfg.TotleBurst,
-			NPerSec: cfg.TotleNPerSec,
-		}),
+		totleThrottle:  tt,
 		titlesThrottle: new(sync.Map),
 		cfg:            cfg,
 	}
@@ -51,12 +59,17 @@ func (t *TelegramThrottle) Allow(alertType string) (ok bool) {
 	if tti, ok = t.titlesThrottle.Load(alertType); !ok {
 		t.Lock()
 		if tti, ok = t.titlesThrottle.Load(alertType); !ok {
-			tt = utils.NewThrottleWithCtx(
+			var err error
+			if tt, err = utils.NewThrottleWithCtx(
 				context.Background(),
 				&utils.ThrottleCfg{
 					Max:     t.cfg.EachTitleBurst,
 					NPerSec: t.cfg.EachTitleNPerSec,
-				})
+				}); err != nil {
+				utils.Logger.Panic("create new throttle for alertType", zap.Error(err),
+					zap.Int("Max", t.cfg.EachTitleBurst),
+					zap.Int("NPerSec", t.cfg.EachTitleNPerSec))
+			}
 			t.titlesThrottle.Store(alertType, tt)
 		} else {
 			tt = tti.(*utils.Throttle)

@@ -7,8 +7,8 @@ github.com/DataDog/zstd v1.3.6-0.20190409195224-796139022798/go.mod h1:1jcaCB/uf
 github.com/DataDog/zstd v1.3.8/go.mod h1:1jcaCB/ufaK+sKp1NBhlGmpz41jOoPQ35bpF36t7BBo=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be h1:7Rxhm6IjOtDAyj8eScOFntevwzkWhx94zi48lxo4m4w=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be/go.mod h1:1mdzaETo0kjvCQICPSePsoaatJN4l7JvEA1200lyevo=
-github.com/Laisky/go-utils v1.8.2-0.20191104062552-c61d7808c964 h1:o7tpsfbZEdLnEPDTyk4UIFzBF/R6XZfldcZwctj6RW0=
-github.com/Laisky/go-utils v1.8.2-0.20191104062552-c61d7808c964/go.mod h1:xqOWv8whvlG0Uvib+4W3moyvQzPFlQBGLYjhpzxXvXs=
+github.com/Laisky/go-utils v1.8.2-0.20191105092341-bf9ac8f155f9 h1:04PoHN+p/koHUFlaXMppAPlTahEuEe/LH4Y0Omkk3Ts=
+github.com/Laisky/go-utils v1.8.2-0.20191105092341-bf9ac8f155f9/go.mod h1:+HReb8jPJwwDbz3dVYmaqZE802UzrQvrHn4FYqQjnvw=
 github.com/Laisky/zap v1.9.2 h1:7dTtABboHk8DnT0d6Dc8A9Opu2cyIEaMlL9JO11zvag=
 github.com/Laisky/zap v1.9.2/go.mod h1:CQdLb2wEfqBvoNLmfOp7wnKTOMvhc4DQRc3xfshL4EQ=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
@@ -196,6 +196,8 @@ github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af/go.mod h1:XWv6So
 github.com/rs/cors v1.6.0/go.mod h1:gFx+x8UowdsKA9AchylcLynDq+nNFfI8FkUZdN/jGCU=
 github.com/sergi/go-diff v1.0.0 h1:Kpca3qRNrduNnOQeazBd0ysaKrUJiIuISHxogkT9RPQ=
 github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAmXWZgo=
+github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f h1:tygelZueB1EtXkPI6mQ4o9DQ0+FKW41hTbunoXZCTqk=
+github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f/go.mod h1:AuYgA5Kyo4c7HfUmvRGs/6rGlMMV/6B1bVnB9JxJEEg=
 github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371/go.mod h1:ZY1cvUeJuFPAdZ/B6v7RHavJWZn2YPVFQ1OSXhCGOkg=
 github.com/shurcooL/vfsgen v0.0.0-20180121065927-ffb13db8def0/go.mod h1:TrYk7fJVaAttu97ZZKrO9UbRa8izdowaMIZcxYMbVaw=
 github.com/sirupsen/logrus v1.2.0 h1:juTguoYk5qI21pwyTXY3B3Y5cOTH3ZUyZCg1v/mihuo=

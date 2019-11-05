@@ -13,19 +13,15 @@ import (
 	"github.com/Laisky/zap"
 )
 
-func setupSettings() {
+func setupSettings(ctx context.Context) {
 	var err error
 	// mode
 	if utils.Settings.GetBool("debug") {
 		fmt.Println("run in debug mode")
 		utils.Settings.Set("log-level", "debug")
+		_ = utils.Logger.ChangeLevel("debug")
 	} else { // prod mode
 		fmt.Println("run in prod mode")
-	}
-
-	// log
-	if err = utils.Logger.ChangeLevel(utils.Settings.GetString("log-level")); err != nil {
-		utils.Logger.Panic("set log level", zap.Error(err))
 	}
 
 	// clock
@@ -39,6 +35,20 @@ func setupSettings() {
 	} else {
 		utils.Logger.Info("success load configuration from dir",
 			zap.String("dirpath", cfgDirPath))
+	}
+}
+
+func setupLogger(ctx context.Context) {
+	// log
+	alertPusher := utils.NewAlertPusherWithAlertType(
+		ctx,
+		utils.Settings.GetString("settings.logger.push_api"),
+		utils.Settings.GetString("settings.logger.alert_type"),
+		utils.Settings.GetString("settings.logger.push_token"),
+	)
+	hook := utils.NewAlertHook(alertPusher)
+	if _, err := utils.SetDefaultLogger("laisky-blog-graphql", utils.Settings.GetString("log-level"), zap.Hooks(hook.GetZapHook())); err != nil {
+		utils.Logger.Panic("setup logger", zap.Error(err))
 	}
 }
 
@@ -58,10 +68,11 @@ func setupArgs() {
 }
 
 func main() {
-	setupArgs()
-	setupSettings()
-
 	ctx := context.Background()
+
+	setupArgs()
+	setupSettings(ctx)
+	setupLogger(ctx)
 
 	c := laisky_blog_graphql.NewControllor()
 	c.Run(ctx)

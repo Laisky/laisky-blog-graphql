@@ -279,6 +279,10 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg str
 		return nil, fmt.Errorf("deny by throttle")
 	}
 
+	if len(msg) > 1024 {
+		msg = msg[:1024]
+	}
+
 	alert, err := monitorDB.ValidateTokenForAlertType(token, typeArg)
 	if err != nil {
 		return nil, err
