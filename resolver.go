@@ -276,6 +276,7 @@ func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) 
 }
 func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*telegram.AlertTypes, error) {
 	if !telegramThrottle.Allow(typeArg) {
+		utils.Logger.Warn("deny by throttle", zap.String("type", typeArg))
 		return nil, fmt.Errorf("deny by throttle")
 	}
 
