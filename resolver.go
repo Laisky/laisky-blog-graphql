@@ -280,7 +280,7 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg str
 	}
 
 	if len(msg) > 1024 {
-		msg = msg[:1024]
+		msg = msg[:1024] + " ..."
 	}
 
 	alert, err := monitorDB.ValidateTokenForAlertType(token, typeArg)
