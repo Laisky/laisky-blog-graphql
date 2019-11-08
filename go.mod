@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/99designs/gqlgen v0.8.3
-	github.com/Laisky/go-utils v1.8.2-0.20191108074033-261a79711965
+	github.com/Laisky/go-utils v1.9.1
 	github.com/Laisky/zap v1.9.3
 	github.com/agnivade/levenshtein v1.0.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -23,7 +23,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.5.0 // indirect
-	github.com/ugorji/go v1.1.7 // indirect
+	github.com/ugorji/go/codec v1.1.7 // indirect
 	github.com/vektah/gqlparser v1.1.2
 	golang.org/x/crypto v0.0.0-20191107222254-f4817d981bb6 // indirect
 	golang.org/x/net v0.0.0-20191108063844-7e6e90b9ea88 // indirect
