@@ -82,6 +82,7 @@ func (d *DB) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
 			utils.Logger.Error("db connection got error", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
 			if err = d.dial(dialInfo); err != nil {
 				utils.Logger.Error("can not reconnect to db", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
+				time.Sleep(3 * time.Second)
 				continue
 			}
 			utils.Logger.Info("success reconnect to db", zap.Strings("db", dialInfo.Addrs))
