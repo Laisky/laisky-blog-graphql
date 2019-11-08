@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/99designs/gqlgen v0.8.3
-	github.com/Laisky/go-utils v1.9.1
+	github.com/Laisky/go-utils v1.9.2
 	github.com/Laisky/zap v1.9.3
 	github.com/agnivade/levenshtein v1.0.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
