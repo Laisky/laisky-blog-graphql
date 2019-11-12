@@ -50,7 +50,10 @@ func setupLogger(ctx context.Context) {
 		utils.Logger.Panic("create AlertPusher", zap.Error(err))
 	}
 	hook := utils.NewAlertHook(alertPusher)
-	if _, err := utils.SetDefaultLogger("laisky-blog-graphql", utils.Settings.GetString("log-level"), zap.Hooks(hook.GetZapHook())); err != nil {
+	if _, err := utils.SetDefaultLogger(
+		"laisky-blog-graphql",
+		utils.Settings.GetString("log-level"),
+		zap.HooksWithFields(hook.GetZapHook())); err != nil {
 		utils.Logger.Panic("setup logger", zap.Error(err))
 	}
 }

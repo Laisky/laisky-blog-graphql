@@ -4,8 +4,8 @@ go 1.12
 
 require (
 	github.com/99designs/gqlgen v0.8.3
-	github.com/Laisky/go-utils v1.9.2
-	github.com/Laisky/zap v1.9.3
+	github.com/Laisky/go-utils v1.9.3
+	github.com/Laisky/zap v1.12.2
 	github.com/agnivade/levenshtein v1.0.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/gin-gonic/gin v1.4.0
@@ -25,9 +25,10 @@ require (
 	github.com/spf13/viper v1.5.0 // indirect
 	github.com/ugorji/go/codec v1.1.7 // indirect
 	github.com/vektah/gqlparser v1.1.2
-	golang.org/x/crypto v0.0.0-20191107222254-f4817d981bb6 // indirect
-	golang.org/x/net v0.0.0-20191108063844-7e6e90b9ea88 // indirect
-	golang.org/x/sys v0.0.0-20191105231009-c1f44814a5cd // indirect
+	golang.org/x/crypto v0.0.0-20191111213947-16651526fdb4 // indirect
+	golang.org/x/net v0.0.0-20191109021931-daa7c04131f5 // indirect
+	golang.org/x/sys v0.0.0-20191110163157-d32e6e3b99c4 // indirect
+	golang.org/x/tools v0.0.0-20191112005509-a3f652f18032 // indirect
 	gopkg.in/mgo.v2 v2.0.0-20180705113604-9856a29383ce
 	gopkg.in/tucnak/telebot.v2 v2.0.0-20191005061224-d0707a9d73c4
 	gopkg.in/yaml.v2 v2.2.5 // indirect
