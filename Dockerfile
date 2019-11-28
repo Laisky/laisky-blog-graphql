@@ -1,4 +1,4 @@
-FROM golang:1.13.3-alpine3.10 AS gobuild
+FROM golang:1.13.4-alpine3.10 AS gobuild
 
 # run dependencies
 RUN apk update && apk upgrade && \
@@ -27,7 +27,6 @@ COPY --from=gobuild /goapp/main /app/go-graphql-srv
 
 RUN chmod +rx -R /app && \
     adduser -S laisky
-
 USER laisky
 
 ENTRYPOINT [ "./go-graphql-srv" ]
