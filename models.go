@@ -3,6 +3,8 @@ package laisky_blog_graphql
 import (
 	"context"
 
+	"github.com/Laisky/laisky-blog-graphql/gcp"
+
 	"github.com/Laisky/laisky-blog-graphql/models"
 
 	"github.com/Laisky/laisky-blog-graphql/telegram"
@@ -14,16 +16,36 @@ import (
 )
 
 var (
-	twitterDB *twitter.TwitterDB
-	blogDB    *blog.BlogDB
-	monitorDB *telegram.MonitorDB
+	twitterDB    *twitter.TwitterDB
+	blogDB       *blog.BlogDB
+	monitorDB    *telegram.MonitorDB
+	gcpGeneralDB *gcp.GeneralDB
 )
 
 func setupDB(ctx context.Context) {
-	utils.Logger.Info("dial mongodb")
+	setupMongo(ctx)
+	setupGCP(ctx)
+}
+
+func setupGCP(ctx context.Context) {
+	defer utils.Logger.Info("connected gcp firestore")
+	generalFirestore, err := models.NewFirestore(
+		ctx,
+		utils.Settings.GetString("settings.gcp.project_id"),
+	)
+	if err != nil {
+		utils.Logger.Panic("create firestore client", zap.Error(err))
+	}
+	gcpGeneralDB = gcp.NewGeneralDB(generalFirestore)
+}
+
+func setupMongo(ctx context.Context) {
+	defer utils.Logger.Info("connected mongodb")
 	var (
-		blogDBCli, twitterDBCli, monitorDBCli *models.DB
-		err                                   error
+		blogDBCli,
+		twitterDBCli,
+		monitorDBCli *models.DB
+		err error
 	)
 	if blogDBCli, err = models.NewMongoDB(ctx,
 		utils.Settings.GetString("settings.db.blog.addr"),

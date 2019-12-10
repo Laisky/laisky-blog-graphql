@@ -2,6 +2,7 @@ package laisky_blog_graphql
 
 import (
 	"context"
+	"github.com/Laisky/go-utils"
 
 	"gopkg.in/mgo.v2/bson"
 
@@ -9,6 +10,17 @@ import (
 
 	"github.com/pkg/errors"
 )
+
+var (
+	jwtLib *utils.JWT
+)
+
+func SetupJWT(secret []byte) (err error) {
+	if jwtLib, err = utils.NewJWT(utils.NewJWTCfg(secret)); err != nil {
+		return errors.Wrap(err, "new jwt")
+	}
+	return nil
+}
 
 func validateAndGetUser(ctx context.Context) (user *blog.User, err error) {
 	var uid bson.ObjectId

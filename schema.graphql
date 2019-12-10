@@ -46,6 +46,9 @@ type Query {
   TelegramAlertTypes(page: Pagination = {page: 0, size: 10},
     name: String! = "",
   ): [TelegramAlertType]!
+
+  # lock
+  Lock(name: String!): Lock!
 }
 
 
@@ -57,4 +60,10 @@ type Mutation {
 
   # telegram monitor
   TelegramMonitorAlert(type: String!, token: String!, msg: String!): TelegramAlertType!
+
+  # GCP general
+  AcquireLock(
+    lock_name: String!,
+    duration_sec: Int! = 5,
+    is_renewal: Boolean = false): Boolean!
 }
