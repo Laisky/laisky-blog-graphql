@@ -1,0 +1,5 @@
+type Lock {
+    name: String!
+    owner_id: String!
+    expires_at: Date!
+}
