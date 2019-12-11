@@ -47,7 +47,7 @@ type Query {
     name: String! = "",
   ): [TelegramAlertType]!
 
-  # lock
+  # GCP general
   Lock(name: String!): Lock!
 }
 
@@ -65,5 +65,6 @@ type Mutation {
   AcquireLock(
     lock_name: String!,
     duration_sec: Int! = 5,
-    is_renewal: Boolean = false): Boolean!
+    is_renewal: Boolean = false
+  ): Boolean!
 }
