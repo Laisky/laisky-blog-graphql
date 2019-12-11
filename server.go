@@ -19,8 +19,7 @@ var (
 )
 
 func setupAuth() (err error) {
-	cfg := ginMiddlewares.NewAuthCfg(utils.Settings.GetString("settings.secret"))
-	auth, err = ginMiddlewares.NewAuth(cfg)
+	auth, err = ginMiddlewares.NewAuth([]byte(utils.Settings.GetString("settings.secret")))
 	return
 }
 

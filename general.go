@@ -81,8 +81,8 @@ func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 		return "", errors.Wrap(err, "validate jwt token")
 	}
 
-	if userName, ok = payload[jwtLib.JWTUserIDKey].(string); !ok {
-		return "", fmt.Errorf("type of " + jwtLib.JWTUserIDKey + " should be string")
+	if userName, ok = payload[jwtLib.GetUserIDKey()].(string); !ok {
+		return "", fmt.Errorf("type of " + jwtLib.GetUserIDKey() + " should be string")
 	}
 
 	return userName, nil

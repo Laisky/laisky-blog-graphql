@@ -55,7 +55,9 @@ func (db *GeneralDB) AcquireLock(ctx context.Context, name, ownerID string, dura
 		lock := &Lock{}
 		// check whether expired
 		if doc.Exists() && !isRenewal {
-			doc.DataTo(lock)
+			if err = doc.DataTo(lock); err != nil {
+				return errors.Wrap(err, "convert gcp docu to go struct")
+			}
 			if lock.OwnerID != ownerID && lock.ExpiresAt.After(now) { // still locked
 				return nil
 			}

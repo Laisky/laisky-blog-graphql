@@ -5,7 +5,7 @@ go 1.12
 require (
 	cloud.google.com/go/firestore v1.1.0
 	github.com/99designs/gqlgen v0.10.2
-	github.com/Laisky/go-utils v1.9.3
+	github.com/Laisky/go-utils v1.9.3-0.20191211053603-941e164480ef
 	github.com/Laisky/zap v1.12.2
 	github.com/agnivade/levenshtein v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -26,8 +26,6 @@ require (
 	github.com/spf13/viper v1.5.0 // indirect
 	github.com/ugorji/go v1.1.7 // indirect
 	github.com/vektah/gqlparser v1.2.0
-	go.uber.org/atomic v1.5.1 // indirect
-	go.uber.org/zap v1.10.0
 	golang.org/x/crypto v0.0.0-20191122220453-ac88ee75c92c // indirect
 	golang.org/x/lint v0.0.0-20191125180803-fdd1cda4f05f // indirect
 	golang.org/x/net v0.0.0-20191126235420-ef20fe5d7933 // indirect
@@ -35,5 +33,4 @@ require (
 	golang.org/x/tools v0.0.0-20191206204035-259af5ff87bd // indirect
 	gopkg.in/mgo.v2 v2.0.0-20180705113604-9856a29383ce
 	gopkg.in/tucnak/telebot.v2 v2.0.0-20191005061224-d0707a9d73c4
-	gopkg.in/yaml.v2 v2.2.7 // indirect
 )

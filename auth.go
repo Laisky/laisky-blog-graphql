@@ -16,7 +16,7 @@ var (
 )
 
 func SetupJWT(secret []byte) (err error) {
-	if jwtLib, err = utils.NewJWT(utils.NewJWTCfg(secret)); err != nil {
+	if jwtLib, err = utils.NewJWT(secret); err != nil {
 		return errors.Wrap(err, "new jwt")
 	}
 	return nil

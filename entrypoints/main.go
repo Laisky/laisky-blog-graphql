@@ -80,7 +80,9 @@ func main() {
 	setupSettings(ctx)
 	setupLogger(ctx)
 
-	laisky_blog_graphql.SetupJWT([]byte(utils.Settings.GetString("settings.secret")))
+	if err := laisky_blog_graphql.SetupJWT([]byte(utils.Settings.GetString("settings.secret"))); err != nil {
+		utils.Logger.Panic("setup jwt", zap.Error(err))
+	}
 
 	c := laisky_blog_graphql.NewControllor()
 	c.Run(ctx)

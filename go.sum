@@ -26,8 +26,8 @@ github.com/DataDog/zstd v1.3.6-0.20190409195224-796139022798/go.mod h1:1jcaCB/uf
 github.com/DataDog/zstd v1.3.8/go.mod h1:1jcaCB/ufaK+sKp1NBhlGmpz41jOoPQ35bpF36t7BBo=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be h1:7Rxhm6IjOtDAyj8eScOFntevwzkWhx94zi48lxo4m4w=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be/go.mod h1:1mdzaETo0kjvCQICPSePsoaatJN4l7JvEA1200lyevo=
-github.com/Laisky/go-utils v1.9.3 h1:i6kjzxCnZzl7fDDwwZuBTjIfE5l/29CPbCO6hCrk0Nc=
-github.com/Laisky/go-utils v1.9.3/go.mod h1:ENL5t7WuCK90GKcyfEESvU7RVya7O9VUri4DXi/zPus=
+github.com/Laisky/go-utils v1.9.3-0.20191211053603-941e164480ef h1:Ibi0JoIGgNVidkDpHA6P4F4B2TpwG4BopeVlrRsp2lw=
+github.com/Laisky/go-utils v1.9.3-0.20191211053603-941e164480ef/go.mod h1:K3+7xT23PylFlcYTJMg9y/96DOyQ8dK2bGcaTY6XHb0=
 github.com/Laisky/zap v1.12.2 h1:mZjjMrbHPhunfFdajwpBvey9c07kkF7iHJaVXSV7gdA=
 github.com/Laisky/zap v1.12.2/go.mod h1:ZuMDz72PjpnvgHEJoNJsbIWH5KxQqPpbLBAghToG9cc=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
@@ -154,6 +154,10 @@ github.com/jtolds/gls v4.20.0+incompatible/go.mod h1:QJZ7F/aHp+rZTRtaJ1ow/lLfFfV
 github.com/julienschmidt/httprouter v1.2.0/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
 github.com/kisielk/errcheck v1.1.0/go.mod h1:EZBBE59ingxPouuu3KfxchcWSUPOHkagtvWXihfKN4Q=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
+github.com/klauspost/compress v1.9.4 h1:xhvAeUPQ2drNUhKtrGdTGNvV9nNafHMUkRyLkzxJoB4=
+github.com/klauspost/compress v1.9.4/go.mod h1:RyIbtBH6LamlWaDj8nUwkbUhJ87Yi3uG0guNDohfE1A=
+github.com/klauspost/pgzip v1.2.1 h1:oIPZROsWuPHpOdMVWLuJZXwgjhrW8r1yEX8UqMyeNHM=
+github.com/klauspost/pgzip v1.2.1/go.mod h1:Ch1tH69qFZu15pkjo5kYi6mth2Zzwzt50oCQKQE9RUs=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1 h1:mweAR1A6xJ3oS2pRaGiHgQ4OO8tzTaLawm8vnODuwDk=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2 h1:DB17ag19krx9CFsz4o3enTrPXyIXCl+2iCXH/aMAp9s=
