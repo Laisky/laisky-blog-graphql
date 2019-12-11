@@ -18,7 +18,7 @@ import (
 
 const (
 	generalTokenName       = "general"
-	maxTokenExpireDuration = 3600 * 24 * 7 // 7d
+	maxTokenExpireDuration = 3600 * 24 * 7 * time.Second // 7d
 )
 
 func (r *Resolver) Lock() LockResolver {
@@ -131,8 +131,9 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 }
 
 func (r *mutationResolver) CreateGeneralToken(ctx context.Context, username string, durationSec int) (token string, err error) {
+	utils.Logger.Debug("CreateGeneralToken", zap.String("username", username), zap.Int("durationSec", durationSec))
 	if time.Duration(durationSec)*time.Second > maxTokenExpireDuration {
-		return "", errors.Errorf("duration should less than %v", maxTokenExpireDuration)
+		return "", errors.Errorf("duration should less than %d, got %d", maxTokenExpireDuration, durationSec)
 	}
 	if _, err = validateAndGetUser(ctx); err != nil {
 		return "", errors.Wrap(err, "user invalidate")
