@@ -8,6 +8,11 @@ import (
 	"strconv"
 )
 
+type GeneralUser struct {
+	Name         string   `json:"name"`
+	LockPrefixes []string `json:"lock_prefixes"`
+}
+
 type NewBlogPost struct {
 	Name     string       `json:"name"`
 	Title    string       `json:"title"`

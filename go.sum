@@ -26,8 +26,8 @@ github.com/DataDog/zstd v1.3.6-0.20190409195224-796139022798/go.mod h1:1jcaCB/uf
 github.com/DataDog/zstd v1.3.8/go.mod h1:1jcaCB/ufaK+sKp1NBhlGmpz41jOoPQ35bpF36t7BBo=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be h1:7Rxhm6IjOtDAyj8eScOFntevwzkWhx94zi48lxo4m4w=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be/go.mod h1:1mdzaETo0kjvCQICPSePsoaatJN4l7JvEA1200lyevo=
-github.com/Laisky/go-utils v1.9.3-0.20191211053603-941e164480ef h1:Ibi0JoIGgNVidkDpHA6P4F4B2TpwG4BopeVlrRsp2lw=
-github.com/Laisky/go-utils v1.9.3-0.20191211053603-941e164480ef/go.mod h1:K3+7xT23PylFlcYTJMg9y/96DOyQ8dK2bGcaTY6XHb0=
+github.com/Laisky/go-utils v1.9.3-0.20191211063343-617be484fc97 h1:LwYfmJXk5KhI0NX+daMgbap68M0MYh2PzLah4UE1LDA=
+github.com/Laisky/go-utils v1.9.3-0.20191211063343-617be484fc97/go.mod h1:K3+7xT23PylFlcYTJMg9y/96DOyQ8dK2bGcaTY6XHb0=
 github.com/Laisky/zap v1.12.2 h1:mZjjMrbHPhunfFdajwpBvey9c07kkF7iHJaVXSV7gdA=
 github.com/Laisky/zap v1.12.2/go.mod h1:ZuMDz72PjpnvgHEJoNJsbIWH5KxQqPpbLBAghToG9cc=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=

@@ -1,4 +1,4 @@
-package gcp
+package general
 
 import (
 	"context"

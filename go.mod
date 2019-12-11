@@ -5,7 +5,7 @@ go 1.12
 require (
 	cloud.google.com/go/firestore v1.1.0
 	github.com/99designs/gqlgen v0.10.2
-	github.com/Laisky/go-utils v1.9.3-0.20191211053603-941e164480ef
+	github.com/Laisky/go-utils v1.9.3-0.20191211063343-617be484fc97
 	github.com/Laisky/zap v1.12.2
 	github.com/agnivade/levenshtein v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

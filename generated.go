@@ -13,7 +13,7 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
 	"github.com/Laisky/laisky-blog-graphql/blog"
-	"github.com/Laisky/laisky-blog-graphql/gcp"
+	"github.com/Laisky/laisky-blog-graphql/general"
 	"github.com/Laisky/laisky-blog-graphql/telegram"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
 	"github.com/Laisky/laisky-blog-graphql/types"
@@ -78,6 +78,11 @@ type ComplexityRoot struct {
 		Username func(childComplexity int) int
 	}
 
+	GeneralUser struct {
+		LockPrefixes func(childComplexity int) int
+		Name         func(childComplexity int) int
+	}
+
 	Lock struct {
 		ExpiresAt func(childComplexity int) int
 		Name      func(childComplexity int) int
@@ -89,6 +94,7 @@ type ComplexityRoot struct {
 		BlogAmendPost        func(childComplexity int, post NewBlogPost) int
 		BlogCreatePost       func(childComplexity int, post NewBlogPost) int
 		BlogLogin            func(childComplexity int, account string, password string) int
+		CreateGeneralToken   func(childComplexity int, username string, durationSec int) int
 		TelegramMonitorAlert func(childComplexity int, typeArg string, token string, msg string) int
 	}
 
@@ -102,6 +108,7 @@ type ComplexityRoot struct {
 		BlogPosts            func(childComplexity int, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) int
 		Hello                func(childComplexity int) int
 		Lock                 func(childComplexity int, name string) int
+		LockPermissions      func(childComplexity int, username string) int
 		TelegramAlertTypes   func(childComplexity int, page *Pagination, name string) int
 		TelegramMonitorUsers func(childComplexity int, page *Pagination, name string) int
 		TwitterStatues       func(childComplexity int, page *Pagination, username string, sort *Sort, topic string, regexp string) int
@@ -158,7 +165,7 @@ type BlogUserResolver interface {
 	ID(ctx context.Context, obj *blog.User) (string, error)
 }
 type LockResolver interface {
-	ExpiresAt(ctx context.Context, obj *gcp.Lock) (*types.Datetime, error)
+	ExpiresAt(ctx context.Context, obj *general.Lock) (*types.Datetime, error)
 }
 type MutationResolver interface {
 	BlogCreatePost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
@@ -166,6 +173,7 @@ type MutationResolver interface {
 	BlogAmendPost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*telegram.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
+	CreateGeneralToken(ctx context.Context, username string, durationSec int) (string, error)
 }
 type QueryResolver interface {
 	Hello(ctx context.Context) (string, error)
@@ -175,7 +183,8 @@ type QueryResolver interface {
 	BlogPostCategories(ctx context.Context) ([]*blog.Category, error)
 	TelegramMonitorUsers(ctx context.Context, page *Pagination, name string) ([]*telegram.Users, error)
 	TelegramAlertTypes(ctx context.Context, page *Pagination, name string) ([]*telegram.AlertTypes, error)
-	Lock(ctx context.Context, name string) (*gcp.Lock, error)
+	Lock(ctx context.Context, name string) (*general.Lock, error)
+	LockPermissions(ctx context.Context, username string) ([]*GeneralUser, error)
 }
 type TelegramAlertTypeResolver interface {
 	ID(ctx context.Context, obj *telegram.AlertTypes) (string, error)
@@ -328,6 +337,20 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.BlogUser.Username(childComplexity), true
 
+	case "GeneralUser.lock_prefixes":
+		if e.complexity.GeneralUser.LockPrefixes == nil {
+			break
+		}
+
+		return e.complexity.GeneralUser.LockPrefixes(childComplexity), true
+
+	case "GeneralUser.name":
+		if e.complexity.GeneralUser.Name == nil {
+			break
+		}
+
+		return e.complexity.GeneralUser.Name(childComplexity), true
+
 	case "Lock.expires_at":
 		if e.complexity.Lock.ExpiresAt == nil {
 			break
@@ -397,6 +420,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Mutation.BlogLogin(childComplexity, args["account"].(string), args["password"].(string)), true
 
+	case "Mutation.CreateGeneralToken":
+		if e.complexity.Mutation.CreateGeneralToken == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_CreateGeneralToken_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateGeneralToken(childComplexity, args["username"].(string), args["duration_sec"].(int)), true
+
 	case "Mutation.TelegramMonitorAlert":
 		if e.complexity.Mutation.TelegramMonitorAlert == nil {
 			break
@@ -460,6 +495,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Query.Lock(childComplexity, args["name"].(string)), true
+
+	case "Query.LockPermissions":
+		if e.complexity.Query.LockPermissions == nil {
+			break
+		}
+
+		args, err := ec.field_Query_LockPermissions_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.LockPermissions(childComplexity, args["username"].(string)), true
 
 	case "Query.TelegramAlertTypes":
 		if e.complexity.Query.TelegramAlertTypes == nil {
@@ -783,10 +830,15 @@ input NewBlogPost {
   type: BlogPostType!
 }
 `},
-	&ast.Source{Name: "./gcp/schema.graphql", Input: `type Lock {
+	&ast.Source{Name: "./general/schema.graphql", Input: `type Lock {
     name: String!
     owner_id: String!
     expires_at: Date!
+}
+
+type GeneralUser {
+    name: String!
+    lock_prefixes: [String!]!
 }
 `},
 	&ast.Source{Name: "./telegram/schema.graphql", Input: `type TelegramUser {
@@ -878,8 +930,9 @@ type Query {
     name: String! = "",
   ): [TelegramAlertType]!
 
-  # lock
+  # GCP general
   Lock(name: String!): Lock!
+  LockPermissions(username: String! = ""): [GeneralUser]!
 }
 
 
@@ -896,7 +949,12 @@ type Mutation {
   AcquireLock(
     lock_name: String!,
     duration_sec: Int! = 5,
-    is_renewal: Boolean = false): Boolean!
+    is_renewal: Boolean = false,
+  ): Boolean!
+  CreateGeneralToken(  # only blog user can create token
+    username: String!,
+    duration_sec: Int! = 604800, # 7d
+  ): String!
 }
 `},
 )
@@ -985,6 +1043,28 @@ func (ec *executionContext) field_Mutation_BlogLogin_args(ctx context.Context, r
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_CreateGeneralToken_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["username"]; ok {
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["username"] = arg0
+	var arg1 int
+	if tmp, ok := rawArgs["duration_sec"]; ok {
+		arg1, err = ec.unmarshalNInt2int(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["duration_sec"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_TelegramMonitorAlert_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
@@ -1066,6 +1146,20 @@ func (ec *executionContext) field_Query_BlogPosts_args(ctx context.Context, rawA
 		}
 	}
 	args["regexp"] = arg5
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_LockPermissions_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["username"]; ok {
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["username"] = arg0
 	return args, nil
 }
 
@@ -1772,7 +1866,81 @@ func (ec *executionContext) _BlogUser_username(ctx context.Context, field graphq
 	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Lock_name(ctx context.Context, field graphql.CollectedField, obj *gcp.Lock) (ret graphql.Marshaler) {
+func (ec *executionContext) _GeneralUser_name(ctx context.Context, field graphql.CollectedField, obj *GeneralUser) (ret graphql.Marshaler) {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+		ec.Tracer.EndFieldExecution(ctx)
+	}()
+	rctx := &graphql.ResolverContext{
+		Object:   "GeneralUser",
+		Field:    field,
+		Args:     nil,
+		IsMethod: false,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _GeneralUser_lock_prefixes(ctx context.Context, field graphql.CollectedField, obj *GeneralUser) (ret graphql.Marshaler) {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+		ec.Tracer.EndFieldExecution(ctx)
+	}()
+	rctx := &graphql.ResolverContext{
+		Object:   "GeneralUser",
+		Field:    field,
+		Args:     nil,
+		IsMethod: false,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LockPrefixes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Lock_name(ctx context.Context, field graphql.CollectedField, obj *general.Lock) (ret graphql.Marshaler) {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() {
 		if r := recover(); r != nil {
@@ -1809,7 +1977,7 @@ func (ec *executionContext) _Lock_name(ctx context.Context, field graphql.Collec
 	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Lock_owner_id(ctx context.Context, field graphql.CollectedField, obj *gcp.Lock) (ret graphql.Marshaler) {
+func (ec *executionContext) _Lock_owner_id(ctx context.Context, field graphql.CollectedField, obj *general.Lock) (ret graphql.Marshaler) {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() {
 		if r := recover(); r != nil {
@@ -1846,7 +2014,7 @@ func (ec *executionContext) _Lock_owner_id(ctx context.Context, field graphql.Co
 	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Lock_expires_at(ctx context.Context, field graphql.CollectedField, obj *gcp.Lock) (ret graphql.Marshaler) {
+func (ec *executionContext) _Lock_expires_at(ctx context.Context, field graphql.CollectedField, obj *general.Lock) (ret graphql.Marshaler) {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer func() {
 		if r := recover(); r != nil {
@@ -2101,6 +2269,50 @@ func (ec *executionContext) _Mutation_AcquireLock(ctx context.Context, field gra
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Mutation_CreateGeneralToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+		ec.Tracer.EndFieldExecution(ctx)
+	}()
+	rctx := &graphql.ResolverContext{
+		Object:   "Mutation",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Mutation_CreateGeneralToken_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	rctx.Args = args
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateGeneralToken(rctx, args["username"].(string), args["duration_sec"].(int))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *blog.PostInfo) (ret graphql.Marshaler) {
@@ -2465,10 +2677,54 @@ func (ec *executionContext) _Query_Lock(ctx context.Context, field graphql.Colle
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*gcp.Lock)
+	res := resTmp.(*general.Lock)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return ec.marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋgcpᚐLock(ctx, field.Selections, res)
+	return ec.marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋgeneralᚐLock(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_LockPermissions(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+		ec.Tracer.EndFieldExecution(ctx)
+	}()
+	rctx := &graphql.ResolverContext{
+		Object:   "Query",
+		Field:    field,
+		Args:     nil,
+		IsMethod: true,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_LockPermissions_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	rctx.Args = args
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().LockPermissions(rctx, args["username"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*GeneralUser)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return ec.marshalNGeneralUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐGeneralUser(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -4926,9 +5182,41 @@ func (ec *executionContext) _BlogUser(ctx context.Context, sel ast.SelectionSet,
 	return out
 }
 
+var generalUserImplementors = []string{"GeneralUser"}
+
+func (ec *executionContext) _GeneralUser(ctx context.Context, sel ast.SelectionSet, obj *GeneralUser) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.RequestContext, sel, generalUserImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	var invalids uint32
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("GeneralUser")
+		case "name":
+			out.Values[i] = ec._GeneralUser_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalids++
+			}
+		case "lock_prefixes":
+			out.Values[i] = ec._GeneralUser_lock_prefixes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalids > 0 {
+		return graphql.Null
+	}
+	return out
+}
+
 var lockImplementors = []string{"Lock"}
 
-func (ec *executionContext) _Lock(ctx context.Context, sel ast.SelectionSet, obj *gcp.Lock) graphql.Marshaler {
+func (ec *executionContext) _Lock(ctx context.Context, sel ast.SelectionSet, obj *general.Lock) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.RequestContext, sel, lockImplementors)
 
 	out := graphql.NewFieldSet(fields)
@@ -5009,6 +5297,11 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			}
 		case "AcquireLock":
 			out.Values[i] = ec._Mutation_AcquireLock(ctx, field)
+			if out.Values[i] == graphql.Null {
+				invalids++
+			}
+		case "CreateGeneralToken":
+			out.Values[i] = ec._Mutation_CreateGeneralToken(ctx, field)
 			if out.Values[i] == graphql.Null {
 				invalids++
 			}
@@ -5172,6 +5465,20 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_Lock(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
+				return res
+			})
+		case "LockPermissions":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_LockPermissions(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&invalids, 1)
 				}
@@ -5942,6 +6249,43 @@ func (ec *executionContext) marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblo
 	return v
 }
 
+func (ec *executionContext) marshalNGeneralUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐGeneralUser(ctx context.Context, sel ast.SelectionSet, v []*GeneralUser) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		rctx := &graphql.ResolverContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithResolverContext(ctx, rctx)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalOGeneralUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐGeneralUser(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+	return ret
+}
+
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v interface{}) (int, error) {
 	return graphql.UnmarshalInt(v)
 }
@@ -5956,11 +6300,11 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 	return res
 }
 
-func (ec *executionContext) marshalNLock2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋgcpᚐLock(ctx context.Context, sel ast.SelectionSet, v gcp.Lock) graphql.Marshaler {
+func (ec *executionContext) marshalNLock2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋgeneralᚐLock(ctx context.Context, sel ast.SelectionSet, v general.Lock) graphql.Marshaler {
 	return ec._Lock(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋgcpᚐLock(ctx context.Context, sel ast.SelectionSet, v *gcp.Lock) graphql.Marshaler {
+func (ec *executionContext) marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋgeneralᚐLock(ctx context.Context, sel ast.SelectionSet, v *general.Lock) graphql.Marshaler {
 	if v == nil {
 		if !ec.HasError(graphql.GetResolverContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -6458,6 +6802,17 @@ func (ec *executionContext) marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblo
 		return graphql.Null
 	}
 	return v
+}
+
+func (ec *executionContext) marshalOGeneralUser2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐGeneralUser(ctx context.Context, sel ast.SelectionSet, v GeneralUser) graphql.Marshaler {
+	return ec._GeneralUser(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalOGeneralUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐGeneralUser(ctx context.Context, sel ast.SelectionSet, v *GeneralUser) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._GeneralUser(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOPagination2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐPagination(ctx context.Context, v interface{}) (Pagination, error) {

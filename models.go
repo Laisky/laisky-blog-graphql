@@ -2,8 +2,7 @@ package laisky_blog_graphql
 
 import (
 	"context"
-
-	"github.com/Laisky/laisky-blog-graphql/gcp"
+	"github.com/Laisky/laisky-blog-graphql/general"
 
 	"github.com/Laisky/laisky-blog-graphql/models"
 
@@ -16,10 +15,10 @@ import (
 )
 
 var (
-	twitterDB    *twitter.TwitterDB
-	blogDB       *blog.BlogDB
-	monitorDB    *telegram.MonitorDB
-	gcpGeneralDB *gcp.GeneralDB
+	twitterDB *twitter.TwitterDB
+	blogDB    *blog.BlogDB
+	monitorDB *telegram.MonitorDB
+	generalDB *general.GeneralDB
 )
 
 func setupDB(ctx context.Context) {
@@ -31,12 +30,12 @@ func setupGCP(ctx context.Context) {
 	defer utils.Logger.Info("connected gcp firestore")
 	generalFirestore, err := models.NewFirestore(
 		ctx,
-		utils.Settings.GetString("settings.gcp.project_id"),
+		utils.Settings.GetString("settings.general.project_id"),
 	)
 	if err != nil {
 		utils.Logger.Panic("create firestore client", zap.Error(err))
 	}
-	gcpGeneralDB = gcp.NewGeneralDB(generalFirestore)
+	generalDB = general.NewGeneralDB(generalFirestore)
 }
 
 func setupMongo(ctx context.Context) {

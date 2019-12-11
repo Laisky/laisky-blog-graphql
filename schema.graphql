@@ -49,6 +49,7 @@ type Query {
 
   # GCP general
   Lock(name: String!): Lock!
+  LockPermissions(username: String! = ""): [GeneralUser]!
 }
 
 
@@ -65,6 +66,10 @@ type Mutation {
   AcquireLock(
     lock_name: String!,
     duration_sec: Int! = 5,
-    is_renewal: Boolean = false
+    is_renewal: Boolean = false,
   ): Boolean!
+  CreateGeneralToken(  # only blog user can create token
+    username: String!,
+    duration_sec: Int! = 604800, # 7d
+  ): String!
 }

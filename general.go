@@ -9,7 +9,7 @@ import (
 	middlewares "github.com/Laisky/go-utils/gin-middlewares"
 
 	utils "github.com/Laisky/go-utils"
-	"github.com/Laisky/laisky-blog-graphql/gcp"
+	"github.com/Laisky/laisky-blog-graphql/general"
 	"github.com/Laisky/laisky-blog-graphql/types"
 	"github.com/Laisky/zap"
 	jwt "github.com/dgrijalva/jwt-go"
@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	generalTokenName = "general"
+	generalTokenName       = "general"
+	maxTokenExpireDuration = 3600 * 24 * 7 // 7d
 )
 
 func (r *Resolver) Lock() LockResolver {
@@ -34,14 +35,38 @@ type locksResolver struct{ *Resolver }
 // query resolver
 // =================
 
-func (q *queryResolver) Lock(ctx context.Context, name string) (*gcp.Lock, error) {
-	return gcpGeneralDB.LoadLockByName(ctx, name)
+func (q *queryResolver) Lock(ctx context.Context, name string) (*general.Lock, error) {
+	return generalDB.LoadLockByName(ctx, name)
+}
+func (r *queryResolver) LockPermissions(ctx context.Context, username string) (users []*GeneralUser, err error) {
+	utils.Logger.Debug("LockPermissions", zap.String("username", username))
+	users = []*GeneralUser{}
+	var (
+		prefixes []string
+	)
+	if username != "" {
+		if prefixes = utils.Settings.GetStringSlice("settings.general.locks.user_prefix_map." + username); prefixes != nil {
+			users = append(users, &GeneralUser{
+				LockPrefixes: prefixes,
+			})
+			return users, nil
+		}
+		return nil, errors.Errorf("user `%v` not exists", username)
+	}
+
+	for username = range utils.Settings.GetStringMap("settings.general.locks.user_prefix_map") {
+		users = append(users, &GeneralUser{
+			Name:         username,
+			LockPrefixes: utils.Settings.GetStringSlice("settings.general.locks.user_prefix_map." + username),
+		})
+	}
+	return users, nil
 }
 
 // --------------------------
 // gcp general resolver
 // --------------------------
-func (r *locksResolver) ExpiresAt(ctx context.Context, obj *gcp.Lock) (*types.Datetime, error) {
+func (r *locksResolver) ExpiresAt(ctx context.Context, obj *general.Lock) (*types.Datetime, error) {
 	return types.NewDatetimeFromTime(obj.ExpiresAt), nil
 }
 
@@ -50,7 +75,7 @@ func (r *locksResolver) ExpiresAt(ctx context.Context, obj *gcp.Lock) (*types.Da
 // ============================
 
 func validateLockName(ownerName, lockName string) (ok bool) {
-	for _, prefix := range utils.Settings.GetStringSlice("settings.gcp.locks.user_prefix_map." + ownerName + ".prefixes") {
+	for _, prefix := range utils.Settings.GetStringSlice("settings.general.locks.user_prefix_map." + ownerName + ".prefixes") {
 		if strings.HasPrefix(lockName, prefix) {
 			return true
 		}
@@ -89,8 +114,8 @@ func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 }
 
 func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (ok bool, err error) {
-	if durationSec > utils.Settings.GetInt("settings.gcp.locks.max_duration_sec") {
-		return ok, fmt.Errorf("duration sec should less than %v", utils.Settings.GetInt("settings.gcp.locks.max_duration_sec"))
+	if durationSec > utils.Settings.GetInt("settings.general.locks.max_duration_sec") {
+		return ok, fmt.Errorf("duration sec should less than %v", utils.Settings.GetInt("settings.general.locks.max_duration_sec"))
 	}
 
 	var username string
@@ -102,5 +127,19 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 		return ok, fmt.Errorf("do not have permission to acquire this lock")
 	}
 
-	return gcpGeneralDB.AcquireLock(ctx, lockName, username, time.Duration(durationSec)*time.Second, false)
+	return generalDB.AcquireLock(ctx, lockName, username, time.Duration(durationSec)*time.Second, false)
+}
+
+func (r *mutationResolver) CreateGeneralToken(ctx context.Context, username string, durationSec int) (token string, err error) {
+	if time.Duration(durationSec)*time.Second > maxTokenExpireDuration {
+		return "", errors.Errorf("duration should less than %v", maxTokenExpireDuration)
+	}
+	if _, err = validateAndGetUser(ctx); err != nil {
+		return "", errors.Wrap(err, "user invalidate")
+	}
+
+	if token, err = jwtLib.GenerateToken(username, utils.UTCNow().Add(time.Duration(durationSec)*time.Second), nil); err != nil {
+		return "", errors.Wrap(err, "generate token")
+	}
+	return token, nil
 }

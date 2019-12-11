@@ -8,7 +8,7 @@ schema:
 - ./twitter/schema.graphql
 - ./blog/schema.graphql
 - ./telegram/schema.graphql
-- ./gcp/schema.graphql
+- ./general/schema.graphql
 exec:
   filename: generated.go
 model:
@@ -45,4 +45,6 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/telegram.AlertTypes
   # GCP General
   Lock:
-    model: github.com/Laisky/laisky-blog-graphql/gcp.Lock
+    model: github.com/Laisky/laisky-blog-graphql/general.Lock
+  # GeneralUser:
+  #   model: github.com/Laisky/laisky-blog-graphql/general.User

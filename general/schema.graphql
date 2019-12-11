@@ -3,3 +3,8 @@ type Lock {
     owner_id: String!
     expires_at: Date!
 }
+
+type GeneralUser {
+    name: String!
+    lock_prefixes: [String!]!
+}
