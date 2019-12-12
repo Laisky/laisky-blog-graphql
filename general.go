@@ -124,7 +124,8 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 		return ok, err
 	}
 	if !validateLockName(username, lockName) {
-		return ok, fmt.Errorf("do not have permission to acquire this lock")
+		utils.Logger.Warn("user want to acquire lock out of permission", zap.String("user", username), zap.String("lock", lockName))
+		return ok, fmt.Errorf("`%v` do not have permission to acquire `%v`", username, lockName)
 	}
 
 	return generalDB.AcquireLock(ctx, lockName, username, time.Duration(durationSec)*time.Second, false)
@@ -136,7 +137,7 @@ func (r *mutationResolver) CreateGeneralToken(ctx context.Context, username stri
 		return "", errors.Errorf("duration should less than %d, got %d", maxTokenExpireDuration, durationSec)
 	}
 	if _, err = validateAndGetUser(ctx); err != nil {
-		return "", errors.Wrap(err, "user invalidate")
+		return "", errors.Wrapf(err, "user `%v` invalidate", username)
 	}
 
 	if token, err = jwtLib.GenerateToken(username, utils.UTCNow().Add(time.Duration(durationSec)*time.Second), nil); err != nil {
