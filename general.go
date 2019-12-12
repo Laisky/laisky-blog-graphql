@@ -75,7 +75,7 @@ func (r *locksResolver) ExpiresAt(ctx context.Context, obj *general.Lock) (*type
 // ============================
 
 func validateLockName(ownerName, lockName string) (ok bool) {
-	for _, prefix := range utils.Settings.GetStringSlice("settings.general.locks.user_prefix_map." + ownerName + ".prefixes") {
+	for _, prefix := range utils.Settings.GetStringSlice("settings.general.locks.user_prefix_map." + ownerName) {
 		if strings.HasPrefix(lockName, prefix) {
 			return true
 		}
