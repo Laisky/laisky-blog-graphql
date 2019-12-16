@@ -104,7 +104,7 @@ func (r *mutationResolver) BlogLogin(ctx context.Context, account string, passwo
 		return nil, err
 	}
 
-	if err = auth.SetLoginCookie(ctx, user, nil); err != nil {
+	if err = auth.SetLoginCookie(ctx, user); err != nil {
 		utils.Logger.Error("try to set cookie got error", zap.Error(err))
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}
