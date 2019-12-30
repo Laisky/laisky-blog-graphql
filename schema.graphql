@@ -63,12 +63,15 @@ type Mutation {
   TelegramMonitorAlert(type: String!, token: String!, msg: String!): TelegramAlertType!
 
   # GCP general
+  # will validate cookie `general`
   AcquireLock(
     lock_name: String!,
     duration_sec: Int! = 5,
     is_renewal: Boolean = false,
   ): Boolean!
-  CreateGeneralToken(  # only blog user can create token
+  # only blog user can create token,
+  # set token as cookie `general`
+  CreateGeneralToken(
     username: String!,
     duration_sec: Int! = 604800, # 7d
   ): String!

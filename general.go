@@ -85,7 +85,7 @@ func validateLockName(ownerName, lockName string) (ok bool) {
 }
 
 /*
-token:
+token (`general` in cookie):
 ::
 	{
 		"uid": "laisky",
@@ -113,6 +113,8 @@ func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 	return userName, nil
 }
 
+// AcquireLock acquire mutex lock with name and duration.
+// if `isRenewal=true`, will renewal exists lock.
 func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (ok bool, err error) {
 	if durationSec > utils.Settings.GetInt("settings.general.locks.max_duration_sec") {
 		return ok, fmt.Errorf("duration sec should less than %v", utils.Settings.GetInt("settings.general.locks.max_duration_sec"))
@@ -131,6 +133,7 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 	return generalDB.AcquireLock(ctx, lockName, username, time.Duration(durationSec)*time.Second, false)
 }
 
+// CreateGeneralToken generate genaral token than should be set as cookie `general`
 func (r *mutationResolver) CreateGeneralToken(ctx context.Context, username string, durationSec int) (token string, err error) {
 	utils.Logger.Debug("CreateGeneralToken", zap.String("username", username), zap.Int("durationSec", durationSec))
 	if time.Duration(durationSec)*time.Second > maxTokenExpireDuration {
