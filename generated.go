@@ -790,7 +790,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 }
 
 var sources = []*ast.Source{
-	&ast.Source{Name: "schema.graphql", Input: `scalar Date
+	{Name: "schema.graphql", Input: `scalar Date
 scalar QuotedString
 scalar JSONString
 
@@ -869,7 +869,7 @@ type Mutation {
   ): String!
 }
 `, BuiltIn: false},
-	&ast.Source{Name: "./twitter/schema.graphql", Input: `type Tweet {
+	{Name: "./twitter/schema.graphql", Input: `type Tweet {
     # mongo_id: String!
     id: String!
     created_at: Date
@@ -891,7 +891,7 @@ type TwitterUser {
     description: String!
 }
 `, BuiltIn: false},
-	&ast.Source{Name: "./blog/schema.graphql", Input: `enum BlogPostType {
+	{Name: "./blog/schema.graphql", Input: `enum BlogPostType {
     markdown
     slide
     html  # legacy posts
@@ -933,7 +933,7 @@ input NewBlogPost {
   type: BlogPostType!
 }
 `, BuiltIn: false},
-	&ast.Source{Name: "./telegram/schema.graphql", Input: `type TelegramUser {
+	{Name: "./telegram/schema.graphql", Input: `type TelegramUser {
     id: String!
     created_at: Date!
     modified_at: Date!
@@ -951,7 +951,7 @@ type TelegramAlertType {
 }
 
 `, BuiltIn: false},
-	&ast.Source{Name: "./general/schema.graphql", Input: `type Lock {
+	{Name: "./general/schema.graphql", Input: `type Lock {
     name: String!
     owner_id: String!
     expires_at: Date!
