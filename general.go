@@ -6,13 +6,14 @@ import (
 	"strings"
 	"time"
 
-	middlewares "github.com/Laisky/go-utils/gin-middlewares"
-
+	middlewares "github.com/Laisky/gin-middlewares"
 	utils "github.com/Laisky/go-utils"
+	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/general"
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/types"
 	"github.com/Laisky/zap"
-	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
 )
 
@@ -39,7 +40,7 @@ func (q *queryResolver) Lock(ctx context.Context, name string) (*general.Lock, e
 	return generalDB.LoadLockByName(ctx, name)
 }
 func (r *queryResolver) LockPermissions(ctx context.Context, username string) (users []*GeneralUser, err error) {
-	utils.Logger.Debug("LockPermissions", zap.String("username", username))
+	log.GetLog().Debug("LockPermissions", zap.String("username", username))
 	users = []*GeneralUser{}
 	var (
 		prefixes []string
@@ -93,24 +94,17 @@ token (`general` in cookie):
 	}
 */
 func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
-	var (
-		token   string
-		payload jwt.MapClaims
-		ok      bool
-	)
+	var token string
 	if token, err = middlewares.GetGinCtxFromStdCtx(ctx).Cookie(generalTokenName); err != nil {
 		return "", errors.Wrap(err, "get jwt token from ctx")
 	}
 
-	if payload, err = jwtLib.Validate(token); err != nil {
-		return "", errors.Wrap(err, "validate jwt token")
+	uc := &blog.UserClaims{}
+	if err = jwtLib.ParseClaims(token, uc); err != nil {
+		return "", errors.Wrap(err, "parse jwt token")
 	}
 
-	if userName, ok = payload[jwtLib.GetUserIDKey()].(string); !ok {
-		return "", fmt.Errorf("type of " + jwtLib.GetUserIDKey() + " should be string")
-	}
-
-	return userName, nil
+	return uc.Subject, nil
 }
 
 // AcquireLock acquire mutex lock with name and duration.
@@ -122,11 +116,12 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 
 	var username string
 	if username, err = validateAndGetGCPUser(ctx); err != nil {
-		utils.Logger.Debug("user invalidate", zap.Error(err))
+		log.GetLog().Debug("user invalidate", zap.Error(err))
 		return ok, err
 	}
+
 	if !validateLockName(username, lockName) {
-		utils.Logger.Warn("user want to acquire lock out of permission", zap.String("user", username), zap.String("lock", lockName))
+		log.GetLog().Warn("user want to acquire lock out of permission", zap.String("user", username), zap.String("lock", lockName))
 		return ok, fmt.Errorf("`%v` do not have permission to acquire `%v`", username, lockName)
 	}
 
@@ -135,16 +130,24 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 
 // CreateGeneralToken generate genaral token than should be set as cookie `general`
 func (r *mutationResolver) CreateGeneralToken(ctx context.Context, username string, durationSec int) (token string, err error) {
-	utils.Logger.Debug("CreateGeneralToken", zap.String("username", username), zap.Int("durationSec", durationSec))
+	log.GetLog().Debug("CreateGeneralToken", zap.String("username", username), zap.Int("durationSec", durationSec))
 	if time.Duration(durationSec)*time.Second > maxTokenExpireDuration {
 		return "", errors.Errorf("duration should less than %d, got %d", maxTokenExpireDuration, durationSec)
 	}
+
 	if _, err = validateAndGetUser(ctx); err != nil {
 		return "", errors.Wrapf(err, "user `%v` invalidate", username)
 	}
 
-	if token, err = jwtLib.GenerateToken(username, utils.UTCNow().Add(time.Duration(durationSec)*time.Second), nil); err != nil {
+	uc := &blog.UserClaims{
+		StandardClaims: jwt.StandardClaims{
+			Subject:   username,
+			ExpiresAt: utils.Clock.GetUTCNow().Add(time.Duration(durationSec)).Unix(),
+		},
+	}
+	if token, err = jwtLib.Sign(uc); err != nil {
 		return "", errors.Wrap(err, "generate token")
 	}
+
 	return token, nil
 }

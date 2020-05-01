@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/Laisky/go-utils"
-	"github.com/Laisky/zap"
-
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/models"
+	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -97,7 +97,7 @@ func (db *MonitorDB) CreateOrGetUser(user *tb.User) (u *Users, err error) {
 		return nil, errors.Wrap(err, "load users")
 	}
 	if info.Matched == 0 {
-		utils.Logger.Info("create user",
+		log.GetLog().Info("create user",
 			zap.String("name", u.Name),
 			zap.String("id", u.ID.Hex()))
 	}
@@ -139,7 +139,7 @@ func (db *MonitorDB) CreateAlertType(name string) (at *AlertTypes, err error) {
 		return nil, errors.Wrap(err, "load alert_types")
 	}
 	if info.Matched == 0 {
-		utils.Logger.Info("create alert_type",
+		log.GetLog().Info("create alert_type",
 			zap.String("name", at.Name),
 			zap.String("id", at.ID.Hex()))
 	}
@@ -173,7 +173,7 @@ func (db *MonitorDB) CreateOrGetUserAlertRelations(user *Users, alert *AlertType
 		return nil, errors.Wrap(err, "load user_alert_relations docu")
 	}
 	if info.Matched == 0 {
-		utils.Logger.Info("create user_alert_relations",
+		log.GetLog().Info("create user_alert_relations",
 			zap.String("user", user.Name),
 			zap.String("alert_type", alert.Name),
 			zap.String("id", uar.ID.Hex()))
@@ -183,7 +183,7 @@ func (db *MonitorDB) CreateOrGetUserAlertRelations(user *Users, alert *AlertType
 }
 
 func (db *MonitorDB) LoadUsers(cfg *TelegramQueryCfg) (users []*Users, err error) {
-	utils.Logger.Debug("LoadUsers",
+	log.GetLog().Debug("LoadUsers",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
 		zap.Int("size", cfg.Size))
@@ -206,7 +206,7 @@ func (db *MonitorDB) LoadUsers(cfg *TelegramQueryCfg) (users []*Users, err error
 }
 
 func (db *MonitorDB) LoadAlertTypes(cfg *TelegramQueryCfg) (alerts []*AlertTypes, err error) {
-	utils.Logger.Debug("LoadAlertTypes",
+	log.GetLog().Debug("LoadAlertTypes",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
 		zap.Int("size", cfg.Size))
@@ -229,7 +229,7 @@ func (db *MonitorDB) LoadAlertTypes(cfg *TelegramQueryCfg) (alerts []*AlertTypes
 }
 
 func (db *MonitorDB) LoadAlertTypesByUser(u *Users) (alerts []*AlertTypes, err error) {
-	utils.Logger.Debug("LoadAlertTypesByUser",
+	log.GetLog().Debug("LoadAlertTypesByUser",
 		zap.String("uid", u.ID.Hex()),
 		zap.String("username", u.Name))
 
@@ -241,7 +241,7 @@ func (db *MonitorDB) LoadAlertTypesByUser(u *Users) (alerts []*AlertTypes, err e
 	for iter.Next(uar) {
 		alert := new(AlertTypes)
 		if err = db.GetAlertTypesCol().FindId(uar.AlertMongoID).One(alert); err == mgo.ErrNotFound {
-			utils.Logger.Warn("can not find alert_types by user_alert_relations",
+			log.GetLog().Warn("can not find alert_types by user_alert_relations",
 				zap.String("user_alert_relation_id", uar.ID.Hex()))
 			continue
 		} else if err != nil {
@@ -254,7 +254,7 @@ func (db *MonitorDB) LoadAlertTypesByUser(u *Users) (alerts []*AlertTypes, err e
 }
 
 func (db *MonitorDB) LoadUsersByAlertType(a *AlertTypes) (users []*Users, err error) {
-	utils.Logger.Debug("LoadUsersByAlertType",
+	log.GetLog().Debug("LoadUsersByAlertType",
 		zap.String("alert_type", a.ID.Hex()))
 
 	users = []*Users{}
@@ -265,7 +265,7 @@ func (db *MonitorDB) LoadUsersByAlertType(a *AlertTypes) (users []*Users, err er
 	for iter.Next(uar) {
 		user := new(Users)
 		if err = db.GetUsersCol().FindId(uar.UserMongoID).One(user); err == mgo.ErrNotFound {
-			utils.Logger.Warn("can not find user by user_alert_relations",
+			log.GetLog().Warn("can not find user by user_alert_relations",
 				zap.String("user_alert_relation_id", uar.ID.Hex()))
 			continue
 		} else if err != nil {
@@ -278,7 +278,7 @@ func (db *MonitorDB) LoadUsersByAlertType(a *AlertTypes) (users []*Users, err er
 }
 
 func (db *MonitorDB) ValidateTokenForAlertType(token, alert_type string) (alert *AlertTypes, err error) {
-	utils.Logger.Debug("ValidateTokenForAlertType", zap.String("alert_type", alert_type))
+	log.GetLog().Debug("ValidateTokenForAlertType", zap.String("alert_type", alert_type))
 
 	alert = new(AlertTypes)
 	if err = db.GetAlertTypesCol().Find(bson.M{
@@ -297,7 +297,7 @@ func (db *MonitorDB) ValidateTokenForAlertType(token, alert_type string) (alert 
 }
 
 func (db *MonitorDB) RegisterUserAlertRelation(u *Users, alertName string, joinKey string) (uar *UserAlertRelations, err error) {
-	utils.Logger.Info("RegisterUserAlertRelation", zap.Int("uid", u.UID), zap.String("alert", alertName))
+	log.GetLog().Info("RegisterUserAlertRelation", zap.Int("uid", u.UID), zap.String("alert", alertName))
 	alert := new(AlertTypes)
 	if err = db.GetAlertTypesCol().Find(bson.M{"name": alertName}).One(alert); err == mgo.ErrNotFound {
 		return nil, fmt.Errorf("alert_type not found")
@@ -313,7 +313,7 @@ func (db *MonitorDB) RegisterUserAlertRelation(u *Users, alertName string, joinK
 }
 
 func (db *MonitorDB) LoadUserByUID(telegramUID int) (u *Users, err error) {
-	utils.Logger.Debug("LoadUserByUID", zap.Int("uid", telegramUID))
+	log.GetLog().Debug("LoadUserByUID", zap.Int("uid", telegramUID))
 	u = new(Users)
 	if err = db.GetUsersCol().Find(bson.M{
 		"uid": telegramUID,
@@ -327,7 +327,7 @@ func (db *MonitorDB) LoadUserByUID(telegramUID int) (u *Users, err error) {
 }
 
 func (db *MonitorDB) IsUserSubAlert(uid int, alertName string) (alert *AlertTypes, err error) {
-	utils.Logger.Debug("IsUserSubAlert", zap.Int("uid", uid), zap.String("alert", alertName))
+	log.GetLog().Debug("IsUserSubAlert", zap.Int("uid", uid), zap.String("alert", alertName))
 	alert = new(AlertTypes)
 	if err = db.GetAlertTypesCol().Find(bson.M{"name": alertName}).One(alert); err != nil {
 		return
@@ -350,7 +350,7 @@ func (db *MonitorDB) IsUserSubAlert(uid int, alertName string) (alert *AlertType
 }
 
 func (db *MonitorDB) RefreshAlertTokenAndKey(alert *AlertTypes) (err error) {
-	utils.Logger.Info("RefreshAlertTokenAndKey", zap.String("alert", alert.Name))
+	log.GetLog().Info("RefreshAlertTokenAndKey", zap.String("alert", alert.Name))
 	alert.PushToken = generatePushToken()
 	alert.JoinKey = generateJoinKey()
 	return db.GetAlertTypesCol().UpdateId(
@@ -366,7 +366,7 @@ func (db *MonitorDB) RefreshAlertTokenAndKey(alert *AlertTypes) (err error) {
 }
 
 func (db *MonitorDB) RemoveUAR(uid int, alertName string) (err error) {
-	utils.Logger.Info("remove user_alert_relation", zap.Int("uid", uid), zap.String("alert", alertName))
+	log.GetLog().Info("remove user_alert_relation", zap.Int("uid", uid), zap.String("alert", alertName))
 	alert := new(AlertTypes)
 	if err = db.GetAlertTypesCol().Find(bson.M{"name": alertName}).One(alert); err != nil {
 		return

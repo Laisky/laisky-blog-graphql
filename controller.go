@@ -3,6 +3,7 @@ package laisky_blog_graphql
 import (
 	"context"
 
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/telegram"
 	"github.com/Laisky/zap"
 
@@ -22,7 +23,7 @@ func setupTelegramThrottle(ctx context.Context) {
 		EachTitleNPerSec: utils.Settings.GetInt("settings.telegram.throttle.each_title_per_sec"),
 		EachTitleBurst:   utils.Settings.GetInt("settings.telegram.throttle.each_title_burst"),
 	}); err != nil {
-		utils.Logger.Panic("create telegramThrottle", zap.Error(err),
+		log.GetLog().Panic("create telegramThrottle", zap.Error(err),
 			zap.Int("TotleBurst", utils.Settings.GetInt("settings.telegram.throttle.total_burst")),
 			zap.Int("TotleNPerSec", utils.Settings.GetInt("settings.telegram.throttle.total_per_sec")),
 			zap.Int("EachTitleNPerSec", utils.Settings.GetInt("settings.telegram.throttle.each_title_per_sec")),
@@ -36,17 +37,17 @@ func setupTasks(ctx context.Context) {
 	for _, task := range utils.Settings.GetStringSlice("tasks") {
 		switch task {
 		case "telegram":
-			utils.Logger.Info("enable telegram")
+			log.GetLog().Info("enable telegram")
 			if telegramCli, err = telegram.NewTelegram(
 				ctx,
 				monitorDB,
 				utils.Settings.GetString("settings.telegram.token"),
 				utils.Settings.GetString("settings.telegram.api"),
 			); err != nil {
-				utils.Logger.Panic("new telegram", zap.Error(err))
+				log.GetLog().Panic("new telegram", zap.Error(err))
 			}
 		default:
-			utils.Logger.Panic("unknown task", zap.String("task", task))
+			log.GetLog().Panic("unknown task", zap.String("task", task))
 		}
 	}
 }

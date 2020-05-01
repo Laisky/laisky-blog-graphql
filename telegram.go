@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	utils "github.com/Laisky/go-utils"
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/telegram"
 	"github.com/Laisky/laisky-blog-graphql/types"
 	"github.com/Laisky/zap"
@@ -80,7 +81,7 @@ func (t *telegramAlertTypeResolver) SubUsers(ctx context.Context, obj *telegram.
 
 func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*telegram.AlertTypes, error) {
 	if !telegramThrottle.Allow(typeArg) {
-		utils.Logger.Warn("deny by throttle", zap.String("type", typeArg))
+		log.GetLog().Warn("deny by throttle", zap.String("type", typeArg))
 		return nil, fmt.Errorf("deny by throttle")
 	}
 
@@ -102,7 +103,7 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg str
 	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
 	for _, user := range users {
 		if err = telegramCli.SendMsgToUser(user.UID, msg); err != nil {
-			utils.Logger.Error("send msg to user", zap.Error(err), zap.Int("uid", user.UID), zap.String("msg", msg))
+			log.GetLog().Error("send msg to user", zap.Error(err), zap.Int("uid", user.UID), zap.String("msg", msg))
 			errMsg += err.Error()
 		}
 	}

@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Laisky/zap"
-
 	"cloud.google.com/go/firestore"
 	"github.com/Laisky/go-utils"
-	"github.com/pkg/errors"
-
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/models"
+	"github.com/Laisky/zap"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -39,13 +38,13 @@ func (db *GeneralDB) GetLocksCol() *firestore.CollectionRef {
 }
 
 func (db *GeneralDB) AcquireLock(ctx context.Context, name, ownerID string, duration time.Duration, isRenewal bool) (ok bool, err error) {
-	utils.Logger.Info("AcquireLock", zap.String("name", name), zap.String("owner", ownerID), zap.Duration("duration", duration))
+	log.GetLog().Info("AcquireLock", zap.String("name", name), zap.String("owner", ownerID), zap.Duration("duration", duration))
 	ref := db.GetLocksCol().Doc(name)
 	now := utils.Clock.GetUTCNow()
 	err = db.dbcli.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		doc, err := tx.Get(ref)
 		if err != nil && doc == nil {
-			utils.Logger.Warn("load gcp general lock", zap.String("name", name), zap.Error(err))
+			log.GetLog().Warn("load gcp general lock", zap.String("name", name), zap.Error(err))
 			return errors.Wrap(err, "load lock docu")
 		}
 		if !doc.Exists() && isRenewal {
@@ -73,10 +72,10 @@ func (db *GeneralDB) AcquireLock(ctx context.Context, name, ownerID string, dura
 }
 
 func (db *GeneralDB) LoadLockByName(ctx context.Context, name string) (lock *Lock, err error) {
-	utils.Logger.Debug("load lock by name", zap.String("name", name))
+	log.GetLog().Debug("load lock by name", zap.String("name", name))
 	docu, err := db.GetLocksCol().Doc(name).Get(ctx)
 	if err != nil && docu == nil {
-		utils.Logger.Error("load gcp general lock", zap.String("name", name), zap.Error(err))
+		log.GetLog().Error("load gcp general lock", zap.String("name", name), zap.Error(err))
 		return nil, errors.Wrap(err, "load docu by name")
 	}
 
