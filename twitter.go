@@ -1,14 +1,14 @@
 package laisky_blog_graphql
 
 import (
-	"github.com/Laisky/zap"
 	"context"
 	"fmt"
 	"strconv"
 
-	utils "github.com/Laisky/go-utils"
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
 	"github.com/Laisky/laisky-blog-graphql/types"
+	"github.com/Laisky/zap"
 )
 
 func (r *Resolver) Tweet() TweetResolver {
@@ -84,7 +84,7 @@ func (t *tweetResolver) ReplyTo(ctx context.Context, obj *twitter.Tweet) (tweet 
 	}
 
 	if tweet, err = twitterDB.LoadTweetByTwitterID(obj.ReplyToStatusID); err != nil {
-		utils.Logger.Warn("try to load tweet by id got error",
+		log.GetLog().Warn("try to load tweet by id got error",
 			zap.Int64("tid", obj.ReplyToStatusID),
 			zap.Error(err))
 		return nil, fmt.Errorf("can not load tweet by tid: %v", obj.ReplyToStatusID)

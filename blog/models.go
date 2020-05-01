@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/Laisky/go-utils"
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/zap"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -37,6 +39,25 @@ type Post struct {
 
 type PostInfo struct {
 	Total int `json:"total"`
+}
+
+type UserClaims struct {
+	jwt.StandardClaims
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+}
+
+func (uc *UserClaims) Valid() error {
+	now := utils.Clock.GetUTCNow().Unix()
+	if uc.StandardClaims.VerifyExpiresAt(now, true) {
+		return fmt.Errorf("token expired")
+	}
+
+	if uc.StandardClaims.VerifyIssuedAt(now, true) {
+		return fmt.Errorf("token issueAt invalid")
+	}
+
+	return nil
 }
 
 type User struct {
@@ -93,7 +114,7 @@ type BlogPostCfg struct {
 }
 
 func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
-	utils.Logger.Debug("LoadPosts",
+	log.GetLog().Debug("LoadPosts",
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("tag", cfg.Tag),
 		zap.String("regexp", cfg.Regexp),
@@ -108,14 +129,14 @@ func (t *BlogDB) LoadPosts(cfg *BlogPostCfg) (results []*Post, err error) {
 		return nil, errors.Wrap(err, "try to make query got error")
 	}
 
-	// utils.Logger.Debug("load blog posts", zap.String("query", fmt.Sprint(query)))
+	// log.GetLog().Debug("load blog posts", zap.String("query", fmt.Sprint(query)))
 	iter := t.dbcli.GetCol(POST_COL_NAME).Find(query).
 		Sort("-_id").
 		Skip(cfg.Page * cfg.Size).
 		Limit(cfg.Size).
 		Iter()
 	results = t.filterPosts(cfg, iter)
-	utils.Logger.Debug("load posts done", zap.Int("n", len(results)))
+	log.GetLog().Debug("load posts done", zap.Int("n", len(results)))
 	return results, nil
 }
 
@@ -131,7 +152,7 @@ func (t *BlogDB) LoadPostInfo() (*PostInfo, error) {
 }
 
 func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
-	utils.Logger.Debug("makeQuery",
+	log.GetLog().Debug("makeQuery",
 		zap.String("name", cfg.Name),
 		zap.String("tag", cfg.Tag),
 		zap.String("regexp", cfg.Regexp),
@@ -154,24 +175,24 @@ func (t *BlogDB) makeQuery(cfg *BlogPostCfg) (query bson.M, err error) {
 
 	// "" means empty, nil means ignore
 	if cfg.CategoryURL != nil {
-		utils.Logger.Debug("post category", zap.String("category_url", *cfg.CategoryURL))
+		log.GetLog().Debug("post category", zap.String("category_url", *cfg.CategoryURL))
 		if *cfg.CategoryURL == "" {
 			query["category"] = nil
 		} else {
 			var cate *Category
 			if cate, err = t.LoadCategoryByURL(*cfg.CategoryURL); err != nil {
-				utils.Logger.Error("try to load posts by category url got error",
+				log.GetLog().Error("try to load posts by category url got error",
 					zap.Error(err),
 					zap.String("category_url", *cfg.CategoryURL),
 				)
 			} else if cate != nil {
-				utils.Logger.Debug("set post filter", zap.String("category", cate.ID.Hex()))
+				log.GetLog().Debug("set post filter", zap.String("category", cate.ID.Hex()))
 				query["category"] = cate.ID
 			}
 		}
 	}
 
-	utils.Logger.Debug("generate query", zap.String("query", fmt.Sprint(query)))
+	log.GetLog().Debug("generate query", zap.String("query", fmt.Sprint(query)))
 	return query, nil
 }
 
@@ -179,7 +200,7 @@ func (t *BlogDB) filterPosts(cfg *BlogPostCfg, iter *mgo.Iter) (results []*Post)
 	result := &Post{}
 	isValidate := true
 	for iter.Next(result) {
-		utils.Logger.Debug("filter post", zap.String("post", fmt.Sprintf("%+v", result)))
+		log.GetLog().Debug("filter post", zap.String("post", fmt.Sprintf("%+v", result)))
 		for _, f := range [...]func(*Post) bool{
 			// filters pipeline
 			passwordFilter,
@@ -231,7 +252,7 @@ func getContentLengthFilter(length int) func(*Post) bool {
 }
 
 func (t *BlogDB) LoadUserById(uid bson.ObjectId) (user *User, err error) {
-	utils.Logger.Debug("LoadUserById", zap.String("user_id", uid.Hex()))
+	log.GetLog().Debug("LoadUserById", zap.String("user_id", uid.Hex()))
 	if uid == "" {
 		return nil, nil
 	}
@@ -244,7 +265,7 @@ func (t *BlogDB) LoadUserById(uid bson.ObjectId) (user *User, err error) {
 }
 
 func (t *BlogDB) LoadCategoryById(cateid bson.ObjectId) (cate *Category, err error) {
-	utils.Logger.Debug("LoadCategoryById", zap.String("cate_id", cateid.Hex()))
+	log.GetLog().Debug("LoadCategoryById", zap.String("cate_id", cateid.Hex()))
 	if cateid == "" {
 		return nil, nil
 	}
@@ -294,7 +315,7 @@ func (t *BlogDB) LoadCategoryByURL(url string) (cate *Category, err error) {
 func (t *BlogDB) IsNameExists(name string) (bool, error) {
 	n, err := t.dbcli.GetCol(POST_COL_NAME).Find(bson.M{"post_name": name}).Count()
 	if err != nil {
-		utils.Logger.Error("try to count post_name got error", zap.Error(err))
+		log.GetLog().Error("try to count post_name got error", zap.Error(err))
 		return false, err
 	}
 
@@ -324,7 +345,7 @@ func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md, ptype string) 
 	p.Menu = ExtractMenu(p.Content)
 
 	if utils.Settings.GetBool("dry") {
-		utils.Logger.Info("insert post",
+		log.GetLog().Info("insert post",
 			zap.String("title", p.Title),
 			zap.String("name", p.Name),
 			// zap.String("markdown", p.Markdown),
@@ -342,10 +363,10 @@ func (t *BlogDB) NewPost(authorID bson.ObjectId, title, name, md, ptype string) 
 var IncorrectErr = errors.New("Password Or Username Incorrect")
 
 func (t *BlogDB) ValidateLogin(account, password string) (u *User, err error) {
-	utils.Logger.Debug("ValidateLogin", zap.String("account", account))
+	log.GetLog().Debug("ValidateLogin", zap.String("account", account))
 	u = &User{}
 	if err := t.dbcli.GetCol(USER_COL_NAME).Find(bson.M{"account": account}).One(u); err != nil && err != mgo.ErrNotFound {
-		utils.Logger.Error("try to load user got error", zap.Error(err))
+		log.GetLog().Error("try to load user got error", zap.Error(err))
 	} else if utils.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
 		return u, nil
 	}

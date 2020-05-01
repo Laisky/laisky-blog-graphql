@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pkg/errors"
-
-	"github.com/Laisky/go-utils"
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/zap"
+	"github.com/pkg/errors"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -64,7 +63,7 @@ func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
 	if err = t.dbcli.GetCol(TWEET_COL_NAME).
 		Find(bson.M{"id": id}).
 		One(tweet); err == mgo.ErrNotFound {
-		utils.Logger.Debug("tweet not found", zap.Int64("id", id))
+		log.GetLog().Debug("tweet not found", zap.Int64("id", id))
 		return &Tweet{ID: id}, nil
 	} else if err != nil {
 		return nil, errors.Wrap(err, "try to load tweet by id got error")
@@ -80,7 +79,7 @@ type TweetLoadCfg struct {
 }
 
 func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) {
-	utils.Logger.Debug("LoadTweets",
+	log.GetLog().Debug("LoadTweets",
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("topic", cfg.Topic),
 		zap.String("regexp", cfg.Regexp),

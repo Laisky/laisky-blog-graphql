@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	laisky_blog_graphql "github.com/Laisky/laisky-blog-graphql"
-
-	"github.com/spf13/pflag"
-
 	"github.com/Laisky/go-utils"
+	laisky_blog_graphql "github.com/Laisky/laisky-blog-graphql"
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/zap"
+	"github.com/spf13/pflag"
 )
 
 func setupSettings(ctx context.Context) {
@@ -19,7 +18,9 @@ func setupSettings(ctx context.Context) {
 	if utils.Settings.GetBool("debug") {
 		fmt.Println("run in debug mode")
 		utils.Settings.Set("log-level", "debug")
-		_ = utils.Logger.ChangeLevel("debug")
+		if err := log.GetLog().ChangeLevel("debug"); err != nil {
+			log.GetLog().Panic("change log level to debug")
+		}
 	} else { // prod mode
 		fmt.Println("run in prod mode")
 	}
@@ -30,10 +31,10 @@ func setupSettings(ctx context.Context) {
 	// load configuration
 	cfgDirPath := utils.Settings.GetString("config")
 	if err = utils.Settings.Setup(cfgDirPath); err != nil {
-		utils.Logger.Panic("can not load config from disk",
+		log.GetLog().Panic("can not load config from disk",
 			zap.String("dirpath", cfgDirPath))
 	} else {
-		utils.Logger.Info("success load configuration from dir",
+		log.GetLog().Info("success load configuration from dir",
 			zap.String("dirpath", cfgDirPath))
 	}
 }
@@ -47,15 +48,14 @@ func setupLogger(ctx context.Context) {
 		utils.Settings.GetString("settings.logger.push_token"),
 	)
 	if err != nil {
-		utils.Logger.Panic("create AlertPusher", zap.Error(err))
+		log.GetLog().Panic("create AlertPusher", zap.Error(err))
 	}
-	hook := utils.NewAlertHook(alertPusher)
-	if _, err := utils.SetDefaultLogger(
-		"laisky-blog-graphql",
-		utils.Settings.GetString("log-level"),
-		zap.HooksWithFields(hook.GetZapHook())); err != nil {
-		utils.Logger.Panic("setup logger", zap.Error(err))
-	}
+
+	logger := log.GetLog().WithOptions(
+		zap.HooksWithFields(alertPusher.GetZapHook()),
+	).Named("laisky-graphql")
+	log.SetLog(logger)
+
 }
 
 func setupArgs() {
@@ -69,7 +69,7 @@ func setupArgs() {
 	pflag.Int("heartbeat", 60, "heartbeat seconds")
 	pflag.Parse()
 	if err := utils.Settings.BindPFlags(pflag.CommandLine); err != nil {
-		utils.Logger.Panic("parse command args", zap.Error(err))
+		log.GetLog().Panic("parse command args", zap.Error(err))
 	}
 }
 
@@ -81,7 +81,7 @@ func main() {
 	setupLogger(ctx)
 
 	if err := laisky_blog_graphql.SetupJWT([]byte(utils.Settings.GetString("settings.secret"))); err != nil {
-		utils.Logger.Panic("setup jwt", zap.Error(err))
+		log.GetLog().Panic("setup jwt", zap.Error(err))
 	}
 
 	c := laisky_blog_graphql.NewControllor()

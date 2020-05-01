@@ -3,11 +3,14 @@ package laisky_blog_graphql
 import (
 	"context"
 	"fmt"
+	"time"
 
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
+	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/laisky-blog-graphql/types"
 	"github.com/Laisky/zap"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
 )
 
@@ -92,7 +95,7 @@ func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, erro
 func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
-		utils.Logger.Debug("user invalidate", zap.Error(err))
+		log.GetLog().Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
@@ -100,12 +103,22 @@ func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost
 }
 func (r *mutationResolver) BlogLogin(ctx context.Context, account string, password string) (user *blog.User, err error) {
 	if user, err = blogDB.ValidateLogin(account, password); err != nil {
-		utils.Logger.Debug("user invalidate", zap.Error(err))
+		log.GetLog().Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
-	if err = auth.SetLoginCookie(ctx, user); err != nil {
-		utils.Logger.Error("try to set cookie got error", zap.Error(err))
+	uc := &blog.UserClaims{
+		StandardClaims: jwt.StandardClaims{
+			Subject:   user.ID.String(),
+			IssuedAt:  utils.Clock2.GetUTCNow().Unix(),
+			ExpiresAt: utils.Clock.GetUTCNow().Add(7 * 24 * time.Hour).Unix(),
+		},
+		Username:    user.Account,
+		DisplayName: user.Username,
+	}
+
+	if err = auth.SetLoginCookie(ctx, uc); err != nil {
+		log.GetLog().Error("try to set cookie got error", zap.Error(err))
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}
 
@@ -114,7 +127,7 @@ func (r *mutationResolver) BlogLogin(ctx context.Context, account string, passwo
 func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
-		utils.Logger.Debug("user invalidate", zap.Error(err))
+		log.GetLog().Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
