@@ -49,11 +49,11 @@ type UserClaims struct {
 
 func (uc *UserClaims) Valid() error {
 	now := utils.Clock.GetUTCNow().Unix()
-	if uc.StandardClaims.VerifyExpiresAt(now, true) {
+	if !uc.StandardClaims.VerifyExpiresAt(now, true) {
 		return fmt.Errorf("token expired")
 	}
 
-	if uc.StandardClaims.VerifyIssuedAt(now, true) {
+	if !uc.StandardClaims.VerifyIssuedAt(now, true) {
 		return fmt.Errorf("token issueAt invalid")
 	}
 

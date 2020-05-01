@@ -109,7 +109,7 @@ func (r *mutationResolver) BlogLogin(ctx context.Context, account string, passwo
 
 	uc := &blog.UserClaims{
 		StandardClaims: jwt.StandardClaims{
-			Subject:   user.ID.String(),
+			Subject:   user.ID.Hex(),
 			IssuedAt:  utils.Clock2.GetUTCNow().Unix(),
 			ExpiresAt: utils.Clock.GetUTCNow().Add(7 * 24 * time.Hour).Unix(),
 		},

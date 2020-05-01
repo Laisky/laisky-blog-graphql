@@ -119,6 +119,7 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 		log.GetLog().Debug("user invalidate", zap.Error(err))
 		return ok, err
 	}
+
 	if !validateLockName(username, lockName) {
 		log.GetLog().Warn("user want to acquire lock out of permission", zap.String("user", username), zap.String("lock", lockName))
 		return ok, fmt.Errorf("`%v` do not have permission to acquire `%v`", username, lockName)
@@ -133,6 +134,7 @@ func (r *mutationResolver) CreateGeneralToken(ctx context.Context, username stri
 	if time.Duration(durationSec)*time.Second > maxTokenExpireDuration {
 		return "", errors.Errorf("duration should less than %d, got %d", maxTokenExpireDuration, durationSec)
 	}
+
 	if _, err = validateAndGetUser(ctx); err != nil {
 		return "", errors.Wrapf(err, "user `%v` invalidate", username)
 	}
