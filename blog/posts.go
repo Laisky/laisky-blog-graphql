@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/Laisky/go-utils"
-	"github.com/Laisky/laisky-blog-graphql/log"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"
@@ -65,7 +65,7 @@ func ParseMarkdown2HTML(md []byte) (cnt string) {
 			l3cnt++
 			ttext = strconv.FormatInt(int64(l3cnt), 10) + "、" + ttext
 		default:
-			log.GetLog().Error("unknown title level", zap.String("lev", tlev))
+			libs.Logger.Error("unknown title level", zap.String("lev", tlev))
 		}
 
 		tid = url.QueryEscape(tid) + "-" + utils.RandomStringWithLength(5)

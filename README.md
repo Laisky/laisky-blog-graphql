@@ -19,9 +19,10 @@ Run:
 
 ```sh
 go run -race entrypoints/main.go \
-    --debug --addr=127.0.0.1:8080 \
+    --addr=127.0.0.1:8080 \
     --dbaddr=127.0.0.1:27017 \
-    --config=./docs
+    --config=./docs/settings.yml \
+    --debug
 ```
 
 Build:

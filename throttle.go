@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/Laisky/go-utils"
-	"github.com/Laisky/laisky-blog-graphql/log"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 )
@@ -66,7 +66,7 @@ func (t *TelegramThrottle) Allow(alertType string) (ok bool) {
 					Max:     t.cfg.EachTitleBurst,
 					NPerSec: t.cfg.EachTitleNPerSec,
 				}); err != nil {
-				log.GetLog().Panic("create new throttle for alertType", zap.Error(err),
+				libs.Logger.Panic("create new throttle for alertType", zap.Error(err),
 					zap.Int("Max", t.cfg.EachTitleBurst),
 					zap.Int("NPerSec", t.cfg.EachTitleNPerSec))
 			}

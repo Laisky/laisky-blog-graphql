@@ -7,8 +7,7 @@ import (
 
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
-	"github.com/Laisky/laisky-blog-graphql/log"
-	"github.com/Laisky/laisky-blog-graphql/types"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
@@ -59,11 +58,11 @@ func (q *queryResolver) BlogPostCategories(ctx context.Context) ([]*blog.Categor
 func (r *blogPostResolver) MongoID(ctx context.Context, obj *blog.Post) (string, error) {
 	return obj.ID.Hex(), nil
 }
-func (r *blogPostResolver) CreatedAt(ctx context.Context, obj *blog.Post) (*types.Datetime, error) {
-	return types.NewDatetimeFromTime(obj.CreatedAt), nil
+func (r *blogPostResolver) CreatedAt(ctx context.Context, obj *blog.Post) (*libs.Datetime, error) {
+	return libs.NewDatetimeFromTime(obj.CreatedAt), nil
 }
-func (r *blogPostResolver) ModifiedAt(ctx context.Context, obj *blog.Post) (*types.Datetime, error) {
-	return types.NewDatetimeFromTime(obj.ModifiedAt), nil
+func (r *blogPostResolver) ModifiedAt(ctx context.Context, obj *blog.Post) (*libs.Datetime, error) {
+	return libs.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
 func (r *blogPostResolver) Author(ctx context.Context, obj *blog.Post) (*blog.User, error) {
 	return blogDB.LoadUserById(obj.Author)
@@ -95,7 +94,7 @@ func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, erro
 func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
-		log.GetLog().Debug("user invalidate", zap.Error(err))
+		libs.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
@@ -103,7 +102,7 @@ func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost
 }
 func (r *mutationResolver) BlogLogin(ctx context.Context, account string, password string) (user *blog.User, err error) {
 	if user, err = blogDB.ValidateLogin(account, password); err != nil {
-		log.GetLog().Debug("user invalidate", zap.Error(err))
+		libs.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
@@ -118,7 +117,7 @@ func (r *mutationResolver) BlogLogin(ctx context.Context, account string, passwo
 	}
 
 	if err = auth.SetLoginCookie(ctx, uc); err != nil {
-		log.GetLog().Error("try to set cookie got error", zap.Error(err))
+		libs.Logger.Error("try to set cookie got error", zap.Error(err))
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}
 
@@ -127,7 +126,7 @@ func (r *mutationResolver) BlogLogin(ctx context.Context, account string, passwo
 func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
-		log.GetLog().Debug("user invalidate", zap.Error(err))
+		libs.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 

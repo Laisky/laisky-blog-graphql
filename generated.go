@@ -14,9 +14,9 @@ import (
 	"github.com/99designs/gqlgen/graphql/introspection"
 	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/general"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/laisky-blog-graphql/telegram"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
-	"github.com/Laisky/laisky-blog-graphql/types"
 	gqlparser "github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -155,8 +155,8 @@ type ComplexityRoot struct {
 
 type BlogPostResolver interface {
 	Author(ctx context.Context, obj *blog.Post) (*blog.User, error)
-	CreatedAt(ctx context.Context, obj *blog.Post) (*types.Datetime, error)
-	ModifiedAt(ctx context.Context, obj *blog.Post) (*types.Datetime, error)
+	CreatedAt(ctx context.Context, obj *blog.Post) (*libs.Datetime, error)
+	ModifiedAt(ctx context.Context, obj *blog.Post) (*libs.Datetime, error)
 	Type(ctx context.Context, obj *blog.Post) (BlogPostType, error)
 
 	Category(ctx context.Context, obj *blog.Post) (*blog.Category, error)
@@ -165,7 +165,7 @@ type BlogUserResolver interface {
 	ID(ctx context.Context, obj *blog.User) (string, error)
 }
 type LockResolver interface {
-	ExpiresAt(ctx context.Context, obj *general.Lock) (*types.Datetime, error)
+	ExpiresAt(ctx context.Context, obj *general.Lock) (*libs.Datetime, error)
 }
 type MutationResolver interface {
 	BlogCreatePost(ctx context.Context, post NewBlogPost) (*blog.Post, error)
@@ -188,22 +188,22 @@ type QueryResolver interface {
 }
 type TelegramAlertTypeResolver interface {
 	ID(ctx context.Context, obj *telegram.AlertTypes) (string, error)
-	CreatedAt(ctx context.Context, obj *telegram.AlertTypes) (*types.Datetime, error)
-	ModifiedAt(ctx context.Context, obj *telegram.AlertTypes) (*types.Datetime, error)
+	CreatedAt(ctx context.Context, obj *telegram.AlertTypes) (*libs.Datetime, error)
+	ModifiedAt(ctx context.Context, obj *telegram.AlertTypes) (*libs.Datetime, error)
 
 	SubUsers(ctx context.Context, obj *telegram.AlertTypes) ([]*telegram.Users, error)
 }
 type TelegramUserResolver interface {
 	ID(ctx context.Context, obj *telegram.Users) (string, error)
-	CreatedAt(ctx context.Context, obj *telegram.Users) (*types.Datetime, error)
-	ModifiedAt(ctx context.Context, obj *telegram.Users) (*types.Datetime, error)
+	CreatedAt(ctx context.Context, obj *telegram.Users) (*libs.Datetime, error)
+	ModifiedAt(ctx context.Context, obj *telegram.Users) (*libs.Datetime, error)
 	TelegramID(ctx context.Context, obj *telegram.Users) (string, error)
 
 	SubAlerts(ctx context.Context, obj *telegram.Users) ([]*telegram.AlertTypes, error)
 }
 type TweetResolver interface {
 	ID(ctx context.Context, obj *twitter.Tweet) (string, error)
-	CreatedAt(ctx context.Context, obj *twitter.Tweet) (*types.Datetime, error)
+	CreatedAt(ctx context.Context, obj *twitter.Tweet) (*libs.Datetime, error)
 
 	ReplyTo(ctx context.Context, obj *twitter.Tweet) (*twitter.Tweet, error)
 	IsQuoteStatus(ctx context.Context, obj *twitter.Tweet) (bool, error)
@@ -790,7 +790,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 }
 
 var sources = []*ast.Source{
-	{Name: "schema.graphql", Input: `scalar Date
+	&ast.Source{Name: "schema.graphql", Input: `scalar Date
 scalar QuotedString
 scalar JSONString
 
@@ -869,7 +869,7 @@ type Mutation {
   ): String!
 }
 `, BuiltIn: false},
-	{Name: "./twitter/schema.graphql", Input: `type Tweet {
+	&ast.Source{Name: "./twitter/schema.graphql", Input: `type Tweet {
     # mongo_id: String!
     id: String!
     created_at: Date
@@ -891,7 +891,7 @@ type TwitterUser {
     description: String!
 }
 `, BuiltIn: false},
-	{Name: "./blog/schema.graphql", Input: `enum BlogPostType {
+	&ast.Source{Name: "./blog/schema.graphql", Input: `enum BlogPostType {
     markdown
     slide
     html  # legacy posts
@@ -933,7 +933,7 @@ input NewBlogPost {
   type: BlogPostType!
 }
 `, BuiltIn: false},
-	{Name: "./telegram/schema.graphql", Input: `type TelegramUser {
+	&ast.Source{Name: "./telegram/schema.graphql", Input: `type TelegramUser {
     id: String!
     created_at: Date!
     modified_at: Date!
@@ -951,7 +951,7 @@ type TelegramAlertType {
 }
 
 `, BuiltIn: false},
-	{Name: "./general/schema.graphql", Input: `type Lock {
+	&ast.Source{Name: "./general/schema.graphql", Input: `type Lock {
     name: String!
     owner_id: String!
     expires_at: Date!
@@ -1454,9 +1454,9 @@ func (ec *executionContext) _BlogPost_created_at(ctx context.Context, field grap
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*types.Datetime)
+	res := resTmp.(*libs.Datetime)
 	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _BlogPost_modified_at(ctx context.Context, field graphql.CollectedField, obj *blog.Post) (ret graphql.Marshaler) {
@@ -1488,9 +1488,9 @@ func (ec *executionContext) _BlogPost_modified_at(ctx context.Context, field gra
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*types.Datetime)
+	res := resTmp.(*libs.Datetime)
 	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _BlogPost_type(ctx context.Context, field graphql.CollectedField, obj *blog.Post) (ret graphql.Marshaler) {
@@ -1992,9 +1992,9 @@ func (ec *executionContext) _Lock_expires_at(ctx context.Context, field graphql.
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*types.Datetime)
+	res := resTmp.(*libs.Datetime)
 	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Mutation_BlogCreatePost(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2757,9 +2757,9 @@ func (ec *executionContext) _TelegramAlertType_created_at(ctx context.Context, f
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*types.Datetime)
+	res := resTmp.(*libs.Datetime)
 	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TelegramAlertType_modified_at(ctx context.Context, field graphql.CollectedField, obj *telegram.AlertTypes) (ret graphql.Marshaler) {
@@ -2791,9 +2791,9 @@ func (ec *executionContext) _TelegramAlertType_modified_at(ctx context.Context, 
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*types.Datetime)
+	res := resTmp.(*libs.Datetime)
 	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TelegramAlertType_name(ctx context.Context, field graphql.CollectedField, obj *telegram.AlertTypes) (ret graphql.Marshaler) {
@@ -2927,9 +2927,9 @@ func (ec *executionContext) _TelegramUser_created_at(ctx context.Context, field 
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*types.Datetime)
+	res := resTmp.(*libs.Datetime)
 	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TelegramUser_modified_at(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) (ret graphql.Marshaler) {
@@ -2961,9 +2961,9 @@ func (ec *executionContext) _TelegramUser_modified_at(ctx context.Context, field
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*types.Datetime)
+	res := resTmp.(*libs.Datetime)
 	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TelegramUser_telegram_id(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) (ret graphql.Marshaler) {
@@ -3128,9 +3128,9 @@ func (ec *executionContext) _Tweet_created_at(ctx context.Context, field graphql
 	if resTmp == nil {
 		return graphql.Null
 	}
-	res := resTmp.(*types.Datetime)
+	res := resTmp.(*libs.Datetime)
 	fc.Result = res
-	return ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, field.Selections, res)
+	return ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_text(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) (ret graphql.Marshaler) {
@@ -5940,24 +5940,24 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
-func (ec *executionContext) unmarshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx context.Context, v interface{}) (types.Datetime, error) {
-	var res types.Datetime
+func (ec *executionContext) unmarshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx context.Context, v interface{}) (libs.Datetime, error) {
+	var res libs.Datetime
 	return res, res.UnmarshalGQL(v)
 }
 
-func (ec *executionContext) marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx context.Context, sel ast.SelectionSet, v types.Datetime) graphql.Marshaler {
+func (ec *executionContext) marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx context.Context, sel ast.SelectionSet, v libs.Datetime) graphql.Marshaler {
 	return v
 }
 
-func (ec *executionContext) unmarshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx context.Context, v interface{}) (*types.Datetime, error) {
+func (ec *executionContext) unmarshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx context.Context, v interface{}) (*libs.Datetime, error) {
 	if v == nil {
 		return nil, nil
 	}
-	res, err := ec.unmarshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, v)
+	res, err := ec.unmarshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, v)
 	return &res, err
 }
 
-func (ec *executionContext) marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx context.Context, sel ast.SelectionSet, v *types.Datetime) graphql.Marshaler {
+func (ec *executionContext) marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx context.Context, sel ast.SelectionSet, v *libs.Datetime) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -6498,24 +6498,24 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	return ec.marshalOBoolean2bool(ctx, sel, *v)
 }
 
-func (ec *executionContext) unmarshalODate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx context.Context, v interface{}) (types.Datetime, error) {
-	var res types.Datetime
+func (ec *executionContext) unmarshalODate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx context.Context, v interface{}) (libs.Datetime, error) {
+	var res libs.Datetime
 	return res, res.UnmarshalGQL(v)
 }
 
-func (ec *executionContext) marshalODate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx context.Context, sel ast.SelectionSet, v types.Datetime) graphql.Marshaler {
+func (ec *executionContext) marshalODate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx context.Context, sel ast.SelectionSet, v libs.Datetime) graphql.Marshaler {
 	return v
 }
 
-func (ec *executionContext) unmarshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx context.Context, v interface{}) (*types.Datetime, error) {
+func (ec *executionContext) unmarshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx context.Context, v interface{}) (*libs.Datetime, error) {
 	if v == nil {
 		return nil, nil
 	}
-	res, err := ec.unmarshalODate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx, v)
+	res, err := ec.unmarshalODate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx, v)
 	return &res, err
 }
 
-func (ec *executionContext) marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtypesᚐDatetime(ctx context.Context, sel ast.SelectionSet, v *types.Datetime) graphql.Marshaler {
+func (ec *executionContext) marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibsᚐDatetime(ctx context.Context, sel ast.SelectionSet, v *libs.Datetime) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}

@@ -6,7 +6,7 @@ import (
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/general"
-	"github.com/Laisky/laisky-blog-graphql/log"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/laisky-blog-graphql/models"
 	"github.com/Laisky/laisky-blog-graphql/telegram"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
@@ -26,19 +26,19 @@ func setupDB(ctx context.Context) {
 }
 
 func setupGCP(ctx context.Context) {
-	defer log.GetLog().Info("connected gcp firestore")
+	defer libs.Logger.Info("connected gcp firestore")
 	generalFirestore, err := models.NewFirestore(
 		ctx,
 		utils.Settings.GetString("settings.general.project_id"),
 	)
 	if err != nil {
-		log.GetLog().Panic("create firestore client", zap.Error(err))
+		libs.Logger.Panic("create firestore client", zap.Error(err))
 	}
 	generalDB = general.NewGeneralDB(generalFirestore)
 }
 
 func setupMongo(ctx context.Context) {
-	defer log.GetLog().Info("connected mongodb")
+	defer libs.Logger.Info("connected mongodb")
 	var (
 		blogDBCli,
 		twitterDBCli,
@@ -51,7 +51,7 @@ func setupMongo(ctx context.Context) {
 		utils.Settings.GetString("settings.db.blog.user"),
 		utils.Settings.GetString("settings.db.blog.pwd"),
 	); err != nil {
-		log.GetLog().Panic("connect to blog db", zap.Error(err))
+		libs.Logger.Panic("connect to blog db", zap.Error(err))
 	}
 	blogDB = blog.NewBlogDB(blogDBCli)
 
@@ -61,7 +61,7 @@ func setupMongo(ctx context.Context) {
 		utils.Settings.GetString("settings.db.twitter.user"),
 		utils.Settings.GetString("settings.db.twitter.pwd"),
 	); err != nil {
-		log.GetLog().Panic("connect to twitter db", zap.Error(err))
+		libs.Logger.Panic("connect to twitter db", zap.Error(err))
 	}
 	twitterDB = twitter.NewTwitterDB(twitterDBCli)
 
@@ -71,7 +71,7 @@ func setupMongo(ctx context.Context) {
 		utils.Settings.GetString("settings.db.monitor.user"),
 		utils.Settings.GetString("settings.db.monitor.pwd"),
 	); err != nil {
-		log.GetLog().Panic("connect to monitor db", zap.Error(err))
+		libs.Logger.Panic("connect to monitor db", zap.Error(err))
 	}
 	monitorDB = telegram.NewMonitorDB(monitorDBCli)
 }

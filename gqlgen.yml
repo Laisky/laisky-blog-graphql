@@ -19,11 +19,11 @@ resolver:
 models:
   # general
   Date:
-    model: github.com/Laisky/laisky-blog-graphql/types.Datetime
+    model: github.com/Laisky/laisky-blog-graphql/libs.Datetime
   QuotedString:
-    model: github.com/Laisky/laisky-blog-graphql/types.QuotedString
+    model: github.com/Laisky/laisky-blog-graphql/libs.QuotedString
   JSONString:
-    model: github.com/Laisky/laisky-blog-graphql/types.JSONString
+    model: github.com/Laisky/laisky-blog-graphql/libs.JSONString
   # twitter
   Tweet:
     model: github.com/Laisky/laisky-blog-graphql/twitter.Tweet

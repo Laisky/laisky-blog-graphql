@@ -1,4 +1,4 @@
-package types
+package libs
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/Laisky/laisky-blog-graphql/log"
 	"github.com/Laisky/zap"
 )
 
@@ -40,7 +39,7 @@ func (d *Datetime) UnmarshalGQL(vi interface{}) (err error) {
 
 func (d Datetime) MarshalGQL(w io.Writer) {
 	if _, err := w.Write(appendQuote([]byte(d.t.Format(TimeLayout)))); err != nil {
-		log.GetLog().Error("write datetime bytes", zap.Error(err))
+		Logger.Error("write datetime bytes", zap.Error(err))
 	}
 }
 
@@ -50,20 +49,20 @@ func (qs *QuotedString) UnmarshalGQL(vi interface{}) (err error) {
 	switch v := vi.(type) {
 	case string:
 		if v, err = url.QueryUnescape(v); err != nil {
-			log.GetLog().Debug("unquote string", zap.String("quoted", v), zap.Error(err))
+			Logger.Debug("unquote string", zap.String("quoted", v), zap.Error(err))
 			return err
 		}
 		*qs = QuotedString(v)
 		return nil
 	}
 
-	log.GetLog().Debug("unknown type of QuotedString", zap.String("quoted", fmt.Sprint(vi)))
+	Logger.Debug("unknown type of QuotedString", zap.String("quoted", fmt.Sprint(vi)))
 	return fmt.Errorf("unknown type of QuotedString: `%+v`", vi)
 }
 
 func (qs QuotedString) MarshalGQL(w io.Writer) {
 	if _, err := w.Write(appendQuote([]byte(qs))); err != nil {
-		log.GetLog().Error("write bytes", zap.Error(err))
+		Logger.Error("write bytes", zap.Error(err))
 	}
 }
 
@@ -72,11 +71,11 @@ type JSONString string
 func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 	v, ok := vi.(string)
 	if !ok {
-		log.GetLog().Debug("unknown type of JSONString", zap.String("val", fmt.Sprint(vi)))
+		Logger.Debug("unknown type of JSONString", zap.String("val", fmt.Sprint(vi)))
 	}
 	// var v string
 	if err = json.UnmarshalFromString(v, &v); err != nil {
-		log.GetLog().Debug("decode string", zap.String("quoted", v), zap.Error(err))
+		Logger.Debug("decode string", zap.String("quoted", v), zap.Error(err))
 		return err
 	}
 
@@ -86,10 +85,10 @@ func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 
 func (qs JSONString) MarshalGQL(w io.Writer) {
 	if vb, err := json.Marshal(qs); err != nil {
-		log.GetLog().Error("marshal json", zap.Error(err))
+		Logger.Error("marshal json", zap.Error(err))
 	} else {
 		if _, err = w.Write(vb); err != nil {
-			log.GetLog().Error("write bytes", zap.Error(err))
+			Logger.Error("write bytes", zap.Error(err))
 		}
 	}
 }

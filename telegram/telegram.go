@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Laisky/laisky-blog-graphql/log"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	tb "gopkg.in/tucnak/telebot.v2"
@@ -68,14 +68,14 @@ func NewTelegram(ctx context.Context, db *MonitorDB, token, api string) (*Telegr
 func (b *Telegram) runDefaultHandle() {
 	// start default handler
 	b.bot.Handle(tb.OnText, func(m *tb.Message) {
-		log.GetLog().Debug("got message", zap.String("msg", m.Text), zap.Int("sender", m.Sender.ID))
+		libs.Logger.Debug("got message", zap.String("msg", m.Text), zap.Int("sender", m.Sender.ID))
 		if _, ok := b.userStats.Load(m.Sender.ID); ok {
 			b.dispatcher(m)
 			return
 		}
 
 		if _, err := b.bot.Send(m.Sender, "NotImplement for "+m.Text); err != nil {
-			log.GetLog().Error("send msg", zap.Error(err), zap.String("to", m.Sender.Username))
+			libs.Logger.Error("send msg", zap.Error(err), zap.String("to", m.Sender.Username))
 		}
 	})
 }
@@ -95,18 +95,18 @@ func (b *Telegram) dispatcher(msg *tb.Message) {
 	case userWaitChooseMonitorCmd:
 		b.chooseMonitor(us.(*userStat), msg)
 	default:
-		log.GetLog().Warn("unknown msg")
+		libs.Logger.Warn("unknown msg")
 		if _, err := b.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {
-			log.GetLog().Error("send msg by telegram", zap.Error(err))
+			libs.Logger.Error("send msg by telegram", zap.Error(err))
 		}
 	}
 }
 
 // PleaseRetry echo retry
 func (b *Telegram) PleaseRetry(sender *tb.User, msg string) {
-	log.GetLog().Warn("unknown msg", zap.String("msg", msg))
+	libs.Logger.Warn("unknown msg", zap.String("msg", msg))
 	if _, err := b.bot.Send(sender, "[Error] unknown msg, please retry"); err != nil {
-		log.GetLog().Error("send msg by telegram", zap.Error(err))
+		libs.Logger.Error("send msg by telegram", zap.Error(err))
 	}
 }
 

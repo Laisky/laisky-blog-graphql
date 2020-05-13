@@ -10,8 +10,7 @@ import (
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/general"
-	"github.com/Laisky/laisky-blog-graphql/log"
-	"github.com/Laisky/laisky-blog-graphql/types"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
@@ -40,7 +39,7 @@ func (q *queryResolver) Lock(ctx context.Context, name string) (*general.Lock, e
 	return generalDB.LoadLockByName(ctx, name)
 }
 func (r *queryResolver) LockPermissions(ctx context.Context, username string) (users []*GeneralUser, err error) {
-	log.GetLog().Debug("LockPermissions", zap.String("username", username))
+	libs.Logger.Debug("LockPermissions", zap.String("username", username))
 	users = []*GeneralUser{}
 	var (
 		prefixes []string
@@ -67,8 +66,8 @@ func (r *queryResolver) LockPermissions(ctx context.Context, username string) (u
 // --------------------------
 // gcp general resolver
 // --------------------------
-func (r *locksResolver) ExpiresAt(ctx context.Context, obj *general.Lock) (*types.Datetime, error) {
-	return types.NewDatetimeFromTime(obj.ExpiresAt), nil
+func (r *locksResolver) ExpiresAt(ctx context.Context, obj *general.Lock) (*libs.Datetime, error) {
+	return libs.NewDatetimeFromTime(obj.ExpiresAt), nil
 }
 
 // ============================
@@ -116,12 +115,12 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 
 	var username string
 	if username, err = validateAndGetGCPUser(ctx); err != nil {
-		log.GetLog().Debug("user invalidate", zap.Error(err))
+		libs.Logger.Debug("user invalidate", zap.Error(err))
 		return ok, err
 	}
 
 	if !validateLockName(username, lockName) {
-		log.GetLog().Warn("user want to acquire lock out of permission", zap.String("user", username), zap.String("lock", lockName))
+		libs.Logger.Warn("user want to acquire lock out of permission", zap.String("user", username), zap.String("lock", lockName))
 		return ok, fmt.Errorf("`%v` do not have permission to acquire `%v`", username, lockName)
 	}
 
@@ -130,7 +129,7 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 
 // CreateGeneralToken generate genaral token than should be set as cookie `general`
 func (r *mutationResolver) CreateGeneralToken(ctx context.Context, username string, durationSec int) (token string, err error) {
-	log.GetLog().Debug("CreateGeneralToken", zap.String("username", username), zap.Int("durationSec", durationSec))
+	libs.Logger.Debug("CreateGeneralToken", zap.String("username", username), zap.Int("durationSec", durationSec))
 	if time.Duration(durationSec)*time.Second > maxTokenExpireDuration {
 		return "", errors.Errorf("duration should less than %d, got %d", maxTokenExpireDuration, durationSec)
 	}

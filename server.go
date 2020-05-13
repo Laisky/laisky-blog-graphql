@@ -9,7 +9,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/playground"
 	ginMiddlewares "github.com/Laisky/gin-middlewares"
 	utils "github.com/Laisky/go-utils"
-	"github.com/Laisky/laisky-blog-graphql/log"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"
 )
@@ -31,12 +31,12 @@ func RunServer(addr string) {
 	}
 
 	if err := setupAuth(); err != nil {
-		log.GetLog().Panic("try to setup auth got error", zap.Error(err))
+		libs.Logger.Panic("try to setup auth got error", zap.Error(err))
 	}
 
 	server.Use(LoggerMiddleware)
 	if err := ginMiddlewares.EnableMetric(server); err != nil {
-		log.GetLog().Panic("enable metric server", zap.Error(err))
+		libs.Logger.Panic("enable metric server", zap.Error(err))
 	}
 
 	server.Any("/health", func(ctx *gin.Context) {
@@ -54,8 +54,8 @@ func RunServer(addr string) {
 	server.Any("/ui/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/graphql/query/")))
 	server.Any("/query/", ginMiddlewares.FromStd(h.ServeHTTP))
 
-	log.GetLog().Info("listening on http", zap.String("addr", addr))
-	log.GetLog().Panic("httpServer exit", zap.Error(server.Run(addr)))
+	libs.Logger.Info("listening on http", zap.String("addr", addr))
+	libs.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))
 }
 
 func LoggerMiddleware(ctx *gin.Context) {
@@ -63,7 +63,7 @@ func LoggerMiddleware(ctx *gin.Context) {
 
 	ctx.Next()
 
-	log.GetLog().Debug("request",
+	libs.Logger.Debug("request",
 		zap.Duration("ts", utils.Clock.GetUTCNow().Sub(start)),
 		zap.String("path", ctx.Request.RequestURI),
 		zap.String("method", ctx.Request.Method),

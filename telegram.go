@@ -6,9 +6,8 @@ import (
 	"strconv"
 
 	utils "github.com/Laisky/go-utils"
-	"github.com/Laisky/laisky-blog-graphql/log"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/laisky-blog-graphql/telegram"
-	"github.com/Laisky/laisky-blog-graphql/types"
 	"github.com/Laisky/zap"
 )
 
@@ -49,11 +48,11 @@ func (q *queryResolver) TelegramAlertTypes(ctx context.Context, page *Pagination
 func (t *telegramUserResolver) ID(ctx context.Context, obj *telegram.Users) (string, error) {
 	return obj.ID.Hex(), nil
 }
-func (t *telegramUserResolver) CreatedAt(ctx context.Context, obj *telegram.Users) (*types.Datetime, error) {
-	return types.NewDatetimeFromTime(obj.CreatedAt), nil
+func (t *telegramUserResolver) CreatedAt(ctx context.Context, obj *telegram.Users) (*libs.Datetime, error) {
+	return libs.NewDatetimeFromTime(obj.CreatedAt), nil
 }
-func (t *telegramUserResolver) ModifiedAt(ctx context.Context, obj *telegram.Users) (*types.Datetime, error) {
-	return types.NewDatetimeFromTime(obj.ModifiedAt), nil
+func (t *telegramUserResolver) ModifiedAt(ctx context.Context, obj *telegram.Users) (*libs.Datetime, error) {
+	return libs.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
 func (t *telegramUserResolver) TelegramID(ctx context.Context, obj *telegram.Users) (string, error) {
 	return strconv.FormatInt(int64(obj.UID), 10), nil
@@ -65,11 +64,11 @@ func (t *telegramUserResolver) SubAlerts(ctx context.Context, obj *telegram.User
 func (t *telegramAlertTypeResolver) ID(ctx context.Context, obj *telegram.AlertTypes) (string, error) {
 	return obj.ID.Hex(), nil
 }
-func (t *telegramAlertTypeResolver) CreatedAt(ctx context.Context, obj *telegram.AlertTypes) (*types.Datetime, error) {
-	return types.NewDatetimeFromTime(obj.CreatedAt), nil
+func (t *telegramAlertTypeResolver) CreatedAt(ctx context.Context, obj *telegram.AlertTypes) (*libs.Datetime, error) {
+	return libs.NewDatetimeFromTime(obj.CreatedAt), nil
 }
-func (t *telegramAlertTypeResolver) ModifiedAt(ctx context.Context, obj *telegram.AlertTypes) (*types.Datetime, error) {
-	return types.NewDatetimeFromTime(obj.ModifiedAt), nil
+func (t *telegramAlertTypeResolver) ModifiedAt(ctx context.Context, obj *telegram.AlertTypes) (*libs.Datetime, error) {
+	return libs.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
 func (t *telegramAlertTypeResolver) SubUsers(ctx context.Context, obj *telegram.AlertTypes) ([]*telegram.Users, error) {
 	return monitorDB.LoadUsersByAlertType(obj)
@@ -81,7 +80,7 @@ func (t *telegramAlertTypeResolver) SubUsers(ctx context.Context, obj *telegram.
 
 func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*telegram.AlertTypes, error) {
 	if !telegramThrottle.Allow(typeArg) {
-		log.GetLog().Warn("deny by throttle", zap.String("type", typeArg))
+		libs.Logger.Warn("deny by throttle", zap.String("type", typeArg))
 		return nil, fmt.Errorf("deny by throttle")
 	}
 
@@ -103,7 +102,7 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg str
 	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
 	for _, user := range users {
 		if err = telegramCli.SendMsgToUser(user.UID, msg); err != nil {
-			log.GetLog().Error("send msg to user", zap.Error(err), zap.Int("uid", user.UID), zap.String("msg", msg))
+			libs.Logger.Error("send msg to user", zap.Error(err), zap.Int("uid", user.UID), zap.String("msg", msg))
 			errMsg += err.Error()
 		}
 	}

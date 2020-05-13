@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Laisky/laisky-blog-graphql/log"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
@@ -23,7 +23,7 @@ type DB struct {
 }
 
 func NewMongoDB(ctx context.Context, addr, dbName, user, pwd string) (db *DB, err error) {
-	log.GetLog().Info("try to connect to mongodb",
+	libs.Logger.Info("try to connect to mongodb",
 		zap.String("addr", addr),
 		zap.String("db", dbName),
 	)
@@ -79,13 +79,13 @@ func (d *DB) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
 		}
 
 		if err = d.s.Ping(); err != nil {
-			log.GetLog().Error("db connection got error", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
+			libs.Logger.Error("db connection got error", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
 			if err = d.dial(dialInfo); err != nil {
-				log.GetLog().Error("can not reconnect to db", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
+				libs.Logger.Error("can not reconnect to db", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
 				time.Sleep(3 * time.Second)
 				continue
 			}
-			log.GetLog().Info("success reconnect to db", zap.Strings("db", dialInfo.Addrs))
+			libs.Logger.Info("success reconnect to db", zap.Strings("db", dialInfo.Addrs))
 		}
 	}
 }

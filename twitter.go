@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/Laisky/laisky-blog-graphql/log"
+	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
-	"github.com/Laisky/laisky-blog-graphql/types"
 	"github.com/Laisky/zap"
 )
 
@@ -65,12 +64,12 @@ func (t *tweetResolver) MongoID(ctx context.Context, obj *twitter.Tweet) (string
 func (t *tweetResolver) TweetID(ctx context.Context, obj *twitter.Tweet) (int, error) {
 	return int(obj.ID), nil
 }
-func (t *tweetResolver) CreatedAt(ctx context.Context, obj *twitter.Tweet) (*types.Datetime, error) {
+func (t *tweetResolver) CreatedAt(ctx context.Context, obj *twitter.Tweet) (*libs.Datetime, error) {
 	if obj.CreatedAt == nil {
 		return nil, nil
 	}
 
-	return types.NewDatetimeFromTime(*obj.CreatedAt), nil
+	return libs.NewDatetimeFromTime(*obj.CreatedAt), nil
 }
 func (t *tweetResolver) URL(ctx context.Context, obj *twitter.Tweet) (string, error) {
 	if obj.User == nil {
@@ -84,7 +83,7 @@ func (t *tweetResolver) ReplyTo(ctx context.Context, obj *twitter.Tweet) (tweet 
 	}
 
 	if tweet, err = twitterDB.LoadTweetByTwitterID(obj.ReplyToStatusID); err != nil {
-		log.GetLog().Warn("try to load tweet by id got error",
+		libs.Logger.Warn("try to load tweet by id got error",
 			zap.Int64("tid", obj.ReplyToStatusID),
 			zap.Error(err))
 		return nil, fmt.Errorf("can not load tweet by tid: %v", obj.ReplyToStatusID)
