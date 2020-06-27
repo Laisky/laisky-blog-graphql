@@ -19,7 +19,7 @@ func setupSettings(ctx context.Context) {
 		fmt.Println("run in debug mode")
 		utils.Settings.Set("log-level", "debug")
 		if err := libs.Logger.ChangeLevel("debug"); err != nil {
-			libs.Logger.Panic("change log level to debug")
+			libs.Logger.Panic("change log level to debug", zap.Error(err))
 		}
 	} else { // prod mode
 		fmt.Println("run in prod mode")
@@ -32,6 +32,7 @@ func setupSettings(ctx context.Context) {
 	cfgPath := utils.Settings.GetString("config")
 	if err = utils.Settings.SetupFromFile(cfgPath); err != nil {
 		libs.Logger.Panic("load configuration",
+			zap.Error(err),
 			zap.String("config", cfgPath))
 	} else {
 		libs.Logger.Info("load configuration",
@@ -78,6 +79,7 @@ func main() {
 	setupSettings(ctx)
 	setupLogger(ctx)
 
+	defer utils.Logger.Sync()
 	if err := laisky_blog_graphql.SetupJWT([]byte(utils.Settings.GetString("settings.secret"))); err != nil {
 		libs.Logger.Panic("setup jwt", zap.Error(err))
 	}
