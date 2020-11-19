@@ -34,8 +34,9 @@ type BlogCategory {
 }
 
 input NewBlogPost {
-  name: String!
-  title: String!
-  markdown: String!
-  type: BlogPostType!
+    name: String!
+    title: String
+    markdown: String
+    type: BlogPostType
+    category: String
 }

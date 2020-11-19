@@ -22,7 +22,7 @@ type Query {
 
   # twitter
   TwitterStatues(page: Pagination = {page: 0, size: 20},
-    username: String! = "ppcelery",
+    username: String! = "",
     sort: Sort = {sort_by: "id", order: DESC},
     topic: String! = "",
     regexp: String! = "",

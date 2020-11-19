@@ -89,17 +89,20 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 	if cfg.Size > 100 || cfg.Size < 0 {
 		return nil, fmt.Errorf("size shoule in [0~100]")
 	}
+
 	results = []*Tweet{}
 	var query = bson.M{}
 	if cfg.Topic != "" {
 		query["topics"] = cfg.Topic
 	}
+
 	if cfg.Regexp != "" {
 		query["text"] = bson.M{"$regex": bson.RegEx{
 			Pattern: cfg.Regexp,
 			Options: "im",
 		}}
 	}
+
 	sort := "-_id"
 	if cfg.SortBy != "" {
 		sort = cfg.SortBy
@@ -111,6 +114,7 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 			return nil, fmt.Errorf("SortOrder must in `ASC/DESC`, but got %v", cfg.SortOrder)
 		}
 	}
+
 	if cfg.Username != "" {
 		query["user.screen_name"] = cfg.Username
 	}
@@ -123,5 +127,11 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 		All(&results); err != nil {
 		return nil, err
 	}
+
+	libs.Logger.Debug("load tweets",
+		zap.String("sort", sort),
+		zap.Any("query", query),
+		zap.Int("skip", cfg.Page*cfg.Size),
+		zap.Int("size", cfg.Size))
 	return results, nil
 }

@@ -2,6 +2,7 @@ package laisky_blog_graphql
 
 import (
 	"context"
+	"path/filepath"
 
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
@@ -11,6 +12,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/telegram"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
 	"github.com/Laisky/zap"
+	"google.golang.org/api/option"
 )
 
 var (
@@ -30,6 +32,10 @@ func setupGCP(ctx context.Context) {
 	generalFirestore, err := models.NewFirestore(
 		ctx,
 		utils.Settings.GetString("settings.general.project_id"),
+		option.WithCredentialsFile(filepath.Join(
+			utils.Settings.GetString("cfg_dir"),
+			utils.Settings.GetString("settings.general.credential_file"),
+		)),
 	)
 	if err != nil {
 		libs.Logger.Panic("create firestore client", zap.Error(err))

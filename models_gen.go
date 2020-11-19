@@ -14,10 +14,11 @@ type GeneralUser struct {
 }
 
 type NewBlogPost struct {
-	Name     string       `json:"name"`
-	Title    string       `json:"title"`
-	Markdown string       `json:"markdown"`
-	Type     BlogPostType `json:"type"`
+	Name     string        `json:"name"`
+	Title    *string       `json:"title"`
+	Markdown *string       `json:"markdown"`
+	Type     *BlogPostType `json:"type"`
+	Category *string       `json:"category"`
 }
 
 type Pagination struct {
