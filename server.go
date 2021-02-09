@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
 	ginMiddlewares "github.com/Laisky/gin-middlewares"
@@ -52,6 +53,7 @@ func RunServer(addr string) {
 	h.AddTransport(transport.Options{})
 	h.AddTransport(transport.MultipartForm{})
 	// server.Any("/ui/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/query/")))
+	h.Use(extension.Introspection{})
 	server.Any("/ui/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/graphql/query/")))
 	server.Any("/query/", ginMiddlewares.FromStd(h.ServeHTTP))
 
