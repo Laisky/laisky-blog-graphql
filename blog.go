@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	utils "github.com/Laisky/go-utils"
+	gutils "github.com/Laisky/go-utils"
 	"github.com/Laisky/laisky-blog-graphql/blog"
 	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
@@ -23,9 +23,9 @@ func (r *Resolver) BlogUser() BlogUserResolver {
 type blogPostResolver struct{ *Resolver }
 type blogUserResolver struct{ *Resolver }
 
-// =================
+// =====================================
 // query resolver
-// =================
+// =====================================
 
 func (q *queryResolver) BlogPostInfo(ctx context.Context) (*blog.PostInfo, error) {
 	return blogDB.LoadPostInfo()
@@ -68,7 +68,7 @@ func (r *blogPostResolver) Author(ctx context.Context, obj *blog.Post) (*blog.Us
 	return blogDB.LoadUserById(obj.Author)
 }
 func (r *blogPostResolver) Category(ctx context.Context, obj *blog.Post) (*blog.Category, error) {
-	return blogDB.LoadCategoryById(obj.Category)
+	return blogDB.LoadCategoryByID(obj.Category)
 }
 func (r *blogPostResolver) Type(ctx context.Context, obj *blog.Post) (BlogPostType, error) {
 	switch obj.Type {
@@ -87,10 +87,11 @@ func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, erro
 	return obj.ID.Hex(), nil
 }
 
-// ============================
+// =====================================
 // mutations
-// ============================
+// =====================================
 
+// BlogCreatePost create new blog post
 func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
@@ -98,8 +99,15 @@ func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost
 		return nil, err
 	}
 
-	return blogDB.NewPost(user.ID, string(input.Title), input.Name, string(input.Markdown), input.Type.String())
+	if input.Title == nil ||
+		input.Markdown == nil {
+		return nil, fmt.Errorf("title & markdown must set")
+	}
+
+	return blogDB.NewPost(user.ID, *input.Title, input.Name, *input.Markdown, input.Type.String())
 }
+
+// BlogLogin login in blog page
 func (r *mutationResolver) BlogLogin(ctx context.Context, account string, password string) (user *blog.User, err error) {
 	if user, err = blogDB.ValidateLogin(account, password); err != nil {
 		libs.Logger.Debug("user invalidate", zap.Error(err))
@@ -109,8 +117,8 @@ func (r *mutationResolver) BlogLogin(ctx context.Context, account string, passwo
 	uc := &blog.UserClaims{
 		StandardClaims: jwt.StandardClaims{
 			Subject:   user.ID.Hex(),
-			IssuedAt:  utils.Clock2.GetUTCNow().Unix(),
-			ExpiresAt: utils.Clock.GetUTCNow().Add(7 * 24 * time.Hour).Unix(),
+			IssuedAt:  gutils.Clock2.GetUTCNow().Unix(),
+			ExpiresAt: gutils.Clock.GetUTCNow().Add(7 * 24 * time.Hour).Unix(),
 		},
 		Username:    user.Account,
 		DisplayName: user.Username,
@@ -123,6 +131,7 @@ func (r *mutationResolver) BlogLogin(ctx context.Context, account string, passwo
 
 	return user, nil
 }
+
 func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
@@ -130,5 +139,21 @@ func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) 
 		return nil, err
 	}
 
-	return blogDB.UpdatePost(user, post.Name, string(post.Title), string(post.Markdown), string(post.Type))
+	if post.Name == "" {
+		return nil, fmt.Errorf("title & name cannot be empty")
+	}
+
+	// only update category
+	if post.Category != nil {
+		return blogDB.UpdatePostCategory(post.Name, *post.Category)
+	}
+
+	if post.Title == nil ||
+		post.Markdown == nil ||
+		post.Type == nil {
+		return nil, fmt.Errorf("title & markdown & type must set")
+	}
+
+	// update post content
+	return blogDB.UpdatePost(user, post.Name, *post.Title, *post.Markdown, post.Type.String())
 }
