@@ -1,9 +1,11 @@
 package laisky_blog_graphql
 
 import (
+	"context"
 	"net/http"
 	"time"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
@@ -13,6 +15,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 var (
@@ -54,6 +57,11 @@ func RunServer(addr string) {
 	h.AddTransport(transport.MultipartForm{})
 	// server.Any("/ui/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/query/")))
 	h.Use(extension.Introspection{})
+	h.SetErrorPresenter(func(ctx context.Context, e error) *gqlerror.Error {
+		err := graphql.DefaultErrorPresenter(ctx, e)
+		libs.Logger.Error(err.Error())
+		return err
+	})
 	server.Any("/ui/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/graphql/query/")))
 	server.Any("/query/", ginMiddlewares.FromStd(h.ServeHTTP))
 

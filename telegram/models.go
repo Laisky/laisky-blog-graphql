@@ -21,10 +21,10 @@ const (
 )
 
 var (
-	AlreadyExistsErr = errors.New("already exists")
+	ErrAlreadyExists = errors.New("already exists")
 )
 
-type TelegramQueryCfg struct {
+type QueryCfg struct {
 	Name       string
 	Page, Size int
 }
@@ -129,7 +129,7 @@ func (db *MonitorDB) CreateAlertType(name string) (at *AlertTypes, err error) {
 		return nil, errors.Wrap(err, "upsert alert_types docu")
 	}
 	if info.Matched != 0 {
-		return nil, AlreadyExistsErr
+		return nil, ErrAlreadyExists
 	}
 
 	at = new(AlertTypes)
@@ -182,7 +182,7 @@ func (db *MonitorDB) CreateOrGetUserAlertRelations(user *Users, alert *AlertType
 	return uar, nil
 }
 
-func (db *MonitorDB) LoadUsers(cfg *TelegramQueryCfg) (users []*Users, err error) {
+func (db *MonitorDB) LoadUsers(cfg *QueryCfg) (users []*Users, err error) {
 	libs.Logger.Debug("LoadUsers",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
@@ -205,7 +205,7 @@ func (db *MonitorDB) LoadUsers(cfg *TelegramQueryCfg) (users []*Users, err error
 	return users, nil
 }
 
-func (db *MonitorDB) LoadAlertTypes(cfg *TelegramQueryCfg) (alerts []*AlertTypes, err error) {
+func (db *MonitorDB) LoadAlertTypes(cfg *QueryCfg) (alerts []*AlertTypes, err error) {
 	libs.Logger.Debug("LoadAlertTypes",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
@@ -284,13 +284,13 @@ func (db *MonitorDB) ValidateTokenForAlertType(token, alert_type string) (alert 
 	if err = db.GetAlertTypesCol().Find(bson.M{
 		"name": alert_type,
 	}).One(alert); err == mgo.ErrNotFound {
-		return nil, fmt.Errorf("alert_type not found")
+		return nil, errors.Wrapf(err, "alert_type `%s` not found", alert_type)
 	} else if err != nil {
-		return nil, errors.Wrap(err, "load alert_type from db")
+		return nil, errors.Wrapf(err, "load alert_type `%s` from db", alert_type)
 	}
 
 	if token != alert.PushToken {
-		return nil, fmt.Errorf("token invalidate")
+		return nil, fmt.Errorf("token invalidate for `%s`", alert_type)
 	}
 
 	return alert, nil
