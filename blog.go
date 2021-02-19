@@ -41,11 +41,12 @@ func (q *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag str
 		CategoryURL: categoryURL,
 		Name:        name,
 	}
-	if results, err := blogDB.LoadPosts(cfg); err != nil {
+	results, err := blogDB.LoadPosts(cfg)
+	if err != nil {
 		return nil, err
-	} else {
-		return results, nil
 	}
+
+	return results, nil
 }
 func (q *queryResolver) BlogPostCategories(ctx context.Context) ([]*blog.Category, error) {
 	return blogDB.LoadAllCategories()
@@ -65,7 +66,7 @@ func (r *blogPostResolver) ModifiedAt(ctx context.Context, obj *blog.Post) (*lib
 	return libs.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
 func (r *blogPostResolver) Author(ctx context.Context, obj *blog.Post) (*blog.User, error) {
-	return blogDB.LoadUserById(obj.Author)
+	return blogDB.LoadUserByID(obj.Author)
 }
 func (r *blogPostResolver) Category(ctx context.Context, obj *blog.Post) (*blog.Category, error) {
 	return blogDB.LoadCategoryByID(obj.Category)

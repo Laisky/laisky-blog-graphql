@@ -250,8 +250,8 @@ func getContentLengthFilter(length int) func(*Post) bool {
 	}
 }
 
-func (db *BlogDB) LoadUserById(uid bson.ObjectId) (user *User, err error) {
-	libs.Logger.Debug("LoadUserById", zap.String("user_id", uid.Hex()))
+func (db *BlogDB) LoadUserByID(uid bson.ObjectId) (user *User, err error) {
+	libs.Logger.Debug("LoadUserByID", zap.String("user_id", uid.Hex()))
 	if uid == "" {
 		return nil, nil
 	}

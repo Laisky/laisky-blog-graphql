@@ -41,19 +41,21 @@ func setupSettings(ctx context.Context) {
 
 func setupLogger(ctx context.Context) {
 	// log
-	alertPusher, err := utils.NewAlertPusherWithAlertType(
-		ctx,
-		utils.Settings.GetString("settings.logger.push_api"),
-		utils.Settings.GetString("settings.logger.alert_type"),
-		utils.Settings.GetString("settings.logger.push_token"),
-	)
-	if err != nil {
-		libs.Logger.Panic("create AlertPusher", zap.Error(err))
-	}
+	// alertPusher, err := utils.NewAlertPusherWithAlertType(
+	// 	ctx,
+	// 	utils.Settings.GetString("settings.logger.push_api"),
+	// 	utils.Settings.GetString("settings.logger.alert_type"),
+	// 	utils.Settings.GetString("settings.logger.push_token"),
+	// )
+	// if err != nil {
+	// 	libs.Logger.Panic("create AlertPusher", zap.Error(err))
+	// }
+	//
+	// libs.Logger = libs.Logger.WithOptions(
+	// 	zap.HooksWithFields(alertPusher.GetZapHook()),
+	// ).Named("laisky-graphql")
 
-	libs.Logger = libs.Logger.WithOptions(
-		zap.HooksWithFields(alertPusher.GetZapHook()),
-	).Named("laisky-graphql")
+	libs.Logger = libs.Logger.Named("laisky-graphql")
 
 	lvl := utils.Settings.GetString("log-level")
 	if err := libs.Logger.ChangeLevel(lvl); err != nil {

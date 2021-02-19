@@ -26,7 +26,7 @@ type telegramUserResolver struct{ *Resolver }
 // =================
 
 func (q *queryResolver) TelegramMonitorUsers(ctx context.Context, page *Pagination, name string) ([]*telegram.Users, error) {
-	cfg := &telegram.TelegramQueryCfg{
+	cfg := &telegram.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
 		Name: name,
@@ -34,7 +34,7 @@ func (q *queryResolver) TelegramMonitorUsers(ctx context.Context, page *Paginati
 	return monitorDB.LoadUsers(cfg)
 }
 func (q *queryResolver) TelegramAlertTypes(ctx context.Context, page *Pagination, name string) ([]*telegram.AlertTypes, error) {
-	cfg := &telegram.TelegramQueryCfg{
+	cfg := &telegram.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
 		Name: name,
@@ -93,6 +93,7 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg str
 	if err != nil {
 		return nil, err
 	}
+
 	users, err := monitorDB.LoadUsersByAlertType(alert)
 	if err != nil {
 		return nil, err

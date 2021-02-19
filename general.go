@@ -35,9 +35,10 @@ type locksResolver struct{ *Resolver }
 // query resolver
 // =================
 
-func (q *queryResolver) Lock(ctx context.Context, name string) (*general.Lock, error) {
+func (r *queryResolver) Lock(ctx context.Context, name string) (*general.Lock, error) {
 	return generalDB.LoadLockByName(ctx, name)
 }
+
 func (r *queryResolver) LockPermissions(ctx context.Context, username string) (users []*GeneralUser, err error) {
 	libs.Logger.Debug("LockPermissions", zap.String("username", username))
 	users = []*GeneralUser{}

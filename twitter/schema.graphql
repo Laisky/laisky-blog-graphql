@@ -11,6 +11,7 @@ type Tweet {
     is_retweeted: Boolean!
     retweeted_tweet: Tweet
     url: String!
+    viewers: [TwitterUser!]
 }
 
 type TwitterUser {

@@ -30,7 +30,7 @@ func validateAndGetUser(ctx context.Context) (user *blog.User, err error) {
 	}
 
 	uid := bson.ObjectIdHex(uc.Subject)
-	if user, err = blogDB.LoadUserById(uid); err != nil {
+	if user, err = blogDB.LoadUserByID(uid); err != nil {
 		return nil, errors.Wrapf(err, "load user `%s`", uid)
 	}
 

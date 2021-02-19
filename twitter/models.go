@@ -2,6 +2,7 @@ package twitter
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Laisky/laisky-blog-graphql/libs"
@@ -38,18 +39,20 @@ type Tweet struct {
 	RetweetedTweet  *Tweet        `bson:"retweeted_status,omitempty" json:"retweeted_tweet"`
 	IsQuoted        bool          `bson:"is_quote_status" json:"is_quote_status"`
 	QuotedTweet     *Tweet        `bson:"quoted_status,omitempty" json:"quoted_status"`
+	Viewer          []int64       `bson:"viewer,omitempty" json:"viewer"`
 }
 
 type User struct {
-	ID         int32  `bson:"id" json:"id"`
+	ID         int64  `bson:"id" json:"id"`
 	ScreenName string `bson:"screen_name" json:"screen_name"`
 	Name       string `bson:"name" json:"name"`
 	Dscription string `bson:"dscription" json:"dscription"`
 }
 
 const (
-	DB_NAME        = "twitter"
-	TWEET_COL_NAME = "tweets"
+	DB_NAME   = "twitter"
+	colTweets = "tweets"
+	colUsers  = "users"
 )
 
 func NewTwitterDB(dbcli *models.DB) *TwitterDB {
@@ -60,7 +63,7 @@ func NewTwitterDB(dbcli *models.DB) *TwitterDB {
 
 func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
 	tweet = &Tweet{}
-	if err = t.dbcli.GetCol(TWEET_COL_NAME).
+	if err = t.dbcli.GetCol(colTweets).
 		Find(bson.M{"id": id}).
 		One(tweet); err == mgo.ErrNotFound {
 		libs.Logger.Debug("tweet not found", zap.Int64("id", id))
@@ -72,10 +75,24 @@ func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
 	return tweet, nil
 }
 
+func (t *TwitterDB) LoadUserByID(id int64) (user *User, err error) {
+	user = new(User)
+	if err = t.dbcli.GetCol(colUsers).
+		Find(bson.M{"id": id}).
+		One(user); err == mgo.ErrNotFound {
+		libs.Logger.Debug("tweet not found", zap.Int64("id", id))
+		return nil, errors.Errorf("user `%d` not found", id)
+	} else if err != nil {
+		return nil, errors.Wrap(err, "try to load tweet by id got error")
+	}
+
+	return user, nil
+}
+
 type TweetLoadCfg struct {
-	Page, Size              int
-	Topic, Regexp, Username string
-	SortBy, SortOrder       string
+	Page, Size                        int
+	Topic, Regexp, Username, ViewerID string
+	SortBy, SortOrder                 string
 }
 
 func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) {
@@ -84,6 +101,7 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 		zap.String("topic", cfg.Topic),
 		zap.String("regexp", cfg.Regexp),
 		zap.String("sort_by", cfg.SortBy),
+		zap.String("viewer", cfg.ViewerID),
 		zap.String("sort_order", cfg.SortOrder),
 	)
 	if cfg.Size > 100 || cfg.Size < 0 {
@@ -94,6 +112,15 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 	var query = bson.M{}
 	if cfg.Topic != "" {
 		query["topics"] = cfg.Topic
+	}
+
+	if cfg.ViewerID != "" {
+		vid, err := strconv.Atoi(cfg.ViewerID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "invalid viewer id `%s`", cfg.ViewerID)
+		}
+
+		query["viewer"] = int64(vid)
 	}
 
 	if cfg.Regexp != "" {
@@ -119,7 +146,7 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 		query["user.screen_name"] = cfg.Username
 	}
 
-	if err = t.dbcli.GetCol(TWEET_COL_NAME).
+	if err = t.dbcli.GetCol(colTweets).
 		Find(query).
 		Sort(sort).
 		Skip(cfg.Page * cfg.Size).
