@@ -28,22 +28,22 @@ type Entities struct {
 
 type Tweet struct {
 	MongoID         bson.ObjectId `bson:"_id" json:"mongo_id"`
-	ID              int64         `bson:"id" json:"id"`
+	ID              string        `bson:"id_str" json:"id"`
 	CreatedAt       *time.Time    `bson:"created_at" json:"created_at"`
 	Text            string        `bson:"text" json:"text"`
 	Topics          []string      `bson:"topics" json:"topics"`
 	User            *User         `bson:"user" json:"user"`
-	ReplyToStatusID int64         `bson:"in_reply_to_status_id" json:"in_reply_to_status_id"`
+	ReplyToStatusID string        `bson:"in_reply_to_status_id_str" json:"in_reply_to_status_id"`
 	Entities        *Entities     `bson:"entities" json:"entities"`
 	IsRetweeted     bool          `bson:"retweeted" json:"is_retweeted"`
 	RetweetedTweet  *Tweet        `bson:"retweeted_status,omitempty" json:"retweeted_tweet"`
 	IsQuoted        bool          `bson:"is_quote_status" json:"is_quote_status"`
 	QuotedTweet     *Tweet        `bson:"quoted_status,omitempty" json:"quoted_status"`
-	Viewer          []int64       `bson:"viewer,omitempty" json:"viewer"`
+	Viewer          []string      `bson:"viewer,omitempty" json:"viewer"`
 }
 
 type User struct {
-	ID         int64  `bson:"id" json:"id"`
+	ID         string `bson:"id_str" json:"id"`
 	ScreenName string `bson:"screen_name" json:"screen_name"`
 	Name       string `bson:"name" json:"name"`
 	Dscription string `bson:"dscription" json:"dscription"`
@@ -61,12 +61,22 @@ func NewTwitterDB(dbcli *models.DB) *TwitterDB {
 	}
 }
 
-func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
+func (t *TwitterDB) LoadTweetReplys(tweetID string) (replys []*Tweet, err error) {
+	if err = t.dbcli.GetCol(colTweets).
+		Find(bson.M{"in_reply_to_status_id_str": tweetID}).
+		All(&replys); err != nil {
+		return nil, errors.Wrapf(err, "load replys of tweet `%d`", tweetID)
+	}
+
+	return
+}
+
+func (t *TwitterDB) LoadTweetByTwitterID(id string) (tweet *Tweet, err error) {
 	tweet = &Tweet{}
 	if err = t.dbcli.GetCol(colTweets).
-		Find(bson.M{"id": id}).
+		Find(bson.M{"id_str": id}).
 		One(tweet); err == mgo.ErrNotFound {
-		libs.Logger.Debug("tweet not found", zap.Int64("id", id))
+		libs.Logger.Debug("tweet not found", zap.String("id", id))
 		return &Tweet{ID: id}, nil
 	} else if err != nil {
 		return nil, errors.Wrap(err, "try to load tweet by id got error")
@@ -75,12 +85,12 @@ func (t *TwitterDB) LoadTweetByTwitterID(id int64) (tweet *Tweet, err error) {
 	return tweet, nil
 }
 
-func (t *TwitterDB) LoadUserByID(id int64) (user *User, err error) {
+func (t *TwitterDB) LoadUserByID(id string) (user *User, err error) {
 	user = new(User)
 	if err = t.dbcli.GetCol(colUsers).
-		Find(bson.M{"id": id}).
+		Find(bson.M{"id_str": id}).
 		One(user); err == mgo.ErrNotFound {
-		libs.Logger.Debug("tweet not found", zap.Int64("id", id))
+		libs.Logger.Debug("tweet not found", zap.String("id", id))
 		return nil, errors.Errorf("user `%d` not found", id)
 	} else if err != nil {
 		return nil, errors.Wrap(err, "try to load tweet by id got error")

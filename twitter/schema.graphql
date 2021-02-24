@@ -6,11 +6,13 @@ type Tweet {
     topics: [String!]
     user: TwitterUser
     reply_to: Tweet
+    replys: [Tweet!]
     is_quote_status: Boolean!
     quoted_status: Tweet
     is_retweeted: Boolean!
     retweeted_tweet: Tweet
     url: String!
+    images: [String!]
     viewers: [TwitterUser!]
 }
 

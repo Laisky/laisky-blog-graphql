@@ -55,13 +55,13 @@ func RunServer(addr string) {
 	h.AddTransport(transport.POST{})
 	h.AddTransport(transport.Options{})
 	h.AddTransport(transport.MultipartForm{})
-	// server.Any("/ui/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/query/")))
 	h.Use(extension.Introspection{})
 	h.SetErrorPresenter(func(ctx context.Context, e error) *gqlerror.Error {
 		err := graphql.DefaultErrorPresenter(ctx, e)
 		libs.Logger.Error(err.Error())
 		return err
 	})
+	server.Any("/ui-dev/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/query/")))
 	server.Any("/ui/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/graphql/query/")))
 	server.Any("/query/", ginMiddlewares.FromStd(h.ServeHTTP))
 
