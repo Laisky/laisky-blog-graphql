@@ -3,7 +3,7 @@ package laisky_blog_graphql
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"strings"
 
 	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/laisky-blog-graphql/twitter"
@@ -52,20 +52,33 @@ func (q *queryResolver) TwitterStatues(ctx context.Context,
 // twitter resolver
 // ----------------
 
-func (t *twitterUserResolver) ID(ctx context.Context, obj *twitter.User) (string, error) {
-	return strconv.FormatInt(int64(obj.ID), 10), nil
-}
+// func (t *twitterUserResolver) ID(ctx context.Context, obj *twitter.User) (string, error) {
+// 	return obj.ID, nil
+// }
 
 func (t *twitterUserResolver) Description(ctx context.Context, obj *twitter.User) (string, error) {
 	return obj.Dscription, nil
 }
 
 func (t *tweetResolver) ID(ctx context.Context, obj *twitter.Tweet) (string, error) {
-	return strconv.FormatInt(obj.ID, 10), nil
+	return obj.ID, nil
 }
 
 func (t *tweetResolver) IsQuoteStatus(ctx context.Context, obj *twitter.Tweet) (bool, error) {
 	return obj.IsQuoted, nil
+}
+
+func (t *tweetResolver) Replys(ctx context.Context, obj *twitter.Tweet) ([]*twitter.Tweet, error) {
+	return twitterDB.LoadTweetReplys(obj.ID)
+}
+
+func (t *tweetResolver) Images(ctx context.Context, obj *twitter.Tweet) (imgs []string, err error) {
+	for _, e := range obj.Entities.Media {
+		us := strings.Split(e.URL, "/")
+		imgs = append(imgs, ("https://s3.laisky.com/uploads/twitter/" + us[len(us)-1]))
+	}
+
+	return
 }
 
 func (t *tweetResolver) Viewers(ctx context.Context, obj *twitter.Tweet) (us []*twitter.User, err error) {
@@ -85,13 +98,13 @@ func (t *tweetResolver) QuotedStatus(ctx context.Context, obj *twitter.Tweet) (*
 	return obj.QuotedTweet, nil
 }
 
-func (t *tweetResolver) MongoID(ctx context.Context, obj *twitter.Tweet) (string, error) {
-	return obj.MongoID.Hex(), nil
-}
+// func (t *tweetResolver) MongoID(ctx context.Context, obj *twitter.Tweet) (string, error) {
+// 	return obj.MongoID.Hex(), nil
+// }
 
-func (t *tweetResolver) TweetID(ctx context.Context, obj *twitter.Tweet) (int, error) {
-	return int(obj.ID), nil
-}
+// func (t *tweetResolver) TweetID(ctx context.Context, obj *twitter.Tweet) (int, error) {
+// 	return int(obj.ID), nil
+// }
 
 func (t *tweetResolver) CreatedAt(ctx context.Context, obj *twitter.Tweet) (*libs.Datetime, error) {
 	if obj.CreatedAt == nil {
@@ -105,17 +118,17 @@ func (t *tweetResolver) URL(ctx context.Context, obj *twitter.Tweet) (string, er
 	if obj.User == nil {
 		return "", nil
 	}
-	return "https://twitter.com/" + obj.User.ScreenName + "/status/" + strconv.FormatInt(obj.ID, 10), nil
+	return "https://twitter.com/" + obj.User.ScreenName + "/status/" + obj.ID, nil
 }
 
 func (t *tweetResolver) ReplyTo(ctx context.Context, obj *twitter.Tweet) (tweet *twitter.Tweet, err error) {
-	if obj.ReplyToStatusID == 0 {
+	if obj.ReplyToStatusID == "" {
 		return nil, nil
 	}
 
 	if tweet, err = twitterDB.LoadTweetByTwitterID(obj.ReplyToStatusID); err != nil {
 		libs.Logger.Warn("try to load tweet by id got error",
-			zap.Int64("tid", obj.ReplyToStatusID),
+			zap.String("tweet", obj.ReplyToStatusID),
 			zap.Error(err))
 		return nil, fmt.Errorf("can not load tweet by tid: %v", obj.ReplyToStatusID)
 	}

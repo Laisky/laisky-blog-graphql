@@ -20,6 +20,7 @@ func SetupJWT(secret []byte) (err error) {
 	); err != nil {
 		return errors.Wrap(err, "new jwt")
 	}
+
 	return nil
 }
 
