@@ -1,15 +1,9 @@
 package twitter
 
 import (
-	"fmt"
-	"strconv"
 	"time"
 
-	"github.com/Laisky/laisky-blog-graphql/libs"
 	"github.com/Laisky/laisky-blog-graphql/models"
-	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
-	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -59,116 +53,4 @@ func NewTwitterDB(dbcli *models.DB) *TwitterDB {
 	return &TwitterDB{
 		dbcli: dbcli,
 	}
-}
-
-func (t *TwitterDB) LoadTweetReplys(tweetID string) (replys []*Tweet, err error) {
-	if err = t.dbcli.GetCol(colTweets).
-		Find(bson.M{"in_reply_to_status_id_str": tweetID}).
-		All(&replys); err != nil {
-		return nil, errors.Wrapf(err, "load replys of tweet `%d`", tweetID)
-	}
-
-	return
-}
-
-func (t *TwitterDB) LoadTweetByTwitterID(id string) (tweet *Tweet, err error) {
-	tweet = &Tweet{}
-	if err = t.dbcli.GetCol(colTweets).
-		Find(bson.M{"id_str": id}).
-		One(tweet); err == mgo.ErrNotFound {
-		libs.Logger.Debug("tweet not found", zap.String("id", id))
-		return &Tweet{ID: id}, nil
-	} else if err != nil {
-		return nil, errors.Wrap(err, "try to load tweet by id got error")
-	}
-
-	return tweet, nil
-}
-
-func (t *TwitterDB) LoadUserByID(id string) (user *User, err error) {
-	user = new(User)
-	if err = t.dbcli.GetCol(colUsers).
-		Find(bson.M{"id_str": id}).
-		One(user); err == mgo.ErrNotFound {
-		libs.Logger.Debug("tweet not found", zap.String("id", id))
-		return nil, errors.Errorf("user `%d` not found", id)
-	} else if err != nil {
-		return nil, errors.Wrap(err, "try to load tweet by id got error")
-	}
-
-	return user, nil
-}
-
-type TweetLoadCfg struct {
-	Page, Size                        int
-	Topic, Regexp, Username, ViewerID string
-	SortBy, SortOrder                 string
-}
-
-func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) {
-	libs.Logger.Debug("LoadTweets",
-		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
-		zap.String("topic", cfg.Topic),
-		zap.String("regexp", cfg.Regexp),
-		zap.String("sort_by", cfg.SortBy),
-		zap.String("viewer", cfg.ViewerID),
-		zap.String("sort_order", cfg.SortOrder),
-	)
-	if cfg.Size > 100 || cfg.Size < 0 {
-		return nil, fmt.Errorf("size shoule in [0~100]")
-	}
-
-	results = []*Tweet{}
-	var query = bson.M{}
-	if cfg.Topic != "" {
-		query["topics"] = cfg.Topic
-	}
-
-	if cfg.ViewerID != "" {
-		vid, err := strconv.Atoi(cfg.ViewerID)
-		if err != nil {
-			return nil, errors.Wrapf(err, "invalid viewer id `%s`", cfg.ViewerID)
-		}
-
-		query["viewer"] = int64(vid)
-	}
-
-	if cfg.Regexp != "" {
-		query["text"] = bson.M{"$regex": bson.RegEx{
-			Pattern: cfg.Regexp,
-			Options: "im",
-		}}
-	}
-
-	sort := "-_id"
-	if cfg.SortBy != "" {
-		sort = cfg.SortBy
-		switch cfg.SortOrder {
-		case "ASC":
-		case "DESC":
-			sort = "-" + sort
-		default:
-			return nil, fmt.Errorf("SortOrder must in `ASC/DESC`, but got %v", cfg.SortOrder)
-		}
-	}
-
-	if cfg.Username != "" {
-		query["user.screen_name"] = cfg.Username
-	}
-
-	if err = t.dbcli.GetCol(colTweets).
-		Find(query).
-		Sort(sort).
-		Skip(cfg.Page * cfg.Size).
-		Limit(cfg.Size).
-		All(&results); err != nil {
-		return nil, err
-	}
-
-	libs.Logger.Debug("load tweets",
-		zap.String("sort", sort),
-		zap.Any("query", query),
-		zap.Int("skip", cfg.Page*cfg.Size),
-		zap.Int("size", cfg.Size))
-	return results, nil
 }

@@ -58,7 +58,8 @@ func RunServer(addr string) {
 	h.Use(extension.Introspection{})
 	h.SetErrorPresenter(func(ctx context.Context, e error) *gqlerror.Error {
 		err := graphql.DefaultErrorPresenter(ctx, e)
-		libs.Logger.Error(err.Error())
+		// FIXME: add cli error
+		// libs.Logger.Error(err.Error())
 		return err
 	})
 	server.Any("/ui-dev/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/query/")))

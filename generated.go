@@ -112,6 +112,7 @@ type ComplexityRoot struct {
 		TelegramAlertTypes   func(childComplexity int, page *Pagination, name string) int
 		TelegramMonitorUsers func(childComplexity int, page *Pagination, name string) int
 		TwitterStatues       func(childComplexity int, page *Pagination, username string, viewerID string, sort *Sort, topic string, regexp string) int
+		TwitterThreads       func(childComplexity int, tweetID string) int
 	}
 
 	TelegramAlertType struct {
@@ -181,6 +182,7 @@ type MutationResolver interface {
 type QueryResolver interface {
 	Hello(ctx context.Context) (string, error)
 	TwitterStatues(ctx context.Context, page *Pagination, username string, viewerID string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error)
+	TwitterThreads(ctx context.Context, tweetID string) ([]*twitter.Tweet, error)
 	BlogPosts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error)
 	BlogPostInfo(ctx context.Context) (*blog.PostInfo, error)
 	BlogPostCategories(ctx context.Context) ([]*blog.Category, error)
@@ -547,6 +549,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Query.TwitterStatues(childComplexity, args["page"].(*Pagination), args["username"].(string), args["viewer_id"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string)), true
 
+	case "Query.TwitterThreads":
+		if e.complexity.Query.TwitterThreads == nil {
+			break
+		}
+
+		args, err := ec.field_Query_TwitterThreads_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.TwitterThreads(childComplexity, args["tweet_id"].(string)), true
+
 	case "TelegramAlertType.created_at":
 		if e.complexity.TelegramAlertType.CreatedAt == nil {
 			break
@@ -844,6 +858,8 @@ type Query {
     topic: String! = "",
     regexp: String! = "",
   ): [Tweet]!
+  # TwitterThreads load tweets thread by tweet id
+  TwitterThreads(tweet_id: String!): [Tweet!]
 
   # blog
   BlogPosts(page: Pagination = {page: 0, size: 10},
@@ -1337,6 +1353,21 @@ func (ec *executionContext) field_Query_TwitterStatues_args(ctx context.Context,
 		}
 	}
 	args["regexp"] = arg5
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_TwitterThreads_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["tweet_id"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("tweet_id"))
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["tweet_id"] = arg0
 	return args, nil
 }
 
@@ -2449,6 +2480,45 @@ func (ec *executionContext) _Query_TwitterStatues(ctx context.Context, field gra
 	res := resTmp.([]*twitter.Tweet)
 	fc.Result = res
 	return ec.marshalNTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐTweet(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_TwitterThreads(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_TwitterThreads_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	fc.Args = args
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().TwitterThreads(rctx, args["tweet_id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]*twitter.Tweet)
+	fc.Result = res
+	return ec.marshalOTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋtwitterᚐTweetᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_BlogPosts(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -5388,6 +5458,17 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 				if res == graphql.Null {
 					atomic.AddUint32(&invalids, 1)
 				}
+				return res
+			})
+		case "TwitterThreads":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_TwitterThreads(ctx, field)
 				return res
 			})
 		case "BlogPosts":

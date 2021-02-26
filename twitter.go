@@ -48,6 +48,10 @@ func (q *queryResolver) TwitterStatues(ctx context.Context,
 	return results, nil
 }
 
+func (q *queryResolver) TwitterThreads(ctx context.Context, tweetID string) ([]*twitter.Tweet, error) {
+	return twitterDB.LoadThreadByTweetID(tweetID)
+}
+
 // ----------------
 // twitter resolver
 // ----------------
