@@ -28,6 +28,8 @@ type Query {
     topic: String! = "",
     regexp: String! = "",
   ): [Tweet]!
+  # TwitterThreads load tweets thread by tweet id
+  TwitterThreads(tweet_id: String!): [Tweet!]
 
   # blog
   BlogPosts(page: Pagination = {page: 0, size: 10},
