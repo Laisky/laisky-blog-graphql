@@ -14,7 +14,7 @@ func (t *TwitterDB) LoadTweetReplys(tweetID string) (replys []*Tweet, err error)
 	if err = t.dbcli.GetCol(colTweets).
 		Find(bson.M{"in_reply_to_status_id_str": tweetID}).
 		All(&replys); err != nil {
-		return nil, errors.Wrapf(err, "load replys of tweet `%d`", tweetID)
+		return nil, errors.Wrapf(err, "load replys of tweet `%s`", tweetID)
 	}
 
 	return
@@ -129,7 +129,7 @@ func (t *TwitterDB) LoadUserByID(id string) (user *User, err error) {
 		Find(bson.M{"id_str": id}).
 		One(user); err == mgo.ErrNotFound {
 		libs.Logger.Debug("tweet not found", zap.String("id", id))
-		return nil, errors.Errorf("user `%d` not found", id)
+		return nil, errors.Errorf("user `%s` not found", id)
 	} else if err != nil {
 		return nil, errors.Wrap(err, "try to load tweet by id got error")
 	}
@@ -137,16 +137,21 @@ func (t *TwitterDB) LoadUserByID(id string) (user *User, err error) {
 	return user, nil
 }
 
-type TweetLoadCfg struct {
-	Page, Size                        int
-	Topic, Regexp, Username, ViewerID string
-	SortBy, SortOrder                 string
+type LoadTweetArgs struct {
+	Page, Size int
+	TweetID,
+	Topic,
+	Regexp,
+	Username,
+	ViewerID string
+	SortBy, SortOrder string
 }
 
-func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) {
+func (t *TwitterDB) LoadTweets(cfg *LoadTweetArgs) (results []*Tweet, err error) {
 	libs.Logger.Debug("LoadTweets",
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("topic", cfg.Topic),
+		zap.String("tweet_id", cfg.TweetID),
 		zap.String("regexp", cfg.Regexp),
 		zap.String("sort_by", cfg.SortBy),
 		zap.String("viewer", cfg.ViewerID),
@@ -160,6 +165,10 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 	var query = bson.M{}
 	if cfg.Topic != "" {
 		query["topics"] = cfg.Topic
+	}
+
+	if cfg.TweetID != "" {
+		query["id_str"] = cfg.TweetID
 	}
 
 	if cfg.ViewerID != "" {
@@ -178,6 +187,10 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 		}}
 	}
 
+	if cfg.Username != "" {
+		query["user.screen_name"] = cfg.Username
+	}
+
 	sort := "-created_at"
 	if cfg.SortBy != "" {
 		sort = cfg.SortBy
@@ -188,10 +201,6 @@ func (t *TwitterDB) LoadTweets(cfg *TweetLoadCfg) (results []*Tweet, err error) 
 		default:
 			return nil, errors.Errorf("SortOrder must in `ASC/DESC`, but got %v", cfg.SortOrder)
 		}
-	}
-
-	if cfg.Username != "" {
-		query["user.screen_name"] = cfg.Username
 	}
 
 	if err = t.dbcli.GetCol(colTweets).

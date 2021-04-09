@@ -4,11 +4,11 @@
 # for detailed .gqlgen.yml documentation.
 
 schema:
-- schema.graphql
-- ./twitter/schema.graphql
-- ./blog/schema.graphql
-- ./telegram/schema.graphql
-- ./general/schema.graphql
+  - schema.graphql
+  - ./twitter/schema.graphql
+  - ./blog/schema.graphql
+  - ./telegram/schema.graphql
+  - ./general/schema.graphql
 exec:
   filename: generated.go
 model:
@@ -38,6 +38,8 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/blog.User
   BlogCategory:
     model: github.com/Laisky/laisky-blog-graphql/blog.Category
+  BlogPostSeries:
+    model: github.com/Laisky/laisky-blog-graphql/blog.PostSeries
   # telegram
   TelegramUser:
     model: github.com/Laisky/laisky-blog-graphql/telegram.Users

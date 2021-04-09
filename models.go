@@ -17,7 +17,7 @@ import (
 
 var (
 	twitterDB *twitter.TwitterDB
-	blogDB    *blog.BlogDB
+	blogDB    *blog.DB
 	monitorDB *telegram.MonitorDB
 	generalDB *general.GeneralDB
 )
