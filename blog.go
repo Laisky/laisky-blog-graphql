@@ -19,8 +19,12 @@ func (r *Resolver) BlogPost() BlogPostResolver {
 func (r *Resolver) BlogUser() BlogUserResolver {
 	return &blogUserResolver{r}
 }
+func (r *Resolver) BlogPostSeries() BlogPostSeriesResolver {
+	return &blogPostSeriesResolver{r}
+}
 
 type blogPostResolver struct{ *Resolver }
+type blogPostSeriesResolver struct{ *Resolver }
 type blogUserResolver struct{ *Resolver }
 
 // =====================================
@@ -29,6 +33,15 @@ type blogUserResolver struct{ *Resolver }
 
 func (q *queryResolver) BlogPostInfo(ctx context.Context) (*blog.PostInfo, error) {
 	return blogDB.LoadPostInfo()
+}
+
+func (q *queryResolver) GetBlogPostSeries(ctx context.Context, page *Pagination, key string) ([]*blog.PostSeries, error) {
+	se, err := blogDB.LoadPostSeries("", key)
+	if err != nil {
+		return nil, err
+	}
+
+	return se, nil
 }
 
 func (q *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error) {
@@ -56,7 +69,7 @@ func (q *queryResolver) BlogPostCategories(ctx context.Context) ([]*blog.Categor
 // blog resolver
 // ----------------
 
-func (r *blogPostResolver) MongoID(ctx context.Context, obj *blog.Post) (string, error) {
+func (r *blogPostResolver) ID(ctx context.Context, obj *blog.Post) (string, error) {
 	return obj.ID.Hex(), nil
 }
 func (r *blogPostResolver) CreatedAt(ctx context.Context, obj *blog.Post) (*libs.Datetime, error) {
@@ -82,6 +95,29 @@ func (r *blogPostResolver) Type(ctx context.Context, obj *blog.Post) (BlogPostTy
 	}
 
 	return "", fmt.Errorf("unknown blog post type: `%+v`", obj.Type)
+}
+
+func (r *blogPostSeriesResolver) Posts(ctx context.Context, obj *blog.PostSeries) (posts []*blog.Post, err error) {
+	se, err := blogDB.LoadPostSeries(obj.ID, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if len(se) == 0 {
+		return nil, errors.Errorf("notfound")
+	}
+
+	for _, postID := range se[0].Posts {
+		ps, err := blogDB.LoadPosts(&blog.BlogPostCfg{ID: postID})
+		if err != nil {
+			libs.Logger.Error("load posts", zap.Error(err), zap.String("id", postID.Hex()))
+			continue
+		}
+
+		posts = append(posts, ps...)
+	}
+
+	return posts, nil
 }
 
 func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, error) {

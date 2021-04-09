@@ -40,6 +40,7 @@ type Config struct {
 
 type ResolverRoot interface {
 	BlogPost() BlogPostResolver
+	BlogPostSeries() BlogPostSeriesResolver
 	BlogUser() BlogUserResolver
 	Lock() LockResolver
 	Mutation() MutationResolver
@@ -64,6 +65,7 @@ type ComplexityRoot struct {
 		Category   func(childComplexity int) int
 		Content    func(childComplexity int) int
 		CreatedAt  func(childComplexity int) int
+		ID         func(childComplexity int) int
 		Markdown   func(childComplexity int) int
 		Menu       func(childComplexity int) int
 		ModifiedAt func(childComplexity int) int
@@ -71,6 +73,12 @@ type ComplexityRoot struct {
 		Tags       func(childComplexity int) int
 		Title      func(childComplexity int) int
 		Type       func(childComplexity int) int
+	}
+
+	BlogPostSeries struct {
+		Key    func(childComplexity int) int
+		Posts  func(childComplexity int) int
+		Remark func(childComplexity int) int
 	}
 
 	BlogUser struct {
@@ -106,12 +114,13 @@ type ComplexityRoot struct {
 		BlogPostCategories   func(childComplexity int) int
 		BlogPostInfo         func(childComplexity int) int
 		BlogPosts            func(childComplexity int, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) int
+		GetBlogPostSeries    func(childComplexity int, page *Pagination, key string) int
 		Hello                func(childComplexity int) int
 		Lock                 func(childComplexity int, name string) int
 		LockPermissions      func(childComplexity int, username string) int
 		TelegramAlertTypes   func(childComplexity int, page *Pagination, name string) int
 		TelegramMonitorUsers func(childComplexity int, page *Pagination, name string) int
-		TwitterStatues       func(childComplexity int, page *Pagination, username string, viewerID string, sort *Sort, topic string, regexp string) int
+		TwitterStatues       func(childComplexity int, page *Pagination, tweetID string, username string, viewerID string, sort *Sort, topic string, regexp string) int
 		TwitterThreads       func(childComplexity int, tweetID string) int
 	}
 
@@ -158,12 +167,16 @@ type ComplexityRoot struct {
 }
 
 type BlogPostResolver interface {
+	ID(ctx context.Context, obj *blog.Post) (string, error)
 	Author(ctx context.Context, obj *blog.Post) (*blog.User, error)
 	CreatedAt(ctx context.Context, obj *blog.Post) (*libs.Datetime, error)
 	ModifiedAt(ctx context.Context, obj *blog.Post) (*libs.Datetime, error)
 	Type(ctx context.Context, obj *blog.Post) (BlogPostType, error)
 
 	Category(ctx context.Context, obj *blog.Post) (*blog.Category, error)
+}
+type BlogPostSeriesResolver interface {
+	Posts(ctx context.Context, obj *blog.PostSeries) ([]*blog.Post, error)
 }
 type BlogUserResolver interface {
 	ID(ctx context.Context, obj *blog.User) (string, error)
@@ -181,11 +194,12 @@ type MutationResolver interface {
 }
 type QueryResolver interface {
 	Hello(ctx context.Context) (string, error)
-	TwitterStatues(ctx context.Context, page *Pagination, username string, viewerID string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error)
+	TwitterStatues(ctx context.Context, page *Pagination, tweetID string, username string, viewerID string, sort *Sort, topic string, regexp string) ([]*twitter.Tweet, error)
 	TwitterThreads(ctx context.Context, tweetID string) ([]*twitter.Tweet, error)
 	BlogPosts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error)
 	BlogPostInfo(ctx context.Context) (*blog.PostInfo, error)
 	BlogPostCategories(ctx context.Context) ([]*blog.Category, error)
+	GetBlogPostSeries(ctx context.Context, page *Pagination, key string) ([]*blog.PostSeries, error)
 	TelegramMonitorUsers(ctx context.Context, page *Pagination, name string) ([]*telegram.Users, error)
 	TelegramAlertTypes(ctx context.Context, page *Pagination, name string) ([]*telegram.AlertTypes, error)
 	Lock(ctx context.Context, name string) (*general.Lock, error)
@@ -279,6 +293,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.BlogPost.CreatedAt(childComplexity), true
 
+	case "BlogPost.id":
+		if e.complexity.BlogPost.ID == nil {
+			break
+		}
+
+		return e.complexity.BlogPost.ID(childComplexity), true
+
 	case "BlogPost.markdown":
 		if e.complexity.BlogPost.Markdown == nil {
 			break
@@ -327,6 +348,27 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.BlogPost.Type(childComplexity), true
+
+	case "BlogPostSeries.key":
+		if e.complexity.BlogPostSeries.Key == nil {
+			break
+		}
+
+		return e.complexity.BlogPostSeries.Key(childComplexity), true
+
+	case "BlogPostSeries.posts":
+		if e.complexity.BlogPostSeries.Posts == nil {
+			break
+		}
+
+		return e.complexity.BlogPostSeries.Posts(childComplexity), true
+
+	case "BlogPostSeries.remark":
+		if e.complexity.BlogPostSeries.Remark == nil {
+			break
+		}
+
+		return e.complexity.BlogPostSeries.Remark(childComplexity), true
 
 	case "BlogUser.id":
 		if e.complexity.BlogUser.ID == nil {
@@ -482,6 +524,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Query.BlogPosts(childComplexity, args["page"].(*Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
 
+	case "Query.GetBlogPostSeries":
+		if e.complexity.Query.GetBlogPostSeries == nil {
+			break
+		}
+
+		args, err := ec.field_Query_GetBlogPostSeries_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.GetBlogPostSeries(childComplexity, args["page"].(*Pagination), args["key"].(string)), true
+
 	case "Query.Hello":
 		if e.complexity.Query.Hello == nil {
 			break
@@ -547,7 +601,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.TwitterStatues(childComplexity, args["page"].(*Pagination), args["username"].(string), args["viewer_id"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string)), true
+		return e.complexity.Query.TwitterStatues(childComplexity, args["page"].(*Pagination), args["tweet_id"].(string), args["username"].(string), args["viewer_id"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string)), true
 
 	case "Query.TwitterThreads":
 		if e.complexity.Query.TwitterThreads == nil {
@@ -851,7 +905,9 @@ type Query {
   Hello: String!
 
   # twitter
-  TwitterStatues(page: Pagination = {page: 0, size: 20},
+  TwitterStatues(
+    page: Pagination = {page: 0, size: 20},
+    tweet_id: String! = "",
     username: String! = "",
     viewer_id: String! = "",
     sort: Sort = {sort_by: "id", order: DESC},
@@ -862,7 +918,8 @@ type Query {
   TwitterThreads(tweet_id: String!): [Tweet!]
 
   # blog
-  BlogPosts(page: Pagination = {page: 0, size: 10},
+  BlogPosts(
+    page: Pagination = {page: 0, size: 10},
     tag: String! = "",
     category_url: String,  # "" means empty, nil means ignore
     length: Int! = 0,  # content length, 0 means total
@@ -871,12 +928,18 @@ type Query {
   ): [BlogPost]!
   BlogPostInfo: PostInfo!
   BlogPostCategories: [BlogCategory]!
+  GetBlogPostSeries(
+    page: Pagination = {page: 0, size: 10},
+    key: String! = "",
+  ): [BlogPostSeries!]!
 
   # telegram monitor
-  TelegramMonitorUsers(page: Pagination = {page: 0, size: 10},
+  TelegramMonitorUsers(
+    page: Pagination = {page: 0, size: 10},
     name: String! = "",
   ): [TelegramUser]!
-  TelegramAlertTypes(page: Pagination = {page: 0, size: 10},
+  TelegramAlertTypes(
+    page: Pagination = {page: 0, size: 10},
     name: String! = "",
   ): [TelegramAlertType]!
 
@@ -924,7 +987,7 @@ type Mutation {
     is_retweeted: Boolean!
     retweeted_tweet: Tweet
     url: String!
-    images: [String!]
+    images: [String!]!
     viewers: [TwitterUser!]
 }
 
@@ -946,7 +1009,7 @@ type PostInfo {
 }
 
 type BlogPost {
-    # mongo_id: String!
+    id: String!
     author: BlogUser!
     created_at: Date!
     modified_at: Date!
@@ -976,6 +1039,12 @@ input NewBlogPost {
     markdown: String
     type: BlogPostType
     category: String
+}
+
+type BlogPostSeries {
+    key: String!
+    remark: String!
+    posts: [BlogPost!]!
 }
 `, BuiltIn: false},
 	{Name: "./telegram/schema.graphql", Input: `type TelegramUser {
@@ -1218,6 +1287,30 @@ func (ec *executionContext) field_Query_BlogPosts_args(ctx context.Context, rawA
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_GetBlogPostSeries_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 *Pagination
+	if tmp, ok := rawArgs["page"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("page"))
+		arg0, err = ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐPagination(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["page"] = arg0
+	var arg1 string
+	if tmp, ok := rawArgs["key"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("key"))
+		arg1, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["key"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_LockPermissions_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
@@ -1309,50 +1402,59 @@ func (ec *executionContext) field_Query_TwitterStatues_args(ctx context.Context,
 	}
 	args["page"] = arg0
 	var arg1 string
-	if tmp, ok := rawArgs["username"]; ok {
-		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("username"))
+	if tmp, ok := rawArgs["tweet_id"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("tweet_id"))
 		arg1, err = ec.unmarshalNString2string(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["username"] = arg1
+	args["tweet_id"] = arg1
 	var arg2 string
-	if tmp, ok := rawArgs["viewer_id"]; ok {
-		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("viewer_id"))
+	if tmp, ok := rawArgs["username"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("username"))
 		arg2, err = ec.unmarshalNString2string(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["viewer_id"] = arg2
-	var arg3 *Sort
+	args["username"] = arg2
+	var arg3 string
+	if tmp, ok := rawArgs["viewer_id"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("viewer_id"))
+		arg3, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["viewer_id"] = arg3
+	var arg4 *Sort
 	if tmp, ok := rawArgs["sort"]; ok {
 		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sort"))
-		arg3, err = ec.unmarshalOSort2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSort(ctx, tmp)
+		arg4, err = ec.unmarshalOSort2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐSort(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["sort"] = arg3
-	var arg4 string
+	args["sort"] = arg4
+	var arg5 string
 	if tmp, ok := rawArgs["topic"]; ok {
 		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("topic"))
-		arg4, err = ec.unmarshalNString2string(ctx, tmp)
-		if err != nil {
-			return nil, err
-		}
-	}
-	args["topic"] = arg4
-	var arg5 string
-	if tmp, ok := rawArgs["regexp"]; ok {
-		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("regexp"))
 		arg5, err = ec.unmarshalNString2string(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["regexp"] = arg5
+	args["topic"] = arg5
+	var arg6 string
+	if tmp, ok := rawArgs["regexp"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("regexp"))
+		arg6, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["regexp"] = arg6
 	return args, nil
 }
 
@@ -1478,6 +1580,41 @@ func (ec *executionContext) _BlogCategory_url(ctx context.Context, field graphql
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
 		return obj.URL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _BlogPost_id(ctx context.Context, field graphql.CollectedField, obj *blog.Post) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "BlogPost",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.BlogPost().ID(rctx, obj)
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1871,6 +2008,111 @@ func (ec *executionContext) _BlogPost_category(ctx context.Context, field graphq
 	res := resTmp.(*blog.Category)
 	fc.Result = res
 	return ec.marshalOBlogCategory2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐCategory(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _BlogPostSeries_key(ctx context.Context, field graphql.CollectedField, obj *blog.PostSeries) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "BlogPostSeries",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   false,
+		IsResolver: false,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Key, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _BlogPostSeries_remark(ctx context.Context, field graphql.CollectedField, obj *blog.PostSeries) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "BlogPostSeries",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   false,
+		IsResolver: false,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Remark, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _BlogPostSeries_posts(ctx context.Context, field graphql.CollectedField, obj *blog.PostSeries) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "BlogPostSeries",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.BlogPostSeries().Posts(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*blog.Post)
+	fc.Result = res
+	return ec.marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _BlogUser_id(ctx context.Context, field graphql.CollectedField, obj *blog.User) (ret graphql.Marshaler) {
@@ -2465,7 +2707,7 @@ func (ec *executionContext) _Query_TwitterStatues(ctx context.Context, field gra
 	fc.Args = args
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().TwitterStatues(rctx, args["page"].(*Pagination), args["username"].(string), args["viewer_id"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string))
+		return ec.resolvers.Query().TwitterStatues(rctx, args["page"].(*Pagination), args["tweet_id"].(string), args["username"].(string), args["viewer_id"].(string), args["sort"].(*Sort), args["topic"].(string), args["regexp"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2631,6 +2873,48 @@ func (ec *executionContext) _Query_BlogPostCategories(ctx context.Context, field
 	res := resTmp.([]*blog.Category)
 	fc.Result = res
 	return ec.marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐCategory(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_GetBlogPostSeries(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_GetBlogPostSeries_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	fc.Args = args
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().GetBlogPostSeries(rctx, args["page"].(*Pagination), args["key"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*blog.PostSeries)
+	fc.Result = res
+	return ec.marshalNBlogPostSeries2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostSeriesᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_TelegramMonitorUsers(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -3681,11 +3965,14 @@ func (ec *executionContext) _Tweet_images(ctx context.Context, field graphql.Col
 		return graphql.Null
 	}
 	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
 		return graphql.Null
 	}
 	res := resTmp.([]string)
 	fc.Result = res
-	return ec.marshalOString2ᚕstringᚄ(ctx, field.Selections, res)
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_viewers(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) (ret graphql.Marshaler) {
@@ -5110,6 +5397,20 @@ func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet,
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("BlogPost")
+		case "id":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._BlogPost_id(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
+				return res
+			})
 		case "author":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
@@ -5202,6 +5503,52 @@ func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet,
 					}
 				}()
 				res = ec._BlogPost_category(ctx, field, obj)
+				return res
+			})
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalids > 0 {
+		return graphql.Null
+	}
+	return out
+}
+
+var blogPostSeriesImplementors = []string{"BlogPostSeries"}
+
+func (ec *executionContext) _BlogPostSeries(ctx context.Context, sel ast.SelectionSet, obj *blog.PostSeries) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, blogPostSeriesImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	var invalids uint32
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("BlogPostSeries")
+		case "key":
+			out.Values[i] = ec._BlogPostSeries_key(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&invalids, 1)
+			}
+		case "remark":
+			out.Values[i] = ec._BlogPostSeries_remark(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&invalids, 1)
+			}
+		case "posts":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._BlogPostSeries_posts(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
 				return res
 			})
 		default:
@@ -5508,6 +5855,20 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_BlogPostCategories(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
+				return res
+			})
+		case "GetBlogPostSeries":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_GetBlogPostSeries(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&invalids, 1)
 				}
@@ -5877,6 +6238,9 @@ func (ec *executionContext) _Tweet(ctx context.Context, sel ast.SelectionSet, ob
 					}
 				}()
 				res = ec._Tweet_images(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
 				return res
 			})
 		case "viewers":
@@ -6275,6 +6639,43 @@ func (ec *executionContext) marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaisk
 	return ret
 }
 
+func (ec *executionContext) marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostᚄ(ctx context.Context, sel ast.SelectionSet, v []*blog.Post) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+	return ret
+}
+
 func (ec *executionContext) marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v *blog.Post) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -6283,6 +6684,53 @@ func (ec *executionContext) marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaisky�
 		return graphql.Null
 	}
 	return ec._BlogPost(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNBlogPostSeries2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostSeriesᚄ(ctx context.Context, sel ast.SelectionSet, v []*blog.PostSeries) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNBlogPostSeries2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostSeries(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+	return ret
+}
+
+func (ec *executionContext) marshalNBlogPostSeries2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋblogᚐPostSeries(ctx context.Context, sel ast.SelectionSet, v *blog.PostSeries) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	return ec._BlogPostSeries(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNBlogPostType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚐBlogPostType(ctx context.Context, v interface{}) (BlogPostType, error) {

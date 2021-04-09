@@ -9,7 +9,7 @@ type PostInfo {
 }
 
 type BlogPost {
-    # mongo_id: String!
+    id: String!
     author: BlogUser!
     created_at: Date!
     modified_at: Date!
@@ -39,4 +39,10 @@ input NewBlogPost {
     markdown: String
     type: BlogPostType
     category: String
+}
+
+type BlogPostSeries {
+    key: String!
+    remark: String!
+    posts: [BlogPost!]!
 }

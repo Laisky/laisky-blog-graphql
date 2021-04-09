@@ -12,7 +12,7 @@ type Tweet {
     is_retweeted: Boolean!
     retweeted_tweet: Tweet
     url: String!
-    images: [String!]
+    images: [String!]!
     viewers: [TwitterUser!]
 }
 
