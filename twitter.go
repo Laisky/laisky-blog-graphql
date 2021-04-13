@@ -27,21 +27,30 @@ type twitterUserResolver struct{ *Resolver }
 
 func (q *queryResolver) TwitterStatues(ctx context.Context,
 	page *Pagination,
+	tweetID string,
 	username string,
 	viewerID string,
 	sort *Sort,
 	topic string,
 	regexp string,
 ) (results []*twitter.Tweet, err error) {
-	if results, err = twitterDB.LoadTweets(&twitter.TweetLoadCfg{
-		Page:      page.Page,
-		Regexp:    regexp,
-		Size:      page.Size,
-		Username:  username,
-		ViewerID:  viewerID,
+	args := &twitter.LoadTweetArgs{
 		SortBy:    sort.SortBy,
 		SortOrder: string(sort.Order),
-	}); err != nil {
+	}
+	switch {
+	case tweetID != "":
+		args.TweetID = tweetID
+	default:
+		args.Page = page.Page
+		args.Regexp = regexp
+		args.Size = page.Size
+		args.Username = username
+		args.ViewerID = viewerID
+		args.TweetID = tweetID
+	}
+
+	if results, err = twitterDB.LoadTweets(args); err != nil {
 		return nil, err
 	}
 
@@ -77,6 +86,10 @@ func (t *tweetResolver) Replys(ctx context.Context, obj *twitter.Tweet) ([]*twit
 }
 
 func (t *tweetResolver) Images(ctx context.Context, obj *twitter.Tweet) (imgs []string, err error) {
+	if obj.Entities == nil {
+		return
+	}
+
 	for _, e := range obj.Entities.Media {
 		us := strings.Split(e.URL, "/")
 		imgs = append(imgs, ("https://s3.laisky.com/uploads/twitter/" + us[len(us)-1]))
@@ -122,6 +135,7 @@ func (t *tweetResolver) URL(ctx context.Context, obj *twitter.Tweet) (string, er
 	if obj.User == nil {
 		return "", nil
 	}
+
 	return "https://twitter.com/" + obj.User.ScreenName + "/status/" + obj.ID, nil
 }
 

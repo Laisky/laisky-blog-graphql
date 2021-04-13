@@ -277,20 +277,20 @@ func (db *MonitorDB) LoadUsersByAlertType(a *AlertTypes) (users []*Users, err er
 	return users, nil
 }
 
-func (db *MonitorDB) ValidateTokenForAlertType(token, alert_type string) (alert *AlertTypes, err error) {
-	libs.Logger.Debug("ValidateTokenForAlertType", zap.String("alert_type", alert_type))
+func (db *MonitorDB) ValidateTokenForAlertType(token, alertType string) (alert *AlertTypes, err error) {
+	libs.Logger.Debug("ValidateTokenForAlertType", zap.String("alert_type", alertType))
 
 	alert = new(AlertTypes)
 	if err = db.GetAlertTypesCol().Find(bson.M{
-		"name": alert_type,
+		"name": alertType,
 	}).One(alert); err == mgo.ErrNotFound {
-		return nil, errors.Wrapf(err, "alert_type `%s` not found", alert_type)
+		return nil, errors.Wrapf(err, "alert_type `%s` not found", alertType)
 	} else if err != nil {
-		return nil, errors.Wrapf(err, "load alert_type `%s` from db", alert_type)
+		return nil, errors.Wrapf(err, "load alert_type `%s` from db", alertType)
 	}
 
 	if token != alert.PushToken {
-		return nil, fmt.Errorf("token invalidate for `%s`", alert_type)
+		return nil, fmt.Errorf("token invalidate for `%s`", alertType)
 	}
 
 	return alert, nil
