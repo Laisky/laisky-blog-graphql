@@ -7,7 +7,7 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-type TwitterDB struct {
+type DB struct {
 	dbcli *models.DB
 }
 
@@ -44,13 +44,13 @@ type User struct {
 }
 
 const (
-	DB_NAME   = "twitter"
+	DBName    = "twitter"
 	colTweets = "tweets"
 	colUsers  = "users"
 )
 
-func NewTwitterDB(dbcli *models.DB) *TwitterDB {
-	return &TwitterDB{
+func NewTwitterDB(dbcli *models.DB) *DB {
+	return &DB{
 		dbcli: dbcli,
 	}
 }

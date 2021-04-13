@@ -1,4 +1,4 @@
-FROM golang:1.16.0-buster AS gobuild
+FROM golang:1.16.3-buster AS gobuild
 
 # install dependencies
 RUN apt-get update \

@@ -21,7 +21,9 @@ type Query {
   Hello: String!
 
   # twitter
-  TwitterStatues(page: Pagination = {page: 0, size: 20},
+  TwitterStatues(
+    page: Pagination = {page: 0, size: 20},
+    tweet_id: String! = "",
     username: String! = "",
     viewer_id: String! = "",
     sort: Sort = {sort_by: "id", order: DESC},
@@ -32,7 +34,8 @@ type Query {
   TwitterThreads(tweet_id: String!): [Tweet!]
 
   # blog
-  BlogPosts(page: Pagination = {page: 0, size: 10},
+  BlogPosts(
+    page: Pagination = {page: 0, size: 10},
     tag: String! = "",
     category_url: String,  # "" means empty, nil means ignore
     length: Int! = 0,  # content length, 0 means total
@@ -41,12 +44,18 @@ type Query {
   ): [BlogPost]!
   BlogPostInfo: PostInfo!
   BlogPostCategories: [BlogCategory]!
+  GetBlogPostSeries(
+    page: Pagination = {page: 0, size: 10},
+    key: String! = "",
+  ): [BlogPostSeries!]!
 
   # telegram monitor
-  TelegramMonitorUsers(page: Pagination = {page: 0, size: 10},
+  TelegramMonitorUsers(
+    page: Pagination = {page: 0, size: 10},
     name: String! = "",
   ): [TelegramUser]!
-  TelegramAlertTypes(page: Pagination = {page: 0, size: 10},
+  TelegramAlertTypes(
+    page: Pagination = {page: 0, size: 10},
     name: String! = "",
   ): [TelegramAlertType]!
 
