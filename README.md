@@ -18,7 +18,8 @@ Example: <https://blog.laisky.com/graphql/ui/>
 Run:
 
 ```sh
-go run -race entrypoints/main.go \
+go generate
+go run -race main.go \
     --addr=127.0.0.1:8080 \
     --dbaddr=127.0.0.1:27017 \
     --config=./docs/settings.yml \

@@ -1,4 +1,4 @@
-FROM golang:1.16.3-buster AS gobuild
+FROM golang:1.16.5-buster AS gobuild
 
 # install dependencies
 RUN apt-get update \
@@ -13,7 +13,7 @@ RUN go mod download
 
 # static build
 ADD . .
-RUN go build -a -ldflags '-w -extldflags "-static"' -o main entrypoints/main.go
+RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
 
 
 # copy executable file and certs to a pure container
