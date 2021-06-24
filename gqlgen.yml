@@ -4,49 +4,49 @@
 # for detailed .gqlgen.yml documentation.
 
 schema:
-  - schema.graphql
-  - ./twitter/schema.graphql
-  - ./blog/schema.graphql
-  - ./telegram/schema.graphql
-  - ./general/schema.graphql
+  - ./internal/web/schema.graphql
+  - ./internal/apps/twitter/schema.graphql
+  - ./internal/apps/blog/schema.graphql
+  - ./internal/apps/telegram/schema.graphql
+  - ./internal/apps/general/schema.graphql
 exec:
-  filename: generated.go
+  filename: ./internal/web/generated.go
 model:
-  filename: models_gen.go
+  filename: ./internal/web/serializers.go
 resolver:
-  filename: resolver.go
+  filename: ./internal/web/resolver.go
   type: Resolver
 models:
   # general
   Date:
-    model: github.com/Laisky/laisky-blog-graphql/libs.Datetime
+    model: laisky-blog-graphql/library.Datetime
   QuotedString:
-    model: github.com/Laisky/laisky-blog-graphql/libs.QuotedString
+    model: laisky-blog-graphql/library.QuotedString
   JSONString:
-    model: github.com/Laisky/laisky-blog-graphql/libs.JSONString
+    model: laisky-blog-graphql/library.JSONString
   # twitter
   Tweet:
-    model: github.com/Laisky/laisky-blog-graphql/twitter.Tweet
+    model: laisky-blog-graphql/internal/apps/twitter.Tweet
   TwitterUser:
-    model: github.com/Laisky/laisky-blog-graphql/twitter.User
+    model: laisky-blog-graphql/internal/apps/twitter.User
   # blog
   BlogPost:
-    model: github.com/Laisky/laisky-blog-graphql/blog.Post
+    model: laisky-blog-graphql/internal/apps/blog.Post
   PostInfo:
-    model: github.com/Laisky/laisky-blog-graphql/blog.PostInfo
+    model: laisky-blog-graphql/internal/apps/blog.PostInfo
   BlogUser:
-    model: github.com/Laisky/laisky-blog-graphql/blog.User
+    model: laisky-blog-graphql/internal/apps/blog.User
   BlogCategory:
-    model: github.com/Laisky/laisky-blog-graphql/blog.Category
+    model: laisky-blog-graphql/internal/apps/blog.Category
   BlogPostSeries:
-    model: github.com/Laisky/laisky-blog-graphql/blog.PostSeries
+    model: laisky-blog-graphql/internal/apps/blog.PostSeries
   # telegram
   TelegramUser:
-    model: github.com/Laisky/laisky-blog-graphql/telegram.Users
+    model: laisky-blog-graphql/internal/apps/telegram.Users
   TelegramAlertType:
-    model: github.com/Laisky/laisky-blog-graphql/telegram.AlertTypes
+    model: laisky-blog-graphql/internal/apps/telegram.AlertTypes
   # GCP General
   Lock:
-    model: github.com/Laisky/laisky-blog-graphql/general.Lock
+    model: laisky-blog-graphql/internal/apps/general.Lock
   # GeneralUser:
-  #   model: github.com/Laisky/laisky-blog-graphql/general.User
+  #   model: laisky-blog-graphql/general.User
