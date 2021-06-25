@@ -5,10 +5,10 @@
 
 schema:
   - ./internal/web/schema.graphql
-  - ./internal/apps/twitter/schema.graphql
-  - ./internal/apps/blog/schema.graphql
-  - ./internal/apps/telegram/schema.graphql
-  - ./internal/apps/general/schema.graphql
+  - ./internal/web/twitter/schema.graphql
+  - ./internal/web/blog/schema.graphql
+  - ./internal/web/telegram/schema.graphql
+  - ./internal/web/general/schema.graphql
 exec:
   filename: ./internal/web/generated.go
 model:
@@ -26,27 +26,27 @@ models:
     model: laisky-blog-graphql/library.JSONString
   # twitter
   Tweet:
-    model: laisky-blog-graphql/internal/apps/twitter.Tweet
+    model: laisky-blog-graphql/internal/web/twitter.Tweet
   TwitterUser:
-    model: laisky-blog-graphql/internal/apps/twitter.User
+    model: laisky-blog-graphql/internal/web/twitter.User
   # blog
   BlogPost:
-    model: laisky-blog-graphql/internal/apps/blog.Post
+    model: laisky-blog-graphql/internal/web/blog.Post
   PostInfo:
-    model: laisky-blog-graphql/internal/apps/blog.PostInfo
+    model: laisky-blog-graphql/internal/web/blog.PostInfo
   BlogUser:
-    model: laisky-blog-graphql/internal/apps/blog.User
+    model: laisky-blog-graphql/internal/web/blog.User
   BlogCategory:
-    model: laisky-blog-graphql/internal/apps/blog.Category
+    model: laisky-blog-graphql/internal/web/blog.Category
   BlogPostSeries:
-    model: laisky-blog-graphql/internal/apps/blog.PostSeries
+    model: laisky-blog-graphql/internal/web/blog.PostSeries
   # telegram
   TelegramUser:
-    model: laisky-blog-graphql/internal/apps/telegram.Users
+    model: laisky-blog-graphql/internal/web/telegram.Users
   TelegramAlertType:
-    model: laisky-blog-graphql/internal/apps/telegram.AlertTypes
+    model: laisky-blog-graphql/internal/web/telegram.AlertTypes
   # GCP General
   Lock:
-    model: laisky-blog-graphql/internal/apps/general.Lock
+    model: laisky-blog-graphql/internal/web/general.Lock
   # GeneralUser:
   #   model: laisky-blog-graphql/general.User

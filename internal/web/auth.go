@@ -7,7 +7,8 @@ import (
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2/bson"
 
-	"laisky-blog-graphql/internal/apps/blog"
+	"laisky-blog-graphql/internal/global"
+	"laisky-blog-graphql/internal/web/blog"
 )
 
 var (
@@ -32,7 +33,7 @@ func validateAndGetUser(ctx context.Context) (user *blog.User, err error) {
 	}
 
 	uid := bson.ObjectIdHex(uc.Subject)
-	if user, err = blogDB.LoadUserByID(uid); err != nil {
+	if user, err = global.BlogSvc.LoadUserByID(uid); err != nil {
 		return nil, errors.Wrapf(err, "load user `%s`", uid)
 	}
 

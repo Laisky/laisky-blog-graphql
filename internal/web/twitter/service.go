@@ -3,16 +3,25 @@ package twitter
 import (
 	"strconv"
 
+	"laisky-blog-graphql/internal/web/twitter/db"
+	"laisky-blog-graphql/library/log"
+
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-
-	"laisky-blog-graphql/library/log"
 )
 
-func (t *DB) LoadTweetReplys(tweetID string) (replys []*Tweet, err error) {
-	if err = t.dbcli.GetCol(colTweets).
+type Service struct {
+	*db.DB
+}
+
+func NewService(db *db.DB) *Service {
+	return &Service{DB: db}
+}
+
+func (s *Service) LoadTweetReplys(tweetID string) (replys []*Tweet, err error) {
+	if err = s.GetTweetCol().
 		Find(bson.M{"in_reply_to_status_id_str": tweetID}).
 		All(&replys); err != nil {
 		return nil, errors.Wrapf(err, "load replys of tweet `%s`", tweetID)
@@ -21,23 +30,23 @@ func (t *DB) LoadTweetReplys(tweetID string) (replys []*Tweet, err error) {
 	return
 }
 
-func (t *DB) LoadThreadByTweetID(id string) (tweets []*Tweet, err error) {
+func (s *Service) LoadThreadByTweetID(id string) (tweets []*Tweet, err error) {
 	tweet := &Tweet{}
-	if err = t.dbcli.GetCol(colTweets).
+	if err = s.GetTweetCol().
 		Find(bson.M{"id_str": id}).
 		One(tweet); err != nil {
 		return nil, errors.Wrapf(err, "load tweet `%s`", id)
 	}
 
-	head, err := t.loadTweetsRecur(tweet, func(status *Tweet) string {
+	head, err := s.loadTweetsRecur(tweet, func(status *Tweet) string {
 		return status.ReplyToStatusID
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "load head for tweet `%s`", id)
 	}
 
-	tail, err := t.loadTweetsRecur(tweet, func(status *Tweet) (nextID string) {
-		replys, err := t.LoadTweetReplys(status.ID)
+	tail, err := s.loadTweetsRecur(tweet, func(status *Tweet) (nextID string) {
+		replys, err := s.LoadTweetReplys(status.ID)
 		if err != nil {
 			log.Logger.Error("load tweet replies", zap.Error(err))
 			return ""
@@ -88,7 +97,7 @@ func (t *DB) LoadThreadByTweetID(id string) (tweets []*Tweet, err error) {
 	return tweets, nil
 }
 
-func (t *DB) loadTweetsRecur(tweet *Tweet, getNextID func(*Tweet) string) (tweets []*Tweet, err error) {
+func (s *Service) loadTweetsRecur(tweet *Tweet, getNextID func(*Tweet) string) (tweets []*Tweet, err error) {
 	var nextID string
 	for {
 		if nextID = getNextID(tweet); nextID == "" {
@@ -96,7 +105,7 @@ func (t *DB) loadTweetsRecur(tweet *Tweet, getNextID func(*Tweet) string) (tweet
 		}
 
 		tweet = &Tweet{}
-		if err = t.dbcli.GetCol(colTweets).
+		if err = s.GetTweetCol().
 			Find(bson.M{"id_str": nextID}).
 			One(tweet); err != nil {
 			if errors.Is(err, mgo.ErrNotFound) {
@@ -112,9 +121,9 @@ func (t *DB) loadTweetsRecur(tweet *Tweet, getNextID func(*Tweet) string) (tweet
 	return tweets, nil
 }
 
-func (t *DB) LoadTweetByTwitterID(id string) (tweet *Tweet, err error) {
+func (s *Service) LoadTweetByTwitterID(id string) (tweet *Tweet, err error) {
 	tweet = &Tweet{}
-	if err = t.dbcli.GetCol(colTweets).
+	if err = s.GetTweetCol().
 		Find(bson.M{"id_str": id}).
 		One(tweet); err == mgo.ErrNotFound {
 		log.Logger.Debug("tweet not found", zap.String("id", id))
@@ -126,9 +135,9 @@ func (t *DB) LoadTweetByTwitterID(id string) (tweet *Tweet, err error) {
 	return tweet, nil
 }
 
-func (t *DB) LoadUserByID(id string) (user *User, err error) {
+func (s *Service) LoadUserByID(id string) (user *User, err error) {
 	user = new(User)
-	if err = t.dbcli.GetCol(colUsers).
+	if err = s.GetUserCol().
 		Find(bson.M{"id_str": id}).
 		One(user); err == mgo.ErrNotFound {
 		log.Logger.Debug("tweet not found", zap.String("id", id))
@@ -150,7 +159,7 @@ type LoadTweetArgs struct {
 	SortBy, SortOrder string
 }
 
-func (t *DB) LoadTweets(cfg *LoadTweetArgs) (results []*Tweet, err error) {
+func (s *Service) LoadTweets(cfg *LoadTweetArgs) (results []*Tweet, err error) {
 	log.Logger.Debug("LoadTweets",
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("topic", cfg.Topic),
@@ -206,7 +215,7 @@ func (t *DB) LoadTweets(cfg *LoadTweetArgs) (results []*Tweet, err error) {
 		}
 	}
 
-	if err = t.dbcli.GetCol(colTweets).
+	if err = s.GetTweetCol().
 		Find(query).
 		Sort(sort).
 		Skip(cfg.Page * cfg.Size).

@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
-
-	"laisky-blog-graphql/internal/apps/twitter"
+	"laisky-blog-graphql/internal/global"
+	"laisky-blog-graphql/internal/web/twitter"
 	"laisky-blog-graphql/library"
 	"laisky-blog-graphql/library/log"
+
+	"github.com/Laisky/zap"
+	"github.com/pkg/errors"
 )
 
 func (r *Resolver) Tweet() TweetResolver {
@@ -52,7 +53,7 @@ func (q *queryResolver) TwitterStatues(ctx context.Context,
 		args.TweetID = tweetID
 	}
 
-	if results, err = twitterDB.LoadTweets(args); err != nil {
+	if results, err = global.TwitterSvc.LoadTweets(args); err != nil {
 		return nil, err
 	}
 
@@ -60,7 +61,7 @@ func (q *queryResolver) TwitterStatues(ctx context.Context,
 }
 
 func (q *queryResolver) TwitterThreads(ctx context.Context, tweetID string) ([]*twitter.Tweet, error) {
-	return twitterDB.LoadThreadByTweetID(tweetID)
+	return global.TwitterSvc.LoadThreadByTweetID(tweetID)
 }
 
 // ----------------
@@ -84,7 +85,7 @@ func (t *tweetResolver) IsQuoteStatus(ctx context.Context, obj *twitter.Tweet) (
 }
 
 func (t *tweetResolver) Replys(ctx context.Context, obj *twitter.Tweet) ([]*twitter.Tweet, error) {
-	return twitterDB.LoadTweetReplys(obj.ID)
+	return global.TwitterSvc.LoadTweetReplys(obj.ID)
 }
 
 func (t *tweetResolver) Images(ctx context.Context, obj *twitter.Tweet) (imgs []string, err error) {
@@ -102,7 +103,7 @@ func (t *tweetResolver) Images(ctx context.Context, obj *twitter.Tweet) (imgs []
 
 func (t *tweetResolver) Viewers(ctx context.Context, obj *twitter.Tweet) (us []*twitter.User, err error) {
 	for _, uid := range obj.Viewer {
-		u, err := twitterDB.LoadUserByID(uid)
+		u, err := global.TwitterSvc.LoadUserByID(uid)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
@@ -146,7 +147,7 @@ func (t *tweetResolver) ReplyTo(ctx context.Context, obj *twitter.Tweet) (tweet 
 		return nil, nil
 	}
 
-	if tweet, err = twitterDB.LoadTweetByTwitterID(obj.ReplyToStatusID); err != nil {
+	if tweet, err = global.TwitterSvc.LoadTweetByTwitterID(obj.ReplyToStatusID); err != nil {
 		log.Logger.Warn("try to load tweet by id got error",
 			zap.String("tweet", obj.ReplyToStatusID),
 			zap.Error(err))

@@ -10,7 +10,8 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
 
-	"laisky-blog-graphql/internal/apps/blog"
+	"laisky-blog-graphql/internal/global"
+	"laisky-blog-graphql/internal/web/blog"
 	"laisky-blog-graphql/library"
 	"laisky-blog-graphql/library/log"
 )
@@ -34,11 +35,11 @@ type blogUserResolver struct{ *Resolver }
 // =====================================
 
 func (q *queryResolver) BlogPostInfo(ctx context.Context) (*blog.PostInfo, error) {
-	return blogDB.LoadPostInfo()
+	return global.BlogSvc.LoadPostInfo()
 }
 
 func (q *queryResolver) GetBlogPostSeries(ctx context.Context, page *Pagination, key string) ([]*blog.PostSeries, error) {
-	se, err := blogDB.LoadPostSeries("", key)
+	se, err := global.BlogSvc.LoadPostSeries("", key)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +57,7 @@ func (q *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag str
 		CategoryURL: categoryURL,
 		Name:        name,
 	}
-	results, err := blogDB.LoadPosts(cfg)
+	results, err := global.BlogSvc.LoadPosts(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +65,7 @@ func (q *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag str
 	return results, nil
 }
 func (q *queryResolver) BlogPostCategories(ctx context.Context) ([]*blog.Category, error) {
-	return blogDB.LoadAllCategories()
+	return global.BlogSvc.LoadAllCategories()
 }
 
 // ----------------
@@ -81,10 +82,10 @@ func (r *blogPostResolver) ModifiedAt(ctx context.Context, obj *blog.Post) (*lib
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
 func (r *blogPostResolver) Author(ctx context.Context, obj *blog.Post) (*blog.User, error) {
-	return blogDB.LoadUserByID(obj.Author)
+	return global.BlogSvc.LoadUserByID(obj.Author)
 }
 func (r *blogPostResolver) Category(ctx context.Context, obj *blog.Post) (*blog.Category, error) {
-	return blogDB.LoadCategoryByID(obj.Category)
+	return global.BlogSvc.LoadCategoryByID(obj.Category)
 }
 func (r *blogPostResolver) Type(ctx context.Context, obj *blog.Post) (BlogPostType, error) {
 	switch obj.Type {
@@ -100,7 +101,7 @@ func (r *blogPostResolver) Type(ctx context.Context, obj *blog.Post) (BlogPostTy
 }
 
 func (r *blogPostSeriesResolver) Posts(ctx context.Context, obj *blog.PostSeries) (posts []*blog.Post, err error) {
-	se, err := blogDB.LoadPostSeries(obj.ID, "")
+	se, err := global.BlogSvc.LoadPostSeries(obj.ID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +111,7 @@ func (r *blogPostSeriesResolver) Posts(ctx context.Context, obj *blog.PostSeries
 	}
 
 	for _, postID := range se[0].Posts {
-		ps, err := blogDB.LoadPosts(&blog.PostCfg{ID: postID})
+		ps, err := global.BlogSvc.LoadPosts(&blog.PostCfg{ID: postID})
 		if err != nil {
 			log.Logger.Error("load posts", zap.Error(err), zap.String("id", postID.Hex()))
 			continue
@@ -124,7 +125,7 @@ func (r *blogPostSeriesResolver) Posts(ctx context.Context, obj *blog.PostSeries
 func (r *blogPostSeriesResolver) Children(ctx context.Context, obj *blog.PostSeries) ([]*blog.PostSeries, error) {
 	var ss []*blog.PostSeries
 	for _, sid := range obj.Chidlren {
-		se, err := blogDB.LoadPostSeries(sid, "")
+		se, err := global.BlogSvc.LoadPostSeries(sid, "")
 		if err != nil {
 			return nil, errors.Wrapf(err, "load post series `%s`", sid.Hex())
 		}
@@ -156,12 +157,12 @@ func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost
 		return nil, fmt.Errorf("title & markdown must set")
 	}
 
-	return blogDB.NewPost(user.ID, *input.Title, input.Name, *input.Markdown, input.Type.String())
+	return global.BlogSvc.NewPost(user.ID, *input.Title, input.Name, *input.Markdown, input.Type.String())
 }
 
 // BlogLogin login in blog page
 func (r *mutationResolver) BlogLogin(ctx context.Context, account string, password string) (user *blog.User, err error) {
-	if user, err = blogDB.ValidateLogin(account, password); err != nil {
+	if user, err = global.BlogSvc.ValidateLogin(account, password); err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
@@ -197,7 +198,7 @@ func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) 
 
 	// only update category
 	if post.Category != nil {
-		return blogDB.UpdatePostCategory(post.Name, *post.Category)
+		return global.BlogSvc.UpdatePostCategory(post.Name, *post.Category)
 	}
 
 	if post.Title == nil ||
@@ -207,5 +208,5 @@ func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) 
 	}
 
 	// update post content
-	return blogDB.UpdatePost(user, post.Name, *post.Title, *post.Markdown, post.Type.String())
+	return global.BlogSvc.UpdatePost(user, post.Name, *post.Title, *post.Markdown, post.Type.String())
 }

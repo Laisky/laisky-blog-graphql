@@ -10,10 +10,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"laisky-blog-graphql/internal/apps/blog"
-	"laisky-blog-graphql/internal/apps/general"
-	"laisky-blog-graphql/internal/apps/telegram"
-	"laisky-blog-graphql/internal/apps/twitter"
+	"laisky-blog-graphql/internal/web/blog"
+	"laisky-blog-graphql/internal/web/general"
+	"laisky-blog-graphql/internal/web/telegram"
+	"laisky-blog-graphql/internal/web/twitter"
 	"laisky-blog-graphql/library"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -983,7 +983,7 @@ type Mutation {
   ): String!
 }
 `, BuiltIn: false},
-	{Name: "./internal/apps/twitter/schema.graphql", Input: `type Tweet {
+	{Name: "./internal/web/twitter/schema.graphql", Input: `type Tweet {
     # mongo_id: String!
     id: String!
     created_at: Date
@@ -1008,7 +1008,7 @@ type TwitterUser {
     description: String!
 }
 `, BuiltIn: false},
-	{Name: "./internal/apps/blog/schema.graphql", Input: `enum BlogPostType {
+	{Name: "./internal/web/blog/schema.graphql", Input: `enum BlogPostType {
     markdown
     slide
     html  # legacy posts
@@ -1058,7 +1058,7 @@ type BlogPostSeries {
     children: [BlogPostSeries!]!
 }
 `, BuiltIn: false},
-	{Name: "./internal/apps/telegram/schema.graphql", Input: `type TelegramUser {
+	{Name: "./internal/web/telegram/schema.graphql", Input: `type TelegramUser {
     id: String!
     created_at: Date!
     modified_at: Date!
@@ -1076,7 +1076,7 @@ type TelegramAlertType {
 }
 
 `, BuiltIn: false},
-	{Name: "./internal/apps/general/schema.graphql", Input: `type Lock {
+	{Name: "./internal/web/general/schema.graphql", Input: `type Lock {
     name: String!
     owner_id: String!
     expires_at: Date!
@@ -1674,7 +1674,7 @@ func (ec *executionContext) _BlogPost_author(ctx context.Context, field graphql.
 	}
 	res := resTmp.(*blog.User)
 	fc.Result = res
-	return ec.marshalNBlogUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐUser(ctx, field.Selections, res)
+	return ec.marshalNBlogUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐUser(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _BlogPost_created_at(ctx context.Context, field graphql.CollectedField, obj *blog.Post) (ret graphql.Marshaler) {
@@ -2018,7 +2018,7 @@ func (ec *executionContext) _BlogPost_category(ctx context.Context, field graphq
 	}
 	res := resTmp.(*blog.Category)
 	fc.Result = res
-	return ec.marshalOBlogCategory2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐCategory(ctx, field.Selections, res)
+	return ec.marshalOBlogCategory2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐCategory(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _BlogPostSeries_key(ctx context.Context, field graphql.CollectedField, obj *blog.PostSeries) (ret graphql.Marshaler) {
@@ -2123,7 +2123,7 @@ func (ec *executionContext) _BlogPostSeries_posts(ctx context.Context, field gra
 	}
 	res := resTmp.([]*blog.Post)
 	fc.Result = res
-	return ec.marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostᚄ(ctx, field.Selections, res)
+	return ec.marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _BlogPostSeries_children(ctx context.Context, field graphql.CollectedField, obj *blog.PostSeries) (ret graphql.Marshaler) {
@@ -2158,7 +2158,7 @@ func (ec *executionContext) _BlogPostSeries_children(ctx context.Context, field 
 	}
 	res := resTmp.([]*blog.PostSeries)
 	fc.Result = res
-	return ec.marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostSeriesᚄ(ctx, field.Selections, res)
+	return ec.marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostSeriesᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _BlogUser_id(ctx context.Context, field graphql.CollectedField, obj *blog.User) (ret graphql.Marshaler) {
@@ -2445,7 +2445,7 @@ func (ec *executionContext) _Mutation_BlogCreatePost(ctx context.Context, field 
 	}
 	res := resTmp.(*blog.Post)
 	fc.Result = res
-	return ec.marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx, field.Selections, res)
+	return ec.marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Mutation_BlogLogin(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2487,7 +2487,7 @@ func (ec *executionContext) _Mutation_BlogLogin(ctx context.Context, field graph
 	}
 	res := resTmp.(*blog.User)
 	fc.Result = res
-	return ec.marshalNBlogUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐUser(ctx, field.Selections, res)
+	return ec.marshalNBlogUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐUser(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Mutation_BlogAmendPost(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2529,7 +2529,7 @@ func (ec *executionContext) _Mutation_BlogAmendPost(ctx context.Context, field g
 	}
 	res := resTmp.(*blog.Post)
 	fc.Result = res
-	return ec.marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx, field.Selections, res)
+	return ec.marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Mutation_TelegramMonitorAlert(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2571,7 +2571,7 @@ func (ec *executionContext) _Mutation_TelegramMonitorAlert(ctx context.Context, 
 	}
 	res := resTmp.(*telegram.AlertTypes)
 	fc.Result = res
-	return ec.marshalNTelegramAlertType2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
+	return ec.marshalNTelegramAlertType2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Mutation_AcquireLock(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2767,7 +2767,7 @@ func (ec *executionContext) _Query_TwitterStatues(ctx context.Context, field gra
 	}
 	res := resTmp.([]*twitter.Tweet)
 	fc.Result = res
-	return ec.marshalNTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx, field.Selections, res)
+	return ec.marshalNTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_TwitterThreads(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2806,7 +2806,7 @@ func (ec *executionContext) _Query_TwitterThreads(ctx context.Context, field gra
 	}
 	res := resTmp.([]*twitter.Tweet)
 	fc.Result = res
-	return ec.marshalOTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweetᚄ(ctx, field.Selections, res)
+	return ec.marshalOTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweetᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_BlogPosts(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2848,7 +2848,7 @@ func (ec *executionContext) _Query_BlogPosts(ctx context.Context, field graphql.
 	}
 	res := resTmp.([]*blog.Post)
 	fc.Result = res
-	return ec.marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx, field.Selections, res)
+	return ec.marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_BlogPostInfo(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2883,7 +2883,7 @@ func (ec *executionContext) _Query_BlogPostInfo(ctx context.Context, field graph
 	}
 	res := resTmp.(*blog.PostInfo)
 	fc.Result = res
-	return ec.marshalNPostInfo2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostInfo(ctx, field.Selections, res)
+	return ec.marshalNPostInfo2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostInfo(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_BlogPostCategories(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2918,7 +2918,7 @@ func (ec *executionContext) _Query_BlogPostCategories(ctx context.Context, field
 	}
 	res := resTmp.([]*blog.Category)
 	fc.Result = res
-	return ec.marshalNBlogCategory2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐCategory(ctx, field.Selections, res)
+	return ec.marshalNBlogCategory2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐCategory(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_GetBlogPostSeries(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2960,7 +2960,7 @@ func (ec *executionContext) _Query_GetBlogPostSeries(ctx context.Context, field 
 	}
 	res := resTmp.([]*blog.PostSeries)
 	fc.Result = res
-	return ec.marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostSeriesᚄ(ctx, field.Selections, res)
+	return ec.marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostSeriesᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_TelegramMonitorUsers(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -3002,7 +3002,7 @@ func (ec *executionContext) _Query_TelegramMonitorUsers(ctx context.Context, fie
 	}
 	res := resTmp.([]*telegram.Users)
 	fc.Result = res
-	return ec.marshalNTelegramUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐUsers(ctx, field.Selections, res)
+	return ec.marshalNTelegramUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐUsers(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_TelegramAlertTypes(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -3044,7 +3044,7 @@ func (ec *executionContext) _Query_TelegramAlertTypes(ctx context.Context, field
 	}
 	res := resTmp.([]*telegram.AlertTypes)
 	fc.Result = res
-	return ec.marshalNTelegramAlertType2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
+	return ec.marshalNTelegramAlertType2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_Lock(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -3086,7 +3086,7 @@ func (ec *executionContext) _Query_Lock(ctx context.Context, field graphql.Colle
 	}
 	res := resTmp.(*general.Lock)
 	fc.Result = res
-	return ec.marshalNLock2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋgeneralᚐLock(ctx, field.Selections, res)
+	return ec.marshalNLock2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚐLock(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_LockPermissions(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -3374,7 +3374,7 @@ func (ec *executionContext) _TelegramAlertType_sub_users(ctx context.Context, fi
 	}
 	res := resTmp.([]*telegram.Users)
 	fc.Result = res
-	return ec.marshalNTelegramUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐUsers(ctx, field.Selections, res)
+	return ec.marshalNTelegramUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐUsers(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TelegramUser_id(ctx context.Context, field graphql.CollectedField, obj *telegram.Users) (ret graphql.Marshaler) {
@@ -3584,7 +3584,7 @@ func (ec *executionContext) _TelegramUser_sub_alerts(ctx context.Context, field 
 	}
 	res := resTmp.([]*telegram.AlertTypes)
 	fc.Result = res
-	return ec.marshalNTelegramAlertType2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
+	return ec.marshalNTelegramAlertType2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐAlertTypes(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_id(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) (ret graphql.Marshaler) {
@@ -3750,7 +3750,7 @@ func (ec *executionContext) _Tweet_user(ctx context.Context, field graphql.Colle
 	}
 	res := resTmp.(*twitter.User)
 	fc.Result = res
-	return ec.marshalOTwitterUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐUser(ctx, field.Selections, res)
+	return ec.marshalOTwitterUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐUser(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_reply_to(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) (ret graphql.Marshaler) {
@@ -3782,7 +3782,7 @@ func (ec *executionContext) _Tweet_reply_to(ctx context.Context, field graphql.C
 	}
 	res := resTmp.(*twitter.Tweet)
 	fc.Result = res
-	return ec.marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx, field.Selections, res)
+	return ec.marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_replys(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) (ret graphql.Marshaler) {
@@ -3814,7 +3814,7 @@ func (ec *executionContext) _Tweet_replys(ctx context.Context, field graphql.Col
 	}
 	res := resTmp.([]*twitter.Tweet)
 	fc.Result = res
-	return ec.marshalOTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweetᚄ(ctx, field.Selections, res)
+	return ec.marshalOTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweetᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_is_quote_status(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) (ret graphql.Marshaler) {
@@ -3881,7 +3881,7 @@ func (ec *executionContext) _Tweet_quoted_status(ctx context.Context, field grap
 	}
 	res := resTmp.(*twitter.Tweet)
 	fc.Result = res
-	return ec.marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx, field.Selections, res)
+	return ec.marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_is_retweeted(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) (ret graphql.Marshaler) {
@@ -3948,7 +3948,7 @@ func (ec *executionContext) _Tweet_retweeted_tweet(ctx context.Context, field gr
 	}
 	res := resTmp.(*twitter.Tweet)
 	fc.Result = res
-	return ec.marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx, field.Selections, res)
+	return ec.marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Tweet_url(ctx context.Context, field graphql.CollectedField, obj *twitter.Tweet) (ret graphql.Marshaler) {
@@ -4050,7 +4050,7 @@ func (ec *executionContext) _Tweet_viewers(ctx context.Context, field graphql.Co
 	}
 	res := resTmp.([]*twitter.User)
 	fc.Result = res
-	return ec.marshalOTwitterUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐUserᚄ(ctx, field.Selections, res)
+	return ec.marshalOTwitterUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐUserᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _TwitterUser_id(ctx context.Context, field graphql.CollectedField, obj *twitter.User) (ret graphql.Marshaler) {
@@ -6621,7 +6621,7 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
-func (ec *executionContext) marshalNBlogCategory2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐCategory(ctx context.Context, sel ast.SelectionSet, v []*blog.Category) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogCategory2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐCategory(ctx context.Context, sel ast.SelectionSet, v []*blog.Category) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
 	isLen1 := len(v) == 1
@@ -6645,7 +6645,7 @@ func (ec *executionContext) marshalNBlogCategory2ᚕᚖlaiskyᚑblogᚑgraphql�
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalOBlogCategory2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐCategory(ctx, sel, v[i])
+			ret[i] = ec.marshalOBlogCategory2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐCategory(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -6658,11 +6658,11 @@ func (ec *executionContext) marshalNBlogCategory2ᚕᚖlaiskyᚑblogᚑgraphql�
 	return ret
 }
 
-func (ec *executionContext) marshalNBlogPost2laiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v blog.Post) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogPost2laiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v blog.Post) graphql.Marshaler {
 	return ec._BlogPost(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v []*blog.Post) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v []*blog.Post) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
 	isLen1 := len(v) == 1
@@ -6686,7 +6686,7 @@ func (ec *executionContext) marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋint
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalOBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx, sel, v[i])
+			ret[i] = ec.marshalOBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -6699,7 +6699,7 @@ func (ec *executionContext) marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋint
 	return ret
 }
 
-func (ec *executionContext) marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostᚄ(ctx context.Context, sel ast.SelectionSet, v []*blog.Post) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostᚄ(ctx context.Context, sel ast.SelectionSet, v []*blog.Post) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
 	isLen1 := len(v) == 1
@@ -6723,7 +6723,7 @@ func (ec *executionContext) marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋint
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx, sel, v[i])
+			ret[i] = ec.marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -6736,7 +6736,7 @@ func (ec *executionContext) marshalNBlogPost2ᚕᚖlaiskyᚑblogᚑgraphqlᚋint
 	return ret
 }
 
-func (ec *executionContext) marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v *blog.Post) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v *blog.Post) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -6746,7 +6746,7 @@ func (ec *executionContext) marshalNBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋintern
 	return ec._BlogPost(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostSeriesᚄ(ctx context.Context, sel ast.SelectionSet, v []*blog.PostSeries) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostSeriesᚄ(ctx context.Context, sel ast.SelectionSet, v []*blog.PostSeries) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
 	isLen1 := len(v) == 1
@@ -6770,7 +6770,7 @@ func (ec *executionContext) marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphql
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalNBlogPostSeries2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostSeries(ctx, sel, v[i])
+			ret[i] = ec.marshalNBlogPostSeries2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostSeries(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -6783,7 +6783,7 @@ func (ec *executionContext) marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphql
 	return ret
 }
 
-func (ec *executionContext) marshalNBlogPostSeries2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostSeries(ctx context.Context, sel ast.SelectionSet, v *blog.PostSeries) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogPostSeries2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostSeries(ctx context.Context, sel ast.SelectionSet, v *blog.PostSeries) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -6803,11 +6803,11 @@ func (ec *executionContext) marshalNBlogPostType2laiskyᚑblogᚑgraphqlᚋinter
 	return v
 }
 
-func (ec *executionContext) marshalNBlogUser2laiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐUser(ctx context.Context, sel ast.SelectionSet, v blog.User) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogUser2laiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐUser(ctx context.Context, sel ast.SelectionSet, v blog.User) graphql.Marshaler {
 	return ec._BlogUser(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNBlogUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐUser(ctx context.Context, sel ast.SelectionSet, v *blog.User) graphql.Marshaler {
+func (ec *executionContext) marshalNBlogUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐUser(ctx context.Context, sel ast.SelectionSet, v *blog.User) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -6910,11 +6910,11 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 	return res
 }
 
-func (ec *executionContext) marshalNLock2laiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋgeneralᚐLock(ctx context.Context, sel ast.SelectionSet, v general.Lock) graphql.Marshaler {
+func (ec *executionContext) marshalNLock2laiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚐLock(ctx context.Context, sel ast.SelectionSet, v general.Lock) graphql.Marshaler {
 	return ec._Lock(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNLock2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋgeneralᚐLock(ctx context.Context, sel ast.SelectionSet, v *general.Lock) graphql.Marshaler {
+func (ec *executionContext) marshalNLock2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚐLock(ctx context.Context, sel ast.SelectionSet, v *general.Lock) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -6929,11 +6929,11 @@ func (ec *executionContext) unmarshalNNewBlogPost2laiskyᚑblogᚑgraphqlᚋinte
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
-func (ec *executionContext) marshalNPostInfo2laiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v blog.PostInfo) graphql.Marshaler {
+func (ec *executionContext) marshalNPostInfo2laiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v blog.PostInfo) graphql.Marshaler {
 	return ec._PostInfo(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNPostInfo2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v *blog.PostInfo) graphql.Marshaler {
+func (ec *executionContext) marshalNPostInfo2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v *blog.PostInfo) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -6998,11 +6998,11 @@ func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel
 	return ret
 }
 
-func (ec *executionContext) marshalNTelegramAlertType2laiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v telegram.AlertTypes) graphql.Marshaler {
+func (ec *executionContext) marshalNTelegramAlertType2laiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v telegram.AlertTypes) graphql.Marshaler {
 	return ec._TelegramAlertType(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNTelegramAlertType2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v []*telegram.AlertTypes) graphql.Marshaler {
+func (ec *executionContext) marshalNTelegramAlertType2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v []*telegram.AlertTypes) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
 	isLen1 := len(v) == 1
@@ -7026,7 +7026,7 @@ func (ec *executionContext) marshalNTelegramAlertType2ᚕᚖlaiskyᚑblogᚑgrap
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalOTelegramAlertType2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐAlertTypes(ctx, sel, v[i])
+			ret[i] = ec.marshalOTelegramAlertType2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐAlertTypes(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -7039,7 +7039,7 @@ func (ec *executionContext) marshalNTelegramAlertType2ᚕᚖlaiskyᚑblogᚑgrap
 	return ret
 }
 
-func (ec *executionContext) marshalNTelegramAlertType2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v *telegram.AlertTypes) graphql.Marshaler {
+func (ec *executionContext) marshalNTelegramAlertType2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v *telegram.AlertTypes) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -7049,7 +7049,7 @@ func (ec *executionContext) marshalNTelegramAlertType2ᚖlaiskyᚑblogᚑgraphql
 	return ec._TelegramAlertType(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNTelegramUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐUsers(ctx context.Context, sel ast.SelectionSet, v []*telegram.Users) graphql.Marshaler {
+func (ec *executionContext) marshalNTelegramUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐUsers(ctx context.Context, sel ast.SelectionSet, v []*telegram.Users) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
 	isLen1 := len(v) == 1
@@ -7073,7 +7073,7 @@ func (ec *executionContext) marshalNTelegramUser2ᚕᚖlaiskyᚑblogᚑgraphql�
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalOTelegramUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐUsers(ctx, sel, v[i])
+			ret[i] = ec.marshalOTelegramUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐUsers(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -7086,7 +7086,7 @@ func (ec *executionContext) marshalNTelegramUser2ᚕᚖlaiskyᚑblogᚑgraphql�
 	return ret
 }
 
-func (ec *executionContext) marshalNTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx context.Context, sel ast.SelectionSet, v []*twitter.Tweet) graphql.Marshaler {
+func (ec *executionContext) marshalNTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx context.Context, sel ast.SelectionSet, v []*twitter.Tweet) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
 	isLen1 := len(v) == 1
@@ -7110,7 +7110,7 @@ func (ec *executionContext) marshalNTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋintern
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx, sel, v[i])
+			ret[i] = ec.marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -7123,7 +7123,7 @@ func (ec *executionContext) marshalNTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋintern
 	return ret
 }
 
-func (ec *executionContext) marshalNTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx context.Context, sel ast.SelectionSet, v *twitter.Tweet) graphql.Marshaler {
+func (ec *executionContext) marshalNTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx context.Context, sel ast.SelectionSet, v *twitter.Tweet) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -7133,7 +7133,7 @@ func (ec *executionContext) marshalNTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternal�
 	return ec._Tweet(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNTwitterUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐUser(ctx context.Context, sel ast.SelectionSet, v *twitter.User) graphql.Marshaler {
+func (ec *executionContext) marshalNTwitterUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐUser(ctx context.Context, sel ast.SelectionSet, v *twitter.User) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "must not be null")
@@ -7372,14 +7372,14 @@ func (ec *executionContext) marshalN__TypeKind2string(ctx context.Context, sel a
 	return res
 }
 
-func (ec *executionContext) marshalOBlogCategory2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐCategory(ctx context.Context, sel ast.SelectionSet, v *blog.Category) graphql.Marshaler {
+func (ec *executionContext) marshalOBlogCategory2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐCategory(ctx context.Context, sel ast.SelectionSet, v *blog.Category) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return ec._BlogCategory(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalOBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v *blog.Post) graphql.Marshaler {
+func (ec *executionContext) marshalOBlogPost2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚐPost(ctx context.Context, sel ast.SelectionSet, v *blog.Post) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
@@ -7525,21 +7525,21 @@ func (ec *executionContext) marshalOString2ᚖstring(ctx context.Context, sel as
 	return graphql.MarshalString(*v)
 }
 
-func (ec *executionContext) marshalOTelegramAlertType2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v *telegram.AlertTypes) graphql.Marshaler {
+func (ec *executionContext) marshalOTelegramAlertType2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v *telegram.AlertTypes) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return ec._TelegramAlertType(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalOTelegramUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtelegramᚐUsers(ctx context.Context, sel ast.SelectionSet, v *telegram.Users) graphql.Marshaler {
+func (ec *executionContext) marshalOTelegramUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚐUsers(ctx context.Context, sel ast.SelectionSet, v *telegram.Users) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return ec._TelegramUser(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalOTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweetᚄ(ctx context.Context, sel ast.SelectionSet, v []*twitter.Tweet) graphql.Marshaler {
+func (ec *executionContext) marshalOTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweetᚄ(ctx context.Context, sel ast.SelectionSet, v []*twitter.Tweet) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
@@ -7566,7 +7566,7 @@ func (ec *executionContext) marshalOTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋintern
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalNTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx, sel, v[i])
+			ret[i] = ec.marshalNTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -7579,14 +7579,14 @@ func (ec *executionContext) marshalOTweet2ᚕᚖlaiskyᚑblogᚑgraphqlᚋintern
 	return ret
 }
 
-func (ec *executionContext) marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐTweet(ctx context.Context, sel ast.SelectionSet, v *twitter.Tweet) graphql.Marshaler {
+func (ec *executionContext) marshalOTweet2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐTweet(ctx context.Context, sel ast.SelectionSet, v *twitter.Tweet) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return ec._Tweet(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalOTwitterUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐUserᚄ(ctx context.Context, sel ast.SelectionSet, v []*twitter.User) graphql.Marshaler {
+func (ec *executionContext) marshalOTwitterUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐUserᚄ(ctx context.Context, sel ast.SelectionSet, v []*twitter.User) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
@@ -7613,7 +7613,7 @@ func (ec *executionContext) marshalOTwitterUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋ
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalNTwitterUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐUser(ctx, sel, v[i])
+			ret[i] = ec.marshalNTwitterUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐUser(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -7626,7 +7626,7 @@ func (ec *executionContext) marshalOTwitterUser2ᚕᚖlaiskyᚑblogᚑgraphqlᚋ
 	return ret
 }
 
-func (ec *executionContext) marshalOTwitterUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋappsᚋtwitterᚐUser(ctx context.Context, sel ast.SelectionSet, v *twitter.User) graphql.Marshaler {
+func (ec *executionContext) marshalOTwitterUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚐUser(ctx context.Context, sel ast.SelectionSet, v *twitter.User) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}

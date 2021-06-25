@@ -1,15 +1,15 @@
-package models
+package db
 
 import (
 	"context"
 	"sync"
 	"time"
 
+	"laisky-blog-graphql/library/log"
+
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
-
-	"laisky-blog-graphql/library/log"
 )
 
 const (

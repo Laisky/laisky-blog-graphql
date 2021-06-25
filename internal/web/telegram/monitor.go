@@ -6,23 +6,23 @@ import (
 	"strings"
 	"time"
 
+	"laisky-blog-graphql/library/log"
+
 	"github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	tb "gopkg.in/tucnak/telebot.v2"
-
-	"laisky-blog-graphql/library/log"
 )
 
-func (b *Telegram) monitorHandler() {
-	b.bot.Handle("/monitor", func(c *tb.Message) {
-		b.userStats.Store(c.Sender.ID, &userStat{
+func (s *Service) monitorHandler() {
+	s.bot.Handle("/monitor", func(c *tb.Message) {
+		s.userStats.Store(c.Sender.ID, &userStat{
 			user:  c.Sender,
 			state: userWaitChooseMonitorCmd,
 			lastT: utils.Clock.GetUTCNow(),
 		})
 
-		if _, err := b.bot.Send(c.Sender, `
+		if _, err := s.bot.Send(c.Sender, `
 Reply number:
 
 	1 - new alert's name  # reply "1 - alert_name"
@@ -37,11 +37,11 @@ Reply number:
 	})
 }
 
-func (b *Telegram) chooseMonitor(us *userStat, msg *tb.Message) {
+func (s *Service) chooseMonitor(us *userStat, msg *tb.Message) {
 	log.Logger.Debug("choose monitor",
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text))
-	defer b.userStats.Delete(us.user.ID)
+	defer s.userStats.Delete(us.user.ID)
 	var (
 		err error
 		ans = []string{msg.Text, ""}
@@ -50,59 +50,59 @@ func (b *Telegram) chooseMonitor(us *userStat, msg *tb.Message) {
 		ans = strings.SplitN(msg.Text, " - ", 2)
 	}
 	if len(ans) < 2 {
-		b.PleaseRetry(us.user, msg.Text)
+		s.PleaseRetry(us.user, msg.Text)
 		return
 	}
 
 	switch ans[0] {
 	case "1": // create new monitor
-		if err = b.createNewMonitor(us, ans[1]); err != nil {
+		if err = s.createNewMonitor(us, ans[1]); err != nil {
 			log.Logger.Warn("createNewMonitor", zap.Error(err))
-			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
 				log.Logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "2":
-		if err = b.listAllMonitorAlerts(us); err != nil {
+		if err = s.listAllMonitorAlerts(us); err != nil {
 			log.Logger.Warn("listAllMonitorAlerts", zap.Error(err))
-			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
 				log.Logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "3":
-		if err = b.joinAlertGroup(us, ans[1]); err != nil {
+		if err = s.joinAlertGroup(us, ans[1]); err != nil {
 			log.Logger.Warn("joinAlertGroup", zap.Error(err))
-			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
 				log.Logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "4":
-		if err = b.refreshAlertTokenAndKey(us, ans[1]); err != nil {
+		if err = s.refreshAlertTokenAndKey(us, ans[1]); err != nil {
 			log.Logger.Warn("refreshAlertTokenAndKey", zap.Error(err))
-			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
 				log.Logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "5":
-		if err = b.userQuitAlert(us, ans[1]); err != nil {
+		if err = s.userQuitAlert(us, ans[1]); err != nil {
 			log.Logger.Warn("userQuitAlert", zap.Error(err))
-			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
 				log.Logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "6":
-		if err = b.kickUser(us, ans[1]); err != nil {
+		if err = s.kickUser(us, ans[1]); err != nil {
 			log.Logger.Warn("kickUser", zap.Error(err))
-			if _, err = b.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
+			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
 				log.Logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	default:
-		b.PleaseRetry(us.user, msg.Text)
+		s.PleaseRetry(us.user, msg.Text)
 	}
 }
 
-func (b *Telegram) kickUser(us *userStat, au string) (err error) {
+func (s *Service) kickUser(us *userStat, au string) (err error) {
 	if !strings.Contains(au, ":") {
 		return fmt.Errorf("unknown alert_name:uid format")
 	}
@@ -114,18 +114,18 @@ func (b *Telegram) kickUser(us *userStat, au string) (err error) {
 	}
 
 	var alertType *AlertTypes
-	alertType, err = b.db.IsUserSubAlert(us.user.ID, alertName)
+	alertType, err = s.IsUserSubAlert(us.user.ID, alertName)
 	if err != nil {
 		return errors.Wrap(err, "load alert by user uid")
 	}
 
 	var kickedUser *Users
-	kickedUser, err = b.db.LoadUserByUID(kickUID)
+	kickedUser, err = s.LoadUserByUID(kickUID)
 	if err != nil {
 		return errors.Wrap(err, "load user by kicked user uid")
 	}
 
-	if err = b.db.RemoveUAR(kickedUser.UID, alertName); err != nil {
+	if err = s.RemoveUAR(kickedUser.UID, alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation")
 	}
 	log.Logger.Info("remove user_alert_relation",
@@ -137,7 +137,7 @@ func (b *Telegram) kickUser(us *userStat, au string) (err error) {
 	msg += "alert_type: " + alertName + "\n"
 	msg += "kicked_user: " + kickedUser.Name + " (" + ans[1] + ")\n"
 
-	users, err := b.db.LoadUsersByAlertType(alertType)
+	users, err := s.LoadUsersByAlertType(alertType)
 	if err != nil {
 		return errors.Wrap(err, "load users")
 	}
@@ -145,7 +145,7 @@ func (b *Telegram) kickUser(us *userStat, au string) (err error) {
 
 	errMsg := ""
 	for _, user := range users {
-		if err = b.SendMsgToUser(user.UID, msg); err != nil {
+		if err = s.SendMsgToUser(user.UID, msg); err != nil {
 			errMsg += err.Error()
 		}
 	}
@@ -156,21 +156,21 @@ func (b *Telegram) kickUser(us *userStat, au string) (err error) {
 	return err
 }
 
-func (b *Telegram) userQuitAlert(us *userStat, alertName string) (err error) {
-	if err = b.db.RemoveUAR(us.user.ID, alertName); err != nil {
+func (s *Service) userQuitAlert(us *userStat, alertName string) (err error) {
+	if err = s.RemoveUAR(us.user.ID, alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation by uid and alert_name")
 	}
 
-	return b.SendMsgToUser(us.user.ID, "successed unsubscribe "+alertName)
+	return s.SendMsgToUser(us.user.ID, "successed unsubscribe "+alertName)
 }
 
-func (b *Telegram) refreshAlertTokenAndKey(us *userStat, alert string) (err error) {
+func (s *Service) refreshAlertTokenAndKey(us *userStat, alert string) (err error) {
 	var alertType *AlertTypes
-	alertType, err = b.db.IsUserSubAlert(us.user.ID, alert)
+	alertType, err = s.IsUserSubAlert(us.user.ID, alert)
 	if err != nil {
 		return errors.Wrap(err, "load alert by user uid")
 	}
-	if err = b.db.RefreshAlertTokenAndKey(alertType); err != nil {
+	if err = s.RefreshAlertTokenAndKey(alertType); err != nil {
 		return errors.Wrap(err, "refresh alert token and key")
 	}
 
@@ -179,14 +179,14 @@ func (b *Telegram) refreshAlertTokenAndKey(us *userStat, alert string) (err erro
 	msg += "push_token: " + alertType.PushToken + "\n"
 	msg += "join_key: " + alertType.JoinKey + "\n"
 
-	users, err := b.db.LoadUsersByAlertType(alertType)
+	users, err := s.LoadUsersByAlertType(alertType)
 	if err != nil {
 		return errors.Wrap(err, "load users")
 	}
 
 	errMsg := ""
 	for _, user := range users {
-		if err = b.SendMsgToUser(user.UID, msg); err != nil {
+		if err = s.SendMsgToUser(user.UID, msg); err != nil {
 			errMsg += err.Error()
 		}
 	}
@@ -197,7 +197,7 @@ func (b *Telegram) refreshAlertTokenAndKey(us *userStat, alert string) (err erro
 	return err
 }
 
-func (b *Telegram) joinAlertGroup(us *userStat, kt string) (err error) {
+func (s *Service) joinAlertGroup(us *userStat, kt string) (err error) {
 	if !strings.Contains(kt, ":") {
 		return fmt.Errorf("unknown format")
 	}
@@ -205,25 +205,25 @@ func (b *Telegram) joinAlertGroup(us *userStat, kt string) (err error) {
 	alert := ans[0]
 	joinKey := ans[1]
 
-	user, err := b.db.CreateOrGetUser(us.user)
+	user, err := s.CreateOrGetUser(us.user)
 	if err != nil {
 		return err
 	}
 
-	uar, err := b.db.RegisterUserAlertRelation(user, alert, joinKey)
+	uar, err := s.RegisterUserAlertRelation(user, alert, joinKey)
 	if err != nil {
 		return err
 	}
 
-	return b.SendMsgToUser(us.user.ID, alert+" (joint at "+uar.CreatedAt.Format(time.RFC3339)+")")
+	return s.SendMsgToUser(us.user.ID, alert+" (joint at "+uar.CreatedAt.Format(time.RFC3339)+")")
 }
 
-func (b *Telegram) listAllMonitorAlerts(us *userStat) (err error) {
-	u, err := b.db.LoadUserByUID(us.user.ID)
+func (s *Service) listAllMonitorAlerts(us *userStat) (err error) {
+	u, err := s.LoadUserByUID(us.user.ID)
 	if err != nil {
 		return err
 	}
-	alerts, err := b.db.LoadAlertTypesByUser(u)
+	alerts, err := s.LoadAlertTypesByUser(u)
 	if err != nil {
 		return err
 	}
@@ -242,26 +242,26 @@ func (b *Telegram) listAllMonitorAlerts(us *userStat) (err error) {
 		msg += "--------------------------------"
 	}
 
-	return b.SendMsgToUser(u.UID, msg)
+	return s.SendMsgToUser(u.UID, msg)
 }
 
-func (b *Telegram) createNewMonitor(us *userStat, alertName string) (err error) {
-	u, err := b.db.CreateOrGetUser(us.user)
+func (s *Service) createNewMonitor(us *userStat, alertName string) (err error) {
+	u, err := s.CreateOrGetUser(us.user)
 	if err != nil {
 		return errors.Wrap(err, "create user")
 	}
 
-	a, err := b.db.CreateAlertType(alertName)
+	a, err := s.CreateAlertType(alertName)
 	if err != nil {
 		return errors.Wrap(err, "create alert_type")
 	}
 
-	_, err = b.db.CreateOrGetUserAlertRelations(u, a)
+	_, err = s.CreateOrGetUserAlertRelations(u, a)
 	if err != nil {
 		return errors.Wrap(err, "create user_alert_relation")
 	}
 
-	if _, err = b.bot.Send(us.user, fmt.Sprintf(`
+	if _, err = s.bot.Send(us.user, fmt.Sprintf(`
 create user & alert_type & user_alert_relations successed!
 user: %v
 alert_type: %v

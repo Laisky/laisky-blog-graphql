@@ -1,36 +1,36 @@
-package web
+package global
 
 import (
 	"context"
 	"path/filepath"
 
-	utils "github.com/Laisky/go-utils"
+	blogDB "laisky-blog-graphql/internal/web/blog/db"
+	generalDB "laisky-blog-graphql/internal/web/general/db"
+	telegramDB "laisky-blog-graphql/internal/web/telegram/db"
+	twitterDB "laisky-blog-graphql/internal/web/twitter/db"
+	"laisky-blog-graphql/library/db"
+	"laisky-blog-graphql/library/log"
+
+	"github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
 	"google.golang.org/api/option"
-
-	"laisky-blog-graphql/internal/apps/blog"
-	"laisky-blog-graphql/internal/apps/general"
-	"laisky-blog-graphql/internal/apps/telegram"
-	"laisky-blog-graphql/internal/apps/twitter"
-	"laisky-blog-graphql/internal/models"
-	"laisky-blog-graphql/library/log"
 )
 
 var (
-	twitterDB *twitter.DB
-	blogDB    *blog.DB
-	monitorDB *telegram.MonitorDB
-	generalDB *general.DB
+	TwitterDB *twitterDB.DB
+	BlogDB    *blogDB.DB
+	MonitorDB *telegramDB.DB
+	GeneralDB *generalDB.DB
 )
 
-func setupDB(ctx context.Context) {
+func SetupDB(ctx context.Context) {
 	setupMongo(ctx)
 	setupGCP(ctx)
 }
 
 func setupGCP(ctx context.Context) {
 	defer log.Logger.Info("connected gcp firestore")
-	generalFirestore, err := models.NewFirestore(
+	generalFirestore, err := db.NewFirestore(
 		ctx,
 		utils.Settings.GetString("settings.general.project_id"),
 		option.WithCredentialsFile(filepath.Join(
@@ -41,7 +41,7 @@ func setupGCP(ctx context.Context) {
 	if err != nil {
 		log.Logger.Panic("create firestore client", zap.Error(err))
 	}
-	generalDB = general.NewGeneralDB(generalFirestore)
+	GeneralDB = generalDB.NewDB(generalFirestore)
 }
 
 func setupMongo(ctx context.Context) {
@@ -49,10 +49,10 @@ func setupMongo(ctx context.Context) {
 	var (
 		blogDBCli,
 		twitterDBCli,
-		monitorDBCli *models.DB
+		monitorDBCli *db.DB
 		err error
 	)
-	if blogDBCli, err = models.NewMongoDB(ctx,
+	if blogDBCli, err = db.NewMongoDB(ctx,
 		utils.Settings.GetString("settings.db.blog.addr"),
 		utils.Settings.GetString("settings.db.blog.db"),
 		utils.Settings.GetString("settings.db.blog.user"),
@@ -60,9 +60,9 @@ func setupMongo(ctx context.Context) {
 	); err != nil {
 		log.Logger.Panic("connect to blog db", zap.Error(err))
 	}
-	blogDB = blog.NewBlogDB(blogDBCli)
+	BlogDB = blogDB.NewDB(blogDBCli)
 
-	if twitterDBCli, err = models.NewMongoDB(ctx,
+	if twitterDBCli, err = db.NewMongoDB(ctx,
 		utils.Settings.GetString("settings.db.twitter.addr"),
 		utils.Settings.GetString("settings.db.twitter.db"),
 		utils.Settings.GetString("settings.db.twitter.user"),
@@ -70,9 +70,9 @@ func setupMongo(ctx context.Context) {
 	); err != nil {
 		log.Logger.Panic("connect to twitter db", zap.Error(err))
 	}
-	twitterDB = twitter.NewTwitterDB(twitterDBCli)
+	TwitterDB = twitterDB.NewTwitterDB(twitterDBCli)
 
-	if monitorDBCli, err = models.NewMongoDB(ctx,
+	if monitorDBCli, err = db.NewMongoDB(ctx,
 		utils.Settings.GetString("settings.db.monitor.addr"),
 		utils.Settings.GetString("settings.db.monitor.db"),
 		utils.Settings.GetString("settings.db.monitor.user"),
@@ -80,5 +80,5 @@ func setupMongo(ctx context.Context) {
 	); err != nil {
 		log.Logger.Panic("connect to monitor db", zap.Error(err))
 	}
-	monitorDB = telegram.NewMonitorDB(monitorDBCli)
+	MonitorDB = telegramDB.NewDB(monitorDBCli)
 }

@@ -3,15 +3,8 @@ package blog
 import (
 	"time"
 
-	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-
-	"laisky-blog-graphql/internal/models"
 )
-
-type DB struct {
-	dbcli *models.DB
-}
 
 // Post blog posts
 type Post struct {
@@ -57,14 +50,6 @@ type PostSeries struct {
 	Chidlren []bson.ObjectId `bson:"children" json:"children"`
 }
 
-const (
-	DBName            = "blog"
-	PostColName       = "posts"
-	UserColName       = "users"
-	PostSeriesColName = "post_series"
-	CategoryColName   = "categories"
-)
-
 func (u *User) GetID() string {
 	return u.ID.Hex()
 }
@@ -74,23 +59,4 @@ func (u *User) GetPayload() map[string]interface{} {
 		"display_name": u.Username,
 		"account":      u.Account,
 	}
-}
-
-func NewBlogDB(dbcli *models.DB) *DB {
-	return &DB{
-		dbcli: dbcli,
-	}
-}
-
-func (db *DB) GetPostsCol() *mgo.Collection {
-	return db.dbcli.GetCol(PostColName)
-}
-func (db *DB) GetUsersCol() *mgo.Collection {
-	return db.dbcli.GetCol(UserColName)
-}
-func (db *DB) GetCategoriesCol() *mgo.Collection {
-	return db.dbcli.GetCol(CategoryColName)
-}
-func (db *DB) GetPostSeriesCol() *mgo.Collection {
-	return db.dbcli.GetCol(PostSeriesColName)
 }

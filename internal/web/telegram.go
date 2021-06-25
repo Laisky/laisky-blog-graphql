@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"strconv"
 
-	utils "github.com/Laisky/go-utils"
-	"github.com/Laisky/zap"
-
-	"laisky-blog-graphql/internal/apps/telegram"
+	"laisky-blog-graphql/internal/global"
+	"laisky-blog-graphql/internal/web/telegram"
 	"laisky-blog-graphql/library"
 	"laisky-blog-graphql/library/log"
+
+	gutils "github.com/Laisky/go-utils"
+	"github.com/Laisky/zap"
 )
 
 func (r *Resolver) TelegramAlertType() TelegramAlertTypeResolver {
@@ -33,7 +34,7 @@ func (q *queryResolver) TelegramMonitorUsers(ctx context.Context, page *Paginati
 		Size: page.Size,
 		Name: name,
 	}
-	return monitorDB.LoadUsers(cfg)
+	return global.TelegramSvc.LoadUsers(cfg)
 }
 func (q *queryResolver) TelegramAlertTypes(ctx context.Context, page *Pagination, name string) ([]*telegram.AlertTypes, error) {
 	cfg := &telegram.QueryCfg{
@@ -41,7 +42,7 @@ func (q *queryResolver) TelegramAlertTypes(ctx context.Context, page *Pagination
 		Size: page.Size,
 		Name: name,
 	}
-	return monitorDB.LoadAlertTypes(cfg)
+	return global.TelegramSvc.LoadAlertTypes(cfg)
 }
 
 // --------------------------
@@ -60,7 +61,7 @@ func (t *telegramUserResolver) TelegramID(ctx context.Context, obj *telegram.Use
 	return strconv.FormatInt(int64(obj.UID), 10), nil
 }
 func (t *telegramUserResolver) SubAlerts(ctx context.Context, obj *telegram.Users) ([]*telegram.AlertTypes, error) {
-	return monitorDB.LoadAlertTypesByUser(obj)
+	return global.TelegramSvc.LoadAlertTypesByUser(obj)
 }
 
 func (t *telegramAlertTypeResolver) ID(ctx context.Context, obj *telegram.AlertTypes) (string, error) {
@@ -73,7 +74,7 @@ func (t *telegramAlertTypeResolver) ModifiedAt(ctx context.Context, obj *telegra
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
 func (t *telegramAlertTypeResolver) SubUsers(ctx context.Context, obj *telegram.AlertTypes) ([]*telegram.Users, error) {
-	return monitorDB.LoadUsersByAlertType(obj)
+	return global.TelegramSvc.LoadUsersByAlertType(obj)
 }
 
 // ============================
@@ -86,17 +87,17 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg str
 		return nil, fmt.Errorf("deny by throttle")
 	}
 
-	maxlen := utils.Settings.GetInt("settings.telegram.max_len")
+	maxlen := gutils.Settings.GetInt("settings.telegram.max_len")
 	if len(msg) > maxlen {
 		msg = msg[:maxlen] + " ..."
 	}
 
-	alert, err := monitorDB.ValidateTokenForAlertType(token, typeArg)
+	alert, err := global.TelegramSvc.ValidateTokenForAlertType(token, typeArg)
 	if err != nil {
 		return nil, err
 	}
 
-	users, err := monitorDB.LoadUsersByAlertType(alert)
+	users, err := global.TelegramSvc.LoadUsersByAlertType(alert)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg str
 	errMsg := ""
 	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
 	for _, user := range users {
-		if err = telegramCli.SendMsgToUser(user.UID, msg); err != nil {
+		if err = global.TelegramSvc.SendMsgToUser(user.UID, msg); err != nil {
 			log.Logger.Error("send msg to user", zap.Error(err), zap.Int("uid", user.UID), zap.String("msg", msg))
 			errMsg += err.Error()
 		}

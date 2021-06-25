@@ -6,16 +6,17 @@ import (
 	"strings"
 	"time"
 
+	"laisky-blog-graphql/internal/global"
+	"laisky-blog-graphql/internal/web/blog"
+	"laisky-blog-graphql/internal/web/general"
+	"laisky-blog-graphql/library"
+	"laisky-blog-graphql/library/log"
+
 	middlewares "github.com/Laisky/gin-middlewares"
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
-
-	"laisky-blog-graphql/internal/apps/blog"
-	"laisky-blog-graphql/internal/apps/general"
-	"laisky-blog-graphql/library"
-	"laisky-blog-graphql/library/log"
 )
 
 const (
@@ -38,7 +39,7 @@ type locksResolver struct{ *Resolver }
 // =================
 
 func (r *queryResolver) Lock(ctx context.Context, name string) (*general.Lock, error) {
-	return generalDB.LoadLockByName(ctx, name)
+	return global.GeneralSvc.LoadLockByName(ctx, name)
 }
 
 func (r *queryResolver) LockPermissions(ctx context.Context, username string) (users []*GeneralUser, err error) {
@@ -127,7 +128,7 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 		return ok, fmt.Errorf("`%v` do not have permission to acquire `%v`", username, lockName)
 	}
 
-	return generalDB.AcquireLock(ctx, lockName, username, time.Duration(durationSec)*time.Second, false)
+	return global.GeneralSvc.AcquireLock(ctx, lockName, username, time.Duration(durationSec)*time.Second, false)
 }
 
 // CreateGeneralToken generate genaral token than should be set as cookie `general`

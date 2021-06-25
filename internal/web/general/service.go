@@ -5,44 +5,28 @@ import (
 	"fmt"
 	"time"
 
+	"laisky-blog-graphql/internal/web/general/db"
+	"laisky-blog-graphql/library/log"
+
 	"cloud.google.com/go/firestore"
 	"github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
-
-	"laisky-blog-graphql/internal/models"
-	"laisky-blog-graphql/library/log"
 )
 
-const (
-	locksColName = "Locks"
-)
-
-type DB struct {
-	dbcli *models.Firestore
+type Service struct {
+	db *db.DB
 }
 
-type Lock struct {
-	Name      string    `firestore:"name"`
-	OwnerID   string    `firestore:"owner_id"`
-	ExpiresAt time.Time `firestore:"expires_at"`
+func NewService(db *db.DB) *Service {
+	return &Service{db: db}
 }
 
-func NewGeneralDB(db *models.Firestore) *DB {
-	return &DB{
-		dbcli: db,
-	}
-}
-
-func (db *DB) GetLocksCol() *firestore.CollectionRef {
-	return db.dbcli.Collection(locksColName)
-}
-
-func (db *DB) AcquireLock(ctx context.Context, name, ownerID string, duration time.Duration, isRenewal bool) (ok bool, err error) {
+func (s *Service) AcquireLock(ctx context.Context, name, ownerID string, duration time.Duration, isRenewal bool) (ok bool, err error) {
 	log.Logger.Info("AcquireLock", zap.String("name", name), zap.String("owner", ownerID), zap.Duration("duration", duration))
-	ref := db.GetLocksCol().Doc(name)
+	ref := s.db.GetLocksCol().Doc(name)
 	now := utils.Clock.GetUTCNow()
-	err = db.dbcli.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err = s.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		doc, err := tx.Get(ref)
 		if err != nil && doc == nil {
 			log.Logger.Warn("load gcp general lock", zap.String("name", name), zap.Error(err))
@@ -72,9 +56,9 @@ func (db *DB) AcquireLock(ctx context.Context, name, ownerID string, duration ti
 	return
 }
 
-func (db *DB) LoadLockByName(ctx context.Context, name string) (lock *Lock, err error) {
+func (s *Service) LoadLockByName(ctx context.Context, name string) (lock *Lock, err error) {
 	log.Logger.Debug("load lock by name", zap.String("name", name))
-	docu, err := db.GetLocksCol().Doc(name).Get(ctx)
+	docu, err := s.db.GetLocksCol().Doc(name).Get(ctx)
 	if err != nil && docu == nil {
 		log.Logger.Error("load gcp general lock", zap.String("name", name), zap.Error(err))
 		return nil, errors.Wrap(err, "load docu by name")

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"laisky-blog-graphql/internal/apps/general"
+	"laisky-blog-graphql/internal/web/general"
 )
 
 func Test_queryResolver_Lock(t *testing.T) {

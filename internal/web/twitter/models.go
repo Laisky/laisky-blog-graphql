@@ -4,13 +4,7 @@ import (
 	"time"
 
 	"gopkg.in/mgo.v2/bson"
-
-	"laisky-blog-graphql/internal/models"
 )
-
-type DB struct {
-	dbcli *models.DB
-}
 
 type Media struct {
 	ID  int64  `bson:"id" json:"id"`
@@ -42,16 +36,4 @@ type User struct {
 	ScreenName string `bson:"screen_name" json:"screen_name"`
 	Name       string `bson:"name" json:"name"`
 	Dscription string `bson:"dscription" json:"dscription"`
-}
-
-const (
-	DBName    = "twitter"
-	colTweets = "tweets"
-	colUsers  = "users"
-)
-
-func NewTwitterDB(dbcli *models.DB) *DB {
-	return &DB{
-		dbcli: dbcli,
-	}
 }
