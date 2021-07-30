@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Laisky/go-utils"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/form3tech-oss/jwt-go"
 	"gopkg.in/mgo.v2/bson"
 )
 

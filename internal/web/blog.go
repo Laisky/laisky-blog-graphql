@@ -7,7 +7,7 @@ import (
 
 	gutils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/form3tech-oss/jwt-go"
 	"github.com/pkg/errors"
 
 	"laisky-blog-graphql/internal/global"
