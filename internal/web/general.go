@@ -49,7 +49,8 @@ func (r *queryResolver) LockPermissions(ctx context.Context, username string) (u
 		prefixes []string
 	)
 	if username != "" {
-		if prefixes = utils.Settings.GetStringSlice("settings.general.locks.user_prefix_map." + username); prefixes != nil {
+		if prefixes = utils.Settings.GetStringSlice(
+			"settings.general.locks.user_prefix_map." + username); prefixes != nil {
 			users = append(users, &GeneralUser{
 				LockPrefixes: prefixes,
 			})
@@ -58,10 +59,12 @@ func (r *queryResolver) LockPermissions(ctx context.Context, username string) (u
 		return nil, errors.Errorf("user `%v` not exists", username)
 	}
 
-	for username = range utils.Settings.GetStringMap("settings.general.locks.user_prefix_map") {
+	for username = range utils.Settings.GetStringMap(
+		"settings.general.locks.user_prefix_map") {
 		users = append(users, &GeneralUser{
-			Name:         username,
-			LockPrefixes: utils.Settings.GetStringSlice("settings.general.locks.user_prefix_map." + username),
+			Name: username,
+			LockPrefixes: utils.Settings.GetStringSlice(
+				"settings.general.locks.user_prefix_map." + username),
 		})
 	}
 	return users, nil
@@ -70,7 +73,8 @@ func (r *queryResolver) LockPermissions(ctx context.Context, username string) (u
 // --------------------------
 // gcp general resolver
 // --------------------------
-func (r *locksResolver) ExpiresAt(ctx context.Context, obj *general.Lock) (*library.Datetime, error) {
+func (r *locksResolver) ExpiresAt(ctx context.Context,
+	obj *general.Lock) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.ExpiresAt), nil
 }
 
@@ -79,7 +83,8 @@ func (r *locksResolver) ExpiresAt(ctx context.Context, obj *general.Lock) (*libr
 // ============================
 
 func validateLockName(ownerName, lockName string) (ok bool) {
-	for _, prefix := range utils.Settings.GetStringSlice("settings.general.locks.user_prefix_map." + ownerName) {
+	for _, prefix := range utils.Settings.GetStringSlice(
+		"settings.general.locks.user_prefix_map." + ownerName) {
 		if strings.HasPrefix(lockName, prefix) {
 			return true
 		}
@@ -98,7 +103,9 @@ token (`general` in cookie):
 */
 func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 	var token string
-	if token, err = middlewares.GetGinCtxFromStdCtx(ctx).Cookie(generalTokenName); err != nil {
+	if token, err = middlewares.
+		GetGinCtxFromStdCtx(ctx).
+		Cookie(generalTokenName); err != nil {
 		return "", errors.Wrap(err, "get jwt token from ctx")
 	}
 
@@ -112,9 +119,14 @@ func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 
 // AcquireLock acquire mutex lock with name and duration.
 // if `isRenewal=true`, will renewal exists lock.
-func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (ok bool, err error) {
+func (r *mutationResolver) AcquireLock(ctx context.Context,
+	lockName string,
+	durationSec int,
+	isRenewal *bool,
+) (ok bool, err error) {
 	if durationSec > utils.Settings.GetInt("settings.general.locks.max_duration_sec") {
-		return ok, fmt.Errorf("duration sec should less than %v", utils.Settings.GetInt("settings.general.locks.max_duration_sec"))
+		return ok, fmt.Errorf("duration sec should less than %v",
+			utils.Settings.GetInt("settings.general.locks.max_duration_sec"))
 	}
 
 	var username string
@@ -124,18 +136,33 @@ func (r *mutationResolver) AcquireLock(ctx context.Context, lockName string, dur
 	}
 
 	if !validateLockName(username, lockName) {
-		log.Logger.Warn("user want to acquire lock out of permission", zap.String("user", username), zap.String("lock", lockName))
-		return ok, fmt.Errorf("`%v` do not have permission to acquire `%v`", username, lockName)
+		log.Logger.Warn("user want to acquire lock out of permission",
+			zap.String("user", username),
+			zap.String("lock", lockName))
+		return ok, fmt.Errorf("`%v` do not have permission to acquire `%v`",
+			username, lockName)
 	}
 
-	return global.GeneralSvc.AcquireLock(ctx, lockName, username, time.Duration(durationSec)*time.Second, false)
+	return global.GeneralSvc.AcquireLock(ctx,
+		lockName,
+		username,
+		time.Duration(durationSec)*time.Second,
+		false)
 }
 
 // CreateGeneralToken generate genaral token than should be set as cookie `general`
-func (r *mutationResolver) CreateGeneralToken(ctx context.Context, username string, durationSec int) (token string, err error) {
-	log.Logger.Debug("CreateGeneralToken", zap.String("username", username), zap.Int("durationSec", durationSec))
+func (r *mutationResolver) CreateGeneralToken(ctx context.Context,
+	username string,
+	durationSec int,
+) (token string, err error) {
+	log.Logger.Debug("CreateGeneralToken",
+		zap.String("username", username),
+		zap.Int("durationSec", durationSec))
 	if time.Duration(durationSec)*time.Second > maxTokenExpireDuration {
-		return "", errors.Errorf("duration should less than %d, got %d", maxTokenExpireDuration, durationSec)
+		return "", errors.Errorf(
+			"duration should less than %d, got %d",
+			maxTokenExpireDuration,
+			durationSec)
 	}
 
 	if _, err = validateAndGetUser(ctx); err != nil {

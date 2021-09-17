@@ -1,3 +1,4 @@
+// Package db implements the Twitter database
 package db
 
 import (

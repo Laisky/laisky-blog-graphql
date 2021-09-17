@@ -362,13 +362,13 @@ func (s *Service) UpdatePostCategory(name, category string) (p *Post, err error)
 	return p, nil
 }
 
-func (d *Service) UpdatePost(user *User, name string, title string, md string, typeArg string) (p *Post, err error) {
+func (s *Service) UpdatePost(user *User, name string, title string, md string, typeArg string) (p *Post, err error) {
 	p = &Post{}
 	typeArg = strings.ToLower(typeArg)
 	if _, ok := supporttedTypes[typeArg]; !ok {
 		return nil, fmt.Errorf("type `%v` not supportted", typeArg)
 	}
-	if err = d.db.GetPostsCol().Find(bson.M{"post_name": name}).One(p); err != nil {
+	if err = s.db.GetPostsCol().Find(bson.M{"post_name": name}).One(p); err != nil {
 		if err == mgo.ErrNotFound {
 			return nil, errors.Wrap(err, "post not exists")
 		}
@@ -387,7 +387,7 @@ func (d *Service) UpdatePost(user *User, name string, title string, md string, t
 	p.ModifiedAt = time.Now()
 	p.Type = typeArg
 
-	if err = d.db.GetPostsCol().UpdateId(p.ID, p); err != nil {
+	if err = s.db.GetPostsCol().UpdateId(p.ID, p); err != nil {
 		return nil, errors.Wrap(err, "try to update post got error")
 	}
 

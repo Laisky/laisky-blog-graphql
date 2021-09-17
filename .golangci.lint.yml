@@ -81,6 +81,9 @@ output:
 
 # all available settings of specific linters
 linters-settings:
+  stylecheck:
+    go: "1.16"
+    checks: ["all", "-ST1000"]
   dogsled:
     # checks assignments with too many blank identifiers; default is 2
     max-blank-identifiers: 2
@@ -104,6 +107,7 @@ linters-settings:
     # path to a file containing a list of functions to exclude from checking
     # see https://github.com/kisielk/errcheck#excluding-functions for details
     exclude: .golangci.lint.exclude.func
+
   exhaustive:
     # indicates that switch statements are to be considered exhaustive if a
     # 'default' case is present, even if all enum members aren't listed in the

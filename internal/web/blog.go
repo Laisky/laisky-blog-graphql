@@ -38,7 +38,10 @@ func (r *queryResolver) BlogPostInfo(ctx context.Context) (*blog.PostInfo, error
 	return global.BlogSvc.LoadPostInfo()
 }
 
-func (r *queryResolver) GetBlogPostSeries(ctx context.Context, page *Pagination, key string) ([]*blog.PostSeries, error) {
+func (r *queryResolver) GetBlogPostSeries(ctx context.Context,
+	page *Pagination,
+	key string,
+) ([]*blog.PostSeries, error) {
 	se, err := global.BlogSvc.LoadPostSeries("", key)
 	if err != nil {
 		return nil, err
@@ -47,7 +50,14 @@ func (r *queryResolver) GetBlogPostSeries(ctx context.Context, page *Pagination,
 	return se, nil
 }
 
-func (r *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error) {
+func (r *queryResolver) BlogPosts(ctx context.Context,
+	page *Pagination,
+	tag string,
+	categoryURL *string,
+	length int,
+	name string,
+	regexp string,
+) ([]*blog.Post, error) {
 	cfg := &blog.PostCfg{
 		Page:        page.Page,
 		Size:        page.Size,
@@ -122,7 +132,8 @@ func (r *blogPostSeriesResolver) Posts(ctx context.Context, obj *blog.PostSeries
 
 	return posts, nil
 }
-func (r *blogPostSeriesResolver) Children(ctx context.Context, obj *blog.PostSeries) ([]*blog.PostSeries, error) {
+func (r *blogPostSeriesResolver) Children(ctx context.Context,
+	obj *blog.PostSeries) ([]*blog.PostSeries, error) {
 	var ss []*blog.PostSeries
 	for _, sid := range obj.Chidlren {
 		se, err := global.BlogSvc.LoadPostSeries(sid, "")
@@ -136,7 +147,8 @@ func (r *blogPostSeriesResolver) Children(ctx context.Context, obj *blog.PostSer
 	return ss, nil
 }
 
-func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, error) {
+func (r *blogUserResolver) ID(ctx context.Context,
+	obj *blog.User) (string, error) {
 	return obj.ID.Hex(), nil
 }
 
@@ -145,7 +157,8 @@ func (r *blogUserResolver) ID(ctx context.Context, obj *blog.User) (string, erro
 // =====================================
 
 // BlogCreatePost create new blog post
-func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost) (*blog.Post, error) {
+func (r *mutationResolver) BlogCreatePost(ctx context.Context,
+	input NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
@@ -157,11 +170,18 @@ func (r *mutationResolver) BlogCreatePost(ctx context.Context, input NewBlogPost
 		return nil, fmt.Errorf("title & markdown must set")
 	}
 
-	return global.BlogSvc.NewPost(user.ID, *input.Title, input.Name, *input.Markdown, input.Type.String())
+	return global.BlogSvc.NewPost(user.ID,
+		*input.Title,
+		input.Name,
+		*input.Markdown,
+		input.Type.String())
 }
 
 // BlogLogin login in blog page
-func (r *mutationResolver) BlogLogin(ctx context.Context, account string, password string) (user *blog.User, err error) {
+func (r *mutationResolver) BlogLogin(ctx context.Context,
+	account string,
+	password string,
+) (user *blog.User, err error) {
 	if user, err = global.BlogSvc.ValidateLogin(account, password); err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
@@ -185,7 +205,8 @@ func (r *mutationResolver) BlogLogin(ctx context.Context, account string, passwo
 	return user, nil
 }
 
-func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) (*blog.Post, error) {
+func (r *mutationResolver) BlogAmendPost(ctx context.Context,
+	post NewBlogPost) (*blog.Post, error) {
 	user, err := validateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
@@ -208,5 +229,9 @@ func (r *mutationResolver) BlogAmendPost(ctx context.Context, post NewBlogPost) 
 	}
 
 	// update post content
-	return global.BlogSvc.UpdatePost(user, post.Name, *post.Title, *post.Markdown, post.Type.String())
+	return global.BlogSvc.UpdatePost(user,
+		post.Name,
+		*post.Title,
+		*post.Markdown,
+		post.Type.String())
 }

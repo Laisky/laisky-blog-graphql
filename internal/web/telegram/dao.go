@@ -232,7 +232,10 @@ func (s *Service) ValidateTokenForAlertType(token, alertType string) (alert *Ale
 	return alert, nil
 }
 
-func (s *Service) RegisterUserAlertRelation(u *Users, alertName string, joinKey string) (uar *UserAlertRelations, err error) {
+func (s *Service) RegisterUserAlertRelation(u *Users,
+	alertName string,
+	joinKey string,
+) (uar *UserAlertRelations, err error) {
 	log.Logger.Info("RegisterUserAlertRelation", zap.Int("uid", u.UID), zap.String("alert", alertName))
 	alert := new(AlertTypes)
 	if err = s.GetAlertTypesCol().Find(bson.M{"name": alertName}).One(alert); err == mgo.ErrNotFound {

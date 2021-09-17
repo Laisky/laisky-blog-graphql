@@ -1,3 +1,4 @@
+// Package global global shared variables
 package global
 
 import (

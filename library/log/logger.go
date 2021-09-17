@@ -1,3 +1,4 @@
+// Package log is a logging package that provides functions to log messages.
 package log
 
 import (

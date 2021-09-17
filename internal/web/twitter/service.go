@@ -1,3 +1,4 @@
+// Package twitter service for twitter API
 package twitter
 
 import (

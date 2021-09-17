@@ -94,7 +94,8 @@ func init() {
 	rootCmd.Flags().String("dbaddr", "localhost:8080", "like `localhost:8080`")
 	rootCmd.Flags().StringP("config", "c", "/etc/laisky-blog-graphql/settings.yml", "config file path")
 	rootCmd.Flags().String("log-level", "info", "`debug/info/error`")
-	rootCmd.Flags().StringSliceP("tasks", "t", []string{}, "which tasks want to runnning, like\n ./main -t t1,t2,heartbeat")
+	rootCmd.Flags().StringSliceP("tasks", "t", []string{},
+		"which tasks want to runnning, like\n ./main -t t1,t2,heartbeat")
 	rootCmd.Flags().Int("heartbeat", 60, "heartbeat seconds")
 }
 

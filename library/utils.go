@@ -1,3 +1,4 @@
+// Package library contains helper functions
 package library
 
 import (
