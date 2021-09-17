@@ -28,7 +28,7 @@ type telegramUserResolver struct{ *Resolver }
 // query resolver
 // =================
 
-func (q *queryResolver) TelegramMonitorUsers(ctx context.Context, page *Pagination, name string) ([]*telegram.Users, error) {
+func (r *queryResolver) TelegramMonitorUsers(ctx context.Context, page *Pagination, name string) ([]*telegram.Users, error) {
 	cfg := &telegram.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
@@ -36,7 +36,7 @@ func (q *queryResolver) TelegramMonitorUsers(ctx context.Context, page *Paginati
 	}
 	return global.TelegramSvc.LoadUsers(cfg)
 }
-func (q *queryResolver) TelegramAlertTypes(ctx context.Context, page *Pagination, name string) ([]*telegram.AlertTypes, error) {
+func (r *queryResolver) TelegramAlertTypes(ctx context.Context, page *Pagination, name string) ([]*telegram.AlertTypes, error) {
 	cfg := &telegram.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,

@@ -67,52 +67,52 @@ func NewService(ctx context.Context, db *db.DB, token, api string) (*Service, er
 	return tel, nil
 }
 
-func (b *Service) runDefaultHandle() {
+func (s *Service) runDefaultHandle() {
 	// start default handler
-	b.bot.Handle(tb.OnText, func(m *tb.Message) {
+	s.bot.Handle(tb.OnText, func(m *tb.Message) {
 		log.Logger.Debug("got message", zap.String("msg", m.Text), zap.Int("sender", m.Sender.ID))
-		if _, ok := b.userStats.Load(m.Sender.ID); ok {
-			b.dispatcher(m)
+		if _, ok := s.userStats.Load(m.Sender.ID); ok {
+			s.dispatcher(m)
 			return
 		}
 
-		if _, err := b.bot.Send(m.Sender, "NotImplement for "+m.Text); err != nil {
+		if _, err := s.bot.Send(m.Sender, "NotImplement for "+m.Text); err != nil {
 			log.Logger.Error("send msg", zap.Error(err), zap.String("to", m.Sender.Username))
 		}
 	})
 }
 
 // Stop stop telegram polling
-func (b *Service) Stop() {
-	b.stop <- struct{}{}
+func (s *Service) Stop() {
+	s.stop <- struct{}{}
 }
 
-func (b *Service) dispatcher(msg *tb.Message) {
-	us, ok := b.userStats.Load(msg.Sender.ID)
+func (s *Service) dispatcher(msg *tb.Message) {
+	us, ok := s.userStats.Load(msg.Sender.ID)
 	if !ok {
 		return
 	}
 
 	switch us.(*userStat).state {
 	case userWaitChooseMonitorCmd:
-		b.chooseMonitor(us.(*userStat), msg)
+		s.chooseMonitor(us.(*userStat), msg)
 	default:
 		log.Logger.Warn("unknown msg")
-		if _, err := b.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {
+		if _, err := s.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {
 			log.Logger.Error("send msg by telegram", zap.Error(err))
 		}
 	}
 }
 
 // PleaseRetry echo retry
-func (b *Service) PleaseRetry(sender *tb.User, msg string) {
+func (s *Service) PleaseRetry(sender *tb.User, msg string) {
 	log.Logger.Warn("unknown msg", zap.String("msg", msg))
-	if _, err := b.bot.Send(sender, "[Error] unknown msg, please retry"); err != nil {
+	if _, err := s.bot.Send(sender, "[Error] unknown msg, please retry"); err != nil {
 		log.Logger.Error("send msg by telegram", zap.Error(err))
 	}
 }
 
-func (b *Service) SendMsgToUser(uid int, msg string) (err error) {
-	_, err = b.bot.Send(&tb.User{ID: uid}, msg)
+func (s *Service) SendMsgToUser(uid int, msg string) (err error) {
+	_, err = s.bot.Send(&tb.User{ID: uid}, msg)
 	return err
 }

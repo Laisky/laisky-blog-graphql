@@ -24,7 +24,7 @@ type queryResolver struct{ *Resolver }
 // query resolver
 // =================
 
-func (q *queryResolver) Hello(ctx context.Context) (string, error) {
+func (r *queryResolver) Hello(ctx context.Context) (string, error) {
 	return "hello, world", nil
 }
 

@@ -22,7 +22,11 @@ func NewService(db *db.DB) *Service {
 	return &Service{db: db}
 }
 
-func (s *Service) AcquireLock(ctx context.Context, name, ownerID string, duration time.Duration, isRenewal bool) (ok bool, err error) {
+func (s *Service) AcquireLock(ctx context.Context,
+	name, ownerID string,
+	duration time.Duration,
+	isRenewal bool,
+) (ok bool, err error) {
 	log.Logger.Info("AcquireLock", zap.String("name", name), zap.String("owner", ownerID), zap.Duration("duration", duration))
 	ref := s.db.GetLocksCol().Doc(name)
 	now := utils.Clock.GetUTCNow()

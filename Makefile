@@ -20,4 +20,5 @@ lint:
 	go mod tidy
 	goimports -local laisky-blog-graphql -w .
 	gofmt -s -w .
-	golangci-lint run --timeout 3m -E golint,depguard,gocognit,goconst,gofmt,misspell,exportloopref,nilerr #,gosec,lll
+	# golangci-lint run --timeout 3m -E golint,depguard,gocognit,goconst,gofmt,misspell,exportloopref,nilerr #,gosec,lll
+	golangci-lint run -c .golangci.lint.yml

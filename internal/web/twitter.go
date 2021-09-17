@@ -28,7 +28,7 @@ type twitterUserResolver struct{ *Resolver }
 // query resolver
 // =================
 
-func (q *queryResolver) TwitterStatues(ctx context.Context,
+func (r *queryResolver) TwitterStatues(ctx context.Context,
 	page *Pagination,
 	tweetID string,
 	username string,
@@ -60,7 +60,7 @@ func (q *queryResolver) TwitterStatues(ctx context.Context,
 	return results, nil
 }
 
-func (q *queryResolver) TwitterThreads(ctx context.Context, tweetID string) ([]*twitter.Tweet, error) {
+func (r *queryResolver) TwitterThreads(ctx context.Context, tweetID string) ([]*twitter.Tweet, error) {
 	return global.TwitterSvc.LoadThreadByTweetID(tweetID)
 }
 

@@ -34,11 +34,11 @@ type blogUserResolver struct{ *Resolver }
 // query resolver
 // =====================================
 
-func (q *queryResolver) BlogPostInfo(ctx context.Context) (*blog.PostInfo, error) {
+func (r *queryResolver) BlogPostInfo(ctx context.Context) (*blog.PostInfo, error) {
 	return global.BlogSvc.LoadPostInfo()
 }
 
-func (q *queryResolver) GetBlogPostSeries(ctx context.Context, page *Pagination, key string) ([]*blog.PostSeries, error) {
+func (r *queryResolver) GetBlogPostSeries(ctx context.Context, page *Pagination, key string) ([]*blog.PostSeries, error) {
 	se, err := global.BlogSvc.LoadPostSeries("", key)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (q *queryResolver) GetBlogPostSeries(ctx context.Context, page *Pagination,
 	return se, nil
 }
 
-func (q *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error) {
+func (r *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*blog.Post, error) {
 	cfg := &blog.PostCfg{
 		Page:        page.Page,
 		Size:        page.Size,
@@ -64,7 +64,7 @@ func (q *queryResolver) BlogPosts(ctx context.Context, page *Pagination, tag str
 
 	return results, nil
 }
-func (q *queryResolver) BlogPostCategories(ctx context.Context) ([]*blog.Category, error) {
+func (r *queryResolver) BlogPostCategories(ctx context.Context) ([]*blog.Category, error) {
 	return global.BlogSvc.LoadAllCategories()
 }
 

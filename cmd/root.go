@@ -50,7 +50,7 @@ func setupSettings(ctx context.Context) {
 	}
 
 	// clock
-	gutils.SetupClock(100 * time.Millisecond)
+	gutils.SetInternalClock(100 * time.Millisecond)
 
 	// load configuration
 	cfgPath := gutils.Settings.GetString("config")
@@ -82,7 +82,7 @@ func setupLogger(ctx context.Context) {
 	// ).Named("laisky-graphql")
 
 	lvl := gutils.Settings.GetString("log-level")
-	if err := log.Logger.ChangeLevel(gutils.LoggerLevel(lvl)); err != nil {
+	if err := log.Logger.ChangeLevel(lvl); err != nil {
 		log.Logger.Panic("change log level", zap.Error(err), zap.String("level", lvl))
 	}
 }
