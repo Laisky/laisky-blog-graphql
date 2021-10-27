@@ -20,8 +20,7 @@ Run:
 ```sh
 go generate
 go run -race main.go \
-    --addr=127.0.0.1:8080 \
-    --dbaddr=127.0.0.1:27017 \
+    --listen=127.0.0.1:8080 \
     --config=./docs/settings.yml \
     --debug
 ```

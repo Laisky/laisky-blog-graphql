@@ -7,15 +7,16 @@ import (
 	"time"
 
 	"laisky-blog-graphql/internal/global"
-	"laisky-blog-graphql/internal/web/blog"
+	blogSvc "laisky-blog-graphql/internal/web/blog/service"
 	"laisky-blog-graphql/internal/web/general"
 	"laisky-blog-graphql/library"
+	"laisky-blog-graphql/library/jwt"
 	"laisky-blog-graphql/library/log"
 
-	middlewares "github.com/Laisky/gin-middlewares"
+	ginMw "github.com/Laisky/gin-middlewares"
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
-	"github.com/form3tech-oss/jwt-go"
+	jwtLib "github.com/form3tech-oss/jwt-go"
 	"github.com/pkg/errors"
 )
 
@@ -39,19 +40,19 @@ type locksResolver struct{ *Resolver }
 // =================
 
 func (r *queryResolver) Lock(ctx context.Context, name string) (*general.Lock, error) {
-	return global.GeneralSvc.LoadLockByName(ctx, name)
+	return general.Service.LoadLockByName(ctx, name)
 }
 
-func (r *queryResolver) LockPermissions(ctx context.Context, username string) (users []*GeneralUser, err error) {
+func (r *queryResolver) LockPermissions(ctx context.Context, username string) (users []*global.GeneralUser, err error) {
 	log.Logger.Debug("LockPermissions", zap.String("username", username))
-	users = []*GeneralUser{}
+	users = []*global.GeneralUser{}
 	var (
 		prefixes []string
 	)
 	if username != "" {
 		if prefixes = utils.Settings.GetStringSlice(
 			"settings.general.locks.user_prefix_map." + username); prefixes != nil {
-			users = append(users, &GeneralUser{
+			users = append(users, &global.GeneralUser{
 				LockPrefixes: prefixes,
 			})
 			return users, nil
@@ -61,7 +62,7 @@ func (r *queryResolver) LockPermissions(ctx context.Context, username string) (u
 
 	for username = range utils.Settings.GetStringMap(
 		"settings.general.locks.user_prefix_map") {
-		users = append(users, &GeneralUser{
+		users = append(users, &global.GeneralUser{
 			Name: username,
 			LockPrefixes: utils.Settings.GetStringSlice(
 				"settings.general.locks.user_prefix_map." + username),
@@ -103,14 +104,14 @@ token (`general` in cookie):
 */
 func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 	var token string
-	if token, err = middlewares.
+	if token, err = ginMw.
 		GetGinCtxFromStdCtx(ctx).
 		Cookie(generalTokenName); err != nil {
 		return "", errors.Wrap(err, "get jwt token from ctx")
 	}
 
-	uc := &blog.UserClaims{}
-	if err = jwtLib.ParseClaims(token, uc); err != nil {
+	uc := &jwt.UserClaims{}
+	if err = jwt.Instance.ParseClaims(token, uc); err != nil {
 		return "", errors.Wrap(err, "parse jwt token")
 	}
 
@@ -143,7 +144,7 @@ func (r *mutationResolver) AcquireLock(ctx context.Context,
 			username, lockName)
 	}
 
-	return global.GeneralSvc.AcquireLock(ctx,
+	return general.Service.AcquireLock(ctx,
 		lockName,
 		username,
 		time.Duration(durationSec)*time.Second,
@@ -165,17 +166,17 @@ func (r *mutationResolver) CreateGeneralToken(ctx context.Context,
 			durationSec)
 	}
 
-	if _, err = validateAndGetUser(ctx); err != nil {
+	if _, err = blogSvc.Instance.ValidateAndGetUser(ctx); err != nil {
 		return "", errors.Wrapf(err, "user `%v` invalidate", username)
 	}
 
-	uc := &blog.UserClaims{
-		StandardClaims: jwt.StandardClaims{
+	uc := &jwt.UserClaims{
+		StandardClaims: jwtLib.StandardClaims{
 			Subject:   username,
 			ExpiresAt: utils.Clock.GetUTCNow().Add(time.Duration(durationSec)).Unix(),
 		},
 	}
-	if token, err = jwtLib.Sign(uc); err != nil {
+	if token, err = jwt.Instance.Sign(uc); err != nil {
 		return "", errors.Wrap(err, "generate token")
 	}
 

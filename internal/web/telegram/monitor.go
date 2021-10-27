@@ -14,7 +14,7 @@ import (
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
-func (s *Service) monitorHandler() {
+func (s *ServiceType) monitorHandler() {
 	s.bot.Handle("/monitor", func(c *tb.Message) {
 		s.userStats.Store(c.Sender.ID, &userStat{
 			user:  c.Sender,
@@ -37,7 +37,7 @@ Reply number:
 	})
 }
 
-func (s *Service) chooseMonitor(us *userStat, msg *tb.Message) {
+func (s *ServiceType) chooseMonitor(us *userStat, msg *tb.Message) {
 	log.Logger.Debug("choose monitor",
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text))
@@ -102,7 +102,7 @@ func (s *Service) chooseMonitor(us *userStat, msg *tb.Message) {
 	}
 }
 
-func (s *Service) kickUser(us *userStat, au string) (err error) {
+func (s *ServiceType) kickUser(us *userStat, au string) (err error) {
 	if !strings.Contains(au, ":") {
 		return fmt.Errorf("unknown alert_name:uid format")
 	}
@@ -114,18 +114,18 @@ func (s *Service) kickUser(us *userStat, au string) (err error) {
 	}
 
 	var alertType *AlertTypes
-	alertType, err = s.IsUserSubAlert(us.user.ID, alertName)
+	alertType, err = s.dao.IsUserSubAlert(us.user.ID, alertName)
 	if err != nil {
 		return errors.Wrap(err, "load alert by user uid")
 	}
 
 	var kickedUser *Users
-	kickedUser, err = s.LoadUserByUID(kickUID)
+	kickedUser, err = s.dao.LoadUserByUID(kickUID)
 	if err != nil {
 		return errors.Wrap(err, "load user by kicked user uid")
 	}
 
-	if err = s.RemoveUAR(kickedUser.UID, alertName); err != nil {
+	if err = s.dao.RemoveUAR(kickedUser.UID, alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation")
 	}
 	log.Logger.Info("remove user_alert_relation",
@@ -137,7 +137,7 @@ func (s *Service) kickUser(us *userStat, au string) (err error) {
 	msg += "alert_type: " + alertName + "\n"
 	msg += "kicked_user: " + kickedUser.Name + " (" + ans[1] + ")\n"
 
-	users, err := s.LoadUsersByAlertType(alertType)
+	users, err := s.dao.LoadUsersByAlertType(alertType)
 	if err != nil {
 		return errors.Wrap(err, "load users")
 	}
@@ -156,21 +156,21 @@ func (s *Service) kickUser(us *userStat, au string) (err error) {
 	return err
 }
 
-func (s *Service) userQuitAlert(us *userStat, alertName string) (err error) {
-	if err = s.RemoveUAR(us.user.ID, alertName); err != nil {
+func (s *ServiceType) userQuitAlert(us *userStat, alertName string) (err error) {
+	if err = s.dao.RemoveUAR(us.user.ID, alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation by uid and alert_name")
 	}
 
 	return s.SendMsgToUser(us.user.ID, "successed unsubscribe "+alertName)
 }
 
-func (s *Service) refreshAlertTokenAndKey(us *userStat, alert string) (err error) {
+func (s *ServiceType) refreshAlertTokenAndKey(us *userStat, alert string) (err error) {
 	var alertType *AlertTypes
-	alertType, err = s.IsUserSubAlert(us.user.ID, alert)
+	alertType, err = s.dao.IsUserSubAlert(us.user.ID, alert)
 	if err != nil {
 		return errors.Wrap(err, "load alert by user uid")
 	}
-	if err = s.RefreshAlertTokenAndKey(alertType); err != nil {
+	if err = s.dao.RefreshAlertTokenAndKey(alertType); err != nil {
 		return errors.Wrap(err, "refresh alert token and key")
 	}
 
@@ -179,7 +179,7 @@ func (s *Service) refreshAlertTokenAndKey(us *userStat, alert string) (err error
 	msg += "push_token: " + alertType.PushToken + "\n"
 	msg += "join_key: " + alertType.JoinKey + "\n"
 
-	users, err := s.LoadUsersByAlertType(alertType)
+	users, err := s.dao.LoadUsersByAlertType(alertType)
 	if err != nil {
 		return errors.Wrap(err, "load users")
 	}
@@ -197,7 +197,7 @@ func (s *Service) refreshAlertTokenAndKey(us *userStat, alert string) (err error
 	return err
 }
 
-func (s *Service) joinAlertGroup(us *userStat, kt string) (err error) {
+func (s *ServiceType) joinAlertGroup(us *userStat, kt string) (err error) {
 	if !strings.Contains(kt, ":") {
 		return fmt.Errorf("unknown format")
 	}
@@ -205,12 +205,12 @@ func (s *Service) joinAlertGroup(us *userStat, kt string) (err error) {
 	alert := ans[0]
 	joinKey := ans[1]
 
-	user, err := s.CreateOrGetUser(us.user)
+	user, err := s.dao.CreateOrGetUser(us.user)
 	if err != nil {
 		return err
 	}
 
-	uar, err := s.RegisterUserAlertRelation(user, alert, joinKey)
+	uar, err := s.dao.RegisterUserAlertRelation(user, alert, joinKey)
 	if err != nil {
 		return err
 	}
@@ -218,12 +218,32 @@ func (s *Service) joinAlertGroup(us *userStat, kt string) (err error) {
 	return s.SendMsgToUser(us.user.ID, alert+" (joint at "+uar.CreatedAt.Format(time.RFC3339)+")")
 }
 
-func (s *Service) listAllMonitorAlerts(us *userStat) (err error) {
-	u, err := s.LoadUserByUID(us.user.ID)
+func (s *ServiceType) LoadAlertTypesByUser(u *Users) (alerts []*AlertTypes, err error) {
+	return s.dao.LoadAlertTypesByUser(u)
+}
+
+func (s *ServiceType) LoadAlertTypes(cfg *QueryCfg) (alerts []*AlertTypes, err error) {
+	return s.dao.LoadAlertTypes(cfg)
+}
+
+func (s *ServiceType) LoadUsers(cfg *QueryCfg) (users []*Users, err error) {
+	return s.dao.LoadUsers(cfg)
+}
+
+func (s *ServiceType) LoadUsersByAlertType(a *AlertTypes) (users []*Users, err error) {
+	return s.dao.LoadUsersByAlertType(a)
+}
+
+func (s *ServiceType) ValidateTokenForAlertType(token, alertType string) (alert *AlertTypes, err error) {
+	return s.dao.ValidateTokenForAlertType(token, alertType)
+}
+
+func (s *ServiceType) listAllMonitorAlerts(us *userStat) (err error) {
+	u, err := s.dao.LoadUserByUID(us.user.ID)
 	if err != nil {
 		return err
 	}
-	alerts, err := s.LoadAlertTypesByUser(u)
+	alerts, err := s.dao.LoadAlertTypesByUser(u)
 	if err != nil {
 		return err
 	}
@@ -245,18 +265,18 @@ func (s *Service) listAllMonitorAlerts(us *userStat) (err error) {
 	return s.SendMsgToUser(u.UID, msg)
 }
 
-func (s *Service) createNewMonitor(us *userStat, alertName string) (err error) {
-	u, err := s.CreateOrGetUser(us.user)
+func (s *ServiceType) createNewMonitor(us *userStat, alertName string) (err error) {
+	u, err := s.dao.CreateOrGetUser(us.user)
 	if err != nil {
 		return errors.Wrap(err, "create user")
 	}
 
-	a, err := s.CreateAlertType(alertName)
+	a, err := s.dao.CreateAlertType(alertName)
 	if err != nil {
 		return errors.Wrap(err, "create alert_type")
 	}
 
-	_, err = s.CreateOrGetUserAlertRelations(u, a)
+	_, err = s.dao.CreateOrGetUserAlertRelations(u, a)
 	if err != nil {
 		return errors.Wrap(err, "create user_alert_relation")
 	}

@@ -7,20 +7,39 @@ import (
 	"sync"
 	"time"
 
-	"laisky-blog-graphql/internal/web/telegram/db"
+	"laisky-blog-graphql/internal/global"
 	"laisky-blog-graphql/library/log"
 
+	gutils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
-// Service client
-type Service struct {
+var Service *ServiceType
+
+func Initialize(ctx context.Context) {
+	if !gutils.InArray(gutils.Settings.GetStringSlice("tasks"), "telegram") {
+		return
+	}
+
+	var err error
+	if Service, err = NewService(
+		ctx,
+		NewDao(global.MonitorDB),
+		gutils.Settings.GetString("settings.telegram.token"),
+		gutils.Settings.GetString("settings.telegram.api"),
+	); err != nil {
+		log.Logger.Panic("new telegram", zap.Error(err))
+	}
+}
+
+// ServiceType client
+type ServiceType struct {
 	stop chan struct{}
 	bot  *tb.Bot
 
-	*db.DB
+	dao       *Dao
 	userStats *sync.Map
 }
 
@@ -31,7 +50,7 @@ type userStat struct {
 }
 
 // NewService create new telegram client
-func NewService(ctx context.Context, db *db.DB, token, api string) (*Service, error) {
+func NewService(ctx context.Context, dao *Dao, token, api string) (*ServiceType, error) {
 	bot, err := tb.NewBot(tb.Settings{
 		Token: token,
 		URL:   api,
@@ -43,8 +62,8 @@ func NewService(ctx context.Context, db *db.DB, token, api string) (*Service, er
 		return nil, errors.Wrap(err, "new telegram bot")
 	}
 
-	tel := &Service{
-		DB:        db,
+	tel := &ServiceType{
+		dao:       dao,
 		stop:      make(chan struct{}),
 		bot:       bot,
 		userStats: new(sync.Map),
@@ -67,7 +86,7 @@ func NewService(ctx context.Context, db *db.DB, token, api string) (*Service, er
 	return tel, nil
 }
 
-func (s *Service) runDefaultHandle() {
+func (s *ServiceType) runDefaultHandle() {
 	// start default handler
 	s.bot.Handle(tb.OnText, func(m *tb.Message) {
 		log.Logger.Debug("got message", zap.String("msg", m.Text), zap.Int("sender", m.Sender.ID))
@@ -83,11 +102,11 @@ func (s *Service) runDefaultHandle() {
 }
 
 // Stop stop telegram polling
-func (s *Service) Stop() {
+func (s *ServiceType) Stop() {
 	s.stop <- struct{}{}
 }
 
-func (s *Service) dispatcher(msg *tb.Message) {
+func (s *ServiceType) dispatcher(msg *tb.Message) {
 	us, ok := s.userStats.Load(msg.Sender.ID)
 	if !ok {
 		return
@@ -105,14 +124,14 @@ func (s *Service) dispatcher(msg *tb.Message) {
 }
 
 // PleaseRetry echo retry
-func (s *Service) PleaseRetry(sender *tb.User, msg string) {
+func (s *ServiceType) PleaseRetry(sender *tb.User, msg string) {
 	log.Logger.Warn("unknown msg", zap.String("msg", msg))
 	if _, err := s.bot.Send(sender, "[Error] unknown msg, please retry"); err != nil {
 		log.Logger.Error("send msg by telegram", zap.Error(err))
 	}
 }
 
-func (s *Service) SendMsgToUser(uid int, msg string) (err error) {
+func (s *ServiceType) SendMsgToUser(uid int, msg string) (err error) {
 	_, err = s.bot.Send(&tb.User{ID: uid}, msg)
 	return err
 }

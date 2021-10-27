@@ -1,16 +1,11 @@
-package blog
+package jwt
 
 import (
 	"fmt"
 
 	"github.com/Laisky/go-utils"
 	"github.com/form3tech-oss/jwt-go"
-	"gopkg.in/mgo.v2/bson"
 )
-
-type PostInfo struct {
-	Total int `json:"total"`
-}
 
 type UserClaims struct {
 	jwt.StandardClaims
@@ -29,11 +24,4 @@ func (uc *UserClaims) Valid() error {
 	}
 
 	return nil
-}
-
-type PostCfg struct {
-	ID                 bson.ObjectId
-	Page, Size, Length int
-	Name, Tag, Regexp  string
-	CategoryURL        *string
 }

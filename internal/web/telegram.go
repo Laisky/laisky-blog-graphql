@@ -29,24 +29,24 @@ type telegramUserResolver struct{ *Resolver }
 // =================
 
 func (r *queryResolver) TelegramMonitorUsers(ctx context.Context,
-	page *Pagination,
+	page *global.Pagination,
 	name string) ([]*telegram.Users, error) {
 	cfg := &telegram.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
 		Name: name,
 	}
-	return global.TelegramSvc.LoadUsers(cfg)
+	return telegram.Service.LoadUsers(cfg)
 }
 func (r *queryResolver) TelegramAlertTypes(ctx context.Context,
-	page *Pagination,
+	page *global.Pagination,
 	name string) ([]*telegram.AlertTypes, error) {
 	cfg := &telegram.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
 		Name: name,
 	}
-	return global.TelegramSvc.LoadAlertTypes(cfg)
+	return telegram.Service.LoadAlertTypes(cfg)
 }
 
 // --------------------------
@@ -73,7 +73,7 @@ func (t *telegramUserResolver) TelegramID(ctx context.Context,
 func (t *telegramUserResolver) SubAlerts(ctx context.Context,
 	obj *telegram.Users,
 ) ([]*telegram.AlertTypes, error) {
-	return global.TelegramSvc.LoadAlertTypesByUser(obj)
+	return telegram.Service.LoadAlertTypesByUser(obj)
 }
 
 func (t *telegramAlertTypeResolver) ID(ctx context.Context,
@@ -94,7 +94,7 @@ func (t *telegramAlertTypeResolver) ModifiedAt(ctx context.Context,
 func (t *telegramAlertTypeResolver) SubUsers(ctx context.Context,
 	obj *telegram.AlertTypes,
 ) ([]*telegram.Users, error) {
-	return global.TelegramSvc.LoadUsersByAlertType(obj)
+	return telegram.Service.LoadUsersByAlertType(obj)
 }
 
 // ============================
@@ -115,12 +115,12 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context,
 		msg = msg[:maxlen] + " ..."
 	}
 
-	alert, err := global.TelegramSvc.ValidateTokenForAlertType(token, typeArg)
+	alert, err := telegram.Service.ValidateTokenForAlertType(token, typeArg)
 	if err != nil {
 		return nil, err
 	}
 
-	users, err := global.TelegramSvc.LoadUsersByAlertType(alert)
+	users, err := telegram.Service.LoadUsersByAlertType(alert)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (r *mutationResolver) TelegramMonitorAlert(ctx context.Context,
 	errMsg := ""
 	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
 	for _, user := range users {
-		if err = global.TelegramSvc.SendMsgToUser(user.UID, msg); err != nil {
+		if err = telegram.Service.SendMsgToUser(user.UID, msg); err != nil {
 			log.Logger.Error("send msg to user",
 				zap.Error(err),
 				zap.Int("uid", user.UID),

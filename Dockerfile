@@ -1,4 +1,4 @@
-FROM golang:1.16.5-buster AS gobuild
+FROM golang:1.17.2-buster AS gobuild
 
 # install dependencies
 RUN apt-get update \
@@ -32,5 +32,4 @@ RUN chmod +rx -R /app && \
     adduser --disabled-password --gecos '' laisky
 USER laisky
 
-ENTRYPOINT [ "./go-graphql-srv" ]
-CMD [ "--debug", "--addr=127.0.0.1:8080", "--dbaddr=127.0.0.1:27017" ]
+ENTRYPOINT [ "/app/go-graphql-srv", "api", "-c", "/etc/laisky-blog-graphql/settings.yml" ]
