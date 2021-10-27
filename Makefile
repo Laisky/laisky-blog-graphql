@@ -5,8 +5,9 @@ install:
 	go get -u github.com/go-bindata/go-bindata
 
 gen:
+	go get github.com/99designs/gqlgen/cmd@v0.13.0
 	go get github.com/vektah/gqlparser/v2@v2.1.0
-	go get github.com/99designs/gqlgen
+	go install github.com/99designs/gqlgen
 	go run github.com/99designs/gqlgen
 
 test:

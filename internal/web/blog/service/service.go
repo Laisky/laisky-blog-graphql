@@ -1,12 +1,17 @@
-package blog
+package service
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
-	"laisky-blog-graphql/internal/web/blog/db"
+	"laisky-blog-graphql/internal/web/blog/dao"
+	"laisky-blog-graphql/internal/web/blog/dto"
+	"laisky-blog-graphql/internal/web/blog/model"
+	"laisky-blog-graphql/library/auth"
+	"laisky-blog-graphql/library/jwt"
 	"laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/go-utils"
@@ -16,15 +21,22 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-type Service struct {
-	db *db.DB
+var Instance *Type
+
+func Initialize(ctx context.Context) {
+	dao.Initialize(ctx)
+	Instance = New(dao.Instance)
 }
 
-func NewService(db *db.DB) *Service {
-	return &Service{db: db}
+type Type struct {
+	dao *dao.Type
 }
 
-func (s *Service) LoadPostSeries(id bson.ObjectId, key string) (se []*PostSeries, err error) {
+func New(dao *dao.Type) *Type {
+	return &Type{dao: dao}
+}
+
+func (s *Type) LoadPostSeries(id bson.ObjectId, key string) (se []*model.PostSeries, err error) {
 	query := bson.M{}
 	if id != "" {
 		query["_id"] = id
@@ -34,12 +46,12 @@ func (s *Service) LoadPostSeries(id bson.ObjectId, key string) (se []*PostSeries
 		query["key"] = key
 	}
 
-	se = []*PostSeries{}
-	err = s.db.GetPostSeriesCol().Find(query).All(&se)
+	se = []*model.PostSeries{}
+	err = s.dao.GetPostSeriesCol().Find(query).All(&se)
 	return
 }
 
-func (s *Service) LoadPosts(cfg *PostCfg) (results []*Post, err error) {
+func (s *Type) LoadPosts(cfg *dto.PostCfg) (results []*model.Post, err error) {
 	logger := log.Logger.With(
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("tag", cfg.Tag),
@@ -55,7 +67,7 @@ func (s *Service) LoadPosts(cfg *PostCfg) (results []*Post, err error) {
 	}
 
 	// logger.Debug("load blog posts", zap.String("query", fmt.Sprint(query)))
-	iter := s.db.GetPostsCol().Find(query).
+	iter := s.dao.GetPostsCol().Find(query).
 		Sort("-_id").
 		Skip(cfg.Page * cfg.Size).
 		Limit(cfg.Size).
@@ -65,18 +77,18 @@ func (s *Service) LoadPosts(cfg *PostCfg) (results []*Post, err error) {
 	return results, nil
 }
 
-func (s *Service) LoadPostInfo() (*PostInfo, error) {
-	cnt, err := s.db.GetPostsCol().Count()
+func (s *Type) LoadPostInfo() (*dto.PostInfo, error) {
+	cnt, err := s.dao.GetPostsCol().Count()
 	if err != nil {
 		return nil, errors.Wrap(err, "try to count posts got error")
 	}
 
-	return &PostInfo{
+	return &dto.PostInfo{
 		Total: cnt,
 	}, nil
 }
 
-func (s *Service) makeQuery(cfg *PostCfg) (query bson.M, err error) {
+func (s *Type) makeQuery(cfg *dto.PostCfg) (query bson.M, err error) {
 	log.Logger.Debug("makeQuery",
 		zap.String("name", cfg.Name),
 		zap.String("tag", cfg.Tag),
@@ -108,7 +120,7 @@ func (s *Service) makeQuery(cfg *PostCfg) (query bson.M, err error) {
 		if *cfg.CategoryURL == "" {
 			query["category"] = nil
 		} else {
-			var cate *Category
+			var cate *model.Category
 			if cate, err = s.LoadCategoryByURL(*cfg.CategoryURL); err != nil {
 				log.Logger.Error("try to load posts by category url got error",
 					zap.Error(err),
@@ -125,12 +137,12 @@ func (s *Service) makeQuery(cfg *PostCfg) (query bson.M, err error) {
 	return query, nil
 }
 
-func (s *Service) filterPosts(cfg *PostCfg, iter *mgo.Iter) (results []*Post) {
-	post := &Post{}
+func (s *Type) filterPosts(cfg *dto.PostCfg, iter *mgo.Iter) (results []*model.Post) {
+	post := &model.Post{}
 	isValidate := true
 	for iter.Next(post) {
 		// log.Logger.Debug("filter post", zap.String("post", fmt.Sprintf("%+v", result)))
-		for _, f := range [...]func(*Post) bool{
+		for _, f := range [...]func(*model.Post) bool{
 			// filters pipeline
 			passwordFilter,
 			getContentLengthFilter(cfg.Length),
@@ -145,7 +157,7 @@ func (s *Service) filterPosts(cfg *PostCfg, iter *mgo.Iter) (results []*Post) {
 
 		if isValidate {
 			results = append(results, post)
-			post = &Post{}
+			post = &model.Post{}
 		}
 		isValidate = true
 	}
@@ -155,7 +167,7 @@ func (s *Service) filterPosts(cfg *PostCfg, iter *mgo.Iter) (results []*Post) {
 
 const defaultPostType = "html"
 
-func defaultTypeFilter(docu *Post) bool {
+func defaultTypeFilter(docu *model.Post) bool {
 	if docu.Type == "" {
 		docu.Type = defaultPostType
 	}
@@ -163,7 +175,7 @@ func defaultTypeFilter(docu *Post) bool {
 	return true
 }
 
-func hiddenFilter(docu *Post) bool {
+func hiddenFilter(docu *model.Post) bool {
 	if docu.Hidden {
 		docu.Markdown = "本文已被设置为隐藏"
 		docu.Content = "本文已被设置为隐藏"
@@ -172,7 +184,7 @@ func hiddenFilter(docu *Post) bool {
 	return true
 }
 
-func passwordFilter(docu *Post) bool {
+func passwordFilter(docu *model.Post) bool {
 	if docu.Password != "" {
 		docu.Content = "🔒本文已设置为加密"
 		docu.Markdown = "🔒本文已设置为加密"
@@ -181,8 +193,8 @@ func passwordFilter(docu *Post) bool {
 	return true
 }
 
-func getContentLengthFilter(length int) func(*Post) bool {
-	return func(docu *Post) bool {
+func getContentLengthFilter(length int) func(*model.Post) bool {
+	return func(docu *model.Post) bool {
 		if length > 0 { // 0 means full
 			if len([]rune(docu.Content)) > length {
 				docu.Content = string([]rune(docu.Content)[:length])
@@ -195,69 +207,69 @@ func getContentLengthFilter(length int) func(*Post) bool {
 	}
 }
 
-func (s *Service) LoadUserByID(uid bson.ObjectId) (user *User, err error) {
+func (s *Type) LoadUserByID(uid bson.ObjectId) (user *model.User, err error) {
 	log.Logger.Debug("LoadUserByID", zap.String("user_id", uid.Hex()))
 	if uid == "" {
 		return nil, nil
 	}
 
-	user = &User{}
-	if err = s.db.GetUsersCol().FindId(uid).One(user); err != nil {
+	user = &model.User{}
+	if err = s.dao.GetUsersCol().FindId(uid).One(user); err != nil {
 		return nil, err
 	}
 	return user, nil
 }
 
-func (s *Service) LoadCategoryByID(cateid bson.ObjectId) (cate *Category, err error) {
+func (s *Type) LoadCategoryByID(cateid bson.ObjectId) (cate *model.Category, err error) {
 	log.Logger.Debug("LoadCategoryByID", zap.String("cate_id", cateid.Hex()))
 	if cateid == "" {
 		return nil, nil
 	}
 
-	cate = &Category{}
-	if err = s.db.GetCategoriesCol().FindId(cateid).One(cate); err != nil {
+	cate = &model.Category{}
+	if err = s.dao.GetCategoriesCol().FindId(cateid).One(cate); err != nil {
 		return nil, err
 	}
 	return cate, nil
 }
 
-func (s *Service) LoadAllCategories() (cates []*Category, err error) {
-	cates = []*Category{}
-	if err = s.db.GetCategoriesCol().Find(bson.M{}).All(&cates); err != nil {
+func (s *Type) LoadAllCategories() (cates []*model.Category, err error) {
+	cates = []*model.Category{}
+	if err = s.dao.GetCategoriesCol().Find(bson.M{}).All(&cates); err != nil {
 		return nil, errors.Wrap(err, "try to load all categories got error")
 	}
 
 	return cates, nil
 }
 
-func (s *Service) LoadCategoryByName(name string) (cate *Category, err error) {
+func (s *Type) LoadCategoryByName(name string) (cate *model.Category, err error) {
 	if name == "" {
 		return nil, nil
 	}
 
-	cate = &Category{}
-	if err = s.db.GetCategoriesCol().Find(bson.M{"name": name}).One(cate); err != nil && err != mgo.ErrNotFound {
+	cate = &model.Category{}
+	if err = s.dao.GetCategoriesCol().Find(bson.M{"name": name}).One(cate); err != nil && err != mgo.ErrNotFound {
 		return nil, err
 	}
 
 	return cate, nil
 }
 
-func (s *Service) LoadCategoryByURL(url string) (cate *Category, err error) {
+func (s *Type) LoadCategoryByURL(url string) (cate *model.Category, err error) {
 	if url == "" {
 		return nil, nil
 	}
 
-	cate = &Category{}
-	if err = s.db.GetCategoriesCol().Find(bson.M{"url": url}).One(cate); err != nil && err != mgo.ErrNotFound {
+	cate = &model.Category{}
+	if err = s.dao.GetCategoriesCol().Find(bson.M{"url": url}).One(cate); err != nil && err != mgo.ErrNotFound {
 		return nil, err
 	}
 
 	return cate, nil
 }
 
-func (s *Service) IsNameExists(name string) (bool, error) {
-	n, err := s.db.GetPostsCol().Find(bson.M{"post_name": name}).Count()
+func (s *Type) IsNameExists(name string) (bool, error) {
+	n, err := s.dao.GetPostsCol().Find(bson.M{"post_name": name}).Count()
 	if err != nil {
 		log.Logger.Error("try to count post_name got error", zap.Error(err))
 		return false, err
@@ -271,7 +283,7 @@ func (s *Service) IsNameExists(name string) (bool, error) {
 //   * name: post url
 //   * md: post markdown content
 //   * ptype: post type, markdown/slide
-func (s *Service) NewPost(authorID bson.ObjectId, title, name, md, ptype string) (post *Post, err error) {
+func (s *Type) NewPost(authorID bson.ObjectId, title, name, md, ptype string) (post *model.Post, err error) {
 	if isExists, err := s.IsNameExists(name); err != nil {
 		return nil, err
 	} else if isExists {
@@ -279,7 +291,7 @@ func (s *Service) NewPost(authorID bson.ObjectId, title, name, md, ptype string)
 	}
 
 	ts := time.Now()
-	p := &Post{
+	p := &model.Post{
 		Type:       strings.ToLower(ptype),
 		Markdown:   md,
 		Content:    string(ParseMarkdown2HTML([]byte(md))),
@@ -300,7 +312,7 @@ func (s *Service) NewPost(authorID bson.ObjectId, title, name, md, ptype string)
 			// zap.String("content", p.Content),
 		)
 	} else {
-		if err = s.db.GetPostsCol().Insert(p); err != nil {
+		if err = s.dao.GetPostsCol().Insert(p); err != nil {
 			return nil, errors.Wrap(err, "try to insert post got error")
 		}
 	}
@@ -310,10 +322,10 @@ func (s *Service) NewPost(authorID bson.ObjectId, title, name, md, ptype string)
 
 var ErrLogin = errors.New("Password Or Username Incorrect")
 
-func (s *Service) ValidateLogin(account, password string) (u *User, err error) {
+func (s *Type) ValidateLogin(account, password string) (u *model.User, err error) {
 	log.Logger.Debug("ValidateLogin", zap.String("account", account))
-	u = &User{}
-	if err := s.db.GetUsersCol().Find(bson.M{"account": account}).One(u); err != nil {
+	u = &model.User{}
+	if err := s.dao.GetUsersCol().Find(bson.M{"account": account}).One(u); err != nil {
 		if err == mgo.ErrNotFound {
 			return nil, fmt.Errorf("user notfound")
 		}
@@ -334,14 +346,14 @@ var supporttedTypes = map[string]struct{}{
 }
 
 // UpdatePostCategory change blog post's category
-func (s *Service) UpdatePostCategory(name, category string) (p *Post, err error) {
-	c := new(Category)
-	if err = s.db.GetCategoriesCol().Find(bson.M{"name": category}).One(c); err != nil {
+func (s *Type) UpdatePostCategory(name, category string) (p *model.Post, err error) {
+	c := new(model.Category)
+	if err = s.dao.GetCategoriesCol().Find(bson.M{"name": category}).One(c); err != nil {
 		return nil, errors.Wrapf(err, "load category `%s`", category)
 	}
 
-	p = new(Post)
-	if err = s.db.GetPostsCol().Find(bson.M{"post_name": name}).One(p); err != nil {
+	p = new(model.Post)
+	if err = s.dao.GetPostsCol().Find(bson.M{"post_name": name}).One(p); err != nil {
 		return nil, errors.Wrapf(err, "load post by name `%s`", name)
 	}
 
@@ -350,7 +362,7 @@ func (s *Service) UpdatePostCategory(name, category string) (p *Post, err error)
 	}
 
 	p.Category = c.ID
-	if err = s.db.GetPostsCol().UpdateId(p.ID, bson.M{
+	if err = s.dao.GetPostsCol().UpdateId(p.ID, bson.M{
 		"$set": bson.M{
 			"category": c.ID,
 		},
@@ -362,13 +374,13 @@ func (s *Service) UpdatePostCategory(name, category string) (p *Post, err error)
 	return p, nil
 }
 
-func (s *Service) UpdatePost(user *User, name string, title string, md string, typeArg string) (p *Post, err error) {
-	p = &Post{}
+func (s *Type) UpdatePost(user *model.User, name string, title string, md string, typeArg string) (p *model.Post, err error) {
+	p = &model.Post{}
 	typeArg = strings.ToLower(typeArg)
 	if _, ok := supporttedTypes[typeArg]; !ok {
 		return nil, fmt.Errorf("type `%v` not supportted", typeArg)
 	}
-	if err = s.db.GetPostsCol().Find(bson.M{"post_name": name}).One(p); err != nil {
+	if err = s.dao.GetPostsCol().Find(bson.M{"post_name": name}).One(p); err != nil {
 		if err == mgo.ErrNotFound {
 			return nil, errors.Wrap(err, "post not exists")
 		}
@@ -387,10 +399,24 @@ func (s *Service) UpdatePost(user *User, name string, title string, md string, t
 	p.ModifiedAt = time.Now()
 	p.Type = typeArg
 
-	if err = s.db.GetPostsCol().UpdateId(p.ID, p); err != nil {
+	if err = s.dao.GetPostsCol().UpdateId(p.ID, p); err != nil {
 		return nil, errors.Wrap(err, "try to update post got error")
 	}
 
 	log.Logger.Info("updated post", zap.String("post", p.Name), zap.String("user", user.Account))
 	return p, nil
+}
+
+func (t *Type) ValidateAndGetUser(ctx context.Context) (user *model.User, err error) {
+	uc := &jwt.UserClaims{}
+	if err = auth.Instance.GetUserClaims(ctx, uc); err != nil {
+		return nil, errors.Wrap(err, "get user from token")
+	}
+
+	uid := bson.ObjectIdHex(uc.Subject)
+	if user, err = t.LoadUserByID(uid); err != nil {
+		return nil, errors.Wrapf(err, "load user `%s`", uid)
+	}
+
+	return user, nil
 }

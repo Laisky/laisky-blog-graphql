@@ -8,6 +8,7 @@ import (
 
 	"laisky-blog-graphql/library/log"
 
+	gutils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
 )
 
@@ -76,7 +77,7 @@ func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 		log.Logger.Debug("unknown type of JSONString", zap.String("val", fmt.Sprint(vi)))
 	}
 	// var v string
-	if err = json.UnmarshalFromString(v, &v); err != nil {
+	if err = gutils.JSON.UnmarshalFromString(v, &v); err != nil {
 		log.Logger.Debug("decode string", zap.String("quoted", v), zap.Error(err))
 		return err
 	}
@@ -86,7 +87,7 @@ func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 }
 
 func (qs JSONString) MarshalGQL(w io.Writer) {
-	if vb, err := json.Marshal(qs); err != nil {
+	if vb, err := gutils.JSON.Marshal(qs); err != nil {
 		log.Logger.Error("marshal json", zap.Error(err))
 	} else {
 		if _, err = w.Write(vb); err != nil {

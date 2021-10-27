@@ -1,10 +1,13 @@
-// Package twitter service for twitter API
-package twitter
+// Package service service for twitter API
+package service
 
 import (
+	"context"
 	"strconv"
 
-	"laisky-blog-graphql/internal/web/twitter/db"
+	"laisky-blog-graphql/internal/web/twitter/dao"
+	"laisky-blog-graphql/internal/web/twitter/dto"
+	"laisky-blog-graphql/internal/web/twitter/model"
 	"laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/zap"
@@ -13,16 +16,28 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-type Service struct {
-	*db.DB
+var Instance *Type
+
+func Initialize(ctx context.Context) {
+	dao.Initialize(ctx)
+
+	Instance = New(dao.InstanceTweets, dao.InstanceSearch)
 }
 
-func NewService(db *db.DB) *Service {
-	return &Service{DB: db}
+type Type struct {
+	tweetDao  *dao.Tweets
+	searchDao *dao.Search
 }
 
-func (s *Service) LoadTweetReplys(tweetID string) (replys []*Tweet, err error) {
-	if err = s.GetTweetCol().
+func New(tweet *dao.Tweets, search *dao.Search) *Type {
+	return &Type{
+		tweetDao:  tweet,
+		searchDao: search,
+	}
+}
+
+func (s *Type) LoadTweetReplys(tweetID string) (replys []*model.Tweet, err error) {
+	if err = s.tweetDao.GetTweetCol().
 		Find(bson.M{"in_reply_to_status_id_str": tweetID}).
 		All(&replys); err != nil {
 		return nil, errors.Wrapf(err, "load replys of tweet `%s`", tweetID)
@@ -31,22 +46,22 @@ func (s *Service) LoadTweetReplys(tweetID string) (replys []*Tweet, err error) {
 	return
 }
 
-func (s *Service) LoadThreadByTweetID(id string) (tweets []*Tweet, err error) {
-	tweet := &Tweet{}
-	if err = s.GetTweetCol().
+func (s *Type) LoadThreadByTweetID(id string) (tweets []*model.Tweet, err error) {
+	tweet := &model.Tweet{}
+	if err = s.tweetDao.GetTweetCol().
 		Find(bson.M{"id_str": id}).
 		One(tweet); err != nil {
 		return nil, errors.Wrapf(err, "load tweet `%s`", id)
 	}
 
-	head, err := s.loadTweetsRecur(tweet, func(status *Tweet) string {
+	head, err := s.loadTweetsRecur(tweet, func(status *model.Tweet) string {
 		return status.ReplyToStatusID
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "load head for tweet `%s`", id)
 	}
 
-	tail, err := s.loadTweetsRecur(tweet, func(status *Tweet) (nextID string) {
+	tail, err := s.loadTweetsRecur(tweet, func(status *model.Tweet) (nextID string) {
 		replys, err := s.LoadTweetReplys(status.ID)
 		if err != nil {
 			log.Logger.Error("load tweet replies", zap.Error(err))
@@ -98,15 +113,15 @@ func (s *Service) LoadThreadByTweetID(id string) (tweets []*Tweet, err error) {
 	return tweets, nil
 }
 
-func (s *Service) loadTweetsRecur(tweet *Tweet, getNextID func(*Tweet) string) (tweets []*Tweet, err error) {
+func (s *Type) loadTweetsRecur(tweet *model.Tweet, getNextID func(*model.Tweet) string) (tweets []*model.Tweet, err error) {
 	var nextID string
 	for {
 		if nextID = getNextID(tweet); nextID == "" {
 			break
 		}
 
-		tweet = &Tweet{}
-		if err = s.GetTweetCol().
+		tweet = &model.Tweet{}
+		if err = s.tweetDao.GetTweetCol().
 			Find(bson.M{"id_str": nextID}).
 			One(tweet); err != nil {
 			if errors.Is(err, mgo.ErrNotFound) {
@@ -122,13 +137,13 @@ func (s *Service) loadTweetsRecur(tweet *Tweet, getNextID func(*Tweet) string) (
 	return tweets, nil
 }
 
-func (s *Service) LoadTweetByTwitterID(id string) (tweet *Tweet, err error) {
-	tweet = &Tweet{}
-	if err = s.GetTweetCol().
+func (s *Type) LoadTweetByTwitterID(id string) (tweet *model.Tweet, err error) {
+	tweet = &model.Tweet{}
+	if err = s.tweetDao.GetTweetCol().
 		Find(bson.M{"id_str": id}).
 		One(tweet); err == mgo.ErrNotFound {
 		log.Logger.Debug("tweet not found", zap.String("id", id))
-		return &Tweet{ID: id}, nil
+		return &model.Tweet{ID: id}, nil
 	} else if err != nil {
 		return nil, errors.Wrap(err, "try to load tweet by id got error")
 	}
@@ -136,9 +151,9 @@ func (s *Service) LoadTweetByTwitterID(id string) (tweet *Tweet, err error) {
 	return tweet, nil
 }
 
-func (s *Service) LoadUserByID(id string) (user *User, err error) {
-	user = new(User)
-	if err = s.GetUserCol().
+func (s *Type) LoadUserByID(id string) (user *model.User, err error) {
+	user = new(model.User)
+	if err = s.tweetDao.GetUserCol().
 		Find(bson.M{"id_str": id}).
 		One(user); err == mgo.ErrNotFound {
 		log.Logger.Debug("tweet not found", zap.String("id", id))
@@ -150,17 +165,7 @@ func (s *Service) LoadUserByID(id string) (user *User, err error) {
 	return user, nil
 }
 
-type LoadTweetArgs struct {
-	Page, Size int
-	TweetID,
-	Topic,
-	Regexp,
-	Username,
-	ViewerID string
-	SortBy, SortOrder string
-}
-
-func (s *Service) LoadTweets(cfg *LoadTweetArgs) (results []*Tweet, err error) {
+func (s *Type) LoadTweets(cfg *dto.LoadTweetArgs) (results []*model.Tweet, err error) {
 	log.Logger.Debug("LoadTweets",
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("topic", cfg.Topic),
@@ -174,7 +179,7 @@ func (s *Service) LoadTweets(cfg *LoadTweetArgs) (results []*Tweet, err error) {
 		return nil, errors.Errorf("size shoule in [0~100]")
 	}
 
-	results = []*Tweet{}
+	results = []*model.Tweet{}
 	var query = bson.M{}
 	if cfg.Topic != "" {
 		query["topics"] = cfg.Topic
@@ -194,10 +199,17 @@ func (s *Service) LoadTweets(cfg *LoadTweetArgs) (results []*Tweet, err error) {
 	}
 
 	if cfg.Regexp != "" {
-		query["text"] = bson.M{"$regex": bson.RegEx{
-			Pattern: cfg.Regexp,
-			Options: "im",
-		}}
+		// search in clickhouse
+		if ids, err := s.searchDao.SearchByText(cfg.Regexp); err != nil || len(ids) == 0 {
+			// clickhouse got error,
+			// back to mongo searching
+			query["text"] = bson.M{"$regex": bson.RegEx{
+				Pattern: cfg.Regexp,
+				Options: "im",
+			}}
+		} else if cfg.TweetID == "" {
+			query["id_str"] = bson.M{"$in": ids}
+		}
 	}
 
 	if cfg.Username != "" {
@@ -216,7 +228,7 @@ func (s *Service) LoadTweets(cfg *LoadTweetArgs) (results []*Tweet, err error) {
 		}
 	}
 
-	if err = s.GetTweetCol().
+	if err = s.tweetDao.GetTweetCol().
 		Find(query).
 		Sort(sort).
 		Skip(cfg.Page * cfg.Size).

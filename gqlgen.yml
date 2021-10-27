@@ -12,7 +12,7 @@ schema:
 exec:
   filename: ./internal/web/generated.go
 model:
-  filename: ./internal/web/serializers.go
+  filename: ./internal/global/dto.go
 resolver:
   filename: ./internal/web/resolver.go
   type: Resolver
@@ -26,20 +26,20 @@ models:
     model: laisky-blog-graphql/library.JSONString
   # twitter
   Tweet:
-    model: laisky-blog-graphql/internal/web/twitter.Tweet
+    model: laisky-blog-graphql/internal/web/twitter/model.Tweet
   TwitterUser:
-    model: laisky-blog-graphql/internal/web/twitter.User
+    model: laisky-blog-graphql/internal/web/twitter/model.User
   # blog
   BlogPost:
-    model: laisky-blog-graphql/internal/web/blog.Post
+    model: laisky-blog-graphql/internal/web/blog/model.Post
   PostInfo:
-    model: laisky-blog-graphql/internal/web/blog.PostInfo
+    model: laisky-blog-graphql/internal/web/blog/dto.PostInfo
   BlogUser:
-    model: laisky-blog-graphql/internal/web/blog.User
+    model: laisky-blog-graphql/internal/web/blog/model.User
   BlogCategory:
-    model: laisky-blog-graphql/internal/web/blog.Category
+    model: laisky-blog-graphql/internal/web/blog/model.Category
   BlogPostSeries:
-    model: laisky-blog-graphql/internal/web/blog.PostSeries
+    model: laisky-blog-graphql/internal/web/blog/model.PostSeries
   # telegram
   TelegramUser:
     model: laisky-blog-graphql/internal/web/telegram.Users

@@ -10,7 +10,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
-	ginMiddlewares "github.com/Laisky/gin-middlewares"
+	ginMw "github.com/Laisky/gin-middlewares"
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"
@@ -21,13 +21,7 @@ import (
 
 var (
 	server = gin.New()
-	auth   *ginMiddlewares.Auth
 )
-
-func setupAuth() (err error) {
-	auth, err = ginMiddlewares.NewAuth([]byte(utils.Settings.GetString("settings.secret")))
-	return
-}
 
 func RunServer(addr string) {
 	server.Use(gin.Recovery())
@@ -35,12 +29,8 @@ func RunServer(addr string) {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	if err := setupAuth(); err != nil {
-		log.Logger.Panic("try to setup auth got error", zap.Error(err))
-	}
-
-	server.Use(ginMiddlewares.GetLoggerMiddleware(log.Logger.Named("gin")))
-	if err := ginMiddlewares.EnableMetric(server); err != nil {
+	server.Use(ginMw.GetLoggerMiddleware(log.Logger.Named("gin")))
+	if err := ginMw.EnableMetric(server); err != nil {
 		log.Logger.Panic("enable metric server", zap.Error(err))
 	}
 
@@ -63,9 +53,9 @@ func RunServer(addr string) {
 		// log.Logger.Error(err.Error())
 		return err
 	})
-	server.Any("/ui-dev/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/query/")))
-	server.Any("/ui/", ginMiddlewares.FromStd(playground.Handler("GraphQL playground", "/graphql/query/")))
-	server.Any("/query/", ginMiddlewares.FromStd(h.ServeHTTP))
+	server.Any("/ui-dev/", ginMw.FromStd(playground.Handler("GraphQL playground", "/query/")))
+	server.Any("/ui/", ginMw.FromStd(playground.Handler("GraphQL playground", "/graphql/query/")))
+	server.Any("/query/", ginMw.FromStd(h.ServeHTTP))
 
 	log.Logger.Info("listening on http", zap.String("addr", addr))
 	log.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))

@@ -1,4 +1,4 @@
-package twitter
+package model
 
 import (
 	"time"
@@ -29,11 +29,4 @@ type Tweet struct {
 	IsQuoted        bool          `bson:"is_quote_status" json:"is_quote_status"`
 	QuotedTweet     *Tweet        `bson:"quoted_status,omitempty" json:"quoted_status"`
 	Viewer          []string      `bson:"viewer,omitempty" json:"viewer"`
-}
-
-type User struct {
-	ID         string `bson:"id_str" json:"id"`
-	ScreenName string `bson:"screen_name" json:"screen_name"`
-	Name       string `bson:"name" json:"name"`
-	Dscription string `bson:"dscription" json:"dscription"`
 }
