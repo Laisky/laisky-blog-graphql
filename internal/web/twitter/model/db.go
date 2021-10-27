@@ -42,7 +42,7 @@ func Initialize(ctx context.Context) {
 	if SearchDB, err = gorm.Open(
 		clickhouse.New(clickhouse.Config{
 			DSN:                    gutils.Settings.GetString("settings.db.clickhouse.dsn"),
-			DefaultTableEngineOpts: "ENGINE=MergeTree()",
+			DefaultTableEngineOpts: "ENGINE=Log()",
 		}),
 		&gorm.Config{
 			Logger: logger,

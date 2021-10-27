@@ -22,13 +22,14 @@ func (s *Search) SearchByText(text string) (tweetIDs []string, err error) {
 	err = s.db.Model(model.SearchTweet{}).
 		// Where("text LIKE ?", "%"+text+"%").
 		Where("match(text, ?)", text).
+		Order("created_at DESC").
 		Find(&tweets).Error
 	if err != nil {
 		return nil, errors.Wrapf(err, "search text `%s", text)
 	}
 
 	for i := range tweets {
-		tweetIDs = append(tweetIDs, tweets[i].ID)
+		tweetIDs = append(tweetIDs, tweets[i].TweetID)
 	}
 
 	return tweetIDs, nil
