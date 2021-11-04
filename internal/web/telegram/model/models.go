@@ -1,20 +1,10 @@
-package telegram
+package model
 
 import (
 	"time"
 
-	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2/bson"
 )
-
-var (
-	ErrAlreadyExists = errors.New("already exists")
-)
-
-type QueryCfg struct {
-	Name       string
-	Page, Size int
-}
 
 // AlertTypes type of alert
 type AlertTypes struct {
