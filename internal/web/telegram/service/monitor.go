@@ -1,4 +1,4 @@
-package telegram
+package service
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"laisky-blog-graphql/internal/web/telegram/dto"
+	"laisky-blog-graphql/internal/web/telegram/model"
 	"laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/go-utils"
@@ -14,7 +16,7 @@ import (
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
-func (s *ServiceType) monitorHandler() {
+func (s *Type) monitorHandler() {
 	s.bot.Handle("/monitor", func(c *tb.Message) {
 		s.userStats.Store(c.Sender.ID, &userStat{
 			user:  c.Sender,
@@ -37,7 +39,7 @@ Reply number:
 	})
 }
 
-func (s *ServiceType) chooseMonitor(us *userStat, msg *tb.Message) {
+func (s *Type) chooseMonitor(us *userStat, msg *tb.Message) {
 	log.Logger.Debug("choose monitor",
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text))
@@ -102,7 +104,7 @@ func (s *ServiceType) chooseMonitor(us *userStat, msg *tb.Message) {
 	}
 }
 
-func (s *ServiceType) kickUser(us *userStat, au string) (err error) {
+func (s *Type) kickUser(us *userStat, au string) (err error) {
 	if !strings.Contains(au, ":") {
 		return fmt.Errorf("unknown alert_name:uid format")
 	}
@@ -113,13 +115,13 @@ func (s *ServiceType) kickUser(us *userStat, au string) (err error) {
 		return errors.Wrap(err, "parse uid to")
 	}
 
-	var alertType *AlertTypes
+	var alertType *model.AlertTypes
 	alertType, err = s.dao.IsUserSubAlert(us.user.ID, alertName)
 	if err != nil {
 		return errors.Wrap(err, "load alert by user uid")
 	}
 
-	var kickedUser *Users
+	var kickedUser *model.Users
 	kickedUser, err = s.dao.LoadUserByUID(kickUID)
 	if err != nil {
 		return errors.Wrap(err, "load user by kicked user uid")
@@ -156,7 +158,7 @@ func (s *ServiceType) kickUser(us *userStat, au string) (err error) {
 	return err
 }
 
-func (s *ServiceType) userQuitAlert(us *userStat, alertName string) (err error) {
+func (s *Type) userQuitAlert(us *userStat, alertName string) (err error) {
 	if err = s.dao.RemoveUAR(us.user.ID, alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation by uid and alert_name")
 	}
@@ -164,8 +166,8 @@ func (s *ServiceType) userQuitAlert(us *userStat, alertName string) (err error) 
 	return s.SendMsgToUser(us.user.ID, "successed unsubscribe "+alertName)
 }
 
-func (s *ServiceType) refreshAlertTokenAndKey(us *userStat, alert string) (err error) {
-	var alertType *AlertTypes
+func (s *Type) refreshAlertTokenAndKey(us *userStat, alert string) (err error) {
+	var alertType *model.AlertTypes
 	alertType, err = s.dao.IsUserSubAlert(us.user.ID, alert)
 	if err != nil {
 		return errors.Wrap(err, "load alert by user uid")
@@ -197,7 +199,7 @@ func (s *ServiceType) refreshAlertTokenAndKey(us *userStat, alert string) (err e
 	return err
 }
 
-func (s *ServiceType) joinAlertGroup(us *userStat, kt string) (err error) {
+func (s *Type) joinAlertGroup(us *userStat, kt string) (err error) {
 	if !strings.Contains(kt, ":") {
 		return fmt.Errorf("unknown format")
 	}
@@ -218,27 +220,27 @@ func (s *ServiceType) joinAlertGroup(us *userStat, kt string) (err error) {
 	return s.SendMsgToUser(us.user.ID, alert+" (joint at "+uar.CreatedAt.Format(time.RFC3339)+")")
 }
 
-func (s *ServiceType) LoadAlertTypesByUser(u *Users) (alerts []*AlertTypes, err error) {
+func (s *Type) LoadAlertTypesByUser(u *model.Users) (alerts []*model.AlertTypes, err error) {
 	return s.dao.LoadAlertTypesByUser(u)
 }
 
-func (s *ServiceType) LoadAlertTypes(cfg *QueryCfg) (alerts []*AlertTypes, err error) {
+func (s *Type) LoadAlertTypes(cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
 	return s.dao.LoadAlertTypes(cfg)
 }
 
-func (s *ServiceType) LoadUsers(cfg *QueryCfg) (users []*Users, err error) {
+func (s *Type) LoadUsers(cfg *dto.QueryCfg) (users []*model.Users, err error) {
 	return s.dao.LoadUsers(cfg)
 }
 
-func (s *ServiceType) LoadUsersByAlertType(a *AlertTypes) (users []*Users, err error) {
+func (s *Type) LoadUsersByAlertType(a *model.AlertTypes) (users []*model.Users, err error) {
 	return s.dao.LoadUsersByAlertType(a)
 }
 
-func (s *ServiceType) ValidateTokenForAlertType(token, alertType string) (alert *AlertTypes, err error) {
+func (s *Type) ValidateTokenForAlertType(token, alertType string) (alert *model.AlertTypes, err error) {
 	return s.dao.ValidateTokenForAlertType(token, alertType)
 }
 
-func (s *ServiceType) listAllMonitorAlerts(us *userStat) (err error) {
+func (s *Type) listAllMonitorAlerts(us *userStat) (err error) {
 	u, err := s.dao.LoadUserByUID(us.user.ID)
 	if err != nil {
 		return err
@@ -265,7 +267,7 @@ func (s *ServiceType) listAllMonitorAlerts(us *userStat) (err error) {
 	return s.SendMsgToUser(u.UID, msg)
 }
 
-func (s *ServiceType) createNewMonitor(us *userStat, alertName string) (err error) {
+func (s *Type) createNewMonitor(us *userStat, alertName string) (err error) {
 	u, err := s.dao.CreateOrGetUser(us.user)
 	if err != nil {
 		return errors.Wrap(err, "create user")

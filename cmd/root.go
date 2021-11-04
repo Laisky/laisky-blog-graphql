@@ -6,6 +6,7 @@ import (
 	"time"
 
 	blog "laisky-blog-graphql/internal/web/blog/controller"
+	telegram "laisky-blog-graphql/internal/web/telegram/controller"
 	twitter "laisky-blog-graphql/internal/web/twitter/controller"
 	"laisky-blog-graphql/library/auth"
 	"laisky-blog-graphql/library/config"
@@ -42,6 +43,7 @@ func initialize(ctx context.Context, cmd *cobra.Command) error {
 func setupModules(ctx context.Context) {
 	blog.Initialize(ctx)
 	twitter.Initialize(ctx)
+	telegram.Initialize(ctx)
 }
 
 func setupLibrary(ctx context.Context) {

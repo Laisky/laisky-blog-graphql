@@ -14,12 +14,10 @@ import (
 )
 
 var (
-	MonitorDB *db.DB
 	GeneralDB *db.Firestore
 )
 
 func SetupDB(ctx context.Context) {
-	setupMongo(ctx)
 	setupGCP(ctx)
 }
 
@@ -35,19 +33,5 @@ func setupGCP(ctx context.Context) {
 		)),
 	); err != nil {
 		log.Logger.Panic("create firestore client", zap.Error(err))
-	}
-}
-
-func setupMongo(ctx context.Context) {
-	defer log.Logger.Info("connected mongodb")
-	var err error
-
-	if MonitorDB, err = db.NewMongoDB(ctx,
-		gutils.Settings.GetString("settings.db.monitor.addr"),
-		gutils.Settings.GetString("settings.db.monitor.db"),
-		gutils.Settings.GetString("settings.db.monitor.user"),
-		gutils.Settings.GetString("settings.db.monitor.pwd"),
-	); err != nil {
-		log.Logger.Panic("connect to monitor db", zap.Error(err))
 	}
 }

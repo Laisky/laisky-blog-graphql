@@ -42,9 +42,9 @@ models:
     model: laisky-blog-graphql/internal/web/blog/model.PostSeries
   # telegram
   TelegramUser:
-    model: laisky-blog-graphql/internal/web/telegram.Users
+    model: laisky-blog-graphql/internal/web/telegram/model.Users
   TelegramAlertType:
-    model: laisky-blog-graphql/internal/web/telegram.AlertTypes
+    model: laisky-blog-graphql/internal/web/telegram/model.AlertTypes
   # GCP General
   Lock:
     model: laisky-blog-graphql/internal/web/general.Lock
