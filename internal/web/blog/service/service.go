@@ -374,7 +374,11 @@ func (s *Type) UpdatePostCategory(name, category string) (p *model.Post, err err
 	return p, nil
 }
 
-func (s *Type) UpdatePost(user *model.User, name string, title string, md string, typeArg string) (p *model.Post, err error) {
+func (s *Type) UpdatePost(user *model.User,
+	name string,
+	title string,
+	md string,
+	typeArg string) (p *model.Post, err error) {
 	p = &model.Post{}
 	typeArg = strings.ToLower(typeArg)
 	if _, ok := supporttedTypes[typeArg]; !ok {
@@ -407,14 +411,14 @@ func (s *Type) UpdatePost(user *model.User, name string, title string, md string
 	return p, nil
 }
 
-func (t *Type) ValidateAndGetUser(ctx context.Context) (user *model.User, err error) {
+func (s *Type) ValidateAndGetUser(ctx context.Context) (user *model.User, err error) {
 	uc := &jwt.UserClaims{}
 	if err = auth.Instance.GetUserClaims(ctx, uc); err != nil {
 		return nil, errors.Wrap(err, "get user from token")
 	}
 
 	uid := bson.ObjectIdHex(uc.Subject)
-	if user, err = t.LoadUserByID(uid); err != nil {
+	if user, err = s.LoadUserByID(uid); err != nil {
 		return nil, errors.Wrapf(err, "load user `%s`", uid)
 	}
 

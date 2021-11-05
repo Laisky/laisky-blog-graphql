@@ -120,7 +120,10 @@ func (d *Type) CreateAlertType(name string) (at *model.AlertTypes, err error) {
 	return at, nil
 }
 
-func (d *Type) CreateOrGetUserAlertRelations(user *model.Users, alert *model.AlertTypes) (uar *model.UserAlertRelations, err error) {
+func (d *Type) CreateOrGetUserAlertRelations(user *model.Users,
+	alert *model.AlertTypes) (
+	uar *model.UserAlertRelations,
+	err error) {
 	var info *mgo.ChangeInfo
 	if info, err = d.GetUserAlertRelationsCol().Upsert(
 		bson.M{"user_id": user.ID, "alert_id": alert.ID},

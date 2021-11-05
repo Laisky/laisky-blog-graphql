@@ -3,8 +3,8 @@ scalar QuotedString
 scalar JSONString
 
 input Pagination {
-    page: Int!
-    size: Int!
+  page: Int!
+  size: Int!
 }
 
 enum SortOrder {
@@ -22,48 +22,48 @@ type Query {
 
   # twitter
   TwitterStatues(
-    page: Pagination = {page: 0, size: 20},
-    tweet_id: String! = "",
-    username: String! = "",
-    viewer_id: String! = "",
-    sort: Sort = {sort_by: "id", order: DESC},
-    topic: String! = "",
-    regexp: String! = "",
+    page: Pagination = { page: 0, size: 20 }
+    tweet_id: String! = ""
+    username: String! = ""
+    viewer_id: String! = ""
+    sort: Sort = { sort_by: "id", order: DESC }
+    topic: String! = ""
+    regexp: String! = ""
   ): [Tweet]!
   # TwitterThreads load tweets thread by tweet id
   TwitterThreads(tweet_id: String!): [Tweet!]
 
   # blog
   BlogPosts(
-    page: Pagination = {page: 0, size: 10},
-    tag: String! = "",
-    category_url: String,  # "" means empty, nil means ignore
-    length: Int! = 0,  # content length, 0 means total
-    name: String! = "",
-    regexp: String! = "",
+    page: Pagination = { page: 0, size: 10 }
+    tag: String! = ""
+    category_url: String # "" means empty, nil means ignore
+    length: Int! = 0 # content length, 0 means total
+    name: String! = ""
+    regexp: String! = ""
   ): [BlogPost]!
   BlogPostInfo: PostInfo!
   BlogPostCategories: [BlogCategory]!
   GetBlogPostSeries(
-    page: Pagination = {page: 0, size: 10},
-    key: String! = "",
+    page: Pagination = { page: 0, size: 10 }
+    key: String! = ""
   ): [BlogPostSeries!]!
+  BlogTwitterCard(name: String! = ""): String!
 
   # telegram monitor
   TelegramMonitorUsers(
-    page: Pagination = {page: 0, size: 10},
-    name: String! = "",
+    page: Pagination = { page: 0, size: 10 }
+    name: String! = ""
   ): [TelegramUser]!
   TelegramAlertTypes(
-    page: Pagination = {page: 0, size: 10},
-    name: String! = "",
+    page: Pagination = { page: 0, size: 10 }
+    name: String! = ""
   ): [TelegramAlertType]!
 
   # GCP general
   Lock(name: String!): Lock!
   LockPermissions(username: String! = ""): [GeneralUser]!
 }
-
 
 type Mutation {
   # blog
@@ -72,19 +72,23 @@ type Mutation {
   BlogAmendPost(post: NewBlogPost!): BlogPost!
 
   # telegram monitor
-  TelegramMonitorAlert(type: String!, token: String!, msg: String!): TelegramAlertType!
+  TelegramMonitorAlert(
+    type: String!
+    token: String!
+    msg: String!
+  ): TelegramAlertType!
 
   # GCP general
   # will validate cookie `general`
   AcquireLock(
-    lock_name: String!,
-    duration_sec: Int! = 5,
-    is_renewal: Boolean = false,
+    lock_name: String!
+    duration_sec: Int! = 5
+    is_renewal: Boolean = false
   ): Boolean!
   # only blog user can create token,
   # set token as cookie `general`
   CreateGeneralToken(
-    username: String!,
-    duration_sec: Int! = 604800, # 7d
+    username: String!
+    duration_sec: Int! = 604800 # 7d
   ): String!
 }

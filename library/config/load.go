@@ -1,8 +1,9 @@
 package config
 
 import (
-	"laisky-blog-graphql/library/log"
 	"path/filepath"
+
+	"laisky-blog-graphql/library/log"
 
 	gutils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
