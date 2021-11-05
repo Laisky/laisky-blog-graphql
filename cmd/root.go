@@ -6,6 +6,7 @@ import (
 	"time"
 
 	blog "laisky-blog-graphql/internal/web/blog/controller"
+	general "laisky-blog-graphql/internal/web/general/controller"
 	telegram "laisky-blog-graphql/internal/web/telegram/controller"
 	twitter "laisky-blog-graphql/internal/web/twitter/controller"
 	"laisky-blog-graphql/library/auth"
@@ -44,6 +45,7 @@ func setupModules(ctx context.Context) {
 	blog.Initialize(ctx)
 	twitter.Initialize(ctx)
 	telegram.Initialize(ctx)
+	general.Initialize(ctx)
 }
 
 func setupLibrary(ctx context.Context) {

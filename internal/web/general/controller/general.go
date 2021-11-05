@@ -1,4 +1,4 @@
-package web
+package controller
 
 import (
 	"context"
@@ -8,7 +8,8 @@ import (
 
 	"laisky-blog-graphql/internal/global"
 	blogSvc "laisky-blog-graphql/internal/web/blog/service"
-	"laisky-blog-graphql/internal/web/general"
+	"laisky-blog-graphql/internal/web/general/model"
+	"laisky-blog-graphql/internal/web/general/service"
 	"laisky-blog-graphql/library"
 	"laisky-blog-graphql/library/jwt"
 	"laisky-blog-graphql/library/log"
@@ -20,30 +21,43 @@ import (
 	"github.com/pkg/errors"
 )
 
+type LocksResolver struct{}
+
+type QueryResolver struct{}
+type MutationResolver struct{}
+
+type Type struct {
+	LocksResolver *LocksResolver
+}
+
+func New() *Type {
+	return &Type{
+		LocksResolver: new(LocksResolver),
+	}
+}
+
+var Instance *Type
+
+func Initialize(ctx context.Context) {
+	service.Initialize(ctx)
+
+	Instance = New()
+}
+
 const (
 	generalTokenName       = "general"
 	maxTokenExpireDuration = 3600 * 24 * 7 * time.Second // 7d
 )
 
-func (r *Resolver) Lock() LockResolver {
-	return &locksResolver{r}
-}
-
-// ===========================
-// query
-// ===========================
-
-type locksResolver struct{ *Resolver }
-
 // =================
 // query resolver
 // =================
 
-func (r *queryResolver) Lock(ctx context.Context, name string) (*general.Lock, error) {
-	return general.Service.LoadLockByName(ctx, name)
+func (r *QueryResolver) Lock(ctx context.Context, name string) (*model.Lock, error) {
+	return service.Instance.LoadLockByName(ctx, name)
 }
 
-func (r *queryResolver) LockPermissions(ctx context.Context, username string) (users []*global.GeneralUser, err error) {
+func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (users []*global.GeneralUser, err error) {
 	log.Logger.Debug("LockPermissions", zap.String("username", username))
 	users = []*global.GeneralUser{}
 	var (
@@ -74,8 +88,8 @@ func (r *queryResolver) LockPermissions(ctx context.Context, username string) (u
 // --------------------------
 // gcp general resolver
 // --------------------------
-func (r *locksResolver) ExpiresAt(ctx context.Context,
-	obj *general.Lock) (*library.Datetime, error) {
+func (r *LocksResolver) ExpiresAt(ctx context.Context,
+	obj *model.Lock) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.ExpiresAt), nil
 }
 
@@ -120,7 +134,7 @@ func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 
 // AcquireLock acquire mutex lock with name and duration.
 // if `isRenewal=true`, will renewal exists lock.
-func (r *mutationResolver) AcquireLock(ctx context.Context,
+func (r *MutationResolver) AcquireLock(ctx context.Context,
 	lockName string,
 	durationSec int,
 	isRenewal *bool,
@@ -144,7 +158,7 @@ func (r *mutationResolver) AcquireLock(ctx context.Context,
 			username, lockName)
 	}
 
-	return general.Service.AcquireLock(ctx,
+	return service.Instance.AcquireLock(ctx,
 		lockName,
 		username,
 		time.Duration(durationSec)*time.Second,
@@ -152,7 +166,7 @@ func (r *mutationResolver) AcquireLock(ctx context.Context,
 }
 
 // CreateGeneralToken generate genaral token than should be set as cookie `general`
-func (r *mutationResolver) CreateGeneralToken(ctx context.Context,
+func (r *MutationResolver) CreateGeneralToken(ctx context.Context,
 	username string,
 	durationSec int,
 ) (token string, err error) {

@@ -1,5 +1,4 @@
-// Package global global shared variables
-package global
+package model
 
 import (
 	"context"
@@ -17,11 +16,7 @@ var (
 	GeneralDB *db.Firestore
 )
 
-func SetupDB(ctx context.Context) {
-	setupGCP(ctx)
-}
-
-func setupGCP(ctx context.Context) {
+func Initialize(ctx context.Context) {
 	defer log.Logger.Info("connected gcp firestore")
 	var err error
 	if GeneralDB, err = db.NewFirestore(

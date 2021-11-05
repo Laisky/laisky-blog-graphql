@@ -4,6 +4,7 @@ import (
 	"context"
 
 	blog "laisky-blog-graphql/internal/web/blog/controller"
+	general "laisky-blog-graphql/internal/web/general/controller"
 	telegram "laisky-blog-graphql/internal/web/telegram/controller"
 	twitter "laisky-blog-graphql/internal/web/twitter/controller"
 )
@@ -48,6 +49,12 @@ func (r *Resolver) TelegramUser() TelegramUserResolver {
 	return telegram.Instance.TelegramUserResolver
 }
 
+// general
+
+func (r *Resolver) Lock() LockResolver {
+	return general.Instance.LocksResolver
+}
+
 // =================
 // query resolver
 // =================
@@ -64,10 +71,15 @@ type telegramQuery struct {
 	telegram.QueryResolver
 }
 
+type genaralQuery struct {
+	general.QueryResolver
+}
+
 type queryResolver struct {
 	twitterQuery
 	blogQuery
 	telegramQuery
+	genaralQuery
 }
 
 func (r *queryResolver) Hello(ctx context.Context) (string, error) {
@@ -86,7 +98,12 @@ type telegramMutation struct {
 	telegram.MutationResolver
 }
 
+type generalMutation struct {
+	general.MutationResolver
+}
+
 type mutationResolver struct {
 	blogMutation
 	telegramMutation
+	generalMutation
 }
