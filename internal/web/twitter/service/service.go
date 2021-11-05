@@ -113,7 +113,9 @@ func (s *Type) LoadThreadByTweetID(id string) (tweets []*model.Tweet, err error)
 	return tweets, nil
 }
 
-func (s *Type) loadTweetsRecur(tweet *model.Tweet, getNextID func(*model.Tweet) string) (tweets []*model.Tweet, err error) {
+func (s *Type) loadTweetsRecur(tweet *model.Tweet,
+	getNextID func(*model.Tweet) string) (
+	tweets []*model.Tweet, err error) {
 	var nextID string
 	for {
 		if nextID = getNextID(tweet); nextID == "" {

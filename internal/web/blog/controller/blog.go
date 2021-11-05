@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"laisky-blog-graphql/internal/global"
@@ -94,6 +95,48 @@ func (r *QueryResolver) BlogPosts(ctx context.Context,
 }
 func (r *QueryResolver) BlogPostCategories(ctx context.Context) ([]*model.Category, error) {
 	return service.Instance.LoadAllCategories()
+}
+
+var (
+	markdownImgRe = regexp.MustCompile(`!\[[^\]]*\]\((.*\))`)
+)
+
+func (r *QueryResolver) BlogTwitterCard(ctx context.Context, name string) (string, error) {
+	posts, err := service.Instance.LoadPosts(&dto.PostCfg{
+		Name: name,
+	})
+	if err != nil {
+		return "", errors.Wrapf(err, "load posts `%s`", name)
+	}
+	if len(posts) == 0 {
+		return "", errors.Errorf("notfound `%s`", name)
+	}
+
+	p := posts[0]
+
+	// find image
+	var imgUrl string
+	{
+		matched := markdownImgRe.FindStringSubmatch(p.Markdown)
+		if len(matched) == 2 {
+			imgUrl = matched[1]
+		}
+	}
+
+	// get description
+	// var desc string
+	// if len(p.Markdown) > 100 {
+	// 	desc = p.Markdown[:100]
+	// } else {
+	// 	desc = p.Markdown
+	// }
+
+	return fmt.Sprintf(`
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="%s">
+<meta name="twitter:image" content="%s">
+<meta name="twitter:site" content="https://blog.laisky.com/p/%s/">
+`, p.Title, imgUrl, name), nil
 }
 
 // ----------------

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+
 	"laisky-blog-graphql/internal/web/twitter/model"
 	"laisky-blog-graphql/library/log"
 
@@ -17,7 +18,9 @@ var migrateCMD = &cobra.Command{
 	Args:  gcmd.NoExtraArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
-		initialize(ctx, cmd)
+		if err := initialize(ctx, cmd); err != nil {
+			log.Logger.Panic("init", zap.Error(err))
+		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := model.SearchDB.AutoMigrate(

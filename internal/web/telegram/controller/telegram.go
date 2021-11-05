@@ -16,15 +16,15 @@ import (
 	"github.com/Laisky/zap"
 )
 
-type TelegramAlertTypeResolver struct{}
-type TelegramUserResolver struct{}
+type AlertTypeResolver struct{}
+type UserResolver struct{}
 
 type QueryResolver struct{}
 type MutationResolver struct{}
 
 type Type struct {
-	TelegramAlertTypeResolver *TelegramAlertTypeResolver
-	TelegramUserResolver      *TelegramUserResolver
+	TelegramAlertTypeResolver *AlertTypeResolver
+	TelegramUserResolver      *UserResolver
 }
 
 var Instance *Type
@@ -35,8 +35,8 @@ func Initialize(ctx context.Context) {
 	setupTelegramThrottle(ctx)
 
 	Instance = &Type{
-		TelegramAlertTypeResolver: new(TelegramAlertTypeResolver),
-		TelegramUserResolver:      new(TelegramUserResolver),
+		TelegramAlertTypeResolver: new(AlertTypeResolver),
+		TelegramUserResolver:      new(UserResolver),
 	}
 }
 
@@ -64,46 +64,46 @@ func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 // --------------------------
 // telegram monitor resolver
 // --------------------------
-func (t *TelegramUserResolver) ID(ctx context.Context, obj *model.Users) (string, error) {
+func (t *UserResolver) ID(ctx context.Context, obj *model.Users) (string, error) {
 	return obj.ID.Hex(), nil
 }
-func (t *TelegramUserResolver) CreatedAt(ctx context.Context,
+func (t *UserResolver) CreatedAt(ctx context.Context,
 	obj *model.Users,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.CreatedAt), nil
 }
-func (t *TelegramUserResolver) ModifiedAt(ctx context.Context,
+func (t *UserResolver) ModifiedAt(ctx context.Context,
 	obj *model.Users,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
-func (t *TelegramUserResolver) TelegramID(ctx context.Context,
+func (t *UserResolver) TelegramID(ctx context.Context,
 	obj *model.Users,
 ) (string, error) {
 	return strconv.FormatInt(int64(obj.UID), 10), nil
 }
-func (t *TelegramUserResolver) SubAlerts(ctx context.Context,
+func (t *UserResolver) SubAlerts(ctx context.Context,
 	obj *model.Users,
 ) ([]*model.AlertTypes, error) {
 	return service.Instance.LoadAlertTypesByUser(obj)
 }
 
-func (t *TelegramAlertTypeResolver) ID(ctx context.Context,
+func (t *AlertTypeResolver) ID(ctx context.Context,
 	obj *model.AlertTypes,
 ) (string, error) {
 	return obj.ID.Hex(), nil
 }
-func (t *TelegramAlertTypeResolver) CreatedAt(ctx context.Context,
+func (t *AlertTypeResolver) CreatedAt(ctx context.Context,
 	obj *model.AlertTypes,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.CreatedAt), nil
 }
-func (t *TelegramAlertTypeResolver) ModifiedAt(ctx context.Context,
+func (t *AlertTypeResolver) ModifiedAt(ctx context.Context,
 	obj *model.AlertTypes,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
-func (t *TelegramAlertTypeResolver) SubUsers(ctx context.Context,
+func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 	obj *model.AlertTypes,
 ) ([]*model.Users, error) {
 	return service.Instance.LoadUsersByAlertType(obj)

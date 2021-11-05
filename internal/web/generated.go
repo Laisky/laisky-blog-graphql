@@ -117,6 +117,7 @@ type ComplexityRoot struct {
 		BlogPostCategories   func(childComplexity int) int
 		BlogPostInfo         func(childComplexity int) int
 		BlogPosts            func(childComplexity int, page *global.Pagination, tag string, categoryURL *string, length int, name string, regexp string) int
+		BlogTwitterCard      func(childComplexity int, name string) int
 		GetBlogPostSeries    func(childComplexity int, page *global.Pagination, key string) int
 		Hello                func(childComplexity int) int
 		Lock                 func(childComplexity int, name string) int
@@ -204,6 +205,7 @@ type QueryResolver interface {
 	BlogPostInfo(ctx context.Context) (*dto.PostInfo, error)
 	BlogPostCategories(ctx context.Context) ([]*model.Category, error)
 	GetBlogPostSeries(ctx context.Context, page *global.Pagination, key string) ([]*model.PostSeries, error)
+	BlogTwitterCard(ctx context.Context, name string) (string, error)
 	TelegramMonitorUsers(ctx context.Context, page *global.Pagination, name string) ([]*model1.Users, error)
 	TelegramAlertTypes(ctx context.Context, page *global.Pagination, name string) ([]*model1.AlertTypes, error)
 	Lock(ctx context.Context, name string) (*general.Lock, error)
@@ -534,6 +536,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Query.BlogPosts(childComplexity, args["page"].(*global.Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
+
+	case "Query.BlogTwitterCard":
+		if e.complexity.Query.BlogTwitterCard == nil {
+			break
+		}
+
+		args, err := ec.field_Query_BlogTwitterCard_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.BlogTwitterCard(childComplexity, args["name"].(string)), true
 
 	case "Query.GetBlogPostSeries":
 		if e.complexity.Query.GetBlogPostSeries == nil {
@@ -898,8 +912,8 @@ scalar QuotedString
 scalar JSONString
 
 input Pagination {
-    page: Int!
-    size: Int!
+  page: Int!
+  size: Int!
 }
 
 enum SortOrder {
@@ -917,48 +931,48 @@ type Query {
 
   # twitter
   TwitterStatues(
-    page: Pagination = {page: 0, size: 20},
-    tweet_id: String! = "",
-    username: String! = "",
-    viewer_id: String! = "",
-    sort: Sort = {sort_by: "id", order: DESC},
-    topic: String! = "",
-    regexp: String! = "",
+    page: Pagination = { page: 0, size: 20 }
+    tweet_id: String! = ""
+    username: String! = ""
+    viewer_id: String! = ""
+    sort: Sort = { sort_by: "id", order: DESC }
+    topic: String! = ""
+    regexp: String! = ""
   ): [Tweet]!
   # TwitterThreads load tweets thread by tweet id
   TwitterThreads(tweet_id: String!): [Tweet!]
 
   # blog
   BlogPosts(
-    page: Pagination = {page: 0, size: 10},
-    tag: String! = "",
-    category_url: String,  # "" means empty, nil means ignore
-    length: Int! = 0,  # content length, 0 means total
-    name: String! = "",
-    regexp: String! = "",
+    page: Pagination = { page: 0, size: 10 }
+    tag: String! = ""
+    category_url: String # "" means empty, nil means ignore
+    length: Int! = 0 # content length, 0 means total
+    name: String! = ""
+    regexp: String! = ""
   ): [BlogPost]!
   BlogPostInfo: PostInfo!
   BlogPostCategories: [BlogCategory]!
   GetBlogPostSeries(
-    page: Pagination = {page: 0, size: 10},
-    key: String! = "",
+    page: Pagination = { page: 0, size: 10 }
+    key: String! = ""
   ): [BlogPostSeries!]!
+  BlogTwitterCard(name: String! = ""): String!
 
   # telegram monitor
   TelegramMonitorUsers(
-    page: Pagination = {page: 0, size: 10},
-    name: String! = "",
+    page: Pagination = { page: 0, size: 10 }
+    name: String! = ""
   ): [TelegramUser]!
   TelegramAlertTypes(
-    page: Pagination = {page: 0, size: 10},
-    name: String! = "",
+    page: Pagination = { page: 0, size: 10 }
+    name: String! = ""
   ): [TelegramAlertType]!
 
   # GCP general
   Lock(name: String!): Lock!
   LockPermissions(username: String! = ""): [GeneralUser]!
 }
-
 
 type Mutation {
   # blog
@@ -967,20 +981,24 @@ type Mutation {
   BlogAmendPost(post: NewBlogPost!): BlogPost!
 
   # telegram monitor
-  TelegramMonitorAlert(type: String!, token: String!, msg: String!): TelegramAlertType!
+  TelegramMonitorAlert(
+    type: String!
+    token: String!
+    msg: String!
+  ): TelegramAlertType!
 
   # GCP general
   # will validate cookie ` + "`" + `general` + "`" + `
   AcquireLock(
-    lock_name: String!,
-    duration_sec: Int! = 5,
-    is_renewal: Boolean = false,
+    lock_name: String!
+    duration_sec: Int! = 5
+    is_renewal: Boolean = false
   ): Boolean!
   # only blog user can create token,
   # set token as cookie ` + "`" + `general` + "`" + `
   CreateGeneralToken(
-    username: String!,
-    duration_sec: Int! = 604800, # 7d
+    username: String!
+    duration_sec: Int! = 604800 # 7d
   ): String!
 }
 `, BuiltIn: false},
@@ -1296,6 +1314,21 @@ func (ec *executionContext) field_Query_BlogPosts_args(ctx context.Context, rawA
 		}
 	}
 	args["regexp"] = arg5
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_BlogTwitterCard_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["name"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["name"] = arg0
 	return args, nil
 }
 
@@ -2962,6 +2995,48 @@ func (ec *executionContext) _Query_GetBlogPostSeries(ctx context.Context, field 
 	res := resTmp.([]*model.PostSeries)
 	fc.Result = res
 	return ec.marshalNBlogPostSeries2ᚕᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPostSeriesᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_BlogTwitterCard(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_BlogTwitterCard_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	fc.Args = args
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().BlogTwitterCard(rctx, args["name"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query_TelegramMonitorUsers(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -5930,6 +6005,20 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_GetBlogPostSeries(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
+				return res
+			})
+		case "BlogTwitterCard":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_BlogTwitterCard(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&invalids, 1)
 				}
