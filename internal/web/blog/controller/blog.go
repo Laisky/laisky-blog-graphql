@@ -98,7 +98,7 @@ func (r *QueryResolver) BlogPostCategories(ctx context.Context) ([]*model.Catego
 }
 
 var (
-	markdownImgRe = regexp.MustCompile(`!\[[^\]]*\]\((.*\))`)
+	markdownImgRe = regexp.MustCompile(`!\[[^\]]*\]\((.*)\)`)
 )
 
 func (r *QueryResolver) BlogTwitterCard(ctx context.Context, name string) (string, error) {
