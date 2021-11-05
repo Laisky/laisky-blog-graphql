@@ -47,6 +47,6 @@ models:
     model: laisky-blog-graphql/internal/web/telegram/model.AlertTypes
   # GCP General
   Lock:
-    model: laisky-blog-graphql/internal/web/general.Lock
+    model: laisky-blog-graphql/internal/web/general/model.Lock
   # GeneralUser:
   #   model: laisky-blog-graphql/general.User

@@ -32,4 +32,5 @@ RUN chmod +rx -R /app && \
     adduser --disabled-password --gecos '' laisky
 USER laisky
 
-ENTRYPOINT [ "/app/go-graphql-srv", "api", "-c", "/etc/laisky-blog-graphql/settings.yml" ]
+ENTRYPOINT [ "/app/go-graphql-srv" ]
+CMD [ "api", "-c", "/etc/laisky-blog-graphql/settings.yml" ]

@@ -6,6 +6,7 @@ import (
 	"laisky-blog-graphql/internal/web"
 	"laisky-blog-graphql/library/log"
 
+	gutils "github.com/Laisky/go-utils"
 	gcmd "github.com/Laisky/go-utils/cmd"
 	"github.com/Laisky/zap"
 	"github.com/spf13/cobra"
@@ -23,9 +24,7 @@ var apiCMD = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		ctx := context.Background()
-		c := web.NewControllor()
-		c.Run(ctx)
+		web.RunServer(gutils.Settings.GetString("listen"))
 	},
 }
 

@@ -1,11 +1,12 @@
-package general
+package service
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"laisky-blog-graphql/internal/global"
+	"laisky-blog-graphql/internal/web/general/dao"
+	"laisky-blog-graphql/internal/web/general/model"
 	"laisky-blog-graphql/library/log"
 
 	"cloud.google.com/go/firestore"
@@ -14,21 +15,23 @@ import (
 	"github.com/pkg/errors"
 )
 
-var Service *ServiceType
+var Instance *Type
 
-type ServiceType struct {
-	dao *Dao
+type Type struct {
+	dao *dao.Type
 }
 
-func Initialize() {
-	Service = NewService(NewDao(global.GeneralDB))
+func Initialize(ctx context.Context) {
+	dao.Initialize(ctx)
+
+	Instance = NewService(dao.Instance)
 }
 
-func NewService(db *Dao) *ServiceType {
-	return &ServiceType{dao: db}
+func NewService(db *dao.Type) *Type {
+	return &Type{dao: db}
 }
 
-func (s *ServiceType) AcquireLock(ctx context.Context,
+func (s *Type) AcquireLock(ctx context.Context,
 	name, ownerID string,
 	duration time.Duration,
 	isRenewal bool,
@@ -39,7 +42,7 @@ func (s *ServiceType) AcquireLock(ctx context.Context,
 		zap.Duration("duration", duration))
 	ref := s.dao.GetLocksCol().Doc(name)
 	now := utils.Clock.GetUTCNow()
-	err = s.dao.db.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err = s.dao.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		doc, err := tx.Get(ref)
 		if err != nil && doc == nil {
 			log.Logger.Warn("load gcp general lock",
@@ -51,7 +54,7 @@ func (s *ServiceType) AcquireLock(ctx context.Context,
 			return fmt.Errorf("lock `%v` not exists", name)
 		}
 
-		lock := &Lock{}
+		lock := &model.Lock{}
 		// check whether expired
 		if doc.Exists() && !isRenewal {
 			if err = doc.DataTo(lock); err != nil {
@@ -71,8 +74,8 @@ func (s *ServiceType) AcquireLock(ctx context.Context,
 	return
 }
 
-func (s *ServiceType) LoadLockByName(ctx context.Context,
-	name string) (lock *Lock, err error) {
+func (s *Type) LoadLockByName(ctx context.Context,
+	name string) (lock *model.Lock, err error) {
 	log.Logger.Debug("load lock by name", zap.String("name", name))
 	docu, err := s.dao.GetLocksCol().Doc(name).Get(ctx)
 	if err != nil && docu == nil {
@@ -82,7 +85,7 @@ func (s *ServiceType) LoadLockByName(ctx context.Context,
 		return nil, errors.Wrap(err, "load docu by name")
 	}
 
-	lock = &Lock{}
+	lock = &model.Lock{}
 	if err = docu.DataTo(lock); err != nil {
 		return nil, errors.Wrap(err, "load data to type Lock")
 	}
