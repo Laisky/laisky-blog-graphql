@@ -65,10 +65,14 @@ type Query {
   LockPermissions(username: String! = ""): [GeneralUser]!
 }
 
+
+
 type Mutation {
-  # blog
+  # publish new blog post
   BlogCreatePost(post: NewBlogPost!): BlogPost!
-  BlogLogin(account: String!, password: String!): BlogUser!
+  # login
+  BlogLogin(account: String!, password: String!): BlogLoginResponse!
+  # update blog post
   BlogAmendPost(post: NewBlogPost!): BlogPost!
 
   # telegram monitor

@@ -6,10 +6,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"strconv"
-	"sync"
-	"sync/atomic"
-
 	"laisky-blog-graphql/internal/global"
 	"laisky-blog-graphql/internal/web/blog/dto"
 	"laisky-blog-graphql/internal/web/blog/model"
@@ -17,6 +13,9 @@ import (
 	model2 "laisky-blog-graphql/internal/web/telegram/model"
 	model3 "laisky-blog-graphql/internal/web/twitter/model"
 	"laisky-blog-graphql/library"
+	"strconv"
+	"sync"
+	"sync/atomic"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
@@ -61,6 +60,11 @@ type ComplexityRoot struct {
 	BlogCategory struct {
 		Name func(childComplexity int) int
 		URL  func(childComplexity int) int
+	}
+
+	BlogLoginResponse struct {
+		Token func(childComplexity int) int
+		User  func(childComplexity int) int
 	}
 
 	BlogPost struct {
@@ -192,7 +196,7 @@ type LockResolver interface {
 }
 type MutationResolver interface {
 	BlogCreatePost(ctx context.Context, post global.NewBlogPost) (*model.Post, error)
-	BlogLogin(ctx context.Context, account string, password string) (*model.User, error)
+	BlogLogin(ctx context.Context, account string, password string) (*global.BlogLoginResponse, error)
 	BlogAmendPost(ctx context.Context, post global.NewBlogPost) (*model.Post, error)
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*model2.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
@@ -271,6 +275,20 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.BlogCategory.URL(childComplexity), true
+
+	case "BlogLoginResponse.token":
+		if e.complexity.BlogLoginResponse.Token == nil {
+			break
+		}
+
+		return e.complexity.BlogLoginResponse.Token(childComplexity), true
+
+	case "BlogLoginResponse.user":
+		if e.complexity.BlogLoginResponse.User == nil {
+			break
+		}
+
+		return e.complexity.BlogLoginResponse.User(childComplexity), true
 
 	case "BlogPost.author":
 		if e.complexity.BlogPost.Author == nil {
@@ -975,10 +993,14 @@ type Query {
   LockPermissions(username: String! = ""): [GeneralUser]!
 }
 
+
+
 type Mutation {
-  # blog
+  # publish new blog post
   BlogCreatePost(post: NewBlogPost!): BlogPost!
-  BlogLogin(account: String!, password: String!): BlogUser!
+  # login
+  BlogLogin(account: String!, password: String!): BlogLoginResponse!
+  # update blog post
   BlogAmendPost(post: NewBlogPost!): BlogPost!
 
   # telegram monitor
@@ -1076,6 +1098,11 @@ type BlogPostSeries {
     remark: String!
     posts: [BlogPost!]!
     children: [BlogPostSeries!]!
+}
+
+type BlogLoginResponse {
+    user: BlogUser!
+    token: String!
 }
 `, BuiltIn: false},
 	{Name: "./internal/web/telegram/schema.graphql", Input: `type TelegramUser {
@@ -1626,6 +1653,76 @@ func (ec *executionContext) _BlogCategory_url(ctx context.Context, field graphql
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
 		return obj.URL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _BlogLoginResponse_user(ctx context.Context, field graphql.CollectedField, obj *global.BlogLoginResponse) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "BlogLoginResponse",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   false,
+		IsResolver: false,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.User, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.User)
+	fc.Result = res
+	return ec.marshalNBlogUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _BlogLoginResponse_token(ctx context.Context, field graphql.CollectedField, obj *global.BlogLoginResponse) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "BlogLoginResponse",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   false,
+		IsResolver: false,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Token, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2520,9 +2617,9 @@ func (ec *executionContext) _Mutation_BlogLogin(ctx context.Context, field graph
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.User)
+	res := resTmp.(*global.BlogLoginResponse)
 	fc.Result = res
-	return ec.marshalNBlogUser2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx, field.Selections, res)
+	return ec.marshalNBlogLoginResponse2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋglobalᚐBlogLoginResponse(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Mutation_BlogAmendPost(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -5509,6 +5606,38 @@ func (ec *executionContext) _BlogCategory(ctx context.Context, sel ast.Selection
 	return out
 }
 
+var blogLoginResponseImplementors = []string{"BlogLoginResponse"}
+
+func (ec *executionContext) _BlogLoginResponse(ctx context.Context, sel ast.SelectionSet, obj *global.BlogLoginResponse) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, blogLoginResponseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	var invalids uint32
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("BlogLoginResponse")
+		case "user":
+			out.Values[i] = ec._BlogLoginResponse_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalids++
+			}
+		case "token":
+			out.Values[i] = ec._BlogLoginResponse_token(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalids > 0 {
+		return graphql.Null
+	}
+	return out
+}
+
 var blogPostImplementors = []string{"BlogPost"}
 
 func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet, obj *model.Post) graphql.Marshaler {
@@ -6747,6 +6876,20 @@ func (ec *executionContext) marshalNBlogCategory2ᚕᚖlaiskyᚑblogᚑgraphql�
 	}
 	wg.Wait()
 	return ret
+}
+
+func (ec *executionContext) marshalNBlogLoginResponse2laiskyᚑblogᚑgraphqlᚋinternalᚋglobalᚐBlogLoginResponse(ctx context.Context, sel ast.SelectionSet, v global.BlogLoginResponse) graphql.Marshaler {
+	return ec._BlogLoginResponse(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNBlogLoginResponse2ᚖlaiskyᚑblogᚑgraphqlᚋinternalᚋglobalᚐBlogLoginResponse(ctx context.Context, sel ast.SelectionSet, v *global.BlogLoginResponse) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	return ec._BlogLoginResponse(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNBlogPost2laiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost(ctx context.Context, sel ast.SelectionSet, v model.Post) graphql.Marshaler {

@@ -15,6 +15,7 @@ import (
 	"laisky-blog-graphql/library/jwt"
 	"laisky-blog-graphql/library/log"
 
+	ginMw "github.com/Laisky/gin-middlewares"
 	gutils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
 	jwtLib "github.com/form3tech-oss/jwt-go"
@@ -242,7 +243,8 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
-) (user *model.User, err error) {
+) (resp *global.BlogLoginResponse, err error) {
+	var user *model.User
 	if user, err = service.Instance.ValidateLogin(account, password); err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
@@ -258,12 +260,16 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 		DisplayName: user.Username,
 	}
 
-	if err = auth.Instance.SetLoginCookie(ctx, uc); err != nil {
+	var token string
+	if token, err = auth.Instance.SetLoginCookiev2(ctx, ginMw.WithAuthClaims(uc)); err != nil {
 		log.Logger.Error("try to set cookie got error", zap.Error(err))
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}
 
-	return user, nil
+	return &global.BlogLoginResponse{
+		User:  user,
+		Token: token,
+	}, nil
 }
 
 func (r *MutationResolver) BlogAmendPost(ctx context.Context,

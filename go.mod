@@ -5,7 +5,7 @@ go 1.16
 require (
 	cloud.google.com/go/firestore v1.3.0
 	github.com/99designs/gqlgen v0.13.0
-	github.com/Laisky/gin-middlewares v1.2.1-0.20211026083254-4d33142760f4
+	github.com/Laisky/gin-middlewares v1.2.1-0.20211111061132-db7b0d09e85b
 	github.com/Laisky/go-utils v1.15.1-0.20210917032536-aa76584858e2
 	github.com/Laisky/zap v1.12.3-0.20210804015521-853b5a8ec429
 	github.com/agnivade/levenshtein v1.1.0 // indirect

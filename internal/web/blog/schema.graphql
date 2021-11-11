@@ -47,3 +47,8 @@ type BlogPostSeries {
     posts: [BlogPost!]!
     children: [BlogPostSeries!]!
 }
+
+type BlogLoginResponse {
+    user: BlogUser!
+    token: String!
+}

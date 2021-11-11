@@ -5,8 +5,14 @@ package global
 import (
 	"fmt"
 	"io"
+	"laisky-blog-graphql/internal/web/blog/model"
 	"strconv"
 )
+
+type BlogLoginResponse struct {
+	User  *model.User `json:"user"`
+	Token string      `json:"token"`
+}
 
 type GeneralUser struct {
 	Name         string   `json:"name"`
