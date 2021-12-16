@@ -116,11 +116,11 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context, name string) (strin
 	p := posts[0]
 
 	// find image
-	var imgUrl string
+	var imgURL string
 	{
 		matched := markdownImgRe.FindStringSubmatch(p.Markdown)
 		if len(matched) == 2 {
-			imgUrl = matched[1]
+			imgURL = matched[1]
 		}
 	}
 
@@ -137,7 +137,7 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context, name string) (strin
 <meta name="twitter:title" content="%s">
 <meta name="twitter:image" content="%s">
 <meta name="twitter:site" content="https://blog.laisky.com/p/%s/">
-`, p.Title, imgUrl, name), nil
+`, p.Title, imgURL, name), nil
 }
 
 // ----------------

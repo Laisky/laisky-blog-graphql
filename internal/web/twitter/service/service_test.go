@@ -18,7 +18,8 @@ func TestType_LoadTweets(t *testing.T) {
 	config.LoadTest()
 	Initialize(ctx)
 
-	log.Logger.ChangeLevel(gutils.LoggerLevelDebug)
+	err := log.Logger.ChangeLevel(gutils.LoggerLevelDebug)
+	require.NoError(t, err)
 
 	ts, err := Instance.LoadTweets(&dto.LoadTweetArgs{
 		Regexp: "饥荒",
