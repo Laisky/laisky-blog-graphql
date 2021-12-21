@@ -18,7 +18,7 @@ import (
 	ginMw "github.com/Laisky/gin-middlewares"
 	gutils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
-	jwtLib "github.com/form3tech-oss/jwt-go"
+	jwtLib "github.com/golang-jwt/jwt/v4"
 	"github.com/pkg/errors"
 )
 
@@ -251,10 +251,14 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	}
 
 	uc := &jwt.UserClaims{
-		StandardClaims: jwtLib.StandardClaims{
-			Subject:   user.ID.Hex(),
-			IssuedAt:  gutils.Clock2.GetUTCNow().Unix(),
-			ExpiresAt: gutils.Clock.GetUTCNow().Add(7 * 24 * time.Hour).Unix(),
+		RegisteredClaims: jwtLib.RegisteredClaims{
+			Subject: user.ID.Hex(),
+			IssuedAt: &jwtLib.NumericDate{
+				Time: gutils.Clock.GetUTCNow(),
+			},
+			ExpiresAt: &jwtLib.NumericDate{
+				Time: gutils.Clock.GetUTCNow().Add(7 * 24 * time.Hour),
+			},
 		},
 		Username:    user.Account,
 		DisplayName: user.Username,

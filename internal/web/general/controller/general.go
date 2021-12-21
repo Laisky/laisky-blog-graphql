@@ -17,7 +17,7 @@ import (
 	ginMw "github.com/Laisky/gin-middlewares"
 	utils "github.com/Laisky/go-utils"
 	"github.com/Laisky/zap"
-	jwtLib "github.com/form3tech-oss/jwt-go"
+	jwtLib "github.com/golang-jwt/jwt/v4"
 	"github.com/pkg/errors"
 )
 
@@ -185,9 +185,11 @@ func (r *MutationResolver) CreateGeneralToken(ctx context.Context,
 	}
 
 	uc := &jwt.UserClaims{
-		StandardClaims: jwtLib.StandardClaims{
-			Subject:   username,
-			ExpiresAt: utils.Clock.GetUTCNow().Add(time.Duration(durationSec)).Unix(),
+		RegisteredClaims: jwtLib.RegisteredClaims{
+			Subject: username,
+			ExpiresAt: &jwtLib.NumericDate{
+				Time: utils.Clock.GetUTCNow().Add(time.Duration(durationSec)),
+			},
 		},
 	}
 	if token, err = jwt.Instance.Sign(uc); err != nil {

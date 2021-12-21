@@ -8,8 +8,8 @@ require (
 	github.com/Laisky/gin-middlewares v1.2.1-0.20211111075947-bf579c534df7
 	github.com/Laisky/go-utils v1.15.1-0.20210917032536-aa76584858e2
 	github.com/Laisky/zap v1.12.3-0.20210804015521-853b5a8ec429
-	github.com/form3tech-oss/jwt-go v3.2.5+incompatible
 	github.com/gin-gonic/gin v1.7.7
+	github.com/golang-jwt/jwt/v4 v4.2.0
 	github.com/gomarkdown/markdown v0.0.0-20200824053859-8c8b3816f167
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.0.0
