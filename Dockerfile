@@ -1,4 +1,4 @@
-FROM golang:1.17.6-buster AS gobuild
+FROM golang:1.17.8-bullseye AS gobuild
 
 # install dependencies
 RUN apt-get update \
@@ -17,7 +17,7 @@ RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
 
 
 # copy executable file and certs to a pure container
-FROM debian:buster
+FROM debian:bullseye
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates haveged \
