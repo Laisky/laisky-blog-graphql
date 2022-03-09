@@ -6,7 +6,7 @@ import (
 	"github.com/Laisky/zap"
 )
 
-var Logger *gutils.LoggerType
+var Logger gutils.LoggerItf
 
 func init() {
 	var err error
