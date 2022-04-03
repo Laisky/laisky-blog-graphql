@@ -17,7 +17,7 @@ RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
 
 
 # copy executable file and certs to a pure container
-FROM debian:bullseye
+FROM debian:11
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates haveged \
