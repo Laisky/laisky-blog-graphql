@@ -1,16 +1,16 @@
 package jwt
 
 import (
-	"github.com/Laisky/go-utils"
+	gjwt "github.com/Laisky/go-utils/v2/jwt"
 	"github.com/pkg/errors"
 )
 
-var Instance *utils.JWT
+var Instance gjwt.JWT
 
 func Initialize(secret []byte) (err error) {
-	if Instance, err = utils.NewJWT(
-		utils.WithJWTSecretByte(secret),
-		utils.WithJWTSignMethod(utils.SignMethodHS256),
+	if Instance, err = gjwt.New(
+		gjwt.WithSecretByte(secret),
+		gjwt.WithSignMethod(gjwt.SignMethodHS256),
 	); err != nil {
 		return errors.Wrap(err, "new jwt")
 	}

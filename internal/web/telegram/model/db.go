@@ -6,7 +6,7 @@ import (
 	"laisky-blog-graphql/library/db"
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
+	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"
 )
 
@@ -18,10 +18,10 @@ func Initialize(ctx context.Context) {
 
 	var err error
 	if MonitorDB, err = db.NewMongoDB(ctx,
-		gutils.Settings.GetString("settings.db.monitor.addr"),
-		gutils.Settings.GetString("settings.db.monitor.db"),
-		gutils.Settings.GetString("settings.db.monitor.user"),
-		gutils.Settings.GetString("settings.db.monitor.pwd"),
+		gconfig.Shared.GetString("settings.db.monitor.addr"),
+		gconfig.Shared.GetString("settings.db.monitor.db"),
+		gconfig.Shared.GetString("settings.db.monitor.user"),
+		gconfig.Shared.GetString("settings.db.monitor.pwd"),
 	); err != nil {
 		log.Logger.Panic("connect to monitor db", zap.Error(err))
 	}

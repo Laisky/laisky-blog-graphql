@@ -2,15 +2,16 @@
 package log
 
 import (
-	gutils "github.com/Laisky/go-utils"
+	"github.com/Laisky/go-utils/v2/log"
+	glog "github.com/Laisky/go-utils/v2/log"
 	"github.com/Laisky/zap"
 )
 
-var Logger gutils.LoggerItf
+var Logger glog.Logger
 
 func init() {
 	var err error
-	if Logger, err = gutils.NewConsoleLoggerWithName("graphql", gutils.LoggerLevelDebug); err != nil {
-		gutils.Logger.Panic("new logger", zap.Error(err))
+	if Logger, err = glog.NewConsoleWithName("graphql", glog.LevelDebug); err != nil {
+		log.Shared.Panic("new logger", zap.Error(err))
 	}
 }

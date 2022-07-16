@@ -8,7 +8,7 @@ import (
 
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
+	gutils "github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"
 )
 

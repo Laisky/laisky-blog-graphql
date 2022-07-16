@@ -6,7 +6,7 @@ import (
 	"laisky-blog-graphql/library/log"
 	"laisky-blog-graphql/library/throttle"
 
-	gutils "github.com/Laisky/go-utils"
+	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"
 )
 
@@ -17,16 +17,16 @@ var (
 func setupTelegramThrottle(ctx context.Context) {
 	var err error
 	if telegramThrottle, err = throttle.NewTelegramThrottle(ctx, &throttle.TelegramThrottleCfg{
-		TotleBurst:       gutils.Settings.GetInt("settings.telegram.throttle.total_burst"),
-		TotleNPerSec:     gutils.Settings.GetInt("settings.telegram.throttle.total_per_sec"),
-		EachTitleNPerSec: gutils.Settings.GetInt("settings.telegram.throttle.each_title_per_sec"),
-		EachTitleBurst:   gutils.Settings.GetInt("settings.telegram.throttle.each_title_burst"),
+		TotleBurst:       gconfig.Shared.GetInt("settings.telegram.throttle.total_burst"),
+		TotleNPerSec:     gconfig.Shared.GetInt("settings.telegram.throttle.total_per_sec"),
+		EachTitleNPerSec: gconfig.Shared.GetInt("settings.telegram.throttle.each_title_per_sec"),
+		EachTitleBurst:   gconfig.Shared.GetInt("settings.telegram.throttle.each_title_burst"),
 	}); err != nil {
 		log.Logger.Panic("create telegramThrottle", zap.Error(err),
-			zap.Int("TotleBurst", gutils.Settings.GetInt("settings.telegram.throttle.total_burst")),
-			zap.Int("TotleNPerSec", gutils.Settings.GetInt("settings.telegram.throttle.total_per_sec")),
-			zap.Int("EachTitleNPerSec", gutils.Settings.GetInt("settings.telegram.throttle.each_title_per_sec")),
-			zap.Int("EachTitleBurst", gutils.Settings.GetInt("settings.telegram.throttle.each_title_burst")),
+			zap.Int("TotleBurst", gconfig.Shared.GetInt("settings.telegram.throttle.total_burst")),
+			zap.Int("TotleNPerSec", gconfig.Shared.GetInt("settings.telegram.throttle.total_per_sec")),
+			zap.Int("EachTitleNPerSec", gconfig.Shared.GetInt("settings.telegram.throttle.each_title_per_sec")),
+			zap.Int("EachTitleBurst", gconfig.Shared.GetInt("settings.telegram.throttle.each_title_burst")),
 		)
 	}
 }

@@ -14,8 +14,10 @@ import (
 	"laisky-blog-graphql/library/jwt"
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
-	gcmd "github.com/Laisky/go-utils/cmd"
+	gconfig "github.com/Laisky/go-config"
+	gutils "github.com/Laisky/go-utils/v2"
+	gcmd "github.com/Laisky/go-utils/v2/cmd"
+	glog "github.com/Laisky/go-utils/v2/log"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -29,7 +31,7 @@ var rootCMD = &cobra.Command{
 }
 
 func initialize(ctx context.Context, cmd *cobra.Command) error {
-	if err := gutils.Settings.BindPFlags(cmd.Flags()); err != nil {
+	if err := gconfig.Shared.BindPFlags(cmd.Flags()); err != nil {
 		return errors.Wrap(err, "bind pflags")
 	}
 
@@ -49,11 +51,11 @@ func setupModules(ctx context.Context) {
 }
 
 func setupLibrary(ctx context.Context) {
-	if err := auth.Initialize([]byte(gutils.Settings.GetString("settings.secret"))); err != nil {
+	if err := auth.Initialize([]byte(gconfig.Shared.GetString("settings.secret"))); err != nil {
 		log.Logger.Panic("init jwt", zap.Error(err))
 	}
 
-	if err := jwt.Initialize([]byte(gutils.Settings.GetString("settings.secret"))); err != nil {
+	if err := jwt.Initialize([]byte(gconfig.Shared.GetString("settings.secret"))); err != nil {
 		log.Logger.Panic("setup jwt", zap.Error(err))
 	}
 
@@ -61,9 +63,9 @@ func setupLibrary(ctx context.Context) {
 
 func setupSettings(ctx context.Context) {
 	// mode
-	if gutils.Settings.GetBool("debug") {
+	if gconfig.Shared.GetBool("debug") {
 		fmt.Println("run in debug mode")
-		gutils.Settings.Set("log-level", "debug")
+		gconfig.Shared.Set("log-level", "debug")
 	} else { // prod mode
 		fmt.Println("run in prod mode")
 	}
@@ -72,7 +74,7 @@ func setupSettings(ctx context.Context) {
 	gutils.SetInternalClock(100 * time.Millisecond)
 
 	// load configuration
-	cfgPath := gutils.Settings.GetString("config")
+	cfgPath := gconfig.Shared.GetString("config")
 	config.LoadFromFile(cfgPath)
 }
 
@@ -80,9 +82,9 @@ func setupLogger(ctx context.Context) {
 	// log
 	// alertPusher, err := gutils.NewAlertPusherWithAlertType(
 	// 	ctx,
-	// 	gutils.Settings.GetString("settings.logger.push_api"),
-	// 	gutils.Settings.GetString("settings.logger.alert_type"),
-	// 	gutils.Settings.GetString("settings.logger.push_token"),
+	// 	gconfig.Shared.GetString("settings.logger.push_api"),
+	// 	gconfig.Shared.GetString("settings.logger.alert_type"),
+	// 	gconfig.Shared.GetString("settings.logger.push_token"),
 	// )
 	// if err != nil {
 	// 	log.Logger.Panic("create AlertPusher", zap.Error(err))
@@ -92,8 +94,8 @@ func setupLogger(ctx context.Context) {
 	// 	zap.HooksWithFields(alertPusher.GetZapHook()),
 	// ).Named("laisky-graphql")
 
-	lvl := gutils.Settings.GetString("log-level")
-	if err := log.Logger.ChangeLevel(lvl); err != nil {
+	lvl := gconfig.Shared.GetString("log-level")
+	if err := log.Logger.ChangeLevel(glog.Level(lvl)); err != nil {
 		log.Logger.Panic("change log level", zap.Error(err), zap.String("level", lvl))
 	}
 }
@@ -111,6 +113,6 @@ func init() {
 
 func Execute() {
 	if err := rootCMD.Execute(); err != nil {
-		gutils.Logger.Panic("start", zap.Error(err))
+		glog.Shared.Panic("start", zap.Error(err))
 	}
 }

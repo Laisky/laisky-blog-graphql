@@ -10,7 +10,8 @@ import (
 	"laisky-blog-graphql/internal/web/telegram/dao"
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
+	gconfig "github.com/Laisky/go-config"
+	gutils "github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	tb "gopkg.in/tucnak/telebot.v2"
@@ -19,7 +20,7 @@ import (
 var Instance *Type
 
 func Initialize(ctx context.Context) {
-	if !gutils.InArray(gutils.Settings.GetStringSlice("tasks"), "telegram") {
+	if !gutils.InArray(gconfig.Shared.GetStringSlice("tasks"), "telegram") {
 		return
 	}
 
@@ -29,8 +30,8 @@ func Initialize(ctx context.Context) {
 	if Instance, err = New(
 		ctx,
 		dao.Instance,
-		gutils.Settings.GetString("settings.telegram.token"),
-		gutils.Settings.GetString("settings.telegram.api"),
+		gconfig.Shared.GetString("settings.telegram.token"),
+		gconfig.Shared.GetString("settings.telegram.api"),
 	); err != nil {
 		log.Logger.Panic("new telegram", zap.Error(err))
 	}

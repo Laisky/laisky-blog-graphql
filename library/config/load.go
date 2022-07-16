@@ -5,13 +5,13 @@ import (
 
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
+	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"
 )
 
 func LoadFromFile(cfgPath string) {
-	gutils.Settings.Set("cfg_dir", filepath.Dir(cfgPath))
-	if err := gutils.Settings.LoadFromFile(cfgPath); err != nil {
+	gconfig.Shared.Set("cfg_dir", filepath.Dir(cfgPath))
+	if err := gconfig.Shared.LoadFromFile(cfgPath); err != nil {
 		log.Logger.Panic("load configuration",
 			zap.Error(err),
 			zap.String("config", cfgPath))

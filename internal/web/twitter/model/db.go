@@ -9,7 +9,7 @@ import (
 	"laisky-blog-graphql/library/db"
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
+	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
@@ -24,10 +24,10 @@ var (
 func Initialize(ctx context.Context) {
 	var err error
 	if TwitterDB, err = db.NewMongoDB(ctx,
-		gutils.Settings.GetString("settings.db.twitter.addr"),
-		gutils.Settings.GetString("settings.db.twitter.db"),
-		gutils.Settings.GetString("settings.db.twitter.user"),
-		gutils.Settings.GetString("settings.db.twitter.pwd"),
+		gconfig.Shared.GetString("settings.db.twitter.addr"),
+		gconfig.Shared.GetString("settings.db.twitter.db"),
+		gconfig.Shared.GetString("settings.db.twitter.user"),
+		gconfig.Shared.GetString("settings.db.twitter.pwd"),
 	); err != nil {
 		log.Logger.Panic("connect to twitter db", zap.Error(err))
 	}
@@ -41,7 +41,7 @@ func Initialize(ctx context.Context) {
 
 	if SearchDB, err = gorm.Open(
 		clickhouse.New(clickhouse.Config{
-			DSN:                    gutils.Settings.GetString("settings.db.clickhouse.dsn"),
+			DSN:                    gconfig.Shared.GetString("settings.db.clickhouse.dsn"),
 			DefaultTableEngineOpts: "ENGINE=Log()",
 		}),
 		&gorm.Config{

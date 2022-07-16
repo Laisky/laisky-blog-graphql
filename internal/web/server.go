@@ -10,8 +10,8 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
-	ginMw "github.com/Laisky/gin-middlewares"
-	utils "github.com/Laisky/go-utils"
+	ginMw "github.com/Laisky/gin-middlewares/v2"
+	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -25,11 +25,13 @@ var (
 
 func RunServer(addr string) {
 	server.Use(gin.Recovery())
-	if !utils.Settings.GetBool("debug") {
+	if !gconfig.Shared.GetBool("debug") {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	server.Use(ginMw.GetLoggerMiddleware(log.Logger.Named("gin")))
+	server.Use(ginMw.NewLoggerMiddleware(
+		ginMw.WithLogger(log.Logger.Named("gin")),
+	))
 	if err := ginMw.EnableMetric(server); err != nil {
 		log.Logger.Panic("enable metric server", zap.Error(err))
 	}

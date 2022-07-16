@@ -7,7 +7,7 @@ import (
 	"laisky-blog-graphql/library/db"
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
+	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"
 	"google.golang.org/api/option"
 )
@@ -21,10 +21,10 @@ func Initialize(ctx context.Context) {
 	var err error
 	if GeneralDB, err = db.NewFirestore(
 		ctx,
-		gutils.Settings.GetString("settings.general.project_id"),
+		gconfig.Shared.GetString("settings.general.project_id"),
 		option.WithCredentialsFile(filepath.Join(
-			gutils.Settings.GetString("cfg_dir"),
-			gutils.Settings.GetString("settings.general.credential_file"),
+			gconfig.Shared.GetString("cfg_dir"),
+			gconfig.Shared.GetString("settings.general.credential_file"),
 		)),
 	); err != nil {
 		log.Logger.Panic("create firestore client", zap.Error(err))
