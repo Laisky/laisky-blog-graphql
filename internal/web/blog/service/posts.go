@@ -8,7 +8,7 @@ import (
 
 	"laisky-blog-graphql/library/log"
 
-	"github.com/Laisky/go-utils"
+	"github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"

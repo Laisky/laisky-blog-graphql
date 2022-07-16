@@ -14,8 +14,9 @@ import (
 	"laisky-blog-graphql/library/jwt"
 	"laisky-blog-graphql/library/log"
 
-	ginMw "github.com/Laisky/gin-middlewares"
-	utils "github.com/Laisky/go-utils"
+	ginMw "github.com/Laisky/gin-middlewares/v2"
+	gconfig "github.com/Laisky/go-config"
+	gutils "github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"
 	jwtLib "github.com/golang-jwt/jwt/v4"
 	"github.com/pkg/errors"
@@ -64,7 +65,7 @@ func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (u
 		prefixes []string
 	)
 	if username != "" {
-		if prefixes = utils.Settings.GetStringSlice(
+		if prefixes = gconfig.Shared.GetStringSlice(
 			"settings.general.locks.user_prefix_map." + username); prefixes != nil {
 			users = append(users, &global.GeneralUser{
 				LockPrefixes: prefixes,
@@ -74,11 +75,11 @@ func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (u
 		return nil, errors.Errorf("user `%v` not exists", username)
 	}
 
-	for username = range utils.Settings.GetStringMap(
+	for username = range gconfig.Shared.GetStringMap(
 		"settings.general.locks.user_prefix_map") {
 		users = append(users, &global.GeneralUser{
 			Name: username,
-			LockPrefixes: utils.Settings.GetStringSlice(
+			LockPrefixes: gconfig.Shared.GetStringSlice(
 				"settings.general.locks.user_prefix_map." + username),
 		})
 	}
@@ -98,7 +99,7 @@ func (r *LocksResolver) ExpiresAt(ctx context.Context,
 // ============================
 
 func validateLockName(ownerName, lockName string) (ok bool) {
-	for _, prefix := range utils.Settings.GetStringSlice(
+	for _, prefix := range gconfig.Shared.GetStringSlice(
 		"settings.general.locks.user_prefix_map." + ownerName) {
 		if strings.HasPrefix(lockName, prefix) {
 			return true
@@ -139,9 +140,9 @@ func (r *MutationResolver) AcquireLock(ctx context.Context,
 	durationSec int,
 	isRenewal *bool,
 ) (ok bool, err error) {
-	if durationSec > utils.Settings.GetInt("settings.general.locks.max_duration_sec") {
+	if durationSec > gconfig.Shared.GetInt("settings.general.locks.max_duration_sec") {
 		return ok, fmt.Errorf("duration sec should less than %v",
-			utils.Settings.GetInt("settings.general.locks.max_duration_sec"))
+			gconfig.Shared.GetInt("settings.general.locks.max_duration_sec"))
 	}
 
 	var username string
@@ -188,7 +189,7 @@ func (r *MutationResolver) CreateGeneralToken(ctx context.Context,
 		RegisteredClaims: jwtLib.RegisteredClaims{
 			Subject: username,
 			ExpiresAt: &jwtLib.NumericDate{
-				Time: utils.Clock.GetUTCNow().Add(time.Duration(durationSec)),
+				Time: gutils.Clock.GetUTCNow().Add(time.Duration(durationSec)),
 			},
 		},
 	}

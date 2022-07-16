@@ -9,7 +9,7 @@ import (
 	"laisky-blog-graphql/library/config"
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
+	glog "github.com/Laisky/go-utils/v2/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +18,7 @@ func TestType_LoadTweets(t *testing.T) {
 	config.LoadTest()
 	Initialize(ctx)
 
-	err := log.Logger.ChangeLevel(gutils.LoggerLevelDebug)
+	err := log.Logger.ChangeLevel(glog.LevelDebug)
 	require.NoError(t, err)
 
 	ts, err := Instance.LoadTweets(&dto.LoadTweetArgs{

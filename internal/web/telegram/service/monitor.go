@@ -10,7 +10,7 @@ import (
 	"laisky-blog-graphql/internal/web/telegram/model"
 	"laisky-blog-graphql/library/log"
 
-	"github.com/Laisky/go-utils"
+	"github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	tb "gopkg.in/tucnak/telebot.v2"

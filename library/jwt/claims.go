@@ -3,7 +3,7 @@ package jwt
 import (
 	"fmt"
 
-	"github.com/Laisky/go-utils"
+	"github.com/Laisky/go-utils/v2"
 	"github.com/golang-jwt/jwt/v4"
 )
 

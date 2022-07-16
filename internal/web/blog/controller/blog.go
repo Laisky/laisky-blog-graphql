@@ -15,8 +15,8 @@ import (
 	"laisky-blog-graphql/library/jwt"
 	"laisky-blog-graphql/library/log"
 
-	ginMw "github.com/Laisky/gin-middlewares"
-	gutils "github.com/Laisky/go-utils"
+	ginMw "github.com/Laisky/gin-middlewares/v2"
+	gutils "github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"
 	jwtLib "github.com/golang-jwt/jwt/v4"
 	"github.com/pkg/errors"
@@ -265,7 +265,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	}
 
 	var token string
-	if token, err = auth.Instance.SetLoginCookiev2(ctx, ginMw.WithAuthClaims(uc)); err != nil {
+	if token, err = auth.Instance.SetLoginCookie(ctx, ginMw.WithAuthClaims(uc)); err != nil {
 		log.Logger.Error("try to set cookie got error", zap.Error(err))
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}

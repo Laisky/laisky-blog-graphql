@@ -14,7 +14,8 @@ import (
 	"laisky-blog-graphql/library/jwt"
 	"laisky-blog-graphql/library/log"
 
-	"github.com/Laisky/go-utils"
+	gconfig "github.com/Laisky/go-config"
+	"github.com/Laisky/go-utils/v2/encrypt"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	mgo "gopkg.in/mgo.v2"
@@ -304,7 +305,7 @@ func (s *Type) NewPost(authorID bson.ObjectId, title, name, md, ptype string) (p
 	}
 	p.Menu = ExtractMenu(p.Content)
 
-	if utils.Settings.GetBool("dry") {
+	if gconfig.Shared.GetBool("dry") {
 		log.Logger.Info("insert post",
 			zap.String("title", p.Title),
 			zap.String("name", p.Name),
@@ -333,7 +334,7 @@ func (s *Type) ValidateLogin(account, password string) (u *model.User, err error
 		return nil, err
 	}
 
-	if utils.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
+	if encrypt.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
 		log.Logger.Debug("user login", zap.String("user", u.Account))
 		return u, nil
 	}

@@ -12,7 +12,7 @@ import (
 	"laisky-blog-graphql/library"
 	"laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils"
+	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"
 )
 
@@ -122,7 +122,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		return nil, fmt.Errorf("deny by throttle")
 	}
 
-	maxlen := gutils.Settings.GetInt("settings.telegram.max_len")
+	maxlen := gconfig.Shared.GetInt("settings.telegram.max_len")
 	if len(msg) > maxlen {
 		msg = msg[:maxlen] + " ..."
 	}
