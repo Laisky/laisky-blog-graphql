@@ -63,16 +63,14 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/ClickHouse/clickhouse-go v1.4.5 h1:FfhyEnv6/BaWldyjgT2k4gDDmeNwJ9C4NbY/MXxJlXk=
 github.com/ClickHouse/clickhouse-go v1.4.5/go.mod h1:EaI/sW7Azgz9UATzd5ZdZHRUhHgv5+JMS9NSr2smCJI=
-github.com/Laisky/fast-skiplist v0.0.0-20210907063351-e00546c800a6 h1:V3MNilKNjNVKwBiMLsDCa6dFbA5gROE7TYxJJBXkwTc=
-github.com/Laisky/fast-skiplist v0.0.0-20210907063351-e00546c800a6/go.mod h1:BdpS7FU5kzp0QV/dtCWheAV5rIOQu+Jb+uoVuVWZOvU=
 github.com/Laisky/gin-middlewares/v2 v2.0.1-0.20220716101140-5ae26de20ec8 h1:sQaM2K0Esm6RB4JeAsTfLvAKBT+IEaQ2yglOilYn298=
 github.com/Laisky/gin-middlewares/v2 v2.0.1-0.20220716101140-5ae26de20ec8/go.mod h1:vbSbGwm75kc16jRftdrp9aLKf5sRLNp3W6p9Dh2xUco=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be h1:7Rxhm6IjOtDAyj8eScOFntevwzkWhx94zi48lxo4m4w=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be/go.mod h1:1mdzaETo0kjvCQICPSePsoaatJN4l7JvEA1200lyevo=
 github.com/Laisky/go-config v1.0.0 h1:3PF36k6YhCDcXv6L2lGdZbYN40ZGDdjSul5lkJPdjro=
 github.com/Laisky/go-config v1.0.0/go.mod h1:PiSkH2AOAm74GApn4WbALA2Jy4TcJlQXGgByUOW8DEo=
-github.com/Laisky/go-utils/v2 v2.0.4-0.20220716063848-24b7b7edf910 h1:JIqmR0CpMRmNOKNM0TmaN0lcDH4Mf0i8/GsY6b8U780=
-github.com/Laisky/go-utils/v2 v2.0.4-0.20220716063848-24b7b7edf910/go.mod h1:IO4H55q56hzc8T72TTW5PrqESRrMhYrd18YNyyCV+Ao=
+github.com/Laisky/go-utils/v2 v2.0.4-0.20220717150342-fa3fb3b5eca9 h1:ydJR026HxfX5BjURviQA8AEz9d0C00iJu/VEOuCCV7Y=
+github.com/Laisky/go-utils/v2 v2.0.4-0.20220717150342-fa3fb3b5eca9/go.mod h1:0LW/Yye/Urug5I7SeYvNG7eeEIqhRYMHD961xMJyfN8=
 github.com/Laisky/graphql v1.0.5 h1:8eJ7mrXKVkKxZ+Nw1HPs3iQPVNxXGctysqTEY0lNBlc=
 github.com/Laisky/graphql v1.0.5/go.mod h1:ITUrUa/tkyD3MezVt4FKGGIGZokhG13kP8sImV86I1o=
 github.com/Laisky/zap v1.19.3-0.20220707055623-fe1750cd1b41 h1:mqeq1N2tzscftZeDXKtxMqK8vNbo9JjGvLrUs1T80I4=
@@ -141,8 +139,6 @@ github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7
 github.com/frankban/quicktest v1.14.3 h1:FJKSZTDHjyhriyC81FLQ0LY93eSai0ZyR/ZIkd3ZUKE=
 github.com/fsnotify/fsnotify v1.5.4 h1:jRbGcIw6P2Meqdwuo0H1p6JVLbL5DHKAKlYndzMwVZI=
 github.com/fsnotify/fsnotify v1.5.4/go.mod h1:OVB6XrOHzAwXMpEM7uPOzcehqUV2UqJxmVXmkdnm1bU=
-github.com/gammazero/deque v0.1.1 h1:xRVkDuSvDmFuMGf3IquHuRc2jlL0+v/WpFCWaauzwbE=
-github.com/gammazero/deque v0.1.1/go.mod h1:KQw7vFau1hHuM8xmI9RbgKFbAsQFWmBpqQ2KenFLk6M=
 github.com/ghodss/yaml v1.0.0/go.mod h1:4dBDuWmgqj2HViK6kFavaiC9ZROes6MMH2rRYeMEF04=
 github.com/gin-contrib/pprof v1.3.0 h1:G9eK6HnbkSqDZBYbzG4wrjCsA4e+cvYAHUZw6W+W9K0=
 github.com/gin-contrib/pprof v1.3.0/go.mod h1:waMjT1H9b179t3CxuG1cV3DHpga6ybizwfBaM5OXaB0=

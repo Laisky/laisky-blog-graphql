@@ -7,7 +7,7 @@ require (
 	github.com/99designs/gqlgen v0.13.0
 	github.com/Laisky/gin-middlewares/v2 v2.0.1-0.20220716101140-5ae26de20ec8
 	github.com/Laisky/go-config v1.0.0
-	github.com/Laisky/go-utils/v2 v2.0.4-0.20220716063848-24b7b7edf910
+	github.com/Laisky/go-utils/v2 v2.0.4-0.20220717150342-fa3fb3b5eca9
 	github.com/Laisky/zap v1.19.3-0.20220707055623-fe1750cd1b41
 	github.com/gin-gonic/gin v1.7.7
 	github.com/golang-jwt/jwt/v4 v4.4.2
@@ -27,7 +27,6 @@ require (
 	cloud.google.com/go v0.100.2 // indirect
 	cloud.google.com/go/compute v1.6.1 // indirect
 	github.com/ClickHouse/clickhouse-go v1.4.5 // indirect
-	github.com/Laisky/fast-skiplist v0.0.0-20210907063351-e00546c800a6 // indirect
 	github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be // indirect
 	github.com/Laisky/graphql v1.0.5 // indirect
 	github.com/agnivade/levenshtein v1.0.3 // indirect
@@ -37,7 +36,6 @@ require (
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
-	github.com/gammazero/deque v0.1.1 // indirect
 	github.com/gin-contrib/pprof v1.3.0 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-playground/locales v0.13.0 // indirect
