@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultTimeout         = 3 * time.Second
+	defaultTimeout         = 30 * time.Second
 	reconnectCheckInterval = 5 * time.Second
 )
 
