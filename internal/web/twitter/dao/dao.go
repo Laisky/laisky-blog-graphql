@@ -8,12 +8,12 @@ import (
 
 var (
 	InstanceTweets *Tweets
-	InstanceSearch *Search
+	InstanceSearch Search
 )
 
 func Initialize(ctx context.Context) {
 	model.Initialize(ctx)
 
 	InstanceTweets = NewTweets(model.TwitterDB)
-	InstanceSearch = NewSearch(model.SearchDB)
+	InstanceSearch = NewSQLSearch(model.SearchDB)
 }

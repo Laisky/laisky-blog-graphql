@@ -2,16 +2,15 @@
 package log
 
 import (
-	"github.com/Laisky/go-utils/v2/log"
-	glog "github.com/Laisky/go-utils/v2/log"
+	logSDK "github.com/Laisky/go-utils/v2/log"
 	"github.com/Laisky/zap"
 )
 
-var Logger glog.Logger
+var Logger logSDK.Logger
 
 func init() {
 	var err error
-	if Logger, err = glog.NewConsoleWithName("graphql", glog.LevelDebug); err != nil {
-		log.Shared.Panic("new logger", zap.Error(err))
+	if Logger, err = logSDK.NewConsoleWithName("graphql", logSDK.LevelDebug); err != nil {
+		logSDK.Shared.Panic("new logger", zap.Error(err))
 	}
 }

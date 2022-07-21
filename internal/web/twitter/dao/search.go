@@ -7,17 +7,21 @@ import (
 	"gorm.io/gorm"
 )
 
-type Search struct {
+type Search interface {
+	SearchByText(text string) (tweetIDs []string, err error)
+}
+
+type sqlSearch struct {
 	db *gorm.DB
 }
 
-func NewSearch(db *gorm.DB) *Search {
-	return &Search{
+func NewSQLSearch(db *gorm.DB) Search {
+	return &sqlSearch{
 		db: db,
 	}
 }
 
-func (s *Search) SearchByText(text string) (tweetIDs []string, err error) {
+func (s *sqlSearch) SearchByText(text string) (tweetIDs []string, err error) {
 	var tweets []model.SearchTweet
 	err = s.db.Model(model.SearchTweet{}).
 		// Where("text LIKE ?", "%"+text+"%").

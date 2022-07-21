@@ -21,15 +21,16 @@ var Instance *Type
 func Initialize(ctx context.Context) {
 	dao.Initialize(ctx)
 
-	Instance = New(dao.InstanceTweets, dao.InstanceSearch)
+	// Instance = New(dao.InstanceTweets, dao.InstanceSearch)
+	Instance = New(dao.InstanceTweets, dao.InstanceTweets)
 }
 
 type Type struct {
 	tweetDao  *dao.Tweets
-	searchDao *dao.Search
+	searchDao dao.Search
 }
 
-func New(tweet *dao.Tweets, search *dao.Search) *Type {
+func New(tweet *dao.Tweets, search dao.Search) *Type {
 	return &Type{
 		tweetDao:  tweet,
 		searchDao: search,
