@@ -1,5 +1,4 @@
 // Package telegram is telegram server.
-//
 package service
 
 import (

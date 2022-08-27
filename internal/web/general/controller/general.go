@@ -112,6 +112,7 @@ func validateLockName(ownerName, lockName string) (ok bool) {
 /*
 token (`general` in cookie):
 ::
+
 	{
 		"uid": "laisky",
 		"exp": 4701974400

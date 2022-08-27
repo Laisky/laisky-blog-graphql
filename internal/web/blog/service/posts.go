@@ -8,7 +8,6 @@ import (
 
 	"laisky-blog-graphql/library/log"
 
-	"github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"
@@ -69,8 +68,7 @@ func ParseMarkdown2HTML(md []byte) (cnt string) {
 			log.Logger.Error("unknown title level", zap.String("lev", tlev))
 		}
 
-		tid = url.QueryEscape(tid) + "-" + utils.RandomStringWithLength(5)
-		// tid = utils.RandomStringWithLength(15)
+		tid = url.QueryEscape(tid)
 		cnt = strings.ReplaceAll(cnt, tl, `<`+tlev+` id="`+tid+`">`+ttext+`</`+tlev+`>`)
 	}
 	return cnt

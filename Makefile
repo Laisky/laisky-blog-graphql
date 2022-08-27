@@ -5,10 +5,10 @@ install:
 	go install github.com/go-bindata/go-bindata@latest
 
 gen:
-	go install github.com/99designs/gqlgen/cmd@v0.13.0
+	go install github.com/99designs/gqlgen@latest
 	go install github.com/vektah/gqlparser/v2@v2.1.0
-	go install github.com/99designs/gqlgen
-	go run github.com/99designs/gqlgen
+	# go install github.com/99designs/gqlgen
+	go run github.com/99designs/gqlgen init
 
 test:
 	@tox --recreate

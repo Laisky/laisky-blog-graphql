@@ -280,10 +280,10 @@ func (s *Type) IsNameExists(name string) (bool, error) {
 }
 
 // NewPost insert new post
-//   * title: post title
-//   * name: post url
-//   * md: post markdown content
-//   * ptype: post type, markdown/slide
+//   - title: post title
+//   - name: post url
+//   - md: post markdown content
+//   - ptype: post type, markdown/slide
 func (s *Type) NewPost(authorID bson.ObjectId, title, name, md, ptype string) (post *model.Post, err error) {
 	if isExists, err := s.IsNameExists(name); err != nil {
 		return nil, err
