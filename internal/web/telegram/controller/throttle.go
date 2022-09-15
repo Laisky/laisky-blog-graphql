@@ -3,8 +3,8 @@ package telegram
 import (
 	"context"
 
-	"laisky-blog-graphql/library/log"
-	"laisky-blog-graphql/library/throttle"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/throttle"
 
 	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"

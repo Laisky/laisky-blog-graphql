@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strconv"
 
-	"laisky-blog-graphql/internal/global"
-	"laisky-blog-graphql/internal/web/telegram/dto"
-	"laisky-blog-graphql/internal/web/telegram/model"
-	"laisky-blog-graphql/internal/web/telegram/service"
-	"laisky-blog-graphql/library"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
+	"github.com/Laisky/laisky-blog-graphql/library"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"

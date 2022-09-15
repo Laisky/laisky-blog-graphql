@@ -3,7 +3,7 @@ package dao
 import (
 	"context"
 
-	"laisky-blog-graphql/internal/web/twitter/model"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 )
 
 var (

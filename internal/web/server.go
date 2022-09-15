@@ -16,7 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 var (

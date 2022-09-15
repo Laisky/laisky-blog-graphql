@@ -1,4 +1,4 @@
-module laisky-blog-graphql
+module github.com/Laisky/laisky-blog-graphql
 
 go 1.19
 

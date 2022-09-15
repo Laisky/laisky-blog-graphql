@@ -7,7 +7,7 @@ import (
 	"io"
 	"strconv"
 
-	"laisky-blog-graphql/internal/web/blog/model"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
 
 type BlogLoginResponse struct {

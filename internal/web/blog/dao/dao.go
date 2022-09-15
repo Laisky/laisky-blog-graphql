@@ -5,8 +5,8 @@ import (
 
 	"gopkg.in/mgo.v2"
 
-	"laisky-blog-graphql/internal/web/blog/model"
-	"laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	"github.com/Laisky/laisky-blog-graphql/library/db"
 )
 
 const (

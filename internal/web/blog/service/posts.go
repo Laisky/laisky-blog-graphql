@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/zap"
 	"github.com/gomarkdown/markdown"

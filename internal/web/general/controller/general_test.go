@@ -5,7 +5,7 @@ package controller
 // 	"reflect"
 // 	"testing"
 
-// 	"laisky-blog-graphql/internal/web/general"
+// 	"github.com/Laisky/laisky-blog-graphql/internal/web/general"
 // )
 
 // func Test_queryResolver_Lock(t *testing.T) {

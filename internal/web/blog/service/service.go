@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"laisky-blog-graphql/internal/web/blog/dao"
-	"laisky-blog-graphql/internal/web/blog/dto"
-	"laisky-blog-graphql/internal/web/blog/model"
-	"laisky-blog-graphql/library/auth"
-	"laisky-blog-graphql/library/jwt"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	"github.com/Laisky/laisky-blog-graphql/library/auth"
+	"github.com/Laisky/laisky-blog-graphql/library/jwt"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/go-utils/v2/encrypt"

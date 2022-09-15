@@ -2,7 +2,7 @@
 package dao
 
 import (
-	"laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/library/db"
 
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"

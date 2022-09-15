@@ -1,7 +1,7 @@
 package dao
 
 import (
-	"laisky-blog-graphql/internal/web/twitter/model"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 
 	"github.com/pkg/errors"
 	"gorm.io/gorm"

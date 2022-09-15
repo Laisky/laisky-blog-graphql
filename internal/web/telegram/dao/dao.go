@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"laisky-blog-graphql/internal/web/telegram/dto"
-	"laisky-blog-graphql/internal/web/telegram/model"
-	"laisky-blog-graphql/library/db"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
+	"github.com/Laisky/laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"

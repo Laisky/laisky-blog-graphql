@@ -5,10 +5,10 @@ import (
 	"context"
 	"strconv"
 
-	"laisky-blog-graphql/internal/web/twitter/dao"
-	"laisky-blog-graphql/internal/web/twitter/dto"
-	"laisky-blog-graphql/internal/web/twitter/model"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/dao"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"

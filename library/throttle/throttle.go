@@ -9,7 +9,7 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // TelegramThrottleCfg configuration for TelegramThrottle

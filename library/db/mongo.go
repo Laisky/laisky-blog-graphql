@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"

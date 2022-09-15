@@ -3,8 +3,8 @@ package dao
 import (
 	"context"
 
-	"laisky-blog-graphql/internal/web/general/model"
-	"laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/general/model"
+	"github.com/Laisky/laisky-blog-graphql/library/db"
 
 	"cloud.google.com/go/firestore"
 )

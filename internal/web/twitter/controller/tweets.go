@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"laisky-blog-graphql/internal/global"
-	"laisky-blog-graphql/internal/web/twitter/dto"
-	"laisky-blog-graphql/internal/web/twitter/model"
-	"laisky-blog-graphql/internal/web/twitter/service"
-	"laisky-blog-graphql/library"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/service"
+	"github.com/Laisky/laisky-blog-graphql/library"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"

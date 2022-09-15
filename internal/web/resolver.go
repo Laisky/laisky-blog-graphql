@@ -3,10 +3,10 @@ package web
 import (
 	"context"
 
-	blog "laisky-blog-graphql/internal/web/blog/controller"
-	general "laisky-blog-graphql/internal/web/general/controller"
-	telegram "laisky-blog-graphql/internal/web/telegram/controller"
-	twitter "laisky-blog-graphql/internal/web/twitter/controller"
+	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
+	general "github.com/Laisky/laisky-blog-graphql/internal/web/general/controller"
+	telegram "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
+	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
 )
 
 type Resolver struct{}

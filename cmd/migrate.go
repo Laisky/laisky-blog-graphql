@@ -3,8 +3,8 @@ package cmd
 import (
 	"context"
 
-	"laisky-blog-graphql/internal/web/twitter/model"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gcmd "github.com/Laisky/go-utils/v2/cmd"
 	"github.com/Laisky/zap"

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"laisky-blog-graphql/internal/web/telegram/dao"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
 	gutils "github.com/Laisky/go-utils/v2"

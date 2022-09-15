@@ -5,9 +5,9 @@ import (
 	"context"
 	"testing"
 
-	"laisky-blog-graphql/internal/web/twitter/dto"
-	"laisky-blog-graphql/library/config"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/dto"
+	"github.com/Laisky/laisky-blog-graphql/library/config"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	glog "github.com/Laisky/go-utils/v2/log"
 	"github.com/stretchr/testify/require"

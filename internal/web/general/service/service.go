@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"laisky-blog-graphql/internal/web/general/dao"
-	"laisky-blog-graphql/internal/web/general/model"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/general/dao"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/general/model"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"cloud.google.com/go/firestore"
 	"github.com/Laisky/go-utils/v2"

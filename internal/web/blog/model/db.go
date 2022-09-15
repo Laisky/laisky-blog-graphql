@@ -3,8 +3,8 @@ package model
 import (
 	"context"
 
-	"laisky-blog-graphql/library/db"
-	"laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
 	"github.com/Laisky/zap"
