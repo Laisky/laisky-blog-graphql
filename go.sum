@@ -64,8 +64,8 @@ github.com/BurntSushi/toml v1.1.0/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbi
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/ClickHouse/clickhouse-go v1.4.5 h1:FfhyEnv6/BaWldyjgT2k4gDDmeNwJ9C4NbY/MXxJlXk=
 github.com/ClickHouse/clickhouse-go v1.4.5/go.mod h1:EaI/sW7Azgz9UATzd5ZdZHRUhHgv5+JMS9NSr2smCJI=
-github.com/Laisky/gin-middlewares/v3 v3.0.1 h1:EJBivn7P/V1gI8GeAOdsas9K/5QAaygvLxFgKUQ1td4=
-github.com/Laisky/gin-middlewares/v3 v3.0.1/go.mod h1:wNYczGk7hV/RZbhjF/BqsBiI6pqo/q4t8+Js4yU8wDo=
+github.com/Laisky/gin-middlewares/v3 v3.0.2-0.20220915081852-abbd2e488f10 h1:RvcEo3jNIQ9nI+yBI5uR8a7sBrCNnRvQS6ybuIwKpWs=
+github.com/Laisky/gin-middlewares/v3 v3.0.2-0.20220915081852-abbd2e488f10/go.mod h1:wNYczGk7hV/RZbhjF/BqsBiI6pqo/q4t8+Js4yU8wDo=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be h1:7Rxhm6IjOtDAyj8eScOFntevwzkWhx94zi48lxo4m4w=
 github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be/go.mod h1:1mdzaETo0kjvCQICPSePsoaatJN4l7JvEA1200lyevo=
 github.com/Laisky/go-config v1.0.0 h1:3PF36k6YhCDcXv6L2lGdZbYN40ZGDdjSul5lkJPdjro=

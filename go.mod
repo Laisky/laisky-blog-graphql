@@ -5,7 +5,7 @@ go 1.19
 require (
 	cloud.google.com/go/firestore v1.6.1
 	github.com/99designs/gqlgen v0.17.17
-	github.com/Laisky/gin-middlewares/v3 v3.0.1
+	github.com/Laisky/gin-middlewares/v3 v3.0.2-0.20220915081852-abbd2e488f10
 	github.com/Laisky/go-config v1.0.0
 	github.com/Laisky/go-utils/v2 v2.1.3-0.20220907054848-2d14db0f6fe4
 	github.com/Laisky/zap v1.19.3-0.20220902144311-ba5bb1d3eb31
