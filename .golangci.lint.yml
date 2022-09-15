@@ -81,15 +81,12 @@ output:
 
 # all available settings of specific linters
 linters-settings:
-  stylecheck:
-    go: "1.16"
-    checks: ["all", "-ST1000"]
   dogsled:
     # checks assignments with too many blank identifiers; default is 2
     max-blank-identifiers: 2
   dupl:
     # tokens count to trigger issue, 150 by default
-    threshold: 100
+    threshold: 200
   errcheck:
     # report about not checking of errors in type assertions: `a := b.(MyStruct)`;
     # default is false: such cases aren't reported by default.
@@ -106,8 +103,6 @@ linters-settings:
 
     # path to a file containing a list of functions to exclude from checking
     # see https://github.com/kisielk/errcheck#excluding-functions for details
-    exclude: .golangci.lint.exclude.func
-
   exhaustive:
     # indicates that switch statements are to be considered exhaustive if a
     # 'default' case is present, even if all enum members aren't listed in the
@@ -264,6 +259,7 @@ linters-settings:
     tab-width: 4
   gosec:
     excludes:
+      - G301
       - G304
   maligned:
     # print struct with more effective memory layout or not, false by default
@@ -350,7 +346,7 @@ linters:
   disable-all: true
   enable:
     - bodyclose
-    - deadcode
+    # - deadcode
     - depguard
     # - dogsled
     - dupl
@@ -364,7 +360,7 @@ linters:
     # - gocyclo
     - gofmt
     # - goimports
-    - golint
+    # - golint
     # - gomnd
     # - goprintffuncname
     - gosec
@@ -377,10 +373,10 @@ linters:
     # - nakedret
     # - noctx
     # - nolintlint
+    - revive
     # - rowserrcheck
     # - scopelint
     - staticcheck
-    - structcheck
     - stylecheck
     - typecheck
     # - unconvert
@@ -418,16 +414,9 @@ issues:
     - path: model/.*\.go
       linters:
         - lll
-    - path: internal/permission/dao/data.go
-      linters:
-        - dupl
 
     # Exclude known linters from partially hard-vendored code,
     # which is impossible to exclude via "nolint" comments.
-    - path: internal/hmac/
-      text: "weak cryptographic primitive"
-      linters:
-        - gosec
     - linters:
         - gosec
       text: "G402"
