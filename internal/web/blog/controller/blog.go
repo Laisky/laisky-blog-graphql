@@ -15,7 +15,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	ginMw "github.com/Laisky/gin-middlewares/v2"
+	ginMw "github.com/Laisky/gin-middlewares/v3"
 	gutils "github.com/Laisky/go-utils/v2"
 	"github.com/Laisky/zap"
 	jwtLib "github.com/golang-jwt/jwt/v4"
@@ -56,6 +56,16 @@ func Initialize(ctx context.Context) {
 
 func (r *QueryResolver) BlogPostInfo(ctx context.Context) (*dto.PostInfo, error) {
 	return service.Instance.LoadPostInfo()
+}
+
+func (r *QueryResolver) WhoAmI(ctx context.Context) (*model.User, error) {
+	user, err := service.Instance.ValidateAndGetUser(ctx)
+	if err != nil {
+		log.Logger.Debug("user invalidate", zap.Error(err))
+		return nil, err
+	}
+
+	return user, nil
 }
 
 func (r *QueryResolver) GetBlogPostSeries(ctx context.Context,
@@ -265,7 +275,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	}
 
 	var token string
-	if token, err = auth.Instance.SetLoginCookie(ctx, ginMw.WithAuthClaims(uc)); err != nil {
+	if token, err = auth.Instance.SetAuthHeader(ctx, ginMw.WithSetAuthHeaderClaim(uc)); err != nil {
 		log.Logger.Error("try to set cookie got error", zap.Error(err))
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}

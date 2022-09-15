@@ -19,6 +19,7 @@ input Sort {
 
 type Query {
   Hello: String!
+  WhoAmI: BlogUser!
 
   # twitter
   TwitterStatues(

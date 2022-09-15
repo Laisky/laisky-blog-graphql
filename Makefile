@@ -1,22 +1,25 @@
+.PHONY: install
 install:
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.27.0
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/golang/protobuf/protoc-gen-go@v1.3.2
-	go install github.com/go-bindata/go-bindata@latest
 
+.PHONY: gen
 gen:
-	go install github.com/99designs/gqlgen@latest
-	go install github.com/vektah/gqlparser/v2@v2.1.0
-	# go install github.com/99designs/gqlgen
-	go run github.com/99designs/gqlgen init
+	go get github.com/99designs/gqlgen@v0.17.17
+	go get github.com/vektah/gqlparser/v2@v2.1.0
+	go run github.com/99designs/gqlgen generate
 
+.PHONY: test
 test:
 	@tox --recreate
 	@tox
 
+.PHONY: changelog
 changelog: CHANGELOG.md
 	sh ./.scripts/generate_changelog.sh
 
+.PHONY: lint
 lint:
 	go mod tidy
 	goimports -local laisky-blog-graphql -w .

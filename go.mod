@@ -4,8 +4,8 @@ go 1.19
 
 require (
 	cloud.google.com/go/firestore v1.6.1
-	github.com/99designs/gqlgen v0.17.13
-	github.com/Laisky/gin-middlewares/v2 v2.1.2
+	github.com/99designs/gqlgen v0.17.17
+	github.com/Laisky/gin-middlewares/v3 v3.0.1
 	github.com/Laisky/go-config v1.0.0
 	github.com/Laisky/go-utils/v2 v2.1.3-0.20220907054848-2d14db0f6fe4
 	github.com/Laisky/zap v1.19.3-0.20220902144311-ba5bb1d3eb31
@@ -15,7 +15,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.5.0
 	github.com/stretchr/testify v1.8.0
-	github.com/vektah/gqlparser/v2 v2.4.7
+	github.com/vektah/gqlparser/v2 v2.5.1
 	google.golang.org/api v0.81.0
 	gopkg.in/mgo.v2 v2.0.0-20190816093944-a6b53ec6cb22
 	gopkg.in/tucnak/telebot.v2 v2.3.4
@@ -85,10 +85,10 @@ require (
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
-	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
+	golang.org/x/net v0.0.0-20220909164309-bea034e7d591 // indirect
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5 // indirect
-	golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde // indirect
-	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
+	golang.org/x/sync v0.0.0-20220907140024-f12130a52804 // indirect
+	golang.org/x/sys v0.0.0-20220913175220-63ea55921009 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	golang.org/x/xerrors v0.0.0-20220517211312-f3a8303e98df // indirect
