@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Laisky/laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
@@ -17,13 +17,13 @@ import (
 )
 
 var (
-	TwitterDB *db.DB
+	TwitterDB *mongo.DB
 	SearchDB  *gorm.DB
 )
 
 func Initialize(ctx context.Context) {
 	var err error
-	if TwitterDB, err = db.NewMongoDB(ctx,
+	if TwitterDB, err = mongo.NewDB(ctx,
 		gconfig.Shared.GetString("settings.db.twitter.addr"),
 		gconfig.Shared.GetString("settings.db.twitter.db"),
 		gconfig.Shared.GetString("settings.db.twitter.user"),

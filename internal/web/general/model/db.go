@@ -4,7 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/Laisky/laisky-blog-graphql/library/db"
+	fsDB "github.com/Laisky/laisky-blog-graphql/library/db/firestore"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
@@ -13,13 +13,13 @@ import (
 )
 
 var (
-	GeneralDB *db.Firestore
+	GeneralDB *fsDB.DB
 )
 
 func Initialize(ctx context.Context) {
 	defer log.Logger.Info("connected gcp firestore")
 	var err error
-	if GeneralDB, err = db.NewFirestore(
+	if GeneralDB, err = fsDB.NewDB(
 		ctx,
 		gconfig.Shared.GetString("settings.general.project_id"),
 		option.WithCredentialsFile(filepath.Join(

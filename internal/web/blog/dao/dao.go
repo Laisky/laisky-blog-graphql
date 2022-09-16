@@ -6,7 +6,7 @@ import (
 	"gopkg.in/mgo.v2"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
-	"github.com/Laisky/laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 )
 
 const (
@@ -25,10 +25,10 @@ func Initialize(ctx context.Context) {
 }
 
 type Type struct {
-	db *db.DB
+	db *mongo.DB
 }
 
-func New(db *db.DB) *Type {
+func New(db *mongo.DB) *Type {
 	return &Type{
 		db: db,
 	}

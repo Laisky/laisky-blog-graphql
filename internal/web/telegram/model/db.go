@@ -3,7 +3,7 @@ package model
 import (
 	"context"
 
-	"github.com/Laisky/laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
@@ -11,13 +11,13 @@ import (
 )
 
 var (
-	MonitorDB *db.DB
+	MonitorDB *mongo.DB
 )
 
 func Initialize(ctx context.Context) {
 
 	var err error
-	if MonitorDB, err = db.NewMongoDB(ctx,
+	if MonitorDB, err = mongo.NewDB(ctx,
 		gconfig.Shared.GetString("settings.db.monitor.addr"),
 		gconfig.Shared.GetString("settings.db.monitor.db"),
 		gconfig.Shared.GetString("settings.db.monitor.user"),

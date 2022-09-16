@@ -1,4 +1,4 @@
-package db
+package mongo
 
 import (
 	"context"
@@ -23,7 +23,7 @@ type DB struct {
 	dbName string
 }
 
-func NewMongoDB(ctx context.Context, addr, dbName, user, pwd string) (db *DB, err error) {
+func NewDB(ctx context.Context, addr, dbName, user, pwd string) (db *DB, err error) {
 	log.Logger.Info("try to connect to mongodb",
 		zap.String("addr", addr),
 		zap.String("db", dbName),

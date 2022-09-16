@@ -6,7 +6,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
-	"github.com/Laisky/laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/go-utils/v2"
@@ -32,11 +32,11 @@ const (
 
 // Type db
 type Type struct {
-	db *db.DB
+	db *mongo.DB
 }
 
 // New create new DB
-func New(db *db.DB) *Type {
+func New(db *mongo.DB) *Type {
 	return &Type{db}
 }
 

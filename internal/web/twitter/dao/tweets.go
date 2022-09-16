@@ -2,7 +2,7 @@
 package dao
 
 import (
-	"github.com/Laisky/laisky-blog-graphql/library/db"
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
@@ -15,14 +15,14 @@ const (
 	colUsers  = "users"
 )
 
-func NewTweets(db *db.DB) *Tweets {
+func NewTweets(db *mongo.DB) *Tweets {
 	return &Tweets{
 		DB: db,
 	}
 }
 
 type Tweets struct {
-	*db.DB
+	*mongo.DB
 }
 
 func (d *Tweets) GetTweetCol() *mgo.Collection {

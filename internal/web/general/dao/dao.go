@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/model"
-	"github.com/Laisky/laisky-blog-graphql/library/db"
+	fsDB "github.com/Laisky/laisky-blog-graphql/library/db/firestore"
 
 	"cloud.google.com/go/firestore"
 )
@@ -16,14 +16,14 @@ const (
 var Instance *Type
 
 type Type struct {
-	*db.Firestore
+	*fsDB.DB
 }
 
 func Initialize(ctx context.Context) {
 	model.Initialize(ctx)
 
 	Instance = &Type{
-		Firestore: model.GeneralDB,
+		DB: model.GeneralDB,
 	}
 }
 
