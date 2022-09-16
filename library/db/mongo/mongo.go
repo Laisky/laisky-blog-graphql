@@ -17,20 +17,27 @@ const (
 	reconnectCheckInterval = 5 * time.Second
 )
 
-type DB struct {
+type DB interface {
+	GetDB() *mgo.Database
+	Close()
+	GetCol(colName string) *mgo.Collection
+}
+
+type db struct {
 	sync.RWMutex
 	s      *mgo.Session
 	dbName string
 }
 
-func NewDB(ctx context.Context, addr, dbName, user, pwd string) (db *DB, err error) {
+func NewDB(ctx context.Context, addr, dbName, user, pwd string) (DB, error) {
 	log.Logger.Info("try to connect to mongodb",
 		zap.String("addr", addr),
 		zap.String("db", dbName),
 	)
-	db = &DB{
+	db := &db{
 		dbName: dbName,
 	}
+
 	dialInfo := &mgo.DialInfo{
 		Addrs:     []string{addr},
 		Direct:    true,
@@ -41,14 +48,14 @@ func NewDB(ctx context.Context, addr, dbName, user, pwd string) (db *DB, err err
 		PoolLimit: 1000,
 	}
 
-	if err = db.dial(dialInfo); err != nil {
+	if err := db.dial(dialInfo); err != nil {
 		return nil, err
 	}
 	go db.runReconnectCheck(ctx, dialInfo)
 	return db, nil
 }
 
-func (d *DB) dial(dialInfo *mgo.DialInfo) error {
+func (d *db) dial(dialInfo *mgo.DialInfo) error {
 	d.Lock()
 	defer d.Unlock()
 
@@ -61,14 +68,14 @@ func (d *DB) dial(dialInfo *mgo.DialInfo) error {
 	return nil
 }
 
-func (d *DB) GetDB() *mgo.Database {
+func (d *db) GetDB() *mgo.Database {
 	d.RLock()
 	defer d.RUnlock()
 
 	return d.s.DB("")
 }
 
-func (d *DB) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
+func (d *db) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
 	var err error
 	ticker := time.NewTicker(reconnectCheckInterval)
 	defer ticker.Stop()
@@ -91,10 +98,10 @@ func (d *DB) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
 	}
 }
 
-func (d *DB) Close() {
+func (d *db) Close() {
 	d.s.Close()
 }
 
-func (d *DB) GetCol(colName string) *mgo.Collection {
+func (d *db) GetCol(colName string) *mgo.Collection {
 	return d.GetDB().C(colName)
 }

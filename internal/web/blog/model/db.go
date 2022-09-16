@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	BlogDB *mongo.DB
+	BlogDB mongo.DB
 )
 
 func Initialize(ctx context.Context) {

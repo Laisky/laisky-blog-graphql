@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	TwitterDB *mongo.DB
+	TwitterDB mongo.DB
 	SearchDB  *gorm.DB
 )
 

@@ -15,14 +15,14 @@ const (
 	colUsers  = "users"
 )
 
-func NewTweets(db *mongo.DB) *Tweets {
+func NewTweets(db mongo.DB) *Tweets {
 	return &Tweets{
 		DB: db,
 	}
 }
 
 type Tweets struct {
-	*mongo.DB
+	mongo.DB
 }
 
 func (d *Tweets) GetTweetCol() *mgo.Collection {

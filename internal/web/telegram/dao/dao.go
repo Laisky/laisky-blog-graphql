@@ -32,11 +32,11 @@ const (
 
 // Type db
 type Type struct {
-	db *mongo.DB
+	db mongo.DB
 }
 
 // New create new DB
-func New(db *mongo.DB) *Type {
+func New(db mongo.DB) *Type {
 	return &Type{db}
 }
 

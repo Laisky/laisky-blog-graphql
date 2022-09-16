@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	MonitorDB *mongo.DB
+	MonitorDB mongo.DB
 )
 
 func Initialize(ctx context.Context) {

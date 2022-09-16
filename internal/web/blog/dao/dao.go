@@ -25,10 +25,10 @@ func Initialize(ctx context.Context) {
 }
 
 type Type struct {
-	db *mongo.DB
+	db mongo.DB
 }
 
-func New(db *mongo.DB) *Type {
+func New(db mongo.DB) *Type {
 	return &Type{
 		db: db,
 	}
