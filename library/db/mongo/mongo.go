@@ -18,9 +18,11 @@ const (
 )
 
 type DB interface {
-	GetDB() *mgo.Database
+	CurrentDB() *mgo.Database
 	Close()
 	GetCol(colName string) *mgo.Collection
+	DB(name string) *mgo.Database
+	S() *mgo.Session
 }
 
 type db struct {
@@ -29,7 +31,12 @@ type db struct {
 	dbName string
 }
 
-func NewDB(ctx context.Context, addr, dbName, user, pwd string) (DB, error) {
+func NewDB(ctx context.Context,
+	addr,
+	dbName,
+	user,
+	pwd string,
+) (DB, error) {
 	log.Logger.Info("try to connect to mongodb",
 		zap.String("addr", addr),
 		zap.String("db", dbName),
@@ -68,7 +75,21 @@ func (d *db) dial(dialInfo *mgo.DialInfo) error {
 	return nil
 }
 
-func (d *db) GetDB() *mgo.Database {
+func (d *db) DB(name string) *mgo.Database {
+	d.RLock()
+	defer d.RUnlock()
+
+	return d.s.DB(name)
+}
+
+func (d *db) S() *mgo.Session {
+	d.RLock()
+	defer d.RUnlock()
+
+	return d.s
+}
+
+func (d *db) CurrentDB() *mgo.Database {
 	d.RLock()
 	defer d.RUnlock()
 
@@ -103,5 +124,5 @@ func (d *db) Close() {
 }
 
 func (d *db) GetCol(colName string) *mgo.Collection {
-	return d.GetDB().C(colName)
+	return d.CurrentDB().C(colName)
 }
