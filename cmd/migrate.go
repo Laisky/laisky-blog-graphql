@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gcmd "github.com/Laisky/go-utils/v2/cmd"
@@ -23,11 +22,11 @@ var migrateCMD = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := model.SearchDB.AutoMigrate(
-			model.SearchTweet{},
-		); err != nil {
-			log.Logger.Panic("migrate", zap.Error(err))
-		}
+		// if err := model.SearchDB.AutoMigrate(
+		// 	model.SearchTweet{},
+		// ); err != nil {
+		// 	log.Logger.Panic("migrate", zap.Error(err))
+		// }
 	},
 }
 
