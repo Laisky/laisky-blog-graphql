@@ -6,13 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Laisky/errors"
+	gconfig "github.com/Laisky/go-config/v2"
+	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-
-	gconfig "github.com/Laisky/go-config"
-	gutils "github.com/Laisky/go-utils/v3"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
@@ -67,11 +66,11 @@ func New(ctx context.Context, dao *dao.Type, token, api string) (*Type, error) {
 		userStats: new(sync.Map),
 	}
 
-	if gutils.InArray(gconfig.Shared.GetStringSlice("tasks"), "telegram") {
+	if gutils.Contains(gconfig.Shared.GetStringSlice("tasks"), "telegram") {
 		// if not enable telegram task,
 		// do not consuming telegram events
 		go bot.Start()
-		tel.runDefaultHandle()
+		tel.runDefaultHandle(ctx)
 		tel.monitorHandler()
 		go func() {
 			select {
@@ -89,12 +88,12 @@ func New(ctx context.Context, dao *dao.Type, token, api string) (*Type, error) {
 	return tel, nil
 }
 
-func (s *Type) runDefaultHandle() {
+func (s *Type) runDefaultHandle(ctx context.Context) {
 	// start default handler
 	s.bot.Handle(tb.OnText, func(m *tb.Message) {
-		log.Logger.Debug("got message", zap.String("msg", m.Text), zap.Int("sender", m.Sender.ID))
+		log.Logger.Debug("got message", zap.String("msg", m.Text), zap.Int64("sender", m.Sender.ID))
 		if _, ok := s.userStats.Load(m.Sender.ID); ok {
-			s.dispatcher(m)
+			s.dispatcher(ctx, m)
 			return
 		}
 
@@ -109,7 +108,7 @@ func (s *Type) Stop() {
 	s.stop <- struct{}{}
 }
 
-func (s *Type) dispatcher(msg *tb.Message) {
+func (s *Type) dispatcher(ctx context.Context, msg *tb.Message) {
 	us, ok := s.userStats.Load(msg.Sender.ID)
 	if !ok {
 		return
@@ -117,7 +116,7 @@ func (s *Type) dispatcher(msg *tb.Message) {
 
 	switch us.(*userStat).state {
 	case userWaitChooseMonitorCmd:
-		s.chooseMonitor(us.(*userStat), msg)
+		s.chooseMonitor(ctx, us.(*userStat), msg)
 	default:
 		log.Logger.Warn("unknown msg")
 		if _, err := s.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {
@@ -135,6 +134,6 @@ func (s *Type) PleaseRetry(sender *tb.User, msg string) {
 }
 
 func (s *Type) SendMsgToUser(uid int, msg string) (err error) {
-	_, err = s.bot.Send(&tb.User{ID: uid}, msg)
+	_, err = s.bot.Send(&tb.User{ID: int64(uid)}, msg)
 	return err
 }

@@ -28,6 +28,10 @@ func (r *Resolver) TwitterUser() TwitterUserResolver {
 	return twitter.Instance.TwitterUserResolver
 }
 
+func (r *Resolver) EmbededTweet() EmbededTweetResolver {
+	return twitter.Instance.EmbededTweetResolver
+}
+
 // blog
 
 func (r *Resolver) BlogPost() BlogPostResolver {

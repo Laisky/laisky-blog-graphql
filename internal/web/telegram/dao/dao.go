@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Laisky/errors"
+	"github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-
-	"github.com/Laisky/go-utils/v3"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
+	mongoLib "go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
@@ -40,36 +40,39 @@ func New(db mongo.DB) *Type {
 	return &Type{db}
 }
 
-func (d *Type) GetAlertTypesCol() *mgo.Collection {
+func (d *Type) GetAlertTypesCol() *mongoLib.Collection {
 	return d.db.GetCol(alertTypeColName)
 }
-func (d *Type) GetUsersCol() *mgo.Collection {
+func (d *Type) GetUsersCol() *mongoLib.Collection {
 	return d.db.GetCol(usersColName)
 }
-func (d *Type) GetUserAlertRelationsCol() *mgo.Collection {
+func (d *Type) GetUserAlertRelationsCol() *mongoLib.Collection {
 	return d.db.GetCol(userAlertRelationColName)
 }
 
-func (d *Type) CreateOrGetUser(user *tb.User) (u *model.Users, err error) {
-	var info *mgo.ChangeInfo
-	if info, err = d.GetUsersCol().Upsert(
-		bson.M{"uid": user.ID},
+func (d *Type) CreateOrGetUser(ctx context.Context, user *tb.User) (u *model.Users, err error) {
+	info, err := d.GetUsersCol().UpdateByID(ctx,
+		user.ID,
 		bson.M{"$setOnInsert": bson.M{
 			"created_at":  utils.Clock.GetUTCNow(),
 			"modified_at": utils.Clock.GetUTCNow(),
 			"name":        user.Username,
 			"uid":         user.ID,
-		}}); err != nil {
+		}},
+		options.Update().SetUpsert(true),
+	)
+	if err != nil {
 		return nil, errors.Wrap(err, "upsert user docu")
 	}
 
 	u = new(model.Users)
-	if err = d.GetUsersCol().Find(bson.M{
+	if err = d.GetUsersCol().FindOne(ctx, bson.M{
 		"uid": user.ID,
-	}).One(u); err != nil {
+	}).Decode(u); err != nil {
 		return nil, errors.Wrap(err, "load users")
 	}
-	if info.Matched == 0 {
+
+	if info.MatchedCount == 0 {
 		log.Logger.Info("create user",
 			zap.String("name", u.Name),
 			zap.String("id", u.ID.Hex()))
@@ -86,10 +89,9 @@ func generateJoinKey() string {
 	return utils.RandomStringWithLength(6)
 }
 
-func (d *Type) CreateAlertType(name string) (at *model.AlertTypes, err error) {
+func (d *Type) CreateAlertType(ctx context.Context, name string) (at *model.AlertTypes, err error) {
 	// check if exists
-	var info *mgo.ChangeInfo
-	if info, err = d.GetAlertTypesCol().Upsert(
+	info, err := d.GetAlertTypesCol().UpdateOne(ctx,
 		bson.M{"name": name},
 		bson.M{"$setOnInsert": bson.M{
 			"name":        name,
@@ -98,20 +100,22 @@ func (d *Type) CreateAlertType(name string) (at *model.AlertTypes, err error) {
 			"created_at":  utils.Clock.GetUTCNow(),
 			"modified_at": utils.Clock.GetUTCNow(),
 		}},
-	); err != nil {
+		options.Update().SetUpsert(true),
+	)
+	if err != nil {
 		return nil, errors.Wrap(err, "upsert alert_types docu")
 	}
-	if info.Matched != 0 {
+	if info.MatchedCount != 0 {
 		return nil, errors.New("already exists")
 	}
 
 	at = new(model.AlertTypes)
-	if err = d.GetAlertTypesCol().Find(bson.M{
+	if err = d.GetAlertTypesCol().FindOne(ctx, bson.M{
 		"name": name,
-	}).One(at); err != nil {
+	}).Decode(at); err != nil {
 		return nil, errors.Wrap(err, "load alert_types")
 	}
-	if info.Matched == 0 {
+	if info.MatchedCount == 0 {
 		log.Logger.Info("create alert_type",
 			zap.String("name", at.Name),
 			zap.String("id", at.ID.Hex()))
@@ -120,12 +124,11 @@ func (d *Type) CreateAlertType(name string) (at *model.AlertTypes, err error) {
 	return at, nil
 }
 
-func (d *Type) CreateOrGetUserAlertRelations(user *model.Users,
+func (d *Type) CreateOrGetUserAlertRelations(ctx context.Context, user *model.Users,
 	alert *model.AlertTypes) (
 	uar *model.UserAlertRelations,
 	err error) {
-	var info *mgo.ChangeInfo
-	if info, err = d.GetUserAlertRelationsCol().Upsert(
+	info, err := d.GetUserAlertRelationsCol().UpdateOne(ctx,
 		bson.M{"user_id": user.ID, "alert_id": alert.ID},
 		bson.M{
 			"$setOnInsert": bson.M{
@@ -134,7 +137,9 @@ func (d *Type) CreateOrGetUserAlertRelations(user *model.Users,
 				"created_at":  utils.Clock.GetUTCNow(),
 				"modified_at": utils.Clock.GetUTCNow(),
 			}},
-	); err != nil {
+		options.Update().SetUpsert(true),
+	)
+	if err != nil {
 		return nil, errors.Wrap(err, "upsert user_alert_relations docu")
 	}
 	// if info.Matched != 0 {
@@ -142,13 +147,13 @@ func (d *Type) CreateOrGetUserAlertRelations(user *model.Users,
 	// }
 
 	uar = new(model.UserAlertRelations)
-	if err = d.GetUserAlertRelationsCol().Find(bson.M{
+	if err = d.GetUserAlertRelationsCol().FindOne(ctx, bson.M{
 		"user_id":  user.ID,
 		"alert_id": alert.ID,
-	}).One(uar); err != nil {
+	}).Decode(uar); err != nil {
 		return nil, errors.Wrap(err, "load user_alert_relations docu")
 	}
-	if info.Matched == 0 {
+	if info.MatchedCount == 0 {
 		log.Logger.Info("create user_alert_relations",
 			zap.String("user", user.Name),
 			zap.String("alert_type", alert.Name),
@@ -158,7 +163,7 @@ func (d *Type) CreateOrGetUserAlertRelations(user *model.Users,
 	return uar, nil
 }
 
-func (d *Type) LoadUsers(cfg *dto.QueryCfg) (users []*model.Users, err error) {
+func (d *Type) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.Users, err error) {
 	log.Logger.Debug("LoadUsers",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
@@ -169,19 +174,25 @@ func (d *Type) LoadUsers(cfg *dto.QueryCfg) (users []*model.Users, err error) {
 	}
 
 	users = []*model.Users{}
-	if err = d.GetUsersCol().Find(bson.M{
-		"name": cfg.Name,
-	}).
-		Skip(cfg.Page * cfg.Size).
-		Limit(cfg.Size).
-		All(&users); err != nil {
-		return nil, errors.Wrap(err, "load users from db")
+	cur, err := d.GetUsersCol().Find(ctx,
+		bson.M{
+			"name": cfg.Name,
+		},
+		options.Find().SetSkip(int64(cfg.Page*cfg.Size)),
+		options.Find().SetLimit(int64(cfg.Size)),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "find users from db")
+	}
+
+	if err = cur.All(ctx, &users); err != nil {
+		return nil, errors.Wrap(err, "load all users")
 	}
 
 	return users, nil
 }
 
-func (d *Type) LoadAlertTypes(cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
+func (d *Type) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
 	log.Logger.Debug("LoadAlertTypes",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
@@ -192,31 +203,48 @@ func (d *Type) LoadAlertTypes(cfg *dto.QueryCfg) (alerts []*model.AlertTypes, er
 	}
 
 	alerts = []*model.AlertTypes{}
-	if err = d.GetAlertTypesCol().Find(bson.M{
-		"name": cfg.Name,
-	}).
-		Skip(cfg.Page * cfg.Size).
-		Limit(cfg.Size).
-		All(&alerts); err != nil {
-		return nil, errors.Wrap(err, "load alert_types from db")
+	cur, err := d.GetAlertTypesCol().Find(ctx,
+		bson.M{
+			"name": cfg.Name,
+		},
+		options.Find().SetSkip(int64(cfg.Page*cfg.Size)),
+		options.Find().SetLimit(int64(cfg.Size)),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "find alert_types from db")
+	}
+
+	if err = cur.All(ctx, &alerts); err != nil {
+		return nil, errors.Wrap(err, "load all alert types")
 	}
 
 	return alerts, nil
 }
 
-func (d *Type) LoadAlertTypesByUser(u *model.Users) (alerts []*model.AlertTypes, err error) {
+func (d *Type) LoadAlertTypesByUser(ctx context.Context, u *model.Users) (alerts []*model.AlertTypes, err error) {
 	log.Logger.Debug("LoadAlertTypesByUser",
 		zap.String("uid", u.ID.Hex()),
 		zap.String("username", u.Name))
 
 	alerts = []*model.AlertTypes{}
-	uar := new(model.UserAlertRelations)
-	iter := d.GetUserAlertRelationsCol().Find(bson.M{
-		"user_id": u.ID,
-	}).Iter()
-	for iter.Next(uar) {
+	iter, err := d.GetUserAlertRelationsCol().Find(ctx,
+		bson.M{
+			"user_id": u.ID,
+		})
+	if err != nil {
+		return nil, errors.Wrap(err, "find alerts")
+	}
+
+	for iter.Next(ctx) {
+		uar := new(model.UserAlertRelations)
+		if err = iter.Decode(uar); err != nil {
+			return nil, errors.Wrap(err, "load uar")
+		}
+
 		alert := new(model.AlertTypes)
-		if err = d.GetAlertTypesCol().FindId(uar.AlertMongoID).One(alert); err == mgo.ErrNotFound {
+		if err = d.GetAlertTypesCol().
+			FindOne(ctx, bson.D{{Key: "_id", Value: uar.AlertMongoID}}).
+			Decode(alert); mongo.NotFound(err) {
 			log.Logger.Warn("can not find alert_types by user_alert_relations",
 				zap.String("user_alert_relation_id", uar.ID.Hex()))
 			continue
@@ -229,18 +257,28 @@ func (d *Type) LoadAlertTypesByUser(u *model.Users) (alerts []*model.AlertTypes,
 	return alerts, nil
 }
 
-func (d *Type) LoadUsersByAlertType(a *model.AlertTypes) (users []*model.Users, err error) {
+func (d *Type) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.Users, err error) {
 	log.Logger.Debug("LoadUsersByAlertType",
 		zap.String("alert_type", a.ID.Hex()))
 
 	users = []*model.Users{}
-	uar := new(model.UserAlertRelations)
-	iter := d.GetUserAlertRelationsCol().Find(bson.M{
-		"alert_id": a.ID,
-	}).Iter()
-	for iter.Next(uar) {
+	iter, err := d.GetUserAlertRelationsCol().Find(ctx,
+		bson.M{
+			"alert_id": a.ID,
+		})
+	if err != nil {
+		return nil, errors.Wrap(err, "find user alert rels")
+	}
+
+	for iter.Next(ctx) {
+		uar := new(model.UserAlertRelations)
+		if err = iter.Decode(uar); err != nil {
+			return nil, errors.Wrap(err, "load user alert rel")
+		}
+
 		user := new(model.Users)
-		if err = d.GetUsersCol().FindId(uar.UserMongoID).One(user); err == mgo.ErrNotFound {
+		if err = d.GetUsersCol().FindOne(ctx, bson.D{{Key: "_id", Value: uar.UserMongoID}}).
+			Decode(user); mongo.NotFound(err) {
 			log.Logger.Warn("can not find user by user_alert_relations",
 				zap.String("user_alert_relation_id", uar.ID.Hex()))
 			continue
@@ -253,13 +291,14 @@ func (d *Type) LoadUsersByAlertType(a *model.AlertTypes) (users []*model.Users, 
 	return users, nil
 }
 
-func (d *Type) ValidateTokenForAlertType(token, alertType string) (alert *model.AlertTypes, err error) {
+func (d *Type) ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error) {
 	log.Logger.Debug("ValidateTokenForAlertType", zap.String("alert_type", alertType))
 
 	alert = new(model.AlertTypes)
-	if err = d.GetAlertTypesCol().Find(bson.M{
-		"name": alertType,
-	}).One(alert); err == mgo.ErrNotFound {
+	if err = d.GetAlertTypesCol().FindOne(ctx,
+		bson.M{
+			"name": alertType,
+		}).Decode(alert); mongo.NotFound(err) {
 		return nil, errors.Wrapf(err, "alert_type `%s` not found", alertType)
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "load alert_type `%s` from db", alertType)
@@ -272,13 +311,16 @@ func (d *Type) ValidateTokenForAlertType(token, alertType string) (alert *model.
 	return alert, nil
 }
 
-func (d *Type) RegisterUserAlertRelation(u *model.Users,
+func (d *Type) RegisterUserAlertRelation(ctx context.Context,
+	u *model.Users,
 	alertName string,
 	joinKey string,
 ) (uar *model.UserAlertRelations, err error) {
 	log.Logger.Info("RegisterUserAlertRelation", zap.Int("uid", u.UID), zap.String("alert", alertName))
 	alert := new(model.AlertTypes)
-	if err = d.GetAlertTypesCol().Find(bson.M{"name": alertName}).One(alert); err == mgo.ErrNotFound {
+	if err = d.GetAlertTypesCol().
+		FindOne(ctx, bson.M{"name": alertName}).
+		Decode(alert); mongo.NotFound(err) {
 		return nil, fmt.Errorf("alert_type not found")
 	} else if err != nil {
 		return nil, errors.Wrap(err, "load alert_type by name: "+alertName)
@@ -288,15 +330,17 @@ func (d *Type) RegisterUserAlertRelation(u *model.Users,
 		return nil, fmt.Errorf("join_key invalidate")
 	}
 
-	return d.CreateOrGetUserAlertRelations(u, alert)
+	return d.CreateOrGetUserAlertRelations(ctx, u, alert)
 }
 
-func (d *Type) LoadUserByUID(telegramUID int) (u *model.Users, err error) {
+func (d *Type) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.Users, err error) {
 	log.Logger.Debug("LoadUserByUID", zap.Int("uid", telegramUID))
 	u = new(model.Users)
-	if err = d.GetUsersCol().Find(bson.M{
-		"uid": telegramUID,
-	}).One(u); err == mgo.ErrNotFound {
+	if err = d.GetUsersCol().FindOne(ctx,
+		bson.M{
+			"uid": telegramUID,
+		}).
+		Decode(u); mongo.NotFound(err) {
 		return nil, fmt.Errorf("not found user by uid")
 	} else if err != nil {
 		return nil, errors.Wrap(err, "load user in db by uid")
@@ -305,35 +349,36 @@ func (d *Type) LoadUserByUID(telegramUID int) (u *model.Users, err error) {
 	return u, nil
 }
 
-func (d *Type) IsUserSubAlert(uid int, alertName string) (alert *model.AlertTypes, err error) {
+func (d *Type) IsUserSubAlert(ctx context.Context, uid int, alertName string) (alert *model.AlertTypes, err error) {
 	log.Logger.Debug("IsUserSubAlert", zap.Int("uid", uid), zap.String("alert", alertName))
 	alert = new(model.AlertTypes)
-	if err = d.GetAlertTypesCol().Find(bson.M{"name": alertName}).One(alert); err != nil {
+	if err = d.GetAlertTypesCol().FindOne(ctx, bson.M{"name": alertName}).Decode(alert); err != nil {
 		return
 	}
 
 	u := new(model.Users)
-	if err = d.GetUsersCol().Find(bson.M{"uid": uid}).One(u); err != nil {
+	if err = d.GetUsersCol().FindOne(ctx, bson.M{"uid": uid}).Decode(u); err != nil {
 		return
 	}
 
 	uar := new(model.UserAlertRelations)
-	if err = d.GetUserAlertRelationsCol().Find(bson.M{
-		"user_id":  u.ID,
-		"alert_id": alert.ID,
-	}).One(uar); err != nil {
+	if err = d.GetUserAlertRelationsCol().FindOne(ctx,
+		bson.M{
+			"user_id":  u.ID,
+			"alert_id": alert.ID,
+		}).Decode(uar); err != nil {
 		return
 	}
 
 	return alert, nil
 }
 
-func (d *Type) RefreshAlertTokenAndKey(alert *model.AlertTypes) (err error) {
+func (d *Type) RefreshAlertTokenAndKey(ctx context.Context, alert *model.AlertTypes) (err error) {
 	log.Logger.Info("RefreshAlertTokenAndKey", zap.String("alert", alert.Name))
 	alert.PushToken = generatePushToken()
 	alert.JoinKey = generateJoinKey()
-	return d.GetAlertTypesCol().UpdateId(
-		alert.ID,
+	_, err = d.GetAlertTypesCol().UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: alert.ID}},
 		bson.M{
 			"$set": bson.M{
 				"push_token":  alert.PushToken,
@@ -342,22 +387,28 @@ func (d *Type) RefreshAlertTokenAndKey(alert *model.AlertTypes) (err error) {
 			},
 		},
 	)
+	return errors.Wrap(err, "update alert token")
 }
 
-func (d *Type) RemoveUAR(uid int, alertName string) (err error) {
+func (d *Type) RemoveUAR(ctx context.Context, uid int, alertName string) (err error) {
 	log.Logger.Info("remove user_alert_relation", zap.Int("uid", uid), zap.String("alert", alertName))
 	alert := new(model.AlertTypes)
-	if err = d.GetAlertTypesCol().Find(bson.M{"name": alertName}).One(alert); err != nil {
+	if err = d.GetAlertTypesCol().
+		FindOne(ctx, bson.M{"name": alertName}).
+		Decode(alert); err != nil {
 		return
 	}
 
 	u := new(model.Users)
-	if err = d.GetUsersCol().Find(bson.M{"uid": uid}).One(u); err != nil {
+	if err = d.GetUsersCol().FindOne(ctx, bson.M{"uid": uid}).Decode(u); err != nil {
 		return
 	}
 
-	return d.GetUserAlertRelationsCol().Remove(bson.M{
-		"user_id":  u.ID,
-		"alert_id": alert.ID,
-	})
+	_, err = d.GetUserAlertRelationsCol().DeleteMany(ctx,
+		bson.M{
+			"user_id":  u.ID,
+			"alert_id": alert.ID,
+		})
+
+	return errors.Wrapf(err, "delete user %d alert %s rel", uid, alertName)
 }

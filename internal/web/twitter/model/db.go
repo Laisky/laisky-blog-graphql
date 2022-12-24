@@ -6,7 +6,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	gconfig "github.com/Laisky/go-config"
+	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 )
 
@@ -18,10 +18,12 @@ var (
 func Initialize(ctx context.Context) {
 	var err error
 	if TwitterDB, err = mongo.NewDB(ctx,
-		gconfig.Shared.GetString("settings.db.twitter.addr"),
-		gconfig.Shared.GetString("settings.db.twitter.db"),
-		gconfig.Shared.GetString("settings.db.twitter.user"),
-		gconfig.Shared.GetString("settings.db.twitter.pwd"),
+		mongo.DialInfo{
+			Addr:   gconfig.Shared.GetString("settings.db.twitter.addr"),
+			DBName: gconfig.Shared.GetString("settings.db.twitter.db"),
+			User:   gconfig.Shared.GetString("settings.db.twitter.user"),
+			Pwd:    gconfig.Shared.GetString("settings.db.twitter.pwd"),
+		},
 	); err != nil {
 		log.Logger.Panic("connect to twitter db", zap.Error(err))
 	}

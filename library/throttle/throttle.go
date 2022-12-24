@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/Laisky/go-utils/v3"
-	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
-
+	"github.com/Laisky/errors"
+	"github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
+	"github.com/Laisky/zap"
 )
 
 // TelegramThrottleCfg configuration for TelegramThrottle

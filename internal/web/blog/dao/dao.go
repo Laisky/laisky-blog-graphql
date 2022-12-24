@@ -3,10 +3,9 @@ package dao
 import (
 	"context"
 
-	"gopkg.in/mgo.v2"
-
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
+	mongoLib "go.mongodb.org/mongo-driver/mongo"
 )
 
 const (
@@ -34,15 +33,15 @@ func New(db mongo.DB) *Type {
 	}
 }
 
-func (d *Type) GetPostsCol() *mgo.Collection {
+func (d *Type) GetPostsCol() *mongoLib.Collection {
 	return d.db.GetCol(PostColName)
 }
-func (d *Type) GetUsersCol() *mgo.Collection {
+func (d *Type) GetUsersCol() *mongoLib.Collection {
 	return d.db.GetCol(UserColName)
 }
-func (d *Type) GetCategoriesCol() *mgo.Collection {
+func (d *Type) GetCategoriesCol() *mongoLib.Collection {
 	return d.db.GetCol(CategoryColName)
 }
-func (d *Type) GetPostSeriesCol() *mgo.Collection {
+func (d *Type) GetPostSeriesCol() *mongoLib.Collection {
 	return d.db.GetCol(PostSeriesColName)
 }

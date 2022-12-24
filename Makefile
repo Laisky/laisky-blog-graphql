@@ -2,13 +2,13 @@
 install:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install golang.org/x/tools/cmd/goimports@latest
-	go install github.com/golang/protobuf/protoc-gen-go@v1.3.2
+	go install github.com/golang/protobuf/protoc-gen-go@latest
 
 .PHONY: gen
 gen:
-	go get github.com/99designs/gqlgen@v0.17.17
-	go get github.com/vektah/gqlparser/v2@v2.1.0
-	go run github.com/99designs/gqlgen generate
+	go get github.com/99designs/gqlgen@v0.17.22
+	go get github.com/vektah/gqlparser/v2@v2.5.1
+	go run github.com/99designs/gqlgen@v0.17.22 generate
 
 .PHONY: test
 test:

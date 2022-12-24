@@ -2,15 +2,17 @@ package mongo
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
-	gutils "github.com/Laisky/go-utils/v3"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
+	"github.com/Laisky/errors"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
-	"gopkg.in/mgo.v2"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 const (
@@ -19,87 +21,87 @@ const (
 )
 
 type DB interface {
-	CurrentDB() *mgo.Database
-	Close()
-	GetCol(colName string) *mgo.Collection
-	DB(name string) *mgo.Database
-	S() *mgo.Session
+	Close(ctx context.Context) error
+	GetCol(colName string) *mongo.Collection
+	DB(name string) *mongo.Database
+	CurrentDB() *mongo.Database
+}
+
+// type Collection interface {
+// 	Find(ctx context.Context, filter interface{},
+// 		opts ...*options.FindOptions) (cur *mongo.Cursor, err error)
+// 	FindOne(ctx context.Context, filter interface{},
+// 		opts ...*options.FindOneOptions) *mongo.SingleResult
+// }
+
+type DialInfo struct {
+	Addr,
+	DBName,
+	User,
+	Pwd string
 }
 
 type db struct {
 	sync.RWMutex
-	s      *mgo.Session
-	dbName string
-	close  chan struct{}
+	cli     *mongo.Client
+	diaInfo DialInfo
+	uri     string
 }
 
 func NewDB(ctx context.Context,
-	addr,
-	dbName,
-	user,
-	pwd string,
+	dialInfo DialInfo,
 ) (DB, error) {
-	log.Logger.Debug("try to connect to mongodb",
-		zap.String("addr", addr),
-		zap.String("db", dbName),
+	log.Logger.Info("try to connect to mongodb",
+		zap.String("addr", dialInfo.Addr),
+		zap.String("db", dialInfo.DBName),
 	)
 	db := &db{
-		dbName: dbName,
-		close:  make(chan struct{}),
+		diaInfo: dialInfo,
+		uri:     fmt.Sprintf("mongodb://%s:%s@%s/%s", dialInfo.User, dialInfo.Pwd, dialInfo.Addr, dialInfo.DBName),
 	}
 
-	dialInfo := &mgo.DialInfo{
-		Addrs:     []string{addr},
-		Direct:    true,
-		Timeout:   defaultTimeout,
-		Database:  dbName,
-		Username:  user,
-		Password:  pwd,
-		PoolLimit: 1000,
+	if err := db.dial(ctx); err != nil {
+		return nil, errors.Wrap(err, "connect")
 	}
 
-	if err := db.dial(dialInfo); err != nil {
-		return nil, err
-	}
-	go db.runReconnectCheck(ctx, dialInfo)
+	go db.runReconnectCheck(ctx)
 	return db, nil
 }
 
-func (d *db) dial(dialInfo *mgo.DialInfo) error {
+func (d *db) dial(ctx context.Context) (err error) {
 	d.Lock()
 	defer d.Unlock()
 
-	s, err := mgo.DialWithInfo(dialInfo)
+	d.cli, err = mongo.Connect(ctx, options.Client().ApplyURI(d.uri))
 	if err != nil {
-		return errors.Wrap(err, "can not connect to db")
+		return errors.Wrap(err, "connect db")
 	}
 
-	d.s = s
 	return nil
 }
 
-func (d *db) DB(name string) *mgo.Database {
+func (d *db) DB(name string) *mongo.Database {
 	d.RLock()
 	defer d.RUnlock()
 
-	return d.s.DB(name)
+	return d.cli.Database(name)
 }
 
-func (d *db) S() *mgo.Session {
+func (d *db) S() (mongo.Session, error) {
 	d.RLock()
 	defer d.RUnlock()
 
-	return d.s
+	return d.cli.StartSession()
 }
 
-func (d *db) CurrentDB() *mgo.Database {
+func (d *db) CurrentDB() *mongo.Database {
 	d.RLock()
 	defer d.RUnlock()
 
-	return d.s.DB("")
+	return d.DB(d.diaInfo.DBName)
 }
 
-func (d *db) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
+func (d *db) runReconnectCheck(ctx context.Context) {
 	var err error
 	ticker := time.NewTicker(reconnectCheckInterval)
 	defer ticker.Stop()
@@ -108,28 +110,24 @@ func (d *db) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-		case <-d.close:
-			return
 		}
 
-		if gutils.IsPanic(func() { d.s.Ping() }) {
-			log.Logger.Error("db connection got panic", zap.Strings("db", dialInfo.Addrs))
-			if err = d.dial(dialInfo); err != nil {
-				log.Logger.Error("can not reconnect to db", zap.Strings("db", dialInfo.Addrs))
+		if err = d.cli.Ping(ctx, readpref.Primary()); err != nil {
+			log.Logger.Error("db connection got error", zap.Error(err), zap.String("db", d.diaInfo.Addr))
+			if err = d.dial(ctx); err != nil {
+				log.Logger.Error("can not reconnect to db", zap.Error(err), zap.String("db", d.diaInfo.Addr))
 				time.Sleep(3 * time.Second)
 				continue
 			}
-
-			log.Logger.Info("success reconnect to db", zap.Strings("db", dialInfo.Addrs))
+			log.Logger.Info("success reconnect to db", zap.String("db", d.diaInfo.Addr))
 		}
 	}
 }
 
-func (d *db) Close() {
-	close(d.close)
-	d.s.Close()
+func (d *db) Close(ctx context.Context) error {
+	return d.cli.Disconnect(ctx)
 }
 
-func (d *db) GetCol(colName string) *mgo.Collection {
-	return d.CurrentDB().C(colName)
+func (d *db) GetCol(colName string) *mongo.Collection {
+	return d.CurrentDB().Collection(colName)
 }

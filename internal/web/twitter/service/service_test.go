@@ -9,7 +9,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/config"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	glog "github.com/Laisky/go-utils/v3/log"
+	glog "github.com/Laisky/go-utils/v4/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +21,7 @@ func TestType_LoadTweets(t *testing.T) {
 	err := log.Logger.ChangeLevel(glog.LevelDebug)
 	require.NoError(t, err)
 
-	ts, err := Instance.LoadTweets(&dto.LoadTweetArgs{
+	ts, err := Instance.LoadTweets(ctx, &dto.LoadTweetArgs{
 		Regexp: "饥荒",
 	})
 	require.NoError(t, err)

@@ -10,8 +10,8 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
-	ginMw "github.com/Laisky/gin-middlewares/v4"
-	gconfig "github.com/Laisky/go-config"
+	ginMw "github.com/Laisky/gin-middlewares/v5"
+	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -51,8 +51,7 @@ func RunServer(addr string) {
 	h.Use(extension.Introspection{})
 	h.SetErrorPresenter(func(ctx context.Context, e error) *gqlerror.Error {
 		err := graphql.DefaultErrorPresenter(ctx, e)
-		// FIXME: add cli error
-		// log.Logger.Error(err.Error())
+		log.Logger.Error("graphql server", zap.Error(e))
 		return err
 	})
 	server.Any("/ui/", ginMw.FromStd(playground.Handler("GraphQL playground", "/query/")))

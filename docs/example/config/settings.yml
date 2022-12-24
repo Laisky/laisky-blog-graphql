@@ -1,3 +1,19 @@
 ---
 settings:
-  secret: jflf23fu329pfdu9uf9sufsdvsavua9v0
+  secret: 12345
+  db:
+    blog:
+      db: blog
+      addr: 100.97.108.34:27018
+      user: laisky
+      pwd: 1234
+    twitter:
+      db: twitter
+      addr: 100.97.108.34:27018
+      user: laisky
+      pwd: 1234
+    monitor:
+      db: monitor
+      addr: 100.97.108.34:27018
+      user: laisky
+      pwd: 1234

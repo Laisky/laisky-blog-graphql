@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/global"
@@ -12,18 +13,22 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
+	"github.com/Laisky/errors"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
 )
 
 type TweetResolver struct{}
 type TwitterUserResolver struct{}
+type EmbededTweetResolver struct {
+	TweetResolver
+}
 
 type QueryResolver struct{}
 
 type Type struct {
-	TweetResolver       *TweetResolver
-	TwitterUserResolver *TwitterUserResolver
+	TweetResolver        *TweetResolver
+	TwitterUserResolver  *TwitterUserResolver
+	EmbededTweetResolver *EmbededTweetResolver
 }
 
 func New() *Type {
@@ -70,15 +75,15 @@ func (r *QueryResolver) TwitterStatues(ctx context.Context,
 		args.TweetID = tweetID
 	}
 
-	if results, err = service.Instance.LoadTweets(args); err != nil {
-		return nil, err
+	if results, err = service.Instance.LoadTweets(ctx, args); err != nil {
+		return nil, errors.WithStack(err)
 	}
 
 	return results, nil
 }
 
 func (r *QueryResolver) TwitterThreads(ctx context.Context, tweetID string) ([]*model.Tweet, error) {
-	return service.Instance.LoadThreadByTweetID(tweetID)
+	return service.Instance.LoadThreadByTweetID(ctx, tweetID)
 }
 
 // ----------------
@@ -102,7 +107,7 @@ func (t *TweetResolver) IsQuoteStatus(ctx context.Context, obj *model.Tweet) (bo
 }
 
 func (t *TweetResolver) Replys(ctx context.Context, obj *model.Tweet) ([]*model.Tweet, error) {
-	return service.Instance.LoadTweetReplys(obj.ID)
+	return service.Instance.LoadTweetReplys(ctx, obj.ID)
 }
 
 func (t *TweetResolver) Images(ctx context.Context, obj *model.Tweet) (imgs []string, err error) {
@@ -120,7 +125,7 @@ func (t *TweetResolver) Images(ctx context.Context, obj *model.Tweet) (imgs []st
 
 func (t *TweetResolver) Viewers(ctx context.Context, obj *model.Tweet) (us []*model.User, err error) {
 	for _, uid := range obj.Viewer {
-		u, err := service.Instance.LoadUserByID(uid)
+		u, err := service.Instance.LoadUserByID(ctx, strconv.Itoa(int(uid)))
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
@@ -131,7 +136,7 @@ func (t *TweetResolver) Viewers(ctx context.Context, obj *model.Tweet) (us []*mo
 	return us, nil
 }
 
-func (t *TweetResolver) QuotedStatus(ctx context.Context, obj *model.Tweet) (*model.Tweet, error) {
+func (t *TweetResolver) QuotedStatus(ctx context.Context, obj *model.Tweet) (*model.EmbededTweet, error) {
 	return obj.QuotedTweet, nil
 }
 
@@ -144,11 +149,7 @@ func (t *TweetResolver) QuotedStatus(ctx context.Context, obj *model.Tweet) (*mo
 // }
 
 func (t *TweetResolver) CreatedAt(ctx context.Context, obj *model.Tweet) (*library.Datetime, error) {
-	if obj.CreatedAt == nil {
-		return nil, nil
-	}
-
-	return library.NewDatetimeFromTime(*obj.CreatedAt), nil
+	return library.NewDatetimeFromTime(obj.CreatedAt), nil
 }
 
 func (t *TweetResolver) URL(ctx context.Context, obj *model.Tweet) (string, error) {
@@ -164,7 +165,7 @@ func (t *TweetResolver) ReplyTo(ctx context.Context, obj *model.Tweet) (tweet *m
 		return nil, nil
 	}
 
-	if tweet, err = service.Instance.LoadTweetByTwitterID(obj.ReplyToStatusID); err != nil {
+	if tweet, err = service.Instance.LoadTweetByTwitterID(ctx, obj.ReplyToStatusID); err != nil {
 		log.Logger.Warn("try to load tweet by id got error",
 			zap.String("tweet", obj.ReplyToStatusID),
 			zap.Error(err))
@@ -172,6 +173,64 @@ func (t *TweetResolver) ReplyTo(ctx context.Context, obj *model.Tweet) (tweet *m
 	}
 
 	return tweet, nil
+}
+
+func (t *EmbededTweetResolver) Images(ctx context.Context, obj *model.EmbededTweet) ([]string, error) {
+	tweet, err := obj.ToTweet()
+	if err != nil {
+		return nil, errors.Wrap(err, "to tweet")
+	}
+
+	return t.TweetResolver.Images(ctx, tweet)
+}
+
+func (t *EmbededTweetResolver) IsQuoteStatus(ctx context.Context, obj *model.EmbededTweet) (bool, error) {
+	tweet, err := obj.ToTweet()
+	if err != nil {
+		return false, errors.Wrap(err, "to tweet")
+	}
+
+	return t.TweetResolver.IsQuoteStatus(ctx, tweet)
+}
+
+func (t *EmbededTweetResolver) QuotedStatus(ctx context.Context, obj *model.EmbededTweet) (*model.EmbededTweet, error) {
+	return obj.QuotedTweet, nil
+}
+
+func (t *EmbededTweetResolver) ReplyTo(ctx context.Context, obj *model.EmbededTweet) (*model.Tweet, error) {
+	tweet, err := obj.ToTweet()
+	if err != nil {
+		return nil, errors.Wrap(err, "to tweet")
+	}
+
+	return t.TweetResolver.ReplyTo(ctx, tweet)
+}
+
+func (t *EmbededTweetResolver) Replys(ctx context.Context, obj *model.EmbededTweet) ([]*model.Tweet, error) {
+	tweet, err := obj.ToTweet()
+	if err != nil {
+		return nil, errors.Wrap(err, "to tweet")
+	}
+
+	return t.TweetResolver.Replys(ctx, tweet)
+}
+
+func (t *EmbededTweetResolver) URL(ctx context.Context, obj *model.EmbededTweet) (string, error) {
+	tweet, err := obj.ToTweet()
+	if err != nil {
+		return "", errors.Wrap(err, "to tweet")
+	}
+
+	return t.TweetResolver.URL(ctx, tweet)
+}
+
+func (t *EmbededTweetResolver) Viewers(ctx context.Context, obj *model.EmbededTweet) ([]*model.User, error) {
+	tweet, err := obj.ToTweet()
+	if err != nil {
+		return nil, errors.Wrap(err, "to tweet")
+	}
+
+	return t.TweetResolver.Viewers(ctx, tweet)
 }
 
 // ============================

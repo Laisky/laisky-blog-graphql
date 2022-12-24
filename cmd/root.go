@@ -14,12 +14,12 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	gconfig "github.com/Laisky/go-config"
-	gutils "github.com/Laisky/go-utils/v3"
-	gcmd "github.com/Laisky/go-utils/v3/cmd"
-	glog "github.com/Laisky/go-utils/v3/log"
+	"github.com/Laisky/errors"
+	gconfig "github.com/Laisky/go-config/v2"
+	gutils "github.com/Laisky/go-utils/v4"
+	gcmd "github.com/Laisky/go-utils/v4/cmd"
+	glog "github.com/Laisky/go-utils/v4/log"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 

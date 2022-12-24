@@ -19,34 +19,36 @@ resolver:
 models:
   # general
   Date:
-    model: laisky-blog-graphql/library.Datetime
+    model: github.com/Laisky/laisky-blog-graphql/library.Datetime
   QuotedString:
-    model: laisky-blog-graphql/library.QuotedString
+    model: github.com/Laisky/laisky-blog-graphql/library.QuotedString
   JSONString:
-    model: laisky-blog-graphql/library.JSONString
+    model: github.com/Laisky/laisky-blog-graphql/library.JSONString
   # twitter
   Tweet:
-    model: laisky-blog-graphql/internal/web/twitter/model.Tweet
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.Tweet
+  EmbededTweet:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.EmbededTweet
   TwitterUser:
-    model: laisky-blog-graphql/internal/web/twitter/model.User
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.User
   # blog
   BlogPost:
-    model: laisky-blog-graphql/internal/web/blog/model.Post
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.Post
   PostInfo:
-    model: laisky-blog-graphql/internal/web/blog/dto.PostInfo
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto.PostInfo
   BlogUser:
-    model: laisky-blog-graphql/internal/web/blog/model.User
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.User
   BlogCategory:
-    model: laisky-blog-graphql/internal/web/blog/model.Category
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.Category
   BlogPostSeries:
-    model: laisky-blog-graphql/internal/web/blog/model.PostSeries
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.PostSeries
   # telegram
   TelegramUser:
-    model: laisky-blog-graphql/internal/web/telegram/model.Users
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.Users
   TelegramAlertType:
-    model: laisky-blog-graphql/internal/web/telegram/model.AlertTypes
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.AlertTypes
   # GCP General
   Lock:
-    model: laisky-blog-graphql/internal/web/general/model.Lock
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/general/model.Lock
   # GeneralUser:
   #   model: laisky-blog-graphql/general.User

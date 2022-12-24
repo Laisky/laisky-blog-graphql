@@ -12,7 +12,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	gconfig "github.com/Laisky/go-config"
+	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 )
 
@@ -29,7 +29,15 @@ type Type struct {
 
 var Instance *Type
 
+func isEnable() bool {
+	return gconfig.Shared.Get("settings.telegram") != nil
+}
+
 func Initialize(ctx context.Context) {
+	if !isEnable() {
+		return
+	}
+
 	service.Initialize(ctx)
 
 	setupTelegramThrottle(ctx)
@@ -48,7 +56,7 @@ func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 		Size: page.Size,
 		Name: name,
 	}
-	return service.Instance.LoadUsers(cfg)
+	return service.Instance.LoadUsers(ctx, cfg)
 }
 func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 	page *global.Pagination,
@@ -58,7 +66,7 @@ func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 		Size: page.Size,
 		Name: name,
 	}
-	return service.Instance.LoadAlertTypes(cfg)
+	return service.Instance.LoadAlertTypes(ctx, cfg)
 }
 
 // --------------------------
@@ -85,7 +93,7 @@ func (t *UserResolver) TelegramID(ctx context.Context,
 func (t *UserResolver) SubAlerts(ctx context.Context,
 	obj *model.Users,
 ) ([]*model.AlertTypes, error) {
-	return service.Instance.LoadAlertTypesByUser(obj)
+	return service.Instance.LoadAlertTypesByUser(ctx, obj)
 }
 
 func (t *AlertTypeResolver) ID(ctx context.Context,
@@ -106,7 +114,7 @@ func (t *AlertTypeResolver) ModifiedAt(ctx context.Context,
 func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 	obj *model.AlertTypes,
 ) ([]*model.Users, error) {
-	return service.Instance.LoadUsersByAlertType(obj)
+	return service.Instance.LoadUsersByAlertType(ctx, obj)
 }
 
 // ============================
@@ -127,12 +135,12 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		msg = msg[:maxlen] + " ..."
 	}
 
-	alert, err := service.Instance.ValidateTokenForAlertType(token, typeArg)
+	alert, err := service.Instance.ValidateTokenForAlertType(ctx, token, typeArg)
 	if err != nil {
 		return nil, err
 	}
 
-	users, err := service.Instance.LoadUsersByAlertType(alert)
+	users, err := service.Instance.LoadUsersByAlertType(ctx, alert)
 	if err != nil {
 		return nil, err
 	}

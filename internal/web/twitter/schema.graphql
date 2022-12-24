@@ -1,3 +1,21 @@
+type EmbededTweet {
+    # mongo_id: String!
+    id: String!
+    created_at: String!
+    text: String!
+    topics: [String!]
+    user: TwitterUser
+    reply_to: Tweet
+    replys: [Tweet!]
+    is_quote_status: Boolean!
+    quoted_status: EmbededTweet
+    is_retweeted: Boolean!
+    retweeted_tweet: EmbededTweet
+    url: String!
+    images: [String!]!
+    viewers: [TwitterUser!]
+}
+
 type Tweet {
     # mongo_id: String!
     id: String!
@@ -8,9 +26,9 @@ type Tweet {
     reply_to: Tweet
     replys: [Tweet!]
     is_quote_status: Boolean!
-    quoted_status: Tweet
+    quoted_status: EmbededTweet
     is_retweeted: Boolean!
-    retweeted_tweet: Tweet
+    retweeted_tweet: EmbededTweet
     url: String!
     images: [String!]!
     viewers: [TwitterUser!]
