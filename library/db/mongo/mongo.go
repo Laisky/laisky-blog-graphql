@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	gutils "github.com/Laisky/go-utils/v3"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/zap"
@@ -29,6 +30,7 @@ type db struct {
 	sync.RWMutex
 	s      *mgo.Session
 	dbName string
+	close  chan struct{}
 }
 
 func NewDB(ctx context.Context,
@@ -43,6 +45,7 @@ func NewDB(ctx context.Context,
 	)
 	db := &db{
 		dbName: dbName,
+		close:  make(chan struct{}),
 	}
 
 	dialInfo := &mgo.DialInfo{
@@ -105,21 +108,25 @@ func (d *db) runReconnectCheck(ctx context.Context, dialInfo *mgo.DialInfo) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-d.close:
+			return
 		}
 
-		if err = d.s.Ping(); err != nil {
-			log.Logger.Error("db connection got error", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
+		if gutils.IsPanic(func() { d.s.Ping() }) {
+			log.Logger.Error("db connection got panic", zap.Strings("db", dialInfo.Addrs))
 			if err = d.dial(dialInfo); err != nil {
-				log.Logger.Error("can not reconnect to db", zap.Error(err), zap.Strings("db", dialInfo.Addrs))
+				log.Logger.Error("can not reconnect to db", zap.Strings("db", dialInfo.Addrs))
 				time.Sleep(3 * time.Second)
 				continue
 			}
+
 			log.Logger.Info("success reconnect to db", zap.Strings("db", dialInfo.Addrs))
 		}
 	}
 }
 
 func (d *db) Close() {
+	close(d.close)
 	d.s.Close()
 }
 

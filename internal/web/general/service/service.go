@@ -10,7 +10,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"cloud.google.com/go/firestore"
-	"github.com/Laisky/go-utils/v2"
+	"github.com/Laisky/go-utils/v3"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 )

@@ -15,7 +15,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
-	"github.com/Laisky/go-utils/v2/encrypt"
+	"github.com/Laisky/go-utils/v3/encrypt"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 	mgo "gopkg.in/mgo.v2"

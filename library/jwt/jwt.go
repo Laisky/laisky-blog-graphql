@@ -1,7 +1,7 @@
 package jwt
 
 import (
-	gjwt "github.com/Laisky/go-utils/v2/jwt"
+	gjwt "github.com/Laisky/go-utils/v3/jwt"
 	"github.com/pkg/errors"
 )
 

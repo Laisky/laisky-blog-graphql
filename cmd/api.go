@@ -7,7 +7,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config"
-	gcmd "github.com/Laisky/go-utils/v2/cmd"
+	gcmd "github.com/Laisky/go-utils/v3/cmd"
 	"github.com/Laisky/zap"
 	"github.com/spf13/cobra"
 )
