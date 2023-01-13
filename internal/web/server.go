@@ -1,3 +1,4 @@
+// Package web gin server
 package web
 
 import (
