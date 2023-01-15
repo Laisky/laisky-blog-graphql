@@ -19,10 +19,6 @@ import (
 var Instance *Type
 
 func Initialize(ctx context.Context) {
-	if !gutils.InArray(gconfig.Shared.GetStringSlice("tasks"), "telegram") {
-		return
-	}
-
 	dao.Initialize(ctx)
 
 	var err error
@@ -70,16 +66,21 @@ func New(ctx context.Context, dao *dao.Type, token, api string) (*Type, error) {
 		bot:       bot,
 		userStats: new(sync.Map),
 	}
-	go bot.Start()
-	tel.runDefaultHandle()
-	tel.monitorHandler()
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-tel.stop:
-		}
-		bot.Stop()
-	}()
+
+	if gutils.InArray(gconfig.Shared.GetStringSlice("tasks"), "telegram") {
+		// if not enable telegram task,
+		// do not consuming telegram events
+		go bot.Start()
+		tel.runDefaultHandle()
+		tel.monitorHandler()
+		go func() {
+			select {
+			case <-ctx.Done():
+			case <-tel.stop:
+			}
+			bot.Stop()
+		}()
+	}
 
 	// bot.Send(&tb.User{
 	// 	ID: 861999008,
