@@ -39,7 +39,7 @@ func NewDB(ctx context.Context,
 	user,
 	pwd string,
 ) (DB, error) {
-	log.Logger.Info("try to connect to mongodb",
+	log.Logger.Debug("try to connect to mongodb",
 		zap.String("addr", addr),
 		zap.String("db", dbName),
 	)
