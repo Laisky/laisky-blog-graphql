@@ -57,6 +57,7 @@ func RunServer(addr string) {
 	})
 	server.Any("/ui/", ginMw.FromStd(playground.Handler("GraphQL playground", "/query/")))
 	server.Any("/query/", ginMw.FromStd(h.ServeHTTP))
+	server.Any("/query/v2/", ginMw.FromStd(h.ServeHTTP))
 
 	log.Logger.Info("listening on http", zap.String("addr", addr))
 	log.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))
