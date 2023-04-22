@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/Laisky/errors"
-	"github.com/Laisky/go-utils/v4"
+	"github.com/Laisky/errors/v2"
+	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/zap"
 )
@@ -21,7 +21,7 @@ type TelegramThrottleCfg struct {
 type TelegramThrottle struct {
 	sync.Mutex
 	cfg            *TelegramThrottleCfg
-	totleThrottle  *utils.Throttle
+	totleThrottle  *gutils.Throttle
 	titlesThrottle *sync.Map
 }
 
@@ -34,8 +34,8 @@ func NewTelegramThrottle(ctx context.Context, cfg *TelegramThrottleCfg) (t *Tele
 		return nil, fmt.Errorf("burst must bigger than NPerSec")
 	}
 
-	var tt *utils.Throttle
-	if tt, err = utils.NewThrottleWithCtx(ctx, &utils.ThrottleCfg{
+	var tt *gutils.Throttle
+	if tt, err = gutils.NewThrottleWithCtx(ctx, &gutils.ThrottleCfg{
 		Max:     cfg.TotleBurst,
 		NPerSec: cfg.TotleNPerSec,
 	}); err != nil {
@@ -54,15 +54,15 @@ func NewTelegramThrottle(ctx context.Context, cfg *TelegramThrottleCfg) (t *Tele
 func (t *TelegramThrottle) Allow(alertType string) (ok bool) {
 	var (
 		tti interface{}
-		tt  *utils.Throttle
+		tt  *gutils.Throttle
 	)
 	if tti, ok = t.titlesThrottle.Load(alertType); !ok {
 		t.Lock()
 		if tti, ok = t.titlesThrottle.Load(alertType); !ok {
 			var err error
-			if tt, err = utils.NewThrottleWithCtx(
+			if tt, err = gutils.NewThrottleWithCtx(
 				context.Background(),
-				&utils.ThrottleCfg{
+				&gutils.ThrottleCfg{
 					Max:     t.cfg.EachTitleBurst,
 					NPerSec: t.cfg.EachTitleNPerSec,
 				}); err != nil {
@@ -72,11 +72,11 @@ func (t *TelegramThrottle) Allow(alertType string) (ok bool) {
 			}
 			t.titlesThrottle.Store(alertType, tt)
 		} else {
-			tt = tti.(*utils.Throttle)
+			tt = tti.(*gutils.Throttle)
 		}
 		t.Unlock()
 	} else {
-		tt = tti.(*utils.Throttle)
+		tt = tti.(*gutils.Throttle)
 	}
 
 	return tt.Allow() && t.totleThrottle.Allow()

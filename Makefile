@@ -22,6 +22,7 @@ changelog: CHANGELOG.md
 .PHONY: lint
 lint:
 	go mod tidy
+	go vet ./...
 	goimports -local laisky-blog-graphql -w .
 	gofmt -s -w .
 	# golangci-lint run --timeout 3m -E golint,depguard,gocognit,goconst,gofmt,misspell,exportloopref,nilerr #,gosec,lll

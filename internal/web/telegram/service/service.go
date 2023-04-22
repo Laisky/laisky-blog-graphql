@@ -6,29 +6,39 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Laisky/errors"
+	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/zap"
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
-var Instance *Type
+// func Initialize(ctx context.Context) {
+// 	dao.Initialize(ctx)
 
-func Initialize(ctx context.Context) {
-	dao.Initialize(ctx)
+// 	var err error
+// 	if Instance, err = New(
+// 		ctx,
+// 		dao.Instance,
+// 		gconfig.Shared.GetString("settings.telegram.token"),
+// 		gconfig.Shared.GetString("settings.telegram.api"),
+// 	); err != nil {
+// 		log.Logger.Panic("new telegram", zap.Error(err))
+// 	}
+// }
 
-	var err error
-	if Instance, err = New(
-		ctx,
-		dao.Instance,
-		gconfig.Shared.GetString("settings.telegram.token"),
-		gconfig.Shared.GetString("settings.telegram.api"),
-	); err != nil {
-		log.Logger.Panic("new telegram", zap.Error(err))
-	}
+type Interface interface {
+	PleaseRetry(sender *tb.User, msg string)
+	SendMsgToUser(uid int, msg string) (err error)
+	LoadAlertTypesByUser(ctx context.Context, u *model.Users) (alerts []*model.AlertTypes, err error)
+	LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error)
+	LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.Users, err error)
+	LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.Users, err error)
+	ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error)
 }
 
 // Type client
@@ -36,7 +46,7 @@ type Type struct {
 	stop chan struct{}
 	bot  *tb.Bot
 
-	dao       *dao.Type
+	dao       *dao.Monitor
 	userStats *sync.Map
 }
 
@@ -47,7 +57,9 @@ type userStat struct {
 }
 
 // New create new telegram client
-func New(ctx context.Context, dao *dao.Type, token, api string) (*Type, error) {
+func New(ctx context.Context,
+	dao *dao.Monitor,
+	token, api string) (*Type, error) {
 	bot, err := tb.NewBot(tb.Settings{
 		Token: token,
 		URL:   api,

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Laisky/errors"
+	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
-	"github.com/Laisky/go-utils/v2/encrypt"
+	gcrypto "github.com/Laisky/go-utils/v4/crypto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
@@ -41,7 +41,7 @@ func New(dao *dao.Type) *Type {
 
 func (s *Type) LoadPostSeries(ctx context.Context, id primitive.ObjectID, key string) (se []*model.PostSeries, err error) {
 	query := bson.D{}
-	if id.IsZero() {
+	if !id.IsZero() {
 		query = append(query, bson.E{Key: "_id", Value: id})
 	}
 
@@ -98,7 +98,7 @@ func (s *Type) LoadPosts(ctx context.Context, cfg *dto.PostCfg) (results []*mode
 }
 
 func (s *Type) LoadPostInfo(ctx context.Context) (*dto.PostInfo, error) {
-	cnt, err := s.dao.GetPostsCol().CountDocuments(ctx, nil)
+	cnt, err := s.dao.GetPostsCol().CountDocuments(ctx, bson.D{})
 	if err != nil {
 		return nil, errors.Wrap(err, "try to count posts got error")
 	}
@@ -248,7 +248,7 @@ func (s *Type) LoadUserByID(ctx context.Context, uid primitive.ObjectID) (user *
 func (s *Type) LoadCategoryByID(ctx context.Context, cateid primitive.ObjectID) (cate *model.Category, err error) {
 	log.Logger.Debug("LoadCategoryByID", zap.String("cate_id", cateid.Hex()))
 	if cateid.IsZero() {
-		return nil, errors.Errorf("cateid is empty")
+		return nil, nil
 	}
 
 	cate = &model.Category{}
@@ -263,7 +263,7 @@ func (s *Type) LoadCategoryByID(ctx context.Context, cateid primitive.ObjectID) 
 
 func (s *Type) LoadAllCategories(ctx context.Context) (cates []*model.Category, err error) {
 	cates = []*model.Category{}
-	cur, err := s.dao.GetCategoriesCol().Find(ctx, nil)
+	cur, err := s.dao.GetCategoriesCol().Find(ctx, bson.D{})
 	if err != nil {
 		return nil, errors.Wrap(err, "find all categories")
 	}
@@ -372,7 +372,7 @@ func (s *Type) ValidateLogin(ctx context.Context, account, password string) (u *
 		return nil, err
 	}
 
-	if encrypt.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
+	if gcrypto.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
 		log.Logger.Debug("user login", zap.String("user", u.Account))
 		return u, nil
 	}
@@ -442,7 +442,7 @@ func (s *Type) UpdatePost(ctx context.Context, user *model.User,
 	p.ModifiedAt = time.Now()
 	p.Type = typeArg
 
-	if _, err = s.dao.GetPostsCol().UpdateByID(ctx, p.ID, p); err != nil {
+	if _, err = s.dao.GetPostsCol().ReplaceOne(ctx, bson.M{"_id": p.ID}, p); err != nil {
 		return nil, errors.Wrap(err, "try to update post got error")
 	}
 
@@ -456,7 +456,11 @@ func (s *Type) ValidateAndGetUser(ctx context.Context) (user *model.User, err er
 		return nil, errors.Wrap(err, "get user from token")
 	}
 
-	uid := primitive.NewObjectID()
+	uid, err := primitive.ObjectIDFromHex(uc.Subject)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse user id in hex")
+	}
+
 	if user, err = s.LoadUserByID(ctx, uid); err != nil {
 		return nil, errors.Wrapf(err, "load user `%s`", uid)
 	}

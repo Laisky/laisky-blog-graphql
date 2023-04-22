@@ -3,7 +3,7 @@ package dao
 import (
 	"context"
 
-	"github.com/Laisky/errors"
+	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"gorm.io/gorm"
 )

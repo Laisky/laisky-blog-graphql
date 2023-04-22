@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Laisky/errors"
+	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
@@ -17,12 +17,7 @@ import (
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
-var Instance *Type
-
-func Initialize(ctx context.Context) {
-	model.Initialize(ctx)
-	Instance = New(model.MonitorDB)
-}
+var Instance *Monitor
 
 const (
 	alertTypeColName         = "alert_types"
@@ -30,27 +25,27 @@ const (
 	userAlertRelationColName = "user_alert_relations"
 )
 
-// Type db
-type Type struct {
+// Monitor db
+type Monitor struct {
 	db mongo.DB
 }
 
 // New create new DB
-func New(db mongo.DB) *Type {
-	return &Type{db}
+func New(db mongo.DB) *Monitor {
+	return &Monitor{db}
 }
 
-func (d *Type) GetAlertTypesCol() *mongoLib.Collection {
+func (d *Monitor) GetAlertTypesCol() *mongoLib.Collection {
 	return d.db.GetCol(alertTypeColName)
 }
-func (d *Type) GetUsersCol() *mongoLib.Collection {
+func (d *Monitor) GetUsersCol() *mongoLib.Collection {
 	return d.db.GetCol(usersColName)
 }
-func (d *Type) GetUserAlertRelationsCol() *mongoLib.Collection {
+func (d *Monitor) GetUserAlertRelationsCol() *mongoLib.Collection {
 	return d.db.GetCol(userAlertRelationColName)
 }
 
-func (d *Type) CreateOrGetUser(ctx context.Context, user *tb.User) (u *model.Users, err error) {
+func (d *Monitor) CreateOrGetUser(ctx context.Context, user *tb.User) (u *model.Users, err error) {
 	info, err := d.GetUsersCol().UpdateByID(ctx,
 		user.ID,
 		bson.M{"$setOnInsert": bson.M{
@@ -89,7 +84,7 @@ func generateJoinKey() string {
 	return utils.RandomStringWithLength(6)
 }
 
-func (d *Type) CreateAlertType(ctx context.Context, name string) (at *model.AlertTypes, err error) {
+func (d *Monitor) CreateAlertType(ctx context.Context, name string) (at *model.AlertTypes, err error) {
 	// check if exists
 	info, err := d.GetAlertTypesCol().UpdateOne(ctx,
 		bson.M{"name": name},
@@ -124,7 +119,7 @@ func (d *Type) CreateAlertType(ctx context.Context, name string) (at *model.Aler
 	return at, nil
 }
 
-func (d *Type) CreateOrGetUserAlertRelations(ctx context.Context, user *model.Users,
+func (d *Monitor) CreateOrGetUserAlertRelations(ctx context.Context, user *model.Users,
 	alert *model.AlertTypes) (
 	uar *model.UserAlertRelations,
 	err error) {
@@ -163,7 +158,7 @@ func (d *Type) CreateOrGetUserAlertRelations(ctx context.Context, user *model.Us
 	return uar, nil
 }
 
-func (d *Type) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.Users, err error) {
+func (d *Monitor) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.Users, err error) {
 	log.Logger.Debug("LoadUsers",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
@@ -192,7 +187,7 @@ func (d *Type) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model
 	return users, nil
 }
 
-func (d *Type) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
+func (d *Monitor) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
 	log.Logger.Debug("LoadAlertTypes",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
@@ -221,7 +216,7 @@ func (d *Type) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []
 	return alerts, nil
 }
 
-func (d *Type) LoadAlertTypesByUser(ctx context.Context, u *model.Users) (alerts []*model.AlertTypes, err error) {
+func (d *Monitor) LoadAlertTypesByUser(ctx context.Context, u *model.Users) (alerts []*model.AlertTypes, err error) {
 	log.Logger.Debug("LoadAlertTypesByUser",
 		zap.String("uid", u.ID.Hex()),
 		zap.String("username", u.Name))
@@ -257,7 +252,7 @@ func (d *Type) LoadAlertTypesByUser(ctx context.Context, u *model.Users) (alerts
 	return alerts, nil
 }
 
-func (d *Type) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.Users, err error) {
+func (d *Monitor) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.Users, err error) {
 	log.Logger.Debug("LoadUsersByAlertType",
 		zap.String("alert_type", a.ID.Hex()))
 
@@ -291,7 +286,7 @@ func (d *Type) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (u
 	return users, nil
 }
 
-func (d *Type) ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error) {
+func (d *Monitor) ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error) {
 	log.Logger.Debug("ValidateTokenForAlertType", zap.String("alert_type", alertType))
 
 	alert = new(model.AlertTypes)
@@ -311,7 +306,7 @@ func (d *Type) ValidateTokenForAlertType(ctx context.Context, token, alertType s
 	return alert, nil
 }
 
-func (d *Type) RegisterUserAlertRelation(ctx context.Context,
+func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,
 	u *model.Users,
 	alertName string,
 	joinKey string,
@@ -333,7 +328,7 @@ func (d *Type) RegisterUserAlertRelation(ctx context.Context,
 	return d.CreateOrGetUserAlertRelations(ctx, u, alert)
 }
 
-func (d *Type) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.Users, err error) {
+func (d *Monitor) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.Users, err error) {
 	log.Logger.Debug("LoadUserByUID", zap.Int("uid", telegramUID))
 	u = new(model.Users)
 	if err = d.GetUsersCol().FindOne(ctx,
@@ -341,7 +336,7 @@ func (d *Type) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.Use
 			"uid": telegramUID,
 		}).
 		Decode(u); mongo.NotFound(err) {
-		return nil, fmt.Errorf("not found user by uid")
+		return nil, fmt.Errorf(`not found user by uid "%d"`, telegramUID)
 	} else if err != nil {
 		return nil, errors.Wrap(err, "load user in db by uid")
 	}
@@ -349,7 +344,7 @@ func (d *Type) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.Use
 	return u, nil
 }
 
-func (d *Type) IsUserSubAlert(ctx context.Context, uid int, alertName string) (alert *model.AlertTypes, err error) {
+func (d *Monitor) IsUserSubAlert(ctx context.Context, uid int, alertName string) (alert *model.AlertTypes, err error) {
 	log.Logger.Debug("IsUserSubAlert", zap.Int("uid", uid), zap.String("alert", alertName))
 	alert = new(model.AlertTypes)
 	if err = d.GetAlertTypesCol().FindOne(ctx, bson.M{"name": alertName}).Decode(alert); err != nil {
@@ -373,7 +368,7 @@ func (d *Type) IsUserSubAlert(ctx context.Context, uid int, alertName string) (a
 	return alert, nil
 }
 
-func (d *Type) RefreshAlertTokenAndKey(ctx context.Context, alert *model.AlertTypes) (err error) {
+func (d *Monitor) RefreshAlertTokenAndKey(ctx context.Context, alert *model.AlertTypes) (err error) {
 	log.Logger.Info("RefreshAlertTokenAndKey", zap.String("alert", alert.Name))
 	alert.PushToken = generatePushToken()
 	alert.JoinKey = generateJoinKey()
@@ -390,7 +385,7 @@ func (d *Type) RefreshAlertTokenAndKey(ctx context.Context, alert *model.AlertTy
 	return errors.Wrap(err, "update alert token")
 }
 
-func (d *Type) RemoveUAR(ctx context.Context, uid int, alertName string) (err error) {
+func (d *Monitor) RemoveUAR(ctx context.Context, uid int, alertName string) (err error) {
 	log.Logger.Info("remove user_alert_relation", zap.Int("uid", uid), zap.String("alert", alertName))
 	alert := new(model.AlertTypes)
 	if err = d.GetAlertTypesCol().

@@ -4,6 +4,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -24,7 +25,7 @@ var (
 	server = gin.New()
 )
 
-func RunServer(addr string) {
+func RunServer(addr string, resolver *Resolver) {
 	server.Use(gin.Recovery())
 	if !gconfig.Shared.GetBool("debug") {
 		gin.SetMode(gin.ReleaseMode)
@@ -41,7 +42,7 @@ func RunServer(addr string) {
 		ctx.String(http.StatusOK, "hello, world")
 	})
 
-	h := handler.New(NewExecutableSchema(Config{Resolvers: &Resolver{}}))
+	h := handler.New(NewExecutableSchema(Config{Resolvers: resolver}))
 	h.AddTransport(transport.Websocket{
 		KeepAlivePingInterval: 10 * time.Second,
 	})
@@ -52,7 +53,10 @@ func RunServer(addr string) {
 	h.Use(extension.Introspection{})
 	h.SetErrorPresenter(func(ctx context.Context, e error) *gqlerror.Error {
 		err := graphql.DefaultErrorPresenter(ctx, e)
-		log.Logger.Error("graphql server", zap.Error(e))
+		if !strings.Contains(err.Error(), "token invalidate for") {
+			log.Logger.Error("graphql server", zap.Error(e))
+		}
+
 		return err
 	})
 	server.Any("/ui/", ginMw.FromStd(playground.Handler("GraphQL playground", "/query/")))

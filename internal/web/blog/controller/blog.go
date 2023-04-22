@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/Laisky/errors"
+	"github.com/Laisky/errors/v2"
 	ginMw "github.com/Laisky/gin-middlewares/v5"
 	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/laisky-blog-graphql/internal/global"
