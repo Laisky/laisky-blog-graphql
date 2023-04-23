@@ -142,6 +142,7 @@ type ComplexityRoot struct {
 		BlogPostCategories   func(childComplexity int) int
 		BlogPostInfo         func(childComplexity int) int
 		BlogPosts            func(childComplexity int, page *global.Pagination, tag string, categoryURL *string, length int, name string, regexp string) int
+		BlogTags             func(childComplexity int) int
 		BlogTwitterCard      func(childComplexity int, name string) int
 		GetBlogPostSeries    func(childComplexity int, page *global.Pagination, key string) int
 		Hello                func(childComplexity int) int
@@ -241,6 +242,7 @@ type QueryResolver interface {
 	BlogPosts(ctx context.Context, page *global.Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*model.Post, error)
 	BlogPostInfo(ctx context.Context) (*dto.PostInfo, error)
 	BlogPostCategories(ctx context.Context) ([]*model.Category, error)
+	BlogTags(ctx context.Context) ([]string, error)
 	GetBlogPostSeries(ctx context.Context, page *global.Pagination, key string) ([]*model.PostSeries, error)
 	BlogTwitterCard(ctx context.Context, name string) (string, error)
 	TelegramMonitorUsers(ctx context.Context, page *global.Pagination, name string) ([]*model3.Users, error)
@@ -685,6 +687,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Query.BlogPosts(childComplexity, args["page"].(*global.Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
+
+	case "Query.BlogTags":
+		if e.complexity.Query.BlogTags == nil {
+			break
+		}
+
+		return e.complexity.Query.BlogTags(childComplexity), true
 
 	case "Query.BlogTwitterCard":
 		if e.complexity.Query.BlogTwitterCard == nil {
@@ -4401,6 +4410,50 @@ func (ec *executionContext) fieldContext_Query_BlogPostCategories(ctx context.Co
 				return ec.fieldContext_BlogCategory_url(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogCategory", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_BlogTags(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_BlogTags(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().BlogTags(rctx)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_BlogTags(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -9175,6 +9228,29 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_BlogPostCategories(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx, innerFunc)
+			}
+
+			out.Concurrently(i, func() graphql.Marshaler {
+				return rrm(innerCtx)
+			})
+		case "BlogTags":
+			field := field
+
+			innerFunc := func(ctx context.Context) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_BlogTags(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&invalids, 1)
 				}

@@ -60,3 +60,9 @@ func (u *User) GetPayload() map[string]interface{} {
 		"account":      u.Account,
 	}
 }
+
+type PostTags struct {
+	ID            primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
+	Keywords      []string           `bson:"keywords" json:"keywords"`
+	ModifiedAtGMT time.Time          `bson:"modified_at_gmt" json:"modified_at_gmt"`
+}

@@ -45,6 +45,7 @@ type Query {
   ): [BlogPost]!
   BlogPostInfo: PostInfo!
   BlogPostCategories: [BlogCategory]!
+  BlogTags: [String!]!
   GetBlogPostSeries(
     page: Pagination = { page: 0, size: 10 }
     key: String! = ""

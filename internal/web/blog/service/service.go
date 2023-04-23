@@ -39,6 +39,21 @@ func New(dao *dao.Type) *Type {
 	return &Type{dao: dao}
 }
 
+// LoadPostTags load post tags
+func (s *Type) LoadPostTags(ctx context.Context) (tags []string, err error) {
+	tags = []string{}
+	// get latest document
+	docu := new(model.PostTags)
+	if err = s.dao.PostTagsCol().
+		FindOne(ctx, bson.D{},
+			options.FindOne().SetSort(bson.D{{Key: "_id", Value: -1}})).
+		Decode(docu); err != nil {
+		return nil, errors.Wrap(err, "get latest post tags")
+	}
+
+	return docu.Keywords, nil
+}
+
 func (s *Type) LoadPostSeries(ctx context.Context, id primitive.ObjectID, key string) (se []*model.PostSeries, err error) {
 	query := bson.D{}
 	if !id.IsZero() {

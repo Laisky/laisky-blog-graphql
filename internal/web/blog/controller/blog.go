@@ -80,6 +80,10 @@ func (r *QueryResolver) GetBlogPostSeries(ctx context.Context,
 	return se, nil
 }
 
+func (r *QueryResolver) BlogTags(ctx context.Context) ([]string, error) {
+	return service.Instance.LoadPostTags(ctx)
+}
+
 func (r *QueryResolver) BlogPosts(ctx context.Context,
 	page *global.Pagination,
 	tag string,
