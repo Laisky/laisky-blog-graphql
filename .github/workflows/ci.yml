@@ -25,6 +25,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
+        name: Cache Go dependencies
+        uses: actions/cache@v3
+        with:
+          path: /go
+          key: ${{ runner.os }}-primes
+      -
         name: Build and push latest
         uses: docker/build-push-action@v4
         with:
