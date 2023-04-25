@@ -215,10 +215,12 @@ func (s *Type) LoadTweets(ctx context.Context, cfg *dto.LoadTweetArgs) (results 
 		if ids, err := s.searchDao.SearchByText(ctx, cfg.Regexp); err != nil || len(ids) == 0 {
 			// clickhouse got error,
 			// back to mongo searching
-			query = append(query, bson.E{Key: "text", Value: bson.D{bson.E{Key: "$regex", Value: primitive.Regex{
-				Pattern: cfg.Regexp,
-				Options: "im",
-			}}}})
+			query = append(query, bson.E{
+				Key: "text",
+				Value: bson.D{bson.E{Key: "$regex", Value: primitive.Regex{
+					Pattern: cfg.Regexp,
+					Options: "im",
+				}}}})
 		} else if cfg.TweetID == "" {
 			query = append(query, bson.E{Key: "id_str", Value: bson.M{"$in": ids}})
 		}

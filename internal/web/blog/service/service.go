@@ -41,7 +41,6 @@ func New(dao *dao.Type) *Type {
 
 // LoadPostTags load post tags
 func (s *Type) LoadPostTags(ctx context.Context) (tags []string, err error) {
-	tags = []string{}
 	// get latest document
 	docu := new(model.PostTags)
 	if err = s.dao.PostTagsCol().

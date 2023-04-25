@@ -9,7 +9,6 @@ import (
 )
 
 type Media struct {
-	ID  int64  `bson:"id" json:"id"`
 	URL string `bson:"media_url_https" json:"media_url_https"`
 }
 

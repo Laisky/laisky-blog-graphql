@@ -110,6 +110,7 @@ func init() {
 	rootCMD.PersistentFlags().Int("heartbeat", 60, "heartbeat seconds")
 }
 
+// Execute execute root command
 func Execute() {
 	if err := rootCMD.Execute(); err != nil {
 		glog.Shared.Panic("start", zap.Error(err))
