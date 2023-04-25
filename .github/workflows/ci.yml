@@ -25,9 +25,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
-        name: Build and push
+        name: Build and push latest
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
           tags: ppcelery/laisky-blog-graphql:latest
+      -
+        name: Build and push hash label
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ppcelery/laisky-blog-graphql:${{ github.sha }}
