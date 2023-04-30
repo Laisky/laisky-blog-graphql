@@ -1,8 +1,8 @@
 package jwt
 
 import (
-	gjwt "github.com/Laisky/go-utils/v3/jwt"
-	"github.com/pkg/errors"
+	"github.com/Laisky/errors/v2"
+	gjwt "github.com/Laisky/go-utils/v4/jwt"
 )
 
 var Instance gjwt.JWT

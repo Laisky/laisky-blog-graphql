@@ -1,14 +1,15 @@
 package dao
 
 import (
-	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
+	"context"
 
-	"github.com/pkg/errors"
+	"github.com/Laisky/errors/v2"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"gorm.io/gorm"
 )
 
 type Search interface {
-	SearchByText(text string) (tweetIDs []string, err error)
+	SearchByText(ctx context.Context, text string) (tweetIDs []string, err error)
 }
 
 type sqlSearch struct {
@@ -21,7 +22,7 @@ func NewSQLSearch(db *gorm.DB) Search {
 	}
 }
 
-func (s *sqlSearch) SearchByText(text string) (tweetIDs []string, err error) {
+func (s *sqlSearch) SearchByText(ctx context.Context, text string) (tweetIDs []string, err error) {
 	var tweets []model.SearchTweet
 	err = s.db.Model(model.SearchTweet{}).
 		// Where("text LIKE ?", "%"+text+"%").

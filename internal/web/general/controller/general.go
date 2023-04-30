@@ -14,12 +14,12 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	ginMw "github.com/Laisky/gin-middlewares/v4"
-	gconfig "github.com/Laisky/go-config"
-	gutils "github.com/Laisky/go-utils/v3"
+	"github.com/Laisky/errors/v2"
+	ginMw "github.com/Laisky/gin-middlewares/v5"
+	gconfig "github.com/Laisky/go-config/v2"
+	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/zap"
 	jwtLib "github.com/golang-jwt/jwt/v4"
-	"github.com/pkg/errors"
 )
 
 type LocksResolver struct{}

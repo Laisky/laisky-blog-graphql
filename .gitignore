@@ -115,3 +115,4 @@ cpu.pprof
 # temporary
 # docs
 .coverage.txt
+docs/example/config/settings-laisky.yml

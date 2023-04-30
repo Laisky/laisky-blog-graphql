@@ -1,3 +1,4 @@
+// Package cmd command line
 package cmd
 
 import (
@@ -5,7 +6,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	gcmd "github.com/Laisky/go-utils/v3/cmd"
+	gcmd "github.com/Laisky/go-utils/v4/cmd"
 	"github.com/Laisky/zap"
 	"github.com/spf13/cobra"
 )

@@ -1,3 +1,4 @@
+// Package model of twitter
 package model
 
 import "time"

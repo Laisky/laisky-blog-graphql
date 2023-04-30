@@ -12,33 +12,61 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	gconfig "github.com/Laisky/go-config"
+	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 )
 
-type AlertTypeResolver struct{}
-type UserResolver struct{}
+type AlertTypeResolver struct {
+	svc service.Interface
+}
+type UserResolver struct {
+	svc service.Interface
+}
 
-type QueryResolver struct{}
-type MutationResolver struct{}
+type QueryResolver struct {
+	svc service.Interface
+}
+type MutationResolver struct {
+	svc service.Interface
+}
 
-type Type struct {
+func NewMutationResolver(svc service.Interface) MutationResolver {
+	return MutationResolver{
+		svc: svc,
+	}
+}
+
+type Telegram struct {
 	TelegramAlertTypeResolver *AlertTypeResolver
 	TelegramUserResolver      *UserResolver
 }
 
-var Instance *Type
-
-func Initialize(ctx context.Context) {
-	service.Initialize(ctx)
-
+func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 	setupTelegramThrottle(ctx)
-
-	Instance = &Type{
-		TelegramAlertTypeResolver: new(AlertTypeResolver),
-		TelegramUserResolver:      new(UserResolver),
+	return &Telegram{
+		TelegramAlertTypeResolver: &AlertTypeResolver{svc},
+		TelegramUserResolver:      &UserResolver{svc},
 	}
 }
+
+func isEnable() bool {
+	return gconfig.Shared.Get("settings.telegram") != nil
+}
+
+// func Initialize(ctx context.Context) {
+// 	if !isEnable() {
+// 		return
+// 	}
+
+// 	service.Initialize(ctx)
+
+// 	setupTelegramThrottle(ctx)
+
+// 	Instance = &Type{
+// 		TelegramAlertTypeResolver: new(AlertTypeResolver),
+// 		TelegramUserResolver:      new(UserResolver),
+// 	}
+// }
 
 func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 	page *global.Pagination,
@@ -48,7 +76,7 @@ func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 		Size: page.Size,
 		Name: name,
 	}
-	return service.Instance.LoadUsers(cfg)
+	return r.svc.LoadUsers(ctx, cfg)
 }
 func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 	page *global.Pagination,
@@ -58,7 +86,7 @@ func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 		Size: page.Size,
 		Name: name,
 	}
-	return service.Instance.LoadAlertTypes(cfg)
+	return r.svc.LoadAlertTypes(ctx, cfg)
 }
 
 // --------------------------
@@ -85,7 +113,7 @@ func (t *UserResolver) TelegramID(ctx context.Context,
 func (t *UserResolver) SubAlerts(ctx context.Context,
 	obj *model.Users,
 ) ([]*model.AlertTypes, error) {
-	return service.Instance.LoadAlertTypesByUser(obj)
+	return t.svc.LoadAlertTypesByUser(ctx, obj)
 }
 
 func (t *AlertTypeResolver) ID(ctx context.Context,
@@ -106,7 +134,7 @@ func (t *AlertTypeResolver) ModifiedAt(ctx context.Context,
 func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 	obj *model.AlertTypes,
 ) ([]*model.Users, error) {
-	return service.Instance.LoadUsersByAlertType(obj)
+	return t.svc.LoadUsersByAlertType(ctx, obj)
 }
 
 // ============================
@@ -127,12 +155,12 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		msg = msg[:maxlen] + " ..."
 	}
 
-	alert, err := service.Instance.ValidateTokenForAlertType(token, typeArg)
+	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
 	if err != nil {
 		return nil, err
 	}
 
-	users, err := service.Instance.LoadUsersByAlertType(alert)
+	users, err := r.svc.LoadUsersByAlertType(ctx, alert)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +168,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	errMsg := ""
 	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
 	for _, user := range users {
-		if err = service.Instance.SendMsgToUser(user.UID, msg); err != nil {
+		if err = r.svc.SendMsgToUser(user.UID, msg); err != nil {
 			log.Logger.Error("send msg to user",
 				zap.Error(err),
 				zap.Int("uid", user.UID),

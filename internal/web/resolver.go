@@ -6,17 +6,37 @@ import (
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	general "github.com/Laisky/laisky-blog-graphql/internal/web/general/controller"
 	telegram "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
+	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
 )
 
-type Resolver struct{}
+type Resolver struct {
+	telegramController *telegram.Telegram
+	telegramSvc        telegramSvc.Interface
+}
+
+func NewResolver(
+	telegramController *telegram.Telegram,
+	telegramSvc telegramSvc.Interface,
+) *Resolver {
+	return &Resolver{
+		telegramController: telegramController,
+		telegramSvc:        telegramSvc,
+	}
+}
 
 func (r *Resolver) Query() QueryResolver {
 	return &queryResolver{}
 }
 
 func (r *Resolver) Mutation() MutationResolver {
-	return &mutationResolver{}
+	return &mutationResolver{
+		blogMutation: blogMutation{},
+		telegramMutation: telegramMutation{
+			MutationResolver: telegram.NewMutationResolver(r.telegramSvc),
+		},
+		generalMutation: generalMutation{},
+	}
 }
 
 // twitter
@@ -26,6 +46,10 @@ func (r *Resolver) Tweet() TweetResolver {
 }
 func (r *Resolver) TwitterUser() TwitterUserResolver {
 	return twitter.Instance.TwitterUserResolver
+}
+
+func (r *Resolver) EmbededTweet() EmbededTweetResolver {
+	return twitter.Instance.EmbededTweetResolver
 }
 
 // blog
@@ -43,10 +67,10 @@ func (r *Resolver) BlogPostSeries() BlogPostSeriesResolver {
 // telegram
 
 func (r *Resolver) TelegramAlertType() TelegramAlertTypeResolver {
-	return telegram.Instance.TelegramAlertTypeResolver
+	return r.telegramController.TelegramAlertTypeResolver
 }
 func (r *Resolver) TelegramUser() TelegramUserResolver {
-	return telegram.Instance.TelegramUserResolver
+	return r.telegramController.TelegramUserResolver
 }
 
 // general

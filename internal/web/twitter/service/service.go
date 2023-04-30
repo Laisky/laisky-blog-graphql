@@ -8,12 +8,14 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
+	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
-	mgo "gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 var Instance *Type
@@ -37,33 +39,37 @@ func New(tweet *dao.Tweets, search dao.Search) *Type {
 	}
 }
 
-func (s *Type) LoadTweetReplys(tweetID string) (replys []*model.Tweet, err error) {
-	if err = s.tweetDao.GetTweetCol().
-		Find(bson.M{"in_reply_to_status_id_str": tweetID}).
-		All(&replys); err != nil {
+func (s *Type) LoadTweetReplys(ctx context.Context, tweetID string) (replys []*model.Tweet, err error) {
+	cur, err := s.tweetDao.GetTweetCol().
+		Find(ctx, bson.M{"in_reply_to_status_id_str": tweetID})
+	if err != nil {
+		return nil, errors.Wrapf(err, "find replys of tweet `%s`", tweetID)
+	}
+
+	if err = cur.All(ctx, &replys); err != nil {
 		return nil, errors.Wrapf(err, "load replys of tweet `%s`", tweetID)
 	}
 
 	return
 }
 
-func (s *Type) LoadThreadByTweetID(id string) (tweets []*model.Tweet, err error) {
+func (s *Type) LoadThreadByTweetID(ctx context.Context, id string) (tweets []*model.Tweet, err error) {
 	tweet := &model.Tweet{}
 	if err = s.tweetDao.GetTweetCol().
-		Find(bson.M{"id_str": id}).
-		One(tweet); err != nil {
+		FindOne(ctx, bson.M{"id_str": id}).
+		Decode(tweet); err != nil {
 		return nil, errors.Wrapf(err, "load tweet `%s`", id)
 	}
 
-	head, err := s.loadTweetsRecur(tweet, func(status *model.Tweet) string {
+	head, err := s.loadTweetsRecur(ctx, tweet, func(status *model.Tweet) string {
 		return status.ReplyToStatusID
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "load head for tweet `%s`", id)
 	}
 
-	tail, err := s.loadTweetsRecur(tweet, func(status *model.Tweet) (nextID string) {
-		replys, err := s.LoadTweetReplys(status.ID)
+	tail, err := s.loadTweetsRecur(ctx, tweet, func(status *model.Tweet) (nextID string) {
+		replys, err := s.LoadTweetReplys(ctx, status.ID)
 		if err != nil {
 			log.Logger.Error("load tweet replies", zap.Error(err))
 			return ""
@@ -114,7 +120,8 @@ func (s *Type) LoadThreadByTweetID(id string) (tweets []*model.Tweet, err error)
 	return tweets, nil
 }
 
-func (s *Type) loadTweetsRecur(tweet *model.Tweet,
+func (s *Type) loadTweetsRecur(ctx context.Context,
+	tweet *model.Tweet,
 	getNextID func(*model.Tweet) string) (
 	tweets []*model.Tweet, err error) {
 	var nextID string
@@ -125,9 +132,9 @@ func (s *Type) loadTweetsRecur(tweet *model.Tweet,
 
 		tweet = &model.Tweet{}
 		if err = s.tweetDao.GetTweetCol().
-			Find(bson.M{"id_str": nextID}).
-			One(tweet); err != nil {
-			if errors.Is(err, mgo.ErrNotFound) {
+			FindOne(ctx, bson.M{"id_str": nextID}).
+			Decode(tweet); err != nil {
+			if mongo.NotFound(err) {
 				break
 			}
 
@@ -140,13 +147,15 @@ func (s *Type) loadTweetsRecur(tweet *model.Tweet,
 	return tweets, nil
 }
 
-func (s *Type) LoadTweetByTwitterID(id string) (tweet *model.Tweet, err error) {
+func (s *Type) LoadTweetByTwitterID(ctx context.Context, id string) (tweet *model.Tweet, err error) {
 	tweet = &model.Tweet{}
 	if err = s.tweetDao.GetTweetCol().
-		Find(bson.M{"id_str": id}).
-		One(tweet); err == mgo.ErrNotFound {
+		FindOne(ctx, bson.M{"id_str": id}).
+		Decode(tweet); mongo.NotFound(err) {
 		log.Logger.Debug("tweet not found", zap.String("id", id))
-		return &model.Tweet{ID: id}, nil
+		tweet = new(model.Tweet)
+		tweet.ID = id
+		return tweet, nil
 	} else if err != nil {
 		return nil, errors.Wrap(err, "try to load tweet by id got error")
 	}
@@ -154,11 +163,11 @@ func (s *Type) LoadTweetByTwitterID(id string) (tweet *model.Tweet, err error) {
 	return tweet, nil
 }
 
-func (s *Type) LoadUserByID(id string) (user *model.User, err error) {
+func (s *Type) LoadUserByID(ctx context.Context, id string) (user *model.User, err error) {
 	user = new(model.User)
 	if err = s.tweetDao.GetUserCol().
-		Find(bson.M{"id_str": id}).
-		One(user); err == mgo.ErrNotFound {
+		FindOne(ctx, bson.M{"id_str": id}).
+		Decode(user); mongo.NotFound(err) {
 		log.Logger.Debug("tweet not found", zap.String("id", id))
 		return nil, errors.Errorf("user `%s` not found", id)
 	} else if err != nil {
@@ -168,7 +177,7 @@ func (s *Type) LoadUserByID(id string) (user *model.User, err error) {
 	return user, nil
 }
 
-func (s *Type) LoadTweets(cfg *dto.LoadTweetArgs) (results []*model.Tweet, err error) {
+func (s *Type) LoadTweets(ctx context.Context, cfg *dto.LoadTweetArgs) (results []*model.Tweet, err error) {
 	log.Logger.Debug("LoadTweets",
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("topic", cfg.Topic),
@@ -183,13 +192,13 @@ func (s *Type) LoadTweets(cfg *dto.LoadTweetArgs) (results []*model.Tweet, err e
 	}
 
 	results = []*model.Tweet{}
-	var query = bson.M{}
+	var query = bson.D{}
 	if cfg.Topic != "" {
-		query["topics"] = cfg.Topic
+		query = append(query, bson.E{Key: "topics", Value: cfg.Topic})
 	}
 
 	if cfg.TweetID != "" {
-		query["id_str"] = cfg.TweetID
+		query = append(query, bson.E{Key: "id_str", Value: cfg.TweetID})
 	}
 
 	if cfg.ViewerID != "" {
@@ -198,50 +207,57 @@ func (s *Type) LoadTweets(cfg *dto.LoadTweetArgs) (results []*model.Tweet, err e
 			return nil, errors.Wrapf(err, "invalid viewer id `%s`", cfg.ViewerID)
 		}
 
-		query["viewer"] = int64(vid)
+		query = append(query, bson.E{Key: "viewer", Value: int64(vid)})
 	}
 
 	if cfg.Regexp != "" {
 		// search in clickhouse
-		if ids, err := s.searchDao.SearchByText(cfg.Regexp); err != nil || len(ids) == 0 {
+		if ids, err := s.searchDao.SearchByText(ctx, cfg.Regexp); err != nil || len(ids) == 0 {
 			// clickhouse got error,
 			// back to mongo searching
-			query["text"] = bson.M{"$regex": bson.RegEx{
-				Pattern: cfg.Regexp,
-				Options: "im",
-			}}
+			query = append(query, bson.E{
+				Key: "text",
+				Value: bson.D{bson.E{Key: "$regex", Value: primitive.Regex{
+					Pattern: cfg.Regexp,
+					Options: "im",
+				}}}})
 		} else if cfg.TweetID == "" {
-			query["id_str"] = bson.M{"$in": ids}
+			query = append(query, bson.E{Key: "id_str", Value: bson.M{"$in": ids}})
 		}
 	}
 
 	if cfg.Username != "" {
-		query["user.screen_name"] = cfg.Username
+		query = append(query, bson.E{Key: "user.screen_name", Value: cfg.Username})
 	}
 
-	sort := "-created_at"
+	sort := bson.D{{Key: "-created_at", Value: 1}}
 	if cfg.SortBy != "" {
-		sort = cfg.SortBy
+		sort[0].Key = cfg.SortBy
 		switch cfg.SortOrder {
 		case "ASC":
 		case "DESC":
-			sort = "-" + sort
+			sort[0].Value = -1
 		default:
-			return nil, errors.Errorf("SortOrder must in `ASC/DESC`, but got %v", cfg.SortOrder)
+			return nil, errors.Errorf("SortOrder must in `ASC/DESC`, but got %s", cfg.SortOrder)
 		}
 	}
 
-	if err = s.tweetDao.GetTweetCol().
-		Find(query).
-		Sort(sort).
-		Skip(cfg.Page * cfg.Size).
-		Limit(cfg.Size).
-		All(&results); err != nil {
-		return nil, err
+	cur, err := s.tweetDao.GetTweetCol().
+		Find(ctx, query,
+			options.Find().SetSort(sort),
+			options.Find().SetSkip(int64(cfg.Page*cfg.Size)),
+			options.Find().SetLimit(int64(cfg.Size)),
+		)
+	if err != nil {
+		return nil, errors.Wrap(err, "find tweets")
+	}
+
+	if err = cur.All(ctx, &results); err != nil {
+		return nil, errors.Wrap(err, "load tweets")
 	}
 
 	log.Logger.Debug("load tweets",
-		zap.String("sort", sort),
+		zap.Any("sort", sort),
 		zap.Any("query", query),
 		zap.Int("skip", cfg.Page*cfg.Size),
 		zap.Int("size", cfg.Size))

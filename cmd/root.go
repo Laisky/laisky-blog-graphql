@@ -7,19 +7,18 @@ import (
 
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	general "github.com/Laisky/laisky-blog-graphql/internal/web/general/controller"
-	telegram "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
 	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/config"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	gconfig "github.com/Laisky/go-config"
-	gutils "github.com/Laisky/go-utils/v3"
-	gcmd "github.com/Laisky/go-utils/v3/cmd"
-	glog "github.com/Laisky/go-utils/v3/log"
+	"github.com/Laisky/errors/v2"
+	gconfig "github.com/Laisky/go-config/v2"
+	gutils "github.com/Laisky/go-utils/v4"
+	gcmd "github.com/Laisky/go-utils/v4/cmd"
+	glog "github.com/Laisky/go-utils/v4/log"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +45,7 @@ func initialize(ctx context.Context, cmd *cobra.Command) error {
 func setupModules(ctx context.Context) {
 	blog.Initialize(ctx)
 	twitter.Initialize(ctx)
-	telegram.Initialize(ctx)
+	// telegram.Initialize(ctx)
 	general.Initialize(ctx)
 }
 
@@ -111,6 +110,7 @@ func init() {
 	rootCMD.PersistentFlags().Int("heartbeat", 60, "heartbeat seconds")
 }
 
+// Execute execute root command
 func Execute() {
 	if err := rootCMD.Execute(); err != nil {
 		glog.Shared.Panic("start", zap.Error(err))

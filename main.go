@@ -1,6 +1,9 @@
+// Package main entrypoint
 package main
 
-import "github.com/Laisky/laisky-blog-graphql/cmd"
+import (
+	"github.com/Laisky/laisky-blog-graphql/cmd"
+)
 
 //go:generate make gen
 

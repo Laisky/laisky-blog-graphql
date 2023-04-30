@@ -4,7 +4,7 @@ import (
 	"context"
 
 	fsSDK "cloud.google.com/go/firestore"
-	"github.com/pkg/errors"
+	"github.com/Laisky/errors/v2"
 	"google.golang.org/api/option"
 )
 

@@ -1,7 +1,7 @@
 package auth
 
 import (
-	ginMw "github.com/Laisky/gin-middlewares/v4"
+	ginMw "github.com/Laisky/gin-middlewares/v5"
 )
 
 var Instance *ginMw.Auth

@@ -5,7 +5,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	gconfig "github.com/Laisky/go-config"
+	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 )
 
