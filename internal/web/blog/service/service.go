@@ -10,6 +10,7 @@ import (
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 	gcrypto "github.com/Laisky/go-utils/v4/crypto"
+	"github.com/Laisky/laisky-blog-graphql/internal/global"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
@@ -77,7 +78,8 @@ func (s *Type) LoadPostSeries(ctx context.Context, id primitive.ObjectID, key st
 	return
 }
 
-func (s *Type) LoadPosts(ctx context.Context, cfg *dto.PostCfg) (results []*model.Post, err error) {
+func (s *Type) LoadPosts(ctx context.Context,
+	cfg *dto.PostCfg) (results []*model.Post, err error) {
 	logger := log.Logger.With(
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("tag", cfg.Tag),
@@ -183,9 +185,10 @@ func (s *Type) filterPosts(ctx context.Context, cfg *dto.PostCfg, iter *mongo.Cu
 		for _, f := range [...]func(*model.Post) bool{
 			// filters pipeline
 			passwordFilter,
-			getContentLengthFilter(cfg.Length),
-			defaultTypeFilter,
 			hiddenFilter,
+			getContentLengthFilter(cfg.Length),
+			getI18NFilter(cfg.Language),
+			defaultTypeFilter,
 		} {
 			if !f(post) {
 				isValidate = false
@@ -210,6 +213,20 @@ func defaultTypeFilter(docu *model.Post) bool {
 	}
 
 	return true
+}
+
+// i18NFilter
+func getI18NFilter(language global.Language) func(*model.Post) bool {
+	return func(p *model.Post) bool {
+		if p.I18N != nil {
+			if v, ok := p.I18N[language.String()]; ok {
+				p.Content = v
+				return true
+			}
+		}
+
+		return true
+	}
 }
 
 func hiddenFilter(docu *model.Post) bool {

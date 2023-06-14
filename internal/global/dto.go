@@ -81,6 +81,47 @@ func (e BlogPostType) MarshalGQL(w io.Writer) {
 	fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
+type Language string
+
+const (
+	LanguageZhCn Language = "zh_CN"
+	LanguageEnUs Language = "en_US"
+)
+
+var AllLanguage = []Language{
+	LanguageZhCn,
+	LanguageEnUs,
+}
+
+func (e Language) IsValid() bool {
+	switch e {
+	case LanguageZhCn, LanguageEnUs:
+		return true
+	}
+	return false
+}
+
+func (e Language) String() string {
+	return string(e)
+}
+
+func (e *Language) UnmarshalGQL(v interface{}) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = Language(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid Language", str)
+	}
+	return nil
+}
+
+func (e Language) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
 type SortOrder string
 
 const (

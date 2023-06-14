@@ -42,6 +42,7 @@ type Query {
     length: Int! = 0 # content length, 0 means total
     name: String! = ""
     regexp: String! = ""
+    language: Language! = zh_CN
   ): [BlogPost]!
   BlogPostInfo: PostInfo!
   BlogPostCategories: [BlogCategory]!

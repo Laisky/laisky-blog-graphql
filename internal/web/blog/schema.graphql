@@ -4,6 +4,11 @@ enum BlogPostType {
     html  # legacy posts
 }
 
+enum Language {
+    zh_CN # Simplified Chinese
+    en_US # English
+}
+
 type PostInfo {
     total: Int!
 }

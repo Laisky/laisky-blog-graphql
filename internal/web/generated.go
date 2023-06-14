@@ -141,7 +141,7 @@ type ComplexityRoot struct {
 	Query struct {
 		BlogPostCategories   func(childComplexity int) int
 		BlogPostInfo         func(childComplexity int) int
-		BlogPosts            func(childComplexity int, page *global.Pagination, tag string, categoryURL *string, length int, name string, regexp string) int
+		BlogPosts            func(childComplexity int, page *global.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language global.Language) int
 		BlogTags             func(childComplexity int) int
 		BlogTwitterCard      func(childComplexity int, name string) int
 		GetBlogPostSeries    func(childComplexity int, page *global.Pagination, key string) int
@@ -239,7 +239,7 @@ type QueryResolver interface {
 	WhoAmI(ctx context.Context) (*model.User, error)
 	TwitterStatues(ctx context.Context, page *global.Pagination, tweetID string, username string, viewerID string, sort *global.Sort, topic string, regexp string) ([]*model1.Tweet, error)
 	TwitterThreads(ctx context.Context, tweetID string) ([]*model1.Tweet, error)
-	BlogPosts(ctx context.Context, page *global.Pagination, tag string, categoryURL *string, length int, name string, regexp string) ([]*model.Post, error)
+	BlogPosts(ctx context.Context, page *global.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language global.Language) ([]*model.Post, error)
 	BlogPostInfo(ctx context.Context) (*dto.PostInfo, error)
 	BlogPostCategories(ctx context.Context) ([]*model.Category, error)
 	BlogTags(ctx context.Context) ([]string, error)
@@ -686,7 +686,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.BlogPosts(childComplexity, args["page"].(*global.Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string)), true
+		return e.complexity.Query.BlogPosts(childComplexity, args["page"].(*global.Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string), args["language"].(global.Language)), true
 
 	case "Query.BlogTags":
 		if e.complexity.Query.BlogTags == nil {
@@ -1303,6 +1303,15 @@ func (ec *executionContext) field_Query_BlogPosts_args(ctx context.Context, rawA
 		}
 	}
 	args["regexp"] = arg5
+	var arg6 global.Language
+	if tmp, ok := rawArgs["language"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
+		arg6, err = ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋglobalᚐLanguage(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["language"] = arg6
 	return args, nil
 }
 
@@ -4250,7 +4259,7 @@ func (ec *executionContext) _Query_BlogPosts(ctx context.Context, field graphql.
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogPosts(rctx, fc.Args["page"].(*global.Pagination), fc.Args["tag"].(string), fc.Args["category_url"].(*string), fc.Args["length"].(int), fc.Args["name"].(string), fc.Args["regexp"].(string))
+		return ec.resolvers.Query().BlogPosts(rctx, fc.Args["page"].(*global.Pagination), fc.Args["tag"].(string), fc.Args["category_url"].(*string), fc.Args["length"].(int), fc.Args["name"].(string), fc.Args["regexp"].(string), fc.Args["language"].(global.Language))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -10558,6 +10567,16 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋglobalᚐLanguage(ctx context.Context, v interface{}) (global.Language, error) {
+	var res global.Language
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋglobalᚐLanguage(ctx context.Context, sel ast.SelectionSet, v global.Language) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) marshalNLock2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚋmodelᚐLock(ctx context.Context, sel ast.SelectionSet, v model2.Lock) graphql.Marshaler {

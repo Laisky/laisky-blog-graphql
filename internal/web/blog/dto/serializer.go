@@ -1,6 +1,9 @@
 package dto
 
-import "go.mongodb.org/mongo-driver/bson/primitive"
+import (
+	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 // PostInfo blog post info
 type PostInfo struct {
@@ -13,4 +16,5 @@ type PostCfg struct {
 	Page, Size, Length int
 	Name, Tag, Regexp  string
 	CategoryURL        *string
+	Language           global.Language
 }

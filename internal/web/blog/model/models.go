@@ -23,6 +23,7 @@ type Post struct {
 	Category   primitive.ObjectID `bson:"category,omitempty" json:"category"`
 	Tags       []string           `bson:"post_tags" json:"tags"`
 	Hidden     bool               `bson:"hidden" json:"hidden"`
+	I18N       map[string]string  `bson:"i18n" json:"i18n"`
 }
 
 // User blog users

@@ -91,6 +91,7 @@ func (r *QueryResolver) BlogPosts(ctx context.Context,
 	length int,
 	name string,
 	regexp string,
+	language global.Language, // FIXME
 ) ([]*model.Post, error) {
 	cfg := &dto.PostCfg{
 		Page:        page.Page,
