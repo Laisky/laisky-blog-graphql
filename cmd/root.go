@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	general "github.com/Laisky/laisky-blog-graphql/internal/web/general/controller"
 	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
@@ -43,7 +42,7 @@ func initialize(ctx context.Context, cmd *cobra.Command) error {
 }
 
 func setupModules(ctx context.Context) {
-	blog.Initialize(ctx)
+	// blog.Initialize(ctx)
 	twitter.Initialize(ctx)
 	// telegram.Initialize(ctx)
 	general.Initialize(ctx)
@@ -77,7 +76,7 @@ func setupSettings(ctx context.Context) {
 	config.LoadFromFile(cfgPath)
 }
 
-func setupLogger(ctx context.Context) {
+func setupLogger(_ context.Context) {
 	// log
 	// alertPusher, err := gutils.NewAlertPusherWithAlertType(
 	// 	ctx,

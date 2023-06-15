@@ -1,3 +1,4 @@
+// Package mongo provides a wrapper for the MongoDB client.
 package mongo
 
 import (

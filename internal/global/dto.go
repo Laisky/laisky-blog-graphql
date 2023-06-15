@@ -38,6 +38,21 @@ type Sort struct {
 	Order  SortOrder `json:"order"`
 }
 
+type UserActiveResponse struct {
+	User  *model.User `json:"user"`
+	Token string      `json:"token"`
+}
+
+type UserLoginResponse struct {
+	User  *model.User `json:"user"`
+	Token string      `json:"token"`
+}
+
+type UserRegisterResponse struct {
+	User  *model.User `json:"user"`
+	Token string      `json:"token"`
+}
+
 type BlogPostType string
 
 const (

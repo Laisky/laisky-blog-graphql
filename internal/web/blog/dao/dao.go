@@ -1,55 +1,46 @@
 package dao
 
 import (
-	"context"
-
-	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	glog "github.com/Laisky/go-utils/v4/log"
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
 )
 
-// Instance dao instance
-var Instance *Type
-
-// Initialize initialize dao
-func Initialize(ctx context.Context) {
-	model.Initialize(ctx)
-	Instance = New(model.BlogDB)
-}
-
-// Type dao type
-type Type struct {
-	db mongo.DB
+// Blog dao type
+type Blog struct {
+	logger glog.Logger
+	db     mongo.DB
 }
 
 // New create new dao
-func New(db mongo.DB) *Type {
-	return &Type{
-		db: db,
+func New(logger glog.Logger, db mongo.DB) *Blog {
+	return &Blog{
+		logger: logger,
+		db:     db,
 	}
 }
 
 // PostTagsCol get post tags collection
-func (d *Type) PostTagsCol() *mongoLib.Collection {
+func (d *Blog) PostTagsCol() *mongoLib.Collection {
 	return d.db.GetCol("keywords")
 }
 
 // GetPostsCol get posts collection
-func (d *Type) GetPostsCol() *mongoLib.Collection {
+func (d *Blog) GetPostsCol() *mongoLib.Collection {
 	return d.db.GetCol("posts")
 }
 
 // GetUsersCol get users collection
-func (d *Type) GetUsersCol() *mongoLib.Collection {
+func (d *Blog) GetUsersCol() *mongoLib.Collection {
 	return d.db.GetCol("users")
 }
 
 // GetCategoriesCol get categories collection
-func (d *Type) GetCategoriesCol() *mongoLib.Collection {
+func (d *Blog) GetCategoriesCol() *mongoLib.Collection {
 	return d.db.GetCol("categories")
 }
 
 // GetPostSeriesCol get post series collection
-func (d *Type) GetPostSeriesCol() *mongoLib.Collection {
+func (d *Blog) GetPostSeriesCol() *mongoLib.Collection {
 	return d.db.GetCol("post_series")
 }

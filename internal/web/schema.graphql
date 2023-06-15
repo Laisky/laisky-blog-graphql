@@ -74,7 +74,11 @@ type Mutation {
   # publish new blog post
   BlogCreatePost(post: NewBlogPost!): BlogPost!
   # login
+  # Deprecated: use UserLogin instead
   BlogLogin(account: String!, password: String!): BlogLoginResponse!
+  UserLogin(account: String!, password: String!): BlogLoginResponse!
+  UserRegister(account: String!, password: String!, email: String!, captcha: String!): UserRegisterResponse!
+  UserActive(token: String!): UserActiveResponse!
   # update blog post
   BlogAmendPost(post: NewBlogPost!): BlogPost!
 

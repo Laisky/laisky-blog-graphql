@@ -4,34 +4,56 @@ import (
 	"context"
 
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
+	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
 	general "github.com/Laisky/laisky-blog-graphql/internal/web/general/controller"
 	telegram "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
 )
 
+// Resolver resolver
 type Resolver struct {
-	telegramController *telegram.Telegram
-	telegramSvc        telegramSvc.Interface
+	telegramCtl *telegram.Telegram
+	telegramSvc telegramSvc.Interface
+	blogCtl     *blog.Blog
+	blogSvc     *blogSvc.Blog
 }
 
-func NewResolver(
-	telegramController *telegram.Telegram,
-	telegramSvc telegramSvc.Interface,
-) *Resolver {
+type ResolverArgs struct {
+	TelegramCtl *telegram.Telegram
+	TelegramSvc telegramSvc.Interface
+	BlogCtl     *blog.Blog
+	BlogSvc     *blogSvc.Blog
+}
+
+// NewResolver new resolver
+func NewResolver(arg ResolverArgs) *Resolver {
 	return &Resolver{
-		telegramController: telegramController,
-		telegramSvc:        telegramSvc,
+		telegramCtl: arg.TelegramCtl,
+		telegramSvc: arg.TelegramSvc,
+		blogCtl:     arg.BlogCtl,
+		blogSvc:     arg.BlogSvc,
 	}
 }
 
+// Query query resolver
 func (r *Resolver) Query() QueryResolver {
-	return &queryResolver{}
+	return &queryResolver{
+		telegramQuery: telegramQuery{
+			QueryResolver: telegram.NewQueryResolver(r.telegramSvc),
+		},
+		blogQuery: blogQuery{
+			QueryResolver: blog.NewQueryResolver(r.blogSvc),
+		},
+	}
 }
 
+// Mutation mutation resolver
 func (r *Resolver) Mutation() MutationResolver {
 	return &mutationResolver{
-		blogMutation: blogMutation{},
+		blogMutation: blogMutation{
+			MutationResolver: blog.NewMutationResolver(r.blogSvc),
+		},
 		telegramMutation: telegramMutation{
 			MutationResolver: telegram.NewMutationResolver(r.telegramSvc),
 		},
@@ -55,22 +77,22 @@ func (r *Resolver) EmbededTweet() EmbededTweetResolver {
 // blog
 
 func (r *Resolver) BlogPost() BlogPostResolver {
-	return blog.Instance.PostResolver
+	return r.blogCtl.PostResolver
 }
 func (r *Resolver) BlogUser() BlogUserResolver {
-	return blog.Instance.UserResolver
+	return r.blogCtl.UserResolver
 }
 func (r *Resolver) BlogPostSeries() BlogPostSeriesResolver {
-	return blog.Instance.PostSeriesResolver
+	return r.blogCtl.PostSeriesResolver
 }
 
 // telegram
 
 func (r *Resolver) TelegramAlertType() TelegramAlertTypeResolver {
-	return r.telegramController.TelegramAlertTypeResolver
+	return r.telegramCtl.TelegramAlertTypeResolver
 }
 func (r *Resolver) TelegramUser() TelegramUserResolver {
-	return r.telegramController.TelegramUserResolver
+	return r.telegramCtl.TelegramUserResolver
 }
 
 // general

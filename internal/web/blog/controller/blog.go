@@ -1,3 +1,4 @@
+// Package controller is the resolver of graphql.
 package controller
 
 import (
@@ -22,32 +23,66 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-type PostResolver struct{}
-type PostSeriesResolver struct{}
-type UserResolver struct{}
+// PostResolver post resolver
+type PostResolver struct {
+	svc *service.Blog
+}
 
-type QueryResolver struct{}
-type MutationResolver struct{}
+// PostSeriesResolver post series resolver
+type PostSeriesResolver struct {
+	svc *service.Blog
+}
 
-type Type struct {
+// UserResolver user resolver
+type UserResolver struct {
+	svc *service.Blog
+}
+
+// QueryResolver query resolver
+type QueryResolver struct {
+	svc *service.Blog
+}
+
+// MutationResolver mutation resolver
+type MutationResolver struct {
+	svc *service.Blog
+}
+
+// NewQueryResolver new query resolver
+func NewQueryResolver(svc *service.Blog) QueryResolver {
+	return QueryResolver{
+		svc: svc,
+	}
+}
+
+// NewMutationResolver new mutation resolver
+func NewMutationResolver(
+	svc *service.Blog,
+) MutationResolver {
+	return MutationResolver{
+		svc: svc,
+	}
+}
+
+// Blog blog resolver
+type Blog struct {
 	PostResolver       *PostResolver
 	PostSeriesResolver *PostSeriesResolver
 	UserResolver       *UserResolver
 }
 
-func New() *Type {
-	return &Type{
-		PostResolver:       new(PostResolver),
-		PostSeriesResolver: new(PostSeriesResolver),
-		UserResolver:       new(UserResolver),
+func New(svc *service.Blog) *Blog {
+	return &Blog{
+		PostResolver: &PostResolver{
+			svc: svc,
+		},
+		PostSeriesResolver: &PostSeriesResolver{
+			svc: svc,
+		},
+		UserResolver: &UserResolver{
+			svc: svc,
+		},
 	}
-}
-
-var Instance *Type
-
-func Initialize(ctx context.Context) {
-	service.Initialize(ctx)
-	Instance = New()
 }
 
 // =====================================
@@ -55,11 +90,11 @@ func Initialize(ctx context.Context) {
 // =====================================
 
 func (r *QueryResolver) BlogPostInfo(ctx context.Context) (*dto.PostInfo, error) {
-	return service.Instance.LoadPostInfo(ctx)
+	return r.svc.LoadPostInfo(ctx)
 }
 
 func (r *QueryResolver) WhoAmI(ctx context.Context) (*model.User, error) {
-	user, err := service.Instance.ValidateAndGetUser(ctx)
+	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
@@ -72,7 +107,7 @@ func (r *QueryResolver) GetBlogPostSeries(ctx context.Context,
 	page *global.Pagination,
 	key string,
 ) ([]*model.PostSeries, error) {
-	se, err := service.Instance.LoadPostSeries(ctx, primitive.NilObjectID, key)
+	se, err := r.svc.LoadPostSeries(ctx, primitive.NilObjectID, key)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +116,7 @@ func (r *QueryResolver) GetBlogPostSeries(ctx context.Context,
 }
 
 func (r *QueryResolver) BlogTags(ctx context.Context) ([]string, error) {
-	return service.Instance.LoadPostTags(ctx)
+	return r.svc.LoadPostTags(ctx)
 }
 
 func (r *QueryResolver) BlogPosts(ctx context.Context,
@@ -102,7 +137,7 @@ func (r *QueryResolver) BlogPosts(ctx context.Context,
 		CategoryURL: categoryURL,
 		Name:        name,
 	}
-	results, err := service.Instance.LoadPosts(ctx, cfg)
+	results, err := r.svc.LoadPosts(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +145,7 @@ func (r *QueryResolver) BlogPosts(ctx context.Context,
 	return results, nil
 }
 func (r *QueryResolver) BlogPostCategories(ctx context.Context) ([]*model.Category, error) {
-	return service.Instance.LoadAllCategories(ctx)
+	return r.svc.LoadAllCategories(ctx)
 }
 
 var (
@@ -118,7 +153,7 @@ var (
 )
 
 func (r *QueryResolver) BlogTwitterCard(ctx context.Context, name string) (string, error) {
-	posts, err := service.Instance.LoadPosts(ctx, &dto.PostCfg{
+	posts, err := r.svc.LoadPosts(ctx, &dto.PostCfg{
 		Name: name,
 	})
 	if err != nil {
@@ -169,10 +204,10 @@ func (r *PostResolver) ModifiedAt(ctx context.Context, obj *model.Post) (*librar
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
 func (r *PostResolver) Author(ctx context.Context, obj *model.Post) (*model.User, error) {
-	return service.Instance.LoadUserByID(ctx, obj.Author)
+	return r.svc.LoadUserByID(ctx, obj.Author)
 }
 func (r *PostResolver) Category(ctx context.Context, obj *model.Post) (*model.Category, error) {
-	return service.Instance.LoadCategoryByID(ctx, obj.Category)
+	return r.svc.LoadCategoryByID(ctx, obj.Category)
 }
 func (r *PostResolver) Type(ctx context.Context, obj *model.Post) (global.BlogPostType, error) {
 	switch obj.Type {
@@ -188,7 +223,7 @@ func (r *PostResolver) Type(ctx context.Context, obj *model.Post) (global.BlogPo
 }
 
 func (r *PostSeriesResolver) Posts(ctx context.Context, obj *model.PostSeries) (posts []*model.Post, err error) {
-	se, err := service.Instance.LoadPostSeries(ctx, obj.ID, "")
+	se, err := r.svc.LoadPostSeries(ctx, obj.ID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +233,7 @@ func (r *PostSeriesResolver) Posts(ctx context.Context, obj *model.PostSeries) (
 	}
 
 	for _, postID := range se[0].Posts {
-		ps, err := service.Instance.LoadPosts(ctx, &dto.PostCfg{ID: postID})
+		ps, err := r.svc.LoadPosts(ctx, &dto.PostCfg{ID: postID})
 		if err != nil {
 			log.Logger.Error("load posts", zap.Error(err), zap.String("id", postID.Hex()))
 			continue
@@ -213,7 +248,7 @@ func (r *PostSeriesResolver) Children(ctx context.Context,
 	obj *model.PostSeries) ([]*model.PostSeries, error) {
 	var ss []*model.PostSeries
 	for _, sid := range obj.Chidlren {
-		se, err := service.Instance.LoadPostSeries(ctx, sid, "")
+		se, err := r.svc.LoadPostSeries(ctx, sid, "")
 		if err != nil {
 			return nil, errors.Wrapf(err, "load post series `%s`", sid.Hex())
 		}
@@ -233,10 +268,22 @@ func (r *UserResolver) ID(ctx context.Context,
 // mutations
 // =====================================
 
+func (r *MutationResolver) UserLogin(ctx context.Context, account string, password string) (*global.BlogLoginResponse, error) {
+	return r.BlogLogin(ctx, account, password)
+}
+
+func (r *MutationResolver) UserRegister(ctx context.Context, account string, password string, email string, captcha string) (*global.UserRegisterResponse, error) {
+	return nil, errors.Errorf("notimplement")
+}
+
+func (r *MutationResolver) UserActive(ctx context.Context, token string) (*global.UserActiveResponse, error) {
+	return nil, errors.Errorf("notimplement")
+}
+
 // BlogCreatePost create new blog post
 func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 	input global.NewBlogPost) (*model.Post, error) {
-	user, err := service.Instance.ValidateAndGetUser(ctx)
+	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
@@ -247,7 +294,7 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 		return nil, fmt.Errorf("title & markdown must set")
 	}
 
-	return service.Instance.NewPost(ctx,
+	return r.svc.NewPost(ctx,
 		user.ID,
 		*input.Title,
 		input.Name,
@@ -261,7 +308,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	password string,
 ) (resp *global.BlogLoginResponse, err error) {
 	var user *model.User
-	if user, err = service.Instance.ValidateLogin(ctx, account, password); err != nil {
+	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
@@ -294,7 +341,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 
 func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	post global.NewBlogPost) (*model.Post, error) {
-	user, err := service.Instance.ValidateAndGetUser(ctx)
+	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
@@ -306,7 +353,7 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 
 	// only update category
 	if post.Category != nil {
-		return service.Instance.UpdatePostCategory(ctx, post.Name, *post.Category)
+		return r.svc.UpdatePostCategory(ctx, post.Name, *post.Category)
 	}
 
 	if post.Title == nil ||
@@ -316,7 +363,7 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	}
 
 	// update post content
-	return service.Instance.UpdatePost(ctx,
+	return r.svc.UpdatePost(ctx,
 		user,
 		post.Name,
 		*post.Title,

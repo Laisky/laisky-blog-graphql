@@ -57,3 +57,18 @@ type BlogLoginResponse {
     user: BlogUser!
     token: String!
 }
+
+type UserLoginResponse {
+    user: BlogUser!
+    token: String!
+}
+
+type UserRegisterResponse {
+    user: BlogUser!
+    token: String!
+}
+
+type UserActiveResponse {
+    user: BlogUser!
+    token: String!
+}

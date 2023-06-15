@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/global"
-	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
@@ -17,9 +16,7 @@ import (
 	"github.com/Laisky/errors/v2"
 	ginMw "github.com/Laisky/gin-middlewares/v5"
 	gconfig "github.com/Laisky/go-config/v2"
-	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/zap"
-	jwtLib "github.com/golang-jwt/jwt/v4"
 )
 
 type LocksResolver struct{}
@@ -182,21 +179,24 @@ func (r *MutationResolver) CreateGeneralToken(ctx context.Context,
 			durationSec)
 	}
 
-	if _, err = blogSvc.Instance.ValidateAndGetUser(ctx); err != nil {
-		return "", errors.Wrapf(err, "user `%v` invalidate", username)
-	}
+	// FIXME
+	return "", errors.Errorf("not implemented")
 
-	uc := &jwt.UserClaims{
-		RegisteredClaims: jwtLib.RegisteredClaims{
-			Subject: username,
-			ExpiresAt: &jwtLib.NumericDate{
-				Time: gutils.Clock.GetUTCNow().Add(time.Duration(durationSec)),
-			},
-		},
-	}
-	if token, err = jwt.Instance.Sign(uc); err != nil {
-		return "", errors.Wrap(err, "generate token")
-	}
+	// if _, err = blogSvc.Instance.ValidateAndGetUser(ctx); err != nil {
+	// 	return "", errors.Wrapf(err, "user `%v` invalidate", username)
+	// }
 
-	return token, nil
+	// uc := &jwt.UserClaims{
+	// 	RegisteredClaims: jwtLib.RegisteredClaims{
+	// 		Subject: username,
+	// 		ExpiresAt: &jwtLib.NumericDate{
+	// 			Time: gutils.Clock.GetUTCNow().Add(time.Duration(durationSec)),
+	// 		},
+	// 	},
+	// }
+	// if token, err = jwt.Instance.Sign(uc); err != nil {
+	// 	return "", errors.Wrap(err, "generate token")
+	// }
+
+	// return token, nil
 }

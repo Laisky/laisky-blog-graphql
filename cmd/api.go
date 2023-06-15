@@ -5,7 +5,11 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
-	telegramCon "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
+	blogCtl "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
+	blogDao "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
+	blogModel "github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
+	telegramCtl "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
 	telegramDao "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	telegramModel "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
@@ -41,25 +45,36 @@ func init() {
 
 func runAPI() error {
 	ctx := context.Background()
-	// logger := log.Logger.Named("api")
+	logger := log.Logger.Named("api")
 
-	db, err := telegramModel.New(ctx)
-	if err != nil {
-		return errors.Wrap(err, "new db")
+	var args web.ResolverArgs
+
+	{ // setup telegram
+		telegramDB, err := telegramModel.New(ctx)
+		if err != nil {
+			return errors.Wrap(err, "new db")
+		}
+		monitorDao := telegramDao.New(telegramDB)
+		args.TelegramSvc, err = telegramSvc.New(ctx, monitorDao,
+			gconfig.Shared.GetString("settings.telegram.token"),
+			gconfig.Shared.GetString("settings.telegram.api"),
+		)
+		if err != nil {
+			return errors.Wrap(err, "new telegram service")
+		}
+		args.TelegramCtl = telegramCtl.NewTelegram(ctx, args.TelegramSvc)
 	}
 
-	monitorDao := telegramDao.New(db)
-	telegramSvc, err := telegramSvc.New(ctx, monitorDao,
-		gconfig.Shared.GetString("settings.telegram.token"),
-		gconfig.Shared.GetString("settings.telegram.api"),
-	)
-	if err != nil {
-		return errors.Wrap(err, "new telegram service")
+	{ // setup blog
+		blogDB, err := blogModel.NewDB(ctx)
+		if err != nil {
+			return errors.Wrap(err, "new blog db")
+		}
+		args.BlogSvc = blogSvc.New(blogDao.New(logger.Named("blog_dao"), blogDB))
+		args.BlogCtl = blogCtl.New(args.BlogSvc)
 	}
 
-	telegramCon := telegramCon.NewTelegram(ctx, telegramSvc)
-	resolver := web.NewResolver(telegramCon, telegramSvc)
-
+	resolver := web.NewResolver(args)
 	web.RunServer(gconfig.Shared.GetString("listen"), resolver)
 	return nil
 }

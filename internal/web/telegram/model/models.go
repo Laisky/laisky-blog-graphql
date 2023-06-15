@@ -1,3 +1,4 @@
+// Package model defines the data model for the blog service.
 package model
 
 import (

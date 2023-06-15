@@ -16,26 +16,41 @@ import (
 	"github.com/Laisky/zap"
 )
 
+// AlertTypeResolver alert type resolver
 type AlertTypeResolver struct {
 	svc service.Interface
 }
+
+// UserResolver user resolver
 type UserResolver struct {
 	svc service.Interface
 }
 
+// QueryResolver query resolver
 type QueryResolver struct {
 	svc service.Interface
 }
+
+// MutationResolver mutation resolver
 type MutationResolver struct {
 	svc service.Interface
 }
 
+// NewQueryResolver new query resolver
+func NewQueryResolver(svc service.Interface) QueryResolver {
+	return QueryResolver{
+		svc: svc,
+	}
+}
+
+// NewMutationResolver new mutation resolver
 func NewMutationResolver(svc service.Interface) MutationResolver {
 	return MutationResolver{
 		svc: svc,
 	}
 }
 
+// Telegram telegram resolver
 type Telegram struct {
 	TelegramAlertTypeResolver *AlertTypeResolver
 	TelegramUserResolver      *UserResolver
@@ -49,9 +64,9 @@ func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 	}
 }
 
-func isEnable() bool {
-	return gconfig.Shared.Get("settings.telegram") != nil
-}
+// func isEnable() bool {
+// 	return gconfig.Shared.Get("settings.telegram") != nil
+// }
 
 // func Initialize(ctx context.Context) {
 // 	if !isEnable() {
