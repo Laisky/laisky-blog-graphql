@@ -6,18 +6,18 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
-	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	gutils "github.com/Laisky/go-utils/v4"
+	glog "github.com/Laisky/go-utils/v4/log"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	mongoSDK "github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -27,12 +27,24 @@ import (
 
 // Blog blog service
 type Blog struct {
-	dao *dao.Blog
+	logger glog.Logger
+	dao    *dao.Blog
 }
 
 // New new blog service
-func New(dao *dao.Blog) *Blog {
-	return &Blog{dao: dao}
+func New(ctx context.Context,
+	logger glog.Logger,
+	dao *dao.Blog) (*Blog, error) {
+	b := &Blog{
+		logger: logger,
+		dao:    dao,
+	}
+
+	if err := b.setupUserCols(ctx); err != nil {
+		return nil, errors.Wrap(err, "setup user cols")
+	}
+
+	return b, nil
 }
 
 // LoadPostTags load post tags
@@ -77,7 +89,7 @@ func (s *Blog) LoadPostSeries(ctx context.Context, id primitive.ObjectID, key st
 // LoadPosts load posts
 func (s *Blog) LoadPosts(ctx context.Context,
 	cfg *dto.PostCfg) (results []*model.Post, err error) {
-	logger := log.Logger.With(
+	logger := s.logger.With(
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("tag", cfg.Tag),
 		zap.String("regexp", cfg.Regexp),
@@ -123,7 +135,7 @@ func (s *Blog) LoadPostInfo(ctx context.Context) (*dto.PostInfo, error) {
 }
 
 func (s *Blog) makeQuery(ctx context.Context, cfg *dto.PostCfg) (query bson.D, err error) {
-	log.Logger.Debug("makeQuery",
+	s.logger.Debug("makeQuery",
 		zap.String("name", cfg.Name),
 		zap.String("tag", cfg.Tag),
 		zap.String("regexp", cfg.Regexp),
@@ -150,24 +162,24 @@ func (s *Blog) makeQuery(ctx context.Context, cfg *dto.PostCfg) (query bson.D, e
 
 	// "" means empty, nil means ignore
 	if cfg.CategoryURL != nil {
-		log.Logger.Debug("post category", zap.String("category_url", *cfg.CategoryURL))
+		s.logger.Debug("post category", zap.String("category_url", *cfg.CategoryURL))
 		if *cfg.CategoryURL == "" {
 			query = append(query, bson.E{Key: "category", Value: nil})
 		} else {
 			var cate *model.Category
 			if cate, err = s.LoadCategoryByURL(ctx, *cfg.CategoryURL); err != nil {
-				log.Logger.Error("try to load posts by category url got error",
+				s.logger.Error("try to load posts by category url got error",
 					zap.Error(err),
 					zap.String("category_url", *cfg.CategoryURL),
 				)
 			} else if cate != nil {
-				log.Logger.Debug("set post filter", zap.String("category", cate.ID.Hex()))
+				s.logger.Debug("set post filter", zap.String("category", cate.ID.Hex()))
 				query = append(query, bson.E{Key: "category", Value: cate.ID})
 			}
 		}
 	}
 
-	log.Logger.Debug("generate query", zap.String("query", fmt.Sprint(query)))
+	s.logger.Debug("generate query", zap.String("query", fmt.Sprint(query)))
 	return query, nil
 }
 
@@ -179,7 +191,7 @@ func (s *Blog) filterPosts(ctx context.Context, cfg *dto.PostCfg, iter *mongo.Cu
 			return nil, errors.Wrap(err, "iter posts")
 		}
 
-		// log.Logger.Debug("filter post", zap.String("post", fmt.Sprintf("%+v", result)))
+		//s.logger.Debug("filter post", zap.String("post", fmt.Sprintf("%+v", result)))
 		for _, f := range [...]func(*model.Post) bool{
 			// filters pipeline
 			passwordFilter,
@@ -214,7 +226,7 @@ func defaultTypeFilter(docu *model.Post) bool {
 }
 
 // i18NFilter
-func getI18NFilter(language global.Language) func(*model.Post) bool {
+func getI18NFilter(language models.Language) func(*model.Post) bool {
 	return func(p *model.Post) bool {
 		if p.I18N != nil {
 			if v, ok := p.I18N[language.String()]; ok {
@@ -261,7 +273,7 @@ func getContentLengthFilter(length int) func(*model.Post) bool {
 
 // LoadUserByID load user by id
 func (s *Blog) LoadUserByID(ctx context.Context, uid primitive.ObjectID) (user *model.User, err error) {
-	log.Logger.Debug("LoadUserByID", zap.String("user_id", uid.Hex()))
+	s.logger.Debug("LoadUserByID", zap.String("user_id", uid.Hex()))
 	if uid.IsZero() {
 		return nil, errors.Errorf("uid is empty")
 	}
@@ -277,9 +289,9 @@ func (s *Blog) LoadUserByID(ctx context.Context, uid primitive.ObjectID) (user *
 
 // LoadCategoryByID load category by id
 func (s *Blog) LoadCategoryByID(ctx context.Context, cateid primitive.ObjectID) (cate *model.Category, err error) {
-	log.Logger.Debug("LoadCategoryByID", zap.String("cate_id", cateid.Hex()))
+	s.logger.Debug("LoadCategoryByID", zap.String("cate_id", cateid.Hex()))
 	if cateid.IsZero() {
-		return nil, nil
+		return cate, nil
 	}
 
 	cate = &model.Category{}
@@ -326,7 +338,7 @@ func (s *Blog) LoadCategoryByName(ctx context.Context, name string) (cate *model
 // LoadCategoryByURL load category by url
 func (s *Blog) LoadCategoryByURL(ctx context.Context, url string) (cate *model.Category, err error) {
 	if url == "" {
-		return nil, nil
+		return cate, nil
 	}
 
 	cate = &model.Category{}
@@ -343,7 +355,7 @@ func (s *Blog) LoadCategoryByURL(ctx context.Context, url string) (cate *model.C
 func (s *Blog) IsNameExists(ctx context.Context, name string) (bool, error) {
 	n, err := s.dao.GetPostsCol().CountDocuments(ctx, bson.D{{Key: "post_name", Value: name}})
 	if err != nil {
-		log.Logger.Error("try to count post_name got error", zap.Error(err))
+		s.logger.Error("try to count post_name got error", zap.Error(err))
 		return false, err
 	}
 
@@ -362,7 +374,7 @@ func (s *Blog) NewPost(ctx context.Context, authorID primitive.ObjectID, title, 
 		return nil, fmt.Errorf("post name `%v` already exists", name)
 	}
 
-	ts := time.Now()
+	ts := gutils.Clock.GetUTCNow()
 	p := &model.Post{
 		Type:       strings.ToLower(ptype),
 		Markdown:   md,
@@ -377,7 +389,7 @@ func (s *Blog) NewPost(ctx context.Context, authorID primitive.ObjectID, title, 
 	p.Menu = ExtractMenu(p.Content)
 
 	if gconfig.Shared.GetBool("dry") {
-		log.Logger.Info("insert post",
+		s.logger.Info("insert post",
 			zap.String("title", p.Title),
 			zap.String("name", p.Name),
 			// zap.String("markdown", p.Markdown),
@@ -421,7 +433,7 @@ func (s *Blog) UpdatePostCategory(ctx context.Context, name, category string) (p
 		return nil, errors.Wrapf(err, "update post `%s` category", p.Name)
 	}
 
-	log.Logger.Info("updated post category", zap.String("post", p.Name), zap.String("category", c.Name))
+	s.logger.Info("updated post category", zap.String("post", p.Name), zap.String("category", c.Name))
 	return p, nil
 }
 
@@ -451,14 +463,14 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	p.Markdown = md
 	p.Content = string(ParseMarkdown2HTML([]byte(md)))
 	p.Menu = ExtractMenu(p.Content)
-	p.ModifiedAt = time.Now()
+	p.ModifiedAt = gutils.Clock.GetUTCNow()
 	p.Type = typeArg
 
 	if _, err = s.dao.GetPostsCol().ReplaceOne(ctx, bson.M{"_id": p.ID}, p); err != nil {
 		return nil, errors.Wrap(err, "try to update post got error")
 	}
 
-	log.Logger.Info("updated post", zap.String("post", p.Name), zap.String("user", user.Account))
+	s.logger.Info("updated post", zap.String("post", p.Name), zap.String("user", user.Account))
 	return p, nil
 }
 

@@ -10,7 +10,7 @@ import (
 	"github.com/Laisky/errors/v2"
 	ginMw "github.com/Laisky/gin-middlewares/v5"
 	gutils "github.com/Laisky/go-utils/v4"
-	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
@@ -104,7 +104,7 @@ func (r *QueryResolver) WhoAmI(ctx context.Context) (*model.User, error) {
 }
 
 func (r *QueryResolver) GetBlogPostSeries(ctx context.Context,
-	page *global.Pagination,
+	page *models.Pagination,
 	key string,
 ) ([]*model.PostSeries, error) {
 	se, err := r.svc.LoadPostSeries(ctx, primitive.NilObjectID, key)
@@ -120,13 +120,13 @@ func (r *QueryResolver) BlogTags(ctx context.Context) ([]string, error) {
 }
 
 func (r *QueryResolver) BlogPosts(ctx context.Context,
-	page *global.Pagination,
+	page *models.Pagination,
 	tag string,
 	categoryURL *string,
 	length int,
 	name string,
 	regexp string,
-	language global.Language, // FIXME
+	language models.Language, // FIXME
 ) ([]*model.Post, error) {
 	cfg := &dto.PostCfg{
 		Page:        page.Page,
@@ -209,14 +209,14 @@ func (r *PostResolver) Author(ctx context.Context, obj *model.Post) (*model.User
 func (r *PostResolver) Category(ctx context.Context, obj *model.Post) (*model.Category, error) {
 	return r.svc.LoadCategoryByID(ctx, obj.Category)
 }
-func (r *PostResolver) Type(ctx context.Context, obj *model.Post) (global.BlogPostType, error) {
+func (r *PostResolver) Type(ctx context.Context, obj *model.Post) (models.BlogPostType, error) {
 	switch obj.Type {
-	case global.BlogPostTypeMarkdown.String():
-		return global.BlogPostTypeMarkdown, nil
-	case global.BlogPostTypeSlide.String():
-		return global.BlogPostTypeSlide, nil
-	case global.BlogPostTypeHTML.String():
-		return global.BlogPostTypeHTML, nil
+	case models.BlogPostTypeMarkdown.String():
+		return models.BlogPostTypeMarkdown, nil
+	case models.BlogPostTypeSlide.String():
+		return models.BlogPostTypeSlide, nil
+	case models.BlogPostTypeHTML.String():
+		return models.BlogPostTypeHTML, nil
 	}
 
 	return "", fmt.Errorf("unknown blog post type: `%+v`", obj.Type)
@@ -268,21 +268,36 @@ func (r *UserResolver) ID(ctx context.Context,
 // mutations
 // =====================================
 
-func (r *MutationResolver) UserLogin(ctx context.Context, account string, password string) (*global.BlogLoginResponse, error) {
+// UserLogin login user
+func (r *MutationResolver) UserLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error) {
 	return r.BlogLogin(ctx, account, password)
 }
 
-func (r *MutationResolver) UserRegister(ctx context.Context, account string, password string, email string, captcha string) (*global.UserRegisterResponse, error) {
+// UserRegister register user
+func (r *MutationResolver) UserRegister(ctx context.Context, account string, password string, displayName string, captcha string) (*models.UserRegisterResponse, error) {
+	_, err := r.svc.UserRegister(ctx, account, password, displayName)
+	if err != nil {
+		return nil, errors.Wrap(err, "register user")
+	}
+
+	return &models.UserRegisterResponse{
+		Msg: fmt.Sprintf("check your email `%s` to active your account", account),
+	}, nil
+}
+
+func (r *MutationResolver) UserActive(ctx context.Context, token string) (*models.UserActiveResponse, error) {
+	// FIXME
 	return nil, errors.Errorf("notimplement")
 }
 
-func (r *MutationResolver) UserActive(ctx context.Context, token string) (*global.UserActiveResponse, error) {
+func (r *MutationResolver) UserResendActiveEmail(ctx context.Context, account string) (*models.UserResendActiveEmailResponse, error) {
+	// FIXME
 	return nil, errors.Errorf("notimplement")
 }
 
 // BlogCreatePost create new blog post
 func (r *MutationResolver) BlogCreatePost(ctx context.Context,
-	input global.NewBlogPost) (*model.Post, error) {
+	input models.NewBlogPost) (*model.Post, error) {
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
@@ -306,7 +321,7 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
-) (resp *global.BlogLoginResponse, err error) {
+) (resp *models.BlogLoginResponse, err error) {
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
@@ -315,7 +330,9 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 
 	uc := &jwt.UserClaims{
 		RegisteredClaims: jwtLib.RegisteredClaims{
+			ID:      gutils.UUID1(),
 			Subject: user.ID.Hex(),
+			Issuer:  "laisky-sso",
 			IssuedAt: &jwtLib.NumericDate{
 				Time: gutils.Clock.GetUTCNow(),
 			},
@@ -328,19 +345,21 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	}
 
 	var token string
-	if token, err = auth.Instance.SetAuthHeader(ctx, ginMw.WithSetAuthHeaderClaim(uc)); err != nil {
+	if token, err = auth.Instance.SetAuthHeader(ctx,
+		ginMw.WithSetAuthHeaderClaim(uc),
+	); err != nil {
 		log.Logger.Error("try to set cookie got error", zap.Error(err))
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}
 
-	return &global.BlogLoginResponse{
+	return &models.BlogLoginResponse{
 		User:  user,
 		Token: token,
 	}, nil
 }
 
 func (r *MutationResolver) BlogAmendPost(ctx context.Context,
-	post global.NewBlogPost) (*model.Post, error) {
+	post models.NewBlogPost) (*model.Post, error) {
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))

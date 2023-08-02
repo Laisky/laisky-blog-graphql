@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
@@ -55,16 +55,16 @@ func (r *QueryResolver) Lock(ctx context.Context, name string) (*model.Lock, err
 	return service.Instance.LoadLockByName(ctx, name)
 }
 
-func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (users []*global.GeneralUser, err error) {
+func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (users []*models.GeneralUser, err error) {
 	log.Logger.Debug("LockPermissions", zap.String("username", username))
-	users = []*global.GeneralUser{}
+	users = []*models.GeneralUser{}
 	var (
 		prefixes []string
 	)
 	if username != "" {
 		if prefixes = gconfig.Shared.GetStringSlice(
 			"settings.general.locks.user_prefix_map." + username); prefixes != nil {
-			users = append(users, &global.GeneralUser{
+			users = append(users, &models.GeneralUser{
 				LockPrefixes: prefixes,
 			})
 			return users, nil
@@ -74,7 +74,7 @@ func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (u
 
 	for username = range gconfig.Shared.GetStringMap(
 		"settings.general.locks.user_prefix_map") {
-		users = append(users, &global.GeneralUser{
+		users = append(users, &models.GeneralUser{
 			Name: username,
 			LockPrefixes: gconfig.Shared.GetStringSlice(
 				"settings.general.locks.user_prefix_map." + username),

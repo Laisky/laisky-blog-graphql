@@ -77,8 +77,9 @@ type Mutation {
   # Deprecated: use UserLogin instead
   BlogLogin(account: String!, password: String!): BlogLoginResponse!
   UserLogin(account: String!, password: String!): BlogLoginResponse!
-  UserRegister(account: String!, password: String!, email: String!, captcha: String!): UserRegisterResponse!
+  UserRegister(account: String!, password: String!, display_name: String!, captcha: String!): UserRegisterResponse!
   UserActive(token: String!): UserActiveResponse!
+  UserResendActiveEmail(account: String!): UserResendActiveEmailResponse!
   # update blog post
   BlogAmendPost(post: NewBlogPost!): BlogPost!
 

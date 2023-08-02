@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/service"
@@ -51,11 +51,11 @@ func Initialize(ctx context.Context) {
 // =================
 
 func (r *QueryResolver) TwitterStatues(ctx context.Context,
-	page *global.Pagination,
+	page *models.Pagination,
 	tweetID string,
 	username string,
 	viewerID string,
-	sort *global.Sort,
+	sort *models.Sort,
 	topic string,
 	regexp string,
 ) (results []*model.Tweet, err error) {
@@ -162,7 +162,7 @@ func (t *TweetResolver) URL(ctx context.Context, obj *model.Tweet) (string, erro
 
 func (t *TweetResolver) ReplyTo(ctx context.Context, obj *model.Tweet) (tweet *model.Tweet, err error) {
 	if obj.ReplyToStatusID == "" {
-		return nil, nil
+		return tweet, nil
 	}
 
 	if tweet, err = service.Instance.LoadTweetByTwitterID(ctx, obj.ReplyToStatusID); err != nil {

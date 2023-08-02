@@ -1,3 +1,4 @@
+// Package dao contains all the data access object used in the application.
 package dao
 
 import (

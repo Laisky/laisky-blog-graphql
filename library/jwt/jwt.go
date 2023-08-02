@@ -1,3 +1,4 @@
+// Package jwt converts jwt to internal jwt.
 package jwt
 
 import (

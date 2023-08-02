@@ -64,11 +64,14 @@ type UserLoginResponse {
 }
 
 type UserRegisterResponse {
-    user: BlogUser!
-    token: String!
+    msg: String!
 }
 
 type UserActiveResponse {
     user: BlogUser!
     token: String!
+}
+
+type UserResendActiveEmailResponse {
+    msg: String!
 }

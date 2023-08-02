@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
@@ -84,7 +84,7 @@ func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 // }
 
 func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
-	page *global.Pagination,
+	page *models.Pagination,
 	name string) ([]*model.Users, error) {
 	cfg := &dto.QueryCfg{
 		Page: page.Page,
@@ -94,7 +94,7 @@ func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 	return r.svc.LoadUsers(ctx, cfg)
 }
 func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
-	page *global.Pagination,
+	page *models.Pagination,
 	name string) ([]*model.AlertTypes, error) {
 	cfg := &dto.QueryCfg{
 		Page: page.Page,

@@ -28,10 +28,9 @@ func (d *Blog) ValidateLogin(ctx context.Context, account, password string) (u *
 		return nil, err
 	}
 
-	if gcrypto.ValidatePasswordHash([]byte(u.Password), []byte(password)) {
-		d.logger.Debug("user login", zap.String("user", u.Account))
-		return u, nil
+	if err = gcrypto.VerifyHashedPassword([]byte(u.Password), password); err != nil {
+		return nil, errors.Join(ErrLogin, err)
 	}
 
-	return nil, ErrLogin
+	return u, nil
 }

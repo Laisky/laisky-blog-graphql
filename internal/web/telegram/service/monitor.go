@@ -250,7 +250,7 @@ func (s *Type) listAllMonitorAlerts(ctx context.Context, us *userStat) (err erro
 		return err
 	}
 
-	msg := ""
+	var msg string
 	if len(alerts) == 0 {
 		msg = "subscribed no alerts"
 	} else {

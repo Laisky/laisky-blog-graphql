@@ -3,7 +3,7 @@ package model
 import (
 	"testing"
 
-	gutils "github.com/Laisky/go-utils/v4"
+	"github.com/Laisky/go-utils/v4/json"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +26,7 @@ func TestXxx(t *testing.T) {
 		},
 	}
 
-	data, err := gutils.JSON.MarshalToString(v)
+	data, err := json.MarshalToString(v)
 	require.NoError(t, err)
 	t.Logf(data)
 	t.Error()

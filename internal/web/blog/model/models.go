@@ -1,8 +1,10 @@
+// Package model contains all the models used in the application.
 package model
 
 import (
 	"time"
 
+	gutils "github.com/Laisky/go-utils/v4"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -56,8 +58,6 @@ const (
 type User struct {
 	// ID unique identifier for the user
 	ID primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
-	// CreatedAt created time
-	CreatedAt time.Time `bson:"post_created_at" json:"created_at"`
 	// ModifiedAt last modified time
 	ModifiedAt time.Time `bson:"post_modified_gmt" json:"modified_at"`
 	// Username display name
@@ -70,6 +70,16 @@ type User struct {
 	Password string `bson:"password" json:"password"`
 	// Status user status
 	Status UserStatus `bson:"status" json:"status"`
+	// ActiveToken token to active user
+	ActiveToken string `bson:"active_token" json:"active_token"`
+}
+
+func NewUser() *User {
+	return &User{
+		ID:         primitive.NewObjectID(),
+		ModifiedAt: gutils.Clock.GetUTCNow(),
+		Status:     UserStatusPending,
+	}
 }
 
 // Category blog post categories

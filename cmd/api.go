@@ -70,7 +70,12 @@ func runAPI() error {
 		if err != nil {
 			return errors.Wrap(err, "new blog db")
 		}
-		args.BlogSvc = blogSvc.New(blogDao.New(logger.Named("blog_dao"), blogDB))
+		blogDao := blogDao.New(logger.Named("blog_dao"), blogDB)
+		args.BlogSvc, err = blogSvc.New(ctx, logger.Named("blog_svc"), blogDao)
+		if err != nil {
+			return errors.Wrap(err, "new blog service")
+		}
+
 		args.BlogCtl = blogCtl.New(args.BlogSvc)
 	}
 

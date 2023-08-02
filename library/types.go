@@ -8,26 +8,31 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	gutils "github.com/Laisky/go-utils/v4"
+	"github.com/Laisky/go-utils/v4/json"
 	"github.com/Laisky/zap"
 )
 
+// Datetime datetime
 type Datetime struct {
 	t time.Time
 }
 
+// TimeLayout time layout
 const TimeLayout = "2006-01-02T15:04:05.000Z"
 
+// NewDatetimeFromTime new datetime from time
 func NewDatetimeFromTime(t time.Time) *Datetime {
 	return &Datetime{
 		t: t,
 	}
 }
 
+// GetTime get time
 func (d *Datetime) GetTime() time.Time {
 	return d.t
 }
 
+// UnmarshalGQL implements the graphql.Unmarshaler interface
 func (d *Datetime) UnmarshalGQL(vi interface{}) (err error) {
 	v, ok := vi.(string)
 	if !ok {
@@ -40,14 +45,17 @@ func (d *Datetime) UnmarshalGQL(vi interface{}) (err error) {
 	return nil
 }
 
+// MarshalGQL implements the graphql.Marshaler interface
 func (d Datetime) MarshalGQL(w io.Writer) {
 	if _, err := w.Write(appendQuote([]byte(d.t.Format(TimeLayout)))); err != nil {
 		log.Logger.Error("write datetime bytes", zap.Error(err))
 	}
 }
 
+// QuotedString is a string which will be unquoted when marshal to json
 type QuotedString string
 
+// UnmarshalGQL implements the graphql.Unmarshaler interface
 func (qs *QuotedString) UnmarshalGQL(vi interface{}) (err error) {
 	switch v := vi.(type) {
 	case string:
@@ -69,15 +77,17 @@ func (qs QuotedString) MarshalGQL(w io.Writer) {
 	}
 }
 
+// JSONString is a string which will be unquoted when marshal to json
 type JSONString string
 
+// UnmarshalGQL implements the graphql.Unmarshaler interface
 func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 	v, ok := vi.(string)
 	if !ok {
 		log.Logger.Debug("unknown type of JSONString", zap.String("val", fmt.Sprint(vi)))
 	}
 	// var v string
-	if err = gutils.JSON.UnmarshalFromString(v, &v); err != nil {
+	if err = json.UnmarshalFromString(v, &v); err != nil {
 		log.Logger.Debug("decode string", zap.String("quoted", v), zap.Error(err))
 		return err
 	}
@@ -87,7 +97,7 @@ func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 }
 
 func (qs JSONString) MarshalGQL(w io.Writer) {
-	if vb, err := gutils.JSON.Marshal(qs); err != nil {
+	if vb, err := json.Marshal(qs); err != nil {
 		log.Logger.Error("marshal json", zap.Error(err))
 	} else {
 		if _, err = w.Write(vb); err != nil {

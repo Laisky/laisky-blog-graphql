@@ -1,7 +1,7 @@
 package dto
 
 import (
-	"github.com/Laisky/laisky-blog-graphql/internal/global"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -16,5 +16,5 @@ type PostCfg struct {
 	Page, Size, Length int
 	Name, Tag, Regexp  string
 	CategoryURL        *string
-	Language           global.Language
+	Language           models.Language
 }
