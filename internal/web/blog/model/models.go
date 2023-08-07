@@ -29,7 +29,7 @@ type Post struct {
 	// Markdown markdown content of the post
 	Markdown string `bson:"post_markdown" json:"markdown"`
 	// Author author of the post
-	Author primitive.ObjectID `bson:"post_author" json:"author"`
+	Author primitive.ObjectID `bson:"post_author,omitempty" json:"author"`
 	// Menu menu of the post
 	Menu string `bson:"post_menu" json:"menu"`
 	// Password password of the post

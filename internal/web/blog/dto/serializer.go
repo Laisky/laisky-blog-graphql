@@ -12,7 +12,7 @@ type PostInfo struct {
 
 // PostCfg blog post config
 type PostCfg struct {
-	ID                 primitive.ObjectID
+	ID                 primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	Page, Size, Length int
 	Name, Tag, Regexp  string
 	CategoryURL        *string

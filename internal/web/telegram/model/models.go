@@ -29,6 +29,6 @@ type UserAlertRelations struct {
 	ID           primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
 	CreatedAt    time.Time          `bson:"created_at" json:"created_at"`
 	ModifiedAt   time.Time          `bson:"modified_at" json:"modified_at"`
-	UserMongoID  primitive.ObjectID `bson:"user_id" json:"user_id"`
-	AlertMongoID primitive.ObjectID `bson:"alert_id" json:"alert_id"`
+	UserMongoID  primitive.ObjectID `bson:"user_id,omitempty" json:"user_id"`
+	AlertMongoID primitive.ObjectID `bson:"alert_id,omitempty" json:"alert_id"`
 }

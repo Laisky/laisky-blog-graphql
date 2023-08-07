@@ -17,7 +17,7 @@ type Entities struct {
 }
 
 type EmbededTweet struct {
-	MongoID         primitive.ObjectID `bson:"_id" json:"mongo_id"`
+	MongoID         primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
 	ID              string             `bson:"id_str" json:"id"`
 	CreatedAt       string             `bson:"created_at" json:"created_at"`
 	Text            string             `bson:"full_text" json:"text"`
@@ -48,7 +48,7 @@ func (t *EmbededTweet) ToTweet() (tweet *Tweet, err error) {
 }
 
 type Tweet struct {
-	MongoID         primitive.ObjectID `bson:"_id" json:"mongo_id"`
+	MongoID         primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
 	ID              string             `bson:"id_str" json:"id"`
 	CreatedAt       time.Time          `bson:"created_at" json:"created_at"`
 	Text            string             `bson:"text" json:"text"`
