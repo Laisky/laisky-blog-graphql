@@ -18,6 +18,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	mongoSDK "github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -228,11 +229,15 @@ func defaultTypeFilter(docu *model.Post) bool {
 // i18NFilter
 func getI18NFilter(language models.Language) func(*model.Post) bool {
 	return func(p *model.Post) bool {
-		if p.I18N != nil {
-			if v, ok := p.I18N[language.String()]; ok {
-				p.Content = v
-				return true
+		switch language {
+		case models.LanguageEnUs:
+			log.Logger.Debug("getI18NFilter", zap.String("language", language.String()))
+			if p.I18N.EnUs.PostContent != "" {
+				p.Content = p.I18N.EnUs.PostMarkdown
 			}
+		default:
+			log.Logger.Debug("getI18NFilter", zap.String("language", language.String()))
+			return true
 		}
 
 		return true

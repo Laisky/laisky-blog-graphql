@@ -41,7 +41,21 @@ type Post struct {
 	// Hidden whether the post is hidden or not
 	Hidden bool `bson:"hidden" json:"hidden"`
 	// I18N internationalization of the post
-	I18N map[string]string `bson:"i18n" json:"i18n"`
+	I18N PostI18N `bson:"i18n" json:"i18n"`
+}
+
+// PostI18N blog post internationalization
+type PostI18N struct {
+	// UpdateAt time when the post was last modified
+	UpdateAt time.Time `bson:"update_at" json:"update_at"`
+	// EnUs english version
+	EnUs PostI18NLanguage `bson:"en_us" json:"en_us"`
+}
+
+// PostI18NLanguage blog post internationalization language
+type PostI18NLanguage struct {
+	PostMarkdown string `bson:"post_markdown" json:"post_markdown"`
+	PostContent  string `bson:"post_content" json:"post_content"`
 }
 
 // UserStatus user status
