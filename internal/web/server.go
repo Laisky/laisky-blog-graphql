@@ -4,6 +4,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -55,9 +56,16 @@ func RunServer(addr string, resolver *Resolver) {
 	h.Use(extension.Introspection{})
 	h.SetErrorPresenter(func(ctx context.Context, e error) *gqlerror.Error {
 		err := graphql.DefaultErrorPresenter(ctx, e)
-		// gqlgen will wrap origin error, that will make error stack trace lost,
-		// so we need to unwrap it and log the origin error.
-		log.Logger.Error("graphql server", zap.Error(err.Err))
+
+		// there are huge of junk logs about "alert token invalidate",
+		// so we just ignore it
+		if !strings.Contains(e.Error(), "token invalidate for ") &&
+			!strings.Contains(e.Error(), "ValidateTokenForAlertType") {
+			// gqlgen will wrap origin error, that will make error stack trace lost,
+			// so we need to unwrap it and log the origin error.
+			log.Logger.Error("graphql server", zap.Error(err.Err))
+		}
+
 		return err
 	})
 	server.Any("/ui/", ginMw.FromStd(playground.Handler("GraphQL playground", "/query/")))
