@@ -60,8 +60,8 @@ func RunServer(addr string, resolver *Resolver) {
 		// there are huge of junk logs about "alert token invalidate",
 		// so we just ignore it
 		errMsg := e.Error()
-		if (!strings.Contains(errMsg, "token invalidate for ") &&
-			!strings.Contains(errMsg, "ValidateTokenForAlertType")) ||
+		if !strings.Contains(errMsg, "token invalidate for ") &&
+			!strings.Contains(errMsg, "ValidateTokenForAlertType") &&
 			!strings.Contains(errMsg, "deny by throttle") {
 			// gqlgen will wrap origin error, that will make error stack trace lost,
 			// so we need to unwrap it and log the origin error.
