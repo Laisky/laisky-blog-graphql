@@ -160,8 +160,8 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	typeArg string,
 	token string,
 	msg string) (*model.AlertTypes, error) {
-	if !telegramThrottle.Allow(typeArg) {
-		log.Logger.Warn("deny by throttle", zap.String("type", typeArg))
+	if !telegramRatelimiter.Allow(typeArg) {
+		// log.Logger.Warn("deny by throttle", zap.String("type", typeArg))
 		return nil, errors.Errorf("deny by throttle")
 	}
 

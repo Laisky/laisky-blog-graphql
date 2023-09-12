@@ -12,12 +12,12 @@ import (
 )
 
 var (
-	telegramThrottle *throttle.TelegramThrottle
+	telegramRatelimiter *throttle.TelegramThrottle
 )
 
 func setupTelegramThrottle(ctx context.Context) {
 	var err error
-	if telegramThrottle, err = throttle.NewTelegramThrottle(ctx, &throttle.TelegramThrottleCfg{
+	if telegramRatelimiter, err = throttle.NewTelegramThrottle(ctx, &throttle.TelegramThrottleCfg{
 		TotleBurst:       gconfig.Shared.GetInt("settings.telegram.throttle.total_burst"),
 		TotleNPerSec:     gconfig.Shared.GetInt("settings.telegram.throttle.total_per_sec"),
 		EachTitleNPerSec: gconfig.Shared.GetInt("settings.telegram.throttle.each_title_per_sec"),
