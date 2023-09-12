@@ -62,7 +62,7 @@ func RunServer(addr string, resolver *Resolver) {
 		errMsg := e.Error()
 		if (!strings.Contains(errMsg, "token invalidate for ") &&
 			!strings.Contains(errMsg, "ValidateTokenForAlertType")) ||
-			strings.Contains(errMsg, "deny by throttle") {
+			!strings.Contains(errMsg, "deny by throttle") {
 			// gqlgen will wrap origin error, that will make error stack trace lost,
 			// so we need to unwrap it and log the origin error.
 			log.Logger.Error("graphql server", zap.Error(err.Err))
