@@ -7,6 +7,8 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/Laisky/errors/v2"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
 
@@ -85,12 +87,12 @@ func (e BlogPostType) String() string {
 func (e *BlogPostType) UnmarshalGQL(v interface{}) error {
 	str, ok := v.(string)
 	if !ok {
-		return fmt.Errorf("enums must be strings")
+		return errors.Errorf("enums must be strings")
 	}
 
 	*e = BlogPostType(str)
 	if !e.IsValid() {
-		return fmt.Errorf("%s is not a valid BlogPostType", str)
+		return errors.Errorf("%s is not a valid BlogPostType", str)
 	}
 	return nil
 }
@@ -126,12 +128,12 @@ func (e Language) String() string {
 func (e *Language) UnmarshalGQL(v interface{}) error {
 	str, ok := v.(string)
 	if !ok {
-		return fmt.Errorf("enums must be strings")
+		return errors.Errorf("enums must be strings")
 	}
 
 	*e = Language(str)
 	if !e.IsValid() {
-		return fmt.Errorf("%s is not a valid Language", str)
+		return errors.Errorf("%s is not a valid Language", str)
 	}
 	return nil
 }
@@ -167,12 +169,12 @@ func (e SortOrder) String() string {
 func (e *SortOrder) UnmarshalGQL(v interface{}) error {
 	str, ok := v.(string)
 	if !ok {
-		return fmt.Errorf("enums must be strings")
+		return errors.Errorf("enums must be strings")
 	}
 
 	*e = SortOrder(str)
 	if !e.IsValid() {
-		return fmt.Errorf("%s is not a valid SortOrder", str)
+		return errors.Errorf("%s is not a valid SortOrder", str)
 	}
 	return nil
 }

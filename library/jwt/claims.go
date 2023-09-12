@@ -1,8 +1,7 @@
 package jwt
 
 import (
-	"fmt"
-
+	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/go-utils/v4"
 	"github.com/golang-jwt/jwt/v4"
 )
@@ -16,11 +15,11 @@ type UserClaims struct {
 func (uc *UserClaims) Valid() error {
 	now := utils.Clock.GetUTCNow()
 	if !uc.RegisteredClaims.VerifyExpiresAt(now, true) {
-		return fmt.Errorf("token expired")
+		return errors.Errorf("token expired")
 	}
 
 	if !uc.RegisteredClaims.VerifyIssuedAt(now, true) {
-		return fmt.Errorf("token issueAt invalid")
+		return errors.Errorf("token issueAt invalid")
 	}
 
 	return nil

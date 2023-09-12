@@ -4,7 +4,6 @@ package web
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -26,14 +25,17 @@ var (
 )
 
 func RunServer(addr string, resolver *Resolver) {
-	server.Use(gin.Recovery())
+	server.Use(
+		gin.Recovery(),
+		ginMw.NewLoggerMiddleware(
+			ginMw.WithLoggerMwColored(),
+			ginMw.WithLogger(log.Logger.Named("gin")),
+		),
+	)
 	if !gconfig.Shared.GetBool("debug") {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	server.Use(ginMw.NewLoggerMiddleware(
-		ginMw.WithLogger(log.Logger.Named("gin")),
-	))
 	if err := ginMw.EnableMetric(server); err != nil {
 		log.Logger.Panic("enable metric server", zap.Error(err))
 	}
@@ -53,10 +55,9 @@ func RunServer(addr string, resolver *Resolver) {
 	h.Use(extension.Introspection{})
 	h.SetErrorPresenter(func(ctx context.Context, e error) *gqlerror.Error {
 		err := graphql.DefaultErrorPresenter(ctx, e)
-		if !strings.Contains(err.Error(), "token invalidate for") {
-			log.Logger.Error("graphql server", zap.Error(e))
-		}
-
+		// gqlgen will wrap origin error, that will make error stack trace lost,
+		// so we need to unwrap it and log the origin error.
+		log.Logger.Error("graphql server", zap.Error(err.Err))
 		return err
 	})
 	server.Any("/ui/", ginMw.FromStd(playground.Handler("GraphQL playground", "/query/")))

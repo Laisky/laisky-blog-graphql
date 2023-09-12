@@ -3,8 +3,9 @@ package dao
 
 import (
 	glog "github.com/Laisky/go-utils/v4/log"
-	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
+
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 )
 
 // Blog dao type

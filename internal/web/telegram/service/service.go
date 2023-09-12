@@ -9,12 +9,13 @@ import (
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v4"
+	"github.com/Laisky/zap"
+	tb "gopkg.in/tucnak/telebot.v2"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-	"github.com/Laisky/zap"
-	tb "gopkg.in/tucnak/telebot.v2"
 )
 
 // func Initialize(ctx context.Context) {

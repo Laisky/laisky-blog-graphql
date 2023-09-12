@@ -2,19 +2,19 @@ package dao
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/go-utils/v4"
-	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
-	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
-	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	tb "gopkg.in/tucnak/telebot.v2"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 var Instance *Monitor
@@ -165,7 +165,7 @@ func (d *Monitor) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*mo
 		zap.Int("size", cfg.Size))
 
 	if cfg.Size > 200 || cfg.Size < 0 {
-		return nil, fmt.Errorf("size shoule in [0~200]")
+		return nil, errors.Errorf("size shoule in [0~200]")
 	}
 
 	users = []*model.Users{}
@@ -194,7 +194,7 @@ func (d *Monitor) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts
 		zap.Int("size", cfg.Size))
 
 	if cfg.Size > 200 || cfg.Size < 0 {
-		return nil, fmt.Errorf("size shoule in [0~200]")
+		return nil, errors.Errorf("size shoule in [0~200]")
 	}
 
 	alerts = []*model.AlertTypes{}
@@ -300,7 +300,7 @@ func (d *Monitor) ValidateTokenForAlertType(ctx context.Context, token, alertTyp
 	}
 
 	if token != alert.PushToken {
-		return nil, fmt.Errorf("token invalidate for `%s`", alertType)
+		return nil, errors.Errorf("token invalidate for `%s`", alertType)
 	}
 
 	return alert, nil
@@ -316,13 +316,13 @@ func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,
 	if err = d.GetAlertTypesCol().
 		FindOne(ctx, bson.M{"name": alertName}).
 		Decode(alert); mongo.NotFound(err) {
-		return nil, fmt.Errorf("alert_type not found")
+		return nil, errors.Errorf("alert_type not found")
 	} else if err != nil {
 		return nil, errors.Wrap(err, "load alert_type by name: "+alertName)
 	}
 
 	if alert.JoinKey != joinKey {
-		return nil, fmt.Errorf("join_key invalidate")
+		return nil, errors.Errorf("join_key invalidate")
 	}
 
 	return d.CreateOrGetUserAlertRelations(ctx, u, alert)
@@ -336,7 +336,7 @@ func (d *Monitor) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.
 			"uid": telegramUID,
 		}).
 		Decode(u); mongo.NotFound(err) {
-		return nil, fmt.Errorf(`not found user by uid "%d"`, telegramUID)
+		return nil, errors.Errorf(`not found user by uid "%d"`, telegramUID)
 	} else if err != nil {
 		return nil, errors.Wrap(err, "load user in db by uid")
 	}

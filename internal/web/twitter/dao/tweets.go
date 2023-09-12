@@ -5,11 +5,12 @@ import (
 	"context"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 )
 
 const (

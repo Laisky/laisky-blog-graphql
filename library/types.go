@@ -6,10 +6,11 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/Laisky/laisky-blog-graphql/library/log"
-
+	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/go-utils/v4/json"
 	"github.com/Laisky/zap"
+
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // Datetime datetime
@@ -36,7 +37,7 @@ func (d *Datetime) GetTime() time.Time {
 func (d *Datetime) UnmarshalGQL(vi interface{}) (err error) {
 	v, ok := vi.(string)
 	if !ok {
-		return fmt.Errorf("unknown type of Datetime: `%+v`", vi)
+		return errors.Errorf("unknown type of Datetime: `%+v`", vi)
 	}
 	if d.t, err = time.Parse(TimeLayout, v); err != nil {
 		return err
@@ -68,7 +69,7 @@ func (qs *QuotedString) UnmarshalGQL(vi interface{}) (err error) {
 	}
 
 	log.Logger.Debug("unknown type of QuotedString", zap.String("quoted", fmt.Sprint(vi)))
-	return fmt.Errorf("unknown type of QuotedString: `%+v`", vi)
+	return errors.Errorf("unknown type of QuotedString: `%+v`", vi)
 }
 
 func (qs QuotedString) MarshalGQL(w io.Writer) {

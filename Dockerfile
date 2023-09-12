@@ -1,4 +1,4 @@
-FROM golang:1.20.7-bullseye AS gobuild
+FROM golang:1.21.0-bullseye AS gobuild
 
 # install dependencies
 RUN apt-get update \
@@ -13,11 +13,12 @@ RUN go mod download
 
 # static build
 ADD . .
+ENV GOOS=linux
+ENV GOARCH=amd64
 RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
 
-
 # copy executable file and certs to a pure container
-FROM debian:bullseye-20230502
+FROM debian:bullseye
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates haveged \

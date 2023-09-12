@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/dao"
@@ -51,7 +50,7 @@ func (s *Type) AcquireLock(ctx context.Context,
 			return errors.Wrap(err, "load lock docu")
 		}
 		if !doc.Exists() && isRenewal {
-			return fmt.Errorf("lock `%v` not exists", name)
+			return errors.Errorf("lock `%v` not exists", name)
 		}
 
 		lock := &model.Lock{}

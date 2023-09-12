@@ -9,11 +9,12 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/go-utils/v4"
+	"github.com/Laisky/zap"
+	tb "gopkg.in/tucnak/telebot.v2"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-	"github.com/Laisky/zap"
-	tb "gopkg.in/tucnak/telebot.v2"
 )
 
 func (s *Type) monitorHandler() {
@@ -106,7 +107,7 @@ func (s *Type) chooseMonitor(ctx context.Context, us *userStat, msg *tb.Message)
 
 func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error) {
 	if !strings.Contains(au, ":") {
-		return fmt.Errorf("unknown alert_name:uid format")
+		return errors.Errorf("unknown alert_name:uid format")
 	}
 	ans := strings.SplitN(strings.TrimSpace(au), ":", 2)
 	alertName := ans[0]
@@ -152,7 +153,7 @@ func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error
 		}
 	}
 	if errMsg != "" {
-		err = fmt.Errorf(errMsg)
+		err = errors.Errorf(errMsg)
 	}
 
 	return err
@@ -193,7 +194,7 @@ func (s *Type) refreshAlertTokenAndKey(ctx context.Context, us *userStat, alert 
 		}
 	}
 	if errMsg != "" {
-		err = fmt.Errorf(errMsg)
+		err = errors.Errorf(errMsg)
 	}
 
 	return err
@@ -201,7 +202,7 @@ func (s *Type) refreshAlertTokenAndKey(ctx context.Context, us *userStat, alert 
 
 func (s *Type) joinAlertGroup(ctx context.Context, us *userStat, kt string) (err error) {
 	if !strings.Contains(kt, ":") {
-		return fmt.Errorf("unknown format")
+		return errors.Errorf("unknown format")
 	}
 	ans := strings.SplitN(strings.TrimSpace(kt), ":", 2)
 	alert := ans[0]

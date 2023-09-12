@@ -6,9 +6,9 @@ install:
 
 .PHONY: gen
 gen:
-	go get github.com/99designs/gqlgen@v0.17.33
-	go get github.com/vektah/gqlparser/v2@v2.5.3
-	go run github.com/99designs/gqlgen@v0.17.33 generate
+	# go get github.com/99designs/gqlgen@v0.17.37
+	# go get github.com/vektah/gqlparser/v2@v2.5.9
+	go run github.com/99designs/gqlgen@v0.17.37 generate
 
 .PHONY: test
 test:
@@ -21,9 +21,9 @@ changelog: CHANGELOG.md
 
 .PHONY: lint
 lint:
+	goimports -local github.com/Laisky/laisky-blog-graphql -w .
 	go mod tidy
-	go vet ./...
-	goimports -local laisky-blog-graphql -w .
 	gofmt -s -w .
-	# golangci-lint run --timeout 3m -E golint,depguard,gocognit,goconst,gofmt,misspell,exportloopref,nilerr #,gosec,lll
+	go vet
 	golangci-lint run -c .golangci.lint.yml
+	govulncheck ./...

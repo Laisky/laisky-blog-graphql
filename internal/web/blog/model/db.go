@@ -4,6 +4,7 @@ import (
 	"context"
 
 	gconfig "github.com/Laisky/go-config/v2"
+
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 )
 

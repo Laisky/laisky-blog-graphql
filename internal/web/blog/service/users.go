@@ -7,11 +7,12 @@ import (
 	"github.com/Laisky/errors/v2"
 	gutils "github.com/Laisky/go-utils/v4"
 	gcrypto "github.com/Laisky/go-utils/v4/crypto"
-	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
 
 func (s *Blog) ValidateLogin(ctx context.Context, account, password string) (u *model.User, err error) {

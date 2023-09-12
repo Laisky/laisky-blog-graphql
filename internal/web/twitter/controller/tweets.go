@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -169,7 +168,7 @@ func (t *TweetResolver) ReplyTo(ctx context.Context, obj *model.Tweet) (tweet *m
 		log.Logger.Warn("try to load tweet by id got error",
 			zap.String("tweet", obj.ReplyToStatusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("can not load tweet by tid: %v", obj.ReplyToStatusID)
+		return nil, errors.Errorf("can not load tweet by tid: %v", obj.ReplyToStatusID)
 	}
 
 	return tweet, nil

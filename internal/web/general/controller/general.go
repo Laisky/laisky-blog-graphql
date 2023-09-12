@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -139,7 +138,7 @@ func (r *MutationResolver) AcquireLock(ctx context.Context,
 	isRenewal *bool,
 ) (ok bool, err error) {
 	if durationSec > gconfig.Shared.GetInt("settings.general.locks.max_duration_sec") {
-		return ok, fmt.Errorf("duration sec should less than %v",
+		return ok, errors.Errorf("duration sec should less than %v",
 			gconfig.Shared.GetInt("settings.general.locks.max_duration_sec"))
 	}
 
@@ -153,7 +152,7 @@ func (r *MutationResolver) AcquireLock(ctx context.Context,
 		log.Logger.Warn("user want to acquire lock out of permission",
 			zap.String("user", username),
 			zap.String("lock", lockName))
-		return ok, fmt.Errorf("`%v` do not have permission to acquire `%v`",
+		return ok, errors.Errorf("`%v` do not have permission to acquire `%v`",
 			username, lockName)
 	}
 

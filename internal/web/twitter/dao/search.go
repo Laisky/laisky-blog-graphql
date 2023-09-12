@@ -4,8 +4,9 @@ import (
 	"context"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"gorm.io/gorm"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 )
 
 type Search interface {

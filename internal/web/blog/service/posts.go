@@ -11,6 +11,12 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v4"
 	glog "github.com/Laisky/go-utils/v4/log"
+	"github.com/Laisky/zap"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
@@ -19,11 +25,6 @@ import (
 	mongoSDK "github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-	"github.com/Laisky/zap"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // Blog blog service
@@ -96,7 +97,7 @@ func (s *Blog) LoadPosts(ctx context.Context,
 		zap.String("regexp", cfg.Regexp),
 	)
 	if cfg.Size > 200 || cfg.Size < 0 {
-		return nil, fmt.Errorf("size shoule in [0~200]")
+		return nil, errors.Errorf("size shoule in [0~200]")
 	}
 
 	var query bson.D
@@ -376,7 +377,7 @@ func (s *Blog) NewPost(ctx context.Context, authorID primitive.ObjectID, title, 
 	if isExists, err := s.IsNameExists(ctx, name); err != nil {
 		return nil, err
 	} else if isExists {
-		return nil, fmt.Errorf("post name `%v` already exists", name)
+		return nil, errors.Errorf("post name `%v` already exists", name)
 	}
 
 	ts := gutils.Clock.GetUTCNow()
@@ -450,7 +451,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	p = &model.Post{}
 	typeArg = strings.ToLower(typeArg)
 	if _, ok := supporttedTypes[typeArg]; !ok {
-		return nil, fmt.Errorf("type `%v` not supportted", typeArg)
+		return nil, errors.Errorf("type `%v` not supportted", typeArg)
 	}
 	if err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": name}).Decode(p); err != nil {
 		if mongoSDK.NotFound(err) {
@@ -461,7 +462,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	}
 
 	if p.Author != user.ID {
-		return nil, fmt.Errorf("post do not belong to this user")
+		return nil, errors.Errorf("post do not belong to this user")
 	}
 
 	p.Title = title

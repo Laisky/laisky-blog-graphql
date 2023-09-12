@@ -1,8 +1,9 @@
 package dto
 
 import (
-	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 )
 
 // PostInfo blog post info

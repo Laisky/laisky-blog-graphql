@@ -2,8 +2,11 @@ package telegram
 
 import (
 	"context"
-	"fmt"
 	"strconv"
+
+	"github.com/Laisky/errors/v2"
+	gconfig "github.com/Laisky/go-config/v2"
+	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
@@ -11,9 +14,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-
-	gconfig "github.com/Laisky/go-config/v2"
-	"github.com/Laisky/zap"
 )
 
 // AlertTypeResolver alert type resolver
@@ -162,7 +162,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	msg string) (*model.AlertTypes, error) {
 	if !telegramThrottle.Allow(typeArg) {
 		log.Logger.Warn("deny by throttle", zap.String("type", typeArg))
-		return nil, fmt.Errorf("deny by throttle")
+		return nil, errors.Errorf("deny by throttle")
 	}
 
 	maxlen := gconfig.Shared.GetInt("settings.telegram.max_len")
@@ -193,7 +193,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	}
 
 	if errMsg != "" {
-		err = fmt.Errorf(errMsg)
+		err = errors.Errorf(errMsg)
 	}
 
 	return alert, err

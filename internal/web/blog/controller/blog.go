@@ -10,6 +10,10 @@ import (
 	"github.com/Laisky/errors/v2"
 	ginMw "github.com/Laisky/gin-middlewares/v5"
 	gutils "github.com/Laisky/go-utils/v4"
+	"github.com/Laisky/zap"
+	jwtLib "github.com/golang-jwt/jwt/v4"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
@@ -18,9 +22,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-	"github.com/Laisky/zap"
-	jwtLib "github.com/golang-jwt/jwt/v4"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // PostResolver post resolver
@@ -219,7 +220,7 @@ func (r *PostResolver) Type(ctx context.Context, obj *model.Post) (models.BlogPo
 		return models.BlogPostTypeHTML, nil
 	}
 
-	return "", fmt.Errorf("unknown blog post type: `%+v`", obj.Type)
+	return "", errors.Errorf("unknown blog post type: `%+v`", obj.Type)
 }
 
 func (r *PostSeriesResolver) Posts(ctx context.Context, obj *model.PostSeries) (posts []*model.Post, err error) {
@@ -306,7 +307,7 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 
 	if input.Title == nil ||
 		input.Markdown == nil {
-		return nil, fmt.Errorf("title & markdown must set")
+		return nil, errors.Errorf("title & markdown must set")
 	}
 
 	return r.svc.NewPost(ctx,
@@ -324,8 +325,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 ) (resp *models.BlogLoginResponse, err error) {
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
-		log.Logger.Debug("user invalidate", zap.Error(err))
-		return nil, err
+		return nil, errors.Wrapf(err, "user `%v` invalidate", account)
 	}
 
 	uc := &jwt.UserClaims{
@@ -367,7 +367,7 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	}
 
 	if post.Name == "" {
-		return nil, fmt.Errorf("title & name cannot be empty")
+		return nil, errors.Errorf("title & name cannot be empty")
 	}
 
 	// only update category
@@ -378,7 +378,7 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	if post.Title == nil ||
 		post.Markdown == nil ||
 		post.Type == nil {
-		return nil, fmt.Errorf("title & markdown & type must set")
+		return nil, errors.Errorf("title & markdown & type must set")
 	}
 
 	// update post content
