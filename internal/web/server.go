@@ -30,6 +30,7 @@ func RunServer(addr string, resolver *Resolver) {
 		gin.Recovery(),
 		ginMw.NewLoggerMiddleware(
 			ginMw.WithLoggerMwColored(),
+			ginMw.WithLevel(log.Logger.Level().String()),
 			ginMw.WithLogger(log.Logger.Named("gin")),
 		),
 	)
