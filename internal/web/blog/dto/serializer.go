@@ -1,3 +1,4 @@
+// Package dto contains all the dto used in the application.
 package dto
 
 import (

@@ -350,8 +350,10 @@ func (s *Blog) LoadCategoryByURL(ctx context.Context, url string) (cate *model.C
 	cate = &model.Category{}
 	if err = s.dao.GetCategoriesCol().
 		FindOne(ctx, bson.D{{Key: "url", Value: url}}).
-		Decode(cate); err != nil && err != mongo.ErrNoDocuments {
-		return nil, err
+		Decode(cate); err != nil {
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, err
+		}
 	}
 
 	return cate, nil

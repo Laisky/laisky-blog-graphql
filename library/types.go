@@ -87,6 +87,7 @@ func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 	if !ok {
 		log.Logger.Debug("unknown type of JSONString", zap.String("val", fmt.Sprint(vi)))
 	}
+
 	// var v string
 	if err = json.UnmarshalFromString(v, &v); err != nil {
 		log.Logger.Debug("decode string", zap.String("quoted", v), zap.Error(err))

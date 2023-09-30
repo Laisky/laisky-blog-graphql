@@ -4,7 +4,6 @@ package model
 import (
 	"time"
 
-	gutils "github.com/Laisky/go-utils/v4"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -58,44 +57,6 @@ type PostI18NLanguage struct {
 	PostContent  string `bson:"post_content" json:"post_content"`
 }
 
-// UserStatus user status
-type UserStatus string
-
-const (
-	// UserStatusActive active user
-	UserStatusActive UserStatus = "active"
-	// UserStatusPending wait for email verification
-	UserStatusPending UserStatus = "pending"
-)
-
-// User blog users
-type User struct {
-	// ID unique identifier for the user
-	ID primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
-	// ModifiedAt last modified time
-	ModifiedAt time.Time `bson:"post_modified_gmt" json:"modified_at"`
-	// Username display name
-	Username string `bson:"username" json:"username"`
-	// Account login account, should be email
-	Account string `bson:"account" json:"account"`
-	// Password hashed password
-	//
-	//  `gcrypto.ValidatePasswordHash`
-	Password string `bson:"password" json:"password"`
-	// Status user status
-	Status UserStatus `bson:"status" json:"status"`
-	// ActiveToken token to active user
-	ActiveToken string `bson:"active_token" json:"active_token"`
-}
-
-func NewUser() *User {
-	return &User{
-		ID:         primitive.NewObjectID(),
-		ModifiedAt: gutils.Clock.GetUTCNow(),
-		Status:     UserStatusPending,
-	}
-}
-
 // Category blog post categories
 type Category struct {
 	// ID unique identifier for the category
@@ -118,19 +79,6 @@ type PostSeries struct {
 	Posts []primitive.ObjectID `bson:"posts" json:"posts"`
 	// Chidlren child series
 	Chidlren []primitive.ObjectID `bson:"children" json:"children"`
-}
-
-// GetID get id
-func (u *User) GetID() string {
-	return u.ID.Hex()
-}
-
-// GetPayload get payload
-func (u *User) GetPayload() map[string]interface{} {
-	return map[string]interface{}{
-		"display_name": u.Username,
-		"account":      u.Account,
-	}
 }
 
 // PostTags blog post tags

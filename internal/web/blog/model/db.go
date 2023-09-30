@@ -1,3 +1,4 @@
+// Package model contains all the models used in the application.
 package model
 
 import (
