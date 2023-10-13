@@ -398,7 +398,7 @@ linters:
     - goprintffuncname
     - gosec
     - gosimple
-    - gosmopolitan
+    # - gosmopolitan
     - govet
     - grouper
     # - ifshort # deprecated

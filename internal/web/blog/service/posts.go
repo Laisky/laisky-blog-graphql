@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v5"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v4"
 	glog "github.com/Laisky/go-utils/v4/log"
@@ -24,7 +25,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	mongoSDK "github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // Blog blog service
@@ -79,7 +79,7 @@ func (s *Blog) LoadPostSeries(ctx context.Context, id primitive.ObjectID, key st
 	if err != nil {
 		return nil, errors.Wrap(err, "find series")
 	}
-	defer cur.Close(ctx)
+	defer cur.Close(ctx) //nolint:errcheck
 
 	if err = cur.All(ctx, &se); err != nil {
 		return nil, errors.Wrap(err, "load series")
@@ -199,7 +199,7 @@ func (s *Blog) filterPosts(ctx context.Context, cfg *dto.PostCfg, iter *mongo.Cu
 			passwordFilter,
 			hiddenFilter,
 			getContentLengthFilter(cfg.Length),
-			getI18NFilter(cfg.Language),
+			s.getI18NFilter(ctx, cfg.Language),
 			defaultTypeFilter,
 		} {
 			if !f(post) {
@@ -227,18 +227,33 @@ func defaultTypeFilter(docu *model.Post) bool {
 	return true
 }
 
-// i18NFilter
-func getI18NFilter(language models.Language) func(*model.Post) bool {
+// getI18NFilter replace content with specified language
+func (s *Blog) getI18NFilter(ctx context.Context, language models.Language) func(*model.Post) bool {
 	return func(p *model.Post) bool {
+		logger := gmw.GetLogger(ctx).
+			With(zap.String("language", language.String()), zap.String("post", p.ID.String()))
 		switch language {
 		case models.LanguageEnUs:
-			log.Logger.Debug("getI18NFilter", zap.String("language", language.String()))
-			if p.I18N.EnUs.PostContent != "" {
-				p.Content = p.I18N.EnUs.PostMarkdown
+			if p.I18N.EnUs.PostMarkdown != "" {
+				p.Language = models.LanguageEnUs.String()
+				p.Markdown = p.I18N.EnUs.PostMarkdown
+
+				if p.I18N.EnUs.PostContent == "" {
+					p.I18N.EnUs.PostContent = ParseMarkdown2HTML([]byte(p.Markdown))
+					p.Content = p.I18N.EnUs.PostContent
+
+					// update post i18n content
+					if _, err := s.dao.GetPostsCol().UpdateByID(ctx, p.ID, bson.M{
+						"$set": bson.M{
+							"i18n.en_us.post_content": p.I18N.EnUs.PostContent,
+						},
+					}); err != nil {
+						logger.Error("try to update post got error", zap.Error(err))
+					}
+				}
 			}
 		default:
-			log.Logger.Debug("getI18NFilter", zap.String("language", language.String()))
-			return true
+			p.Language = models.LanguageZhCn.String()
 		}
 
 		return true

@@ -77,6 +77,7 @@ type ComplexityRoot struct {
 		Content    func(childComplexity int) int
 		CreatedAt  func(childComplexity int) int
 		ID         func(childComplexity int) int
+		Language   func(childComplexity int) int
 		Markdown   func(childComplexity int) int
 		Menu       func(childComplexity int) int
 		ModifiedAt func(childComplexity int) int
@@ -228,6 +229,7 @@ type BlogPostResolver interface {
 	Type(ctx context.Context, obj *model.Post) (models.BlogPostType, error)
 
 	Category(ctx context.Context, obj *model.Post) (*model.Category, error)
+	Language(ctx context.Context, obj *model.Post) (models.Language, error)
 }
 type BlogPostSeriesResolver interface {
 	Posts(ctx context.Context, obj *model.PostSeries) ([]*model.Post, error)
@@ -385,6 +387,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.BlogPost.ID(childComplexity), true
+
+	case "BlogPost.language":
+		if e.complexity.BlogPost.Language == nil {
+			break
+		}
+
+		return e.complexity.BlogPost.Language(childComplexity), true
 
 	case "BlogPost.markdown":
 		if e.complexity.BlogPost.Markdown == nil {
@@ -2535,6 +2544,50 @@ func (ec *executionContext) fieldContext_BlogPost_category(ctx context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _BlogPost_language(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_BlogPost_language(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.BlogPost().Language(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(models.Language)
+	fc.Result = res
+	return ec.marshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_BlogPost_language(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "BlogPost",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Language does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _BlogPostSeries_key(ctx context.Context, field graphql.CollectedField, obj *model.PostSeries) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_BlogPostSeries_key(ctx, field)
 	if err != nil {
@@ -2686,6 +2739,8 @@ func (ec *executionContext) fieldContext_BlogPostSeries_posts(ctx context.Contex
 				return ec.fieldContext_BlogPost_tags(ctx, field)
 			case "category":
 				return ec.fieldContext_BlogPost_category(ctx, field)
+			case "language":
+				return ec.fieldContext_BlogPost_language(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -3853,6 +3908,8 @@ func (ec *executionContext) fieldContext_Mutation_BlogCreatePost(ctx context.Con
 				return ec.fieldContext_BlogPost_tags(ctx, field)
 			case "category":
 				return ec.fieldContext_BlogPost_category(ctx, field)
+			case "language":
+				return ec.fieldContext_BlogPost_language(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -4235,6 +4292,8 @@ func (ec *executionContext) fieldContext_Mutation_BlogAmendPost(ctx context.Cont
 				return ec.fieldContext_BlogPost_tags(ctx, field)
 			case "category":
 				return ec.fieldContext_BlogPost_category(ctx, field)
+			case "language":
+				return ec.fieldContext_BlogPost_language(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -4798,6 +4857,8 @@ func (ec *executionContext) fieldContext_Query_BlogPosts(ctx context.Context, fi
 				return ec.fieldContext_BlogPost_tags(ctx, field)
 			case "category":
 				return ec.fieldContext_BlogPost_category(ctx, field)
+			case "language":
+				return ec.fieldContext_BlogPost_language(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -9403,6 +9464,42 @@ func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet,
 					}
 				}()
 				res = ec._BlogPost_category(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "language":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._BlogPost_language(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
 				return res
 			}
 

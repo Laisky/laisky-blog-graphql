@@ -1,3 +1,4 @@
+// package Auth provides JWT
 package auth
 
 import (

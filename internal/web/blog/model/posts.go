@@ -41,6 +41,8 @@ type Post struct {
 	Hidden bool `bson:"hidden" json:"hidden"`
 	// I18N internationalization of the post
 	I18N PostI18N `bson:"i18n" json:"i18n"`
+	// Language language of the post content or markdown
+	Language string `bson:"-" json:"language"`
 }
 
 // PostI18N blog post internationalization

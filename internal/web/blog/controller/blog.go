@@ -222,6 +222,13 @@ func (r *PostResolver) Type(ctx context.Context, obj *model.Post) (models.BlogPo
 
 	return "", errors.Errorf("unknown blog post type: `%+v`", obj.Type)
 }
+func (r *PostResolver) Language(ctx context.Context, obj *model.Post) (models.Language, error) {
+	if gutils.Contains(models.AllLanguage, models.Language(obj.Language)) {
+		return models.Language(obj.Language), nil
+	}
+
+	return "", errors.Errorf("unknown language: %q", obj.Language)
+}
 
 func (r *PostSeriesResolver) Posts(ctx context.Context, obj *model.PostSeries) (posts []*model.Post, err error) {
 	se, err := r.svc.LoadPostSeries(ctx, obj.ID, "")
@@ -330,7 +337,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 
 	uc := &jwt.UserClaims{
 		RegisteredClaims: jwtLib.RegisteredClaims{
-			ID:      gutils.UUID1(),
+			ID:      gutils.UUID7(),
 			Subject: user.ID.Hex(),
 			Issuer:  "laisky-sso",
 			IssuedAt: &jwtLib.NumericDate{

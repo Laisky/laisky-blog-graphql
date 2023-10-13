@@ -6,10 +6,10 @@ require (
 	cloud.google.com/go/firestore v1.13.0
 	github.com/99designs/gqlgen v0.17.38
 	github.com/Laisky/errors/v2 v2.0.1
-	github.com/Laisky/gin-middlewares/v5 v5.0.2
+	github.com/Laisky/gin-middlewares/v5 v5.0.3-0.20231007055404-1e0c1ed0f4f5
 	github.com/Laisky/go-config/v2 v2.0.0
-	github.com/Laisky/go-utils/v4 v4.5.2
-	github.com/Laisky/zap v1.25.1
+	github.com/Laisky/go-utils/v4 v4.5.3-0.20231013025446-3e010e9407e4
+	github.com/Laisky/zap v1.25.2
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/gomarkdown/markdown v0.0.0-20230922112808-5421fefb8386
@@ -28,6 +28,8 @@ require (
 	cloud.google.com/go/compute v1.23.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	cloud.google.com/go/longrunning v0.5.1 // indirect
+	github.com/GoWebProd/gip v0.0.0-20230623090727-b60d41d5d320 // indirect
+	github.com/GoWebProd/uuid7 v0.0.0-20230623091058-5f5954faed6a // indirect
 	github.com/Laisky/errors v0.9.2-0.20221107084216-4b771a197718 // indirect
 	github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be // indirect
 	github.com/Laisky/go-gin-prometheus v1.0.0 // indirect
@@ -102,7 +104,7 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/automaxprocs v1.5.3 // indirect
-	go.uber.org/multierr v1.10.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/crypto v0.13.0 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect

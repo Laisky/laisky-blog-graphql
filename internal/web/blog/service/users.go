@@ -64,7 +64,7 @@ func (s *Blog) UserRegister(ctx context.Context,
 		return nil, errors.Wrapf(err, "generate password hash for %q", account)
 	}
 	user.Password = pwd
-	user.ActiveToken = gutils.UUID1()
+	user.ActiveToken = gutils.UUID7()
 
 	// insert new user
 	if _, err = col.InsertOne(ctx, user); err != nil {
