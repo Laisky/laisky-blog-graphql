@@ -9002,7 +9002,11 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj i
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"name", "title", "markdown", "type", "category"}
+	if _, present := asMap["language"]; !present {
+		asMap["language"] = "zh_CN"
+	}
+
+	fieldsInOrder := [...]string{"name", "title", "markdown", "type", "category", "language"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -9054,6 +9058,15 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj i
 				return it, err
 			}
 			it.Category = data
+		case "language":
+			var err error
+
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
+			data, err := ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Language = data
 		}
 	}
 

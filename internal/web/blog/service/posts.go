@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v5"
@@ -64,7 +65,8 @@ func (s *Blog) LoadPostTags(ctx context.Context) (tags []string, err error) {
 }
 
 // LoadPostSeries load post series
-func (s *Blog) LoadPostSeries(ctx context.Context, id primitive.ObjectID, key string) (se []*model.PostSeries, err error) {
+func (s *Blog) LoadPostSeries(ctx context.Context,
+	id primitive.ObjectID, key string) (se []*model.PostSeries, err error) {
 	query := bson.D{}
 	if !id.IsZero() {
 		query = append(query, bson.E{Key: "_id", Value: id})
@@ -185,7 +187,8 @@ func (s *Blog) makeQuery(ctx context.Context, cfg *dto.PostCfg) (query bson.D, e
 	return query, nil
 }
 
-func (s *Blog) filterPosts(ctx context.Context, cfg *dto.PostCfg, iter *mongo.Cursor) (results []*model.Post, err error) {
+func (s *Blog) filterPosts(ctx context.Context,
+	cfg *dto.PostCfg, iter *mongo.Cursor) (results []*model.Post, err error) {
 	isValidate := true
 	for iter.Next(ctx) {
 		post := &model.Post{}
@@ -349,8 +352,8 @@ func (s *Blog) LoadCategoryByName(ctx context.Context, name string) (cate *model
 	cate = &model.Category{}
 	if err := s.dao.GetCategoriesCol().
 		FindOne(ctx, bson.D{{Key: "name", Value: name}}).
-		Decode(cate); err != nil && err != mongo.ErrNoDocuments {
-		return nil, err
+		Decode(cate); err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, errors.Wrapf(err, "decode category %q", name)
 	}
 
 	return cate, nil
@@ -367,7 +370,7 @@ func (s *Blog) LoadCategoryByURL(ctx context.Context, url string) (cate *model.C
 		FindOne(ctx, bson.D{{Key: "url", Value: url}}).
 		Decode(cate); err != nil {
 		if !errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, err
+			return nil, errors.Wrapf(err, "decode category %q", url)
 		}
 	}
 
@@ -379,7 +382,7 @@ func (s *Blog) IsNameExists(ctx context.Context, name string) (bool, error) {
 	n, err := s.dao.GetPostsCol().CountDocuments(ctx, bson.D{{Key: "post_name", Value: name}})
 	if err != nil {
 		s.logger.Error("try to count post_name got error", zap.Error(err))
-		return false, err
+		return false, errors.Wrapf(err, "try to count post_name `%s` got error", name)
 	}
 
 	return n != 0, nil
@@ -390,9 +393,10 @@ func (s *Blog) IsNameExists(ctx context.Context, name string) (bool, error) {
 //   - name: post url
 //   - md: post markdown content
 //   - ptype: post type, markdown/slide
-func (s *Blog) NewPost(ctx context.Context, authorID primitive.ObjectID, title, name, md, ptype string) (post *model.Post, err error) {
+func (s *Blog) NewPost(ctx context.Context,
+	authorID primitive.ObjectID, title, name, md, ptype string) (post *model.Post, err error) {
 	if isExists, err := s.IsNameExists(ctx, name); err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "check post name `%s` exists", name)
 	} else if isExists {
 		return nil, errors.Errorf("post name `%v` already exists", name)
 	}
@@ -401,7 +405,7 @@ func (s *Blog) NewPost(ctx context.Context, authorID primitive.ObjectID, title, 
 	p := &model.Post{
 		Type:       strings.ToLower(ptype),
 		Markdown:   md,
-		Content:    string(ParseMarkdown2HTML([]byte(md))),
+		Content:    ParseMarkdown2HTML([]byte(md)),
 		ModifiedAt: ts,
 		CreatedAt:  ts,
 		Title:      title,
@@ -464,7 +468,9 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	name string,
 	title string,
 	md string,
-	typeArg string) (p *model.Post, err error) {
+	typeArg string,
+	language models.Language,
+) (p *model.Post, err error) {
 	p = &model.Post{}
 	typeArg = strings.ToLower(typeArg)
 	if _, ok := supporttedTypes[typeArg]; !ok {
@@ -475,7 +481,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 			return nil, errors.Wrap(err, "post not exists")
 		}
 
-		return nil, err
+		return nil, errors.Wrapf(err, "load post by name `%s`", name)
 	}
 
 	if p.Author != user.ID {
@@ -483,11 +489,21 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	}
 
 	p.Title = title
-	p.Markdown = md
-	p.Content = string(ParseMarkdown2HTML([]byte(md)))
 	p.Menu = ExtractMenu(p.Content)
 	p.ModifiedAt = gutils.Clock.GetUTCNow()
 	p.Type = typeArg
+	parsedMd := ParseMarkdown2HTML([]byte(md))
+	switch language {
+	case models.LanguageZhCn:
+		p.Markdown = md
+		p.Content = parsedMd
+	case models.LanguageEnUs:
+		p.I18N.UpdateAt = time.Now().UTC()
+		p.I18N.EnUs.PostMarkdown = md
+		p.I18N.EnUs.PostContent = parsedMd
+	default:
+		return nil, errors.Errorf("language `%s` not supportted", language)
+	}
 
 	if _, err = s.dao.GetPostsCol().ReplaceOne(ctx, bson.M{"_id": p.ID}, p); err != nil {
 		return nil, errors.Wrap(err, "try to update post got error")

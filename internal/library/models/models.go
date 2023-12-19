@@ -26,6 +26,7 @@ type NewBlogPost struct {
 	Markdown *string       `json:"markdown,omitempty"`
 	Type     *BlogPostType `json:"type,omitempty"`
 	Category *string       `json:"category,omitempty"`
+	Language Language      `json:"language"`
 }
 
 type Pagination struct {

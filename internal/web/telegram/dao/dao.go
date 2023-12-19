@@ -286,7 +286,8 @@ func (d *Monitor) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes)
 	return users, nil
 }
 
-func (d *Monitor) ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error) {
+func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
+	token, alertType string) (alert *model.AlertTypes, err error) {
 	log.Logger.Debug("ValidateTokenForAlertType", zap.String("alert_type", alertType))
 
 	alert = new(model.AlertTypes)

@@ -159,7 +159,8 @@ func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error
 	return err
 }
 
-func (s *Type) userQuitAlert(ctx context.Context, us *userStat, alertName string) (err error) {
+func (s *Type) userQuitAlert(ctx context.Context,
+	us *userStat, alertName string) (err error) {
 	if err = s.dao.RemoveUAR(ctx, int(us.user.ID), alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation by uid and alert_name")
 	}
@@ -218,10 +219,12 @@ func (s *Type) joinAlertGroup(ctx context.Context, us *userStat, kt string) (err
 		return err
 	}
 
-	return s.SendMsgToUser(int(us.user.ID), alert+" (joint at "+uar.CreatedAt.Format(time.RFC3339)+")")
+	return s.SendMsgToUser(int(us.user.ID),
+		alert+" (joint at "+uar.CreatedAt.Format(time.RFC3339)+")")
 }
 
-func (s *Type) LoadAlertTypesByUser(ctx context.Context, u *model.Users) (alerts []*model.AlertTypes, err error) {
+func (s *Type) LoadAlertTypesByUser(ctx context.Context,
+	u *model.Users) (alerts []*model.AlertTypes, err error) {
 	return s.dao.LoadAlertTypesByUser(ctx, u)
 }
 
@@ -229,19 +232,23 @@ func (s *Type) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []
 	return s.dao.LoadAlertTypes(ctx, cfg)
 }
 
-func (s *Type) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.Users, err error) {
+func (s *Type) LoadUsers(ctx context.Context,
+	cfg *dto.QueryCfg) (users []*model.Users, err error) {
 	return s.dao.LoadUsers(ctx, cfg)
 }
 
-func (s *Type) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.Users, err error) {
+func (s *Type) LoadUsersByAlertType(ctx context.Context,
+	a *model.AlertTypes) (users []*model.Users, err error) {
 	return s.dao.LoadUsersByAlertType(ctx, a)
 }
 
-func (s *Type) ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error) {
+func (s *Type) ValidateTokenForAlertType(ctx context.Context,
+	token, alertType string) (alert *model.AlertTypes, err error) {
 	return s.dao.ValidateTokenForAlertType(ctx, token, alertType)
 }
 
-func (s *Type) listAllMonitorAlerts(ctx context.Context, us *userStat) (err error) {
+func (s *Type) listAllMonitorAlerts(ctx context.Context,
+	us *userStat) (err error) {
 	u, err := s.dao.LoadUserByUID(ctx, int(us.user.ID))
 	if err != nil {
 		return err

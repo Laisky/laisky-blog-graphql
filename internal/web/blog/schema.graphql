@@ -45,6 +45,7 @@ input NewBlogPost {
     markdown: String
     type: BlogPostType
     category: String
+    language: Language! = zh_CN
 }
 
 type BlogPostSeries {

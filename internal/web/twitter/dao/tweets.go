@@ -5,6 +5,8 @@ import (
 	"context"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v5"
+	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
@@ -37,6 +39,7 @@ func (d *Tweets) GetUserCol() *mongoLib.Collection {
 }
 
 func (d *Tweets) SearchByText(ctx context.Context, text string) (tweetIDs []string, err error) {
+	logger := gmw.GetLogger(ctx)
 	cur, err := d.GetTweetCol().
 		Find(ctx,
 			bson.M{"text": primitive.Regex{Pattern: text, Options: "i"}},
@@ -48,13 +51,19 @@ func (d *Tweets) SearchByText(ctx context.Context, text string) (tweetIDs []stri
 		return nil, errors.Wrapf(err, "search text `%s", text)
 	}
 
-	var tweets []bson.D
+	var tweets []bson.M
 	if err = cur.All(ctx, &tweets); err != nil {
 		return nil, errors.Wrap(err, "load tweets")
 	}
 
 	for i := range tweets {
-		tweetIDs = append(tweetIDs, tweets[i].Map()["id_str"].(string))
+		tid, ok := tweets[i]["id_str"].(string)
+		if !ok {
+			logger.Warn("got invalid tweet id", zap.Any("id_str", tweets[i]["id_str"]))
+			continue
+		}
+
+		tweetIDs = append(tweetIDs, tid)
 	}
 
 	return tweetIDs, nil

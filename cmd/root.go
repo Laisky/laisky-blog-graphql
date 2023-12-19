@@ -56,7 +56,6 @@ func setupLibrary(ctx context.Context) {
 	if err := jwt.Initialize([]byte(gconfig.Shared.GetString("settings.secret"))); err != nil {
 		log.Logger.Panic("setup jwt", zap.Error(err))
 	}
-
 }
 
 func setupSettings(ctx context.Context) {

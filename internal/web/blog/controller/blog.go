@@ -277,12 +277,15 @@ func (r *UserResolver) ID(ctx context.Context,
 // =====================================
 
 // UserLogin login user
-func (r *MutationResolver) UserLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error) {
+func (r *MutationResolver) UserLogin(ctx context.Context,
+	account string, password string) (*models.BlogLoginResponse, error) {
 	return r.BlogLogin(ctx, account, password)
 }
 
 // UserRegister register user
-func (r *MutationResolver) UserRegister(ctx context.Context, account string, password string, displayName string, captcha string) (*models.UserRegisterResponse, error) {
+func (r *MutationResolver) UserRegister(ctx context.Context,
+	account string, password string, displayName string, captcha string) (
+	*models.UserRegisterResponse, error) {
 	_, err := r.svc.UserRegister(ctx, account, password, displayName)
 	if err != nil {
 		return nil, errors.Wrap(err, "register user")
@@ -298,7 +301,8 @@ func (r *MutationResolver) UserActive(ctx context.Context, token string) (*model
 	return nil, errors.Errorf("notimplement")
 }
 
-func (r *MutationResolver) UserResendActiveEmail(ctx context.Context, account string) (*models.UserResendActiveEmailResponse, error) {
+func (r *MutationResolver) UserResendActiveEmail(ctx context.Context,
+	account string) (*models.UserResendActiveEmailResponse, error) {
 	// FIXME
 	return nil, errors.Errorf("notimplement")
 }
@@ -394,5 +398,7 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 		post.Name,
 		*post.Title,
 		*post.Markdown,
-		post.Type.String())
+		post.Type.String(),
+		post.Language,
+	)
 }
