@@ -1,3 +1,4 @@
+// Package dao is a data access object for telegram monitor.
 package dao
 
 import (

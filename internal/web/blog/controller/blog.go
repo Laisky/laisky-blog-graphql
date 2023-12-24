@@ -137,6 +137,7 @@ func (r *QueryResolver) BlogPosts(ctx context.Context,
 		Regexp:      regexp,
 		CategoryURL: categoryURL,
 		Name:        name,
+		Language:    language,
 	}
 	results, err := r.svc.LoadPosts(ctx, cfg)
 	if err != nil {
@@ -155,7 +156,8 @@ var (
 
 func (r *QueryResolver) BlogTwitterCard(ctx context.Context, name string) (string, error) {
 	posts, err := r.svc.LoadPosts(ctx, &dto.PostCfg{
-		Name: name,
+		Name:     name,
+		Language: models.LanguageZhCn, // TODO: support i18n
 	})
 	if err != nil {
 		return "", errors.Wrapf(err, "load posts `%s`", name)
@@ -195,22 +197,28 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context, name string) (strin
 // blog resolver
 // ----------------
 
-func (r *PostResolver) ID(ctx context.Context, obj *model.Post) (string, error) {
+func (r *PostResolver) ID(ctx context.Context,
+	obj *model.Post) (string, error) {
 	return obj.ID.Hex(), nil
 }
-func (r *PostResolver) CreatedAt(ctx context.Context, obj *model.Post) (*library.Datetime, error) {
+func (r *PostResolver) CreatedAt(ctx context.Context,
+	obj *model.Post) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.CreatedAt), nil
 }
-func (r *PostResolver) ModifiedAt(ctx context.Context, obj *model.Post) (*library.Datetime, error) {
+func (r *PostResolver) ModifiedAt(ctx context.Context,
+	obj *model.Post) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
-func (r *PostResolver) Author(ctx context.Context, obj *model.Post) (*model.User, error) {
+func (r *PostResolver) Author(ctx context.Context,
+	obj *model.Post) (*model.User, error) {
 	return r.svc.LoadUserByID(ctx, obj.Author)
 }
-func (r *PostResolver) Category(ctx context.Context, obj *model.Post) (*model.Category, error) {
+func (r *PostResolver) Category(ctx context.Context,
+	obj *model.Post) (*model.Category, error) {
 	return r.svc.LoadCategoryByID(ctx, obj.Category)
 }
-func (r *PostResolver) Type(ctx context.Context, obj *model.Post) (models.BlogPostType, error) {
+func (r *PostResolver) Type(ctx context.Context,
+	obj *model.Post) (models.BlogPostType, error) {
 	switch obj.Type {
 	case models.BlogPostTypeMarkdown.String():
 		return models.BlogPostTypeMarkdown, nil
@@ -222,15 +230,26 @@ func (r *PostResolver) Type(ctx context.Context, obj *model.Post) (models.BlogPo
 
 	return "", errors.Errorf("unknown blog post type: `%+v`", obj.Type)
 }
-func (r *PostResolver) Language(ctx context.Context, obj *model.Post) (models.Language, error) {
+func (r *PostResolver) Language(ctx context.Context,
+	obj *model.Post) (models.Language, error) {
 	if gutils.Contains(models.AllLanguage, models.Language(obj.Language)) {
 		return models.Language(obj.Language), nil
 	}
 
 	return "", errors.Errorf("unknown language: %q", obj.Language)
 }
+func (r *PostResolver) AllLanguages(ctx context.Context,
+	obj *model.Post) (allLangs []models.Language, err error) {
+	allLangs = append(allLangs, models.LanguageZhCn)
+	if obj.I18N.EnUs.PostMarkdown != "" {
+		allLangs = append(allLangs, models.LanguageEnUs)
+	}
 
-func (r *PostSeriesResolver) Posts(ctx context.Context, obj *model.PostSeries) (posts []*model.Post, err error) {
+	return allLangs, nil
+}
+
+func (r *PostSeriesResolver) Posts(ctx context.Context,
+	obj *model.PostSeries) (posts []*model.Post, err error) {
 	se, err := r.svc.LoadPostSeries(ctx, obj.ID, "")
 	if err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-// Package service service for twitter API
+// Package service provides all the business logic.
 package service
 
 import (

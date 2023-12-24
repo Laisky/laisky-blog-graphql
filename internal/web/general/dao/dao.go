@@ -1,3 +1,4 @@
+// Package dao provides data access object for general service.
 package dao
 
 import (

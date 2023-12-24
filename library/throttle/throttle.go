@@ -1,3 +1,4 @@
+// Package throttle rate limiters
 package throttle
 
 import (

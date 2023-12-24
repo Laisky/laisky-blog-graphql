@@ -138,7 +138,8 @@ func (s *Blog) LoadPostInfo(ctx context.Context) (*dto.PostInfo, error) {
 	}, nil
 }
 
-func (s *Blog) makeQuery(ctx context.Context, cfg *dto.PostCfg) (query bson.D, err error) {
+func (s *Blog) makeQuery(ctx context.Context,
+	cfg *dto.PostCfg) (query bson.D, err error) {
 	s.logger.Debug("makeQuery",
 		zap.String("name", cfg.Name),
 		zap.String("tag", cfg.Tag),
@@ -146,7 +147,9 @@ func (s *Blog) makeQuery(ctx context.Context, cfg *dto.PostCfg) (query bson.D, e
 	)
 	query = bson.D{}
 	if cfg.Name != "" {
-		query = append(query, bson.E{Key: "post_name", Value: strings.ToLower(url.QueryEscape(cfg.Name))})
+		query = append(query, bson.E{
+			Key:   "post_name",
+			Value: strings.ToLower(url.QueryEscape(cfg.Name))})
 	}
 
 	if !cfg.ID.IsZero() {
@@ -231,12 +234,16 @@ func defaultTypeFilter(docu *model.Post) bool {
 }
 
 // getI18NFilter replace content with specified language
-func (s *Blog) getI18NFilter(ctx context.Context, language models.Language) func(*model.Post) bool {
+func (s *Blog) getI18NFilter(ctx context.Context,
+	language models.Language) func(*model.Post) bool {
 	return func(p *model.Post) bool {
 		logger := gmw.GetLogger(ctx).
-			With(zap.String("language", language.String()), zap.String("post", p.ID.String()))
+			With(zap.String("language", language.String()),
+				zap.String("post", p.ID.String()))
 		switch language {
-		case models.LanguageEnUs:
+		case models.LanguageZhCn:
+			p.Language = models.LanguageZhCn.String()
+		default: // en-us as default
 			if p.I18N.EnUs.PostMarkdown != "" {
 				p.Language = models.LanguageEnUs.String()
 				p.Markdown = p.I18N.EnUs.PostMarkdown
@@ -255,8 +262,6 @@ func (s *Blog) getI18NFilter(ctx context.Context, language models.Language) func
 					}
 				}
 			}
-		default:
-			p.Language = models.LanguageZhCn.String()
 		}
 
 		return true

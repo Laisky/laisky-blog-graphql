@@ -6,13 +6,13 @@ require (
 	cloud.google.com/go/firestore v1.14.0
 	github.com/99designs/gqlgen v0.17.41
 	github.com/Laisky/errors/v2 v2.0.1
-	github.com/Laisky/gin-middlewares/v5 v5.0.3-0.20231103080315-4fb0731ecf32
+	github.com/Laisky/gin-middlewares/v5 v5.0.3
 	github.com/Laisky/go-config/v2 v2.0.0
-	github.com/Laisky/go-utils/v4 v4.6.1-0.20231218090321-83df41cbdbf9
+	github.com/Laisky/go-utils/v4 v4.7.0
 	github.com/Laisky/zap v1.25.3-0.20231205071752-1cdfcee9191f
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.0
-	github.com/gomarkdown/markdown v0.0.0-20231115200524-a660076da3fd
+	github.com/gomarkdown/markdown v0.0.0-20231222211730-1d6d20845b47
 	github.com/jinzhu/copier v0.4.0
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.4
@@ -114,7 +114,7 @@ require (
 	go.uber.org/automaxprocs v1.5.3 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.3.0 // indirect
-	golang.org/x/crypto v0.16.0 // indirect
+	golang.org/x/crypto v0.17.0 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/oauth2 v0.15.0 // indirect

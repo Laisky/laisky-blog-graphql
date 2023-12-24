@@ -1,3 +1,4 @@
+// Package service contains all the business logic.
 package service
 
 import (

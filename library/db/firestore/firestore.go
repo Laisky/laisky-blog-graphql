@@ -1,3 +1,4 @@
+// Package firestore provides firestore client.
 package firestore
 
 import (

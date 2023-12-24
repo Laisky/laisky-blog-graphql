@@ -26,7 +26,8 @@ type BlogPost {
     markdown: String
     tags: [String!]!
     category: BlogCategory
-    language: Language!
+    language: Language! # current content language
+    all_languages: [Language!]! # all languages of this post
 }
 
 type BlogUser {

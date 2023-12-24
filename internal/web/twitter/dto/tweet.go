@@ -1,3 +1,4 @@
+// Package dto provides data transfer object.
 package dto
 
 type LoadTweetArgs struct {

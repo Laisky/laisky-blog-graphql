@@ -72,19 +72,20 @@ type ComplexityRoot struct {
 	}
 
 	BlogPost struct {
-		Author     func(childComplexity int) int
-		Category   func(childComplexity int) int
-		Content    func(childComplexity int) int
-		CreatedAt  func(childComplexity int) int
-		ID         func(childComplexity int) int
-		Language   func(childComplexity int) int
-		Markdown   func(childComplexity int) int
-		Menu       func(childComplexity int) int
-		ModifiedAt func(childComplexity int) int
-		Name       func(childComplexity int) int
-		Tags       func(childComplexity int) int
-		Title      func(childComplexity int) int
-		Type       func(childComplexity int) int
+		AllLanguages func(childComplexity int) int
+		Author       func(childComplexity int) int
+		Category     func(childComplexity int) int
+		Content      func(childComplexity int) int
+		CreatedAt    func(childComplexity int) int
+		ID           func(childComplexity int) int
+		Language     func(childComplexity int) int
+		Markdown     func(childComplexity int) int
+		Menu         func(childComplexity int) int
+		ModifiedAt   func(childComplexity int) int
+		Name         func(childComplexity int) int
+		Tags         func(childComplexity int) int
+		Title        func(childComplexity int) int
+		Type         func(childComplexity int) int
 	}
 
 	BlogPostSeries struct {
@@ -230,6 +231,7 @@ type BlogPostResolver interface {
 
 	Category(ctx context.Context, obj *model.Post) (*model.Category, error)
 	Language(ctx context.Context, obj *model.Post) (models.Language, error)
+	AllLanguages(ctx context.Context, obj *model.Post) ([]models.Language, error)
 }
 type BlogPostSeriesResolver interface {
 	Posts(ctx context.Context, obj *model.PostSeries) ([]*model.Post, error)
@@ -352,6 +354,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.BlogLoginResponse.User(childComplexity), true
+
+	case "BlogPost.all_languages":
+		if e.complexity.BlogPost.AllLanguages == nil {
+			break
+		}
+
+		return e.complexity.BlogPost.AllLanguages(childComplexity), true
 
 	case "BlogPost.author":
 		if e.complexity.BlogPost.Author == nil {
@@ -2588,6 +2597,50 @@ func (ec *executionContext) fieldContext_BlogPost_language(ctx context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _BlogPost_all_languages(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_BlogPost_all_languages(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.BlogPost().AllLanguages(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]models.Language)
+	fc.Result = res
+	return ec.marshalNLanguage2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguageᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_BlogPost_all_languages(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "BlogPost",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Language does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _BlogPostSeries_key(ctx context.Context, field graphql.CollectedField, obj *model.PostSeries) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_BlogPostSeries_key(ctx, field)
 	if err != nil {
@@ -2741,6 +2794,8 @@ func (ec *executionContext) fieldContext_BlogPostSeries_posts(ctx context.Contex
 				return ec.fieldContext_BlogPost_category(ctx, field)
 			case "language":
 				return ec.fieldContext_BlogPost_language(ctx, field)
+			case "all_languages":
+				return ec.fieldContext_BlogPost_all_languages(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -3910,6 +3965,8 @@ func (ec *executionContext) fieldContext_Mutation_BlogCreatePost(ctx context.Con
 				return ec.fieldContext_BlogPost_category(ctx, field)
 			case "language":
 				return ec.fieldContext_BlogPost_language(ctx, field)
+			case "all_languages":
+				return ec.fieldContext_BlogPost_all_languages(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -4294,6 +4351,8 @@ func (ec *executionContext) fieldContext_Mutation_BlogAmendPost(ctx context.Cont
 				return ec.fieldContext_BlogPost_category(ctx, field)
 			case "language":
 				return ec.fieldContext_BlogPost_language(ctx, field)
+			case "all_languages":
+				return ec.fieldContext_BlogPost_all_languages(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -4859,6 +4918,8 @@ func (ec *executionContext) fieldContext_Query_BlogPosts(ctx context.Context, fi
 				return ec.fieldContext_BlogPost_category(ctx, field)
 			case "language":
 				return ec.fieldContext_BlogPost_language(ctx, field)
+			case "all_languages":
+				return ec.fieldContext_BlogPost_all_languages(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -9536,6 +9597,42 @@ func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet,
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "all_languages":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._BlogPost_all_languages(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -12315,6 +12412,67 @@ func (ec *executionContext) unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑ
 
 func (ec *executionContext) marshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx context.Context, sel ast.SelectionSet, v models.Language) graphql.Marshaler {
 	return v
+}
+
+func (ec *executionContext) unmarshalNLanguage2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguageᚄ(ctx context.Context, v interface{}) ([]models.Language, error) {
+	var vSlice []interface{}
+	if v != nil {
+		vSlice = graphql.CoerceList(v)
+	}
+	var err error
+	res := make([]models.Language, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalNLanguage2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguageᚄ(ctx context.Context, sel ast.SelectionSet, v []models.Language) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) marshalNLock2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚋmodelᚐLock(ctx context.Context, sel ast.SelectionSet, v model2.Lock) graphql.Marshaler {

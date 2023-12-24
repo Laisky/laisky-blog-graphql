@@ -1,3 +1,4 @@
+// Package config contains all the configuration used in the application.
 package config
 
 import (
