@@ -30,6 +30,10 @@ jobs:
         with:
           path: /go
           key: ${{ runner.os }}-primes
+
+      - name: Add SHORT_SHA env property with commit short sha
+        run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-7`" >> $GITHUB_ENV
+
       -
         name: Build and push latest
         uses: docker/build-push-action@v4
@@ -43,4 +47,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ppcelery/laisky-blog-graphql:${{ github.sha }}
+          tags: ppcelery/laisky-blog-graphql:${{ env.SHORT_SHA }}
