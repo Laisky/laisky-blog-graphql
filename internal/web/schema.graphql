@@ -72,7 +72,11 @@ type Query {
 
 type Mutation {
   # publish new blog post
-  BlogCreatePost(post: NewBlogPost!): BlogPost!
+  BlogCreatePost(
+    post: NewBlogPost!,
+    # some graphql client doesn't support enum as parameter
+    language: Language! = zh_CN
+  ): BlogPost!
   # login
   # Deprecated: use UserLogin instead
   BlogLogin(account: String!, password: String!): BlogLoginResponse!
@@ -81,7 +85,11 @@ type Mutation {
   UserActive(token: String!): UserActiveResponse!
   UserResendActiveEmail(account: String!): UserResendActiveEmailResponse!
   # update blog post
-  BlogAmendPost(post: NewBlogPost!): BlogPost!
+  BlogAmendPost(
+    post: NewBlogPost!,
+    # some graphql client doesn't support enum as parameter
+    language: Language! = zh_CN
+  ): BlogPost!
 
   # telegram monitor
   TelegramMonitorAlert(

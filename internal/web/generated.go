@@ -14,9 +14,6 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
-	gqlparser "github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
-
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
@@ -24,6 +21,8 @@ import (
 	model3 "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	model1 "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
+	gqlparser "github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // region    ************************** generated!.gotpl **************************
@@ -31,6 +30,7 @@ import (
 // NewExecutableSchema creates an ExecutableSchema from the ResolverRoot interface.
 func NewExecutableSchema(cfg Config) graphql.ExecutableSchema {
 	return &executableSchema{
+		schema:     cfg.Schema,
 		resolvers:  cfg.Resolvers,
 		directives: cfg.Directives,
 		complexity: cfg.Complexity,
@@ -38,6 +38,7 @@ func NewExecutableSchema(cfg Config) graphql.ExecutableSchema {
 }
 
 type Config struct {
+	Schema     *ast.Schema
 	Resolvers  ResolverRoot
 	Directives DirectiveRoot
 	Complexity ComplexityRoot
@@ -130,8 +131,8 @@ type ComplexityRoot struct {
 
 	Mutation struct {
 		AcquireLock           func(childComplexity int, lockName string, durationSec int, isRenewal *bool) int
-		BlogAmendPost         func(childComplexity int, post models.NewBlogPost) int
-		BlogCreatePost        func(childComplexity int, post models.NewBlogPost) int
+		BlogAmendPost         func(childComplexity int, post models.NewBlogPost, language models.Language) int
+		BlogCreatePost        func(childComplexity int, post models.NewBlogPost, language models.Language) int
 		BlogLogin             func(childComplexity int, account string, password string) int
 		CreateGeneralToken    func(childComplexity int, username string, durationSec int) int
 		TelegramMonitorAlert  func(childComplexity int, typeArg string, token string, msg string) int
@@ -254,13 +255,13 @@ type LockResolver interface {
 	ExpiresAt(ctx context.Context, obj *model2.Lock) (*library.Datetime, error)
 }
 type MutationResolver interface {
-	BlogCreatePost(ctx context.Context, post models.NewBlogPost) (*model.Post, error)
+	BlogCreatePost(ctx context.Context, post models.NewBlogPost, language models.Language) (*model.Post, error)
 	BlogLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error)
 	UserLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error)
 	UserRegister(ctx context.Context, account string, password string, displayName string, captcha string) (*models.UserRegisterResponse, error)
 	UserActive(ctx context.Context, token string) (*models.UserActiveResponse, error)
 	UserResendActiveEmail(ctx context.Context, account string) (*models.UserResendActiveEmailResponse, error)
-	BlogAmendPost(ctx context.Context, post models.NewBlogPost) (*model.Post, error)
+	BlogAmendPost(ctx context.Context, post models.NewBlogPost, language models.Language) (*model.Post, error)
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*model3.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
 	CreateGeneralToken(ctx context.Context, username string, durationSec int) (string, error)
@@ -313,12 +314,16 @@ type TwitterUserResolver interface {
 }
 
 type executableSchema struct {
+	schema     *ast.Schema
 	resolvers  ResolverRoot
 	directives DirectiveRoot
 	complexity ComplexityRoot
 }
 
 func (e *executableSchema) Schema() *ast.Schema {
+	if e.schema != nil {
+		return e.schema
+	}
 	return parsedSchema
 }
 
@@ -650,7 +655,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Mutation.BlogAmendPost(childComplexity, args["post"].(models.NewBlogPost)), true
+		return e.complexity.Mutation.BlogAmendPost(childComplexity, args["post"].(models.NewBlogPost), args["language"].(models.Language)), true
 
 	case "Mutation.BlogCreatePost":
 		if e.complexity.Mutation.BlogCreatePost == nil {
@@ -662,7 +667,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Mutation.BlogCreatePost(childComplexity, args["post"].(models.NewBlogPost)), true
+		return e.complexity.Mutation.BlogCreatePost(childComplexity, args["post"].(models.NewBlogPost), args["language"].(models.Language)), true
 
 	case "Mutation.BlogLogin":
 		if e.complexity.Mutation.BlogLogin == nil {
@@ -1240,14 +1245,14 @@ func (ec *executionContext) introspectSchema() (*introspection.Schema, error) {
 	if ec.DisableIntrospection {
 		return nil, errors.New("introspection disabled")
 	}
-	return introspection.WrapSchema(parsedSchema), nil
+	return introspection.WrapSchema(ec.Schema()), nil
 }
 
 func (ec *executionContext) introspectType(name string) (*introspection.Type, error) {
 	if ec.DisableIntrospection {
 		return nil, errors.New("introspection disabled")
 	}
-	return introspection.WrapTypeFromDef(parsedSchema, parsedSchema.Types[name]), nil
+	return introspection.WrapTypeFromDef(ec.Schema(), ec.Schema().Types[name]), nil
 }
 
 //go:embed "schema.graphql" "twitter/schema.graphql" "blog/schema.graphql" "telegram/schema.graphql" "general/schema.graphql"
@@ -1319,6 +1324,15 @@ func (ec *executionContext) field_Mutation_BlogAmendPost_args(ctx context.Contex
 		}
 	}
 	args["post"] = arg0
+	var arg1 models.Language
+	if tmp, ok := rawArgs["language"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
+		arg1, err = ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["language"] = arg1
 	return args, nil
 }
 
@@ -1334,6 +1348,15 @@ func (ec *executionContext) field_Mutation_BlogCreatePost_args(ctx context.Conte
 		}
 	}
 	args["post"] = arg0
+	var arg1 models.Language
+	if tmp, ok := rawArgs["language"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
+		arg1, err = ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["language"] = arg1
 	return args, nil
 }
 
@@ -3914,7 +3937,7 @@ func (ec *executionContext) _Mutation_BlogCreatePost(ctx context.Context, field 
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogCreatePost(rctx, fc.Args["post"].(models.NewBlogPost))
+		return ec.resolvers.Mutation().BlogCreatePost(rctx, fc.Args["post"].(models.NewBlogPost), fc.Args["language"].(models.Language))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -4300,7 +4323,7 @@ func (ec *executionContext) _Mutation_BlogAmendPost(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogAmendPost(rctx, fc.Args["post"].(models.NewBlogPost))
+		return ec.resolvers.Mutation().BlogAmendPost(rctx, fc.Args["post"].(models.NewBlogPost), fc.Args["language"].(models.Language))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -9075,8 +9098,6 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj i
 		}
 		switch k {
 		case "name":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
 			data, err := ec.unmarshalNString2string(ctx, v)
 			if err != nil {
@@ -9084,8 +9105,6 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj i
 			}
 			it.Name = data
 		case "title":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("title"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
 			if err != nil {
@@ -9093,8 +9112,6 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj i
 			}
 			it.Title = data
 		case "markdown":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("markdown"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
 			if err != nil {
@@ -9102,8 +9119,6 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj i
 			}
 			it.Markdown = data
 		case "type":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("type"))
 			data, err := ec.unmarshalOBlogPostType2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogPostType(ctx, v)
 			if err != nil {
@@ -9111,8 +9126,6 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj i
 			}
 			it.Type = data
 		case "category":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("category"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
 			if err != nil {
@@ -9120,8 +9133,6 @@ func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj i
 			}
 			it.Category = data
 		case "language":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
 			data, err := ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, v)
 			if err != nil {
@@ -9149,8 +9160,6 @@ func (ec *executionContext) unmarshalInputPagination(ctx context.Context, obj in
 		}
 		switch k {
 		case "page":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("page"))
 			data, err := ec.unmarshalNInt2int(ctx, v)
 			if err != nil {
@@ -9158,8 +9167,6 @@ func (ec *executionContext) unmarshalInputPagination(ctx context.Context, obj in
 			}
 			it.Page = data
 		case "size":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("size"))
 			data, err := ec.unmarshalNInt2int(ctx, v)
 			if err != nil {
@@ -9191,8 +9198,6 @@ func (ec *executionContext) unmarshalInputSort(ctx context.Context, obj interfac
 		}
 		switch k {
 		case "sort_by":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sort_by"))
 			data, err := ec.unmarshalNString2string(ctx, v)
 			if err != nil {
@@ -9200,8 +9205,6 @@ func (ec *executionContext) unmarshalInputSort(ctx context.Context, obj interfac
 			}
 			it.SortBy = data
 		case "order":
-			var err error
-
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("order"))
 			data, err := ec.unmarshalNSortOrder2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSortOrder(ctx, v)
 			if err != nil {

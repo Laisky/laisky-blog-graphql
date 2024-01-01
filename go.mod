@@ -4,11 +4,11 @@ go 1.21
 
 require (
 	cloud.google.com/go/firestore v1.14.0
-	github.com/99designs/gqlgen v0.17.41
+	github.com/99designs/gqlgen v0.17.42
 	github.com/Laisky/errors/v2 v2.0.1
 	github.com/Laisky/gin-middlewares/v5 v5.0.3
 	github.com/Laisky/go-config/v2 v2.0.0
-	github.com/Laisky/go-utils/v4 v4.7.0
+	github.com/Laisky/go-utils/v4 v4.7.1
 	github.com/Laisky/zap v1.25.3-0.20231205071752-1cdfcee9191f
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.0
@@ -31,6 +31,7 @@ require (
 	github.com/GoWebProd/gip v0.0.0-20230623090727-b60d41d5d320 // indirect
 	github.com/GoWebProd/uuid7 v0.0.0-20231130161441-17ee54b097d4 // indirect
 	github.com/Laisky/errors v0.9.2-0.20221107084216-4b771a197718 // indirect
+	github.com/Laisky/fast-skiplist v0.0.0-20210907063351-e00546c800a6 // indirect
 	github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be // indirect
 	github.com/Laisky/go-gin-prometheus v1.0.1 // indirect
 	github.com/Laisky/go-utils/v3 v3.0.1 // indirect
@@ -46,6 +47,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
+	github.com/gammazero/deque v0.2.1 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-logr/logr v1.3.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

@@ -20,6 +20,9 @@ type GeneralUser struct {
 	LockPrefixes []string `json:"lock_prefixes"`
 }
 
+type Mutation struct {
+}
+
 type NewBlogPost struct {
 	Name     string        `json:"name"`
 	Title    *string       `json:"title,omitempty"`
@@ -32,6 +35,9 @@ type NewBlogPost struct {
 type Pagination struct {
 	Page int `json:"page"`
 	Size int `json:"size"`
+}
+
+type Query struct {
 }
 
 type Sort struct {

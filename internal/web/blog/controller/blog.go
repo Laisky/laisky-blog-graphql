@@ -328,24 +328,27 @@ func (r *MutationResolver) UserResendActiveEmail(ctx context.Context,
 
 // BlogCreatePost create new blog post
 func (r *MutationResolver) BlogCreatePost(ctx context.Context,
-	input models.NewBlogPost) (*model.Post, error) {
+	newpost models.NewBlogPost,
+	language models.Language,
+) (*model.Post, error) {
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
-	if input.Title == nil ||
-		input.Markdown == nil {
+	newpost.Language = language
+	if newpost.Title == nil ||
+		newpost.Markdown == nil {
 		return nil, errors.Errorf("title & markdown must set")
 	}
 
 	return r.svc.NewPost(ctx,
 		user.ID,
-		*input.Title,
-		input.Name,
-		*input.Markdown,
-		input.Type.String())
+		*newpost.Title,
+		newpost.Name,
+		*newpost.Markdown,
+		newpost.Type.String())
 }
 
 // BlogLogin login in blog page
@@ -389,13 +392,16 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 }
 
 func (r *MutationResolver) BlogAmendPost(ctx context.Context,
-	post models.NewBlogPost) (*model.Post, error) {
+	post models.NewBlogPost,
+	language models.Language,
+) (*model.Post, error) {
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		log.Logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
+	post.Language = language
 	if post.Name == "" {
 		return nil, errors.Errorf("title & name cannot be empty")
 	}

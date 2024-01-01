@@ -8,7 +8,7 @@ install:
 gen:
 	# go get github.com/99designs/gqlgen@v0.17.38
 	# go get github.com/vektah/gqlparser/v2@v2.5.9
-	go run github.com/99designs/gqlgen@v0.17.38 generate
+	go run github.com/99designs/gqlgen@v0.17.42 generate
 
 .PHONY: test
 test:
