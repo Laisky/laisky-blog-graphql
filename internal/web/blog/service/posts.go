@@ -204,8 +204,8 @@ func (s *Blog) filterPosts(ctx context.Context,
 			// filters pipeline
 			passwordFilter,
 			hiddenFilter,
-			getContentLengthFilter(cfg.Length),
 			s.getI18NFilter(ctx, cfg.Language),
+			getContentLengthFilter(cfg.Length),
 			defaultTypeFilter,
 		} {
 			if !f(post) {
