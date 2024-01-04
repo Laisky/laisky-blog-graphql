@@ -250,7 +250,6 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 
 				if p.I18N.EnUs.PostContent == "" {
 					p.I18N.EnUs.PostContent = ParseMarkdown2HTML([]byte(p.Markdown))
-					p.Content = p.I18N.EnUs.PostContent
 
 					// update post i18n content
 					if _, err := s.dao.GetPostsCol().UpdateByID(ctx, p.ID, bson.M{
@@ -261,6 +260,8 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 						logger.Error("try to update post got error", zap.Error(err))
 					}
 				}
+
+				p.Content = p.I18N.EnUs.PostContent
 			}
 		}
 

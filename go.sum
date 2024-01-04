@@ -70,8 +70,8 @@ github.com/Laisky/go-gin-prometheus v1.0.1 h1:0xxZ0SeuycO65sQyZpwVCr19blGtkbwv39
 github.com/Laisky/go-gin-prometheus v1.0.1/go.mod h1:3yC0gDd4f79ikEM1eGHLTWSRG0tluOV2mmx/liYLtIA=
 github.com/Laisky/go-utils/v3 v3.0.1 h1:TeCk7KX+GFN8LYRhmTFjIj6OL51XVe8BRGy+npcwiig=
 github.com/Laisky/go-utils/v3 v3.0.1/go.mod h1:x7hWlGcFgpgAOmv9qzIcfmJ/4o6gvQnsDAHIoyo42Yk=
-github.com/Laisky/go-utils/v4 v4.7.1 h1:fgBKCbMKu/GKTp0TFv0Tz2yizFhlesNbzWSMpiskD0U=
-github.com/Laisky/go-utils/v4 v4.7.1/go.mod h1:C6EczuPiA6c2No0M0XB1wT1tK9JH25mhT4vaoLVtRsY=
+github.com/Laisky/go-utils/v4 v4.7.2 h1:o16inLpRL5ymUaAIS7W0Hrp4Jhk3GS3Fr/SJnwk1K4E=
+github.com/Laisky/go-utils/v4 v4.7.2/go.mod h1:C6EczuPiA6c2No0M0XB1wT1tK9JH25mhT4vaoLVtRsY=
 github.com/Laisky/graphql v1.0.6 h1:NEULGxfxo+wbsW2OmqBXOMNUGgqo8uFjWNabwuNK10g=
 github.com/Laisky/graphql v1.0.6/go.mod h1:zaKVqXmMQTnTkFJ2AA53oyBWMzlGCnzr3aodKTrtOxI=
 github.com/Laisky/pprof v0.0.0-20231102060718-a7a7fd2965ee h1:V1d26ZVBvLfzk9yK/bY5ga4BYGxoeyz9skxxvcfMoLQ=
