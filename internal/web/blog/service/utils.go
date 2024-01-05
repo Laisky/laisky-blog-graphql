@@ -17,22 +17,22 @@ var (
 	titleRegexp     = regexp.MustCompile(`<(h[23])[^>]{0,}>([^<]+)</\w+>`)
 	titleMenuRegexp = regexp.MustCompile(`<(h[23]) *id="([^"]*)">([^<]+)</\w+>`) // extract menu
 	chineseSerial   = map[string]string{
-		"0": "\u3007",
-		"1": "\u4E00",
-		"2": "\u4E8C",
-		"3": "\u4E09",
-		"4": "\u56DB",
-		"5": "\u4E94",
-		"6": "\u516D",
-		"7": "\u4E03",
-		"8": "\u516B",
-		"9": "\u4E5D",
+		"0": "\u2160",
+		"1": "\u2161",
+		"2": "\u2162",
+		"3": "\u2163",
+		"4": "\u2164",
+		"5": "\u2165",
+		"6": "\u2166",
+		"7": "\u2167",
+		"8": "\u2168",
+		"9": "\u2169",
 	}
 )
 
 func num2CN(num int) string {
 	r := ""
-	for _, v := range strconv.FormatInt(int64(num), 10) {
+	for _, v := range strconv.Itoa(num) {
 		r += chineseSerial[string(v)]
 	}
 
