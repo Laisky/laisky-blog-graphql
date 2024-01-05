@@ -16,7 +16,7 @@ import (
 var (
 	titleRegexp     = regexp.MustCompile(`<(h[23])[^>]{0,}>([^<]+)</\w+>`)
 	titleMenuRegexp = regexp.MustCompile(`<(h[23]) *id="([^"]*)">([^<]+)</\w+>`) // extract menu
-	chineseSerial   = map[string]string{
+	l2MenuSerials   = map[string]string{
 		"0": "\u2160",
 		"1": "\u2161",
 		"2": "\u2162",
@@ -33,7 +33,7 @@ var (
 func num2CN(num int) string {
 	r := ""
 	for _, v := range strconv.Itoa(num) {
-		r += chineseSerial[string(v)]
+		r += l2MenuSerials[string(v)]
 	}
 
 	return r
@@ -58,9 +58,9 @@ func ParseMarkdown2HTML(md []byte) (cnt string) {
 		ttext = ts[3]
 		switch tlev {
 		case "h2":
-			l2cnt++
 			l3cnt = 0
 			ttext = num2CN(l2cnt) + "、" + ttext
+			l2cnt++
 		case "h3":
 			l3cnt++
 			ttext = strconv.FormatInt(int64(l3cnt), 10) + "、" + ttext
