@@ -8,7 +8,7 @@ require (
 	github.com/Laisky/errors/v2 v2.0.1
 	github.com/Laisky/gin-middlewares/v5 v5.0.3
 	github.com/Laisky/go-config/v2 v2.0.0
-	github.com/Laisky/go-utils/v4 v4.7.2
+	github.com/Laisky/go-utils/v4 v4.7.3-0.20240105021308-de2039428516
 	github.com/Laisky/zap v1.25.3-0.20231205071752-1cdfcee9191f
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.0

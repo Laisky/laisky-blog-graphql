@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/zap"
@@ -16,28 +17,7 @@ import (
 var (
 	titleRegexp     = regexp.MustCompile(`<(h[23])[^>]{0,}>([^<]+)</\w+>`)
 	titleMenuRegexp = regexp.MustCompile(`<(h[23]) *id="([^"]*)">([^<]+)</\w+>`) // extract menu
-	l2MenuSerials   = map[string]string{
-		"0": "\u2160",
-		"1": "\u2161",
-		"2": "\u2162",
-		"3": "\u2163",
-		"4": "\u2164",
-		"5": "\u2165",
-		"6": "\u2166",
-		"7": "\u2167",
-		"8": "\u2168",
-		"9": "\u2169",
-	}
 )
-
-func num2CN(num int) string {
-	r := ""
-	for _, v := range strconv.Itoa(num) {
-		r += l2MenuSerials[string(v)]
-	}
-
-	return r
-}
 
 // ParseMarkdown2HTML parse markdown to string
 func ParseMarkdown2HTML(md []byte) (cnt string) {
@@ -59,8 +39,8 @@ func ParseMarkdown2HTML(md []byte) (cnt string) {
 		switch tlev {
 		case "h2":
 			l3cnt = 0
-			ttext = num2CN(l2cnt) + "、" + ttext
 			l2cnt++
+			ttext = gutils.Number2Roman(l2cnt) + "、" + ttext
 		case "h3":
 			l3cnt++
 			ttext = strconv.FormatInt(int64(l3cnt), 10) + "、" + ttext
