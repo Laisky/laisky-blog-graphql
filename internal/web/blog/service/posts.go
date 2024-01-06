@@ -247,6 +247,7 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 			if p.I18N.EnUs.PostMarkdown != "" {
 				p.Language = models.LanguageEnUs.String()
 				p.Markdown = p.I18N.EnUs.PostMarkdown
+				p.Title = p.I18N.EnUs.PostTitle
 
 				if p.I18N.EnUs.PostContent == "" {
 					p.I18N.EnUs.PostContent = ParseMarkdown2HTML([]byte(p.Markdown))
@@ -421,6 +422,13 @@ func (s *Blog) NewPost(ctx context.Context,
 	}
 	p.Menu = ExtractMenu(p.Content)
 
+	switch models.Language(p.Language) {
+	case models.LanguageEnUs:
+		p.I18N.EnUs.PostContent = p.Content
+		p.I18N.EnUs.PostTitle = p.Title
+		p.I18N.EnUs.PostMarkdown = p.Markdown
+	}
+
 	if gconfig.Shared.GetBool("dry") {
 		s.logger.Info("insert post",
 			zap.String("title", p.Title),
@@ -494,17 +502,18 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 		return nil, errors.Errorf("post do not belong to this user")
 	}
 
-	p.Title = title
 	p.Menu = ExtractMenu(p.Content)
 	p.ModifiedAt = gutils.Clock.GetUTCNow()
 	p.Type = typeArg
 	parsedMd := ParseMarkdown2HTML([]byte(md))
 	switch language {
 	case models.LanguageZhCn:
+		p.Title = title
 		p.Markdown = md
 		p.Content = parsedMd
 	case models.LanguageEnUs:
 		p.I18N.UpdateAt = time.Now().UTC()
+		p.I18N.EnUs.PostTitle = title
 		p.I18N.EnUs.PostMarkdown = md
 		p.I18N.EnUs.PostContent = parsedMd
 	default:

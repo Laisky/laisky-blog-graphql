@@ -8,7 +8,7 @@ require (
 	github.com/Laisky/errors/v2 v2.0.1
 	github.com/Laisky/gin-middlewares/v5 v5.0.3
 	github.com/Laisky/go-config/v2 v2.0.0
-	github.com/Laisky/go-utils/v4 v4.7.3-0.20240105021308-de2039428516
+	github.com/Laisky/go-utils/v4 v4.7.3
 	github.com/Laisky/zap v1.25.3-0.20231205071752-1cdfcee9191f
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.0
@@ -120,12 +120,12 @@ require (
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/oauth2 v0.15.0 // indirect
-	golang.org/x/sync v0.5.0 // indirect
-	golang.org/x/sys v0.15.0 // indirect
-	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/sync v0.6.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
+	golang.org/x/term v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
-	golang.org/x/tools v0.9.3 // indirect
+	golang.org/x/tools v0.16.1 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20231120223509-83a465c0220f // indirect
