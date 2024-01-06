@@ -154,10 +154,11 @@ var (
 	markdownImgRe = regexp.MustCompile(`!\[[^\]]*\]\((.*)\)`)
 )
 
-func (r *QueryResolver) BlogTwitterCard(ctx context.Context, name string) (string, error) {
+func (r *QueryResolver) BlogTwitterCard(ctx context.Context,
+	name string, language models.Language) (string, error) {
 	posts, err := r.svc.LoadPosts(ctx, &dto.PostCfg{
 		Name:     name,
-		Language: models.LanguageZhCn, // TODO: support i18n
+		Language: language,
 	})
 	if err != nil {
 		return "", errors.Wrapf(err, "load posts `%s`", name)

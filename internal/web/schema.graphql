@@ -51,7 +51,10 @@ type Query {
     page: Pagination = { page: 0, size: 10 }
     key: String! = ""
   ): [BlogPostSeries!]!
-  BlogTwitterCard(name: String! = ""): String!
+  BlogTwitterCard(
+    name: String! = ""
+    language: Language! = zh_CN
+  ): String!
 
   # telegram monitor
   TelegramMonitorUsers(

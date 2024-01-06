@@ -14,6 +14,9 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
+	gqlparser "github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
@@ -21,8 +24,6 @@ import (
 	model3 "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	model1 "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
-	gqlparser "github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // region    ************************** generated!.gotpl **************************
@@ -151,7 +152,7 @@ type ComplexityRoot struct {
 		BlogPostInfo         func(childComplexity int) int
 		BlogPosts            func(childComplexity int, page *models.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language models.Language) int
 		BlogTags             func(childComplexity int) int
-		BlogTwitterCard      func(childComplexity int, name string) int
+		BlogTwitterCard      func(childComplexity int, name string, language models.Language) int
 		GetBlogPostSeries    func(childComplexity int, page *models.Pagination, key string) int
 		Hello                func(childComplexity int) int
 		Lock                 func(childComplexity int, name string) int
@@ -276,7 +277,7 @@ type QueryResolver interface {
 	BlogPostCategories(ctx context.Context) ([]*model.Category, error)
 	BlogTags(ctx context.Context) ([]string, error)
 	GetBlogPostSeries(ctx context.Context, page *models.Pagination, key string) ([]*model.PostSeries, error)
-	BlogTwitterCard(ctx context.Context, name string) (string, error)
+	BlogTwitterCard(ctx context.Context, name string, language models.Language) (string, error)
 	TelegramMonitorUsers(ctx context.Context, page *models.Pagination, name string) ([]*model3.Users, error)
 	TelegramAlertTypes(ctx context.Context, page *models.Pagination, name string) ([]*model3.AlertTypes, error)
 	Lock(ctx context.Context, name string) (*model2.Lock, error)
@@ -803,7 +804,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.BlogTwitterCard(childComplexity, args["name"].(string)), true
+		return e.complexity.Query.BlogTwitterCard(childComplexity, args["name"].(string), args["language"].(models.Language)), true
 
 	case "Query.GetBlogPostSeries":
 		if e.complexity.Query.GetBlogPostSeries == nil {
@@ -1618,6 +1619,15 @@ func (ec *executionContext) field_Query_BlogTwitterCard_args(ctx context.Context
 		}
 	}
 	args["name"] = arg0
+	var arg1 models.Language
+	if tmp, ok := rawArgs["language"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
+		arg1, err = ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["language"] = arg1
 	return args, nil
 }
 
@@ -5182,7 +5192,7 @@ func (ec *executionContext) _Query_BlogTwitterCard(ctx context.Context, field gr
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogTwitterCard(rctx, fc.Args["name"].(string))
+		return ec.resolvers.Query().BlogTwitterCard(rctx, fc.Args["name"].(string), fc.Args["language"].(models.Language))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
