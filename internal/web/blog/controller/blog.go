@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
@@ -156,6 +157,7 @@ var (
 
 func (r *QueryResolver) BlogTwitterCard(ctx context.Context,
 	name string, language models.Language) (string, error) {
+	name = strings.Trim(name, " /")
 	posts, err := r.svc.LoadPosts(ctx, &dto.PostCfg{
 		Name:     name,
 		Language: language,
