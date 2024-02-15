@@ -373,7 +373,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 				Time: gutils.Clock.GetUTCNow(),
 			},
 			ExpiresAt: &jwtLib.NumericDate{
-				Time: gutils.Clock.GetUTCNow().Add(7 * 24 * time.Hour),
+				Time: gutils.Clock.GetUTCNow().Add(30 * 24 * time.Hour),
 			},
 		},
 		Username:    user.Account,
