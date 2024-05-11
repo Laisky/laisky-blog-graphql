@@ -85,6 +85,9 @@ func (r *Resolver) BlogUser() BlogUserResolver {
 func (r *Resolver) BlogPostSeries() BlogPostSeriesResolver {
 	return r.blogCtl.PostSeriesResolver
 }
+func (r *Resolver) ArweaveItem() ArweaveItemResolver {
+	return r.blogCtl.ArweaveItemResolver
+}
 
 // telegram
 

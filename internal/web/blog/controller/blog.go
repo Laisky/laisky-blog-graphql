@@ -30,6 +30,9 @@ type PostResolver struct {
 	svc *service.Blog
 }
 
+type ArweaveItemResolver struct {
+}
+
 // PostSeriesResolver post series resolver
 type PostSeriesResolver struct {
 	svc *service.Blog
@@ -68,9 +71,10 @@ func NewMutationResolver(
 
 // Blog blog resolver
 type Blog struct {
-	PostResolver       *PostResolver
-	PostSeriesResolver *PostSeriesResolver
-	UserResolver       *UserResolver
+	PostResolver        *PostResolver
+	PostSeriesResolver  *PostSeriesResolver
+	UserResolver        *UserResolver
+	ArweaveItemResolver *ArweaveItemResolver
 }
 
 func New(svc *service.Blog) *Blog {
@@ -249,6 +253,9 @@ func (r *PostResolver) AllLanguages(ctx context.Context,
 	}
 
 	return allLangs, nil
+}
+func (r *ArweaveItemResolver) Time(ctx context.Context, obj *model.ArweaveHistoryItem) (*library.Datetime, error) {
+	return library.NewDatetimeFromTime(obj.Time), nil
 }
 
 func (r *PostSeriesResolver) Posts(ctx context.Context,

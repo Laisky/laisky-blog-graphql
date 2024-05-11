@@ -43,6 +43,14 @@ type Post struct {
 	I18N PostI18N `bson:"i18n" json:"i18n"`
 	// Language language of the post content or markdown
 	Language string `bson:"-" json:"language"`
+	// ArweaveId arweave id of the post
+	ArweaveId []ArweaveHistoryItem `bson:"arweave_id" json:"arweave_id"`
+}
+
+// ArweaveHistoryItem arweave history item
+type ArweaveHistoryItem struct {
+	Time time.Time `bson:"time" json:"time"`
+	Id   string    `bson:"id" json:"id"`
 }
 
 // PostI18N blog post internationalization

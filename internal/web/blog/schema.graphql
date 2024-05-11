@@ -28,6 +28,12 @@ type BlogPost {
     category: BlogCategory
     language: Language! # current content language
     all_languages: [Language!]! # all languages of this post
+    arweave_id: [ArweaveItem!] # arweave id
+}
+
+type ArweaveItem {
+    id: String!
+    time: Date!
 }
 
 type BlogUser {

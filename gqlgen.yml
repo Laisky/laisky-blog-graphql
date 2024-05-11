@@ -42,6 +42,8 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.Category
   BlogPostSeries:
     model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.PostSeries
+  ArweaveItem:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.ArweaveHistoryItem
   # telegram
   TelegramUser:
     model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.Users

@@ -61,9 +61,11 @@ func runAPI() error {
 			gconfig.Shared.GetString("settings.telegram.api"),
 		)
 		if err != nil {
-			return errors.Wrap(err, "new telegram service")
+			logger.Error("new telegram service", zap.Error(err))
+			// return errors.Wrap(err, "new telegram service")
+		} else {
+			args.TelegramCtl = telegramCtl.NewTelegram(ctx, args.TelegramSvc)
 		}
-		args.TelegramCtl = telegramCtl.NewTelegram(ctx, args.TelegramSvc)
 	}
 
 	{ // setup blog

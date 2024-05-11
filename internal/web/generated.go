@@ -45,6 +45,7 @@ type Config struct {
 }
 
 type ResolverRoot interface {
+	ArweaveItem() ArweaveItemResolver
 	BlogPost() BlogPostResolver
 	BlogPostSeries() BlogPostSeriesResolver
 	BlogUser() BlogUserResolver
@@ -62,6 +63,11 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	ArweaveItem struct {
+		Id   func(childComplexity int) int
+		Time func(childComplexity int) int
+	}
+
 	BlogCategory struct {
 		Name func(childComplexity int) int
 		URL  func(childComplexity int) int
@@ -74,6 +80,7 @@ type ComplexityRoot struct {
 
 	BlogPost struct {
 		AllLanguages func(childComplexity int) int
+		ArweaveId    func(childComplexity int) int
 		Author       func(childComplexity int) int
 		Category     func(childComplexity int) int
 		Content      func(childComplexity int) int
@@ -223,6 +230,9 @@ type ComplexityRoot struct {
 	}
 }
 
+type ArweaveItemResolver interface {
+	Time(ctx context.Context, obj *model.ArweaveHistoryItem) (*library.Datetime, error)
+}
 type BlogPostResolver interface {
 	ID(ctx context.Context, obj *model.Post) (string, error)
 	Author(ctx context.Context, obj *model.Post) (*model.User, error)
@@ -332,6 +342,20 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 	_ = ec
 	switch typeName + "." + field {
 
+	case "ArweaveItem.id":
+		if e.complexity.ArweaveItem.Id == nil {
+			break
+		}
+
+		return e.complexity.ArweaveItem.Id(childComplexity), true
+
+	case "ArweaveItem.time":
+		if e.complexity.ArweaveItem.Time == nil {
+			break
+		}
+
+		return e.complexity.ArweaveItem.Time(childComplexity), true
+
 	case "BlogCategory.name":
 		if e.complexity.BlogCategory.Name == nil {
 			break
@@ -366,6 +390,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.BlogPost.AllLanguages(childComplexity), true
+
+	case "BlogPost.arweave_id":
+		if e.complexity.BlogPost.ArweaveId == nil {
+			break
+		}
+
+		return e.complexity.BlogPost.ArweaveId(childComplexity), true
 
 	case "BlogPost.author":
 		if e.complexity.BlogPost.Author == nil {
@@ -1869,6 +1900,94 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 
 // region    **************************** field.gotpl *****************************
 
+func (ec *executionContext) _ArweaveItem_id(ctx context.Context, field graphql.CollectedField, obj *model.ArweaveHistoryItem) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ArweaveItem_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Id, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ArweaveItem_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ArweaveItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ArweaveItem_time(ctx context.Context, field graphql.CollectedField, obj *model.ArweaveHistoryItem) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ArweaveItem_time(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.ArweaveItem().Time(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*library.Datetime)
+	fc.Result = res
+	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ArweaveItem_time(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ArweaveItem",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _BlogCategory_name(ctx context.Context, field graphql.CollectedField, obj *model.Category) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_BlogCategory_name(ctx, field)
 	if err != nil {
@@ -2673,6 +2792,53 @@ func (ec *executionContext) fieldContext_BlogPost_all_languages(_ context.Contex
 	return fc, nil
 }
 
+func (ec *executionContext) _BlogPost_arweave_id(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_BlogPost_arweave_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ArweaveId, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]model.ArweaveHistoryItem)
+	fc.Result = res
+	return ec.marshalOArweaveItem2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐArweaveHistoryItemᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_BlogPost_arweave_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "BlogPost",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_ArweaveItem_id(ctx, field)
+			case "time":
+				return ec.fieldContext_ArweaveItem_time(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ArweaveItem", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _BlogPostSeries_key(ctx context.Context, field graphql.CollectedField, obj *model.PostSeries) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_BlogPostSeries_key(ctx, field)
 	if err != nil {
@@ -2828,6 +2994,8 @@ func (ec *executionContext) fieldContext_BlogPostSeries_posts(_ context.Context,
 				return ec.fieldContext_BlogPost_language(ctx, field)
 			case "all_languages":
 				return ec.fieldContext_BlogPost_all_languages(ctx, field)
+			case "arweave_id":
+				return ec.fieldContext_BlogPost_arweave_id(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -3999,6 +4167,8 @@ func (ec *executionContext) fieldContext_Mutation_BlogCreatePost(ctx context.Con
 				return ec.fieldContext_BlogPost_language(ctx, field)
 			case "all_languages":
 				return ec.fieldContext_BlogPost_all_languages(ctx, field)
+			case "arweave_id":
+				return ec.fieldContext_BlogPost_arweave_id(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -4385,6 +4555,8 @@ func (ec *executionContext) fieldContext_Mutation_BlogAmendPost(ctx context.Cont
 				return ec.fieldContext_BlogPost_language(ctx, field)
 			case "all_languages":
 				return ec.fieldContext_BlogPost_all_languages(ctx, field)
+			case "arweave_id":
+				return ec.fieldContext_BlogPost_arweave_id(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -4952,6 +5124,8 @@ func (ec *executionContext) fieldContext_Query_BlogPosts(ctx context.Context, fi
 				return ec.fieldContext_BlogPost_language(ctx, field)
 			case "all_languages":
 				return ec.fieldContext_BlogPost_all_languages(ctx, field)
+			case "arweave_id":
+				return ec.fieldContext_BlogPost_arweave_id(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogPost", field.Name)
 		},
@@ -9234,6 +9408,81 @@ func (ec *executionContext) unmarshalInputSort(ctx context.Context, obj interfac
 
 // region    **************************** object.gotpl ****************************
 
+var arweaveItemImplementors = []string{"ArweaveItem"}
+
+func (ec *executionContext) _ArweaveItem(ctx context.Context, sel ast.SelectionSet, obj *model.ArweaveHistoryItem) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, arweaveItemImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ArweaveItem")
+		case "id":
+			out.Values[i] = ec._ArweaveItem_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "time":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._ArweaveItem_time(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var blogCategoryImplementors = []string{"BlogCategory"}
 
 func (ec *executionContext) _BlogCategory(ctx context.Context, sel ast.SelectionSet, obj *model.Category) graphql.Marshaler {
@@ -9645,6 +9894,8 @@ func (ec *executionContext) _BlogPost(ctx context.Context, sel ast.SelectionSet,
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "arweave_id":
+			out.Values[i] = ec._BlogPost_arweave_id(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -12096,6 +12347,10 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
+func (ec *executionContext) marshalNArweaveItem2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐArweaveHistoryItem(ctx context.Context, sel ast.SelectionSet, v model.ArweaveHistoryItem) graphql.Marshaler {
+	return ec._ArweaveItem(ctx, sel, &v)
+}
+
 func (ec *executionContext) marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory(ctx context.Context, sel ast.SelectionSet, v []*model.Category) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -13018,6 +13273,53 @@ func (ec *executionContext) marshalN__TypeKind2string(ctx context.Context, sel a
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) marshalOArweaveItem2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐArweaveHistoryItemᚄ(ctx context.Context, sel ast.SelectionSet, v []model.ArweaveHistoryItem) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNArweaveItem2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐArweaveHistoryItem(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) marshalOBlogCategory2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory(ctx context.Context, sel ast.SelectionSet, v *model.Category) graphql.Marshaler {
