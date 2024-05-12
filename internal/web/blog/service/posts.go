@@ -437,6 +437,16 @@ func (s *Blog) NewPost(ctx context.Context,
 			// zap.String("content", p.Content),
 		)
 	} else {
+		// save to arweave
+		if arFileId, err := s.dao.SaveToArweave(ctx, p); err != nil {
+			s.logger.Error("try to save post to arweave got error", zap.Error(err))
+		} else {
+			p.ArweaveId = append(p.ArweaveId, model.ArweaveHistoryItem{
+				Time: p.ModifiedAt,
+				Id:   arFileId,
+			})
+		}
+
 		if _, err = s.dao.GetPostsCol().InsertOne(ctx, p); err != nil {
 			return nil, errors.Wrap(err, "try to insert post got error")
 		}
@@ -518,6 +528,16 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 		p.I18N.EnUs.PostContent = parsedMd
 	default:
 		return nil, errors.Errorf("language `%s` not supportted", language)
+	}
+
+	// save to arweave
+	if arFileId, err := s.dao.SaveToArweave(ctx, p); err != nil {
+		s.logger.Error("try to save post to arweave got error", zap.Error(err))
+	} else {
+		p.ArweaveId = append(p.ArweaveId, model.ArweaveHistoryItem{
+			Time: p.ModifiedAt,
+			Id:   arFileId,
+		})
 	}
 
 	if _, err = s.dao.GetPostsCol().ReplaceOne(ctx, bson.M{"_id": p.ID}, p); err != nil {

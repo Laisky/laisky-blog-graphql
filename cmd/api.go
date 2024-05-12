@@ -14,6 +14,7 @@ import (
 	telegramDao "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	telegramModel "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
+	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config/v2"
@@ -68,12 +69,16 @@ func runAPI() error {
 		}
 	}
 
+	arweave := arweave.NewAkrod(
+		gconfig.Shared.GetStringSlice("settings.db.akrod.apikeys"),
+	)
+
 	{ // setup blog
 		blogDB, err := blogModel.NewDB(ctx)
 		if err != nil {
 			return errors.Wrap(err, "new blog db")
 		}
-		blogDao := blogDao.New(logger.Named("blog_dao"), blogDB)
+		blogDao := blogDao.New(logger.Named("blog_dao"), blogDB, arweave)
 		args.BlogSvc, err = blogSvc.New(ctx, logger.Named("blog_svc"), blogDao)
 		if err != nil {
 			return errors.Wrap(err, "new blog service")
