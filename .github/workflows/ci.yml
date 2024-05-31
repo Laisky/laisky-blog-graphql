@@ -84,5 +84,5 @@ jobs:
           script: |
             docker pull ppcelery/laisky-blog-graphql:latest
             cd /home/laisky/repo/VPS
-            docker-compose -f b1-docker-compose.yml up -d --remove-orphans --force-recreate laisky-blog-graphql
+            docker-compose -f b1-docker-compose.yml up -d --remove-orphans --force-recreate graphql
             docker ps
