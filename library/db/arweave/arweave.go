@@ -2,11 +2,11 @@
 package arweave
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
@@ -76,7 +76,7 @@ func (a *Akord) Upload(ctx context.Context,
 	defer reqCancel()
 
 	req, err := http.NewRequestWithContext(reqCtx,
-		http.MethodPost, AkrodAPI, bytes.NewBuffer(reqBody))
+		http.MethodPost, AkrodAPI, strings.NewReader(string(reqBody)))
 	if err != nil {
 		return "", errors.Wrap(err, "post file to akord")
 	}

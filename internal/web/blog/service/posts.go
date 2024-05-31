@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -441,7 +442,7 @@ func (s *Blog) NewPost(ctx context.Context,
 		if arFileId, err := s.dao.SaveToArweave(ctx, p); err != nil {
 			s.logger.Error("try to save post to arweave got error", zap.Error(err))
 		} else {
-			p.ArweaveId = append(p.ArweaveId, model.ArweaveHistoryItem{
+			p.ArweaveId = slices.Insert(p.ArweaveId, 0, model.ArweaveHistoryItem{
 				Time: p.ModifiedAt,
 				Id:   arFileId,
 			})
@@ -534,7 +535,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	if arFileId, err := s.dao.SaveToArweave(ctx, p); err != nil {
 		s.logger.Error("try to save post to arweave got error", zap.Error(err))
 	} else {
-		p.ArweaveId = append(p.ArweaveId, model.ArweaveHistoryItem{
+		p.ArweaveId = slices.Insert(p.ArweaveId, 0, model.ArweaveHistoryItem{
 			Time: p.ModifiedAt,
 			Id:   arFileId,
 		})
