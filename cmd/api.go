@@ -70,7 +70,7 @@ func runAPI() error {
 	}
 
 	arweave := arweave.NewAkrod(
-		gconfig.Shared.GetStringSlice("settings.db.akrod.apikeys"),
+		gconfig.Shared.GetStringSlice("settings.db.akord.apikeys"),
 	)
 
 	{ // setup blog

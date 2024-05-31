@@ -7,12 +7,12 @@ import (
 
 func TestAkrod_Upload(t *testing.T) {
 	apis := []string{"api-key-1", "api-key-2"}
-	akrod := NewAkrod(apis)
+	akord := NewAkrod(apis)
 
 	ctx := context.Background()
 	data := []byte("test data")
 
-	fileID, err := akrod.Upload(ctx, data)
+	fileID, err := akord.Upload(ctx, data)
 	if err != nil {
 		t.Errorf("Upload returned an error: %v", err)
 	}

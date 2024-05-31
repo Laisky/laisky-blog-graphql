@@ -13,24 +13,24 @@ import (
 	gutils "github.com/Laisky/go-utils/v4"
 )
 
-// AkrodAPI akrod api
+// AkrodAPI akord api
 const AkrodAPI = "https://api.akord.com/files"
 
-// Akrod akrod uploader
-type Akrod struct {
+// Akord akord uploader
+type Akord struct {
 	apis []string
 }
 
-// AkrodUploadFileResp response of akrod upload file
+// AkrodUploadFileResp response of akord upload file
 type AkrodUploadFileResp struct {
 	Tx struct {
 		Id string `json:"id"`
 	} `json:"tx"`
 }
 
-// NewAkrod create a new akrod uploader
-func NewAkrod(apis []string) *Akrod {
-	return &Akrod{apis: apis}
+// NewAkrod create a new akord uploader
+func NewAkrod(apis []string) *Akord {
+	return &Akord{apis: apis}
 }
 
 type uploadOption struct {
@@ -53,8 +53,8 @@ func (o *uploadOption) apply(opts ...UploadOption) (*uploadOption, error) {
 	return o, nil
 }
 
-// Upload upload data to akrod
-func (a *Akrod) Upload(ctx context.Context,
+// Upload upload data to akord
+func (a *Akord) Upload(ctx context.Context,
 	data []byte, opts ...UploadOption) (fileID string, err error) {
 	opt, err := new(uploadOption).apply(opts...)
 	if err != nil {
