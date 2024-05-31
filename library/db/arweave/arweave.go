@@ -2,11 +2,11 @@
 package arweave
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
@@ -39,6 +39,14 @@ type uploadOption struct {
 
 type UploadOption func(*uploadOption) error
 
+// WithContentType set content type
+func WithContentType(contentType string) UploadOption {
+	return func(o *uploadOption) error {
+		o.contentType = contentType
+		return nil
+	}
+}
+
 func (o *uploadOption) apply(opts ...UploadOption) (*uploadOption, error) {
 	// fill default
 	o.contentType = "text/plain"
@@ -67,16 +75,11 @@ func (a *Akord) Upload(ctx context.Context,
 		"Content-Type": opt.contentType,
 	}
 
-	reqBody, err := json.Marshal(data)
-	if err != nil {
-		return "", err
-	}
-
 	reqCtx, reqCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer reqCancel()
 
 	req, err := http.NewRequestWithContext(reqCtx,
-		http.MethodPost, AkrodAPI, strings.NewReader(string(reqBody)))
+		http.MethodPost, AkrodAPI, bytes.NewReader(data))
 	if err != nil {
 		return "", errors.Wrap(err, "post file to akord")
 	}
