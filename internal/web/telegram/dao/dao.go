@@ -10,7 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	tb "gopkg.in/tucnak/telebot.v2"
+	tb "gopkg.in/telebot.v3"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"

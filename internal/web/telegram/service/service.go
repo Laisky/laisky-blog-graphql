@@ -10,7 +10,7 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/zap"
-	tb "gopkg.in/tucnak/telebot.v2"
+	tb "gopkg.in/telebot.v3"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
@@ -103,16 +103,19 @@ func New(ctx context.Context,
 
 func (s *Type) runDefaultHandle(ctx context.Context) {
 	// start default handler
-	s.bot.Handle(tb.OnText, func(m *tb.Message) {
+	s.bot.Handle(tb.OnText, func(tbctx tb.Context) error {
+		m := tbctx.Message()
 		log.Logger.Debug("got message", zap.String("msg", m.Text), zap.Int64("sender", m.Sender.ID))
 		if _, ok := s.userStats.Load(m.Sender.ID); ok {
 			s.dispatcher(ctx, m)
-			return
+			return nil
 		}
 
 		if _, err := s.bot.Send(m.Sender, "NotImplement for "+m.Text); err != nil {
-			log.Logger.Error("send msg", zap.Error(err), zap.String("to", m.Sender.Username))
+			return errors.Wrapf(err, "send msg to %s", m.Sender.Username)
 		}
+
+		return nil
 	})
 }
 

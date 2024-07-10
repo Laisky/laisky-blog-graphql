@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/Laisky/go-utils/v4"
+	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/zap"
-	tb "gopkg.in/tucnak/telebot.v2"
+	tb "gopkg.in/telebot.v3"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
@@ -18,25 +18,28 @@ import (
 )
 
 func (s *Type) monitorHandler() {
-	s.bot.Handle("/monitor", func(c *tb.Message) {
-		s.userStats.Store(c.Sender.ID, &userStat{
-			user:  c.Sender,
+	s.bot.Handle("/monitor", func(c tb.Context) error {
+		m := c.Message()
+		s.userStats.Store(m.Sender.ID, &userStat{
+			user:  m.Sender,
 			state: userWaitChooseMonitorCmd,
-			lastT: utils.Clock.GetUTCNow(),
+			lastT: gutils.Clock.GetUTCNow(),
 		})
 
-		if _, err := s.bot.Send(c.Sender, `
-Reply number:
+		if _, err := s.bot.Send(m.Sender, gutils.Dedent(`
+			Reply number:
 
-	1 - new alert's name  # reply "1 - alert_name"
-	2 - list all joint alerts  # reply "2"
-	3 - join alert  # reply "3 - alert_name:join_key"
-	4 - refresh push_token & join_key  # reply "4 - alert_name"
-	5 - quit alert  # reply "5 - alert_name"
-	6 - kick user  # reply "6 - alert_name:uid"
-`); err != nil {
-			log.Logger.Error("reply msg", zap.Error(err))
+				1 - new alert's name  # reply "1 - alert_name"
+				2 - list all joint alerts  # reply "2"
+				3 - join alert  # reply "3 - alert_name:join_key"
+				4 - refresh push_token & join_key  # reply "4 - alert_name"
+				5 - quit alert  # reply "5 - alert_name"
+				6 - kick user  # reply "6 - alert_name:uid"
+			`)); err != nil {
+			return errors.Wrap(err, "send msg")
 		}
+
+		return nil
 	})
 }
 
