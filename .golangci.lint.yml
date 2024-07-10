@@ -386,7 +386,7 @@ linters:
     # - gocyclo # duplicated with gocognit
     # - godot # useless
     - godox
-    - goerr113
+    - err113
     - gofmt
     # - gofumpt # gofmt is enough for me
     - goheader
