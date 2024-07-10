@@ -18,7 +18,7 @@ require (
 	github.com/jinzhu/copier v0.4.0
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.9.0
-	github.com/vektah/gqlparser/v2 v2.5.12
+	github.com/vektah/gqlparser/v2 v2.5.15
 	go.mongodb.org/mongo-driver v1.15.0
 	google.golang.org/api v0.182.0
 	gopkg.in/telebot.v3 v3.3.6
