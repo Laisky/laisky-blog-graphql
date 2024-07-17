@@ -116,8 +116,8 @@ func (s *Type) arweaveCreateAlias(ctx context.Context, us *userStat, msg string)
 		return errors.New("msg format should be `1 - alias arweave_file_id`")
 	}
 
-	alias := msgParts[1]
-	fileid := msgParts[2]
+	alias := msgParts[0]
+	fileid := msgParts[1]
 
 	if !regexpAlias.MatchString(alias) {
 		return errors.New("alias should be [a-zA-Z0-9_-]")
@@ -159,7 +159,12 @@ func (s *Type) arweaveCreateAlias(ctx context.Context, us *userStat, msg string)
 	defer gutils.CloseWithLog(resp.Body, logger)
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("request failed: %d", resp.StatusCode)
+		cnt, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return errors.Wrapf(err, "[%d]read error body", resp.StatusCode)
+		}
+
+		return errors.Errorf("request failed: [%d]%s", resp.StatusCode, string(cnt))
 	}
 
 	if _, err = s.bot.Send(us.user, "https://ario.laisky.com/alias/"+alias); err != nil {
@@ -177,8 +182,8 @@ func (s *Type) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string)
 		return errors.New("msg format should be `2 - alias arweave_file_id`")
 	}
 
-	alias := msgParts[1]
-	fileid := msgParts[2]
+	alias := msgParts[0]
+	fileid := msgParts[1]
 
 	if !regexpAlias.MatchString(alias) {
 		return errors.New("alias should be [a-zA-Z0-9_-]")
@@ -220,7 +225,12 @@ func (s *Type) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string)
 	defer gutils.CloseWithLog(resp.Body, logger)
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("request failed: %d", resp.StatusCode)
+		cnt, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return errors.Wrapf(err, "[%d]read error body", resp.StatusCode)
+		}
+
+		return errors.Errorf("request failed: [%d]%s", resp.StatusCode, string(cnt))
 	}
 
 	if _, err = s.bot.Send(us.user, "https://ario.laisky.com/alias/"+alias); err != nil {
@@ -251,7 +261,12 @@ func (s *Type) arweaveGetAlias(ctx context.Context, us *userStat, alias string) 
 	defer gutils.CloseWithLog(resp.Body, logger)
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("request failed: %d", resp.StatusCode)
+		cnt, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return errors.Wrapf(err, "[%d]read error body", resp.StatusCode)
+		}
+
+		return errors.Errorf("request failed: [%d]%s", resp.StatusCode, string(cnt))
 	}
 
 	cnt, err := io.ReadAll(resp.Body)
