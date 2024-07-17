@@ -85,6 +85,7 @@ func New(ctx context.Context,
 		go bot.Start()
 		tel.runDefaultHandle(ctx)
 		tel.monitorHandler()
+		tel.arweaveAliasHandler()
 		go func() {
 			select {
 			case <-ctx.Done():
@@ -133,6 +134,8 @@ func (s *Type) dispatcher(ctx context.Context, msg *tb.Message) {
 	switch us.(*userStat).state {
 	case userWaitChooseMonitorCmd:
 		s.chooseMonitor(ctx, us.(*userStat), msg)
+	case userWaitArweaveAliasCmd:
+		s.arweaveAliasDispatcher(ctx, us.(*userStat), msg)
 	default:
 		log.Logger.Warn("unknown msg")
 		if _, err := s.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {
