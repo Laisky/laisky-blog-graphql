@@ -97,8 +97,8 @@ func (s *Type) arweaveAliasDispatcher(ctx context.Context, us *userStat, msg *tb
 			}
 		}
 	case "3":
-		if err = s.joinAlertGroup(ctx, us, ans[1]); err != nil {
-			logger.Warn("joinAlertGroup", zap.Error(err))
+		if err = s.arweaveGetAlias(ctx, us, ans[1]); err != nil {
+			logger.Warn("arweaveGetAlias", zap.Error(err))
 			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
 				logger.Error("send msg by telegram", zap.Error(err))
 			}
