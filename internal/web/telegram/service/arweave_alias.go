@@ -131,9 +131,12 @@ func (s *Type) arweaveCreateAlias(ctx context.Context, us *userStat, msg string)
 		return errors.Wrap(err, "sign user token")
 	}
 
-	body, err := json.Marshal(map[string]string{
+	body, err := json.Marshal(map[string]any{
 		"name":    alias,
 		"file_id": fileid,
+		"owner": map[string]int{
+			"telegram_uid": int(us.user.ID),
+		},
 	})
 	if err != nil {
 		return errors.Wrap(err, "marshal body")
@@ -189,9 +192,12 @@ func (s *Type) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string)
 		return errors.Wrap(err, "sign user token")
 	}
 
-	body, err := json.Marshal(map[string]string{
+	body, err := json.Marshal(map[string]any{
 		"name":    alias,
 		"file_id": fileid,
+		"owner": map[string]int{
+			"telegram_uid": int(us.user.ID),
+		},
 	})
 	if err != nil {
 		return errors.Wrap(err, "marshal body")
