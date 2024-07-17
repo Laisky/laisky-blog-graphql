@@ -123,7 +123,7 @@ func (s *Type) arweaveCreateAlias(ctx context.Context, us *userStat, msg string)
 		return errors.New("alias should be [a-zA-Z0-9_-]")
 	}
 
-	userclaim := new(ijwt.UserClaims)
+	userclaim := ijwt.NewUserClaims()
 	userclaim.Subject = strconv.Itoa(int(us.user.ID))
 	userclaim.ExpiresAt = jwt.NewNumericDate(time.Now().Add(time.Minute * 5))
 	userToken, err := auth.Instance.Sign(userclaim)
@@ -189,7 +189,7 @@ func (s *Type) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string)
 		return errors.New("alias should be [a-zA-Z0-9_-]")
 	}
 
-	userclaim := new(ijwt.UserClaims)
+	userclaim := ijwt.NewUserClaims()
 	userclaim.Subject = strconv.Itoa(int(us.user.ID))
 	userclaim.ExpiresAt = jwt.NewNumericDate(time.Now().Add(time.Minute * 5))
 	userToken, err := auth.Instance.Sign(userclaim)

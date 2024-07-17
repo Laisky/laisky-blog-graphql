@@ -373,15 +373,11 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 
 	uc := &jwt.UserClaims{
 		RegisteredClaims: jwtLib.RegisteredClaims{
-			ID:      gutils.UUID7(),
-			Subject: user.ID.Hex(),
-			Issuer:  "laisky-sso",
-			IssuedAt: &jwtLib.NumericDate{
-				Time: gutils.Clock.GetUTCNow(),
-			},
-			ExpiresAt: &jwtLib.NumericDate{
-				Time: gutils.Clock.GetUTCNow().Add(30 * 24 * time.Hour),
-			},
+			ID:        gutils.UUID7(),
+			Subject:   user.ID.Hex(),
+			Issuer:    "laisky-sso",
+			IssuedAt:  jwtLib.NewNumericDate(gutils.Clock.GetUTCNow()),
+			ExpiresAt: jwtLib.NewNumericDate(gutils.Clock.GetUTCNow().Add(3 * 30 * 24 * time.Hour)),
 		},
 		Username:    user.Account,
 		DisplayName: user.Username,
