@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/firestore v1.15.0
 	github.com/99designs/gqlgen v0.17.49
 	github.com/Laisky/errors/v2 v2.0.1
-	github.com/Laisky/gin-middlewares/v5 v5.0.3
+	github.com/Laisky/gin-middlewares/v5 v5.0.4
 	github.com/Laisky/go-config/v2 v2.0.0
 	github.com/Laisky/go-utils/v4 v4.9.1
 	github.com/Laisky/zap v1.27.0
