@@ -53,6 +53,8 @@ func (s *Type) arweaveAliasHandler() {
 				1 - create alias  # reply "1 - alias arweave_file_id"
 				2 - update alias  # reply "2 - alias arweave_file_id"
 				3 - get alias     # reply "3 - alias"
+
+			all alias records (up to 1000): https://ario.laisky.com/dns
 			`)); err != nil {
 			return errors.Wrap(err, "send msg")
 		}
