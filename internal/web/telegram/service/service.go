@@ -18,19 +18,9 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
-// func Initialize(ctx context.Context) {
-// 	dao.Initialize(ctx)
-
-// 	var err error
-// 	if Instance, err = New(
-// 		ctx,
-// 		dao.Instance,
-// 		gconfig.Shared.GetString("settings.telegram.token"),
-// 		gconfig.Shared.GetString("settings.telegram.api"),
-// 	); err != nil {
-// 		log.Logger.Panic("new telegram", zap.Error(err))
-// 	}
-// }
+var (
+	_ Interface = new(Type)
+)
 
 type Interface interface {
 	PleaseRetry(sender *tb.User, msg string)
@@ -47,8 +37,9 @@ type Type struct {
 	stop chan struct{}
 	bot  *tb.Bot
 
-	dao       *dao.Monitor
-	userStats *sync.Map
+	monitorDao  *dao.Monitor
+	telegramDao *dao.Telegram
+	userStats   *sync.Map
 }
 
 type userStat struct {
@@ -59,7 +50,8 @@ type userStat struct {
 
 // New create new telegram client
 func New(ctx context.Context,
-	dao *dao.Monitor,
+	monitorDao *dao.Monitor,
+	telegramDao *dao.Telegram,
 	token, api string) (*Type, error) {
 	bot, err := tb.NewBot(tb.Settings{
 		Token: token,
@@ -73,10 +65,11 @@ func New(ctx context.Context,
 	}
 
 	tel := &Type{
-		dao:       dao,
-		stop:      make(chan struct{}),
-		bot:       bot,
-		userStats: new(sync.Map),
+		monitorDao:  monitorDao,
+		telegramDao: telegramDao,
+		stop:        make(chan struct{}),
+		bot:         bot,
+		userStats:   new(sync.Map),
 	}
 
 	if gutils.Contains(gconfig.Shared.GetStringSlice("tasks"), "telegram") {
@@ -86,6 +79,7 @@ func New(ctx context.Context,
 		tel.runDefaultHandle(ctx)
 		tel.monitorHandler()
 		tel.arweaveAliasHandler()
+		tel.notesSearchHandler()
 		go func() {
 			select {
 			case <-ctx.Done():
@@ -136,6 +130,8 @@ func (s *Type) dispatcher(ctx context.Context, msg *tb.Message) {
 		s.chooseMonitor(ctx, us.(*userStat), msg)
 	case userWaitArweaveAliasCmd:
 		s.arweaveAliasDispatcher(ctx, us.(*userStat), msg)
+	case userWaitNotesSearchCmd:
+		s.notesSearchDispatcher(ctx, us.(*userStat), msg)
 	default:
 		log.Logger.Warn("unknown msg")
 		if _, err := s.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {

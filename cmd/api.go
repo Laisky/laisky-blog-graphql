@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"os"
 
 	"github.com/Laisky/errors/v2"
 
@@ -52,13 +53,25 @@ func runAPI() error {
 	var args web.ResolverArgs
 
 	{ // setup telegram
-		telegramDB, err := telegramModel.New(ctx)
+		monitorDB, err := telegramModel.NewMonitorDB(ctx)
 		if err != nil {
-			return errors.Wrap(err, "new db")
+			return errors.Wrap(err, "new monitor db")
 		}
-		monitorDao := telegramDao.New(telegramDB)
-		args.TelegramSvc, err = telegramSvc.New(ctx, monitorDao,
-			gconfig.Shared.GetString("settings.telegram.token"),
+		telegramDB, err := telegramModel.NewTelegramDB(ctx)
+		if err != nil {
+			return errors.Wrap(err, "new telegram db")
+		}
+
+		var botToken = gconfig.Shared.GetString("settings.telegram.token")
+		if os.Getenv("TELEGRAM_BOT_TOKEN") != "" {
+			logger.Info("rewrite telegram bot token from env")
+			botToken = os.Getenv("TELEGRAM_BOT_TOKEN")
+		}
+
+		args.TelegramSvc, err = telegramSvc.New(ctx,
+			telegramDao.NewMonitor(monitorDB),
+			telegramDao.NewTelegram(telegramDB),
+			botToken,
 			gconfig.Shared.GetString("settings.telegram.api"),
 		)
 		if err != nil {

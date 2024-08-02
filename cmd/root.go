@@ -48,7 +48,7 @@ func setupModules(ctx context.Context) {
 	general.Initialize(ctx)
 }
 
-func setupLibrary(ctx context.Context) {
+func setupLibrary(_ context.Context) {
 	if err := auth.Initialize([]byte(gconfig.Shared.GetString("settings.secret"))); err != nil {
 		log.Logger.Panic("init jwt", zap.Error(err))
 	}
@@ -58,7 +58,7 @@ func setupLibrary(ctx context.Context) {
 	}
 }
 
-func setupSettings(ctx context.Context) {
+func setupSettings(_ context.Context) {
 	// mode
 	if gconfig.Shared.GetBool("debug") {
 		fmt.Println("run in debug mode")

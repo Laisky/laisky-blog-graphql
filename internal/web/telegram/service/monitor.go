@@ -120,18 +120,18 @@ func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error
 	}
 
 	var alertType *model.AlertTypes
-	alertType, err = s.dao.IsUserSubAlert(ctx, int(us.user.ID), alertName)
+	alertType, err = s.monitorDao.IsUserSubAlert(ctx, int(us.user.ID), alertName)
 	if err != nil {
 		return errors.Wrap(err, "load alert by user uid")
 	}
 
 	var kickedUser *model.Users
-	kickedUser, err = s.dao.LoadUserByUID(ctx, kickUID)
+	kickedUser, err = s.monitorDao.LoadUserByUID(ctx, kickUID)
 	if err != nil {
 		return errors.Wrap(err, "load user by kicked user uid")
 	}
 
-	if err = s.dao.RemoveUAR(ctx, kickedUser.UID, alertName); err != nil {
+	if err = s.monitorDao.RemoveUAR(ctx, kickedUser.UID, alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation")
 	}
 	log.Logger.Info("remove user_alert_relation",
@@ -143,7 +143,7 @@ func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error
 	msg += "alert_type: " + alertName + "\n"
 	msg += "kicked_user: " + kickedUser.Name + " (" + ans[1] + ")\n"
 
-	users, err := s.dao.LoadUsersByAlertType(ctx, alertType)
+	users, err := s.monitorDao.LoadUsersByAlertType(ctx, alertType)
 	if err != nil {
 		return errors.Wrap(err, "load users")
 	}
@@ -164,7 +164,7 @@ func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error
 
 func (s *Type) userQuitAlert(ctx context.Context,
 	us *userStat, alertName string) (err error) {
-	if err = s.dao.RemoveUAR(ctx, int(us.user.ID), alertName); err != nil {
+	if err = s.monitorDao.RemoveUAR(ctx, int(us.user.ID), alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation by uid and alert_name")
 	}
 
@@ -173,11 +173,11 @@ func (s *Type) userQuitAlert(ctx context.Context,
 
 func (s *Type) refreshAlertTokenAndKey(ctx context.Context, us *userStat, alert string) (err error) {
 	var alertType *model.AlertTypes
-	alertType, err = s.dao.IsUserSubAlert(ctx, int(us.user.ID), alert)
+	alertType, err = s.monitorDao.IsUserSubAlert(ctx, int(us.user.ID), alert)
 	if err != nil {
 		return errors.Wrap(err, "load alert by user uid")
 	}
-	if err = s.dao.RefreshAlertTokenAndKey(ctx, alertType); err != nil {
+	if err = s.monitorDao.RefreshAlertTokenAndKey(ctx, alertType); err != nil {
 		return errors.Wrap(err, "refresh alert token and key")
 	}
 
@@ -186,7 +186,7 @@ func (s *Type) refreshAlertTokenAndKey(ctx context.Context, us *userStat, alert 
 	msg += "push_token: " + alertType.PushToken + "\n"
 	msg += "join_key: " + alertType.JoinKey + "\n"
 
-	users, err := s.dao.LoadUsersByAlertType(ctx, alertType)
+	users, err := s.monitorDao.LoadUsersByAlertType(ctx, alertType)
 	if err != nil {
 		return errors.Wrap(err, "load users")
 	}
@@ -212,12 +212,12 @@ func (s *Type) joinAlertGroup(ctx context.Context, us *userStat, kt string) (err
 	alert := ans[0]
 	joinKey := ans[1]
 
-	user, err := s.dao.CreateOrGetUser(ctx, us.user)
+	user, err := s.monitorDao.CreateOrGetUser(ctx, us.user)
 	if err != nil {
 		return err
 	}
 
-	uar, err := s.dao.RegisterUserAlertRelation(ctx, user, alert, joinKey)
+	uar, err := s.monitorDao.RegisterUserAlertRelation(ctx, user, alert, joinKey)
 	if err != nil {
 		return err
 	}
@@ -228,35 +228,35 @@ func (s *Type) joinAlertGroup(ctx context.Context, us *userStat, kt string) (err
 
 func (s *Type) LoadAlertTypesByUser(ctx context.Context,
 	u *model.Users) (alerts []*model.AlertTypes, err error) {
-	return s.dao.LoadAlertTypesByUser(ctx, u)
+	return s.monitorDao.LoadAlertTypesByUser(ctx, u)
 }
 
 func (s *Type) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
-	return s.dao.LoadAlertTypes(ctx, cfg)
+	return s.monitorDao.LoadAlertTypes(ctx, cfg)
 }
 
 func (s *Type) LoadUsers(ctx context.Context,
 	cfg *dto.QueryCfg) (users []*model.Users, err error) {
-	return s.dao.LoadUsers(ctx, cfg)
+	return s.monitorDao.LoadUsers(ctx, cfg)
 }
 
 func (s *Type) LoadUsersByAlertType(ctx context.Context,
 	a *model.AlertTypes) (users []*model.Users, err error) {
-	return s.dao.LoadUsersByAlertType(ctx, a)
+	return s.monitorDao.LoadUsersByAlertType(ctx, a)
 }
 
 func (s *Type) ValidateTokenForAlertType(ctx context.Context,
 	token, alertType string) (alert *model.AlertTypes, err error) {
-	return s.dao.ValidateTokenForAlertType(ctx, token, alertType)
+	return s.monitorDao.ValidateTokenForAlertType(ctx, token, alertType)
 }
 
 func (s *Type) listAllMonitorAlerts(ctx context.Context,
 	us *userStat) (err error) {
-	u, err := s.dao.LoadUserByUID(ctx, int(us.user.ID))
+	u, err := s.monitorDao.LoadUserByUID(ctx, int(us.user.ID))
 	if err != nil {
 		return err
 	}
-	alerts, err := s.dao.LoadAlertTypesByUser(ctx, u)
+	alerts, err := s.monitorDao.LoadAlertTypesByUser(ctx, u)
 	if err != nil {
 		return err
 	}
@@ -279,17 +279,17 @@ func (s *Type) listAllMonitorAlerts(ctx context.Context,
 }
 
 func (s *Type) createNewMonitor(ctx context.Context, us *userStat, alertName string) (err error) {
-	u, err := s.dao.CreateOrGetUser(ctx, us.user)
+	u, err := s.monitorDao.CreateOrGetUser(ctx, us.user)
 	if err != nil {
 		return errors.Wrap(err, "create user")
 	}
 
-	a, err := s.dao.CreateAlertType(ctx, alertName)
+	a, err := s.monitorDao.CreateAlertType(ctx, alertName)
 	if err != nil {
 		return errors.Wrap(err, "create alert_type")
 	}
 
-	_, err = s.dao.CreateOrGetUserAlertRelations(ctx, u, a)
+	_, err = s.monitorDao.CreateOrGetUserAlertRelations(ctx, u, a)
 	if err != nil {
 		return errors.Wrap(err, "create user_alert_relation")
 	}

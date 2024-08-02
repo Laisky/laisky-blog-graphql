@@ -18,8 +18,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
-var Instance *Monitor
-
 const (
 	alertTypeColName         = "alert_types"
 	usersColName             = "users"
@@ -31,8 +29,8 @@ type Monitor struct {
 	db mongo.DB
 }
 
-// New create new DB
-func New(db mongo.DB) *Monitor {
+// NewMonitor create new DB
+func NewMonitor(db mongo.DB) *Monitor {
 	return &Monitor{db}
 }
 

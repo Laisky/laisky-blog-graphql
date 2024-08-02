@@ -4,4 +4,5 @@ const (
 	// user states
 	userWaitChooseMonitorCmd = "userWaitChooseMonitorCmd"
 	userWaitArweaveAliasCmd  = "userWaitArweaveAliasCmd"
+	userWaitNotesSearchCmd   = "userWaitNotesSearchCmd"
 )
