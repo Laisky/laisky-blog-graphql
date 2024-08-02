@@ -75,21 +75,21 @@ func setupSettings(ctx context.Context) {
 	config.LoadFromFile(cfgPath)
 }
 
-func setupLogger(_ context.Context) {
+func setupLogger(ctx context.Context) {
 	// log
-	// alertPusher, err := gutils.NewAlertPusherWithAlertType(
-	// 	ctx,
-	// 	gconfig.Shared.GetString("settings.logger.push_api"),
-	// 	gconfig.Shared.GetString("settings.logger.alert_type"),
-	// 	gconfig.Shared.GetString("settings.logger.push_token"),
-	// )
-	// if err != nil {
-	// 	log.Logger.Panic("create AlertPusher", zap.Error(err))
-	// }
-	//
-	// library.Logger = log.Logger.WithOptions(
-	// 	zap.HooksWithFields(alertPusher.GetZapHook()),
-	// ).Named("laisky-graphql")
+	alertPusher, err := glog.NewAlert(
+		ctx,
+		gconfig.Shared.GetString("settings.logger.push_api"),
+		glog.WithAlertType(gconfig.Shared.GetString("settings.logger.alert_type")),
+		glog.WithAlertToken(gconfig.Shared.GetString("settings.logger.push_token")),
+	)
+	if err != nil {
+		log.Logger.Panic("create AlertPusher", zap.Error(err))
+	}
+
+	log.Logger = log.Logger.WithOptions(
+		zap.HooksWithFields(alertPusher.GetZapHook()),
+	).Named("laisky-graphql")
 
 	lvl := gconfig.Shared.GetString("log-level")
 	if err := log.Logger.ChangeLevel(glog.Level(lvl)); err != nil {

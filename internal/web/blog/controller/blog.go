@@ -170,7 +170,7 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context,
 		return "", errors.Wrapf(err, "load posts `%s`", name)
 	}
 	if len(posts) == 0 {
-		return "", errors.Errorf("notfound `%s`", name)
+		return "", errors.Errorf("cannot find post by name `%s`", name)
 	}
 
 	p := posts[0]
