@@ -22,7 +22,7 @@ func (s *Type) notesSearchHandler() {
 		})
 
 		if _, err := s.bot.Send(m.Sender, gutils.Dedent(`
-			Rely keywords to search notes, do not contain any blank space. Regex is supported.
+			Reply keyword to search notes, do not contain any blank space, regex is supported.
 			`)); err != nil {
 			return errors.Wrap(err, "send msg")
 		}
@@ -70,9 +70,9 @@ func (s *Type) notesSearchByKeyword(ctx context.Context, us *userStat, msg strin
 
 	var resp string
 	for _, note := range notes {
-		summary := note.Content
-		if len([]rune(note.Content)) > 80 {
-			summary = string([]rune(note.Content)[:80]) + "..."
+		summary := strings.ReplaceAll(note.Content, "\n", " ")
+		if len([]rune(summary)) > 80 {
+			summary = string([]rune(summary)[:80]) + "..."
 		}
 
 		resp += fmt.Sprintf(gutils.Dedent(`
