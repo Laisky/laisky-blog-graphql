@@ -50,6 +50,8 @@ func (s *Type) notesSearchDispatcher(ctx context.Context, us *userStat, msg *tb.
 	}
 }
 
+const noteSummaryLen = 120
+
 func (s *Type) notesSearchByKeyword(ctx context.Context, us *userStat, msg string) error {
 	keyword := strings.TrimSpace(msg)
 	if keyword == "" {
@@ -71,8 +73,8 @@ func (s *Type) notesSearchByKeyword(ctx context.Context, us *userStat, msg strin
 	var resp string
 	for _, note := range notes {
 		summary := strings.ReplaceAll(note.Content, "\n", " ")
-		if len([]rune(summary)) > 80 {
-			summary = string([]rune(summary)[:80]) + "..."
+		if len([]rune(summary)) > noteSummaryLen {
+			summary = string([]rune(summary)[:noteSummaryLen]) + "..."
 		}
 
 		resp += fmt.Sprintf(gutils.Dedent(`

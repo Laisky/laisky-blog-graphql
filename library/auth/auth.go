@@ -32,7 +32,7 @@ func AuthMw(ctx *gin.Context) {
 		return
 	}
 
-	ctx.Set(string(CtxKeyAuthUser), user)
+	ctx.Set(CtxKeyAuthUser, user)
 	ctx.Next()
 }
 
