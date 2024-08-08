@@ -120,6 +120,7 @@ func (d *db) runReconnectCheck(ctx context.Context) {
 				time.Sleep(3 * time.Second)
 				continue
 			}
+
 			log.Logger.Info("success reconnect to db", zap.String("db", d.diaInfo.Addr))
 		}
 	}
