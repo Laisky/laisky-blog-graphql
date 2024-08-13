@@ -23,6 +23,8 @@ func (s *Type) notesSearchHandler() {
 
 		if _, err := s.bot.Send(m.Sender, gutils.Dedent(`
 			Reply keyword to search notes, do not contain any blank space, regex is supported.
+
+			For more info, check this doc: https://t.me/laiskynotes/298
 			`)); err != nil {
 			return errors.Wrap(err, "send msg")
 		}

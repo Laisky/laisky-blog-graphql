@@ -35,6 +35,8 @@ func (s *Type) monitorHandler() {
 				4 - refresh push_token & join_key  # reply "4 - alert_name"
 				5 - quit alert  # reply "5 - alert_name"
 				6 - kick user  # reply "6 - alert_name:uid"
+
+			For more info, check this doc: https://github.com/Laisky/laisky-blog-graphql/tree/master/internal/web/telegram
 			`)); err != nil {
 			return errors.Wrap(err, "send msg")
 		}

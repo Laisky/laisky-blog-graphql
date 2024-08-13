@@ -54,7 +54,9 @@ func (s *Type) arweaveAliasHandler() {
 				2 - update alias  # reply "2 - alias arweave_file_id"
 				3 - get alias     # reply "3 - alias"
 
-			all alias records (up to 1000 records, refresh every 10 minutes): https://ario.laisky.com/dns
+			For more info, check this doc: https://ario.laisky.com/alias/doc
+
+			Check all DNS records at this site(up to 1000 records, refresh every 10 minutes): https://ario.laisky.com/dns
 			`)); err != nil {
 			return errors.Wrap(err, "send msg")
 		}
