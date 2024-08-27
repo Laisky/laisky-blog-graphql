@@ -36,7 +36,7 @@ func init() {
 	}
 }
 
-var regexpAlias = regexp.MustCompile(`^[a-zA-Z0-9_\-]+$`)
+var regexpAlias = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+$`)
 
 func (s *Type) arweaveAliasHandler() {
 	s.bot.Handle("/arweave_alias", func(c tb.Context) error {
