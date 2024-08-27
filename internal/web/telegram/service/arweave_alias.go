@@ -147,7 +147,7 @@ func (s *Type) arweaveCreateAlias(ctx context.Context, us *userStat, msg string)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://ario.laisky.com/dns", bytes.NewReader(body),
+		"https://ario.laisky.com/dns/", bytes.NewReader(body),
 	)
 	if err != nil {
 		return errors.Wrap(err, "new request")
@@ -213,7 +213,7 @@ func (s *Type) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		"https://ario.laisky.com/dns", bytes.NewReader(body),
+		"https://ario.laisky.com/dns/", bytes.NewReader(body),
 	)
 	if err != nil {
 		return errors.Wrap(err, "new request")
