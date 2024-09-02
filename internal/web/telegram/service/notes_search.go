@@ -52,7 +52,7 @@ func (s *Type) notesSearchDispatcher(ctx context.Context, us *userStat, msg *tb.
 	}
 }
 
-const noteSummaryLen = 120
+const noteSummaryLen = 140
 
 func (s *Type) notesSearchByKeyword(ctx context.Context, us *userStat, msg string) error {
 	keyword := strings.TrimSpace(msg)

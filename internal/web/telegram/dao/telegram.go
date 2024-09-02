@@ -5,6 +5,7 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -34,7 +35,10 @@ func (d *Telegram) GetNotesCol() *mongoLib.Collection {
 // Search search notes by keyword
 func (d *Telegram) Search(ctx context.Context, keyword string) (notes []*model.TelegramNote, err error) {
 	cur, err := d.GetNotesCol().Find(ctx,
-		bson.M{"content": bson.M{"$regex": keyword}},
+		bson.M{"content": bson.M{"$regex": primitive.Regex{
+			Pattern: keyword,
+			Options: "i",
+		}}},
 		options.Find().SetSort(bson.M{"_id": -1}).SetLimit(10),
 	)
 	if err != nil {
