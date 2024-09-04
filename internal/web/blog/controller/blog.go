@@ -184,20 +184,18 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context,
 		}
 	}
 
-	// get description
-	// var desc string
-	// if len(p.Markdown) > 100 {
-	// 	desc = p.Markdown[:100]
-	// } else {
-	// 	desc = p.Markdown
-	// }
+	// use english title if exists
+	title := p.Title
+	if len(p.I18N.EnUs.PostTitle) > 0 {
+		title = p.I18N.EnUs.PostTitle
+	}
 
-	return fmt.Sprintf(`
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="%s">
-<meta name="twitter:image" content="%s">
-<meta name="twitter:site" content="https://blog.laisky.com/p/%s/">
-`, p.Title, imgURL, name), nil
+	return fmt.Sprintf(gutils.Dedent(`
+		<meta name="twitter:card" content="summary_large_image">
+		<meta name="twitter:title" content="%s">
+		<meta name="twitter:image" content="%s">
+		<meta name="twitter:site" content="https://blog.laisky.com/p/%s/">`),
+		title, imgURL, name), nil
 }
 
 // ----------------
