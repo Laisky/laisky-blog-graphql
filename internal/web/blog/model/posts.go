@@ -32,7 +32,7 @@ type Post struct {
 	// Menu menu of the post
 	Menu string `bson:"post_menu" json:"menu"`
 	// Password password of the post
-	Password string `bson:"post_password" json:"password"`
+	Password string `bson:"post_password" json:"-"`
 	// Category category of the post
 	Category primitive.ObjectID `bson:"category,omitempty" json:"category"`
 	// Tags tags of the post
