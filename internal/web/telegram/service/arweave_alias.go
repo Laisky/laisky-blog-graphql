@@ -36,7 +36,7 @@ func init() {
 	}
 }
 
-var regexpAlias = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+$`)
+var regexpAlias = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{3,64}$`)
 
 func (s *Type) arweaveAliasHandler() {
 	s.bot.Handle("/arweave_alias", func(c tb.Context) error {
@@ -50,9 +50,11 @@ func (s *Type) arweaveAliasHandler() {
 		if _, err := s.bot.Send(m.Sender, gutils.Dedent(`
 			Reply number:
 
-				1 - create alias  # reply "1 - alias arweave_file_id"
-				2 - update alias  # reply "2 - alias arweave_file_id"
-				3 - get alias     # reply "3 - alias"
+				1 - create alias  # reply "1 - <ALIAS_NAME> arweave_file_id"
+				2 - update alias  # reply "2 - <ALIAS_NAME> arweave_file_id"
+				3 - get alias     # reply "3 - <ALIAS_NAME>"
+
+			<ALIAS_NAME> must match ^[a-zA-Z0-9_\-\.]{3,64}$
 
 			For more info, check this doc: https://ario.laisky.com/alias/doc
 
@@ -124,7 +126,7 @@ func (s *Type) arweaveCreateAlias(ctx context.Context, us *userStat, msg string)
 	fileid := msgParts[1]
 
 	if !regexpAlias.MatchString(alias) {
-		return errors.New("alias should be [a-zA-Z0-9_-]")
+		return errors.New(`alias should be ^[a-zA-Z0-9_\-\.]{3,64}$`)
 	}
 
 	userclaim := ijwt.NewUserClaims()
