@@ -175,19 +175,18 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context,
 
 	p := posts[0]
 
-	// find image
+	title := p.Title
 	var imgURL string
-	{
-		matched := markdownImgRe.FindStringSubmatch(p.Markdown)
-		if len(matched) == 2 {
-			imgURL = matched[1]
-		}
+	if matched := markdownImgRe.FindStringSubmatch(p.Markdown); len(matched) == 2 {
+		imgURL = matched[1]
 	}
 
 	// use english title if exists
-	title := p.Title
 	if len(p.I18N.EnUs.PostTitle) > 0 {
 		title = p.I18N.EnUs.PostTitle
+		if matched := markdownImgRe.FindStringSubmatch(p.I18N.EnUs.PostMarkdown); len(matched) == 2 {
+			imgURL = matched[1]
+		}
 	}
 
 	return fmt.Sprintf(gutils.Dedent(`
