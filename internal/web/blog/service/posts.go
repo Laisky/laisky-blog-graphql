@@ -250,7 +250,7 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 				p.Markdown = p.I18N.EnUs.PostMarkdown
 				p.Title = p.I18N.EnUs.PostTitle
 
-				if p.I18N.EnUs.PostContent == "" {
+				if p.I18N.EnUs.PostContent == "" || p.I18N.EnUs.PostMenu == "" {
 					p.I18N.EnUs.PostContent = ParseMarkdown2HTML([]byte(p.Markdown))
 					p.I18N.EnUs.PostMenu = ExtractMenu(p.I18N.EnUs.PostContent)
 
