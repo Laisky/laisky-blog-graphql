@@ -24,6 +24,6 @@ lint:
 	goimports -local github.com/Laisky/laisky-blog-graphql -w .
 	go mod tidy
 	gofmt -s -w .
-	go vet
+	go vet ./...
 	golangci-lint run -c .golangci.lint.yml
 	govulncheck ./...

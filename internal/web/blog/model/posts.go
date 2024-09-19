@@ -66,6 +66,7 @@ type PostI18NLanguage struct {
 	PostMarkdown string `bson:"post_markdown" json:"post_markdown"`
 	PostContent  string `bson:"post_content" json:"post_content"`
 	PostTitle    string `bson:"post_title" json:"post_title"`
+	PostMenu     string `bson:"post_menu" json:"post_menu"`
 }
 
 // Category blog post categories

@@ -252,17 +252,20 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 
 				if p.I18N.EnUs.PostContent == "" {
 					p.I18N.EnUs.PostContent = ParseMarkdown2HTML([]byte(p.Markdown))
+					p.I18N.EnUs.PostMenu = ExtractMenu(p.I18N.EnUs.PostContent)
 
 					// update post i18n content
 					if _, err := s.dao.GetPostsCol().UpdateByID(ctx, p.ID, bson.M{
 						"$set": bson.M{
 							"i18n.en_us.post_content": p.I18N.EnUs.PostContent,
+							"i18n.en_us.post_menu":    p.I18N.EnUs.PostMenu,
 						},
 					}); err != nil {
 						logger.Error("try to update post got error", zap.Error(err))
 					}
 				}
 
+				p.Menu = p.I18N.EnUs.PostMenu
 				p.Content = p.I18N.EnUs.PostContent
 			}
 		}
@@ -428,6 +431,8 @@ func (s *Blog) NewPost(ctx context.Context,
 		p.I18N.EnUs.PostContent = p.Content
 		p.I18N.EnUs.PostTitle = p.Title
 		p.I18N.EnUs.PostMarkdown = p.Markdown
+		p.I18N.EnUs.PostMenu = p.Menu
+	default:
 	}
 
 	if gconfig.Shared.GetBool("dry") {
@@ -513,7 +518,6 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 		return nil, errors.Errorf("post do not belong to this user")
 	}
 
-	p.Menu = ExtractMenu(p.Content)
 	p.ModifiedAt = gutils.Clock.GetUTCNow()
 	p.Type = typeArg
 	parsedMd := ParseMarkdown2HTML([]byte(md))
@@ -522,11 +526,13 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 		p.Title = title
 		p.Markdown = md
 		p.Content = parsedMd
+		p.Menu = ExtractMenu(p.Content)
 	case models.LanguageEnUs:
 		p.I18N.UpdateAt = time.Now().UTC()
 		p.I18N.EnUs.PostTitle = title
 		p.I18N.EnUs.PostMarkdown = md
 		p.I18N.EnUs.PostContent = parsedMd
+		p.I18N.EnUs.PostMenu = ExtractMenu(p.I18N.EnUs.PostContent)
 	default:
 		return nil, errors.Errorf("language `%s` not supportted", language)
 	}
