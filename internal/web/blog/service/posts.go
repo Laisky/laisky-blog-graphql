@@ -241,6 +241,31 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 		logger := gmw.GetLogger(ctx).
 			With(zap.String("language", language.String()),
 				zap.String("post", p.ID.String()))
+
+		// upgrade to new implementation
+		if p.ModifiedAt.Before(time.Date(2024, 9, 23, 0, 0, 0, 0, time.UTC)) {
+			p.Content = ParseMarkdown2HTML([]byte(p.Markdown))
+			p.Menu = ExtractMenu(p.Content)
+
+			if p.I18N.EnUs.PostMarkdown != "" {
+				p.I18N.EnUs.PostContent = ParseMarkdown2HTML([]byte(p.I18N.EnUs.PostMarkdown))
+				p.I18N.EnUs.PostMenu = ExtractMenu(p.I18N.EnUs.PostContent)
+			}
+
+			// save
+			if _, err := s.dao.GetPostsCol().UpdateByID(ctx, p.ID, bson.M{
+				"$set": bson.M{
+					"modified_at":             gutils.Clock.GetUTCNow(),
+					"content":                 p.Content,
+					"menu":                    p.Menu,
+					"i18n.en_us.post_content": p.I18N.EnUs.PostContent,
+					"i18n.en_us.post_menu":    p.I18N.EnUs.PostMenu,
+				},
+			}); err != nil {
+				logger.Error("try to update post got error", zap.Error(err))
+			}
+		}
+
 		switch language {
 		case models.LanguageZhCn:
 			p.Language = models.LanguageZhCn.String()
@@ -269,9 +294,6 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 				p.Menu = p.I18N.EnUs.PostMenu
 			}
 		}
-
-		// upgrade post menu to new implementation
-		p.Menu = ExtractMenu(p.I18N.EnUs.PostContent)
 
 		return true
 	}
