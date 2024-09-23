@@ -265,10 +265,13 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 					}
 				}
 
-				p.Menu = p.I18N.EnUs.PostMenu
 				p.Content = p.I18N.EnUs.PostContent
+				p.Menu = p.I18N.EnUs.PostMenu
 			}
 		}
+
+		// upgrade post menu to new implementation
+		p.Menu = ExtractMenu(p.I18N.EnUs.PostContent)
 
 		return true
 	}
