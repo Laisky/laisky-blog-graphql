@@ -7,17 +7,17 @@ import (
 	"strings"
 
 	gutils "github.com/Laisky/go-utils/v4"
-
-	"github.com/Laisky/laisky-blog-graphql/library/log"
-
 	"github.com/Laisky/zap"
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"
+
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 var (
 	titleRegexp     = regexp.MustCompile(`<(h[23])[^>]{0,}>([^<]+)</\w+>`)
 	titleMenuRegexp = regexp.MustCompile(`<(h[23]) *id="([^"]*)">([^<]+)</\w+>`) // extract menu
+	validHtmlId     = regexp.MustCompile(`[^a-zA-Z0-9\-_]`)
 )
 
 // ParseMarkdown2HTML parse markdown to string
@@ -49,15 +49,22 @@ func ParseMarkdown2HTML(md []byte) (cnt string) {
 			log.Logger.Error("unknown title level", zap.String("lev", tlev))
 		}
 
-		tid = url.QueryEscape(tid)
+		tid = convertTitleID(tid)
 		cnt = strings.ReplaceAll(cnt, tl, `<`+tlev+` id="`+tid+`">`+ttext+`</`+tlev+`>`)
 	}
 	return cnt
 }
 
+// convertTitleID convert title to valid html id
+//
+// https://www.w3.org/TR/REC-html40/types.html#:~:text=ID%20and%20NAME%20tokens%20must,periods%20(%22.%22).
+func convertTitleID(title string) string {
+	return "header-" + validHtmlId.ReplaceAllString(url.QueryEscape(title), "")
+}
+
 func ExtractMenu(html string) string {
 	var (
-		menu                 = `<ul class="nav" role="tablist">`
+		menu                 = `<nav id="post-menu" class="h-100 flex-column align-items-stretch pe-4 border-end"><nav class="nav nav-pills flex-column">`
 		level, escapedTl, tl string
 		l2cnt, l3cnt         string
 	)
@@ -68,28 +75,24 @@ func ExtractMenu(html string) string {
 		if level == "h2" {
 			if l2cnt != "" {
 				if l3cnt != "" {
-					l2cnt += l3cnt + `</ul></li>`
-				} else {
-					l2cnt += `</li>`
+					l2cnt += l3cnt + `</nav>`
 				}
 				menu += l2cnt
 			}
 			l3cnt = ""
-			l2cnt = `<li><a href="#` + escapedTl + `">` + tl + `</a>`
+			l2cnt = `<a class="nav-link" href="#` + escapedTl + `">` + tl + `</a>`
 		} else if level == "h3" {
 			if l3cnt == "" {
-				l3cnt = `<ul class="nav"><li><a href="#` + escapedTl + `">` + tl + `</a></li>`
+				l3cnt = `<nav class="nav nav-pills flex-column"><a class="nav-link ms-3" href="#` + escapedTl + `">` + tl + `</a>`
 			} else {
-				l3cnt += `<li><a href="#` + escapedTl + `">` + tl + `</a></li>`
+				l3cnt += `<a class="nav-link ms-3" href="#` + escapedTl + `">` + tl + `</a>`
 			}
 		}
 	}
 
 	if l3cnt != "" {
-		l2cnt += l3cnt + `</ul></li>`
-	} else {
-		l2cnt += `</li>`
+		l2cnt += l3cnt + `</nav>`
 	}
-	menu += l2cnt + `</ul>`
+	menu += l2cnt + `</nav></nav>`
 	return menu
 }
