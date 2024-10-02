@@ -82,13 +82,9 @@ func RunServer(addr string, resolver *Resolver) {
 
 func allowCORS(ctx *gin.Context) {
 	ctx.Header("Access-Control-Allow-Origin", "*")
-	ctx.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-	ctx.Header("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
-	ctx.Header("Access-Control-Expose-Headers", "Content-Length")
+	ctx.Header("Access-Control-Allow-Methods", "*")
+	ctx.Header("Access-Control-Allow-Headers", "*")
 	ctx.Header("Access-Control-Allow-Credentials", "true")
-	if ctx.Request.Method == "OPTIONS" {
-		ctx.AbortWithStatus(http.StatusNoContent)
-		return
-	}
+
 	ctx.Next()
 }
