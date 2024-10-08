@@ -243,6 +243,7 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 				zap.String("post", p.ID.String()))
 
 		// upgrade to new implementation
+		// be noticed that p.Markdown could be empty!
 		if p.Markdown != "" &&
 			p.ModifiedAt.Before(time.Date(2024, 9, 23, 0, 0, 0, 0, time.UTC)) {
 			p.Content = ParseMarkdown2HTML([]byte(p.Markdown))
