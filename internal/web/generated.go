@@ -14,16 +14,16 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
-	gqlparser "github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
-
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
-	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
+	dto1 "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	model2 "github.com/Laisky/laisky-blog-graphql/internal/web/general/model"
 	model3 "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	model1 "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
+	gqlparser "github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // region    ************************** generated!.gotpl **************************
@@ -67,6 +67,10 @@ type ComplexityRoot struct {
 	ArweaveItem struct {
 		Id   func(childComplexity int) int
 		Time func(childComplexity int) int
+	}
+
+	ArweaveUploadResponse struct {
+		FileID func(childComplexity int) int
 	}
 
 	BlogCategory struct {
@@ -139,6 +143,7 @@ type ComplexityRoot struct {
 
 	Mutation struct {
 		AcquireLock           func(childComplexity int, lockName string, durationSec int, isRenewal *bool) int
+		ArweaveUpload         func(childComplexity int, fileB64 string) int
 		BlogAmendPost         func(childComplexity int, post models.NewBlogPost, language models.Language) int
 		BlogCreatePost        func(childComplexity int, post models.NewBlogPost, language models.Language) int
 		BlogLogin             func(childComplexity int, account string, password string) int
@@ -273,6 +278,7 @@ type MutationResolver interface {
 	UserActive(ctx context.Context, token string) (*models.UserActiveResponse, error)
 	UserResendActiveEmail(ctx context.Context, account string) (*models.UserResendActiveEmailResponse, error)
 	BlogAmendPost(ctx context.Context, post models.NewBlogPost, language models.Language) (*model.Post, error)
+	ArweaveUpload(ctx context.Context, fileB64 string) (*dto.UploadResponse, error)
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*model3.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
 	CreateGeneralToken(ctx context.Context, username string, durationSec int) (string, error)
@@ -283,7 +289,7 @@ type QueryResolver interface {
 	TwitterStatues(ctx context.Context, page *models.Pagination, tweetID string, username string, viewerID string, sort *models.Sort, topic string, regexp string) ([]*model1.Tweet, error)
 	TwitterThreads(ctx context.Context, tweetID string) ([]*model1.Tweet, error)
 	BlogPosts(ctx context.Context, page *models.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language models.Language) ([]*model.Post, error)
-	BlogPostInfo(ctx context.Context) (*dto.PostInfo, error)
+	BlogPostInfo(ctx context.Context) (*dto1.PostInfo, error)
 	BlogPostCategories(ctx context.Context) ([]*model.Category, error)
 	BlogTags(ctx context.Context) ([]string, error)
 	GetBlogPostSeries(ctx context.Context, page *models.Pagination, key string) ([]*model.PostSeries, error)
@@ -356,6 +362,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.ArweaveItem.Time(childComplexity), true
+
+	case "ArweaveUploadResponse.file_id":
+		if e.complexity.ArweaveUploadResponse.FileID == nil {
+			break
+		}
+
+		return e.complexity.ArweaveUploadResponse.FileID(childComplexity), true
 
 	case "BlogCategory.name":
 		if e.complexity.BlogCategory.Name == nil {
@@ -676,6 +689,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Mutation.AcquireLock(childComplexity, args["lock_name"].(string), args["duration_sec"].(int), args["is_renewal"].(*bool)), true
+
+	case "Mutation.ArweaveUpload":
+		if e.complexity.Mutation.ArweaveUpload == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_ArweaveUpload_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.ArweaveUpload(childComplexity, args["fileB64"].(string)), true
 
 	case "Mutation.BlogAmendPost":
 		if e.complexity.Mutation.BlogAmendPost == nil {
@@ -1287,7 +1312,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 	return introspection.WrapTypeFromDef(ec.Schema(), ec.Schema().Types[name]), nil
 }
 
-//go:embed "schema.graphql" "twitter/schema.graphql" "blog/schema.graphql" "telegram/schema.graphql" "general/schema.graphql"
+//go:embed "schema.graphql" "twitter/schema.graphql" "blog/schema.graphql" "telegram/schema.graphql" "general/schema.graphql" "arweave/schema.graphql"
 var sourcesFS embed.FS
 
 func sourceData(filename string) string {
@@ -1304,6 +1329,7 @@ var sources = []*ast.Source{
 	{Name: "blog/schema.graphql", Input: sourceData("blog/schema.graphql"), BuiltIn: false},
 	{Name: "telegram/schema.graphql", Input: sourceData("telegram/schema.graphql"), BuiltIn: false},
 	{Name: "general/schema.graphql", Input: sourceData("general/schema.graphql"), BuiltIn: false},
+	{Name: "arweave/schema.graphql", Input: sourceData("arweave/schema.graphql"), BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
@@ -1394,6 +1420,38 @@ func (ec *executionContext) field_Mutation_AcquireLock_argsIsRenewal(
 	}
 
 	var zeroVal *bool
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_ArweaveUpload_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	arg0, err := ec.field_Mutation_ArweaveUpload_argsFileB64(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["fileB64"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_ArweaveUpload_argsFileB64(
+	ctx context.Context,
+	rawArgs map[string]interface{},
+) (string, error) {
+	// We won't call the directive if the argument is null.
+	// Set call_argument_directives_with_null to true to call directives
+	// even if the argument is null.
+	_, ok := rawArgs["fileB64"]
+	if !ok {
+		var zeroVal string
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("fileB64"))
+	if tmp, ok := rawArgs["fileB64"]; ok {
+		return ec.unmarshalNString2string(ctx, tmp)
+	}
+
+	var zeroVal string
 	return zeroVal, nil
 }
 
@@ -2862,6 +2920,50 @@ func (ec *executionContext) fieldContext_ArweaveItem_time(_ context.Context, fie
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ArweaveUploadResponse_file_id(ctx context.Context, field graphql.CollectedField, obj *dto.UploadResponse) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ArweaveUploadResponse_file_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.FileID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ArweaveUploadResponse_file_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ArweaveUploadResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -5454,6 +5556,65 @@ func (ec *executionContext) fieldContext_Mutation_BlogAmendPost(ctx context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_ArweaveUpload(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_ArweaveUpload(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().ArweaveUpload(rctx, fc.Args["fileB64"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*dto.UploadResponse)
+	fc.Result = res
+	return ec.marshalNArweaveUploadResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋarweaveᚋdtoᚐUploadResponse(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_ArweaveUpload(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "file_id":
+				return ec.fieldContext_ArweaveUploadResponse_file_id(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ArweaveUploadResponse", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_ArweaveUpload_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_TelegramMonitorAlert(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_TelegramMonitorAlert(ctx, field)
 	if err != nil {
@@ -5631,7 +5792,7 @@ func (ec *executionContext) fieldContext_Mutation_CreateGeneralToken(ctx context
 	return fc, nil
 }
 
-func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *dto.PostInfo) (ret graphql.Marshaler) {
+func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *dto1.PostInfo) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_PostInfo_total(ctx, field)
 	if err != nil {
 		return graphql.Null
@@ -6049,7 +6210,7 @@ func (ec *executionContext) _Query_BlogPostInfo(ctx context.Context, field graph
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*dto.PostInfo)
+	res := resTmp.(*dto1.PostInfo)
 	fc.Result = res
 	return ec.marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx, field.Selections, res)
 }
@@ -10371,6 +10532,65 @@ func (ec *executionContext) _ArweaveItem(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var arweaveUploadResponseImplementors = []string{"ArweaveUploadResponse"}
+
+func (ec *executionContext) _ArweaveUploadResponse(ctx context.Context, sel ast.SelectionSet, obj *dto.UploadResponse) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, arweaveUploadResponseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ArweaveUploadResponse")
+		case "file_id":
+			field := field
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return ec._ArweaveUploadResponse_file_id(ctx, field, obj)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+			out.Values[i] = ec._ArweaveUploadResponse_file_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var blogCategoryImplementors = []string{"BlogCategory"}
 
 func (ec *executionContext) _BlogCategory(ctx context.Context, sel ast.SelectionSet, obj *model.Category) graphql.Marshaler {
@@ -11795,6 +12015,15 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "ArweaveUpload":
+			field := field
+
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_ArweaveUpload(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "TelegramMonitorAlert":
 			field := field
 
@@ -11847,7 +12076,7 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 
 var postInfoImplementors = []string{"PostInfo"}
 
-func (ec *executionContext) _PostInfo(ctx context.Context, sel ast.SelectionSet, obj *dto.PostInfo) graphql.Marshaler {
+func (ec *executionContext) _PostInfo(ctx context.Context, sel ast.SelectionSet, obj *dto1.PostInfo) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.OperationContext, sel, postInfoImplementors)
 
 	out := graphql.NewFieldSet(fields)
@@ -14234,6 +14463,20 @@ func (ec *executionContext) marshalNArweaveItem2githubᚗcomᚋLaiskyᚋlaisky�
 	return ec._ArweaveItem(ctx, sel, &v)
 }
 
+func (ec *executionContext) marshalNArweaveUploadResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋarweaveᚋdtoᚐUploadResponse(ctx context.Context, sel ast.SelectionSet, v dto.UploadResponse) graphql.Marshaler {
+	return ec._ArweaveUploadResponse(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNArweaveUploadResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋarweaveᚋdtoᚐUploadResponse(ctx context.Context, sel ast.SelectionSet, v *dto.UploadResponse) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ArweaveUploadResponse(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory(ctx context.Context, sel ast.SelectionSet, v []*model.Category) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -14644,11 +14887,11 @@ func (ec *executionContext) unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaisky
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
-func (ec *executionContext) marshalNPostInfo2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v dto.PostInfo) graphql.Marshaler {
+func (ec *executionContext) marshalNPostInfo2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v dto1.PostInfo) graphql.Marshaler {
 	return ec._PostInfo(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v *dto.PostInfo) graphql.Marshaler {
+func (ec *executionContext) marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v *dto1.PostInfo) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "the requested element is null which the schema does not allow")

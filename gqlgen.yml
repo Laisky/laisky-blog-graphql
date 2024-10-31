@@ -9,6 +9,7 @@ schema:
   - ./internal/web/blog/schema.graphql
   - ./internal/web/telegram/schema.graphql
   - ./internal/web/general/schema.graphql
+  - ./internal/web/arweave/schema.graphql
 exec:
   filename: ./internal/web/generated.go
 model:
@@ -54,3 +55,6 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/internal/web/general/model.Lock
   # GeneralUser:
   #   model: laisky-blog-graphql/general.User
+  # Arweave
+  ArweaveUploadResponse:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto.UploadResponse

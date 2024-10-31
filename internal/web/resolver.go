@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 
+	arweave "github.com/Laisky/laisky-blog-graphql/internal/web/arweave/controller"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
 	general "github.com/Laisky/laisky-blog-graphql/internal/web/general/controller"
@@ -155,4 +156,5 @@ type mutationResolver struct {
 	blogMutation
 	telegramMutation
 	generalMutation
+	arweave.MutationResolver
 }

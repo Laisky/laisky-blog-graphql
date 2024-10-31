@@ -18,12 +18,15 @@ ENV GOARCH=amd64
 RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
 
 # copy executable file and certs to a pure container
-FROM debian:bullseye
+FROM node:22-bullseye AS vitebuilder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates haveged \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# install ardrive cli
+RUN npm install -g ardrive-cli
 
 COPY --from=gobuild /etc/ssl/certs /etc/ssl/certs
 COPY --from=gobuild /app/main /app/go-graphql-srv

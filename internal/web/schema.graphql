@@ -94,6 +94,11 @@ type Mutation {
     language: Language! = zh_CN
   ): BlogPost!
 
+  # Arweave
+  ArweaveUpload(
+    fileB64: String!,
+  ) : ArweaveUploadResponse!
+
   # telegram monitor
   TelegramMonitorAlert(
     type: String!
