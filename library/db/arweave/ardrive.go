@@ -27,6 +27,10 @@ func NewArdrive(walletPath string, folder string) *Ardrive {
 
 func (a *Ardrive) Upload(ctx context.Context,
 	data []byte, opts ...UploadOption) (fileID string, err error) {
+	opt, err := new(uploadOption).apply(opts...)
+	if err != nil {
+		return "", err
+	}
 
 	bin, err := exec.LookPath("ardrive")
 	if err != nil {
@@ -51,6 +55,7 @@ func (a *Ardrive) Upload(ctx context.Context,
 	// upload file
 	stdout, err := gutils.RunCMD(ctx, bin,
 		"upload-file",
+		"--content-type", opt.contentType,
 		"--local-path", tmpFile.Name(),
 		"--parent-folder-id", a.folder,
 		"-w", a.walletPath,
