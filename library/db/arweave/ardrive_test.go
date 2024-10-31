@@ -1,4 +1,4 @@
-package controller
+package arweave
 
 import (
 	"encoding/json"

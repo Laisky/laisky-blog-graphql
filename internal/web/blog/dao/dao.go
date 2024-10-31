@@ -28,7 +28,7 @@ type Blog struct {
 // New create new dao
 func New(logger glog.Logger,
 	db mongo.DB,
-	arweave *arweave.Akord,
+	arweave Arweave,
 ) *Blog {
 	return &Blog{
 		logger:  logger,

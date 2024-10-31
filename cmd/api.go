@@ -82,8 +82,12 @@ func runAPI() error {
 		}
 	}
 
-	arweave := arweave.NewAkrod(
-		gconfig.Shared.GetStringSlice("settings.db.akord.apikeys"),
+	// arweave := arweave.NewAkrod(
+	// 	gconfig.Shared.GetStringSlice("settings.db.akord.apikeys"),
+	// )
+	arweave := arweave.NewArdrive(
+		gconfig.S.GetString("settings.arweave.wallet_file"),
+		gconfig.S.GetString("settings.arweave.folder_id"),
 	)
 
 	{ // setup blog
