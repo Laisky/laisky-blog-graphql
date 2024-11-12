@@ -99,6 +99,10 @@ func (r *QueryResolver) BlogPostInfo(ctx context.Context) (*dto.PostInfo, error)
 	return r.svc.LoadPostInfo(ctx)
 }
 
+func (r *QueryResolver) BlogPostHistory(ctx context.Context, fileID string) (*model.Post, error) {
+	return r.svc.LoadPostHistory(ctx, fileID)
+}
+
 func (r *QueryResolver) WhoAmI(ctx context.Context) (*model.User, error) {
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {

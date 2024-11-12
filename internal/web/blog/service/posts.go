@@ -2,8 +2,13 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -137,6 +142,54 @@ func (s *Blog) LoadPostInfo(ctx context.Context) (*dto.PostInfo, error) {
 	return &dto.PostInfo{
 		Total: int(cnt),
 	}, nil
+}
+
+// LoadPostHistory load post history by arweave file id
+func (s *Blog) LoadPostHistory(ctx context.Context, fileID string) (*model.Post, error) {
+	logger := gmw.GetLogger(ctx)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ario.laisky.com/"+fileID, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "new request")
+	}
+
+	resp, err := httpcli.Do(req)
+	if err != nil {
+		return nil, errors.Wrapf(err, "do request `%s`", req.URL.String())
+	}
+	defer gutils.CloseWithLog(resp.Body, logger)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.Errorf("got status code `%d`", resp.StatusCode)
+	}
+
+	if resp.ContentLength > 1024*1024*10 { // 10M
+		return nil, errors.Errorf("content too large")
+	}
+
+	cnt, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "read all")
+	}
+
+	var reader io.Reader
+	if bytes.HasPrefix(cnt, []byte("gz::")) {
+		cnt = cnt[4:]
+
+		reader, err = gzip.NewReader(bytes.NewReader(cnt))
+		if err != nil {
+			return nil, errors.Wrap(err, "new gzip reader")
+		}
+	} else {
+		reader = bytes.NewReader(cnt)
+	}
+
+	post := new(model.Post)
+	if err = json.NewDecoder(reader).Decode(post); err != nil {
+		return nil, errors.Wrap(err, "decode post")
+	}
+
+	return post, nil
 }
 
 func (s *Blog) makeQuery(ctx context.Context,

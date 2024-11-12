@@ -1,10 +1,12 @@
 package service
 
 import (
+	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/zap"
@@ -18,7 +20,17 @@ var (
 	titleRegexp     = regexp.MustCompile(`<(h[23])[^>]{0,}>([^<]+)</\w+>`)
 	titleMenuRegexp = regexp.MustCompile(`<(h[23]) *id="([^"]*)">([^<]+)</\w+>`) // extract menu
 	validHtmlId     = regexp.MustCompile(`[^a-zA-Z0-9\-_]`)
+	httpcli         *http.Client
 )
+
+func init() {
+	var err error
+	if httpcli, err = gutils.NewHTTPClient(
+		gutils.WithHTTPClientTimeout(20 * time.Second),
+	); err != nil {
+		log.Logger.Panic("init httpcli", zap.Error(err))
+	}
+}
 
 // ParseMarkdown2HTML parse markdown to string
 func ParseMarkdown2HTML(md []byte) (cnt string) {

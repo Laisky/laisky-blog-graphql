@@ -44,6 +44,9 @@ type Query {
     regexp: String! = ""
     language: Language! = zh_CN
   ): [BlogPost]!
+  BlogPostHistory(
+    file_id: String!
+  ): BlogPost!
   BlogPostInfo: PostInfo!
   BlogPostCategories: [BlogCategory]!
   BlogTags: [String!]!
