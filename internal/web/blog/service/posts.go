@@ -145,7 +145,7 @@ func (s *Blog) LoadPostInfo(ctx context.Context) (*dto.PostInfo, error) {
 }
 
 // LoadPostHistory load post history by arweave file id
-func (s *Blog) LoadPostHistory(ctx context.Context, fileID string) (*model.Post, error) {
+func (s *Blog) LoadPostHistory(ctx context.Context, fileID string, language models.Language) (*model.Post, error) {
 	logger := gmw.GetLogger(ctx)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ario.laisky.com/"+fileID, nil)
@@ -187,6 +187,13 @@ func (s *Blog) LoadPostHistory(ctx context.Context, fileID string) (*model.Post,
 	post := new(model.Post)
 	if err = json.NewDecoder(reader).Decode(post); err != nil {
 		return nil, errors.Wrap(err, "decode post")
+	}
+
+	if language != models.LanguageZhCn && post.I18N.EnUs.PostContent != "" {
+		post.Content = post.I18N.EnUs.PostContent
+		post.Title = post.I18N.EnUs.PostTitle
+		post.Menu = post.I18N.EnUs.PostMenu
+		post.Markdown = post.I18N.EnUs.PostMarkdown
 	}
 
 	return post, nil

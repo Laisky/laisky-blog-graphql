@@ -161,7 +161,7 @@ type ComplexityRoot struct {
 
 	Query struct {
 		BlogPostCategories   func(childComplexity int) int
-		BlogPostHistory      func(childComplexity int, fileID string) int
+		BlogPostHistory      func(childComplexity int, fileID string, language models.Language) int
 		BlogPostInfo         func(childComplexity int) int
 		BlogPosts            func(childComplexity int, page *models.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language models.Language) int
 		BlogTags             func(childComplexity int) int
@@ -290,7 +290,7 @@ type QueryResolver interface {
 	TwitterStatues(ctx context.Context, page *models.Pagination, tweetID string, username string, viewerID string, sort *models.Sort, topic string, regexp string) ([]*model1.Tweet, error)
 	TwitterThreads(ctx context.Context, tweetID string) ([]*model1.Tweet, error)
 	BlogPosts(ctx context.Context, page *models.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language models.Language) ([]*model.Post, error)
-	BlogPostHistory(ctx context.Context, fileID string) (*model.Post, error)
+	BlogPostHistory(ctx context.Context, fileID string, language models.Language) (*model.Post, error)
 	BlogPostInfo(ctx context.Context) (*dto1.PostInfo, error)
 	BlogPostCategories(ctx context.Context) ([]*model.Category, error)
 	BlogTags(ctx context.Context) ([]string, error)
@@ -836,7 +836,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.BlogPostHistory(childComplexity, args["file_id"].(string)), true
+		return e.complexity.Query.BlogPostHistory(childComplexity, args["file_id"].(string), args["language"].(models.Language)), true
 
 	case "Query.BlogPostInfo":
 		if e.complexity.Query.BlogPostInfo == nil {
@@ -2035,6 +2035,11 @@ func (ec *executionContext) field_Query_BlogPostHistory_args(ctx context.Context
 		return nil, err
 	}
 	args["file_id"] = arg0
+	arg1, err := ec.field_Query_BlogPostHistory_argsLanguage(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["language"] = arg1
 	return args, nil
 }
 func (ec *executionContext) field_Query_BlogPostHistory_argsFileID(
@@ -2056,6 +2061,28 @@ func (ec *executionContext) field_Query_BlogPostHistory_argsFileID(
 	}
 
 	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Query_BlogPostHistory_argsLanguage(
+	ctx context.Context,
+	rawArgs map[string]interface{},
+) (models.Language, error) {
+	// We won't call the directive if the argument is null.
+	// Set call_argument_directives_with_null to true to call directives
+	// even if the argument is null.
+	_, ok := rawArgs["language"]
+	if !ok {
+		var zeroVal models.Language
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
+	if tmp, ok := rawArgs["language"]; ok {
+		return ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
+	}
+
+	var zeroVal models.Language
 	return zeroVal, nil
 }
 
@@ -6244,7 +6271,7 @@ func (ec *executionContext) _Query_BlogPostHistory(ctx context.Context, field gr
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogPostHistory(rctx, fc.Args["file_id"].(string))
+		return ec.resolvers.Query().BlogPostHistory(rctx, fc.Args["file_id"].(string), fc.Args["language"].(models.Language))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

@@ -46,6 +46,7 @@ type Query {
   ): [BlogPost]!
   BlogPostHistory(
     file_id: String!
+    language: Language! = zh_CN
   ): BlogPost!
   BlogPostInfo: PostInfo!
   BlogPostCategories: [BlogCategory]!

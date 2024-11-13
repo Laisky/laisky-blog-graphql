@@ -99,8 +99,8 @@ func (r *QueryResolver) BlogPostInfo(ctx context.Context) (*dto.PostInfo, error)
 	return r.svc.LoadPostInfo(ctx)
 }
 
-func (r *QueryResolver) BlogPostHistory(ctx context.Context, fileID string) (*model.Post, error) {
-	return r.svc.LoadPostHistory(ctx, fileID)
+func (r *QueryResolver) BlogPostHistory(ctx context.Context, fileID string, language models.Language) (*model.Post, error) {
+	return r.svc.LoadPostHistory(ctx, fileID, language)
 }
 
 func (r *QueryResolver) WhoAmI(ctx context.Context) (*model.User, error) {
