@@ -40,9 +40,9 @@ type Post struct {
 	// Hidden whether the post is hidden or not
 	Hidden bool `bson:"hidden" json:"hidden"`
 	// I18N internationalization of the post
-	I18N PostI18N `bson:"i18n" json:"i18n"`
+	I18N PostI18N `bson:"i18n" json:"i18n,omitempty"`
 	// Language language of the post content or markdown
-	Language string `bson:"-" json:"language"`
+	Language string `bson:"-" json:"language,omitempty"`
 	// ArweaveId arweave id of the post
 	ArweaveId []ArweaveHistoryItem `bson:"arweave_id" json:"arweave_id"`
 }
@@ -60,6 +60,10 @@ type legacyTime struct {
 }
 
 func (t legacyTime) Time() (time.Time, error) {
+	if t.Date == "" {
+		return time.Time{}, nil
+	}
+
 	return time.Parse(time.RFC3339, t.Date)
 }
 
@@ -115,9 +119,9 @@ type LegacyPost struct {
 	// Hidden whether the post is hidden or not
 	Hidden bool `bson:"hidden" json:"hidden"`
 	// I18N internationalization of the post
-	I18N legacyI18N `bson:"i18n" json:"i18n"`
+	I18N legacyI18N `bson:"i18n" json:"i18n,omitempty"`
 	// Language language of the post content or markdown
-	Language string `bson:"-" json:"language"`
+	Language string `bson:"-" json:"language,omitempty"`
 	// ArweaveId arweave id of the post
 	ArweaveId []ArweaveHistoryItem `bson:"arweave_id" json:"arweave_id"`
 }

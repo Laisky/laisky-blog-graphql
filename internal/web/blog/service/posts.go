@@ -193,7 +193,8 @@ func (s *Blog) LoadPostHistory(ctx context.Context, fileID string, language mode
 	}
 
 	post := new(model.Post)
-	if err = json.NewDecoder(reader).Decode(post); err != nil {
+	err = json.NewDecoder(reader).Decode(post)
+	if err != nil || post.Content == "" {
 		// try legacy struct
 		reader, err := makeReader(cnt)
 		if err != nil {
@@ -201,8 +202,8 @@ func (s *Blog) LoadPostHistory(ctx context.Context, fileID string, language mode
 		}
 
 		legacyPost := new(model.LegacyPost)
-		if err2 := json.NewDecoder(reader).Decode(legacyPost); err2 != nil {
-			return nil, errors.Wrap(errors.Join(err, err2), "cannot decode post by legacy struct")
+		if err = json.NewDecoder(reader).Decode(legacyPost); err != nil {
+			return nil, errors.Wrap(err, "cannot decode post by legacy struct")
 		}
 
 		if post, err = legacyPost.Post(); err != nil {
