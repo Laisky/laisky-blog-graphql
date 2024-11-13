@@ -144,6 +144,21 @@ func (s *Blog) LoadPostInfo(ctx context.Context) (*dto.PostInfo, error) {
 	}, nil
 }
 
+func makeReader(cnt []byte) (reader io.Reader, err error) {
+	if bytes.HasPrefix(cnt, []byte("gz::")) {
+		cnt = cnt[4:]
+
+		reader, err = gzip.NewReader(bytes.NewReader(cnt))
+		if err != nil {
+			return nil, errors.Wrap(err, "new gzip reader")
+		}
+	} else {
+		reader = bytes.NewBuffer(cnt)
+	}
+
+	return reader, nil
+}
+
 // LoadPostHistory load post history by arweave file id
 func (s *Blog) LoadPostHistory(ctx context.Context, fileID string, language models.Language) (*model.Post, error) {
 	logger := gmw.GetLogger(ctx)
@@ -172,21 +187,27 @@ func (s *Blog) LoadPostHistory(ctx context.Context, fileID string, language mode
 		return nil, errors.Wrap(err, "read all")
 	}
 
-	var reader io.Reader
-	if bytes.HasPrefix(cnt, []byte("gz::")) {
-		cnt = cnt[4:]
-
-		reader, err = gzip.NewReader(bytes.NewReader(cnt))
-		if err != nil {
-			return nil, errors.Wrap(err, "new gzip reader")
-		}
-	} else {
-		reader = bytes.NewReader(cnt)
+	reader, err := makeReader(cnt)
+	if err != nil {
+		return nil, errors.Wrap(err, "get reader")
 	}
 
 	post := new(model.Post)
 	if err = json.NewDecoder(reader).Decode(post); err != nil {
-		return nil, errors.Wrap(err, "decode post")
+		// try legacy struct
+		reader, err := makeReader(cnt)
+		if err != nil {
+			return nil, errors.Wrap(err, "get reader")
+		}
+
+		legacyPost := new(model.LegacyPost)
+		if err2 := json.NewDecoder(reader).Decode(legacyPost); err2 != nil {
+			return nil, errors.Wrap(errors.Join(err, err2), "cannot decode post by legacy struct")
+		}
+
+		if post, err = legacyPost.Post(); err != nil {
+			return nil, errors.Wrap(err, "convert legacy to current post format")
+		}
 	}
 
 	if language != models.LanguageZhCn && post.I18N.EnUs.PostContent != "" {
