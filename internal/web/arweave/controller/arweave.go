@@ -22,7 +22,7 @@ func NewMutationResolver() *MutationResolver {
 	return &MutationResolver{}
 }
 
-func (r *MutationResolver) ArweaveUpload(ctx context.Context, fileB64 string) (*dto.UploadResponse, error) {
+func (r *MutationResolver) ArweaveUpload(ctx context.Context, fileB64 string, contentType *string) (*dto.UploadResponse, error) {
 	logger := gmw.GetLogger(ctx)
 
 	uc := &jwt.UserClaims{}
@@ -40,7 +40,12 @@ func (r *MutationResolver) ArweaveUpload(ctx context.Context, fileB64 string) (*
 		return nil, errors.Wrap(err, "decode base64")
 	}
 
-	fileID, err := storage.Upload(ctx, cnt)
+	var opt []arweave.UploadOption
+	if contentType != nil {
+		opt = append(opt, arweave.WithContentType(*contentType))
+	}
+
+	fileID, err := storage.Upload(ctx, cnt, opt...)
 	if err != nil {
 		return nil, errors.Wrap(err, "upload file to arweave")
 	}

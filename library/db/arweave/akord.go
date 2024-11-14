@@ -33,34 +33,6 @@ func NewAkrod(apis []string) *Akord {
 	return &Akord{apis: apis}
 }
 
-type uploadOption struct {
-	contentType string
-}
-
-type UploadOption func(*uploadOption) error
-
-// WithContentType set content type
-func WithContentType(contentType string) UploadOption {
-	return func(o *uploadOption) error {
-		o.contentType = contentType
-		return nil
-	}
-}
-
-func (o *uploadOption) apply(opts ...UploadOption) (*uploadOption, error) {
-	// fill default
-	o.contentType = "text/plain"
-
-	// apply opts
-	for _, opt := range opts {
-		if err := opt(o); err != nil {
-			return nil, err
-		}
-	}
-
-	return o, nil
-}
-
 // Upload upload data to akord
 func (a *Akord) Upload(ctx context.Context,
 	data []byte, opts ...UploadOption) (fileID string, err error) {

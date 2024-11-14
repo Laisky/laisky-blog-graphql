@@ -32,9 +32,11 @@ func (a *Ardrive) Upload(ctx context.Context,
 		return "", err
 	}
 
-	data, err = CompressData(data)
-	if err != nil {
-		return "", errors.Wrap(err, "compress data")
+	if opt.gzip {
+		data, err = CompressData(data)
+		if err != nil {
+			return "", errors.Wrap(err, "compress data")
+		}
 	}
 
 	bin, err := exec.LookPath("ardrive")

@@ -74,5 +74,8 @@ func (d *Blog) SaveToArweave(ctx context.Context, data any) (fileID string, err 
 	}
 
 	// akord do not support content type
-	return d.arweave.Upload(ctx, payload) // arweave.WithContentType("application/json"),
+	return d.arweave.Upload(ctx, payload,
+		arweave.WithContentType("application/json"),
+		arweave.WithGzip(),
+	)
 }

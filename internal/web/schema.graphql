@@ -101,6 +101,7 @@ type Mutation {
   # Arweave
   ArweaveUpload(
     fileB64: String!,
+    contentType: String = "application/json",
   ) : ArweaveUploadResponse!
 
   # telegram monitor

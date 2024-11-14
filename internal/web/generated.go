@@ -143,7 +143,7 @@ type ComplexityRoot struct {
 
 	Mutation struct {
 		AcquireLock           func(childComplexity int, lockName string, durationSec int, isRenewal *bool) int
-		ArweaveUpload         func(childComplexity int, fileB64 string) int
+		ArweaveUpload         func(childComplexity int, fileB64 string, contentType *string) int
 		BlogAmendPost         func(childComplexity int, post models.NewBlogPost, language models.Language) int
 		BlogCreatePost        func(childComplexity int, post models.NewBlogPost, language models.Language) int
 		BlogLogin             func(childComplexity int, account string, password string) int
@@ -279,7 +279,7 @@ type MutationResolver interface {
 	UserActive(ctx context.Context, token string) (*models.UserActiveResponse, error)
 	UserResendActiveEmail(ctx context.Context, account string) (*models.UserResendActiveEmailResponse, error)
 	BlogAmendPost(ctx context.Context, post models.NewBlogPost, language models.Language) (*model.Post, error)
-	ArweaveUpload(ctx context.Context, fileB64 string) (*dto.UploadResponse, error)
+	ArweaveUpload(ctx context.Context, fileB64 string, contentType *string) (*dto.UploadResponse, error)
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*model3.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
 	CreateGeneralToken(ctx context.Context, username string, durationSec int) (string, error)
@@ -702,7 +702,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Mutation.ArweaveUpload(childComplexity, args["fileB64"].(string)), true
+		return e.complexity.Mutation.ArweaveUpload(childComplexity, args["fileB64"].(string), args["contentType"].(*string)), true
 
 	case "Mutation.BlogAmendPost":
 		if e.complexity.Mutation.BlogAmendPost == nil {
@@ -1445,6 +1445,11 @@ func (ec *executionContext) field_Mutation_ArweaveUpload_args(ctx context.Contex
 		return nil, err
 	}
 	args["fileB64"] = arg0
+	arg1, err := ec.field_Mutation_ArweaveUpload_argsContentType(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["contentType"] = arg1
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_ArweaveUpload_argsFileB64(
@@ -1466,6 +1471,28 @@ func (ec *executionContext) field_Mutation_ArweaveUpload_argsFileB64(
 	}
 
 	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_ArweaveUpload_argsContentType(
+	ctx context.Context,
+	rawArgs map[string]interface{},
+) (*string, error) {
+	// We won't call the directive if the argument is null.
+	// Set call_argument_directives_with_null to true to call directives
+	// even if the argument is null.
+	_, ok := rawArgs["contentType"]
+	if !ok {
+		var zeroVal *string
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("contentType"))
+	if tmp, ok := rawArgs["contentType"]; ok {
+		return ec.unmarshalOString2ᚖstring(ctx, tmp)
+	}
+
+	var zeroVal *string
 	return zeroVal, nil
 }
 
@@ -5643,7 +5670,7 @@ func (ec *executionContext) _Mutation_ArweaveUpload(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().ArweaveUpload(rctx, fc.Args["fileB64"].(string))
+		return ec.resolvers.Mutation().ArweaveUpload(rctx, fc.Args["fileB64"].(string), fc.Args["contentType"].(*string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
