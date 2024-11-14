@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v5"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v4"
 	"github.com/Laisky/zap"
@@ -44,7 +45,7 @@ type Type struct {
 
 type userStat struct {
 	user  *tb.User
-	state string
+	state int
 	lastT time.Time
 }
 
@@ -76,10 +77,13 @@ func New(ctx context.Context,
 		// if not enable telegram task,
 		// do not consuming telegram events
 		go bot.Start()
-		tel.runDefaultHandle(ctx)
-		tel.monitorHandler()
-		tel.arweaveAliasHandler()
-		tel.notesSearchHandler()
+
+		tel.registerDefaultHandler(ctx)
+		tel.registerMonitorHandler()
+		tel.registerArweaveAliasHandler()
+		tel.registerNotesSearchHandler()
+		tel.registerUploadHandler()
+
 		go func() {
 			select {
 			case <-ctx.Done():
@@ -96,11 +100,12 @@ func New(ctx context.Context,
 	return tel, nil
 }
 
-func (s *Type) runDefaultHandle(ctx context.Context) {
-	// start default handler
-	s.bot.Handle(tb.OnText, func(tbctx tb.Context) error {
+func (s *Type) registerDefaultHandler(ctx context.Context) {
+	logger := gmw.GetLogger(ctx)
+
+	handler := func(tbctx tb.Context) error {
 		m := tbctx.Message()
-		log.Logger.Debug("got message", zap.String("msg", m.Text), zap.Int64("sender", m.Sender.ID))
+		logger.Debug("got message", zap.String("msg", m.Text), zap.Int64("sender", m.Sender.ID))
 		if _, ok := s.userStats.Load(m.Sender.ID); ok {
 			s.dispatcher(ctx, m)
 			return nil
@@ -111,7 +116,13 @@ func (s *Type) runDefaultHandle(ctx context.Context) {
 		}
 
 		return nil
-	})
+	}
+
+	// start default handler
+	s.bot.Handle(tb.OnText, handler)
+	s.bot.Handle(tb.OnDocument, handler)
+	s.bot.Handle(tb.OnPhoto, handler)
+	s.bot.Handle(tb.OnVideo, handler)
 }
 
 // Stop stop telegram polling
@@ -120,22 +131,27 @@ func (s *Type) Stop() {
 }
 
 func (s *Type) dispatcher(ctx context.Context, msg *tb.Message) {
+	logger := gmw.GetLogger(ctx)
+
 	us, ok := s.userStats.Load(msg.Sender.ID)
 	if !ok {
+		logger.Warn("user not found in userStats", zap.Int64("uid", msg.Sender.ID))
 		return
 	}
 
 	switch us.(*userStat).state {
 	case userWaitChooseMonitorCmd:
-		s.chooseMonitor(ctx, us.(*userStat), msg)
+		s.monitorHandler(ctx, us.(*userStat), msg)
 	case userWaitArweaveAliasCmd:
-		s.arweaveAliasDispatcher(ctx, us.(*userStat), msg)
+		s.arweaveAliasHandler(ctx, us.(*userStat), msg)
 	case userWaitNotesSearchCmd:
-		s.notesSearchDispatcher(ctx, us.(*userStat), msg)
+		s.notesSearchHandler(ctx, us.(*userStat), msg)
+	case userWaitUploadFile:
+		s.uploadHandler(ctx, us.(*userStat), msg)
 	default:
-		log.Logger.Warn("unknown msg")
+		logger.Warn("unknown msg", zap.Int("user_state", us.(*userStat).state))
 		if _, err := s.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {
-			log.Logger.Error("send msg by telegram", zap.Error(err))
+			logger.Error("send msg by telegram", zap.Error(err))
 		}
 	}
 }

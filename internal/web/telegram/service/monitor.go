@@ -17,7 +17,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
-func (s *Type) monitorHandler() {
+func (s *Type) registerMonitorHandler() {
 	s.bot.Handle("/monitor", func(c tb.Context) error {
 		m := c.Message()
 		s.userStats.Store(m.Sender.ID, &userStat{
@@ -45,7 +45,7 @@ func (s *Type) monitorHandler() {
 	})
 }
 
-func (s *Type) chooseMonitor(ctx context.Context, us *userStat, msg *tb.Message) {
+func (s *Type) monitorHandler(ctx context.Context, us *userStat, msg *tb.Message) {
 	log.Logger.Debug("choose monitor",
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text))

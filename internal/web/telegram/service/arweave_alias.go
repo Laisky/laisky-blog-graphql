@@ -38,7 +38,7 @@ func init() {
 
 var regexpAlias = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{3,64}$`)
 
-func (s *Type) arweaveAliasHandler() {
+func (s *Type) registerArweaveAliasHandler() {
 	s.bot.Handle("/arweave_alias", func(c tb.Context) error {
 		m := c.Message()
 		s.userStats.Store(m.Sender.ID, &userStat{
@@ -67,7 +67,7 @@ func (s *Type) arweaveAliasHandler() {
 	})
 }
 
-func (s *Type) arweaveAliasDispatcher(ctx context.Context, us *userStat, msg *tb.Message) {
+func (s *Type) arweaveAliasHandler(ctx context.Context, us *userStat, msg *tb.Message) {
 	logger := gmw.GetLogger(ctx).With(
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text),

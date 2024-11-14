@@ -12,7 +12,7 @@ import (
 	tb "gopkg.in/telebot.v3"
 )
 
-func (s *Type) notesSearchHandler() {
+func (s *Type) registerNotesSearchHandler() {
 	s.bot.Handle("/notes_search", func(c tb.Context) error {
 		m := c.Message()
 		s.userStats.Store(m.Sender.ID, &userStat{
@@ -33,7 +33,7 @@ func (s *Type) notesSearchHandler() {
 	})
 }
 
-func (s *Type) notesSearchDispatcher(ctx context.Context, us *userStat, msg *tb.Message) {
+func (s *Type) notesSearchHandler(ctx context.Context, us *userStat, msg *tb.Message) {
 	logger := gmw.GetLogger(ctx).With(
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text),
@@ -49,6 +49,7 @@ func (s *Type) notesSearchDispatcher(ctx context.Context, us *userStat, msg *tb.
 
 	if err := s.notesSearchByKeyword(ctx, us, keyword); err != nil {
 		logger.Error("notes search by keyword", zap.Error(err))
+		s.bot.Send(us.user, fmt.Sprintf("internal error: %s", err.Error()))
 	}
 }
 
