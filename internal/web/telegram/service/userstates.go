@@ -6,4 +6,5 @@ const (
 	userWaitArweaveAliasCmd
 	userWaitNotesSearchCmd
 	userWaitUploadFile
+	userWaitAuthToUploadFile
 )

@@ -41,7 +41,7 @@ type Telegram struct {
 
 	monitorDao  *dao.Monitor
 	telegramDao *dao.Telegram
-	uploadDap   *dao.Upload
+	uploadDao   *dao.Upload
 }
 
 type userStat struct {
@@ -71,7 +71,7 @@ func New(ctx context.Context,
 	tel := &Telegram{
 		monitorDao:  monitorDao,
 		telegramDao: telegramDao,
-		uploadDap:   uploadDao,
+		uploadDao:   uploadDao,
 		stop:        make(chan struct{}),
 		bot:         bot,
 		userStats:   new(sync.Map),
@@ -86,7 +86,7 @@ func New(ctx context.Context,
 		tel.registerMonitorHandler()
 		tel.registerArweaveAliasHandler()
 		tel.registerNotesSearchHandler()
-		tel.registerUploadHandler()
+		tel.registerUploadHandler(ctx)
 
 		go func() {
 			select {
@@ -157,6 +157,8 @@ func (s *Telegram) dispatcher(ctx context.Context, msg *tb.Message) {
 		s.notesSearchHandler(ctx, us.(*userStat), msg)
 	case userWaitUploadFile:
 		s.uploadHandler(ctx, us.(*userStat), msg)
+	case userWaitAuthToUploadFile:
+		s.uploadAuthHandler(ctx, us.(*userStat), msg)
 	default:
 		logger.Warn("unknown msg", zap.Int("user_state", us.(*userStat).state))
 		if _, err := s.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {

@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/Laisky/errors/v2"
@@ -25,6 +27,8 @@ const (
 	colUploadUsers = "upload_users"
 	colUploadFiles = "upload_files"
 )
+
+var oneapiKeyRegexp = regexp.MustCompile(`laisky-[a-zA-Z0-9]{48}`)
 
 // Upload db
 type Upload struct {
@@ -51,6 +55,54 @@ func (d *Upload) GetUsersCol() *mongoLib.Collection {
 }
 func (d *Upload) GetFilesCol() *mongoLib.Collection {
 	return d.db.GetCol(colUploadFiles)
+}
+
+func (d *Upload) ResetUser(ctx context.Context, telegramUID int64) error {
+	_, err := d.GetUsersCol().
+		DeleteOne(ctx, bson.M{"telegram_uid": telegramUID})
+	if err != nil {
+		return errors.Wrap(err, "reset user")
+	}
+
+	return nil
+}
+
+func (d *Upload) IsUserHasPermToUpload(ctx context.Context, telegramUID int64) (bool, error) {
+	cnt, err := d.GetUsersCol().
+		CountDocuments(ctx, bson.M{"telegram_uid": telegramUID})
+	if err != nil {
+		return false, errors.Wrap(err, "count user")
+	}
+
+	return cnt > 0, nil
+}
+
+func (d *Upload) SaveOneapiUser(ctx context.Context, telegramUID int64, oneapiKey string) error {
+	oneapiKey = strings.TrimSpace(oneapiKey)
+	if !oneapiKeyRegexp.MatchString(oneapiKey) {
+		return errors.New("invalid oneapi key")
+	}
+
+	_, err := d.GetUsersCol().
+		UpdateOne(ctx,
+			bson.M{"telegram_uid": telegramUID},
+			bson.M{
+				"$set": bson.M{
+					"updated_at": time.Now(),
+					"oneapi_key": oneapiKey,
+				},
+				"$setOnInsert": bson.M{
+					"created_at":   time.Now(),
+					"telegram_uid": telegramUID,
+				},
+			},
+			options.Update().SetUpsert(true),
+		)
+	if err != nil {
+		return errors.Wrap(err, "save oneapi user")
+	}
+
+	return nil
 }
 
 func (d *Upload) UploadFile(ctx context.Context,
