@@ -85,7 +85,7 @@ func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 
 func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 	page *models.Pagination,
-	name string) ([]*model.Users, error) {
+	name string) ([]*model.MonitorUsers, error) {
 	cfg := &dto.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
@@ -107,26 +107,26 @@ func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 // --------------------------
 // telegram monitor resolver
 // --------------------------
-func (t *UserResolver) ID(ctx context.Context, obj *model.Users) (string, error) {
+func (t *UserResolver) ID(ctx context.Context, obj *model.MonitorUsers) (string, error) {
 	return obj.ID.Hex(), nil
 }
 func (t *UserResolver) CreatedAt(ctx context.Context,
-	obj *model.Users,
+	obj *model.MonitorUsers,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.CreatedAt), nil
 }
 func (t *UserResolver) ModifiedAt(ctx context.Context,
-	obj *model.Users,
+	obj *model.MonitorUsers,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
 func (t *UserResolver) TelegramID(ctx context.Context,
-	obj *model.Users,
+	obj *model.MonitorUsers,
 ) (string, error) {
 	return strconv.FormatInt(int64(obj.UID), 10), nil
 }
 func (t *UserResolver) SubAlerts(ctx context.Context,
-	obj *model.Users,
+	obj *model.MonitorUsers,
 ) ([]*model.AlertTypes, error) {
 	return t.svc.LoadAlertTypesByUser(ctx, obj)
 }
@@ -148,7 +148,7 @@ func (t *AlertTypeResolver) ModifiedAt(ctx context.Context,
 }
 func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 	obj *model.AlertTypes,
-) ([]*model.Users, error) {
+) ([]*model.MonitorUsers, error) {
 	return t.svc.LoadUsersByAlertType(ctx, obj)
 }
 

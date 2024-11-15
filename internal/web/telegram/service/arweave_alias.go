@@ -38,7 +38,7 @@ func init() {
 
 var regexpAlias = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{3,64}$`)
 
-func (s *Type) registerArweaveAliasHandler() {
+func (s *Telegram) registerArweaveAliasHandler() {
 	s.bot.Handle("/arweave_alias", func(c tb.Context) error {
 		m := c.Message()
 		s.userStats.Store(m.Sender.ID, &userStat{
@@ -67,13 +67,13 @@ func (s *Type) registerArweaveAliasHandler() {
 	})
 }
 
-func (s *Type) arweaveAliasHandler(ctx context.Context, us *userStat, msg *tb.Message) {
+func (s *Telegram) arweaveAliasHandler(ctx context.Context, us *userStat, msg *tb.Message) {
 	logger := gmw.GetLogger(ctx).With(
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text),
 	)
 	logger.Debug("choose alias cmd")
-	defer s.userStats.Delete(us.user.ID)
+	// defer s.userStats.Delete(us.user.ID)
 
 	var (
 		err error
@@ -114,7 +114,7 @@ func (s *Type) arweaveAliasHandler(ctx context.Context, us *userStat, msg *tb.Me
 	}
 }
 
-func (s *Type) arweaveCreateAlias(ctx context.Context, us *userStat, msg string) error {
+func (s *Telegram) arweaveCreateAlias(ctx context.Context, us *userStat, msg string) error {
 	logger := gmw.GetLogger(ctx)
 
 	msgParts := strings.Split(msg, " ")
@@ -180,7 +180,7 @@ func (s *Type) arweaveCreateAlias(ctx context.Context, us *userStat, msg string)
 	return nil
 }
 
-func (s *Type) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string) error {
+func (s *Telegram) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string) error {
 	logger := gmw.GetLogger(ctx)
 
 	msgParts := strings.Split(msg, " ")
@@ -246,7 +246,7 @@ func (s *Type) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string)
 	return nil
 }
 
-func (s *Type) arweaveGetAlias(ctx context.Context, us *userStat, alias string) error {
+func (s *Telegram) arweaveGetAlias(ctx context.Context, us *userStat, alias string) error {
 	logger := gmw.GetLogger(ctx)
 
 	if !regexpAlias.MatchString(alias) {

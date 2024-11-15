@@ -296,7 +296,7 @@ type QueryResolver interface {
 	BlogTags(ctx context.Context) ([]string, error)
 	GetBlogPostSeries(ctx context.Context, page *models.Pagination, key string) ([]*model.PostSeries, error)
 	BlogTwitterCard(ctx context.Context, name string, language models.Language) (string, error)
-	TelegramMonitorUsers(ctx context.Context, page *models.Pagination, name string) ([]*model3.Users, error)
+	TelegramMonitorUsers(ctx context.Context, page *models.Pagination, name string) ([]*model3.MonitorUsers, error)
 	TelegramAlertTypes(ctx context.Context, page *models.Pagination, name string) ([]*model3.AlertTypes, error)
 	Lock(ctx context.Context, name string) (*model2.Lock, error)
 	LockPermissions(ctx context.Context, username string) ([]*models.GeneralUser, error)
@@ -306,15 +306,15 @@ type TelegramAlertTypeResolver interface {
 	CreatedAt(ctx context.Context, obj *model3.AlertTypes) (*library.Datetime, error)
 	ModifiedAt(ctx context.Context, obj *model3.AlertTypes) (*library.Datetime, error)
 
-	SubUsers(ctx context.Context, obj *model3.AlertTypes) ([]*model3.Users, error)
+	SubUsers(ctx context.Context, obj *model3.AlertTypes) ([]*model3.MonitorUsers, error)
 }
 type TelegramUserResolver interface {
-	ID(ctx context.Context, obj *model3.Users) (string, error)
-	CreatedAt(ctx context.Context, obj *model3.Users) (*library.Datetime, error)
-	ModifiedAt(ctx context.Context, obj *model3.Users) (*library.Datetime, error)
-	TelegramID(ctx context.Context, obj *model3.Users) (string, error)
+	ID(ctx context.Context, obj *model3.MonitorUsers) (string, error)
+	CreatedAt(ctx context.Context, obj *model3.MonitorUsers) (*library.Datetime, error)
+	ModifiedAt(ctx context.Context, obj *model3.MonitorUsers) (*library.Datetime, error)
+	TelegramID(ctx context.Context, obj *model3.MonitorUsers) (string, error)
 
-	SubAlerts(ctx context.Context, obj *model3.Users) ([]*model3.AlertTypes, error)
+	SubAlerts(ctx context.Context, obj *model3.MonitorUsers) ([]*model3.AlertTypes, error)
 }
 type TweetResolver interface {
 	CreatedAt(ctx context.Context, obj *model1.Tweet) (*library.Datetime, error)
@@ -6659,7 +6659,7 @@ func (ec *executionContext) _Query_TelegramMonitorUsers(ctx context.Context, fie
 		}
 		return graphql.Null
 	}
-	res := resTmp.([]*model3.Users)
+	res := resTmp.([]*model3.MonitorUsers)
 	fc.Result = res
 	return ec.marshalNTelegramUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐUsers(ctx, field.Selections, res)
 }
@@ -7224,7 +7224,7 @@ func (ec *executionContext) _TelegramAlertType_sub_users(ctx context.Context, fi
 		}
 		return graphql.Null
 	}
-	res := resTmp.([]*model3.Users)
+	res := resTmp.([]*model3.MonitorUsers)
 	fc.Result = res
 	return ec.marshalNTelegramUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐUsers(ctx, field.Selections, res)
 }
@@ -7256,7 +7256,7 @@ func (ec *executionContext) fieldContext_TelegramAlertType_sub_users(_ context.C
 	return fc, nil
 }
 
-func (ec *executionContext) _TelegramUser_id(ctx context.Context, field graphql.CollectedField, obj *model3.Users) (ret graphql.Marshaler) {
+func (ec *executionContext) _TelegramUser_id(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_TelegramUser_id(ctx, field)
 	if err != nil {
 		return graphql.Null
@@ -7300,7 +7300,7 @@ func (ec *executionContext) fieldContext_TelegramUser_id(_ context.Context, fiel
 	return fc, nil
 }
 
-func (ec *executionContext) _TelegramUser_created_at(ctx context.Context, field graphql.CollectedField, obj *model3.Users) (ret graphql.Marshaler) {
+func (ec *executionContext) _TelegramUser_created_at(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_TelegramUser_created_at(ctx, field)
 	if err != nil {
 		return graphql.Null
@@ -7344,7 +7344,7 @@ func (ec *executionContext) fieldContext_TelegramUser_created_at(_ context.Conte
 	return fc, nil
 }
 
-func (ec *executionContext) _TelegramUser_modified_at(ctx context.Context, field graphql.CollectedField, obj *model3.Users) (ret graphql.Marshaler) {
+func (ec *executionContext) _TelegramUser_modified_at(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_TelegramUser_modified_at(ctx, field)
 	if err != nil {
 		return graphql.Null
@@ -7388,7 +7388,7 @@ func (ec *executionContext) fieldContext_TelegramUser_modified_at(_ context.Cont
 	return fc, nil
 }
 
-func (ec *executionContext) _TelegramUser_telegram_id(ctx context.Context, field graphql.CollectedField, obj *model3.Users) (ret graphql.Marshaler) {
+func (ec *executionContext) _TelegramUser_telegram_id(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_TelegramUser_telegram_id(ctx, field)
 	if err != nil {
 		return graphql.Null
@@ -7432,7 +7432,7 @@ func (ec *executionContext) fieldContext_TelegramUser_telegram_id(_ context.Cont
 	return fc, nil
 }
 
-func (ec *executionContext) _TelegramUser_name(ctx context.Context, field graphql.CollectedField, obj *model3.Users) (ret graphql.Marshaler) {
+func (ec *executionContext) _TelegramUser_name(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_TelegramUser_name(ctx, field)
 	if err != nil {
 		return graphql.Null
@@ -7476,7 +7476,7 @@ func (ec *executionContext) fieldContext_TelegramUser_name(_ context.Context, fi
 	return fc, nil
 }
 
-func (ec *executionContext) _TelegramUser_sub_alerts(ctx context.Context, field graphql.CollectedField, obj *model3.Users) (ret graphql.Marshaler) {
+func (ec *executionContext) _TelegramUser_sub_alerts(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_TelegramUser_sub_alerts(ctx, field)
 	if err != nil {
 		return graphql.Null
@@ -12520,7 +12520,7 @@ func (ec *executionContext) _TelegramAlertType(ctx context.Context, sel ast.Sele
 
 var telegramUserImplementors = []string{"TelegramUser"}
 
-func (ec *executionContext) _TelegramUser(ctx context.Context, sel ast.SelectionSet, obj *model3.Users) graphql.Marshaler {
+func (ec *executionContext) _TelegramUser(ctx context.Context, sel ast.SelectionSet, obj *model3.MonitorUsers) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.OperationContext, sel, telegramUserImplementors)
 
 	out := graphql.NewFieldSet(fields)
@@ -14193,7 +14193,7 @@ func (ec *executionContext) marshalNTelegramAlertType2ᚖgithubᚗcomᚋLaisky�
 	return ec._TelegramAlertType(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNTelegramUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐUsers(ctx context.Context, sel ast.SelectionSet, v []*model3.Users) graphql.Marshaler {
+func (ec *executionContext) marshalNTelegramUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐUsers(ctx context.Context, sel ast.SelectionSet, v []*model3.MonitorUsers) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
 	isLen1 := len(v) == 1
@@ -14804,7 +14804,7 @@ func (ec *executionContext) marshalOTelegramAlertType2ᚖgithubᚗcomᚋLaisky�
 	return ec._TelegramAlertType(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalOTelegramUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐUsers(ctx context.Context, sel ast.SelectionSet, v *model3.Users) graphql.Marshaler {
+func (ec *executionContext) marshalOTelegramUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐUsers(ctx context.Context, sel ast.SelectionSet, v *model3.MonitorUsers) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}

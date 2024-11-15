@@ -44,9 +44,9 @@ func (d *Monitor) GetUserAlertRelationsCol() *mongoLib.Collection {
 	return d.db.GetCol(userAlertRelationColName)
 }
 
-func (d *Monitor) CreateOrGetUser(ctx context.Context, user *tb.User) (u *model.Users, err error) {
-	info, err := d.GetUsersCol().UpdateByID(ctx,
-		user.ID,
+func (d *Monitor) CreateOrGetUser(ctx context.Context, user *tb.User) (u *model.MonitorUsers, err error) {
+	info, err := d.GetUsersCol().UpdateOne(ctx,
+		bson.M{"uid": user.ID},
 		bson.M{"$setOnInsert": bson.M{
 			"created_at":  utils.Clock.GetUTCNow(),
 			"modified_at": utils.Clock.GetUTCNow(),
@@ -59,7 +59,7 @@ func (d *Monitor) CreateOrGetUser(ctx context.Context, user *tb.User) (u *model.
 		return nil, errors.Wrap(err, "upsert user docu")
 	}
 
-	u = new(model.Users)
+	u = new(model.MonitorUsers)
 	if err = d.GetUsersCol().FindOne(ctx, bson.M{
 		"uid": user.ID,
 	}).Decode(u); err != nil {
@@ -118,7 +118,7 @@ func (d *Monitor) CreateAlertType(ctx context.Context, name string) (at *model.A
 	return at, nil
 }
 
-func (d *Monitor) CreateOrGetUserAlertRelations(ctx context.Context, user *model.Users,
+func (d *Monitor) CreateOrGetUserAlertRelations(ctx context.Context, user *model.MonitorUsers,
 	alert *model.AlertTypes) (
 	uar *model.UserAlertRelations,
 	err error) {
@@ -157,7 +157,7 @@ func (d *Monitor) CreateOrGetUserAlertRelations(ctx context.Context, user *model
 	return uar, nil
 }
 
-func (d *Monitor) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.Users, err error) {
+func (d *Monitor) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.MonitorUsers, err error) {
 	log.Logger.Debug("LoadUsers",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
@@ -167,7 +167,7 @@ func (d *Monitor) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*mo
 		return nil, errors.Errorf("size shoule in [0~200]")
 	}
 
-	users = []*model.Users{}
+	users = []*model.MonitorUsers{}
 	cur, err := d.GetUsersCol().Find(ctx,
 		bson.M{
 			"name": cfg.Name,
@@ -215,7 +215,7 @@ func (d *Monitor) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts
 	return alerts, nil
 }
 
-func (d *Monitor) LoadAlertTypesByUser(ctx context.Context, u *model.Users) (alerts []*model.AlertTypes, err error) {
+func (d *Monitor) LoadAlertTypesByUser(ctx context.Context, u *model.MonitorUsers) (alerts []*model.AlertTypes, err error) {
 	log.Logger.Debug("LoadAlertTypesByUser",
 		zap.String("uid", u.ID.Hex()),
 		zap.String("username", u.Name))
@@ -251,11 +251,11 @@ func (d *Monitor) LoadAlertTypesByUser(ctx context.Context, u *model.Users) (ale
 	return alerts, nil
 }
 
-func (d *Monitor) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.Users, err error) {
+func (d *Monitor) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.MonitorUsers, err error) {
 	log.Logger.Debug("LoadUsersByAlertType",
 		zap.String("alert_type", a.ID.Hex()))
 
-	users = []*model.Users{}
+	users = []*model.MonitorUsers{}
 	iter, err := d.GetUserAlertRelationsCol().Find(ctx,
 		bson.M{
 			"alert_id": a.ID,
@@ -270,7 +270,7 @@ func (d *Monitor) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes)
 			return nil, errors.Wrap(err, "load user alert rel")
 		}
 
-		user := new(model.Users)
+		user := new(model.MonitorUsers)
 		if err = d.GetUsersCol().FindOne(ctx, bson.D{{Key: "_id", Value: uar.UserMongoID}}).
 			Decode(user); mongo.NotFound(err) {
 			log.Logger.Warn("can not find user by user_alert_relations",
@@ -307,7 +307,7 @@ func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
 }
 
 func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,
-	u *model.Users,
+	u *model.MonitorUsers,
 	alertName string,
 	joinKey string,
 ) (uar *model.UserAlertRelations, err error) {
@@ -328,9 +328,9 @@ func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,
 	return d.CreateOrGetUserAlertRelations(ctx, u, alert)
 }
 
-func (d *Monitor) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.Users, err error) {
+func (d *Monitor) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.MonitorUsers, err error) {
 	log.Logger.Debug("LoadUserByUID", zap.Int("uid", telegramUID))
-	u = new(model.Users)
+	u = new(model.MonitorUsers)
 	if err = d.GetUsersCol().FindOne(ctx,
 		bson.M{
 			"uid": telegramUID,
@@ -351,7 +351,7 @@ func (d *Monitor) IsUserSubAlert(ctx context.Context, uid int, alertName string)
 		return
 	}
 
-	u := new(model.Users)
+	u := new(model.MonitorUsers)
 	if err = d.GetUsersCol().FindOne(ctx, bson.M{"uid": uid}).Decode(u); err != nil {
 		return
 	}
@@ -394,7 +394,7 @@ func (d *Monitor) RemoveUAR(ctx context.Context, uid int, alertName string) (err
 		return
 	}
 
-	u := new(model.Users)
+	u := new(model.MonitorUsers)
 	if err = d.GetUsersCol().FindOne(ctx, bson.M{"uid": uid}).Decode(u); err != nil {
 		return
 	}

@@ -12,7 +12,7 @@ import (
 	tb "gopkg.in/telebot.v3"
 )
 
-func (s *Type) registerNotesSearchHandler() {
+func (s *Telegram) registerNotesSearchHandler() {
 	s.bot.Handle("/notes_search", func(c tb.Context) error {
 		m := c.Message()
 		s.userStats.Store(m.Sender.ID, &userStat{
@@ -33,13 +33,13 @@ func (s *Type) registerNotesSearchHandler() {
 	})
 }
 
-func (s *Type) notesSearchHandler(ctx context.Context, us *userStat, msg *tb.Message) {
+func (s *Telegram) notesSearchHandler(ctx context.Context, us *userStat, msg *tb.Message) {
 	logger := gmw.GetLogger(ctx).With(
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text),
 	)
 	logger.Debug("choose notes_search cmd")
-	defer s.userStats.Delete(us.user.ID)
+	// defer s.userStats.Delete(us.user.ID)
 
 	keyword := strings.TrimSpace(msg.Text)
 	if keyword == "" {
@@ -55,7 +55,7 @@ func (s *Type) notesSearchHandler(ctx context.Context, us *userStat, msg *tb.Mes
 
 const noteSummaryLen = 140
 
-func (s *Type) notesSearchByKeyword(ctx context.Context, us *userStat, msg string) error {
+func (s *Telegram) notesSearchByKeyword(ctx context.Context, us *userStat, msg string) error {
 	keyword := strings.TrimSpace(msg)
 	if keyword == "" {
 		return errors.New("keyword is empty")

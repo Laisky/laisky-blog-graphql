@@ -50,6 +50,14 @@ func runAPI() error {
 	ctx := context.Background()
 	logger := log.Logger.Named("api")
 
+	// arweave := arweave.NewAkrod(
+	// 	gconfig.Shared.GetStringSlice("settings.db.akord.apikeys"),
+	// )
+	arweave := arweave.NewArdrive(
+		gconfig.S.GetString("settings.arweave.wallet_file"),
+		gconfig.S.GetString("settings.arweave.folder_id"),
+	)
+
 	var args web.ResolverArgs
 
 	{ // setup telegram
@@ -71,6 +79,7 @@ func runAPI() error {
 		args.TelegramSvc, err = telegramSvc.New(ctx,
 			telegramDao.NewMonitor(monitorDB),
 			telegramDao.NewTelegram(telegramDB),
+			telegramDao.NewUpload(telegramDB, arweave),
 			botToken,
 			gconfig.Shared.GetString("settings.telegram.api"),
 		)
@@ -81,14 +90,6 @@ func runAPI() error {
 			args.TelegramCtl = telegramCtl.NewTelegram(ctx, args.TelegramSvc)
 		}
 	}
-
-	// arweave := arweave.NewAkrod(
-	// 	gconfig.Shared.GetStringSlice("settings.db.akord.apikeys"),
-	// )
-	arweave := arweave.NewArdrive(
-		gconfig.S.GetString("settings.arweave.wallet_file"),
-		gconfig.S.GetString("settings.arweave.folder_id"),
-	)
 
 	{ // setup blog
 		blogDB, err := blogModel.NewDB(ctx)

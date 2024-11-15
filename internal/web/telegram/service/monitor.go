@@ -17,7 +17,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
-func (s *Type) registerMonitorHandler() {
+func (s *Telegram) registerMonitorHandler() {
 	s.bot.Handle("/monitor", func(c tb.Context) error {
 		m := c.Message()
 		s.userStats.Store(m.Sender.ID, &userStat{
@@ -45,11 +45,11 @@ func (s *Type) registerMonitorHandler() {
 	})
 }
 
-func (s *Type) monitorHandler(ctx context.Context, us *userStat, msg *tb.Message) {
+func (s *Telegram) monitorHandler(ctx context.Context, us *userStat, msg *tb.Message) {
 	log.Logger.Debug("choose monitor",
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text))
-	defer s.userStats.Delete(us.user.ID)
+	// defer s.userStats.Delete(us.user.ID)
 	var (
 		err error
 		ans = []string{msg.Text, ""}
@@ -110,7 +110,7 @@ func (s *Type) monitorHandler(ctx context.Context, us *userStat, msg *tb.Message
 	}
 }
 
-func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error) {
+func (s *Telegram) kickUser(ctx context.Context, us *userStat, au string) (err error) {
 	if !strings.Contains(au, ":") {
 		return errors.Errorf("unknown alert_name:uid format")
 	}
@@ -127,7 +127,7 @@ func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error
 		return errors.Wrap(err, "load alert by user uid")
 	}
 
-	var kickedUser *model.Users
+	var kickedUser *model.MonitorUsers
 	kickedUser, err = s.monitorDao.LoadUserByUID(ctx, kickUID)
 	if err != nil {
 		return errors.Wrap(err, "load user by kicked user uid")
@@ -164,7 +164,7 @@ func (s *Type) kickUser(ctx context.Context, us *userStat, au string) (err error
 	return err
 }
 
-func (s *Type) userQuitAlert(ctx context.Context,
+func (s *Telegram) userQuitAlert(ctx context.Context,
 	us *userStat, alertName string) (err error) {
 	if err = s.monitorDao.RemoveUAR(ctx, int(us.user.ID), alertName); err != nil {
 		return errors.Wrap(err, "remove user_alert_relation by uid and alert_name")
@@ -173,7 +173,7 @@ func (s *Type) userQuitAlert(ctx context.Context,
 	return s.SendMsgToUser(int(us.user.ID), "successed unsubscribe "+alertName)
 }
 
-func (s *Type) refreshAlertTokenAndKey(ctx context.Context, us *userStat, alert string) (err error) {
+func (s *Telegram) refreshAlertTokenAndKey(ctx context.Context, us *userStat, alert string) (err error) {
 	var alertType *model.AlertTypes
 	alertType, err = s.monitorDao.IsUserSubAlert(ctx, int(us.user.ID), alert)
 	if err != nil {
@@ -206,7 +206,7 @@ func (s *Type) refreshAlertTokenAndKey(ctx context.Context, us *userStat, alert 
 	return err
 }
 
-func (s *Type) joinAlertGroup(ctx context.Context, us *userStat, kt string) (err error) {
+func (s *Telegram) joinAlertGroup(ctx context.Context, us *userStat, kt string) (err error) {
 	if !strings.Contains(kt, ":") {
 		return errors.Errorf("unknown format")
 	}
@@ -228,31 +228,31 @@ func (s *Type) joinAlertGroup(ctx context.Context, us *userStat, kt string) (err
 		alert+" (joint at "+uar.CreatedAt.Format(time.RFC3339)+")")
 }
 
-func (s *Type) LoadAlertTypesByUser(ctx context.Context,
-	u *model.Users) (alerts []*model.AlertTypes, err error) {
+func (s *Telegram) LoadAlertTypesByUser(ctx context.Context,
+	u *model.MonitorUsers) (alerts []*model.AlertTypes, err error) {
 	return s.monitorDao.LoadAlertTypesByUser(ctx, u)
 }
 
-func (s *Type) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
+func (s *Telegram) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
 	return s.monitorDao.LoadAlertTypes(ctx, cfg)
 }
 
-func (s *Type) LoadUsers(ctx context.Context,
-	cfg *dto.QueryCfg) (users []*model.Users, err error) {
+func (s *Telegram) LoadUsers(ctx context.Context,
+	cfg *dto.QueryCfg) (users []*model.MonitorUsers, err error) {
 	return s.monitorDao.LoadUsers(ctx, cfg)
 }
 
-func (s *Type) LoadUsersByAlertType(ctx context.Context,
-	a *model.AlertTypes) (users []*model.Users, err error) {
+func (s *Telegram) LoadUsersByAlertType(ctx context.Context,
+	a *model.AlertTypes) (users []*model.MonitorUsers, err error) {
 	return s.monitorDao.LoadUsersByAlertType(ctx, a)
 }
 
-func (s *Type) ValidateTokenForAlertType(ctx context.Context,
+func (s *Telegram) ValidateTokenForAlertType(ctx context.Context,
 	token, alertType string) (alert *model.AlertTypes, err error) {
 	return s.monitorDao.ValidateTokenForAlertType(ctx, token, alertType)
 }
 
-func (s *Type) listAllMonitorAlerts(ctx context.Context,
+func (s *Telegram) listAllMonitorAlerts(ctx context.Context,
 	us *userStat) (err error) {
 	u, err := s.monitorDao.LoadUserByUID(ctx, int(us.user.ID))
 	if err != nil {
@@ -280,7 +280,7 @@ func (s *Type) listAllMonitorAlerts(ctx context.Context,
 	return s.SendMsgToUser(u.UID, msg)
 }
 
-func (s *Type) createNewMonitor(ctx context.Context, us *userStat, alertName string) (err error) {
+func (s *Telegram) createNewMonitor(ctx context.Context, us *userStat, alertName string) (err error) {
 	u, err := s.monitorDao.CreateOrGetUser(ctx, us.user)
 	if err != nil {
 		return errors.Wrap(err, "create user")

@@ -17,7 +17,7 @@ type AlertTypes struct {
 	ModifiedAt time.Time          `bson:"modified_at" json:"modified_at"`
 }
 
-type Users struct {
+type MonitorUsers struct {
 	ID         primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
 	CreatedAt  time.Time          `bson:"created_at" json:"created_at"`
 	ModifiedAt time.Time          `bson:"modified_at" json:"modified_at"`

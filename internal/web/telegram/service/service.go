@@ -20,27 +20,28 @@ import (
 )
 
 var (
-	_ Interface = new(Type)
+	_ Interface = new(Telegram)
 )
 
 type Interface interface {
 	PleaseRetry(sender *tb.User, msg string)
 	SendMsgToUser(uid int, msg string) (err error)
-	LoadAlertTypesByUser(ctx context.Context, u *model.Users) (alerts []*model.AlertTypes, err error)
+	LoadAlertTypesByUser(ctx context.Context, u *model.MonitorUsers) (alerts []*model.AlertTypes, err error)
 	LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error)
-	LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.Users, err error)
-	LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.Users, err error)
+	LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.MonitorUsers, err error)
+	LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.MonitorUsers, err error)
 	ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error)
 }
 
-// Type client
-type Type struct {
-	stop chan struct{}
-	bot  *tb.Bot
+// Telegram client
+type Telegram struct {
+	stop      chan struct{}
+	bot       *tb.Bot
+	userStats *sync.Map
 
 	monitorDao  *dao.Monitor
 	telegramDao *dao.Telegram
-	userStats   *sync.Map
+	uploadDap   *dao.Upload
 }
 
 type userStat struct {
@@ -53,7 +54,9 @@ type userStat struct {
 func New(ctx context.Context,
 	monitorDao *dao.Monitor,
 	telegramDao *dao.Telegram,
-	token, api string) (*Type, error) {
+	uploadDao *dao.Upload,
+	token, api string,
+) (*Telegram, error) {
 	bot, err := tb.NewBot(tb.Settings{
 		Token: token,
 		URL:   api,
@@ -65,9 +68,10 @@ func New(ctx context.Context,
 		return nil, errors.Wrap(err, "new telegram bot")
 	}
 
-	tel := &Type{
+	tel := &Telegram{
 		monitorDao:  monitorDao,
 		telegramDao: telegramDao,
+		uploadDap:   uploadDao,
 		stop:        make(chan struct{}),
 		bot:         bot,
 		userStats:   new(sync.Map),
@@ -100,7 +104,7 @@ func New(ctx context.Context,
 	return tel, nil
 }
 
-func (s *Type) registerDefaultHandler(ctx context.Context) {
+func (s *Telegram) registerDefaultHandler(ctx context.Context) {
 	logger := gmw.GetLogger(ctx)
 
 	handler := func(tbctx tb.Context) error {
@@ -111,7 +115,9 @@ func (s *Type) registerDefaultHandler(ctx context.Context) {
 			return nil
 		}
 
-		if _, err := s.bot.Send(m.Sender, "NotImplement for "+m.Text); err != nil {
+		msg := "You have not enabled any commands yet. Please click the command list button on the left side of the input box to select the command you want to enable."
+
+		if _, err := s.bot.Send(m.Sender, msg); err != nil {
 			return errors.Wrapf(err, "send msg to %s", m.Sender.Username)
 		}
 
@@ -126,12 +132,15 @@ func (s *Type) registerDefaultHandler(ctx context.Context) {
 }
 
 // Stop stop telegram polling
-func (s *Type) Stop() {
+func (s *Telegram) Stop() {
 	s.stop <- struct{}{}
 }
 
-func (s *Type) dispatcher(ctx context.Context, msg *tb.Message) {
+func (s *Telegram) dispatcher(ctx context.Context, msg *tb.Message) {
 	logger := gmw.GetLogger(ctx)
+
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 
 	us, ok := s.userStats.Load(msg.Sender.ID)
 	if !ok {
@@ -157,14 +166,14 @@ func (s *Type) dispatcher(ctx context.Context, msg *tb.Message) {
 }
 
 // PleaseRetry echo retry
-func (s *Type) PleaseRetry(sender *tb.User, msg string) {
+func (s *Telegram) PleaseRetry(sender *tb.User, msg string) {
 	log.Logger.Warn("unknown msg", zap.String("msg", msg))
 	if _, err := s.bot.Send(sender, "[Error] unknown msg, please retry"); err != nil {
 		log.Logger.Error("send msg by telegram", zap.Error(err))
 	}
 }
 
-func (s *Type) SendMsgToUser(uid int, msg string) (err error) {
+func (s *Telegram) SendMsgToUser(uid int, msg string) (err error) {
 	_, err = s.bot.Send(&tb.User{ID: int64(uid)}, msg)
 	return err
 }
