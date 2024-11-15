@@ -17,6 +17,8 @@ import (
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v5"
 	gconfig "github.com/Laisky/go-config/v2"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
+	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/zap"
@@ -77,6 +79,18 @@ func (d *Upload) IsUserHasPermToUpload(ctx context.Context, telegramUID int64) (
 	return cnt > 0, nil
 }
 
+func (d *Upload) GetUser(ctx context.Context, telegramUID int64) (user *model.UploadUser, err error) {
+	user = new(model.UploadUser)
+	err = d.GetUsersCol().
+		FindOne(ctx, bson.M{"telegram_uid": telegramUID}).
+		Decode(user)
+	if err != nil {
+		return nil, errors.Wrapf(err, "get user by telegram uid %d", telegramUID)
+	}
+
+	return user, nil
+}
+
 func (d *Upload) SaveOneapiUser(ctx context.Context, telegramUID int64, oneapiKey string) error {
 	oneapiKey = strings.TrimSpace(oneapiKey)
 	if !oneapiKeyRegexp.MatchString(oneapiKey) {
@@ -88,8 +102,9 @@ func (d *Upload) SaveOneapiUser(ctx context.Context, telegramUID int64, oneapiKe
 			bson.M{"telegram_uid": telegramUID},
 			bson.M{
 				"$set": bson.M{
-					"updated_at": time.Now(),
-					"oneapi_key": oneapiKey,
+					"updated_at":   time.Now(),
+					"oneapi_key":   oneapiKey,
+					"billing_type": model.UploadBillingTypeOneapi,
 				},
 				"$setOnInsert": bson.M{
 					"created_at":   time.Now(),
@@ -105,9 +120,30 @@ func (d *Upload) SaveOneapiUser(ctx context.Context, telegramUID int64, oneapiKe
 	return nil
 }
 
+func (d *Upload) OneapiBilling(ctx context.Context, apikey string, size int64) error {
+	price := max(size/1024/1024*int64(oneapi.PriceUploadFileEachMB), int64(oneapi.PriceUploadFileMinimal))
+
+	if err := oneapi.CheckUserExternalBilling(ctx,
+		apikey, oneapi.Price(price), "upload file"); err != nil {
+		return errors.Wrap(err, "check user billing")
+	}
+
+	return nil
+}
+
 func (d *Upload) UploadFile(ctx context.Context,
 	uid int64, cnt []byte, contentType string) (fileID string, err error) {
 	logger := gmw.GetLogger(ctx)
+
+	user, err := d.GetUser(ctx, uid)
+	if err != nil {
+		return fileID, errors.WithStack(err)
+	}
+
+	// check billing
+	if err = d.OneapiBilling(ctx, user.OneapiKey, int64(len(cnt))); err != nil {
+		return fileID, errors.Wrap(err, "check billing")
+	}
 
 	fileID, err = d.ar.Upload(ctx, cnt,
 		arweave.WithContentType(contentType),

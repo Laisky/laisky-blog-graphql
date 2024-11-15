@@ -14,10 +14,17 @@ type UploadFile struct {
 	TelegramUID int64              `bson:"telegram_uid" json:"telegram_uid"`
 }
 
+type UploadBillingType string
+
+const (
+	UploadBillingTypeOneapi UploadBillingType = "oneapi"
+)
+
 type UploadUser struct {
 	ID          primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
 	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt   time.Time          `bson:"updated_at" json:"updated_at"`
+	BillingType UploadBillingType  `bson:"billing_type" json:"billing_type"`
 	TelegramUID int64              `bson:"telegram_uid" json:"telegram_uid"`
 	OneapiKey   string             `bson:"oneapi_key" json:"oneapi_key"`
 }
