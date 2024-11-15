@@ -21,6 +21,8 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 	gcmd "github.com/Laisky/go-utils/v4/cmd"
 	"github.com/Laisky/zap"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/spf13/cobra"
 )
 
@@ -50,13 +52,25 @@ func runAPI() error {
 	ctx := context.Background()
 	logger := log.Logger.Named("api")
 
-	// arweave := arweave.NewAkrod(
-	// 	gconfig.Shared.GetStringSlice("settings.db.akord.apikeys"),
-	// )
 	arweave := arweave.NewArdrive(
 		gconfig.S.GetString("settings.arweave.wallet_file"),
 		gconfig.S.GetString("settings.arweave.folder_id"),
 	)
+
+	minioCli, err := minio.New(
+		gconfig.S.GetString("settings.arweave.s3.endpoint"),
+		&minio.Options{
+			Creds: credentials.NewStaticV4(
+				gconfig.S.GetString("settings.arweave.s3.access_key"),
+				gconfig.S.GetString("settings.arweave.s3.secret"),
+				"",
+			),
+			Secure: true,
+		},
+	)
+	if err != nil {
+		return errors.Wrap(err, "new minio client")
+	}
 
 	var args web.ResolverArgs
 
@@ -79,7 +93,7 @@ func runAPI() error {
 		args.TelegramSvc, err = telegramSvc.New(ctx,
 			telegramDao.NewMonitor(monitorDB),
 			telegramDao.NewTelegram(telegramDB),
-			telegramDao.NewUpload(telegramDB, arweave),
+			telegramDao.NewUpload(telegramDB, arweave, minioCli),
 			botToken,
 			gconfig.Shared.GetString("settings.telegram.api"),
 		)

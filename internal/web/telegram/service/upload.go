@@ -10,7 +10,6 @@ import (
 	gutils "github.com/Laisky/go-utils/v4"
 	glog "github.com/Laisky/go-utils/v4/log"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
-	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
 	"github.com/Laisky/zap"
 	tb "gopkg.in/telebot.v3"
 )
@@ -128,8 +127,7 @@ func (s *Telegram) _handleUserUploadedFile(ctx context.Context,
 	}
 
 	fileID, err = s.uploadDap.UploadFile(ctx,
-		msg.Sender.ID, cnt,
-		arweave.WithContentType(contentType),
+		msg.Sender.ID, cnt, contentType,
 	)
 	if err != nil {
 		return fileID, errors.Wrap(err, "upload file")
