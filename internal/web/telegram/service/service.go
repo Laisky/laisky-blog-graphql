@@ -176,6 +176,11 @@ func (s *Telegram) PleaseRetry(sender *tb.User, msg string) {
 }
 
 func (s *Telegram) SendMsgToUser(uid int, msg string) (err error) {
-	_, err = s.bot.Send(&tb.User{ID: int64(uid)}, msg)
+	_, err = s.bot.Send(&tb.User{ID: int64(uid)}, msg,
+		&tb.SendOptions{
+			ParseMode:             tb.ModeMarkdown,
+			DisableWebPagePreview: true,
+		},
+	)
 	return err
 }

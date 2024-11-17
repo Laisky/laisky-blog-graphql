@@ -26,18 +26,20 @@ func (s *Telegram) registerMonitorHandler() {
 			lastT: gutils.Clock.GetUTCNow(),
 		})
 
-		if _, err := s.bot.Send(m.Sender, gutils.Dedent(`
-			Reply number:
-
-				1 - new alert's name  # reply "1 - alert_name"
-				2 - list all joint alerts  # reply "2"
-				3 - join alert  # reply "3 - alert_name:join_key"
-				4 - refresh push_token & join_key  # reply "4 - alert_name"
-				5 - quit alert  # reply "5 - alert_name"
-				6 - kick user  # reply "6 - alert_name:uid"
-
-			For more info, check this doc: https://github.com/Laisky/laisky-blog-graphql/tree/master/internal/web/telegram
-			`)); err != nil {
+		if _, err := s.bot.Send(m.Sender,
+			"Reply number:\n\n"+
+				"1. new alert's name  # reply `1 - <ALERT_NAME>`\n"+
+				"2. list all joint alerts  # reply `2`\n"+
+				"3. join alert  # reply `3 - <ALERT_NAME>:<JOIN_KEY>`\n"+
+				"4. refresh push token & `join_key`  # reply `4 - <ALERT_NAME>`\n"+
+				"5. quit alert  # reply `5 - <ALERT_NAME>`\n"+
+				"6. kick user  # reply `6 - <ALERT_NAME>:<UID>`\n\n"+
+				"For more info, [check this doc](https://github.com/Laisky/laisky-blog-graphql/tree/master/internal/web/telegram).",
+			&tb.SendOptions{
+				ParseMode:             tb.ModeMarkdown,
+				DisableWebPagePreview: true,
+			},
+		); err != nil {
 			return errors.Wrap(err, "send msg")
 		}
 
@@ -134,16 +136,16 @@ func (s *Telegram) kickUser(ctx context.Context, us *userStat, au string) (err e
 	}
 
 	if err = s.monitorDao.RemoveUAR(ctx, kickedUser.UID, alertName); err != nil {
-		return errors.Wrap(err, "remove user_alert_relation")
+		return errors.Wrap(err, "remove user alert relation")
 	}
 	log.Logger.Info("remove user_alert_relation",
 		zap.String("user_name", kickedUser.Name),
 		zap.String("alert_type", alertName),
 		zap.String("user", kickedUser.ID.Hex()))
 
-	msg := "<" + us.user.Username + "> kick user:\n"
-	msg += "alert_type: " + alertName + "\n"
-	msg += "kicked_user: " + kickedUser.Name + " (" + ans[1] + ")\n"
+	msg := "<`" + us.user.Username + "`> kick user:\n" +
+		"alert type: `" + alertName + "`\n" +
+		"kicked user: `" + kickedUser.Name + "` (`" + ans[1] + "`)\n"
 
 	users, err := s.monitorDao.LoadUsersByAlertType(ctx, alertType)
 	if err != nil {
@@ -167,7 +169,7 @@ func (s *Telegram) kickUser(ctx context.Context, us *userStat, au string) (err e
 func (s *Telegram) userQuitAlert(ctx context.Context,
 	us *userStat, alertName string) (err error) {
 	if err = s.monitorDao.RemoveUAR(ctx, int(us.user.ID), alertName); err != nil {
-		return errors.Wrap(err, "remove user_alert_relation by uid and alert_name")
+		return errors.Wrap(err, "remove user alert relation by uid and alert_name")
 	}
 
 	return s.SendMsgToUser(int(us.user.ID), "successed unsubscribe "+alertName)
@@ -183,10 +185,10 @@ func (s *Telegram) refreshAlertTokenAndKey(ctx context.Context, us *userStat, al
 		return errors.Wrap(err, "refresh alert token and key")
 	}
 
-	msg := "<" + us.user.Username + "> refresh token:\n"
-	msg += "alert_type: " + alertType.Name + "\n"
-	msg += "push_token: " + alertType.PushToken + "\n"
-	msg += "join_key: " + alertType.JoinKey + "\n"
+	msg := "<`" + us.user.Username + "`> refresh token:\n"
+	msg += "alert type: `" + alertType.Name + "`\n"
+	msg += "push token: `" + alertType.PushToken + "`\n"
+	msg += "join key: `" + alertType.JoinKey + "`\n"
 
 	users, err := s.monitorDao.LoadUsersByAlertType(ctx, alertType)
 	if err != nil {
@@ -270,9 +272,9 @@ func (s *Telegram) listAllMonitorAlerts(ctx context.Context,
 		msg = ""
 		for _, alert := range alerts {
 			msg += "--------------------------------\n"
-			msg += "alert_type: " + alert.Name + "\n"
-			msg += "push_token: " + alert.PushToken + "\n"
-			msg += "join_key: " + alert.JoinKey + "\n"
+			msg += "alert type: `" + alert.Name + "`\n"
+			msg += "push token: `" + alert.PushToken + "`\n"
+			msg += "join key: `" + alert.JoinKey + "`\n"
 		}
 		msg += "--------------------------------"
 	}
@@ -288,24 +290,21 @@ func (s *Telegram) createNewMonitor(ctx context.Context, us *userStat, alertName
 
 	a, err := s.monitorDao.CreateAlertType(ctx, alertName)
 	if err != nil {
-		return errors.Wrap(err, "create alert_type")
+		return errors.Wrap(err, "create alert type")
 	}
 
 	_, err = s.monitorDao.CreateOrGetUserAlertRelations(ctx, u, a)
 	if err != nil {
-		return errors.Wrap(err, "create user_alert_relation")
+		return errors.Wrap(err, "create user alert relation")
 	}
 
-	if _, err = s.bot.Send(us.user, fmt.Sprintf(`
-create user & alert_type & user_alert_relations successed!
-user: %v
-alert_type: %v
-join_key: %v
-push_token: %v
-	`, u.Name,
-		a.Name,
-		a.JoinKey,
-		a.PushToken)); err != nil {
+	if _, err = s.bot.Send(us.user,
+		"create user & alert type & user alert relations successed!\n"+
+			fmt.Sprintf("user: `%v`\n", u.Name)+
+			fmt.Sprintf("alert type: `%v`\n", a.Name)+
+			fmt.Sprintf("join key: `%v`\n", a.JoinKey)+
+			fmt.Sprintf("push token: `%v`\n", a.PushToken),
+	); err != nil {
 		return errors.Wrap(err, "send msg")
 	}
 

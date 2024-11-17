@@ -21,11 +21,14 @@ func (s *Telegram) registerNotesSearchHandler() {
 			lastT: gutils.Clock.GetUTCNow(),
 		})
 
-		if _, err := s.bot.Send(m.Sender, gutils.Dedent(`
-			Reply keyword to search notes, do not contain any blank space, regex is supported.
-
-			For more info, check this doc: https://t.me/laiskynotes/298
-			`)); err != nil {
+		if _, err := s.bot.Send(m.Sender,
+			"Reply keyword to search notes, do not contain any blank space, regex is supported.\n"+
+				"For more info, check [this doc](https://t.me/laiskynotes/298).",
+			&tb.SendOptions{
+				ParseMode:             tb.ModeMarkdown,
+				DisableWebPagePreview: true,
+			},
+		); err != nil {
 			return errors.Wrap(err, "send msg")
 		}
 
@@ -80,16 +83,17 @@ func (s *Telegram) notesSearchByKeyword(ctx context.Context, us *userStat, msg s
 			summary = string([]rune(summary)[:noteSummaryLen]) + "..."
 		}
 
-		resp += fmt.Sprintf(gutils.Dedent(`
-		-------------------------------------
-		url: https://t.me/laiskynotes/%d
-		content: %s`), note.PostID, summary)
-		resp += "\n"
+		resp = "-------------------------------------\n" +
+			fmt.Sprintf("link: https://t.me/laiskynotes/%d\n", note.PostID) +
+			fmt.Sprintf("note: %s\n", summary)
 	}
 
 	resp += "-------------------------------------"
 
-	if _, err = s.bot.Send(us.user, resp); err != nil {
+	if _, err = s.bot.Send(us.user, resp, &tb.SendOptions{
+		ParseMode:             tb.ModeMarkdown,
+		DisableWebPagePreview: true,
+	}); err != nil {
 		return errors.Wrap(err, "send msg")
 	}
 

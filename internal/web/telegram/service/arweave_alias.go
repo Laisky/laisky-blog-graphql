@@ -47,19 +47,19 @@ func (s *Telegram) registerArweaveAliasHandler() {
 			lastT: gutils.Clock.GetUTCNow(),
 		})
 
-		if _, err := s.bot.Send(m.Sender, gutils.Dedent(`
-			Reply number:
-
-				1 - create alias  # reply "1 - <ALIAS_NAME> arweave_file_id"
-				2 - update alias  # reply "2 - <ALIAS_NAME> arweave_file_id"
-				3 - get alias     # reply "3 - <ALIAS_NAME>"
-
-			<ALIAS_NAME> must match ^[a-zA-Z0-9_\-\.]{3,64}$
-
-			For more info, check this doc: https://ario.laisky.com/alias/doc
-
-			Check all DNS records at this site(up to 1000 records, refresh every 10 minutes): https://ario.laisky.com/dns
-			`)); err != nil {
+		if _, err := s.bot.Send(m.Sender,
+			"Reply number:\n\n"+
+				"1. create alias  # reply `1 - <ALIAS_NAME> <ARWEAVE_FILE_ID>`\n"+
+				"2. update alias  # reply `2 - <ALIAS_NAME> <ARWEAVE_FILE_ID>`\n"+
+				"3. get alias     # reply `3 - <ALIAS_NAME>`\n\n"+
+				"`<ALIAS_NAME>` must match `^[a-zA-Z0-9_\\-\\.]{3,64}$`, "+
+				"For more info, [check this doc](https://ario.laisky.com/alias/doc). "+
+				"Check all DNS records [at this site](https://ario.laisky.com/dns)(up to 1000 records, refresh every 10 minutes).",
+			&tb.SendOptions{
+				ParseMode:             tb.ModeMarkdown,
+				DisableWebPagePreview: true,
+			},
+		); err != nil {
 			return errors.Wrap(err, "send msg")
 		}
 
@@ -173,7 +173,13 @@ func (s *Telegram) arweaveCreateAlias(ctx context.Context, us *userStat, msg str
 		return errors.Errorf("request failed: [%d]%s", resp.StatusCode, string(cnt))
 	}
 
-	if _, err = s.bot.Send(us.user, "https://ario.laisky.com/alias/"+alias); err != nil {
+	if _, err = s.bot.Send(us.user,
+		fmt.Sprintf("https://ario.laisky.com/alias/%s", alias),
+		&tb.SendOptions{
+			ParseMode:             tb.ModeMarkdown,
+			DisableWebPagePreview: true,
+		},
+	); err != nil {
 		return errors.Wrap(err, "send msg")
 	}
 
@@ -239,7 +245,13 @@ func (s *Telegram) arweaveUpdateAlias(ctx context.Context, us *userStat, msg str
 		return errors.Errorf("request failed: [%d]%s", resp.StatusCode, string(cnt))
 	}
 
-	if _, err = s.bot.Send(us.user, "https://ario.laisky.com/alias/"+alias); err != nil {
+	if _, err = s.bot.Send(us.user,
+		fmt.Sprintf("https://ario.laisky.com/alias/%s", alias),
+		&tb.SendOptions{
+			ParseMode:             tb.ModeMarkdown,
+			DisableWebPagePreview: true,
+		},
+	); err != nil {
 		return errors.Wrap(err, "send msg")
 	}
 
