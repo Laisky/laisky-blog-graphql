@@ -30,7 +30,7 @@ const (
 	colUploadFiles = "upload_files"
 )
 
-var oneapiKeyRegexp = regexp.MustCompile(`laisky-[a-zA-Z0-9]{48}`)
+var oneapiKeyRegexp = regexp.MustCompile(`^(?:laisky|sk)-[a-zA-Z0-9]{48}$`)
 
 // Upload db
 type Upload struct {
