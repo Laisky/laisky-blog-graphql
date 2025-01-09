@@ -45,7 +45,7 @@ func (s *Telegram) uploadCmdHandler(ctx context.Context, msg *tb.Message) {
 		reply := "Save files to the permanent storage [ARweave network](https://arweave.org/) by sending files in Telegram.\n" +
 			"This feature requires payment, so you need to bind to a supported payment account.\n\n" +
 			"Please choose the way you want to bind your account. The fee will be deducted from your account each time you upload a file:\n\n" +
-			"1. oneapi apikey: Please reply `1 - <YOUR_ONEAPI_APIKEY>`\n"
+			"1. [oneapi apikey](https://wiki.laisky.com/projects/gpt/pay/cn/#page_gpt_pay_cn): Please reply `1 - <YOUR_ONEAPI_APIKEY>`\n"
 		_, err = s.bot.Send(msg.Sender, reply, &tb.SendOptions{
 			ParseMode:             tb.ModeMarkdown,
 			DisableWebPagePreview: true,
