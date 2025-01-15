@@ -76,19 +76,20 @@ func (s *Telegram) notesSearchByKeyword(ctx context.Context, us *userStat, msg s
 		return nil
 	}
 
-	var resp string
+	// Initialize response with first separator
+	resp := "-------------------------------------\n"
+
+	// Append each note's information
 	for _, note := range notes {
 		summary := strings.ReplaceAll(note.Content, "\n", " ")
 		if len([]rune(summary)) > noteSummaryLen {
 			summary = string([]rune(summary)[:noteSummaryLen]) + "..."
 		}
 
-		resp = "-------------------------------------\n" +
-			fmt.Sprintf("link: https://t.me/laiskynotes/%d\n", note.PostID) +
-			fmt.Sprintf("note: %s\n", summary)
+		resp += fmt.Sprintf("link: https://t.me/laiskynotes/%d\n", note.PostID) +
+			fmt.Sprintf("note: %s\n", summary) +
+			"-------------------------------------\n"
 	}
-
-	resp += "-------------------------------------"
 
 	if _, err = s.bot.Send(us.user, resp, &tb.SendOptions{
 		ParseMode:             tb.ModeMarkdown,
