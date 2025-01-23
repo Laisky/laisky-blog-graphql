@@ -64,7 +64,7 @@ type Query {
   TelegramMonitorUsers(
     page: Pagination = { page: 0, size: 10 }
     name: String! = ""
-  ): [TelegramUser]!
+  ): [TelegramMonitorUser]!
   TelegramAlertTypes(
     page: Pagination = { page: 0, size: 10 }
     name: String! = ""

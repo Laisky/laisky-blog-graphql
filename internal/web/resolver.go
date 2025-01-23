@@ -95,8 +95,8 @@ func (r *Resolver) ArweaveItem() ArweaveItemResolver {
 func (r *Resolver) TelegramAlertType() TelegramAlertTypeResolver {
 	return r.telegramCtl.TelegramAlertTypeResolver
 }
-func (r *Resolver) TelegramUser() TelegramUserResolver {
-	return r.telegramCtl.TelegramUserResolver
+func (r *Resolver) TelegramMonitorUser() TelegramMonitorUserResolver {
+	return r.telegramCtl.TelegramMonitorUserResolver
 }
 
 // general

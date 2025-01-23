@@ -46,8 +46,8 @@ models:
   ArweaveItem:
     model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.ArweaveHistoryItem
   # telegram
-  TelegramUser:
-    model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.Users
+  TelegramMonitorUser:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.MonitorUsers
   TelegramAlertType:
     model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.AlertTypes
   # GCP General

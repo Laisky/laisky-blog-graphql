@@ -52,15 +52,15 @@ func NewMutationResolver(svc service.Interface) MutationResolver {
 
 // Telegram telegram resolver
 type Telegram struct {
-	TelegramAlertTypeResolver *AlertTypeResolver
-	TelegramUserResolver      *UserResolver
+	TelegramAlertTypeResolver   *AlertTypeResolver
+	TelegramMonitorUserResolver *UserResolver
 }
 
 func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 	setupTelegramThrottle(ctx)
 	return &Telegram{
-		TelegramAlertTypeResolver: &AlertTypeResolver{svc},
-		TelegramUserResolver:      &UserResolver{svc},
+		TelegramAlertTypeResolver:   &AlertTypeResolver{svc},
+		TelegramMonitorUserResolver: &UserResolver{svc},
 	}
 }
 

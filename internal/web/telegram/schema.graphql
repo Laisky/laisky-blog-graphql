@@ -1,4 +1,4 @@
-type TelegramUser {
+type TelegramMonitorUser {
     id: String!
     created_at: Date!
     modified_at: Date!
@@ -12,6 +12,5 @@ type TelegramAlertType {
     created_at: Date!
     modified_at: Date!
     name: String!
-    sub_users: [TelegramUser]!
+    sub_users: [TelegramMonitorUser]!
 }
-
