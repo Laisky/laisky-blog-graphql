@@ -89,7 +89,7 @@ func (e BlogPostType) String() string {
 	return string(e)
 }
 
-func (e *BlogPostType) UnmarshalGQL(v interface{}) error {
+func (e *BlogPostType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
 		return fmt.Errorf("enums must be strings")
@@ -130,7 +130,7 @@ func (e Language) String() string {
 	return string(e)
 }
 
-func (e *Language) UnmarshalGQL(v interface{}) error {
+func (e *Language) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
 		return fmt.Errorf("enums must be strings")
@@ -171,7 +171,7 @@ func (e SortOrder) String() string {
 	return string(e)
 }
 
-func (e *SortOrder) UnmarshalGQL(v interface{}) error {
+func (e *SortOrder) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
 		return fmt.Errorf("enums must be strings")

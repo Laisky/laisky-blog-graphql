@@ -14,7 +14,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/errors/v2"
-	ginMw "github.com/Laisky/gin-middlewares/v5"
+	ginMw "github.com/Laisky/gin-middlewares/v6"
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 )

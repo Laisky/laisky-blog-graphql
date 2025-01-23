@@ -15,14 +15,15 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v5"
+	gmw "github.com/Laisky/gin-middlewares/v6"
 	gconfig "github.com/Laisky/go-config/v2"
+	"github.com/Laisky/zap"
+	"github.com/minio/minio-go/v7"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
-	"github.com/Laisky/zap"
-	"github.com/minio/minio-go/v7"
 )
 
 const (

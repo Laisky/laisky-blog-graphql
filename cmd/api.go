@@ -19,7 +19,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	gconfig "github.com/Laisky/go-config/v2"
-	gcmd "github.com/Laisky/go-utils/v4/cmd"
+	gcmd "github.com/Laisky/go-utils/v5/cmd"
 	"github.com/Laisky/zap"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"

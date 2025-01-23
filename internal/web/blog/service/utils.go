@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	gutils "github.com/Laisky/go-utils/v4"
+	gutils "github.com/Laisky/go-utils/v5"
 	"github.com/Laisky/zap"
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"

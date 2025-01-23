@@ -11,7 +11,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/Laisky/errors/v2"
-	"github.com/Laisky/go-utils/v4"
+	"github.com/Laisky/go-utils/v5"
 	"github.com/Laisky/zap"
 )
 

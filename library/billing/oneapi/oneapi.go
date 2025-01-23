@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	gmw "github.com/Laisky/gin-middlewares/v5"
-	gutils "github.com/Laisky/go-utils/v4"
+	gmw "github.com/Laisky/gin-middlewares/v6"
+	gutils "github.com/Laisky/go-utils/v5"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
 )

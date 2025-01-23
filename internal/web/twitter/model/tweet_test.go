@@ -3,7 +3,7 @@ package model
 import (
 	"testing"
 
-	"github.com/Laisky/go-utils/v4/json"
+	"github.com/Laisky/go-utils/v5/json"
 	"github.com/stretchr/testify/require"
 )
 

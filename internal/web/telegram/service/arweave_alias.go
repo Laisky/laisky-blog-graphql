@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v5"
-	gutils "github.com/Laisky/go-utils/v4"
+	gmw "github.com/Laisky/gin-middlewares/v6"
+	gutils "github.com/Laisky/go-utils/v5"
 	"github.com/Laisky/zap"
 	"github.com/golang-jwt/jwt/v4"
 	tb "gopkg.in/telebot.v3"

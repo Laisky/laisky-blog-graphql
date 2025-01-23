@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 
 	"github.com/Laisky/errors/v2"
-	glog "github.com/Laisky/go-utils/v4/log"
+	glog "github.com/Laisky/go-utils/v5/log"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
 
 	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"

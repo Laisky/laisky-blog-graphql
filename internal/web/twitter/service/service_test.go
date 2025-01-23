@@ -9,7 +9,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/config"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 
-	glog "github.com/Laisky/go-utils/v4/log"
+	glog "github.com/Laisky/go-utils/v5/log"
 	"github.com/stretchr/testify/require"
 )
 

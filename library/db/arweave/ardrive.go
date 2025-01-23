@@ -9,9 +9,10 @@ import (
 	"os/exec"
 	"regexp"
 
-	gutils "github.com/Laisky/go-utils/v4"
-	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
+	gutils "github.com/Laisky/go-utils/v5"
 	"github.com/pkg/errors"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
 )
 
 var jsonReg = regexp.MustCompile(`(?s:(\{.*\}))`)

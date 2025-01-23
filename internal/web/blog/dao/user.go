@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/Laisky/errors/v2"
-	gcrypto "github.com/Laisky/go-utils/v4/crypto"
+	gcrypto "github.com/Laisky/go-utils/v5/crypto"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 

@@ -5,13 +5,14 @@ import (
 	"encoding/base64"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v5"
+	gmw "github.com/Laisky/gin-middlewares/v6"
 	gconfig "github.com/Laisky/go-config/v2"
+	"github.com/Laisky/zap"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
-	"github.com/Laisky/zap"
 )
 
 // MutationResolver mutation resolver

@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/Laisky/go-utils/v4"
-	gutils "github.com/Laisky/go-utils/v4"
+	"github.com/Laisky/go-utils/v5"
+	gutils "github.com/Laisky/go-utils/v5"
 	jwtLib "github.com/golang-jwt/jwt/v4"
 )
 

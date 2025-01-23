@@ -4,7 +4,7 @@ package auth
 import (
 	"net/http"
 
-	ginMw "github.com/Laisky/gin-middlewares/v5"
+	ginMw "github.com/Laisky/gin-middlewares/v6"
 	"github.com/gin-gonic/gin"
 
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
