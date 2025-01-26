@@ -9,16 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	mongoLib "go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v6"
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 	"github.com/minio/minio-go/v7"
+	"go.mongodb.org/mongo-driver/bson"
+	mongoLib "go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
@@ -121,6 +119,7 @@ func (d *Upload) SaveOneapiUser(ctx context.Context, telegramUID int64, oneapiKe
 	return nil
 }
 
+// OneapiBilling check user's billing
 func (d *Upload) OneapiBilling(ctx context.Context, apikey string, size int64) error {
 	price := max(size/1024/1024*int64(oneapi.PriceUploadFileEachMB), int64(oneapi.PriceUploadFileMinimal))
 
@@ -132,7 +131,8 @@ func (d *Upload) OneapiBilling(ctx context.Context, apikey string, size int64) e
 	return nil
 }
 
-func (d *Upload) UploadFile(ctx context.Context,
+// UploadFileWithTelegramUID upload file to arweave with telegram uid
+func (d *Upload) UploadFileWithTelegramUID(ctx context.Context,
 	uid int64, cnt []byte, contentType string) (fileID string, err error) {
 	logger := gmw.GetLogger(ctx)
 
@@ -141,22 +141,14 @@ func (d *Upload) UploadFile(ctx context.Context,
 		return fileID, errors.WithStack(err)
 	}
 
-	// check billing
-	if err = d.OneapiBilling(ctx, user.OneapiKey, int64(len(cnt))); err != nil {
-		return fileID, errors.Wrap(err, "check billing")
-	}
-
-	fileID, err = d.ar.Upload(ctx, cnt,
-		arweave.WithContentType(contentType),
-	)
-	if err != nil {
-		return fileID, errors.Wrap(err, "upload to arweave")
-	}
-
-	var pool errgroup.Group
+	// upload
+	fileID, err = d.UploadFileWithApikey(ctx, user.OneapiKey, cnt, contentType)
 
 	// save file info
-	pool.Go(func() (err error) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+
 		_, err = d.db.GetCol(colUploadFiles).
 			InsertOne(ctx, bson.M{
 				"created_at":   time.Now(),
@@ -165,14 +157,38 @@ func (d *Upload) UploadFile(ctx context.Context,
 				"telegram_uid": uid,
 			})
 		if err != nil {
-			logger.Error("save file info", zap.Error(err))
+			logger.Error("save uploaded arweave file info", zap.Error(err))
 		}
+	}()
 
-		return nil
-	})
+	return fileID, nil
+}
+
+// UploadFileWithApikey upload file to arweave with one-api's apikey
+func (d *Upload) UploadFileWithApikey(ctx context.Context, apikey string, cnt []byte, contentType string) (fileID string, err error) {
+	// check billing
+	if err = d.OneapiBilling(ctx, apikey, int64(len(cnt))); err != nil {
+		return fileID, errors.Wrap(err, "check billing")
+	}
+
+	return d.UploadFile(ctx, cnt, contentType)
+}
+
+// UploadFile upload file to arweave without any authentification
+func (d *Upload) UploadFile(ctx context.Context, cnt []byte, contentType string) (fileID string, err error) {
+	logger := gmw.GetLogger(ctx)
+	fileID, err = d.ar.Upload(ctx, cnt,
+		arweave.WithContentType(contentType),
+	)
+	if err != nil {
+		return fileID, errors.Wrap(err, "upload to arweave")
+	}
 
 	// also upload to minio as cache
-	pool.Go(func() (err error) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+
 		objkey := fmt.Sprintf(
 			"%s/%s",
 			strings.TrimSuffix(gconfig.S.GetString("settings.arweave.s3.prefix"), "/"),
@@ -192,12 +208,7 @@ func (d *Upload) UploadFile(ctx context.Context,
 		}
 
 		logger.Info("upload to minio", zap.String("objkey", objkey))
-		return nil // ignore error
-	})
-
-	if err = pool.Wait(); err != nil {
-		return fileID, errors.Wrap(err, "upload file")
-	}
+	}()
 
 	return fileID, nil
 }

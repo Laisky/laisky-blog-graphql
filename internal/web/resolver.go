@@ -14,26 +14,20 @@ import (
 
 // Resolver resolver
 type Resolver struct {
-	telegramCtl *telegram.Telegram
-	telegramSvc telegramSvc.Interface
-	blogCtl     *blog.Blog
-	blogSvc     *blogSvc.Blog
+	args ResolverArgs
 }
 
 type ResolverArgs struct {
 	TelegramCtl *telegram.Telegram
-	TelegramSvc telegramSvc.Interface
+	TelegramSvc *telegramSvc.Telegram
 	BlogCtl     *blog.Blog
 	BlogSvc     *blogSvc.Blog
 }
 
 // NewResolver new resolver
-func NewResolver(arg ResolverArgs) *Resolver {
+func NewResolver(args ResolverArgs) *Resolver {
 	return &Resolver{
-		telegramCtl: arg.TelegramCtl,
-		telegramSvc: arg.TelegramSvc,
-		blogCtl:     arg.BlogCtl,
-		blogSvc:     arg.BlogSvc,
+		args: args,
 	}
 }
 
@@ -41,10 +35,10 @@ func NewResolver(arg ResolverArgs) *Resolver {
 func (r *Resolver) Query() QueryResolver {
 	return &queryResolver{
 		telegramQuery: telegramQuery{
-			QueryResolver: telegram.NewQueryResolver(r.telegramSvc),
+			QueryResolver: telegram.NewQueryResolver(r.args.TelegramSvc),
 		},
 		blogQuery: blogQuery{
-			QueryResolver: blog.NewQueryResolver(r.blogSvc),
+			QueryResolver: blog.NewQueryResolver(r.args.BlogSvc),
 		},
 	}
 }
@@ -53,12 +47,15 @@ func (r *Resolver) Query() QueryResolver {
 func (r *Resolver) Mutation() MutationResolver {
 	return &mutationResolver{
 		blogMutation: blogMutation{
-			MutationResolver: blog.NewMutationResolver(r.blogSvc),
+			MutationResolver: blog.NewMutationResolver(r.args.BlogSvc),
 		},
 		telegramMutation: telegramMutation{
-			MutationResolver: telegram.NewMutationResolver(r.telegramSvc),
+			MutationResolver: telegram.NewMutationResolver(r.args.TelegramSvc),
 		},
 		generalMutation: generalMutation{},
+		arweaveMutation: arweaveMutation{
+			MutationResolver: arweave.NewMutationResolver(r.args.TelegramSvc.UploadDao),
+		},
 	}
 }
 
@@ -78,25 +75,25 @@ func (r *Resolver) EmbededTweet() EmbededTweetResolver {
 // blog
 
 func (r *Resolver) BlogPost() BlogPostResolver {
-	return r.blogCtl.PostResolver
+	return r.args.BlogCtl.PostResolver
 }
 func (r *Resolver) BlogUser() BlogUserResolver {
-	return r.blogCtl.UserResolver
+	return r.args.BlogCtl.UserResolver
 }
 func (r *Resolver) BlogPostSeries() BlogPostSeriesResolver {
-	return r.blogCtl.PostSeriesResolver
+	return r.args.BlogCtl.PostSeriesResolver
 }
 func (r *Resolver) ArweaveItem() ArweaveItemResolver {
-	return r.blogCtl.ArweaveItemResolver
+	return r.args.BlogCtl.ArweaveItemResolver
 }
 
 // telegram
 
 func (r *Resolver) TelegramAlertType() TelegramAlertTypeResolver {
-	return r.telegramCtl.TelegramAlertTypeResolver
+	return r.args.TelegramCtl.TelegramAlertTypeResolver
 }
 func (r *Resolver) TelegramMonitorUser() TelegramMonitorUserResolver {
-	return r.telegramCtl.TelegramMonitorUserResolver
+	return r.args.TelegramCtl.TelegramMonitorUserResolver
 }
 
 // general
@@ -141,20 +138,24 @@ func (r *queryResolver) Hello(ctx context.Context) (string, error) {
 // ============================
 
 type blogMutation struct {
-	blog.MutationResolver
+	*blog.MutationResolver
 }
 
 type telegramMutation struct {
-	telegram.MutationResolver
+	*telegram.MutationResolver
 }
 
 type generalMutation struct {
-	general.MutationResolver
+	*general.MutationResolver
+}
+
+type arweaveMutation struct {
+	*arweave.MutationResolver
 }
 
 type mutationResolver struct {
 	blogMutation
 	telegramMutation
 	generalMutation
-	arweave.MutationResolver
+	arweaveMutation
 }

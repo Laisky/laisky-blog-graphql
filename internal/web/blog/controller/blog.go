@@ -63,8 +63,8 @@ func NewQueryResolver(svc *service.Blog) QueryResolver {
 // NewMutationResolver new mutation resolver
 func NewMutationResolver(
 	svc *service.Blog,
-) MutationResolver {
-	return MutationResolver{
+) *MutationResolver {
+	return &MutationResolver{
 		svc: svc,
 	}
 }

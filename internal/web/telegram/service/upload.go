@@ -31,7 +31,7 @@ func (s *Telegram) uploadCmdHandler(ctx context.Context, msg *tb.Message) {
 	logger := gmw.GetLogger(ctx)
 
 	// check whether user has permission to upload file
-	if hasPerm, err := s.uploadDao.IsUserHasPermToUpload(context.Background(), msg.Sender.ID); err != nil {
+	if hasPerm, err := s.UploadDao.IsUserHasPermToUpload(context.Background(), msg.Sender.ID); err != nil {
 		logger.Error("check user has perm to upload", zap.Error(err))
 		s.bot.Send(msg.Sender, fmt.Sprintf("failed to check user permission: %s", err.Error()))
 		return
@@ -100,7 +100,7 @@ func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.
 	var err error
 	switch ansers[0] {
 	case "1":
-		err = s.uploadDao.SaveOneapiUser(ctx, us.user.ID, ansers[1])
+		err = s.UploadDao.SaveOneapiUser(ctx, us.user.ID, ansers[1])
 	default:
 		err = errors.Errorf(errMsg)
 	}
@@ -130,7 +130,7 @@ func (s *Telegram) uploadHandler(ctx context.Context, us *userStat, msg *tb.Mess
 
 	// reset upload auth
 	if strings.ToLower(strings.TrimSpace(msg.Text)) == "reset" {
-		s.uploadDao.ResetUser(ctx, us.user.ID)
+		s.UploadDao.ResetUser(ctx, us.user.ID)
 		s.uploadCmdHandler(ctx, msg)
 		return
 	}
@@ -205,7 +205,7 @@ func (s *Telegram) _handleUserUploadedFile(ctx context.Context,
 		return fileID, errors.Wrap(err, "read file content")
 	}
 
-	fileID, err = s.uploadDao.UploadFile(ctx,
+	fileID, err = s.UploadDao.UploadFileWithTelegramUID(ctx,
 		msg.Sender.ID, cnt, contentType,
 	)
 	if err != nil {

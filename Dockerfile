@@ -1,4 +1,4 @@
-FROM golang:1.23.2-bullseye AS gobuild
+FROM golang:1.23.5-bullseye AS gobuild
 
 # install dependencies
 RUN apt-get update \

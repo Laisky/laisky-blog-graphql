@@ -3,52 +3,60 @@ package controller
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v6"
-	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
+	telegramDao "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
-	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 )
 
 // MutationResolver mutation resolver
 type MutationResolver struct {
+	uploadDao *telegramDao.Upload
 }
 
-func NewMutationResolver() *MutationResolver {
-	return &MutationResolver{}
+func NewMutationResolver(uploadDao *telegramDao.Upload) *MutationResolver {
+	return &MutationResolver{
+		uploadDao: uploadDao,
+	}
 }
 
 func (r *MutationResolver) ArweaveUpload(ctx context.Context, fileB64 string, contentType *string) (*dto.UploadResponse, error) {
 	logger := gmw.GetLogger(ctx)
 
+	authMethod := "jwt"
+	var apikey string
 	uc := &jwt.UserClaims{}
 	if err := auth.Instance.GetUserClaims(ctx, uc); err != nil {
-		return nil, errors.Wrap(err, "get user from token")
-	}
+		gctx := gmw.GetGinCtxFromStdCtx(ctx)
+		apikey = strings.TrimSpace(strings.TrimPrefix(gctx.GetHeader("Authorization"), "Bearer "))
+		if apikey == "" {
+			return nil, errors.Wrap(err, "cannot get user claims")
+		}
 
-	storage := arweave.NewArdrive(
-		gconfig.S.GetString("settings.arweave.wallet_file"),
-		gconfig.S.GetString("settings.arweave.folder_id"),
-	)
+		authMethod = "apikey"
+	}
 
 	cnt, err := base64.StdEncoding.DecodeString(fileB64)
 	if err != nil {
-		return nil, errors.Wrap(err, "decode base64")
+		return nil, errors.Wrap(err, "decode file b64")
 	}
 
-	var opt []arweave.UploadOption
-	if contentType != nil {
-		opt = append(opt, arweave.WithContentType(*contentType))
+	var fileID string
+	switch authMethod {
+	case "jwt":
+		fileID, err = r.uploadDao.UploadFile(ctx, cnt, *contentType)
+	case "apikey":
+		fileID, err = r.uploadDao.UploadFileWithApikey(ctx, apikey, cnt, *contentType)
 	}
 
-	fileID, err := storage.Upload(ctx, cnt, opt...)
 	if err != nil {
-		return nil, errors.Wrap(err, "upload file to arweave")
+		return nil, errors.Wrap(err, "upload file")
 	}
 
 	logger.Info("upload file to arweave",

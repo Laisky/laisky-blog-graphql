@@ -44,8 +44,8 @@ func NewQueryResolver(svc service.Interface) QueryResolver {
 }
 
 // NewMutationResolver new mutation resolver
-func NewMutationResolver(svc service.Interface) MutationResolver {
-	return MutationResolver{
+func NewMutationResolver(svc service.Interface) *MutationResolver {
+	return &MutationResolver{
 		svc: svc,
 	}
 }

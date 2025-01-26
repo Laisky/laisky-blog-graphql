@@ -41,7 +41,7 @@ type Telegram struct {
 
 	monitorDao  *dao.Monitor
 	telegramDao *dao.Telegram
-	uploadDao   *dao.Upload
+	UploadDao   *dao.Upload
 }
 
 type userStat struct {
@@ -71,7 +71,7 @@ func New(ctx context.Context,
 	tel := &Telegram{
 		monitorDao:  monitorDao,
 		telegramDao: telegramDao,
-		uploadDao:   uploadDao,
+		UploadDao:   uploadDao,
 		stop:        make(chan struct{}),
 		bot:         bot,
 		userStats:   new(sync.Map),
