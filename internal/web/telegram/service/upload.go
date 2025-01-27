@@ -146,7 +146,9 @@ func (s *Telegram) uploadHandler(ctx context.Context, us *userStat, msg *tb.Mess
 		s.bot.Send(us.user, fmt.Sprintf("failed to upload file: %s", err.Error()))
 	}
 
-	sendMsg := fmt.Sprintf("successfully uploaded file, You may need to wait for a minute for it to take effect.\n[https://ario.laisky.com/%s](https://ario.laisky.com/%s)", fileID, fileID)
+	sendMsg := fmt.Sprintf("File uploaded successfully. "+
+		"Please wait a few minutes for the file to take effect on the blockchain network."+
+		"\n[https://ario.laisky.com/%s](https://ario.laisky.com/%s)", fileID, fileID)
 
 	_, err = s.bot.Send(us.user, sendMsg, &tb.SendOptions{
 		ParseMode: tb.ModeMarkdown,
