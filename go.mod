@@ -10,6 +10,7 @@ require (
 	github.com/Laisky/errors/v2 v2.0.1
 	github.com/Laisky/gin-middlewares/v6 v6.0.0
 	github.com/Laisky/go-config/v2 v2.0.0
+	github.com/Laisky/go-redis/v2 v2.0.0-20250202145116-ec4687947d54
 	github.com/Laisky/go-utils/v5 v5.0.0
 	github.com/Laisky/zap v1.27.1-0.20241010063010-3154c45f2a1f
 	github.com/gin-gonic/gin v1.10.0
@@ -18,6 +19,7 @@ require (
 	github.com/jinzhu/copier v0.4.0
 	github.com/minio/minio-go/v7 v7.0.84
 	github.com/pkg/errors v0.9.1
+	github.com/redis/go-redis/v9 v9.7.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
 	github.com/vektah/gqlparser/v2 v2.5.22
@@ -54,6 +56,7 @@ require (
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
