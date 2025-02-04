@@ -56,7 +56,7 @@ func (s *Telegram) notesSearchHandler(ctx context.Context, us *userStat, msg *tb
 	}
 }
 
-const noteSummaryLen = 140
+const noteSummaryLen = 200
 
 func (s *Telegram) notesSearchByKeyword(ctx context.Context, us *userStat, msg string) error {
 	keyword := strings.TrimSpace(msg)
@@ -77,7 +77,7 @@ func (s *Telegram) notesSearchByKeyword(ctx context.Context, us *userStat, msg s
 	}
 
 	// Initialize response with first separator
-	resp := "-------------------------------------\n"
+	resp := "=====================================\n"
 
 	// Append each note's information
 	for _, note := range notes {
@@ -88,11 +88,11 @@ func (s *Telegram) notesSearchByKeyword(ctx context.Context, us *userStat, msg s
 
 		resp += fmt.Sprintf("link: https://t.me/laiskynotes/%d\n", note.PostID) +
 			fmt.Sprintf("note: %s\n", summary) +
-			"-------------------------------------\n"
+			"=====================================\n"
 	}
 
 	if _, err = s.bot.Send(us.user, resp, &tb.SendOptions{
-		ParseMode:             tb.ModeMarkdown,
+		// ParseMode:             tb.ModeMarkdown,
 		DisableWebPagePreview: true,
 	}); err != nil {
 		return errors.Wrap(err, "send msg")
