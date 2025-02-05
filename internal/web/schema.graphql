@@ -75,6 +75,9 @@ type Query {
   LockPermissions(username: String! = ""): [GeneralUser]!
 }
 
+type CreateLLMStormTaskResponse {
+  task_id: String!
+}
 
 
 type Mutation {

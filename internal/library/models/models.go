@@ -15,6 +15,10 @@ type BlogLoginResponse struct {
 	Token string      `json:"token"`
 }
 
+type CreateLLMStormTaskResponse struct {
+	TaskID string `json:"task_id"`
+}
+
 type GeneralUser struct {
 	Name         string   `json:"name"`
 	LockPrefixes []string `json:"lock_prefixes"`
