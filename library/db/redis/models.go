@@ -3,6 +3,7 @@ package redis
 import (
 	"time"
 
+	gutils "github.com/Laisky/go-utils/v5"
 	"github.com/Laisky/go-utils/v5/json"
 	"github.com/pkg/errors"
 )
@@ -53,11 +54,22 @@ func (s *LLMStormTask) ToString() (string, error) {
 	return data, nil
 }
 
-// NewStormTaskFromString creates a StormTask instance from its JSON string representation.
-func NewStormTaskFromString(taskStr string) (*LLMStormTask, error) {
+// NewLLMStormTaskFromString creates a StormTask instance from its JSON string representation.
+func NewLLMStormTaskFromString(taskStr string) (*LLMStormTask, error) {
 	var task LLMStormTask
 	if err := json.Unmarshal([]byte(taskStr), &task); err != nil {
 		return nil, errors.Wrap(err, "unmarshal")
 	}
 	return &task, nil
+}
+
+// NewLLMStormTask creates a new StormTask instance.
+func NewLLMStormTask(prompt, apikey string) *LLMStormTask {
+	return &LLMStormTask{
+		TaskID:    gutils.UUID7(),
+		Prompt:    prompt,
+		APIKey:    apikey,
+		CreatedAt: time.Now(),
+		Status:    TaskStatusPending,
+	}
 }
