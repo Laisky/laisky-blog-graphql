@@ -28,8 +28,7 @@ func (db *DB) AddLLMStormTask(ctx context.Context,
 // GetLLMStormTaskResult gets the result of a LLMStormTask by taskID.
 func (db *DB) GetLLMStormTaskResult(ctx context.Context, taskID string) (task *LLMStormTask, err error) {
 	key := KeyPrefixTaskLLMStormResult + taskID
-	// LPopKeysBlocking returns (usedKey, poppedValue, error)
-	_, val, err := db.db.LPopKeysBlocking(ctx, key)
+	val, err := db.db.GetItem(ctx, key)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get task result by key `%s`", key)
 	}
