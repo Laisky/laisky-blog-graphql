@@ -11,11 +11,11 @@ type DB struct {
 }
 
 // NewDB creates a new DB instance
-func NewDB(opt *redis.Options) (*DB, error) {
+func NewDB(opt *redis.Options) *DB {
 	rdb := redis.NewClient(opt)
 	rutils := gredis.NewRedisUtils(rdb)
 
 	return &DB{
 		db: rutils,
-	}, nil
+	}
 }
