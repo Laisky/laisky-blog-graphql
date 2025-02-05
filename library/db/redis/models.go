@@ -10,6 +10,7 @@ import (
 
 const (
 	TaskStatusPending = "pending"
+	TaskStatusRunning = "running"
 	TaskStatusSuccess = "success"
 	TaskStatusFailed  = "failed"
 )
