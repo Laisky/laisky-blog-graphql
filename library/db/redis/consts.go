@@ -4,6 +4,10 @@ const (
 	keyPrefix     = "laisky/"
 	keyPrefixTask = keyPrefix + "tasks/"
 
-	// KeyPrefixTaskLLMStorm is the key prefix for LLM storm tasks
-	KeyPrefixTaskLLMStorm = keyPrefixTask + "llm_storm/"
+	// KeyTaskLLMStormPending is the key for LLM storm pending tasks
+	KeyTaskLLMStormPending = keyPrefixTask + "llm_storm/pending"
+	// KeyPrefixTaskLLMStormResult is the key prefix for LLM storm results
+	//
+	//  `KeyPrefixTaskLLMStormResult + <task_id>`
+	KeyPrefixTaskLLMStormResult = keyPrefixTask + "llm_storm/result/"
 )
