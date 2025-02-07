@@ -10,9 +10,9 @@ graphql backend for laisky-blog depends on gqlgen & gin.
 [![codecov](https://codecov.io/gh/Laisky/laisky-blog-graphql/branch/master/graph/badge.svg)](https://codecov.io/gh/Laisky/laisky-blog-graphql)
 
 
-Example: <https://blog.laisky.com/graphql/ui/>
+Example: <https://gq.laisky.com/ui/>
 
-介绍: <https://blog.laisky.com/p/gqlgen/>
+Introduction: <https://blog.laisky.com/p/gqlgen/>
 
 
 Run:
