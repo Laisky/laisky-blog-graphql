@@ -25,6 +25,8 @@ type LLMStormTask struct {
 	FinishedAt       *time.Time       `json:"finished_at,omitempty"`
 	ResultArticle    *string          `json:"result_article,omitempty"`
 	ResultReferences *stormReferences `json:"result_references,omitempty"`
+	// Runner is the name of the runner that processed the task
+	Runner string `json:"runner"`
 }
 
 type stormReferences struct {
