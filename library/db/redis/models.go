@@ -90,8 +90,8 @@ func NewLLMStormTask(prompt, apikey string) *LLMStormTask {
 // HTMLCrawlerTask is a task for crawling HTML pages.
 type HTMLCrawlerTask struct {
 	baseTask
-	Url        string  `json:"url"`
-	ResultHTML *string `json:"result_html,omitempty"`
+	Url        string `json:"url"`
+	ResultHTML []byte `json:"result_html,omitempty"`
 }
 
 // ToString returns the JSON representation of a HTMLCrawlerTask.
