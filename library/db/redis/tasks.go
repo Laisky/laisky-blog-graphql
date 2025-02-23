@@ -79,7 +79,7 @@ func (db *DB) GetHTMLCrawlerTask(ctx context.Context) (task *HTMLCrawlerTask, er
 // GetHTMLCrawlerTaskResult gets the result of a HTMLCrawlerTask by taskID.
 func (db *DB) GetHTMLCrawlerTaskResult(ctx context.Context, taskID string) (task *HTMLCrawlerTask, err error) {
 	key := KeyPrefixTaskHTMLCrawlerResult + taskID
-	val, err := db.db.GetItem(ctx, key)
+	val, err := db.db.GetItemBlocking(ctx, key)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get task result by key `%s`", key)
 	}
