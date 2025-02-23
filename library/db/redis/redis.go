@@ -19,3 +19,8 @@ func NewDB(opt *redis.Options) *DB {
 		db: rutils,
 	}
 }
+
+// GetDB returns the underlying go-redis client
+func (db *DB) GetDB() *gredis.Utils {
+	return db.db
+}

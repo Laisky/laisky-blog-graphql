@@ -61,6 +61,21 @@ func (db *DB) AddHTMLCrawlerTask(ctx context.Context, url string) (taskID string
 	return task.TaskID, nil
 }
 
+// GetHTMLCrawlerTask is to get a HTMLCrawlerTask from the queue.
+func (db *DB) GetHTMLCrawlerTask(ctx context.Context, taskID string) (task *HTMLCrawlerTask, err error) {
+	val, err := db.db.LPop(ctx, KeyTaskHTMLCrawlerPending).Result()
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to pop task from key `%s`", KeyTaskHTMLCrawlerPending)
+	}
+
+	task, err = NewHTMLCrawlerTaskFromString(val)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse task from string for taskID `%s`", taskID)
+	}
+
+	return task, nil
+}
+
 // GetHTMLCrawlerTaskResult gets the result of a HTMLCrawlerTask by taskID.
 func (db *DB) GetHTMLCrawlerTaskResult(ctx context.Context, taskID string) (task *HTMLCrawlerTask, err error) {
 	key := KeyPrefixTaskHTMLCrawlerResult + taskID
