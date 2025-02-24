@@ -17,6 +17,18 @@ input Sort {
   order: SortOrder! = DESC
 }
 
+# type WebSearchResult {
+#   query : String!
+#   created_at: Date!
+#   results: [WebSearchResultItem!]!
+# }
+
+# type WebSearchResultItem {
+#   title: String!
+#   url: String!
+#   snippet: String!
+# }
+
 type Query {
   Hello: String!
   WhoAmI: BlogUser!
@@ -105,7 +117,12 @@ type Mutation {
   ArweaveUpload(
     fileB64: String!,
     contentType: String = "application/json",
-  ) : ArweaveUploadResponse!
+  ): ArweaveUploadResponse!
+
+  # WebSearch
+  # WebSearch(
+  #   query: String!
+  # ): WebSearchResult!
 
   # telegram monitor
   TelegramMonitorAlert(
