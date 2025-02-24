@@ -155,6 +155,7 @@ type ComplexityRoot struct {
 		UserLogin             func(childComplexity int, account string, password string) int
 		UserRegister          func(childComplexity int, account string, password string, displayName string, captcha string) int
 		UserResendActiveEmail func(childComplexity int, account string) int
+		WebFetch              func(childComplexity int, url string) int
 		WebSearch             func(childComplexity int, query string) int
 	}
 
@@ -239,6 +240,12 @@ type ComplexityRoot struct {
 		Msg func(childComplexity int) int
 	}
 
+	WebFetchResult struct {
+		Content   func(childComplexity int) int
+		CreatedAt func(childComplexity int) int
+		URL       func(childComplexity int) int
+	}
+
 	WebSearchResult struct {
 		CreatedAt func(childComplexity int) int
 		Query     func(childComplexity int) int
@@ -296,6 +303,7 @@ type MutationResolver interface {
 	BlogAmendPost(ctx context.Context, post models.NewBlogPost, language models.Language) (*model.Post, error)
 	ArweaveUpload(ctx context.Context, fileB64 string, contentType *string) (*dto.UploadResponse, error)
 	WebSearch(ctx context.Context, query string) (*search.SearchResult, error)
+	WebFetch(ctx context.Context, url string) (*models.WebFetchResult, error)
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*model3.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
 	CreateGeneralToken(ctx context.Context, username string, durationSec int) (string, error)
@@ -831,6 +839,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Mutation.UserResendActiveEmail(childComplexity, args["account"].(string)), true
 
+	case "Mutation.WebFetch":
+		if e.complexity.Mutation.WebFetch == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_WebFetch_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.WebFetch(childComplexity, args["url"].(string)), true
+
 	case "Mutation.WebSearch":
 		if e.complexity.Mutation.WebSearch == nil {
 			break
@@ -1249,6 +1269,27 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.UserResendActiveEmailResponse.Msg(childComplexity), true
+
+	case "WebFetchResult.content":
+		if e.complexity.WebFetchResult.Content == nil {
+			break
+		}
+
+		return e.complexity.WebFetchResult.Content(childComplexity), true
+
+	case "WebFetchResult.created_at":
+		if e.complexity.WebFetchResult.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.WebFetchResult.CreatedAt(childComplexity), true
+
+	case "WebFetchResult.url":
+		if e.complexity.WebFetchResult.URL == nil {
+			break
+		}
+
+		return e.complexity.WebFetchResult.URL(childComplexity), true
 
 	case "WebSearchResult.created_at":
 		if e.complexity.WebSearchResult.CreatedAt == nil {
@@ -2024,6 +2065,34 @@ func (ec *executionContext) field_Mutation_UserResendActiveEmail_argsAccount(
 
 	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("account"))
 	if tmp, ok := rawArgs["account"]; ok {
+		return ec.unmarshalNString2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_WebFetch_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_WebFetch_argsURL(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["url"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_WebFetch_argsURL(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	if _, ok := rawArgs["url"]; !ok {
+		var zeroVal string
+		return zeroVal, nil
+	}
+
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("url"))
+	if tmp, ok := rawArgs["url"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -5719,6 +5788,69 @@ func (ec *executionContext) fieldContext_Mutation_WebSearch(ctx context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_WebFetch(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_WebFetch(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().WebFetch(rctx, fc.Args["url"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*models.WebFetchResult)
+	fc.Result = res
+	return ec.marshalNWebFetchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐWebFetchResult(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_WebFetch(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "url":
+				return ec.fieldContext_WebFetchResult_url(ctx, field)
+			case "created_at":
+				return ec.fieldContext_WebFetchResult_created_at(ctx, field)
+			case "content":
+				return ec.fieldContext_WebFetchResult_content(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type WebFetchResult", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_WebFetch_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_TelegramMonitorAlert(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_TelegramMonitorAlert(ctx, field)
 	if err != nil {
@@ -8712,6 +8844,138 @@ func (ec *executionContext) _UserResendActiveEmailResponse_msg(ctx context.Conte
 func (ec *executionContext) fieldContext_UserResendActiveEmailResponse_msg(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "UserResendActiveEmailResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _WebFetchResult_url(ctx context.Context, field graphql.CollectedField, obj *models.WebFetchResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_WebFetchResult_url(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.URL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_WebFetchResult_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "WebFetchResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _WebFetchResult_created_at(ctx context.Context, field graphql.CollectedField, obj *models.WebFetchResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_WebFetchResult_created_at(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(library.Datetime)
+	fc.Result = res
+	return ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_WebFetchResult_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "WebFetchResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _WebFetchResult_content(ctx context.Context, field graphql.CollectedField, obj *models.WebFetchResult) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_WebFetchResult_content(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Content, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_WebFetchResult_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "WebFetchResult",
 		Field:      field,
 		IsMethod:   false,
 		IsResolver: false,
@@ -12338,6 +12602,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "WebFetch":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_WebFetch(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "TelegramMonitorAlert":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_TelegramMonitorAlert(ctx, field)
@@ -13779,6 +14050,55 @@ func (ec *executionContext) _UserResendActiveEmailResponse(ctx context.Context, 
 	return out
 }
 
+var webFetchResultImplementors = []string{"WebFetchResult"}
+
+func (ec *executionContext) _WebFetchResult(ctx context.Context, sel ast.SelectionSet, obj *models.WebFetchResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, webFetchResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("WebFetchResult")
+		case "url":
+			out.Values[i] = ec._WebFetchResult_url(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._WebFetchResult_created_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "content":
+			out.Values[i] = ec._WebFetchResult_content(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var webSearchResultImplementors = []string{"WebSearchResult"}
 
 func (ec *executionContext) _WebSearchResult(ctx context.Context, sel ast.SelectionSet, obj *search.SearchResult) graphql.Marshaler {
@@ -14930,6 +15250,20 @@ func (ec *executionContext) marshalNUserResendActiveEmailResponse2ᚖgithubᚗco
 		return graphql.Null
 	}
 	return ec._UserResendActiveEmailResponse(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNWebFetchResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐWebFetchResult(ctx context.Context, sel ast.SelectionSet, v models.WebFetchResult) graphql.Marshaler {
+	return ec._WebFetchResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNWebFetchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐWebFetchResult(ctx context.Context, sel ast.SelectionSet, v *models.WebFetchResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._WebFetchResult(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNWebSearchResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚋsearchᚐSearchResult(ctx context.Context, sel ast.SelectionSet, v search.SearchResult) graphql.Marshaler {

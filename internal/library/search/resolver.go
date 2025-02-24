@@ -1,4 +1,4 @@
-package bing
+package search
 
 import (
 	"context"

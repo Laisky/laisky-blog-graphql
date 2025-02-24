@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
 type BlogLoginResponse struct {
@@ -61,6 +62,12 @@ type UserRegisterResponse struct {
 
 type UserResendActiveEmailResponse struct {
 	Msg string `json:"msg"`
+}
+
+type WebFetchResult struct {
+	URL       string           `json:"url"`
+	CreatedAt library.Datetime `json:"created_at"`
+	Content   string           `json:"content"`
 }
 
 type BlogPostType string

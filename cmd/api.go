@@ -5,6 +5,13 @@ import (
 	"os"
 
 	"github.com/Laisky/errors/v2"
+	gconfig "github.com/Laisky/go-config/v2"
+	gcmd "github.com/Laisky/go-utils/v5/cmd"
+	"github.com/Laisky/zap"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/redis/go-redis/v9"
+	"github.com/spf13/cobra"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
 	blogCtl "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
@@ -16,15 +23,9 @@ import (
 	telegramModel "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
+	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
-
-	gconfig "github.com/Laisky/go-config/v2"
-	gcmd "github.com/Laisky/go-utils/v5/cmd"
-	"github.com/Laisky/zap"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/spf13/cobra"
 )
 
 var apiCMD = &cobra.Command{
@@ -74,6 +75,12 @@ func runAPI() error {
 	}
 
 	var args web.ResolverArgs
+
+	// setup redis
+	args.Rdb = rlibs.NewDB(&redis.Options{
+		Addr: gconfig.S.GetString("settings.db.redis.addr"),
+		DB:   gconfig.S.GetInt("settings.db.redis.db"),
+	})
 
 	{ // setup telegram
 		monitorDB, err := telegramModel.NewMonitorDB(ctx)

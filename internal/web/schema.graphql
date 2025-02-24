@@ -30,6 +30,12 @@ type WebSearchResult {
   results: [WebSearchResultItem!]!
 }
 
+type WebFetchResult {
+  url: String!
+  created_at: Date!
+  content: String!
+}
+
 type Query {
   Hello: String!
   WhoAmI: BlogUser!
@@ -120,6 +126,9 @@ type Mutation {
   WebSearch(
     query: String!
   ): WebSearchResult!
+  WebFetch(
+    url: String!
+  ): WebFetchResult!
 
   # telegram monitor
   TelegramMonitorAlert(

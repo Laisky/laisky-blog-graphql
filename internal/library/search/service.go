@@ -1,5 +1,5 @@
 // Package bing is a GraphQL resolver for Bing search engine.
-package bing
+package search
 
 import (
 	"context"
@@ -7,23 +7,61 @@ import (
 	"time"
 
 	gmw "github.com/Laisky/gin-middlewares/v6"
-	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
-	"github.com/Laisky/laisky-blog-graphql/library/search"
-	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
+	"github.com/Laisky/laisky-blog-graphql/library"
+	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
+	"github.com/Laisky/laisky-blog-graphql/library/search"
+	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
 )
 
 // MutationResolver is the resolver for mutation.
 type MutationResolver struct {
 	engine *bing.SearchEngine
+	rdb    *rlibs.DB
 }
 
 // NewMutationResolver is the constructor for MutationResolver.
-func NewMutationResolver(engine *bing.SearchEngine) *MutationResolver {
+func NewMutationResolver(
+	engine *bing.SearchEngine,
+	rdb *rlibs.DB,
+) *MutationResolver {
 	return &MutationResolver{
 		engine: engine,
+		rdb:    rdb,
 	}
+}
+
+// WebFetch is the resolver for webFetch field.
+func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.WebFetchResult, error) {
+	logger := gmw.GetLogger(ctx).
+		Named("web_fetch").
+		With(zap.String("url", url))
+	gctx := gmw.GetGinCtxFromStdCtx(ctx)
+	apikey := strings.TrimSpace(strings.TrimPrefix(gctx.GetHeader("Authorization"), "Bearer "))
+	if apikey == "" {
+		return nil, errors.New("cannot get apikey")
+	}
+
+	err := oneapi.CheckUserExternalBilling(ctx, apikey, oneapi.PriceWebFetch, "web fetch")
+	if err != nil {
+		return nil, errors.Wrap(err, "check user external billing")
+	}
+
+	result, err := search.FetchDynamicURLContent(ctx, r.rdb, url)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch dynamic url content")
+	}
+
+	logger.Info("successfully fetch url content")
+	return &models.WebFetchResult{
+		URL:       url,
+		CreatedAt: *library.NewDatetimeFromTime(time.Now()),
+		Content:   string(result),
+	}, nil
 }
 
 // WebSearch is the resolver for webSearch field.

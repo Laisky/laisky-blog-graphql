@@ -36,6 +36,7 @@ var (
 	PriceUploadFileEachMB  = USD(0.02)
 	PriceUploadFileMinimal = USD(0.003)
 	PriceWebSearch         = USD(0.01)
+	PriceWebFetch          = USD(0.001)
 )
 
 // checkUserExternalBilling save and check billing for text-to-image models
