@@ -193,7 +193,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	}
 
 	if errMsg != "" {
-		err = errors.Errorf(errMsg)
+		err = errors.New(errMsg)
 	}
 
 	return alert, err

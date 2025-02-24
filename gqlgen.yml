@@ -77,7 +77,7 @@ models:
   # -------------------------------------
   # WebSearch
   # -------------------------------------
-  # WebSearchResult:
-  #   model: github.com/Laisky/laisky-blog-graphql/library/search.SearchResult
-  # WebSearchResultItem:
-  #   model: github.com/Laisky/laisky-blog-graphql/library/search.SearchResultItem
+  WebSearchResult:
+    model: github.com/Laisky/laisky-blog-graphql/library/search.SearchResult
+  WebSearchResultItem:
+    model: github.com/Laisky/laisky-blog-graphql/library/search.SearchResultItem

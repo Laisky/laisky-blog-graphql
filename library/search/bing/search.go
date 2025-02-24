@@ -1,6 +1,7 @@
 package bing
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -91,11 +92,11 @@ type bingResponse struct {
 }
 
 // Search performs a web search using the Bing Search API and returns a slice of BingAnswer.
-func (se *SearchEngine) Search(query string) ([]BingAnswer, error) {
+func (se *SearchEngine) Search(ctx context.Context, query string) (*BingAnswer, error) {
 	const endpoint = "https://api.bing.microsoft.com/v7.0/search"
 	// Replace with your valid subscription key.
 
-	req, err := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create request to `%s`", endpoint)
 	}
@@ -122,10 +123,10 @@ func (se *SearchEngine) Search(query string) ([]BingAnswer, error) {
 	}
 
 	// Unmarshal the JSON response.
-	var br bingResponse
-	if err = json.Unmarshal(body, &br); err != nil {
+	result := new(BingAnswer)
+	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal JSON response")
 	}
 
-	return br.WebPages.Value, nil
+	return result, nil
 }

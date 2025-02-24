@@ -17,6 +17,7 @@ import (
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
 
 	gconfig "github.com/Laisky/go-config/v2"
 	gcmd "github.com/Laisky/go-utils/v5/cmd"
@@ -118,6 +119,10 @@ func runAPI() error {
 
 		args.BlogCtl = blogCtl.New(args.BlogSvc)
 	}
+
+	args.BingSearchEngine = bing.NewSearchEngine(
+		gconfig.S.GetString("settings.websearch.bing.api_key"),
+	)
 
 	resolver := web.NewResolver(args)
 	web.RunServer(gconfig.Shared.GetString("listen"), resolver)

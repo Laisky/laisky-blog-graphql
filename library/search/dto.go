@@ -6,10 +6,10 @@ import "time"
 type SearchResult struct {
 	Query     string             `json:"query"`
 	CreatedAt time.Time          `json:"created_at"`
-	Results   []searchResultItem `json:"results"`
+	Results   []SearchResultItem `json:"results"`
 }
 
-type searchResultItem struct {
+type SearchResultItem struct {
 	URL     string `json:"url"`
 	Name    string `json:"name"`
 	Snippet string `json:"snippet"`

@@ -17,17 +17,18 @@ input Sort {
   order: SortOrder! = DESC
 }
 
-# type WebSearchResult {
-#   query : String!
-#   created_at: Date!
-#   results: [WebSearchResultItem!]!
-# }
 
-# type WebSearchResultItem {
-#   title: String!
-#   url: String!
-#   snippet: String!
-# }
+type WebSearchResultItem {
+  name: String!
+  url: String!
+  snippet: String!
+}
+
+type WebSearchResult {
+  query : String!
+  created_at: Date!
+  results: [WebSearchResultItem!]!
+}
 
 type Query {
   Hello: String!
@@ -87,10 +88,6 @@ type Query {
   LockPermissions(username: String! = ""): [GeneralUser]!
 }
 
-type CreateLLMStormTaskResponse {
-  task_id: String!
-}
-
 
 type Mutation {
   # publish new blog post
@@ -120,9 +117,9 @@ type Mutation {
   ): ArweaveUploadResponse!
 
   # WebSearch
-  # WebSearch(
-  #   query: String!
-  # ): WebSearchResult!
+  WebSearch(
+    query: String!
+  ): WebSearchResult!
 
   # telegram monitor
   TelegramMonitorAlert(

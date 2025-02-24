@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 
+	bingSvc "github.com/Laisky/laisky-blog-graphql/internal/library/search/bing"
 	arweave "github.com/Laisky/laisky-blog-graphql/internal/web/arweave/controller"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
@@ -10,6 +11,7 @@ import (
 	telegram "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
+	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
 )
 
 // Resolver resolver
@@ -18,10 +20,11 @@ type Resolver struct {
 }
 
 type ResolverArgs struct {
-	TelegramCtl *telegram.Telegram
-	TelegramSvc *telegramSvc.Telegram
-	BlogCtl     *blog.Blog
-	BlogSvc     *blogSvc.Blog
+	TelegramCtl      *telegram.Telegram
+	TelegramSvc      *telegramSvc.Telegram
+	BlogCtl          *blog.Blog
+	BlogSvc          *blogSvc.Blog
+	BingSearchEngine *bing.SearchEngine
 }
 
 // NewResolver new resolver
@@ -56,6 +59,9 @@ func (r *Resolver) Mutation() MutationResolver {
 		arweaveMutation: arweaveMutation{
 			MutationResolver: arweave.NewMutationResolver(r.args.TelegramSvc.UploadDao),
 		},
+		bingMutation: bingMutation{
+			MutationResolver: bingSvc.NewMutationResolver(r.args.BingSearchEngine),
+		},
 	}
 }
 
@@ -85,6 +91,12 @@ func (r *Resolver) BlogPostSeries() BlogPostSeriesResolver {
 }
 func (r *Resolver) ArweaveItem() ArweaveItemResolver {
 	return r.args.BlogCtl.ArweaveItemResolver
+}
+
+// bing search
+
+func (r *Resolver) WebSearchResult() WebSearchResultResolver {
+	return new(bingSvc.WebSearchResultResolver)
 }
 
 // telegram
@@ -153,9 +165,14 @@ type arweaveMutation struct {
 	*arweave.MutationResolver
 }
 
+type bingMutation struct {
+	*bingSvc.MutationResolver
+}
+
 type mutationResolver struct {
 	blogMutation
 	telegramMutation
 	generalMutation
 	arweaveMutation
+	bingMutation
 }

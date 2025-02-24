@@ -102,7 +102,7 @@ func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.
 	case "1":
 		err = s.UploadDao.SaveOneapiUser(ctx, us.user.ID, ansers[1])
 	default:
-		err = errors.Errorf(errMsg)
+		err = errors.New(errMsg)
 	}
 
 	if err != nil {

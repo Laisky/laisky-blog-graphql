@@ -160,7 +160,7 @@ func (s *Telegram) kickUser(ctx context.Context, us *userStat, au string) (err e
 		}
 	}
 	if errMsg != "" {
-		err = errors.Errorf(errMsg)
+		err = errors.New(errMsg)
 	}
 
 	return err
@@ -202,7 +202,7 @@ func (s *Telegram) refreshAlertTokenAndKey(ctx context.Context, us *userStat, al
 		}
 	}
 	if errMsg != "" {
-		err = errors.Errorf(errMsg)
+		err = errors.New(errMsg)
 	}
 
 	return err
