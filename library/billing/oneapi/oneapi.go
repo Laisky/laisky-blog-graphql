@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"time"
 
@@ -24,17 +25,17 @@ func (p Price) Int() int {
 	return int(p)
 }
 
-// USD100 return how many usd in cents
-func (p Price) USDCents() int {
-	return p.Int() / 5000
+func USD(num float64) Price {
+	return Price(math.Ceil(num * 500000))
 }
 
-const (
+var (
 	// PriceUploadFileEachMB is the price for uploading each MB file
 	//
 	// https://ar-fees.arweave.dev/
-	PriceUploadFileEachMB  int = 0.02 * 500000
-	PriceUploadFileMinimal int = 0.003 * 500000
+	PriceUploadFileEachMB  = USD(0.02)
+	PriceUploadFileMinimal = USD(0.003)
+	PriceWebSearch         = USD(0.01)
 )
 
 // checkUserExternalBilling save and check billing for text-to-image models
