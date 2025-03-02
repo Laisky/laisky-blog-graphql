@@ -73,7 +73,7 @@ func (s *LLMStormTask) ToString() (string, error) {
 func NewLLMStormTaskFromString(taskStr string) (*LLMStormTask, error) {
 	var task LLMStormTask
 	if err := json.Unmarshal([]byte(taskStr), &task); err != nil {
-		return nil, errors.Wrap(err, "unmarshal")
+		return nil, errors.Wrapf(err, "unmarshal llm storm task %q", taskStr)
 	}
 	return &task, nil
 }
@@ -108,7 +108,7 @@ func (s *HTMLCrawlerTask) ToString() (string, error) {
 func NewHTMLCrawlerTaskFromString(taskStr string) (*HTMLCrawlerTask, error) {
 	var task HTMLCrawlerTask
 	if err := json.Unmarshal([]byte(taskStr), &task); err != nil {
-		return nil, errors.Wrap(err, "unmarshal")
+		return nil, errors.Wrapf(err, "unmarshal html crawler task %q", taskStr)
 	}
 
 	return &task, nil

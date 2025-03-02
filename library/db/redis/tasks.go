@@ -63,7 +63,7 @@ func (db *DB) AddHTMLCrawlerTask(ctx context.Context, url string) (taskID string
 
 // GetHTMLCrawlerTask is to get a HTMLCrawlerTask from the queue.
 func (db *DB) GetHTMLCrawlerTask(ctx context.Context) (task *HTMLCrawlerTask, err error) {
-	val, err := db.db.LPop(ctx, KeyTaskHTMLCrawlerPending).Result()
+	_, val, err := db.db.LPopKeysBlocking(ctx, KeyTaskHTMLCrawlerPending)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to pop task from key `%s`", KeyTaskHTMLCrawlerPending)
 	}
