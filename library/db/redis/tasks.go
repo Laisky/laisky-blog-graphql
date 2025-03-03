@@ -18,7 +18,7 @@ func (db *DB) AddLLMStormTask(ctx context.Context,
 		return "", errors.Wrap(err, "failed to serialize task using ToString")
 	}
 
-	if err = db.db.RPush(ctx, KeyTaskLLMStormPending, payload); err != nil {
+	if err = db.db.RPush(ctx, KeyTaskLLMStormPending, []any{payload}); err != nil {
 		return "", errors.Wrapf(err, "failed to push task to key `%s`", KeyTaskLLMStormPending)
 	}
 
@@ -54,7 +54,7 @@ func (db *DB) AddHTMLCrawlerTask(ctx context.Context, url string) (taskID string
 		return "", errors.Wrap(err, "failed to serialize task using ToString")
 	}
 
-	if err = db.db.RPush(ctx, KeyTaskHTMLCrawlerPending, payload); err != nil {
+	if err = db.db.RPush(ctx, KeyTaskHTMLCrawlerPending, []any{payload}); err != nil {
 		return "", errors.Wrapf(err, "failed to push task to key `%s`", KeyTaskHTMLCrawlerPending)
 	}
 

@@ -27,7 +27,7 @@ func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url string) ([]b
 		switch task.Status {
 		case rlibs.TaskStatusSuccess:
 			return task.ResultHTML, nil
-		case rlibs.KeyTaskHTMLCrawlerPending,
+		case rlibs.TaskStatusPending,
 			rlibs.TaskStatusRunning:
 			time.Sleep(time.Second)
 			continue

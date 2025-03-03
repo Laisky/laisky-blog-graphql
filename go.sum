@@ -89,12 +89,12 @@ github.com/Laisky/go-config/v2 v2.0.0 h1:CgiekTAN+L0HPcKdVbmtxDuYfexWacW21P0q680
 github.com/Laisky/go-config/v2 v2.0.0/go.mod h1:gzWBKMl34uxq6fEN53JX4eRzu+Au/cl7HB+Xs5RYCfY=
 github.com/Laisky/go-gin-prometheus v1.0.1 h1:0xxZ0SeuycO65sQyZpwVCr19blGtkbwv39pQrw+hrWo=
 github.com/Laisky/go-gin-prometheus v1.0.1/go.mod h1:3yC0gDd4f79ikEM1eGHLTWSRG0tluOV2mmx/liYLtIA=
-github.com/Laisky/go-redis/v2 v2.0.0 h1:uu388N40p0Z4pG73RqlgQYOScGY6LmqcJURn9Zz9pMA=
-github.com/Laisky/go-redis/v2 v2.0.0/go.mod h1:3S2D8MEx7AejDI9SHqrShzhBDYuoeVtm4BhzSeXIbpA=
+github.com/Laisky/go-redis/v2 v2.0.1-0.20250303033943-e2bf697f90ac h1:n2JWHKCBQ3a3NDGkCE7/fSmKYqYcMWiZnRI1qcgLzvs=
+github.com/Laisky/go-redis/v2 v2.0.1-0.20250303033943-e2bf697f90ac/go.mod h1:mbNt9TRxTYIy9jAhJrIncxGIbC5bu6n98u7P0s9f6zk=
 github.com/Laisky/go-utils/v3 v3.0.1 h1:TeCk7KX+GFN8LYRhmTFjIj6OL51XVe8BRGy+npcwiig=
 github.com/Laisky/go-utils/v3 v3.0.1/go.mod h1:x7hWlGcFgpgAOmv9qzIcfmJ/4o6gvQnsDAHIoyo42Yk=
-github.com/Laisky/go-utils/v5 v5.0.0 h1:Cn7Xy3nnWI9bOZpiZ+msRM9953AneXDTqaFAwIzXM2Y=
-github.com/Laisky/go-utils/v5 v5.0.0/go.mod h1:4v7RGRQvvECSiuND4d1N3sW09A+GcclZUHQnbAkX+T0=
+github.com/Laisky/go-utils/v5 v5.0.1-0.20250228054950-e1500acd6929 h1:xAvviiCg/4ohZi0y4N8jTmZMIIuZAnt7zxpFKt580uw=
+github.com/Laisky/go-utils/v5 v5.0.1-0.20250228054950-e1500acd6929/go.mod h1:4v7RGRQvvECSiuND4d1N3sW09A+GcclZUHQnbAkX+T0=
 github.com/Laisky/golang-fifo v1.0.1-0.20240403091456-fc83d5e38c0b h1:o2BuVyXFkDTkEiuz1Ur32jGvaErgEHqhb8AtTIkrvE0=
 github.com/Laisky/golang-fifo v1.0.1-0.20240403091456-fc83d5e38c0b/go.mod h1:j90tUqwBaEncIzpAd6ZGPZHWjclgAyMY8fdOqsewitE=
 github.com/Laisky/graphql v1.0.6 h1:NEULGxfxo+wbsW2OmqBXOMNUGgqo8uFjWNabwuNK10g=

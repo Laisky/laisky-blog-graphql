@@ -10,8 +10,8 @@ require (
 	github.com/Laisky/errors/v2 v2.0.1
 	github.com/Laisky/gin-middlewares/v6 v6.0.0
 	github.com/Laisky/go-config/v2 v2.0.0
-	github.com/Laisky/go-redis/v2 v2.0.0
-	github.com/Laisky/go-utils/v5 v5.0.0
+	github.com/Laisky/go-redis/v2 v2.0.1-0.20250303033943-e2bf697f90ac
+	github.com/Laisky/go-utils/v5 v5.0.1-0.20250228054950-e1500acd6929
 	github.com/Laisky/zap v1.27.1-0.20241010063010-3154c45f2a1f
 	github.com/gin-gonic/gin v1.10.0
 	github.com/golang-jwt/jwt/v4 v4.5.1
