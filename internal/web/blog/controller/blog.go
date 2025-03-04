@@ -201,6 +201,17 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context,
 		title, imgURL, name), nil
 }
 
+func (r *QueryResolver) BlogComments(ctx context.Context,
+	postID string,
+	page *models.Pagination,
+	sort *models.Sort) ([]*models.Comment, error) {
+	return r.svc.BlogComments(ctx, postID, page, sort)
+}
+
+func (r *QueryResolver) BlogCommentCount(ctx context.Context, postID string) (int, error) {
+	return r.svc.BlogCommentCount(ctx, postID)
+}
+
 // ----------------
 // blog resolver
 // ----------------
@@ -433,4 +444,20 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 		post.Type.String(),
 		post.Language,
 	)
+}
+
+func (r *MutationResolver) BlogCreateComment(ctx context.Context, postID string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) (*models.Comment, error) {
+	return r.svc.BlogCreateComment(ctx, postID, content, authorName, authorEmail, authorWebsite, parentID)
+}
+
+func (r *MutationResolver) BlogToggleCommentLike(ctx context.Context, commentID string) (*models.Comment, error) {
+	return r.svc.BlogToggleCommentLike(ctx, commentID)
+}
+
+func (r *MutationResolver) BlogApproveComment(ctx context.Context, commentID string) (*models.Comment, error) {
+	return r.svc.BlogApproveComment(ctx, commentID)
+}
+
+func (r *MutationResolver) BlogDeleteComment(ctx context.Context, commentID string) (*models.Comment, error) {
+	return r.svc.BlogDeleteComment(ctx, commentID)
 }

@@ -37,6 +37,10 @@ func New(logger glog.Logger,
 	}
 }
 
+func (d *Blog) StartSession() (mongoLib.Session, error) {
+	return d.db.CurrentDB().Client().StartSession()
+}
+
 // PostTagsCol get post tags collection
 func (d *Blog) PostTagsCol() *mongoLib.Collection {
 	return d.db.GetCol("keywords")
@@ -60,6 +64,21 @@ func (d *Blog) GetCategoriesCol() *mongoLib.Collection {
 // GetPostSeriesCol get post series collection
 func (d *Blog) GetPostSeriesCol() *mongoLib.Collection {
 	return d.db.GetCol("post_series")
+}
+
+// GetPostCommentCol get post comment collection
+func (d *Blog) GetPostCommentCol() *mongoLib.Collection {
+	return d.db.GetCol("comments")
+}
+
+// GetPostCommentUserCol get post comment user collection
+func (d *Blog) GetPostCommentUserCol() *mongoLib.Collection {
+	return d.db.GetCol("comment_users")
+}
+
+// GetPostCommentLike get post comment like collection
+func (d *Blog) GetPostCommentLike() *mongoLib.Collection {
+	return d.db.GetCol("comment_likes")
 }
 
 // SaveToArweave save data to arweave

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Laisky/errors/v2"
+	"github.com/redis/go-redis/v9"
 )
 
 // AddLLMStormTask adds a new LLMStormTask to the queue.
@@ -66,6 +67,10 @@ func (db *DB) GetHTMLCrawlerTask(ctx context.Context) (task *HTMLCrawlerTask, er
 	_, val, err := db.db.LPopKeysBlocking(ctx, KeyTaskHTMLCrawlerPending)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to pop task from key `%s`", KeyTaskHTMLCrawlerPending)
+	}
+
+	if val == "OK" {
+		return nil, errors.Wrapf(redis.Nil, "got 'OK' for key %q", KeyTaskHTMLCrawlerPending)
 	}
 
 	task, err = NewHTMLCrawlerTaskFromString(val)

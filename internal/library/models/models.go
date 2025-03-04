@@ -16,6 +16,21 @@ type BlogLoginResponse struct {
 	Token string      `json:"token"`
 }
 
+type Comment struct {
+	ID            string            `json:"id"`
+	Content       string            `json:"content"`
+	AuthorName    string            `json:"authorName"`
+	AuthorEmail   string            `json:"authorEmail"`
+	AuthorWebsite *string           `json:"authorWebsite,omitempty"`
+	PostID        string            `json:"postId"`
+	ParentID      *string           `json:"parentId,omitempty"`
+	CreatedAt     library.Datetime  `json:"createdAt"`
+	UpdatedAt     *library.Datetime `json:"updatedAt,omitempty"`
+	IsApproved    bool              `json:"isApproved"`
+	Likes         int               `json:"likes"`
+	Replies       []*Comment        `json:"replies,omitempty"`
+}
+
 type GeneralUser struct {
 	Name         string   `json:"name"`
 	LockPrefixes []string `json:"lock_prefixes"`

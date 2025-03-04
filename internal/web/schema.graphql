@@ -40,7 +40,9 @@ type Query {
   Hello: String!
   WhoAmI: BlogUser!
 
+  # -------------------------------------
   # twitter
+  # -------------------------------------
   TwitterStatues(
     page: Pagination = { page: 0, size: 20 }
     tweet_id: String! = ""
@@ -53,7 +55,9 @@ type Query {
   # TwitterThreads load tweets thread by tweet id
   TwitterThreads(tweet_id: String!): [Tweet!]
 
+  # -------------------------------------
   # blog
+  # -------------------------------------
   BlogPosts(
     page: Pagination = { page: 0, size: 10 }
     tag: String! = ""
@@ -78,8 +82,18 @@ type Query {
     name: String! = ""
     language: Language! = zh_CN
   ): String!
+  BlogComments(
+    post_id: String!
+    page: Pagination = { page: 0, size: 10 }
+    sort: Sort = { sort_by: "created_at", order: DESC }
+  ): [Comment]!
+  BlogCommentCount(
+    post_id: String!
+  ): Int!
 
+  # -------------------------------------
   # telegram monitor
+  # -------------------------------------
   TelegramMonitorUsers(
     page: Pagination = { page: 0, size: 10 }
     name: String! = ""
@@ -96,12 +110,33 @@ type Query {
 
 
 type Mutation {
+  # -------------------------------------
+  # Blog
+  # -------------------------------------
   # publish new blog post
   BlogCreatePost(
     post: NewBlogPost!,
     # some graphql client doesn't support enum as parameter
     language: Language! = zh_CN
   ): BlogPost!
+  BlogCreateComment(
+    post_id: String!
+    content: String!
+    authorName: String!
+    authorEmail: String!
+    authorWebsite: String
+    parentId: String
+  ): Comment!
+  BlogToggleCommentLike(
+    comment_id: String!
+  ): Comment!
+  BlogApproveComment(
+    comment_id: String!
+  ): Comment!
+  BlogDeleteComment(
+    comment_id: String!
+  ): Comment!
+
   # login
   # Deprecated: use UserLogin instead
   BlogLogin(account: String!, password: String!): BlogLoginResponse!
@@ -109,6 +144,7 @@ type Mutation {
   UserRegister(account: String!, password: String!, display_name: String!, captcha: String!): UserRegisterResponse!
   UserActive(token: String!): UserActiveResponse!
   UserResendActiveEmail(account: String!): UserResendActiveEmailResponse!
+
   # update blog post
   BlogAmendPost(
     post: NewBlogPost!,
@@ -116,13 +152,17 @@ type Mutation {
     language: Language! = zh_CN
   ): BlogPost!
 
+  # -------------------------------------
   # Arweave
+  # -------------------------------------
   ArweaveUpload(
     fileB64: String!,
     contentType: String = "application/json",
   ): ArweaveUploadResponse!
 
+  # -------------------------------------
   # WebSearch
+  # -------------------------------------
   WebSearch(
     query: String!
   ): WebSearchResult!
@@ -130,14 +170,18 @@ type Mutation {
     url: String!
   ): WebFetchResult!
 
+  # -------------------------------------
   # telegram monitor
+  # -------------------------------------
   TelegramMonitorAlert(
     type: String!
     token: String!
     msg: String!
   ): TelegramAlertType!
 
+  # -------------------------------------
   # GCP general
+  # -------------------------------------
   # will validate cookie `general`
   AcquireLock(
     lock_name: String!

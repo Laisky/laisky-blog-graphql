@@ -50,6 +50,12 @@ func (u *User) GetPayload() map[string]interface{} {
 	}
 }
 
+// IsAdmin is admin
+func (u *User) IsAdmin() bool {
+	return u.Account == "ppcelery@gmail.com"
+}
+
+// NewUser create a new user
 func NewUser() *User {
 	return &User{
 		ID:         primitive.NewObjectID(),
