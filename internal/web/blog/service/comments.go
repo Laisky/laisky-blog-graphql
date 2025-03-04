@@ -76,19 +76,13 @@ func (s *Blog) buildCommentTree(comments []*model.Comment) []*model.Comment {
 
 // BlogComments retrieves comments for a specific post
 func (s *Blog) BlogComments(ctx context.Context,
-	postID string,
+	postName string,
 	page *models.Pagination,
 	sort *models.Sort) ([]*models.Comment, error) {
 
-	// Convert string ID to ObjectID
-	postObjID, err := primitive.ObjectIDFromHex(postID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "invalid post ID: %s", postID)
-	}
-
 	// Build filter for approved comments on this post
 	filter := bson.M{
-		"post_id":     postObjID,
+		"post_name":   postName,
 		"is_approved": true,
 	}
 
@@ -158,7 +152,7 @@ func (s *Blog) BlogCommentCount(ctx context.Context, postID string) (int, error)
 
 // BlogCreateComment creates a new comment for a post
 func (s *Blog) BlogCreateComment(ctx context.Context,
-	postID string,
+	postName string,
 	content string,
 	authorName string,
 	authorEmail string,
@@ -178,19 +172,11 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 		return nil, errors.New("author email cannot be empty")
 	}
 
-	// Convert string ID to ObjectID
-	postObjID, err := primitive.ObjectIDFromHex(postID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "invalid post ID: %s", postID)
-	}
-
 	// Verify that post exists
-	postExists, err := s.dao.GetPostsCol().CountDocuments(ctx, bson.M{"_id": postObjID})
+	post := new(model.Post)
+	err := s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check post existence")
-	}
-	if postExists == 0 {
-		return nil, errors.New("post not found")
 	}
 
 	// Create comment user
@@ -209,7 +195,7 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 		Author:     commentUser,
-		PostID:     postObjID,
+		PostID:     post.ID,
 		Content:    content,
 		IsApproved: false, // Require approval by default
 	}
@@ -223,9 +209,9 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 
 		// Verify that parent comment exists and belongs to the same post
 		var parentComment model.Comment
-		err = s.dao.GetCategoriesCol().FindOne(ctx, bson.M{
+		err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{
 			"_id":     parentObjID,
-			"post_id": postObjID,
+			"post_id": post.ID,
 		}).Decode(&parentComment)
 
 		if err != nil {
@@ -239,14 +225,14 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 	}
 
 	// Insert the comment into the database
-	_, err = s.dao.GetCategoriesCol().InsertOne(ctx, comment)
+	_, err = s.dao.GetPostCommentCol().InsertOne(ctx, comment)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to insert comment")
 	}
 
 	// Log the new comment
 	log.Logger.Info("new comment created",
-		zap.String("post_id", postID),
+		zap.String("post_id", post.ID.Hex()),
 		zap.String("comment_id", comment.ID.Hex()),
 		zap.String("author", authorName))
 
@@ -270,7 +256,7 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 
 	// Check if comment exists
 	var comment model.Comment
-	err = s.dao.GetCategoriesCol().FindOne(ctx, bson.M{"_id": commentObjID}).Decode(&comment)
+	err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{"_id": commentObjID}).Decode(&comment)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, errors.New("comment not found")
@@ -317,7 +303,7 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 
 			// Increment likes count
 			update := bson.M{"$inc": bson.M{"likes": 1}}
-			err = s.dao.GetCategoriesCol().FindOneAndUpdate(
+			err = s.dao.GetPostCommentCol().FindOneAndUpdate(
 				sc,
 				bson.M{"_id": commentObjID},
 				update,
@@ -338,7 +324,7 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 
 			// Decrement likes count
 			update := bson.M{"$inc": bson.M{"likes": -1}}
-			err = s.dao.GetCategoriesCol().FindOneAndUpdate(
+			err = s.dao.GetPostCommentCol().FindOneAndUpdate(
 				sc,
 				bson.M{"_id": commentObjID},
 				update,
@@ -380,7 +366,7 @@ func (s *Blog) BlogApproveComment(ctx context.Context, commentID string) (*model
 
 	// Update the comment approval status
 	var updatedComment model.Comment
-	err = s.dao.GetCategoriesCol().FindOneAndUpdate(
+	err = s.dao.GetPostCommentCol().FindOneAndUpdate(
 		ctx,
 		bson.M{"_id": commentObjID},
 		bson.M{"$set": bson.M{"is_approved": true, "updated_at": gutils.Clock.GetUTCNow()}},
@@ -421,7 +407,7 @@ func (s *Blog) BlogDeleteComment(ctx context.Context, commentID string) (*models
 
 	// Get the comment before deletion
 	var comment model.Comment
-	err = s.dao.GetCategoriesCol().FindOne(ctx, bson.M{"_id": commentObjID}).Decode(&comment)
+	err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{"_id": commentObjID}).Decode(&comment)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, errors.New("comment not found")
@@ -442,13 +428,13 @@ func (s *Blog) BlogDeleteComment(ctx context.Context, commentID string) (*models
 		}
 
 		// Delete the comment
-		_, err = s.dao.GetCategoriesCol().DeleteOne(sc, bson.M{"_id": commentObjID})
+		_, err = s.dao.GetPostCommentCol().DeleteOne(sc, bson.M{"_id": commentObjID})
 		if err != nil {
 			return errors.Wrap(err, "failed to delete comment")
 		}
 
 		// Delete all child comments
-		_, err = s.dao.GetCategoriesCol().DeleteMany(sc, bson.M{"parent_id": commentObjID})
+		_, err = s.dao.GetPostCommentCol().DeleteMany(sc, bson.M{"parent_id": commentObjID})
 		if err != nil {
 			return errors.Wrap(err, "failed to delete child comments")
 		}

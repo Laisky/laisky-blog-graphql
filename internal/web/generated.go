@@ -163,7 +163,7 @@ type ComplexityRoot struct {
 		ArweaveUpload         func(childComplexity int, fileB64 string, contentType *string) int
 		BlogAmendPost         func(childComplexity int, post models.NewBlogPost, language models.Language) int
 		BlogApproveComment    func(childComplexity int, commentID string) int
-		BlogCreateComment     func(childComplexity int, postID string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) int
+		BlogCreateComment     func(childComplexity int, postName string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) int
 		BlogCreatePost        func(childComplexity int, post models.NewBlogPost, language models.Language) int
 		BlogDeleteComment     func(childComplexity int, commentID string) int
 		BlogLogin             func(childComplexity int, account string, password string) int
@@ -183,8 +183,8 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		BlogCommentCount     func(childComplexity int, postID string) int
-		BlogComments         func(childComplexity int, postID string, page *models.Pagination, sort *models.Sort) int
+		BlogCommentCount     func(childComplexity int, postName string) int
+		BlogComments         func(childComplexity int, postName string, page *models.Pagination, sort *models.Sort) int
 		BlogPostCategories   func(childComplexity int) int
 		BlogPostHistory      func(childComplexity int, fileID string, language models.Language) int
 		BlogPostInfo         func(childComplexity int) int
@@ -316,7 +316,7 @@ type LockResolver interface {
 }
 type MutationResolver interface {
 	BlogCreatePost(ctx context.Context, post models.NewBlogPost, language models.Language) (*model.Post, error)
-	BlogCreateComment(ctx context.Context, postID string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) (*models.Comment, error)
+	BlogCreateComment(ctx context.Context, postName string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) (*models.Comment, error)
 	BlogToggleCommentLike(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogApproveComment(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogDeleteComment(ctx context.Context, commentID string) (*models.Comment, error)
@@ -345,8 +345,8 @@ type QueryResolver interface {
 	BlogTags(ctx context.Context) ([]string, error)
 	GetBlogPostSeries(ctx context.Context, page *models.Pagination, key string) ([]*model.PostSeries, error)
 	BlogTwitterCard(ctx context.Context, name string, language models.Language) (string, error)
-	BlogComments(ctx context.Context, postID string, page *models.Pagination, sort *models.Sort) ([]*models.Comment, error)
-	BlogCommentCount(ctx context.Context, postID string) (int, error)
+	BlogComments(ctx context.Context, postName string, page *models.Pagination, sort *models.Sort) ([]*models.Comment, error)
+	BlogCommentCount(ctx context.Context, postName string) (int, error)
 	TelegramMonitorUsers(ctx context.Context, page *models.Pagination, name string) ([]*model3.MonitorUsers, error)
 	TelegramAlertTypes(ctx context.Context, page *models.Pagination, name string) ([]*model3.AlertTypes, error)
 	Lock(ctx context.Context, name string) (*model2.Lock, error)
@@ -876,7 +876,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Mutation.BlogCreateComment(childComplexity, args["post_id"].(string), args["content"].(string), args["authorName"].(string), args["authorEmail"].(string), args["authorWebsite"].(*string), args["parentId"].(*string)), true
+		return e.complexity.Mutation.BlogCreateComment(childComplexity, args["post_name"].(string), args["content"].(string), args["authorName"].(string), args["authorEmail"].(string), args["authorWebsite"].(*string), args["parentId"].(*string)), true
 
 	case "Mutation.BlogCreatePost":
 		if e.complexity.Mutation.BlogCreatePost == nil {
@@ -1039,7 +1039,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.BlogCommentCount(childComplexity, args["post_id"].(string)), true
+		return e.complexity.Query.BlogCommentCount(childComplexity, args["post_name"].(string)), true
 
 	case "Query.BlogComments":
 		if e.complexity.Query.BlogComments == nil {
@@ -1051,7 +1051,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.BlogComments(childComplexity, args["post_id"].(string), args["page"].(*models.Pagination), args["sort"].(*models.Sort)), true
+		return e.complexity.Query.BlogComments(childComplexity, args["post_name"].(string), args["page"].(*models.Pagination), args["sort"].(*models.Sort)), true
 
 	case "Query.BlogPostCategories":
 		if e.complexity.Query.BlogPostCategories == nil {
@@ -1855,11 +1855,11 @@ func (ec *executionContext) field_Mutation_BlogApproveComment_argsCommentID(
 func (ec *executionContext) field_Mutation_BlogCreateComment_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_BlogCreateComment_argsPostID(ctx, rawArgs)
+	arg0, err := ec.field_Mutation_BlogCreateComment_argsPostName(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["post_id"] = arg0
+	args["post_name"] = arg0
 	arg1, err := ec.field_Mutation_BlogCreateComment_argsContent(ctx, rawArgs)
 	if err != nil {
 		return nil, err
@@ -1887,17 +1887,17 @@ func (ec *executionContext) field_Mutation_BlogCreateComment_args(ctx context.Co
 	args["parentId"] = arg5
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_BlogCreateComment_argsPostID(
+func (ec *executionContext) field_Mutation_BlogCreateComment_argsPostName(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["post_id"]; !ok {
+	if _, ok := rawArgs["post_name"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_id"))
-	if tmp, ok := rawArgs["post_id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_name"))
+	if tmp, ok := rawArgs["post_name"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -2541,24 +2541,24 @@ func (ec *executionContext) field_Mutation_WebSearch_argsQuery(
 func (ec *executionContext) field_Query_BlogCommentCount_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_BlogCommentCount_argsPostID(ctx, rawArgs)
+	arg0, err := ec.field_Query_BlogCommentCount_argsPostName(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["post_id"] = arg0
+	args["post_name"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Query_BlogCommentCount_argsPostID(
+func (ec *executionContext) field_Query_BlogCommentCount_argsPostName(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["post_id"]; !ok {
+	if _, ok := rawArgs["post_name"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_id"))
-	if tmp, ok := rawArgs["post_id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_name"))
+	if tmp, ok := rawArgs["post_name"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -2569,11 +2569,11 @@ func (ec *executionContext) field_Query_BlogCommentCount_argsPostID(
 func (ec *executionContext) field_Query_BlogComments_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_BlogComments_argsPostID(ctx, rawArgs)
+	arg0, err := ec.field_Query_BlogComments_argsPostName(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["post_id"] = arg0
+	args["post_name"] = arg0
 	arg1, err := ec.field_Query_BlogComments_argsPage(ctx, rawArgs)
 	if err != nil {
 		return nil, err
@@ -2586,17 +2586,17 @@ func (ec *executionContext) field_Query_BlogComments_args(ctx context.Context, r
 	args["sort"] = arg2
 	return args, nil
 }
-func (ec *executionContext) field_Query_BlogComments_argsPostID(
+func (ec *executionContext) field_Query_BlogComments_argsPostName(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["post_id"]; !ok {
+	if _, ok := rawArgs["post_name"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_id"))
-	if tmp, ok := rawArgs["post_id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_name"))
+	if tmp, ok := rawArgs["post_name"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -6346,7 +6346,7 @@ func (ec *executionContext) _Mutation_BlogCreateComment(ctx context.Context, fie
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogCreateComment(rctx, fc.Args["post_id"].(string), fc.Args["content"].(string), fc.Args["authorName"].(string), fc.Args["authorEmail"].(string), fc.Args["authorWebsite"].(*string), fc.Args["parentId"].(*string))
+		return ec.resolvers.Mutation().BlogCreateComment(rctx, fc.Args["post_name"].(string), fc.Args["content"].(string), fc.Args["authorName"].(string), fc.Args["authorEmail"].(string), fc.Args["authorWebsite"].(*string), fc.Args["parentId"].(*string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -8161,7 +8161,7 @@ func (ec *executionContext) _Query_BlogComments(ctx context.Context, field graph
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogComments(rctx, fc.Args["post_id"].(string), fc.Args["page"].(*models.Pagination), fc.Args["sort"].(*models.Sort))
+		return ec.resolvers.Query().BlogComments(rctx, fc.Args["post_name"].(string), fc.Args["page"].(*models.Pagination), fc.Args["sort"].(*models.Sort))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -8242,7 +8242,7 @@ func (ec *executionContext) _Query_BlogCommentCount(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogCommentCount(rctx, fc.Args["post_id"].(string))
+		return ec.resolvers.Query().BlogCommentCount(rctx, fc.Args["post_name"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

@@ -446,8 +446,8 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	)
 }
 
-func (r *MutationResolver) BlogCreateComment(ctx context.Context, postID string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) (*models.Comment, error) {
-	return r.svc.BlogCreateComment(ctx, postID, content, authorName, authorEmail, authorWebsite, parentID)
+func (r *MutationResolver) BlogCreateComment(ctx context.Context, postName string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) (*models.Comment, error) {
+	return r.svc.BlogCreateComment(ctx, postName, content, authorName, authorEmail, authorWebsite, parentID)
 }
 
 func (r *MutationResolver) BlogToggleCommentLike(ctx context.Context, commentID string) (*models.Comment, error) {
