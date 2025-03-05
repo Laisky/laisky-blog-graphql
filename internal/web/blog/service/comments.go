@@ -131,16 +131,10 @@ func (s *Blog) BlogComments(ctx context.Context,
 }
 
 // BlogCommentCount counts comments for a specific post
-func (s *Blog) BlogCommentCount(ctx context.Context, postID string) (int, error) {
-	// Convert string ID to ObjectID
-	postObjID, err := primitive.ObjectIDFromHex(postID)
-	if err != nil {
-		return 0, errors.Wrapf(err, "invalid post ID: %s", postID)
-	}
-
+func (s *Blog) BlogCommentCount(ctx context.Context, postName string) (int, error) {
 	// Count approved comments - use the correct collection
 	count, err := s.dao.GetPostCommentCol().CountDocuments(ctx, bson.M{
-		"post_id":     postObjID,
+		"post_name":   postName,
 		"is_approved": true,
 	})
 	if err != nil {

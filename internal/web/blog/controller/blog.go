@@ -202,14 +202,14 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context,
 }
 
 func (r *QueryResolver) BlogComments(ctx context.Context,
-	postID string,
+	postName string,
 	page *models.Pagination,
 	sort *models.Sort) ([]*models.Comment, error) {
-	return r.svc.BlogComments(ctx, postID, page, sort)
+	return r.svc.BlogComments(ctx, postName, page, sort)
 }
 
-func (r *QueryResolver) BlogCommentCount(ctx context.Context, postID string) (int, error) {
-	return r.svc.BlogCommentCount(ctx, postID)
+func (r *QueryResolver) BlogCommentCount(ctx context.Context, postName string) (int, error) {
+	return r.svc.BlogCommentCount(ctx, postName)
 }
 
 // ----------------
