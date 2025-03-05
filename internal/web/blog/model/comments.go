@@ -55,7 +55,7 @@ type CommentLike struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 	CommentID primitive.ObjectID `bson:"comment_id" json:"comment_id"`
-	UserID    primitive.ObjectID `bson:"user_id" json:"user_id"`
+	Author    CommentUser        `bson:"author" json:"author"`
 }
 
 // Collection returns the name of the MongoDB collection for comment likes

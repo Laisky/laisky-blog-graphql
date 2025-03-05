@@ -278,10 +278,10 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 // BlogToggleCommentLike toggles a like for a comment
 func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*models.Comment, error) {
 	// Get the user from context (assuming you have auth middleware)
-	user, err := s.ValidateAndGetUser(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "authentication required to like comments")
-	}
+	// user, err := s.ValidateAndGetUser(ctx)
+	// if err != nil {
+	// 	return nil, errors.Wrap(err, "authentication required to like comments")
+	// }
 
 	// Convert string ID to ObjectID
 	commentObjID, err := primitive.ObjectIDFromHex(commentID)
@@ -302,7 +302,7 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 	// Check if user has already liked this comment
 	filter := bson.M{
 		"comment_id": commentObjID,
-		"user_id":    user.ID,
+		// "user_id":    user.ID,
 	}
 
 	// Start a session for transaction
@@ -328,7 +328,7 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 				ID:        primitive.NewObjectID(),
 				CreatedAt: time.Now(),
 				CommentID: commentObjID,
-				UserID:    user.ID,
+				// UserID:    user.ID,
 			}
 
 			_, err = s.dao.GetPostCommentLike().InsertOne(sc, like)
