@@ -117,4 +117,4 @@ cpu.pprof
 .coverage.txt
 docs/example/config/settings-laisky.yml
 
-__debug_bin
+/__debug_bin*

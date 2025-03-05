@@ -83,12 +83,12 @@ type Query {
     language: Language! = zh_CN
   ): String!
   BlogComments(
-    post_name: String!
+    postName: String!
     page: Pagination = { page: 0, size: 10 }
     sort: Sort = { sort_by: "created_at", order: DESC }
   ): [Comment]!
   BlogCommentCount(
-    post_name: String!
+    postName: String!
   ): Int!
 
   # -------------------------------------
@@ -120,7 +120,7 @@ type Mutation {
     language: Language! = zh_CN
   ): BlogPost!
   BlogCreateComment(
-    post_name: String!
+    postName: String!
     content: String!
     authorName: String!
     authorEmail: String!
@@ -128,13 +128,13 @@ type Mutation {
     parentId: String
   ): Comment!
   BlogToggleCommentLike(
-    comment_id: String!
+    commentId: String!
   ): Comment!
   BlogApproveComment(
-    comment_id: String!
+    commentId: String!
   ): Comment!
   BlogDeleteComment(
-    comment_id: String!
+    commentId: String!
   ): Comment!
 
   # login

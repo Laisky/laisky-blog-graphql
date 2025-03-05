@@ -29,18 +29,37 @@ const (
 
 // mapDBCommentToAPIComment converts a model.Comment to models.Comment for API response
 func (s *Blog) mapDBCommentToAPIComment(comment *model.Comment) *models.Comment {
-	result := &models.Comment{
-		ID:            comment.ID.Hex(),
-		Content:       comment.Content,
-		AuthorName:    comment.Author.Name,
-		AuthorWebsite: comment.Author.Website,
-		PostID:        comment.PostID.Hex(),
-		CreatedAt:     *library.NewDatetimeFromTime(comment.CreatedAt),
+	if comment == nil {
+		return nil
 	}
 
+	result := &models.Comment{
+		ID:          comment.ID.Hex(),
+		Content:     comment.Content,
+		AuthorName:  comment.Author.Name,
+		AuthorEmail: "",                   // Not exposed in API by default
+		PostID:      comment.PostID.Hex(), // Match GraphQL schema naming
+		CreatedAt:   *library.NewDatetimeFromTime(comment.CreatedAt),
+		IsApproved:  comment.IsApproved,
+		Likes:       comment.Likes, // Include likes count
+	}
+
+	// Handle optional fields
 	if comment.ParentID != nil {
 		parentIDStr := comment.ParentID.Hex()
-		result.ParentID = &parentIDStr
+		result.ParentID = &parentIDStr // Match GraphQL schema naming
+	}
+
+	if comment.Author.Website != nil {
+		result.AuthorWebsite = comment.Author.Website
+	}
+
+	// Map replies recursively
+	if len(comment.Replies) > 0 {
+		result.Replies = make([]*models.Comment, len(comment.Replies))
+		for i, reply := range comment.Replies {
+			result.Replies[i] = s.mapDBCommentToAPIComment(reply)
+		}
 	}
 
 	return result
@@ -80,9 +99,16 @@ func (s *Blog) BlogComments(ctx context.Context,
 	page *models.Pagination,
 	sort *models.Sort) ([]*models.Comment, error) {
 
+	// find post
+	post := new(model.Post)
+	err := s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to check post existence")
+	}
+
 	// Build filter for approved comments on this post
 	filter := bson.M{
-		"post_name":   postName,
+		"post_id":     post.ID,
 		"is_approved": true,
 	}
 
@@ -132,9 +158,16 @@ func (s *Blog) BlogComments(ctx context.Context,
 
 // BlogCommentCount counts comments for a specific post
 func (s *Blog) BlogCommentCount(ctx context.Context, postName string) (int, error) {
+	// get post
+	post := new(model.Post)
+	err := s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to check post existence")
+	}
+
 	// Count approved comments - use the correct collection
 	count, err := s.dao.GetPostCommentCol().CountDocuments(ctx, bson.M{
-		"post_name":   postName,
+		"post_id":     post.ID,
 		"is_approved": true,
 	})
 	if err != nil {
@@ -185,13 +218,21 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 	// Create new comment
 	now := time.Now()
 	comment := &model.Comment{
-		ID:         primitive.NewObjectID(),
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		Author:     commentUser,
+		ID:        primitive.NewObjectID(),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Author: model.CommentUser{
+			// For embedded approach, should be changed to reference-based later
+			ID:        primitive.NewObjectID(),
+			CreatedAt: now,
+			Name:      authorName,
+			Email:     authorEmail,
+			Website:   authorWebsite,
+		},
 		PostID:     post.ID,
 		Content:    content,
-		IsApproved: false, // Require approval by default
+		IsApproved: false, // Change to false - require moderation
+		Likes:      0,     // Initialize likes counter
 	}
 
 	// Handle parent comment if provided

@@ -26,6 +26,7 @@ type Comment struct {
 	IsApproved bool `bson:"is_approved" json:"is_approved"`
 	// Not stored in database, populated at runtime when retrieving comments
 	Replies []*Comment `bson:"-" json:"replies,omitempty"`
+	Likes   int        `json:"likes"`
 }
 
 // Collection returns the name of the MongoDB collection for comments

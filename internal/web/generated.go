@@ -864,7 +864,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Mutation.BlogApproveComment(childComplexity, args["comment_id"].(string)), true
+		return e.complexity.Mutation.BlogApproveComment(childComplexity, args["commentId"].(string)), true
 
 	case "Mutation.BlogCreateComment":
 		if e.complexity.Mutation.BlogCreateComment == nil {
@@ -876,7 +876,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Mutation.BlogCreateComment(childComplexity, args["post_name"].(string), args["content"].(string), args["authorName"].(string), args["authorEmail"].(string), args["authorWebsite"].(*string), args["parentId"].(*string)), true
+		return e.complexity.Mutation.BlogCreateComment(childComplexity, args["postName"].(string), args["content"].(string), args["authorName"].(string), args["authorEmail"].(string), args["authorWebsite"].(*string), args["parentId"].(*string)), true
 
 	case "Mutation.BlogCreatePost":
 		if e.complexity.Mutation.BlogCreatePost == nil {
@@ -900,7 +900,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Mutation.BlogDeleteComment(childComplexity, args["comment_id"].(string)), true
+		return e.complexity.Mutation.BlogDeleteComment(childComplexity, args["commentId"].(string)), true
 
 	case "Mutation.BlogLogin":
 		if e.complexity.Mutation.BlogLogin == nil {
@@ -924,7 +924,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Mutation.BlogToggleCommentLike(childComplexity, args["comment_id"].(string)), true
+		return e.complexity.Mutation.BlogToggleCommentLike(childComplexity, args["commentId"].(string)), true
 
 	case "Mutation.CreateGeneralToken":
 		if e.complexity.Mutation.CreateGeneralToken == nil {
@@ -1039,7 +1039,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.BlogCommentCount(childComplexity, args["post_name"].(string)), true
+		return e.complexity.Query.BlogCommentCount(childComplexity, args["postName"].(string)), true
 
 	case "Query.BlogComments":
 		if e.complexity.Query.BlogComments == nil {
@@ -1051,7 +1051,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.BlogComments(childComplexity, args["post_name"].(string), args["page"].(*models.Pagination), args["sort"].(*models.Sort)), true
+		return e.complexity.Query.BlogComments(childComplexity, args["postName"].(string), args["page"].(*models.Pagination), args["sort"].(*models.Sort)), true
 
 	case "Query.BlogPostCategories":
 		if e.complexity.Query.BlogPostCategories == nil {
@@ -1831,20 +1831,20 @@ func (ec *executionContext) field_Mutation_BlogApproveComment_args(ctx context.C
 	if err != nil {
 		return nil, err
 	}
-	args["comment_id"] = arg0
+	args["commentId"] = arg0
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_BlogApproveComment_argsCommentID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["comment_id"]; !ok {
+	if _, ok := rawArgs["commentId"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("comment_id"))
-	if tmp, ok := rawArgs["comment_id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("commentId"))
+	if tmp, ok := rawArgs["commentId"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -1859,7 +1859,7 @@ func (ec *executionContext) field_Mutation_BlogCreateComment_args(ctx context.Co
 	if err != nil {
 		return nil, err
 	}
-	args["post_name"] = arg0
+	args["postName"] = arg0
 	arg1, err := ec.field_Mutation_BlogCreateComment_argsContent(ctx, rawArgs)
 	if err != nil {
 		return nil, err
@@ -1891,13 +1891,13 @@ func (ec *executionContext) field_Mutation_BlogCreateComment_argsPostName(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["post_name"]; !ok {
+	if _, ok := rawArgs["postName"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_name"))
-	if tmp, ok := rawArgs["post_name"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("postName"))
+	if tmp, ok := rawArgs["postName"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -2053,20 +2053,20 @@ func (ec *executionContext) field_Mutation_BlogDeleteComment_args(ctx context.Co
 	if err != nil {
 		return nil, err
 	}
-	args["comment_id"] = arg0
+	args["commentId"] = arg0
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_BlogDeleteComment_argsCommentID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["comment_id"]; !ok {
+	if _, ok := rawArgs["commentId"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("comment_id"))
-	if tmp, ok := rawArgs["comment_id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("commentId"))
+	if tmp, ok := rawArgs["commentId"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -2132,20 +2132,20 @@ func (ec *executionContext) field_Mutation_BlogToggleCommentLike_args(ctx contex
 	if err != nil {
 		return nil, err
 	}
-	args["comment_id"] = arg0
+	args["commentId"] = arg0
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_BlogToggleCommentLike_argsCommentID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["comment_id"]; !ok {
+	if _, ok := rawArgs["commentId"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("comment_id"))
-	if tmp, ok := rawArgs["comment_id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("commentId"))
+	if tmp, ok := rawArgs["commentId"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -2545,20 +2545,20 @@ func (ec *executionContext) field_Query_BlogCommentCount_args(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	args["post_name"] = arg0
+	args["postName"] = arg0
 	return args, nil
 }
 func (ec *executionContext) field_Query_BlogCommentCount_argsPostName(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["post_name"]; !ok {
+	if _, ok := rawArgs["postName"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_name"))
-	if tmp, ok := rawArgs["post_name"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("postName"))
+	if tmp, ok := rawArgs["postName"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -2573,7 +2573,7 @@ func (ec *executionContext) field_Query_BlogComments_args(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
-	args["post_name"] = arg0
+	args["postName"] = arg0
 	arg1, err := ec.field_Query_BlogComments_argsPage(ctx, rawArgs)
 	if err != nil {
 		return nil, err
@@ -2590,13 +2590,13 @@ func (ec *executionContext) field_Query_BlogComments_argsPostName(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	if _, ok := rawArgs["post_name"]; !ok {
+	if _, ok := rawArgs["postName"]; !ok {
 		var zeroVal string
 		return zeroVal, nil
 	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post_name"))
-	if tmp, ok := rawArgs["post_name"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("postName"))
+	if tmp, ok := rawArgs["postName"]; ok {
 		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
@@ -6346,7 +6346,7 @@ func (ec *executionContext) _Mutation_BlogCreateComment(ctx context.Context, fie
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogCreateComment(rctx, fc.Args["post_name"].(string), fc.Args["content"].(string), fc.Args["authorName"].(string), fc.Args["authorEmail"].(string), fc.Args["authorWebsite"].(*string), fc.Args["parentId"].(*string))
+		return ec.resolvers.Mutation().BlogCreateComment(rctx, fc.Args["postName"].(string), fc.Args["content"].(string), fc.Args["authorName"].(string), fc.Args["authorEmail"].(string), fc.Args["authorWebsite"].(*string), fc.Args["parentId"].(*string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -6427,7 +6427,7 @@ func (ec *executionContext) _Mutation_BlogToggleCommentLike(ctx context.Context,
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogToggleCommentLike(rctx, fc.Args["comment_id"].(string))
+		return ec.resolvers.Mutation().BlogToggleCommentLike(rctx, fc.Args["commentId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -6508,7 +6508,7 @@ func (ec *executionContext) _Mutation_BlogApproveComment(ctx context.Context, fi
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogApproveComment(rctx, fc.Args["comment_id"].(string))
+		return ec.resolvers.Mutation().BlogApproveComment(rctx, fc.Args["commentId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -6589,7 +6589,7 @@ func (ec *executionContext) _Mutation_BlogDeleteComment(ctx context.Context, fie
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogDeleteComment(rctx, fc.Args["comment_id"].(string))
+		return ec.resolvers.Mutation().BlogDeleteComment(rctx, fc.Args["commentId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -8161,7 +8161,7 @@ func (ec *executionContext) _Query_BlogComments(ctx context.Context, field graph
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogComments(rctx, fc.Args["post_name"].(string), fc.Args["page"].(*models.Pagination), fc.Args["sort"].(*models.Sort))
+		return ec.resolvers.Query().BlogComments(rctx, fc.Args["postName"].(string), fc.Args["page"].(*models.Pagination), fc.Args["sort"].(*models.Sort))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -8242,7 +8242,7 @@ func (ec *executionContext) _Query_BlogCommentCount(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogCommentCount(rctx, fc.Args["post_name"].(string))
+		return ec.resolvers.Query().BlogCommentCount(rctx, fc.Args["postName"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
