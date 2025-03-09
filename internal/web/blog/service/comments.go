@@ -250,7 +250,7 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 		}).Decode(&parentComment)
 
 		if err != nil {
-			if err == mongo.ErrNoDocuments {
+			if errors.Is(err, mongo.ErrNoDocuments) {
 				return nil, errors.New("parent comment not found or doesn't belong to the specified post")
 			}
 			return nil, errors.Wrap(err, "failed to fetch parent comment")
@@ -277,12 +277,6 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 
 // BlogToggleCommentLike toggles a like for a comment
 func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*models.Comment, error) {
-	// Get the user from context (assuming you have auth middleware)
-	// user, err := s.ValidateAndGetUser(ctx)
-	// if err != nil {
-	// 	return nil, errors.Wrap(err, "authentication required to like comments")
-	// }
-
 	// Convert string ID to ObjectID
 	commentObjID, err := primitive.ObjectIDFromHex(commentID)
 	if err != nil {
@@ -293,89 +287,66 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 	var comment model.Comment
 	err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{"_id": commentObjID}).Decode(&comment)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.New("comment not found")
 		}
 		return nil, errors.Wrap(err, "failed to fetch comment")
 	}
 
-	// Check if user has already liked this comment
-	filter := bson.M{
-		"comment_id": commentObjID,
-		// "user_id":    user.ID,
+	// Check if there is an existing like
+	filter := bson.M{"comment_id": commentObjID}
+	var like model.CommentLike
+	err = s.dao.GetPostCommentLike().FindOne(ctx, filter).Decode(&like)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		// User has not liked this comment yet - add a like
+		like = model.CommentLike{
+			ID:        primitive.NewObjectID(),
+			CreatedAt: time.Now(),
+			CommentID: commentObjID,
+		}
+
+		_, err = s.dao.GetPostCommentLike().InsertOne(ctx, like)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to insert like")
+		}
+
+		// Increment likes count
+		update := bson.M{"$inc": bson.M{"likes": 1}}
+		var updatedComment model.Comment
+		err = s.dao.GetPostCommentCol().FindOneAndUpdate(
+			ctx,
+			bson.M{"_id": commentObjID},
+			update,
+			options.FindOneAndUpdate().SetReturnDocument(options.After),
+		).Decode(&updatedComment)
+
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to update comment likes count")
+		}
+
+		return s.mapDBCommentToAPIComment(&updatedComment), nil
+	} else if err != nil {
+		return nil, errors.Wrap(err, "failed to check existing like")
 	}
 
-	// Start a session for transaction
-	session, err := s.dao.StartSession()
+	// User has already liked this comment - remove the like
+	_, err = s.dao.GetPostCommentLike().DeleteOne(ctx, bson.M{"_id": like.ID})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to start MongoDB session")
+		return nil, errors.Wrap(err, "failed to delete like")
 	}
-	defer session.EndSession(ctx)
 
+	// Decrement likes count
+	update := bson.M{"$inc": bson.M{"likes": -1}}
 	var updatedComment model.Comment
-	err = mongo.WithSession(ctx, session, func(sc mongo.SessionContext) error {
-		if err := session.StartTransaction(); err != nil {
-			return errors.Wrap(err, "failed to start transaction")
-		}
-
-		// Try to find existing like
-		var like model.CommentLike
-		err = s.dao.GetPostCommentLike().FindOne(sc, filter).Decode(&like)
-
-		if err == mongo.ErrNoDocuments {
-			// User has not liked this comment yet - add a like
-			like = model.CommentLike{
-				ID:        primitive.NewObjectID(),
-				CreatedAt: time.Now(),
-				CommentID: commentObjID,
-				// UserID:    user.ID,
-			}
-
-			_, err = s.dao.GetPostCommentLike().InsertOne(sc, like)
-			if err != nil {
-				return errors.Wrap(err, "failed to insert like")
-			}
-
-			// Increment likes count
-			update := bson.M{"$inc": bson.M{"likes": 1}}
-			err = s.dao.GetPostCommentCol().FindOneAndUpdate(
-				sc,
-				bson.M{"_id": commentObjID},
-				update,
-				options.FindOneAndUpdate().SetReturnDocument(options.After),
-			).Decode(&updatedComment)
-
-			if err != nil {
-				return errors.Wrap(err, "failed to update comment likes count")
-			}
-		} else if err != nil {
-			return errors.Wrap(err, "failed to check existing like")
-		} else {
-			// User has already liked this comment - remove the like
-			_, err = s.dao.GetPostCommentLike().DeleteOne(sc, bson.M{"_id": like.ID})
-			if err != nil {
-				return errors.Wrap(err, "failed to delete like")
-			}
-
-			// Decrement likes count
-			update := bson.M{"$inc": bson.M{"likes": -1}}
-			err = s.dao.GetPostCommentCol().FindOneAndUpdate(
-				sc,
-				bson.M{"_id": commentObjID},
-				update,
-				options.FindOneAndUpdate().SetReturnDocument(options.After),
-			).Decode(&updatedComment)
-
-			if err != nil {
-				return errors.Wrap(err, "failed to update comment likes count")
-			}
-		}
-
-		return session.CommitTransaction(sc)
-	})
+	err = s.dao.GetPostCommentCol().FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": commentObjID},
+		update,
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&updatedComment)
 
 	if err != nil {
-		return nil, errors.Wrap(err, "transaction failed")
+		return nil, errors.Wrap(err, "failed to update comment likes count")
 	}
 
 	return s.mapDBCommentToAPIComment(&updatedComment), nil
@@ -409,7 +380,7 @@ func (s *Blog) BlogApproveComment(ctx context.Context, commentID string) (*model
 	).Decode(&updatedComment)
 
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.New("comment not found")
 		}
 		return nil, errors.Wrap(err, "failed to approve comment")
@@ -444,7 +415,7 @@ func (s *Blog) BlogDeleteComment(ctx context.Context, commentID string) (*models
 	var comment model.Comment
 	err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{"_id": commentObjID}).Decode(&comment)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.New("comment not found")
 		}
 		return nil, errors.Wrap(err, "failed to fetch comment")

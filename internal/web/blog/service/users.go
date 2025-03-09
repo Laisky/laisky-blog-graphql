@@ -52,11 +52,14 @@ func (s *Blog) UserRegister(ctx context.Context,
 	user.Username = displayName
 
 	// check duplicate
-	{
-		user := new(model.User)
-		if err = col.FindOne(ctx, bson.M{"account": account}).Decode(user); err == nil {
-			return nil, errors.New("user already exists")
+	existedUser := new(model.User)
+	err = col.FindOne(ctx, bson.M{"account": account}).Decode(existedUser)
+	if err != nil {
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, errors.Wrapf(err, "find user %q", account)
 		}
+	} else {
+		return nil, errors.New("account already exists")
 	}
 
 	pwd, err := gcrypto.PasswordHash([]byte(password), gutils.HashTypeSha256)

@@ -166,8 +166,13 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	}
 
 	maxlen := gconfig.Shared.GetInt("settings.telegram.max_len")
-	if len(msg) > maxlen {
-		msg = msg[:maxlen] + " ..."
+	if maxlen <= 0 || maxlen > 3000 {
+		log.Logger.Warn("invalid max len, reset to 3000", zap.Int("maxlen", maxlen))
+		maxlen = 3000
+	}
+
+	if len([]rune(msg)) > maxlen {
+		msg = string([]rune(msg)[:maxlen]) + "..."
 	}
 
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
