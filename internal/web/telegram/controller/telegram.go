@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
@@ -171,8 +172,10 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		maxlen = 3000
 	}
 
-	if len([]rune(msg)) > maxlen {
-		msg = string([]rune(msg)[:maxlen]) + "..."
+	// Truncate message if too long, preserving closing delimiters if present
+	msgRunes := []rune(msg)
+	if len(msgRunes) > maxlen {
+		msg = escapeMsg(string(msgRunes[:maxlen]) + "...")
 	}
 
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
@@ -202,4 +205,30 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	}
 
 	return alert, err
+}
+
+// escapeMsg escapes special characters in a message to prevent Telegram from interpreting them as formatting
+func escapeMsg(msg string) string {
+	// Escape special characters that Telegram interprets as formatting
+	// Replace backticks with single quotes to avoid code block formatting issues
+	msg = strings.ReplaceAll(msg, "`", "'")
+
+	// Escape other special Telegram formatting characters
+	msg = strings.ReplaceAll(msg, "_", "\\_")
+	msg = strings.ReplaceAll(msg, "*", "\\*")
+	msg = strings.ReplaceAll(msg, "[", "\\[")
+	msg = strings.ReplaceAll(msg, "]", "\\]")
+	msg = strings.ReplaceAll(msg, "(", "\\(")
+	msg = strings.ReplaceAll(msg, ")", "\\)")
+	msg = strings.ReplaceAll(msg, "~", "\\~")
+	msg = strings.ReplaceAll(msg, ">", "\\>")
+	msg = strings.ReplaceAll(msg, "#", "\\#")
+	msg = strings.ReplaceAll(msg, "+", "\\+")
+	msg = strings.ReplaceAll(msg, "-", "\\-")
+	msg = strings.ReplaceAll(msg, "=", "\\=")
+	msg = strings.ReplaceAll(msg, "|", "\\|")
+	msg = strings.ReplaceAll(msg, "{", "\\{")
+	msg = strings.ReplaceAll(msg, "}", "\\}")
+
+	return msg
 }
