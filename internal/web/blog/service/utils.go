@@ -76,7 +76,7 @@ func convertTitleID(title string) string {
 
 func ExtractMenu(html string) string {
 	var (
-		menu                 = `<nav id="post-menu" class="h-100 flex-column align-items-stretch pe-4 border-end"><nav class="nav nav-pills flex-column">`
+		menu                 = `<nav id="post-menu" class="h-100 flex-column align-items-stretch"><nav class="nav nav-pills flex-column">`
 		level, escapedTl, tl string
 		l2cnt, l3cnt         string
 	)
