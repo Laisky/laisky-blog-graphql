@@ -554,7 +554,7 @@ func (s *Blog) NewPost(ctx context.Context,
 	} else {
 		// save to arweave
 		if arFileId, err := s.dao.SaveToArweave(ctx, p); err != nil {
-			s.logger.Error("try to save post to arweave got error", zap.Error(err))
+			s.logger.Error("try to save new post to arweave got error", zap.Error(err))
 		} else {
 			p.ArweaveId = slices.Insert(p.ArweaveId, 0, model.ArweaveHistoryItem{
 				Time: p.ModifiedAt,
@@ -648,7 +648,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 
 	// save to arweave
 	if arFileId, err := s.dao.SaveToArweave(ctx, p); err != nil {
-		s.logger.Error("try to save post to arweave got error", zap.Error(err))
+		s.logger.Error("try to save updated post to arweave got error", zap.Error(err))
 	} else {
 		p.ArweaveId = slices.Insert(p.ArweaveId, 0, model.ArweaveHistoryItem{
 			Time: p.ModifiedAt,

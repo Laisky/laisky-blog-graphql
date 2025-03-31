@@ -87,9 +87,17 @@ func (d *Blog) SaveToArweave(ctx context.Context, data any) (fileID string, err 
 		return "", errors.New("arweave is not enabled")
 	}
 
+	if data == nil {
+		return "", errors.New("nil data provided to save to arweave")
+	}
+
 	payload, err := json.Marshal(data)
 	if err != nil {
 		return "", errors.Wrap(err, "marshal data")
+	}
+
+	if len(payload) == 0 {
+		return "", errors.New("empty payload after marshal")
 	}
 
 	// akord do not support content type
