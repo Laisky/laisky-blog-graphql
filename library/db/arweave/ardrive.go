@@ -70,7 +70,7 @@ func (a *Ardrive) Upload(ctx context.Context,
 		"--local-path", tmpFile.Name(),
 		"--parent-folder-id", a.folder,
 		"-w", a.walletPath,
-		"--turbo", "--replace",
+		"--replace",
 	)
 	if err != nil {
 		return "", errors.Wrap(err, "upload file")
