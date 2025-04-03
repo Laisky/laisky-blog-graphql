@@ -1,5 +1,5 @@
-// Package model defines the data model for the blog service.
-package model
+// Package telegram defines the data model for the blog service.
+package telegram
 
 import (
 	"crypto/sha256"

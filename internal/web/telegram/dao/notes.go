@@ -9,8 +9,8 @@ import (
 	mongoLib "go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
+	telemodel "github.com/Laisky/laisky-blog-graphql/library/models/telegram"
 )
 
 const (
@@ -33,7 +33,7 @@ func (d *Telegram) GetNotesCol() *mongoLib.Collection {
 }
 
 // Search search notes by keyword
-func (d *Telegram) Search(ctx context.Context, keyword string) (notes []*model.TelegramNote, err error) {
+func (d *Telegram) Search(ctx context.Context, keyword string) (notes []*telemodel.TelegramNote, err error) {
 	cur, err := d.GetNotesCol().Find(ctx,
 		bson.M{"content": bson.M{"$regex": primitive.Regex{
 			Pattern: keyword,
@@ -47,7 +47,7 @@ func (d *Telegram) Search(ctx context.Context, keyword string) (notes []*model.T
 	defer cur.Close(ctx)
 
 	for cur.Next(ctx) {
-		note := &model.TelegramNote{}
+		note := &telemodel.TelegramNote{}
 		if err = cur.Decode(note); err != nil {
 			return nil, errors.Wrap(err, "decode note")
 		}
