@@ -29,7 +29,7 @@ type TelegramNoteHistory struct {
 }
 
 // UpdateNote update note content
-func (n *TelegramNote) UpdateNote(content string) {
+func (n *TelegramNote) UpdateNote(content string) (changed bool) {
 	// check current content's digest
 	newHashed := sha256.Sum256([]byte(content))
 	newDigest := hex.EncodeToString(newHashed[:])
@@ -40,7 +40,7 @@ func (n *TelegramNote) UpdateNote(content string) {
 	}
 
 	if n.Digest == newDigest {
-		return
+		return false
 	}
 
 	// update note
@@ -52,4 +52,6 @@ func (n *TelegramNote) UpdateNote(content string) {
 	n.Content = content
 	n.UpdatedAt = time.Now()
 	n.Digest = newDigest
+
+	return true
 }
