@@ -1,4 +1,4 @@
-FROM golang:1.24.1-bullseye AS gobuild
+FROM golang:1.24.3-bookworm AS gobuild
 
 # install dependencies
 RUN apt-get update \
@@ -18,7 +18,7 @@ ENV GOARCH=amd64
 RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
 
 # copy executable file and certs to a pure container
-FROM node:22-bullseye AS vitebuilder
+FROM node:24-bookworm AS vitebuilder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates haveged \

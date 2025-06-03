@@ -4,6 +4,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -81,10 +82,38 @@ func RunServer(addr string, resolver *Resolver) {
 }
 
 func allowCORS(ctx *gin.Context) {
-	ctx.Header("Access-Control-Allow-Origin", "*")
-	ctx.Header("Access-Control-Allow-Methods", "*")
-	ctx.Header("Access-Control-Allow-Headers", "*")
-	ctx.Header("Access-Control-Allow-Credentials", "true")
+	origin := ctx.Request.Header.Get("Origin")
+	allowedOrigin := ""
+
+	if origin != "" {
+		parsedOriginURL, err := url.Parse(origin)
+		if err == nil {
+			host := strings.ToLower(parsedOriginURL.Hostname())
+			// Allow *.laisky.com and laisky.com
+			if strings.HasSuffix(host, ".laisky.com") || host == "laisky.com" {
+				allowedOrigin = origin
+			}
+		}
+	}
+
+	if allowedOrigin != "" {
+		ctx.Header("Access-Control-Allow-Origin", allowedOrigin)
+		ctx.Header("Access-Control-Allow-Credentials", "true")
+		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD")
+		ctx.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin, X-CSRF-Token, X-Requested-With, sentry-trace, baggage")
+		ctx.Header("Access-Control-Max-Age", "86400") // 24 hours
+		ctx.Header("Vary", "Origin")                  // Indicate that the response varies based on the Origin header
+
+		if ctx.Request.Method == http.MethodOptions {
+			ctx.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+	} else if origin != "" && ctx.Request.Method == http.MethodOptions {
+		// If Origin is present, but not allowed, and it's an OPTIONS request (preflight)
+		// Deny the preflight request from disallowed origins.
+		ctx.AbortWithStatus(http.StatusForbidden)
+		return
+	}
 
 	ctx.Next()
 }
