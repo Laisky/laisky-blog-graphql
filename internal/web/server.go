@@ -98,9 +98,9 @@ func allowCORS(ctx *gin.Context) {
 
 	if allowedOrigin != "" {
 		ctx.Header("Access-Control-Allow-Origin", allowedOrigin)
+		ctx.Header("Access-Control-Allow-Headers", "*")
 		ctx.Header("Access-Control-Allow-Credentials", "true")
-		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD")
-		ctx.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin, X-CSRF-Token, X-Requested-With, sentry-trace, baggage")
+		ctx.Header("Access-Control-Allow-Methods", "*")
 		ctx.Header("Access-Control-Max-Age", "86400") // 24 hours
 		ctx.Header("Vary", "Origin")                  // Indicate that the response varies based on the Origin header
 
