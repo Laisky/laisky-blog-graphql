@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -48,29 +47,51 @@ func (a *Ardrive) Upload(ctx context.Context,
 		return "", errors.Wrap(err, "look path for ardrive")
 	}
 
-	// write file content to temp file
-	tmpFile, err := os.CreateTemp("", "arweave-upload-*")
+	// Create temp file with explicit permissions
+	tmpFile, err := os.CreateTemp("", "arweave-upload-*.tmp")
 	if err != nil {
 		return "", errors.Wrap(err, "create temp file")
 	}
-	defer os.Remove(tmpFile.Name())
+	tmpFilePath := tmpFile.Name()
+	defer func() {
+		tmpFile.Close() // Ensure file is closed even if not explicitly closed above
+		os.Remove(tmpFilePath)
+	}()
 
-	if _, err = io.Copy(tmpFile, bytes.NewReader(data)); err != nil {
+	// Set file permissions explicitly
+	if err = tmpFile.Chmod(0644); err != nil {
+		return "", errors.Wrap(err, "set file permissions")
+	}
+
+	// Write data to temp file
+	if _, err = tmpFile.Write(data); err != nil {
 		return "", errors.Wrap(err, "write data to temp file")
 	}
 
+	// Close the file handle before running the external command
 	if err = tmpFile.Close(); err != nil {
-		return "", errors.Wrap(err, "close file")
+		return "", errors.Wrap(err, "close temp file")
 	}
 
-	// upload file
-	stdout, err := gutils.RunCMD(ctx, bin,
-		"upload-file",
-		"--content-type", opt.contentType,
-		"--local-path", tmpFile.Name(),
-		"--parent-folder-id", a.folder,
-		"-w", a.walletPath,
-		"--replace",
+	// Verify file exists and is readable before running ardrive
+	if _, err = os.Stat(tmpFilePath); err != nil {
+		return "", errors.Wrap(err, "temp file not accessible")
+	}
+
+	// upload file with explicit environment to avoid TLS warnings
+	envs := os.Environ()
+	envs = append(envs, "NODE_TLS_REJECT_UNAUTHORIZED=1") // Override the insecure setting
+
+	stdout, err := gutils.RunCMDWithEnv(ctx, bin,
+		[]string{
+			"upload-file",
+			"--content-type", opt.contentType,
+			"--local-path", tmpFilePath,
+			"--parent-folder-id", a.folder,
+			"-w", a.walletPath,
+			"--replace",
+		},
+		envs,
 	)
 	if err != nil {
 		return "", errors.Wrap(err, "upload file")
@@ -91,6 +112,10 @@ func (a *Ardrive) Upload(ctx context.Context,
 
 	if len(resp.Created) == 0 {
 		return "", errors.Errorf("no file uploaded, got %s", string(stdout))
+	}
+
+	if resp.Created[0].DataTxId == "" {
+		return "", errors.Errorf("no data tx id in response, got %s", string(stdout))
 	}
 
 	return resp.Created[0].DataTxId, nil

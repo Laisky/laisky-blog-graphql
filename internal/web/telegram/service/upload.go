@@ -144,6 +144,7 @@ func (s *Telegram) uploadHandler(ctx context.Context, us *userStat, msg *tb.Mess
 	if err != nil {
 		logger.Error("handle user uploaded file", zap.Error(err))
 		s.bot.Send(us.user, fmt.Sprintf("failed to upload file: %s", err.Error()))
+		return
 	}
 
 	sendMsg := fmt.Sprintf("File uploaded successfully. "+

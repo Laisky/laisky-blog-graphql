@@ -143,6 +143,9 @@ func (d *Upload) UploadFileWithTelegramUID(ctx context.Context,
 
 	// upload
 	fileID, err = d.UploadFileWithApikey(ctx, user.OneapiKey, cnt, contentType)
+	if err != nil {
+		return fileID, errors.Wrap(err, "upload file with apikey")
+	}
 
 	// save file info
 	go func() {
