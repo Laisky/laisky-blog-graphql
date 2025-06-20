@@ -33,7 +33,11 @@ func (r *MutationResolver) ArweaveUpload(ctx context.Context, fileB64 string, co
 	var apikey string
 	uc := &jwt.UserClaims{}
 	if err := auth.Instance.GetUserClaims(ctx, uc); err != nil {
-		gctx := gmw.GetGinCtxFromStdCtx(ctx)
+		gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
+		if !ok {
+			return nil, errors.New("cannot get gin context from standard context")
+		}
+
 		apikey = strings.TrimSpace(strings.TrimPrefix(gctx.GetHeader("Authorization"), "Bearer "))
 		if apikey == "" {
 			return nil, errors.Wrap(err, "cannot get user claims")

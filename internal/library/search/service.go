@@ -40,7 +40,11 @@ func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.We
 	logger := gmw.GetLogger(ctx).
 		Named("web_fetch").
 		With(zap.String("url", url))
-	gctx := gmw.GetGinCtxFromStdCtx(ctx)
+	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
+	if !ok {
+		return nil, errors.New("cannot get gin context from standard context")
+	}
+
 	apikey := strings.TrimSpace(strings.TrimPrefix(gctx.GetHeader("Authorization"), "Bearer "))
 	if apikey == "" {
 		return nil, errors.New("cannot get apikey")
@@ -70,7 +74,11 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 	logger := gmw.GetLogger(ctx).
 		Named("web_search").
 		With(zap.String("query", query))
-	gctx := gmw.GetGinCtxFromStdCtx(ctx)
+	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
+	if !ok {
+		return nil, errors.New("cannot get gin context from standard context")
+	}
+
 	apikey := strings.TrimSpace(strings.TrimPrefix(gctx.GetHeader("Authorization"), "Bearer "))
 	if apikey == "" {
 		return nil, errors.New("cannot get apikey")

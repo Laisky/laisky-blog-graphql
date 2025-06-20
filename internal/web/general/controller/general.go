@@ -117,8 +117,12 @@ token (`general` in cookie):
 */
 func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 	var token string
-	if token, err = ginMw.
-		GetGinCtxFromStdCtx(ctx).
+	gctx, ok := ginMw.GetGinCtxFromStdCtx(ctx)
+	if !ok {
+		return "", errors.New("cannot get gin context from standard context")
+	}
+
+	if token, err = gctx.
 		Cookie(generalTokenName); err != nil {
 		return "", errors.Wrap(err, "get jwt token from ctx")
 	}
