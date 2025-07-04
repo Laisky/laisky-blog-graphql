@@ -85,33 +85,70 @@ func allowCORS(ctx *gin.Context) {
 	origin := ctx.Request.Header.Get("Origin")
 	allowedOrigin := ""
 
+	// Always add debug logging for CORS requests
+	log.Logger.Debug("CORS request",
+		zap.String("method", ctx.Request.Method),
+		zap.String("origin", origin),
+		zap.String("user-agent", ctx.Request.Header.Get("User-Agent")))
+
 	if origin != "" {
 		parsedOriginURL, err := url.Parse(origin)
 		if err == nil {
 			host := strings.ToLower(parsedOriginURL.Hostname())
-			// Allow *.laisky.com and laisky.com
-			if strings.HasSuffix(host, ".laisky.com") || host == "laisky.com" {
+			// Allow *.laisky.com, laisky.com, and localhost for development
+			if strings.HasSuffix(host, ".laisky.com") ||
+				host == "laisky.com" ||
+				host == "localhost" ||
+				strings.HasPrefix(host, "127.0.0.1") ||
+				strings.HasPrefix(host, "192.168.") ||
+				strings.HasPrefix(host, "10.") {
 				allowedOrigin = origin
+				log.Logger.Debug("CORS: origin allowed",
+					zap.String("origin", origin),
+					zap.String("host", host))
+			} else {
+				// Add debug logging for denied origins
+				log.Logger.Debug("CORS: origin denied",
+					zap.String("origin", origin),
+					zap.String("host", host))
 			}
+		} else {
+			// Add debug logging for parsing errors
+			log.Logger.Debug("CORS: failed to parse origin",
+				zap.String("origin", origin),
+				zap.Error(err))
 		}
 	}
 
+	// Set CORS headers
 	if allowedOrigin != "" {
 		ctx.Header("Access-Control-Allow-Origin", allowedOrigin)
-		ctx.Header("Access-Control-Allow-Headers", "*")
+		ctx.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token")
 		ctx.Header("Access-Control-Allow-Credentials", "true")
-		ctx.Header("Access-Control-Allow-Methods", "*")
+		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400") // 24 hours
 		ctx.Header("Vary", "Origin")                  // Indicate that the response varies based on the Origin header
 
 		if ctx.Request.Method == http.MethodOptions {
+			log.Logger.Debug("CORS: handling preflight request", zap.String("origin", origin))
 			ctx.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 	} else if origin != "" && ctx.Request.Method == http.MethodOptions {
 		// If Origin is present, but not allowed, and it's an OPTIONS request (preflight)
 		// Deny the preflight request from disallowed origins.
+		log.Logger.Debug("CORS: denying preflight for disallowed origin",
+			zap.String("origin", origin))
 		ctx.AbortWithStatus(http.StatusForbidden)
+		return
+	} else if origin == "" && ctx.Request.Method == http.MethodOptions {
+		// Handle OPTIONS requests without Origin header (some tools/browsers)
+		log.Logger.Debug("CORS: OPTIONS request without Origin header")
+		ctx.Header("Access-Control-Allow-Origin", "*")
+		ctx.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token")
+		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
+		ctx.Header("Access-Control-Max-Age", "86400")
+		ctx.AbortWithStatus(http.StatusNoContent)
 		return
 	}
 
