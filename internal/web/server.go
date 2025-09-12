@@ -123,7 +123,7 @@ func allowCORS(ctx *gin.Context) {
 	// Set CORS headers
 	if allowedOrigin != "" {
 		ctx.Header("Access-Control-Allow-Origin", allowedOrigin)
-		ctx.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token")
+		ctx.Header("Access-Control-Allow-Headers", "*")
 		ctx.Header("Access-Control-Allow-Credentials", "true")
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400") // 24 hours
@@ -145,7 +145,7 @@ func allowCORS(ctx *gin.Context) {
 		// Handle OPTIONS requests without Origin header (some tools/browsers)
 		log.Logger.Debug("CORS: OPTIONS request without Origin header")
 		ctx.Header("Access-Control-Allow-Origin", "*")
-		ctx.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token")
+		ctx.Header("Access-Control-Allow-Headers", "*")
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400")
 		ctx.AbortWithStatus(http.StatusNoContent)
