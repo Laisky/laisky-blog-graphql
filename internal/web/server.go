@@ -3,6 +3,7 @@ package web
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -101,7 +102,8 @@ func allowCORS(ctx *gin.Context) {
 				host == "localhost" ||
 				strings.HasPrefix(host, "127.0.0.1") ||
 				strings.HasPrefix(host, "192.168.") ||
-				strings.HasPrefix(host, "10.") {
+				strings.HasPrefix(host, "10.") ||
+				isCarrierGradeNatIP(host) {
 				allowedOrigin = origin
 				log.Logger.Debug("CORS: origin allowed",
 					zap.String("origin", origin),
@@ -153,4 +155,18 @@ func allowCORS(ctx *gin.Context) {
 	}
 
 	ctx.Next()
+}
+
+func isCarrierGradeNatIP(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	ip = ip.To4()
+	if ip == nil {
+		return false
+	}
+
+	return ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127
 }

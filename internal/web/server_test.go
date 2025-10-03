@@ -136,6 +136,22 @@ func TestAllowCORS(t *testing.T) {
 			expectedCORS:   true,
 			expectedOrigin: "https://api.v2.laisky.com",
 		},
+		{
+			name:           "Valid CGNAT IP origin",
+			method:         "GET",
+			origin:         "https://100.70.1.2",
+			expectedStatus: http.StatusOK,
+			expectedCORS:   true,
+			expectedOrigin: "https://100.70.1.2",
+		},
+		{
+			name:           "Outside CGNAT range",
+			method:         "GET",
+			origin:         "https://100.128.0.1",
+			expectedStatus: http.StatusOK,
+			expectedCORS:   false,
+			expectedOrigin: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -170,8 +186,8 @@ func TestAllowCORS(t *testing.T) {
 			if tt.expectedCORS {
 				assert.Equal(t, tt.expectedOrigin, w.Header().Get("Access-Control-Allow-Origin"), "CORS origin header mismatch")
 				assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"), "CORS credentials header mismatch")
-				assert.Equal(t, "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD", w.Header().Get("Access-Control-Allow-Methods"), "CORS methods header mismatch")
-				assert.Equal(t, "Content-Type, Authorization, Accept, Origin, X-CSRF-Token, X-Requested-With, sentry-trace, baggage", w.Header().Get("Access-Control-Allow-Headers"), "CORS headers mismatch")
+				assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS, HEAD", w.Header().Get("Access-Control-Allow-Methods"), "CORS methods header mismatch")
+				assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Headers"), "CORS headers mismatch")
 				assert.Equal(t, "86400", w.Header().Get("Access-Control-Max-Age"), "CORS max age header mismatch")
 				assert.Equal(t, "Origin", w.Header().Get("Vary"), "Vary header mismatch")
 			} else {
@@ -204,9 +220,12 @@ func TestAllowCORSEdgeCases(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
-		// Should pass through to handler since no origin header is present
-		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+		// Middleware should respond with generic CORS headers for blank origin preflight
+		assert.Equal(t, http.StatusNoContent, w.Code)
+		assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+		assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Headers"))
+		assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS, HEAD", w.Header().Get("Access-Control-Allow-Methods"))
+		assert.Equal(t, "86400", w.Header().Get("Access-Control-Max-Age"))
 	})
 
 	t.Run("Origin header with only spaces", func(t *testing.T) {
