@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	gmw "github.com/Laisky/gin-middlewares/v6"
@@ -55,6 +56,7 @@ func CheckUserExternalBilling(ctx context.Context,
 	var reqBody bytes.Buffer
 	if err = json.NewEncoder(&reqBody).Encode(
 		map[string]any{
+			"phase":          "single",
 			"add_used_quota": cost,
 			"add_reason":     costReason,
 		}); err != nil {
@@ -65,7 +67,11 @@ func CheckUserExternalBilling(ctx context.Context,
 	if err != nil {
 		return errors.Wrap(err, "push cost to external billing api")
 	}
-	req.Header.Add("Authorization", apikey)
+	if apikey != "" && !strings.HasPrefix(strings.ToLower(apikey), "bearer ") {
+		apikey = "Bearer " + apikey
+	}
+	req.Header.Set("Authorization", apikey)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req) //nolint: bodyclose
 	if err != nil {
