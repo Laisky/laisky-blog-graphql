@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -43,6 +44,21 @@ func RunServer(addr string, resolver *Resolver) {
 
 	if err := ginMw.EnableMetric(server); err != nil {
 		log.Logger.Panic("enable metric server", zap.Error(err))
+	}
+
+	if resolver != nil && resolver.args.BingSearchEngine != nil {
+		mcpServer, err := mcp.NewServer(resolver.args.BingSearchEngine, log.Logger)
+		if err != nil {
+			log.Logger.Error("init mcp server", zap.Error(err))
+		} else {
+			server.Any("/mcp", gin.WrapH(mcpServer.Handler()))
+		}
+	} else {
+		bingNil := resolver != nil && resolver.args.BingSearchEngine == nil
+		log.Logger.Warn("skip mcp server initialization",
+			zap.Bool("resolver_nil", resolver == nil),
+			zap.Bool("bing_search_engine_nil", bingNil),
+		)
 	}
 
 	server.Any("/health", func(ctx *gin.Context) {
