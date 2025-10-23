@@ -21,6 +21,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -46,18 +47,29 @@ func RunServer(addr string, resolver *Resolver) {
 		log.Logger.Panic("enable metric server", zap.Error(err))
 	}
 
-	if resolver != nil && resolver.args.BingSearchEngine != nil {
-		mcpServer, err := mcp.NewServer(resolver.args.BingSearchEngine, log.Logger)
+	if resolver != nil && (resolver.args.BingSearchEngine != nil || resolver.args.AskUserService != nil) {
+		mcpServer, err := mcp.NewServer(resolver.args.BingSearchEngine, resolver.args.AskUserService, log.Logger)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
 			server.Any("/mcp", gin.WrapH(mcpServer.Handler()))
+			inspector := mcp.NewInspectorHandler("/mcp", log.Logger)
+			wrappedInspector := gin.WrapH(inspector)
+			server.GET("/mcp/debug", wrappedInspector)
+			server.HEAD("/mcp/debug", wrappedInspector)
+			if resolver.args.AskUserService != nil {
+				askUserMux := askuser.NewHTTPHandler(resolver.args.AskUserService, log.Logger.Named("ask_user_http"))
+				server.Any("/mcp/tools/ask_user", gin.WrapH(askUserMux))
+				server.Any("/mcp/tools/ask_user/*path", gin.WrapH(http.StripPrefix("/mcp/tools/ask_user", askUserMux)))
+			}
 		}
 	} else {
 		bingNil := resolver != nil && resolver.args.BingSearchEngine == nil
+		askNil := resolver != nil && resolver.args.AskUserService == nil
 		log.Logger.Warn("skip mcp server initialization",
 			zap.Bool("resolver_nil", resolver == nil),
 			zap.Bool("bing_search_engine_nil", bingNil),
+			zap.Bool("ask_user_service_nil", askNil),
 		)
 	}
 

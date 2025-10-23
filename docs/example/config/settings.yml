@@ -17,3 +17,8 @@ settings:
       addr: 100.97.108.34:27018
       user: laisky
       pwd: 1234
+    mcp:
+      db: mcp
+      addr: 127.0.0.1
+      user: postgres
+      pwd: changeme

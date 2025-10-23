@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/search"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	arweave "github.com/Laisky/laisky-blog-graphql/internal/web/arweave/controller"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
@@ -27,6 +28,7 @@ type ResolverArgs struct {
 	BlogSvc          *blogSvc.Blog
 	BingSearchEngine *bing.SearchEngine
 	Rdb              *rlibs.DB
+	AskUserService   *askuser.Service
 }
 
 // NewResolver new resolver

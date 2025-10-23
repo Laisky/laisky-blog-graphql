@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v5/log"
 	"github.com/Laisky/zap"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
@@ -26,15 +28,16 @@ const (
 
 // Server wraps the MCP server state for the HTTP transport.
 type Server struct {
-	handler      http.Handler
-	logger       logSDK.Logger
-	searchEngine *bing.SearchEngine
+	handler        http.Handler
+	logger         logSDK.Logger
+	searchEngine   *bing.SearchEngine
+	askUserService *askuser.Service
 }
 
 // NewServer constructs a remote MCP server exposing HTTP endpoints under a single handler.
-func NewServer(searchEngine *bing.SearchEngine, logger logSDK.Logger) (*Server, error) {
-	if searchEngine == nil {
-		return nil, fmt.Errorf("search engine is required")
+func NewServer(searchEngine *bing.SearchEngine, askUserService *askuser.Service, logger logSDK.Logger) (*Server, error) {
+	if searchEngine == nil && askUserService == nil {
+		return nil, fmt.Errorf("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
 		logger = log.Logger
@@ -59,25 +62,43 @@ func NewServer(searchEngine *bing.SearchEngine, logger logSDK.Logger) (*Server, 
 	)
 
 	s := &Server{
-		handler:      streamable,
-		logger:       logger.Named("mcp"),
-		searchEngine: searchEngine,
+		handler:        streamable,
+		logger:         logger.Named("mcp"),
+		searchEngine:   searchEngine,
+		askUserService: askUserService,
 	}
 
-	tool := mcp.NewTool(
-		"web_search",
-		mcp.WithDescription("Search the public web using Bing and return a structured result set."),
-		mcp.WithString(
-			"query",
-			mcp.Required(),
-			mcp.Description("Plain text search query."),
-		),
-		mcp.WithReadOnlyHintAnnotation(true),
-		mcp.WithIdempotentHintAnnotation(true),
-		mcp.WithOpenWorldHintAnnotation(true),
-	)
+	if searchEngine != nil {
+		tool := mcp.NewTool(
+			"web_search",
+			mcp.WithDescription("Search the public web using Bing and return a structured result set."),
+			mcp.WithString(
+				"query",
+				mcp.Required(),
+				mcp.Description("Plain text search query."),
+			),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(true),
+		)
 
-	mcpServer.AddTool(tool, s.handleWebSearch)
+		mcpServer.AddTool(tool, s.handleWebSearch)
+	}
+
+	if askUserService != nil {
+		askTool := mcp.NewTool(
+			"ask_user",
+			mcp.WithDescription("Forward a question to the authenticated user and wait for a response."),
+			mcp.WithString(
+				"question",
+				mcp.Required(),
+				mcp.Description("The question that should be surfaced to the user."),
+			),
+			mcp.WithIdempotentHintAnnotation(false),
+		)
+
+		mcpServer.AddTool(askTool, s.handleAskUser)
+	}
 
 	return s, nil
 }
@@ -88,6 +109,10 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleWebSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.searchEngine == nil {
+		return mcp.NewToolResultError("web search is not configured"), nil
+	}
+
 	query, err := req.RequireString("query")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -152,6 +177,69 @@ func extractAPIKey(authHeader string) string {
 	}
 
 	return value
+}
+
+func (s *Server) handleAskUser(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.askUserService == nil {
+		return mcp.NewToolResultError("ask_user tool is not available"), nil
+	}
+
+	question, err := req.RequireString("question")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return mcp.NewToolResultError("question cannot be empty"), nil
+	}
+
+	authHeader, _ := ctx.Value(keyAuthorization).(string)
+	authCtx, err := askuser.ParseAuthorizationContext(authHeader)
+	if err != nil {
+		s.logger.Warn("ask_user authorization failed", zap.Error(err))
+		return mcp.NewToolResultError("invalid authorization header"), nil
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	stored, err := s.askUserService.CreateRequest(callCtx, authCtx, question)
+	if err != nil {
+		s.logger.Error("ask_user create request", zap.Error(err))
+		return mcp.NewToolResultError("failed to create ask_user request"), nil
+	}
+
+	answered, err := s.askUserService.WaitForAnswer(callCtx, stored.ID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			_ = s.askUserService.CancelRequest(context.Background(), stored.ID, askuser.StatusExpired)
+			return mcp.NewToolResultError("timeout waiting for user response"), nil
+		}
+		s.logger.Error("ask_user wait for answer", zap.Error(err))
+		return mcp.NewToolResultError("failed while waiting for user response"), nil
+	}
+
+	if answered.Answer == nil {
+		return mcp.NewToolResultError("user responded without an answer"), nil
+	}
+
+	resultPayload := map[string]any{
+		"request_id": answered.ID.String(),
+		"question":   answered.Question,
+		"answer":     *answered.Answer,
+		"asked_at":   answered.CreatedAt,
+	}
+	if answered.AnsweredAt != nil {
+		resultPayload["answered_at"] = answered.AnsweredAt
+	}
+
+	toolResult, err := mcp.NewToolResultJSON(resultPayload)
+	if err != nil {
+		s.logger.Error("encode ask_user response", zap.Error(err))
+		return mcp.NewToolResultError("failed to encode ask_user response"), nil
+	}
+
+	return toolResult, nil
 }
 
 func newMCPHooks(logger logSDK.Logger) *srv.Hooks {

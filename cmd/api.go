@@ -13,6 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
 	blogCtl "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogDao "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
@@ -23,6 +24,7 @@ import (
 	telegramModel "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
+	"github.com/Laisky/laisky-blog-graphql/library/db/postgres"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
@@ -130,6 +132,28 @@ func runAPI() error {
 	args.BingSearchEngine = bing.NewSearchEngine(
 		gconfig.S.GetString("settings.websearch.bing.api_key"),
 	)
+
+	{ // setup ask_user service
+		dial := postgres.DialInfo{
+			Addr:   gconfig.S.GetString("settings.db.mcp.addr"),
+			DBName: gconfig.S.GetString("settings.db.mcp.db"),
+			User:   gconfig.S.GetString("settings.db.mcp.user"),
+			Pwd:    gconfig.S.GetString("settings.db.mcp.pwd"),
+		}
+		if dial.Addr == "" || dial.DBName == "" || dial.User == "" {
+			logger.Warn("ask_user database configuration incomplete",
+				zap.Bool("addr_empty", dial.Addr == ""),
+				zap.Bool("db_empty", dial.DBName == ""),
+				zap.Bool("user_empty", dial.User == ""),
+			)
+		} else if askDB, err := postgres.NewDB(ctx, dial); err != nil {
+			logger.Error("new ask_user postgres", zap.Error(err))
+		} else if svc, err := askuser.NewService(askDB.DB, logger.Named("ask_user")); err != nil {
+			logger.Error("init ask_user service", zap.Error(err))
+		} else {
+			args.AskUserService = svc
+		}
+	}
 
 	resolver := web.NewResolver(args)
 	web.RunServer(gconfig.Shared.GetString("listen"), resolver)
