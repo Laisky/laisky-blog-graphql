@@ -40,12 +40,15 @@ func NewServer(searchEngine *bing.SearchEngine, logger logSDK.Logger) (*Server, 
 		logger = log.Logger
 	}
 
+	hooks := newMCPHooks(logger.Named("mcp_hooks"))
+
 	mcpServer := srv.NewMCPServer(
 		"laisky-blog-graphql",
 		"1.0.0",
 		srv.WithToolCapabilities(true),
 		srv.WithInstructions("Use the web_search tool to run Bing-powered web searches."),
 		srv.WithRecovery(),
+		srv.WithHooks(hooks),
 	)
 
 	streamable := srv.NewStreamableHTTPServer(
@@ -149,4 +152,60 @@ func extractAPIKey(authHeader string) string {
 	}
 
 	return value
+}
+
+func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
+	if logger == nil {
+		return nil
+	}
+
+	hooks := &srv.Hooks{}
+
+	hooks.AddBeforeAny(func(ctx context.Context, id any, method mcp.MCPMethod, message any) {
+		fields := hookLogFields(ctx, id, method)
+		if message != nil {
+			fields = append(fields, zap.Any("request", message))
+		}
+		logger.Debug("mcp request received", fields...)
+	})
+
+	hooks.AddOnSuccess(func(ctx context.Context, id any, method mcp.MCPMethod, message any, result any) {
+		fields := hookLogFields(ctx, id, method)
+		if result != nil {
+			fields = append(fields, zap.Any("response", result))
+		}
+		logger.Info("mcp request succeeded", fields...)
+	})
+
+	hooks.AddOnError(func(ctx context.Context, id any, method mcp.MCPMethod, message any, err error) {
+		fields := hookLogFields(ctx, id, method)
+		if message != nil {
+			fields = append(fields, zap.Any("request", message))
+		}
+		fields = append(fields, zap.Error(err))
+		logger.Error("mcp request failed", fields...)
+	})
+
+	hooks.AddOnRegisterSession(func(ctx context.Context, session srv.ClientSession) {
+		logger.Info("mcp session registered", zap.String("session_id", session.SessionID()))
+	})
+
+	hooks.AddOnUnregisterSession(func(ctx context.Context, session srv.ClientSession) {
+		logger.Info("mcp session unregistered", zap.String("session_id", session.SessionID()))
+	})
+
+	return hooks
+}
+
+func hookLogFields(ctx context.Context, id any, method mcp.MCPMethod) []zap.Field {
+	fields := []zap.Field{
+		zap.Any("request_id", id),
+		zap.String("method", string(method)),
+	}
+
+	if session := srv.ClientSessionFromContext(ctx); session != nil {
+		fields = append(fields, zap.String("session_id", session.SessionID()))
+	}
+
+	return fields
 }

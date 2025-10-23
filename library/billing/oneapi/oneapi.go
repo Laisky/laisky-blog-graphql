@@ -16,7 +16,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-const BillingAPI = "https://oneapi.laisky.com"
+// BillingAPI is the external billing api endpoint
+var BillingAPI = "https://oneapi.laisky.com"
 
 // Price how many quotes for 1 usd
 type Price int
