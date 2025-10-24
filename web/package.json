@@ -10,9 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@modelcontextprotocol/inspector-client": "^0.17.2",
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "js-sha256": "^0.11.1",
     "lucide-react": "^0.547.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

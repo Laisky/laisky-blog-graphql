@@ -6,11 +6,12 @@ import { cn } from '@/lib/utils'
 const navItems = [
   { to: '/', label: 'Overview' },
   { to: '/mcp/tools/ask_user', label: 'MCP ask_user' },
+  { to: '/mcp/debug', label: 'MCP Inspector' },
 ]
 
 export function AppLayout() {
   const location = useLocation()
-  const isMcpRoute = location.pathname.startsWith('/mcp/')
+  const isInspectorRoute = location.pathname.startsWith('/mcp/debug')
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -29,10 +30,14 @@ export function AppLayout() {
           </div>
         </div>
       </header>
-      <main className={cn('flex-1 bg-background', isMcpRoute ? '' : '')}>
-        <div className="container mx-auto max-w-6xl px-4 py-10">
+      <main className="flex-1 bg-background">
+        {isInspectorRoute ? (
           <Outlet />
-        </div>
+        ) : (
+          <div className="container mx-auto max-w-6xl px-4 py-10">
+            <Outlet />
+          </div>
+        )}
       </main>
       <footer className="border-t border-border bg-card/80 py-4 text-center text-xs text-muted-foreground">
         Built with Vite, React, and shadcn/ui.

@@ -53,10 +53,6 @@ func RunServer(addr string, resolver *Resolver) {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
 			server.Any("/mcp", gin.WrapH(mcpServer.Handler()))
-			inspector := mcp.NewInspectorHandler("/mcp", log.Logger)
-			wrappedInspector := gin.WrapH(inspector)
-			server.GET("/mcp/debug", wrappedInspector)
-			server.HEAD("/mcp/debug", wrappedInspector)
 			if resolver.args.AskUserService != nil {
 				askUserMux := askuser.NewHTTPHandler(resolver.args.AskUserService, log.Logger.Named("ask_user_http"))
 				server.Any("/mcp/tools/ask_user", gin.WrapH(askUserMux))

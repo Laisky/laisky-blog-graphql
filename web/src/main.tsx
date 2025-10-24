@@ -6,6 +6,7 @@ import './index.css'
 import { ThemeProvider } from '@/components/theme/theme-provider'
 import { AppLayout } from '@/components/layout/app-layout'
 import { AskUserPage } from '@/features/mcp/ask-user/page'
+import { InspectorPage } from '@/features/mcp/inspector/page'
 import { HomePage } from '@/pages/home'
 import { NotFoundPage } from '@/pages/not-found'
 
@@ -17,6 +18,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'mcp/tools/ask_user', element: <AskUserPage /> },
+      { path: 'mcp/debug/*', element: <InspectorPage /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },

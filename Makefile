@@ -25,3 +25,11 @@ lint:
 	go vet ./...
 	golangci-lint run -c .golangci.lint.yml
 	govulncheck ./...
+
+.PHONY: build
+build:
+	cd ./web && pnpm run build
+
+.PHONY: dev
+dev:
+	cd ./web && pnpm run dev
