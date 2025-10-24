@@ -118,3 +118,25 @@ cpu.pprof
 docs/example/config/settings-laisky.yml
 
 /__debug_bin*
+
+# web
+/web/logs
+/web/*.log
+/web/npm-debug.log*
+/web/yarn-debug.log*
+/web/yarn-error.log*
+/web/pnpm-debug.log*
+/web/lerna-debug.log*
+/web/node_modules
+/web/dist
+/web/dist-ssr
+/web/*.local
+
+# Editor directories and files
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
