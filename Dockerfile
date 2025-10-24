@@ -17,8 +17,22 @@ ENV GOOS=linux
 ENV GOARCH=amd64
 RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
 
-# copy executable file and certs to a pure container
-FROM node:24-bookworm AS vitebuilder
+# build front-end assets
+FROM node:24-bookworm AS webbuild
+
+WORKDIR /web
+ARG PNPM_VERSION=10.19.0
+RUN corepack enable \
+    && corepack prepare pnpm@${PNPM_VERSION} --activate
+
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY web/ ./
+RUN pnpm build
+
+# copy executable file, certs, and assets to a pure container
+FROM node:24-bookworm AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates haveged \
@@ -30,6 +44,7 @@ RUN npm install -g ardrive-cli
 
 COPY --from=gobuild /etc/ssl/certs /etc/ssl/certs
 COPY --from=gobuild /app/main /app/go-graphql-srv
+COPY --from=webbuild /web/dist /app/web/dist
 
 WORKDIR /app
 RUN chmod +rx -R /app && \

@@ -1,0 +1,21 @@
+# Global ignores
+.git
+.gitignore
+**/.DS_Store
+
+# Go build artifacts
+bin/
+*.exe
+*.out
+
+# Node artifacts
+node_modules
+web/node_modules
+web/dist
+web/.next
+web/.nuxt
+web/.cache
+
+# Editor directories
+.vscode
+.idea

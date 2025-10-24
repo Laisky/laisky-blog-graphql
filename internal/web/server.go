@@ -106,6 +106,28 @@ func RunServer(addr string, resolver *Resolver) {
 	server.Any("/query/", ginMw.FromStd(h.ServeHTTP))
 	server.Any("/query/v2/", ginMw.FromStd(h.ServeHTTP))
 
+	if spa := newFrontendSPAHandler(log.Logger.Named("frontend_spa")); spa != nil {
+		server.NoRoute(func(ctx *gin.Context) {
+			if ctx.Request.Method != http.MethodGet && ctx.Request.Method != http.MethodHead {
+				ctx.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+
+			if strings.Contains(ctx.Request.URL.Path, ".") {
+				spa.ServeHTTP(ctx.Writer, ctx.Request)
+				return
+			}
+
+			accept := ctx.Request.Header.Get("Accept")
+			if accept != "" && !strings.Contains(accept, "text/html") && !strings.Contains(accept, "*/*") {
+				ctx.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+
+			spa.ServeHTTP(ctx.Writer, ctx.Request)
+		})
+	}
+
 	log.Logger.Info("listening on http", zap.String("addr", addr))
 	log.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))
 }
