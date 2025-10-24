@@ -5,6 +5,16 @@ on:
     branches:
       - 'master'
       - 'main'
+    paths-ignore:
+      - 'docs/**'
+      - 'doc/**'
+      - 'tests/**'
+      - 'test/**'
+      - 'ci/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build_latest:
