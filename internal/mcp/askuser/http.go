@@ -7,6 +7,9 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,12 +23,34 @@ func NewHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
 	handler := &httpHandler{
 		service: service,
 		logger:  logger,
-		page:    template.Must(template.New("askuser").Parse(pageHTML)),
 	}
+
+	if handler.logger == nil {
+		handler.logger = serviceLogger()
+	}
+
+	page, err := template.New("askuser").Parse(pageHTML)
+	if err != nil {
+		handler.log().Warn("parse ask_user fallback page", zap.Error(err))
+	} else {
+		handler.page = page
+	}
+
+	handler.bootstrapStaticAssets()
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", handler.servePage)
 	mux.HandleFunc("/api/requests", handler.handleRequests)
 	mux.HandleFunc("/api/requests/", handler.handleRequestByID)
+
+	if handler.static != nil {
+		assetServer := http.StripPrefix("/", handler.static)
+		mux.Handle("/assets/", assetServer)
+		mux.Handle("/favicon.ico", assetServer)
+		mux.Handle("/manifest.webmanifest", assetServer)
+		mux.Handle("/robots.txt", assetServer)
+	}
+
+	mux.HandleFunc("/", handler.servePage)
 	return mux
 }
 
@@ -33,6 +58,8 @@ type httpHandler struct {
 	service *Service
 	logger  logSDK.Logger
 	page    *template.Template
+	index   []byte
+	static  http.Handler
 }
 
 func (h *httpHandler) log() logSDK.Logger {
@@ -43,16 +70,32 @@ func (h *httpHandler) log() logSDK.Logger {
 }
 
 func (h *httpHandler) servePage(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
+	if len(h.index) > 0 {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+		if r.Method == http.MethodGet {
+			if _, err := w.Write(h.index); err != nil {
+				h.log().Warn("write ask_user index", zap.Error(err))
+			}
+		}
+		return
+	}
+
+	if h.page == nil {
+		http.Error(w, "ask_user console not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if r.Method == http.MethodHead {
+		return
+	}
 	if err := h.page.Execute(w, nil); err != nil {
 		h.log().Warn("render ask_user page", zap.Error(err))
 	}
@@ -200,6 +243,66 @@ func writeJSON(w http.ResponseWriter, payload any) {
 
 func serviceLogger() logSDK.Logger {
 	return logSDK.Shared.Named("ask_user_http")
+}
+
+func (h *httpHandler) bootstrapStaticAssets() {
+	const envKey = "MCP_ASKUSER_DIST_DIR"
+
+	var candidates []string
+	if override := strings.TrimSpace(os.Getenv(envKey)); override != "" {
+		candidates = append(candidates, override)
+	}
+
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "dist"),
+			filepath.Join(exeDir, "web", "dist"),
+		)
+	}
+
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(wd, "dist"),
+			filepath.Join(wd, "web", "dist"),
+		)
+	}
+
+	if _, file, _, ok := runtime.Caller(0); ok {
+		sourceDir := filepath.Dir(file)
+		candidates = append(candidates,
+			filepath.Join(sourceDir, "../../../../web/dist"),
+		)
+	}
+
+	var distDir string
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		distDir = candidate
+		break
+	}
+
+	if distDir == "" {
+		h.log().Info("ask_user web assets not found, using fallback template")
+		return
+	}
+
+	indexPath := filepath.Join(distDir, "index.html")
+	indexBytes, err := os.ReadFile(indexPath)
+	if err != nil {
+		h.log().Warn("read ask_user index", zap.Error(err), zap.String("path", indexPath))
+	} else {
+		h.index = indexBytes
+	}
+
+	h.static = http.FileServer(http.Dir(distDir))
+	h.log().Info("ask_user web assets mounted", zap.String("dist", distDir))
 }
 
 const pageHTML = `<!DOCTYPE html>
