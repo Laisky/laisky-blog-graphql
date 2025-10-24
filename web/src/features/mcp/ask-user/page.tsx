@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -233,7 +233,7 @@ export function AskUserPage() {
           <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3 md:flex-row">
             <Input
               value={formValue}
-              onChange={(event) => setFormValue(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setFormValue(event.target.value)}
               type="password"
               placeholder="Enter your API key"
               autoComplete="off"
@@ -381,7 +381,9 @@ function PendingRequestCard({
       <CardContent className="space-y-3">
         <Textarea
           value={draftValue}
-          onChange={(event) => onDraftChange(request.id, event.target.value)}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+            onDraftChange(request.id, event.target.value)
+          }
           placeholder="Provide your answer…"
           disabled={disabled}
         />
