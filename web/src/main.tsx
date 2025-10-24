@@ -10,6 +10,8 @@ import { InspectorPage } from '@/features/mcp/inspector/page'
 import { HomePage } from '@/pages/home'
 import { NotFoundPage } from '@/pages/not-found'
 
+const basename = normalizeBasename(import.meta.env.BASE_URL)
+
 const router = createBrowserRouter([
   {
     path: '/',
@@ -17,12 +19,12 @@ const router = createBrowserRouter([
     errorElement: <NotFoundPage />,
     children: [
       { index: true, element: <HomePage /> },
-      { path: 'mcp/tools/ask_user', element: <AskUserPage /> },
-      { path: 'mcp/debug/*', element: <InspectorPage /> },
+      { path: 'tools/ask_user', element: <AskUserPage /> },
+      { path: 'debug/*', element: <InspectorPage /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },
-])
+], { basename })
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -31,3 +33,17 @@ createRoot(document.getElementById('root')!).render(
     </ThemeProvider>
   </StrictMode>
 )
+
+function normalizeBasename(input: string | undefined): string {
+  if (!input) {
+    return '/'
+  }
+
+  const trimmed = input.trim()
+  if (trimmed === '' || trimmed === '/') {
+    return '/'
+  }
+
+  const stripped = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
+  return stripped || '/'
+}

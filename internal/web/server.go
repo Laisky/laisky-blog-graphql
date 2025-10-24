@@ -30,6 +30,7 @@ var (
 )
 
 func RunServer(addr string, resolver *Resolver) {
+	frontendSPA := newFrontendSPAHandler(log.Logger.Named("frontend_spa"))
 	server.Use(
 		gin.Recovery(),
 		ginMw.NewLoggerMiddleware(
@@ -52,7 +53,14 @@ func RunServer(addr string, resolver *Resolver) {
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
-			server.Any("/mcp", gin.WrapH(mcpServer.Handler()))
+			mcpHandler := mcpServer.Handler()
+			server.Any("/mcp", func(ctx *gin.Context) {
+				if frontendSPA != nil && shouldServeFrontend(ctx.Request) {
+					frontendSPA.ServeHTTP(ctx.Writer, ctx.Request)
+					return
+				}
+				mcpHandler.ServeHTTP(ctx.Writer, ctx.Request)
+			})
 			if resolver.args.AskUserService != nil {
 				askUserMux := askuser.NewHTTPHandler(resolver.args.AskUserService, log.Logger.Named("ask_user_http"))
 				server.Any("/mcp/tools/ask_user", gin.WrapH(askUserMux))
@@ -102,7 +110,7 @@ func RunServer(addr string, resolver *Resolver) {
 	server.Any("/query/", ginMw.FromStd(h.ServeHTTP))
 	server.Any("/query/v2/", ginMw.FromStd(h.ServeHTTP))
 
-	if spa := newFrontendSPAHandler(log.Logger.Named("frontend_spa")); spa != nil {
+	if frontendSPA != nil {
 		server.NoRoute(func(ctx *gin.Context) {
 			if ctx.Request.Method != http.MethodGet && ctx.Request.Method != http.MethodHead {
 				ctx.AbortWithStatus(http.StatusNotFound)
@@ -110,7 +118,7 @@ func RunServer(addr string, resolver *Resolver) {
 			}
 
 			if strings.Contains(ctx.Request.URL.Path, ".") {
-				spa.ServeHTTP(ctx.Writer, ctx.Request)
+				frontendSPA.ServeHTTP(ctx.Writer, ctx.Request)
 				return
 			}
 
@@ -120,12 +128,35 @@ func RunServer(addr string, resolver *Resolver) {
 				return
 			}
 
-			spa.ServeHTTP(ctx.Writer, ctx.Request)
+			frontendSPA.ServeHTTP(ctx.Writer, ctx.Request)
 		})
 	}
 
 	log.Logger.Info("listening on http", zap.String("addr", addr))
 	log.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))
+}
+
+func shouldServeFrontend(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+	default:
+		return false
+	}
+
+	accept := r.Header.Get("Accept")
+	if accept == "" {
+		return true
+	}
+	accept = strings.ToLower(accept)
+	if strings.Contains(accept, "text/html") || strings.Contains(accept, "application/xhtml+xml") || strings.Contains(accept, "*/*") {
+		return true
+	}
+
+	return false
 }
 
 func allowCORS(ctx *gin.Context) {

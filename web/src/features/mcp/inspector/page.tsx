@@ -8,7 +8,7 @@ const inspectorScriptModules = import.meta.glob<InspectorModule>(
 const inspectorStyleModules = import.meta.glob(
   '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.css'
 )
-const DEFAULT_ENDPOINT_PATH = '/mcp'
+const DEFAULT_ENDPOINT_PATH = (import.meta.env.VITE_MCP_ENDPOINT_PATH as string | undefined) || '/mcp'
 
 type InspectorInstance = {
   destroy?: () => void
