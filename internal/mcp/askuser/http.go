@@ -362,6 +362,14 @@ const pageHTML = `<!DOCTYPE html>
     const form = document.getElementById('auth-form');
     const apiKeyInput = document.getElementById('api-key');
     const STORAGE_KEY = 'ask_user_api_key';
+	const API_BASE_PATH = (function() {
+		try {
+			const path = window.location.pathname || '/';
+			return path.endsWith('/') ? path : path + '/';
+		} catch (err) {
+			return '/';
+		}
+	})();
     let apiKey = localStorage.getItem(STORAGE_KEY) || '';
     let pollTimer = null;
 
@@ -410,7 +418,7 @@ const pageHTML = `<!DOCTYPE html>
             return;
         }
         try {
-            const response = await fetch('api/requests', {
+			const response = await fetch(API_BASE_PATH + 'api/requests', {
                 headers: { 'Authorization': 'Bearer ' + apiKey }
             });
             if (!response.ok) {
@@ -493,7 +501,7 @@ const pageHTML = `<!DOCTYPE html>
         }
         formEl.querySelector('button')?.setAttribute('disabled', 'disabled');
         try {
-            const response = await fetch('api/requests/' + requestId, {
+			const response = await fetch(API_BASE_PATH + 'api/requests/' + requestId, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

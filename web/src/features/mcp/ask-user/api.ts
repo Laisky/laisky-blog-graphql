@@ -1,3 +1,11 @@
+const API_BASE_PATH = (() => {
+  if (typeof window === 'undefined') {
+    return '/'
+  }
+  const path = window.location.pathname || '/'
+  return path.endsWith('/') ? path : `${path}/`
+})()
+
 export interface AskUserRequest {
   id: string
   question: string
@@ -19,7 +27,7 @@ export interface AskUserListResponse {
 }
 
 export async function listRequests(apiKey: string, signal?: AbortSignal): Promise<AskUserListResponse> {
-  const response = await fetch('api/requests', {
+  const response = await fetch(`${API_BASE_PATH}api/requests`, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
     },
@@ -39,7 +47,7 @@ export async function submitAnswer(
   requestId: string,
   answer: string,
 ): Promise<void> {
-  const response = await fetch(`api/requests/${requestId}`, {
+  const response = await fetch(`${API_BASE_PATH}api/requests/${requestId}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
