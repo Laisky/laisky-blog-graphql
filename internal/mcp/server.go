@@ -18,6 +18,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
 	"github.com/Laisky/laisky-blog-graphql/library/search/google"
@@ -37,12 +38,18 @@ type Server struct {
 	handler        http.Handler
 	logger         logSDK.Logger
 	searchEngine   *google.SearchEngine
+	rdb            *rlibs.DB
 	askUserService *askuser.Service
 }
 
-// NewServer constructs a remote MCP server exposing HTTP endpoints under a single handler.
-func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Service, logger logSDK.Logger) (*Server, error) {
-	if searchEngine == nil && askUserService == nil {
+// NewServer constructs an MCP HTTP server.
+// searchEngine enables the web_search tool when not nil.
+// askUserService enables the ask_user tool when not nil.
+// rdb enables the web_fetch tool when not nil.
+// logger overrides the default logger when provided.
+// It returns the configured server or an error if no capability is available.
+func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Service, rdb *rlibs.DB, logger logSDK.Logger) (*Server, error) {
+	if searchEngine == nil && askUserService == nil && rdb == nil {
 		return nil, fmt.Errorf("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
@@ -52,10 +59,10 @@ func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Servic
 	hooks := newMCPHooks(logger.Named("mcp_hooks"))
 
 	mcpServer := srv.NewMCPServer(
-		"laisky-blog-graphql",
+		"LAISKY MCP SERVER",
 		"1.0.0",
 		srv.WithToolCapabilities(true),
-		srv.WithInstructions("Use the web_search tool to run Google Programmable Search queries."),
+		srv.WithInstructions("Use web_search for Google Programmable Search queries and web_fetch to retrieve dynamic web pages."),
 		srv.WithRecovery(),
 		srv.WithHooks(hooks),
 	)
@@ -73,6 +80,7 @@ func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Servic
 		handler:        withHTTPLogging(streamable, serverLogger.Named("http")),
 		logger:         serverLogger,
 		searchEngine:   searchEngine,
+		rdb:            rdb,
 		askUserService: askUserService,
 	}
 
@@ -91,6 +99,23 @@ func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Servic
 		)
 
 		mcpServer.AddTool(tool, s.handleWebSearch)
+	}
+
+	if rdb != nil {
+		fetchTool := mcp.NewTool(
+			"web_fetch",
+			mcp.WithDescription("Fetch and render dynamic web content by URL."),
+			mcp.WithString(
+				"url",
+				mcp.Required(),
+				mcp.Description("The URL to retrieve."),
+			),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(true),
+		)
+
+		mcpServer.AddTool(fetchTool, s.handleWebFetch)
 	}
 
 	if askUserService != nil {
@@ -168,6 +193,57 @@ func (s *Server) handleWebSearch(ctx context.Context, req mcp.CallToolRequest) (
 	if err != nil {
 		s.logger.Error("encode search result", zap.Error(err))
 		return mcp.NewToolResultError("failed to encode search result"), nil
+	}
+
+	return toolResult, nil
+}
+
+// handleWebFetch executes the web_fetch MCP tool. The context carries request metadata,
+// and the request supplies the target URL. It returns a structured response when the
+// fetch succeeds or a tool error when processing fails.
+func (s *Server) handleWebFetch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.rdb == nil {
+		return mcp.NewToolResultError("web fetch is not configured"), nil
+	}
+
+	urlValue, err := req.RequireString("url")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	urlValue = strings.TrimSpace(urlValue)
+	if urlValue == "" {
+		return mcp.NewToolResultError("url cannot be empty"), nil
+	}
+
+	authHeader, _ := ctx.Value(keyAuthorization).(string)
+	apiKey := extractAPIKey(authHeader)
+	if apiKey == "" {
+		s.logger.Warn("web_fetch missing api key", zap.String("url", urlValue))
+		return mcp.NewToolResultError("missing authorization bearer token"), nil
+	}
+
+	if err := oneapi.CheckUserExternalBilling(ctx, apiKey, oneapi.PriceWebFetch, "web fetch"); err != nil {
+		s.logger.Warn("web_fetch billing denied", zap.Error(err), zap.String("url", urlValue))
+		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
+	}
+
+	content, err := search.FetchDynamicURLContent(ctx, s.rdb, urlValue)
+	if err != nil {
+		s.logger.Error("web_fetch failed", zap.Error(err), zap.String("url", urlValue))
+		return mcp.NewToolResultError(fmt.Sprintf("fetch failed: %v", err)), nil
+	}
+
+	payload := map[string]any{
+		"url":        urlValue,
+		"content":    string(content),
+		"fetched_at": time.Now().UTC(),
+	}
+
+	toolResult, err := mcp.NewToolResultJSON(payload)
+	if err != nil {
+		s.logger.Error("encode web_fetch result", zap.Error(err))
+		return mcp.NewToolResultError("failed to encode web_fetch response"), nil
 	}
 
 	return toolResult, nil

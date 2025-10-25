@@ -165,7 +165,7 @@ func RunServer(addr string, resolver *Resolver) {
 	}
 
 	if resolver != nil && (resolver.args.WebSearchEngine != nil || resolver.args.AskUserService != nil) {
-		mcpServer, err := mcp.NewServer(resolver.args.WebSearchEngine, resolver.args.AskUserService, log.Logger)
+		mcpServer, err := mcp.NewServer(resolver.args.WebSearchEngine, resolver.args.AskUserService, resolver.args.Rdb, log.Logger)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
