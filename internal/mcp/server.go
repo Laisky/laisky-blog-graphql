@@ -4,18 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
+	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v5/log"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
@@ -35,11 +34,11 @@ const (
 
 // Server wraps the MCP server state for the HTTP transport.
 type Server struct {
-	handler        http.Handler
-	logger         logSDK.Logger
-	searchEngine   *google.SearchEngine
-	rdb            *rlibs.DB
-	askUserService *askuser.Service
+	handler   http.Handler
+	logger    logSDK.Logger
+	webSearch *tools.WebSearchTool
+	webFetch  *tools.WebFetchTool
+	askUser   *tools.AskUserTool
 }
 
 // NewServer constructs an MCP HTTP server.
@@ -50,7 +49,7 @@ type Server struct {
 // It returns the configured server or an error if no capability is available.
 func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Service, rdb *rlibs.DB, logger logSDK.Logger) (*Server, error) {
 	if searchEngine == nil && askUserService == nil && rdb == nil {
-		return nil, fmt.Errorf("at least one MCP capability must be enabled")
+		return nil, errors.New("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
 		logger = log.Logger
@@ -77,60 +76,64 @@ func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Servic
 	serverLogger := logger.Named("mcp")
 
 	s := &Server{
-		handler:        withHTTPLogging(streamable, serverLogger.Named("http")),
-		logger:         serverLogger,
-		searchEngine:   searchEngine,
-		rdb:            rdb,
-		askUserService: askUserService,
+		handler: withHTTPLogging(streamable, serverLogger.Named("http")),
+		logger:  serverLogger,
+	}
+
+	apiKeyProvider := func(ctx context.Context) string {
+		authHeader, _ := ctx.Value(keyAuthorization).(string)
+		return extractAPIKey(authHeader)
 	}
 
 	if searchEngine != nil {
-		tool := mcp.NewTool(
-			"web_search",
-			mcp.WithDescription("Search the public web using Google Programmable Search and return a structured result set."),
-			mcp.WithString(
-				"query",
-				mcp.Required(),
-				mcp.Description("Plain text search query."),
-			),
-			mcp.WithReadOnlyHintAnnotation(true),
-			mcp.WithIdempotentHintAnnotation(true),
-			mcp.WithOpenWorldHintAnnotation(true),
+		webSearchTool, err := tools.NewWebSearchTool(
+			searchEngine,
+			serverLogger.Named("web_search"),
+			apiKeyProvider,
+			oneapi.CheckUserExternalBilling,
+			nil,
 		)
-
-		mcpServer.AddTool(tool, s.handleWebSearch)
+		if err != nil {
+			return nil, errors.Wrap(err, "init web_search tool")
+		}
+		s.webSearch = webSearchTool
+		mcpServer.AddTool(webSearchTool.Definition(), s.handleWebSearch)
 	}
 
 	if rdb != nil {
-		fetchTool := mcp.NewTool(
-			"web_fetch",
-			mcp.WithDescription("Fetch and render dynamic web content by URL."),
-			mcp.WithString(
-				"url",
-				mcp.Required(),
-				mcp.Description("The URL to retrieve."),
-			),
-			mcp.WithReadOnlyHintAnnotation(true),
-			mcp.WithIdempotentHintAnnotation(true),
-			mcp.WithOpenWorldHintAnnotation(true),
+		webFetchTool, err := tools.NewWebFetchTool(
+			rdb,
+			serverLogger.Named("web_fetch"),
+			apiKeyProvider,
+			oneapi.CheckUserExternalBilling,
+			search.FetchDynamicURLContent,
+			nil,
 		)
-
-		mcpServer.AddTool(fetchTool, s.handleWebFetch)
+		if err != nil {
+			return nil, errors.Wrap(err, "init web_fetch tool")
+		}
+		s.webFetch = webFetchTool
+		mcpServer.AddTool(webFetchTool.Definition(), s.handleWebFetch)
 	}
 
 	if askUserService != nil {
-		askTool := mcp.NewTool(
-			"ask_user",
-			mcp.WithDescription("Forward a question to the authenticated user and wait for a response."),
-			mcp.WithString(
-				"question",
-				mcp.Required(),
-				mcp.Description("The question that should be surfaced to the user."),
-			),
-			mcp.WithIdempotentHintAnnotation(false),
-		)
+		headerProvider := func(ctx context.Context) string {
+			authHeader, _ := ctx.Value(keyAuthorization).(string)
+			return authHeader
+		}
 
-		mcpServer.AddTool(askTool, s.handleAskUser)
+		askUserTool, err := tools.NewAskUserTool(
+			askUserService,
+			serverLogger.Named("ask_user"),
+			headerProvider,
+			askuser.ParseAuthorizationContext,
+			0,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "init ask_user tool")
+		}
+		s.askUser = askUserTool
+		mcpServer.AddTool(askUserTool.Definition(), s.handleAskUser)
 	}
 
 	return s, nil
@@ -142,111 +145,22 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleWebSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if s.searchEngine == nil {
+	if s.webSearch == nil {
 		return mcp.NewToolResultError("web search is not configured"), nil
 	}
 
-	query, err := req.RequireString("query")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return mcp.NewToolResultError("query cannot be empty"), nil
-	}
-
-	authHeader, _ := ctx.Value(keyAuthorization).(string)
-	apiKey := extractAPIKey(authHeader)
-	if apiKey == "" {
-		s.logger.Warn("web_search missing api key", zap.String("query", query))
-		return mcp.NewToolResultError("missing authorization bearer token"), nil
-	}
-
-	if err := oneapi.CheckUserExternalBilling(ctx, apiKey, oneapi.PriceWebSearch, "web search"); err != nil {
-		s.logger.Warn("web_search billing denied", zap.Error(err), zap.String("query", query))
-		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
-	}
-
-	result, err := s.searchEngine.Search(ctx, query)
-	if err != nil {
-		s.logger.Error("web_search failed", zap.Error(err), zap.String("query", query))
-		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
-	}
-
-	response := search.SearchResult{
-		Query:     query,
-		CreatedAt: time.Now().UTC(),
-	}
-
-	if result != nil {
-		for _, item := range result.Items {
-			response.Results = append(response.Results, search.SearchResultItem{
-				URL:     item.Link,
-				Name:    item.Title,
-				Snippet: item.Snippet,
-			})
-		}
-	}
-
-	toolResult, err := mcp.NewToolResultJSON(response)
-	if err != nil {
-		s.logger.Error("encode search result", zap.Error(err))
-		return mcp.NewToolResultError("failed to encode search result"), nil
-	}
-
-	return toolResult, nil
+	return s.webSearch.Handle(ctx, req)
 }
 
 // handleWebFetch executes the web_fetch MCP tool. The context carries request metadata,
 // and the request supplies the target URL. It returns a structured response when the
 // fetch succeeds or a tool error when processing fails.
 func (s *Server) handleWebFetch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if s.rdb == nil {
+	if s.webFetch == nil {
 		return mcp.NewToolResultError("web fetch is not configured"), nil
 	}
 
-	urlValue, err := req.RequireString("url")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	urlValue = strings.TrimSpace(urlValue)
-	if urlValue == "" {
-		return mcp.NewToolResultError("url cannot be empty"), nil
-	}
-
-	authHeader, _ := ctx.Value(keyAuthorization).(string)
-	apiKey := extractAPIKey(authHeader)
-	if apiKey == "" {
-		s.logger.Warn("web_fetch missing api key", zap.String("url", urlValue))
-		return mcp.NewToolResultError("missing authorization bearer token"), nil
-	}
-
-	if err := oneapi.CheckUserExternalBilling(ctx, apiKey, oneapi.PriceWebFetch, "web fetch"); err != nil {
-		s.logger.Warn("web_fetch billing denied", zap.Error(err), zap.String("url", urlValue))
-		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
-	}
-
-	content, err := search.FetchDynamicURLContent(ctx, s.rdb, urlValue)
-	if err != nil {
-		s.logger.Error("web_fetch failed", zap.Error(err), zap.String("url", urlValue))
-		return mcp.NewToolResultError(fmt.Sprintf("fetch failed: %v", err)), nil
-	}
-
-	payload := map[string]any{
-		"url":        urlValue,
-		"content":    string(content),
-		"fetched_at": time.Now().UTC(),
-	}
-
-	toolResult, err := mcp.NewToolResultJSON(payload)
-	if err != nil {
-		s.logger.Error("encode web_fetch result", zap.Error(err))
-		return mcp.NewToolResultError("failed to encode web_fetch response"), nil
-	}
-
-	return toolResult, nil
+	return s.webFetch.Handle(ctx, req)
 }
 
 func extractAPIKey(authHeader string) string {
@@ -254,66 +168,11 @@ func extractAPIKey(authHeader string) string {
 }
 
 func (s *Server) handleAskUser(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if s.askUserService == nil {
+	if s.askUser == nil {
 		return mcp.NewToolResultError("ask_user tool is not available"), nil
 	}
 
-	question, err := req.RequireString("question")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	question = strings.TrimSpace(question)
-	if question == "" {
-		return mcp.NewToolResultError("question cannot be empty"), nil
-	}
-
-	authHeader, _ := ctx.Value(keyAuthorization).(string)
-	authCtx, err := askuser.ParseAuthorizationContext(authHeader)
-	if err != nil {
-		s.logger.Warn("ask_user authorization failed", zap.Error(err))
-		return mcp.NewToolResultError("invalid authorization header"), nil
-	}
-
-	callCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
-	stored, err := s.askUserService.CreateRequest(callCtx, authCtx, question)
-	if err != nil {
-		s.logger.Error("ask_user create request", zap.Error(err))
-		return mcp.NewToolResultError("failed to create ask_user request"), nil
-	}
-
-	answered, err := s.askUserService.WaitForAnswer(callCtx, stored.ID)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			_ = s.askUserService.CancelRequest(context.Background(), stored.ID, askuser.StatusExpired)
-			return mcp.NewToolResultError("timeout waiting for user response"), nil
-		}
-		s.logger.Error("ask_user wait for answer", zap.Error(err))
-		return mcp.NewToolResultError("failed while waiting for user response"), nil
-	}
-
-	if answered.Answer == nil {
-		return mcp.NewToolResultError("user responded without an answer"), nil
-	}
-
-	resultPayload := map[string]any{
-		"request_id": answered.ID.String(),
-		"question":   answered.Question,
-		"answer":     *answered.Answer,
-		"asked_at":   answered.CreatedAt,
-	}
-	if answered.AnsweredAt != nil {
-		resultPayload["answered_at"] = answered.AnsweredAt
-	}
-
-	toolResult, err := mcp.NewToolResultJSON(resultPayload)
-	if err != nil {
-		s.logger.Error("encode ask_user response", zap.Error(err))
-		return mcp.NewToolResultError("failed to encode ask_user response"), nil
-	}
-
-	return toolResult, nil
+	return s.askUser.Handle(ctx, req)
 }
 
 func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
