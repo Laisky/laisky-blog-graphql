@@ -38,7 +38,7 @@ var (
 	// https://ar-fees.arweave.dev/
 	PriceUploadFileEachMB  = USD(0.02)
 	PriceUploadFileMinimal = USD(0.003)
-	PriceWebSearch         = USD(0.01)
+	PriceWebSearch         = USD(0.005)
 	PriceWebFetch          = USD(0.0001)
 )
 
