@@ -5,13 +5,13 @@ import { cn } from '@/lib/utils'
 
 const navItems = [
   { to: '/', label: 'Overview' },
-  { to: '/mcp/tools/ask_user', label: 'MCP ask_user' },
-  { to: '/mcp/debug', label: 'MCP Inspector' },
+  { to: '/tools/ask_user', label: 'MCP ask_user' },
+  { to: '/debug', label: 'MCP Inspector' },
 ]
 
 export function AppLayout() {
   const location = useLocation()
-  const isInspectorRoute = location.pathname.startsWith('/mcp/debug')
+  const isInspectorRoute = location.pathname.startsWith('/debug')
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">

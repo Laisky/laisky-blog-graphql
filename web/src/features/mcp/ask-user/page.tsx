@@ -210,7 +210,8 @@ export function AskUserPage() {
         <h1 className="text-3xl font-semibold text-foreground">ask_user console</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
           Review pending MCP questions routed to your bearer token, send human answers, and browse
-          the recent history. The HTTP API remains available under <code>/mcp/tools/ask_user/api</code>.
+          the recent history. The HTTP API remains available under <code>/tools/ask_user/api</code> and
+          respects the configured public base path.
         </p>
       </section>
 

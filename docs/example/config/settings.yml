@@ -22,3 +22,6 @@ settings:
       addr: 127.0.0.1
       user: postgres
       pwd: changeme
+  web:
+    url_prefix: /mcp           # internal mount path on the Go server
+    public_url_prefix: /       # set to '/' to hide the prefix in generated links

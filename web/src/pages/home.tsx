@@ -28,10 +28,10 @@ export function HomePage() {
           <CardContent className="flex items-center justify-between">
             <p className="max-w-xs text-sm text-muted-foreground">
               Connect with your bearer token to review pending requests, submit answers, and review
-              history. The route stays at <code className="text-xs text-muted-foreground">/mcp/tools/ask_user</code> for compatibility.
+              history. The route stays under <code className="text-xs text-muted-foreground">/tools/ask_user</code> for compatibility.
             </p>
             <Button asChild variant="secondary">
-              <Link to="/mcp/tools/ask_user">Open tool</Link>
+              <Link to="/tools/ask_user">Open tool</Link>
             </Button>
           </CardContent>
         </Card>

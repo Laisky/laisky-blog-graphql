@@ -9,10 +9,9 @@ import { AskUserPage } from '@/features/mcp/ask-user/page'
 import { InspectorPage } from '@/features/mcp/inspector/page'
 import { HomePage } from '@/pages/home'
 import { NotFoundPage } from '@/pages/not-found'
+import { loadRuntimeConfig } from '@/lib/runtime-config'
 
-const basename = normalizeBasename(import.meta.env.BASE_URL)
-
-const router = createBrowserRouter([
+const routes = [
   {
     path: '/',
     element: <AppLayout />,
@@ -24,15 +23,33 @@ const router = createBrowserRouter([
     ],
   },
   { path: '*', element: <NotFoundPage /> },
-], { basename })
+]
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ThemeProvider>
-      <RouterProvider router={router} />
-    </ThemeProvider>
-  </StrictMode>
-)
+async function bootstrap() {
+  const runtimeConfig = await loadRuntimeConfig()
+  const basename = normalizeBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL)
+  const router = createBrowserRouter(routes, { basename })
+
+  const container = document.getElementById('root')
+  if (!container) {
+    throw new Error('Failed to find root element')
+  }
+
+  createRoot(container).render(
+    <StrictMode>
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
+    </StrictMode>
+  )
+}
+
+bootstrap().catch((error) => {
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to initialize application', error)
+  }
+})
 
 function normalizeBasename(input: string | undefined): string {
   if (!input) {

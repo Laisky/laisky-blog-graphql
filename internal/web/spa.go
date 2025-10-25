@@ -24,7 +24,7 @@ type spaHandler struct {
 	logger logSDK.Logger
 }
 
-func newFrontendSPAHandler(logger logSDK.Logger) http.Handler {
+func newFrontendSPAHandler(logger logSDK.Logger, defaultBase string) http.Handler {
 	if logger == nil {
 		return nil
 	}
@@ -41,7 +41,7 @@ func newFrontendSPAHandler(logger logSDK.Logger) http.Handler {
 		return nil
 	}
 
-	basePath := resolveFrontendBasePath(indexBytes)
+	basePath := resolveFrontendBasePath(indexBytes, defaultBase)
 	if basePath != "" {
 		logger.Info("frontend base path detected", zap.String("base_path", basePath))
 	}
@@ -158,9 +158,9 @@ func locateFrontendDist(logger logSDK.Logger) string {
 	return ""
 }
 
-func resolveFrontendBasePath(index []byte) string {
+func resolveFrontendBasePath(index []byte, defaultBase string) string {
 	if len(index) == 0 {
-		return defaultFrontendBasePath()
+		return defaultFrontendBasePath(defaultBase)
 	}
 
 	if fromEnv := normalizeBasePath(os.Getenv(frontendBasePathEnvKey)); fromEnv != "" {
@@ -171,11 +171,11 @@ func resolveFrontendBasePath(index []byte) string {
 		return detected
 	}
 
-	return defaultFrontendBasePath()
+	return defaultFrontendBasePath(defaultBase)
 }
 
-func defaultFrontendBasePath() string {
-	return normalizeBasePath("/mcp")
+func defaultFrontendBasePath(defaultBase string) string {
+	return normalizeBasePath(defaultBase)
 }
 
 func normalizeBasePath(value string) string {

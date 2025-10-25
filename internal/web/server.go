@@ -29,8 +29,124 @@ var (
 	server = gin.New()
 )
 
+const defaultURLPrefix = "/mcp"
+
+type urlPrefixConfig struct {
+	internal string
+	public   string
+}
+
+func newURLPrefixConfig() urlPrefixConfig {
+	rawInternal := strings.TrimSpace(gconfig.Shared.GetString("settings.web.url_prefix"))
+	internal := normalizeBasePath(rawInternal)
+	if rawInternal == "" && internal == "" {
+		internal = normalizeBasePath(defaultURLPrefix)
+	}
+
+	rawPublic := strings.TrimSpace(gconfig.Shared.GetString("settings.web.public_url_prefix"))
+	public := normalizeBasePath(rawPublic)
+	if rawPublic == "" {
+		public = internal
+	}
+
+	return urlPrefixConfig{internal: internal, public: public}
+}
+
+func (c urlPrefixConfig) join(path string) string {
+	if path == "" {
+		if c.internal == "" {
+			return "/"
+		}
+		return c.internal
+	}
+
+	if path == "/" {
+		if c.internal == "" {
+			return "/"
+		}
+		return c.internal + "/"
+	}
+
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if c.internal == "" {
+		return path
+	}
+	return c.internal + path
+}
+
+func (c urlPrefixConfig) rootVariants() []string {
+	add := func(set map[string]struct{}, values ...string) {
+		for _, v := range values {
+			if v == "" {
+				v = "/"
+			}
+			set[v] = struct{}{}
+		}
+	}
+
+	paths := make(map[string]struct{})
+	if c.internal == "" {
+		add(paths, "/")
+	} else {
+		add(paths, c.internal, c.internal+"/")
+	}
+
+	if c.public == "" {
+		add(paths, "/")
+	} else if c.public != c.internal {
+		add(paths, c.public, c.public+"/")
+	}
+
+	result := make([]string, 0, len(paths))
+	for path := range paths {
+		result = append(result, path)
+	}
+
+	return result
+}
+
+func (c urlPrefixConfig) matches(path string) bool {
+	if path == "" || !strings.HasPrefix(path, "/") {
+		return false
+	}
+
+	check := func(base string) bool {
+		if base == "" {
+			return true
+		}
+		if path == base {
+			return true
+		}
+		return strings.HasPrefix(path, base+"/")
+	}
+
+	if check(c.internal) {
+		return true
+	}
+	if c.public != c.internal && check(c.public) {
+		return true
+	}
+
+	return false
+}
+
+func (c urlPrefixConfig) display(value string) string {
+	if value == "" {
+		return "/"
+	}
+	return value
+}
+
 func RunServer(addr string, resolver *Resolver) {
-	frontendSPA := newFrontendSPAHandler(log.Logger.Named("frontend_spa"))
+	prefix := newURLPrefixConfig()
+	log.Logger.Info("configuring web url prefix",
+		zap.String("internal_prefix", prefix.display(prefix.internal)),
+		zap.String("public_prefix", prefix.display(prefix.public)),
+	)
+
+	frontendSPA := newFrontendSPAHandler(log.Logger.Named("frontend_spa"), prefix.internal)
 	server.Use(
 		gin.Recovery(),
 		ginMw.NewLoggerMiddleware(
@@ -54,17 +170,32 @@ func RunServer(addr string, resolver *Resolver) {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
 			mcpHandler := mcpServer.Handler()
-			server.Any("/mcp", func(ctx *gin.Context) {
+			rootHandler := func(ctx *gin.Context) {
 				if frontendSPA != nil && shouldServeFrontend(ctx.Request) {
 					frontendSPA.ServeHTTP(ctx.Writer, ctx.Request)
 					return
 				}
 				mcpHandler.ServeHTTP(ctx.Writer, ctx.Request)
-			})
+			}
+			for _, rootPath := range prefix.rootVariants() {
+				server.Any(rootPath, rootHandler)
+			}
+
 			if resolver.args.AskUserService != nil {
 				askUserMux := askuser.NewHTTPHandler(resolver.args.AskUserService, log.Logger.Named("ask_user_http"))
-				server.Any("/mcp/tools/ask_user", gin.WrapH(askUserMux))
-				server.Any("/mcp/tools/ask_user/*path", gin.WrapH(http.StripPrefix("/mcp/tools/ask_user", askUserMux)))
+				askUserBase := prefix.join("/tools/ask_user")
+				askUserHandler := gin.WrapH(askUserMux)
+				server.Any(askUserBase, askUserHandler)
+				askUserWildcard := prefix.join("/tools/ask_user/*path")
+				stripPrefix := strings.TrimSuffix(askUserBase, "/")
+				if stripPrefix == "" {
+					stripPrefix = "/"
+				}
+				server.Any(askUserWildcard, gin.WrapH(http.StripPrefix(stripPrefix, askUserMux)))
+				if prefix.public == "" {
+					server.Any("/tools/ask_user", askUserHandler)
+					server.Any("/tools/ask_user/*path", gin.WrapH(http.StripPrefix("/tools/ask_user", askUserMux)))
+				}
 			}
 		}
 	} else {
@@ -74,6 +205,7 @@ func RunServer(addr string, resolver *Resolver) {
 			zap.Bool("resolver_nil", resolver == nil),
 			zap.Bool("bing_search_engine_nil", bingNil),
 			zap.Bool("ask_user_service_nil", askNil),
+			zap.String("internal_prefix", prefix.display(prefix.internal)),
 		)
 	}
 
@@ -106,9 +238,65 @@ func RunServer(addr string, resolver *Resolver) {
 
 		return err
 	})
-	server.Any("/ui/", ginMw.FromStd(playground.Handler("GraphQL playground", "/query/")))
-	server.Any("/query/", ginMw.FromStd(h.ServeHTTP))
-	server.Any("/query/v2/", ginMw.FromStd(h.ServeHTTP))
+
+	graphqlHandler := ginMw.FromStd(h.ServeHTTP)
+	queryPath := prefix.join("/query/")
+	server.Any(queryPath, graphqlHandler)
+	if trimmed := strings.TrimSuffix(queryPath, "/"); trimmed != queryPath {
+		server.Any(trimmed, graphqlHandler)
+	}
+	if prefix.public == "" {
+		server.Any("/query/", graphqlHandler)
+		server.Any("/query", graphqlHandler)
+	}
+
+	queryV2Path := prefix.join("/query/v2/")
+	server.Any(queryV2Path, graphqlHandler)
+	if trimmed := strings.TrimSuffix(queryV2Path, "/"); trimmed != queryV2Path {
+		server.Any(trimmed, graphqlHandler)
+	}
+	if prefix.public == "" {
+		server.Any("/query/v2/", graphqlHandler)
+		server.Any("/query/v2", graphqlHandler)
+	}
+
+	playgroundHandler := ginMw.FromStd(playground.Handler("GraphQL playground", queryPath))
+	uiPath := prefix.join("/ui/")
+	server.Any(uiPath, playgroundHandler)
+	if trimmed := strings.TrimSuffix(uiPath, "/"); trimmed != uiPath {
+		server.Any(trimmed, playgroundHandler)
+	}
+	if prefix.public == "" {
+		server.Any("/ui/", playgroundHandler)
+		server.Any("/ui", playgroundHandler)
+	}
+
+	runtimeConfigHandler := func(ctx *gin.Context) {
+		switch ctx.Request.Method {
+		case http.MethodGet, http.MethodHead:
+		default:
+			ctx.AbortWithStatus(http.StatusMethodNotAllowed)
+			return
+		}
+
+		ctx.Header("Cache-Control", "no-store")
+		ctx.Header("Pragma", "no-cache")
+		if ctx.Request.Method == http.MethodHead {
+			ctx.Status(http.StatusOK)
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{
+			"urlPrefix":      prefix.internal,
+			"publicBasePath": prefix.public,
+		})
+	}
+
+	runtimeConfigPath := prefix.join("/runtime-config.json")
+	server.Any(runtimeConfigPath, runtimeConfigHandler)
+	if runtimeConfigPath != "/runtime-config.json" {
+		server.Any("/runtime-config.json", runtimeConfigHandler)
+	}
 
 	if frontendSPA != nil {
 		server.NoRoute(func(ctx *gin.Context) {
@@ -117,7 +305,18 @@ func RunServer(addr string, resolver *Resolver) {
 				return
 			}
 
-			if strings.Contains(ctx.Request.URL.Path, ".") {
+			requestPath := ctx.Request.URL.Path
+			if !prefix.matches(requestPath) {
+				if prefix.internal != "" && allowUnprefixedAsset(requestPath) {
+					ctx.Request.URL.Path = prefix.join(requestPath)
+					requestPath = ctx.Request.URL.Path
+				} else {
+					ctx.AbortWithStatus(http.StatusNotFound)
+					return
+				}
+			}
+
+			if strings.Contains(requestPath, ".") {
 				frontendSPA.ServeHTTP(ctx.Writer, ctx.Request)
 				return
 			}
@@ -246,4 +445,23 @@ func isCarrierGradeNatIP(host string) bool {
 	}
 
 	return ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127
+}
+
+func allowUnprefixedAsset(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return false
+	}
+
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "/assets/") {
+		return true
+	}
+
+	switch lower {
+	case "/vite.svg", "/favicon.ico", "/robots.txt", "/manifest.json":
+		return true
+	default:
+		return false
+	}
 }
