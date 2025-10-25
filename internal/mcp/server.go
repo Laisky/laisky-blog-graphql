@@ -20,7 +20,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
-	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
+	"github.com/Laisky/laisky-blog-graphql/library/search/google"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	srv "github.com/mark3labs/mcp-go/server"
 )
@@ -36,12 +36,12 @@ const (
 type Server struct {
 	handler        http.Handler
 	logger         logSDK.Logger
-	searchEngine   *bing.SearchEngine
+	searchEngine   *google.SearchEngine
 	askUserService *askuser.Service
 }
 
 // NewServer constructs a remote MCP server exposing HTTP endpoints under a single handler.
-func NewServer(searchEngine *bing.SearchEngine, askUserService *askuser.Service, logger logSDK.Logger) (*Server, error) {
+func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Service, logger logSDK.Logger) (*Server, error) {
 	if searchEngine == nil && askUserService == nil {
 		return nil, fmt.Errorf("at least one MCP capability must be enabled")
 	}
@@ -55,7 +55,7 @@ func NewServer(searchEngine *bing.SearchEngine, askUserService *askuser.Service,
 		"laisky-blog-graphql",
 		"1.0.0",
 		srv.WithToolCapabilities(true),
-		srv.WithInstructions("Use the web_search tool to run Bing-powered web searches."),
+		srv.WithInstructions("Use the web_search tool to run Google Programmable Search queries."),
 		srv.WithRecovery(),
 		srv.WithHooks(hooks),
 	)
@@ -79,7 +79,7 @@ func NewServer(searchEngine *bing.SearchEngine, askUserService *askuser.Service,
 	if searchEngine != nil {
 		tool := mcp.NewTool(
 			"web_search",
-			mcp.WithDescription("Search the public web using Bing and return a structured result set."),
+			mcp.WithDescription("Search the public web using Google Programmable Search and return a structured result set."),
 			mcp.WithString(
 				"query",
 				mcp.Required(),
@@ -155,10 +155,10 @@ func (s *Server) handleWebSearch(ctx context.Context, req mcp.CallToolRequest) (
 	}
 
 	if result != nil {
-		for _, item := range result.WebPages.Value {
+		for _, item := range result.Items {
 			response.Results = append(response.Results, search.SearchResultItem{
-				URL:     item.URL,
-				Name:    item.Name,
+				URL:     item.Link,
+				Name:    item.Title,
 				Snippet: item.Snippet,
 			})
 		}

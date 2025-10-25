@@ -1,4 +1,4 @@
-// Package bing is a GraphQL resolver for Bing search engine.
+// Package search provides the web search GraphQL resolvers.
 package search
 
 import (
@@ -14,18 +14,18 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
-	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
+	"github.com/Laisky/laisky-blog-graphql/library/search/google"
 )
 
 // MutationResolver is the resolver for mutation.
 type MutationResolver struct {
-	engine *bing.SearchEngine
+	engine *google.SearchEngine
 	rdb    *rlibs.DB
 }
 
 // NewMutationResolver is the constructor for MutationResolver.
 func NewMutationResolver(
-	engine *bing.SearchEngine,
+	engine *google.SearchEngine,
 	rdb *rlibs.DB,
 ) *MutationResolver {
 	return &MutationResolver{
@@ -98,10 +98,10 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 		CreatedAt: time.Now(),
 	}
 
-	for _, item := range engineResult.WebPages.Value {
+	for _, item := range engineResult.Items {
 		result.Results = append(result.Results, search.SearchResultItem{
-			URL:     item.URL,
-			Name:    item.Name,
+			URL:     item.Link,
+			Name:    item.Title,
 			Snippet: item.Snippet,
 		})
 	}

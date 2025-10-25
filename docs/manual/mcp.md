@@ -6,7 +6,7 @@ This guide explains how to connect to the remote Model Context Protocol (MCP) en
 
 The service mounts an MCP-compatible JSON-RPC endpoint at `/mcp`. Clients may connect over HTTP(S) using any MCP client, such as the [MCP Inspector](https://modelcontextprotocol.io/), and interact with two tools:
 
-- `web_search` — runs a Bing-powered web search.
+- `web_search` — runs a Google Programmable Search query.
 - `ask_user` — forwards a question to the authenticated human and waits for their reply.
 
 Both tools require a valid `Authorization: Bearer <token>` header. Tokens are also used for billing and for routing questions to the correct user.
@@ -17,7 +17,7 @@ Enable the MCP endpoint when starting the API service. The tools are advertised 
 
 | Feature      | Requirement                                                                                                                                      |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `web_search` | `settings.websearch.bing.api_key` must be configured. Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`.        |
+| `web_search` | `settings.websearch.google.api_key` and `settings.websearch.google.cx` must be configured. Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`. |
 | `ask_user`   | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM. |
 
 If no tool dependencies are met the server skips MCP initialisation.
@@ -54,13 +54,14 @@ The raw token is checked against the external billing service, hashed with SHA-2
 
 ### `web_search`
 
-- **Description:** Search the public web using Bing and return structured results.
+- **Description:** Search the public web using Google Programmable Search and return structured results.
 - **Input Parameters:**
   - `query` (string, required) — plain text search phrase.
 - **Behaviour:**
   1. Validates the token and charges the user via `oneapi.CheckUserExternalBilling` (`PriceWebSearch`).
-  2. Issues the request to the configured Bing search engine.
+  2. Issues the request to the configured Google search engine.
   3. Returns a JSON payload compatible with `search.SearchResult`.
+  > **Cost:** Google currently charges roughly USD $5 per 1,000 queries on the Custom Search JSON API.
 - **Sample Result:**
 
 ```json
@@ -137,7 +138,7 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 | Symptom                                | Possible Cause                                                                                  | Remedy                                                                        |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `ask_user tool is not available`       | PostgreSQL connection could not be opened, or configuration missing.                            | Verify `settings.db.mcp.*` values and database connectivity.                  |
-| `web search is not configured`         | Bing API key missing.                                                                           | Set `settings.websearch.bing.api_key`.                                        |
+| `web search is not configured`         | Google API key or search engine ID missing.                                                     | Set `settings.websearch.google.api_key` and `settings.websearch.google.cx`.   |
 | Repeated `billing check failed` errors | External OneAPI billing request rejected.                                                       | Confirm the bearer token has sufficient quota or check OneAPI service health. |
 | Console shows no pending questions     | The AI has not called `ask_user`, or the API key entered does not match the one used by the AI. | Ensure matching API key and review server logs for request creation.          |
 

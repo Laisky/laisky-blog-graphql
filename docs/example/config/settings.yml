@@ -25,3 +25,7 @@ settings:
   web:
     url_prefix: /mcp           # internal mount path on the Go server
     public_url_prefix: /       # set to '/' to hide the prefix in generated links
+  websearch:
+    google:
+      api_key: YOUR_GOOGLE_API_KEY
+      cx: YOUR_PROGRAMMABLE_SEARCH_ENGINE_ID

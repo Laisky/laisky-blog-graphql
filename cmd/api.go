@@ -27,7 +27,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/db/postgres"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
+	"github.com/Laisky/laisky-blog-graphql/library/search/google"
 )
 
 var apiCMD = &cobra.Command{
@@ -129,8 +129,9 @@ func runAPI() error {
 		args.BlogCtl = blogCtl.New(args.BlogSvc)
 	}
 
-	args.BingSearchEngine = bing.NewSearchEngine(
-		gconfig.S.GetString("settings.websearch.bing.api_key"),
+	args.WebSearchEngine = google.NewSearchEngine(
+		gconfig.S.GetString("settings.websearch.google.api_key"),
+		gconfig.S.GetString("settings.websearch.google.cx"),
 	)
 
 	{ // setup ask_user service

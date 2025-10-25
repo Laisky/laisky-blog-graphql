@@ -13,7 +13,7 @@ import (
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
-	"github.com/Laisky/laisky-blog-graphql/library/search/bing"
+	"github.com/Laisky/laisky-blog-graphql/library/search/google"
 )
 
 // Resolver resolver
@@ -22,13 +22,13 @@ type Resolver struct {
 }
 
 type ResolverArgs struct {
-	TelegramCtl      *telegram.Telegram
-	TelegramSvc      *telegramSvc.Telegram
-	BlogCtl          *blog.Blog
-	BlogSvc          *blogSvc.Blog
-	BingSearchEngine *bing.SearchEngine
-	Rdb              *rlibs.DB
-	AskUserService   *askuser.Service
+	TelegramCtl     *telegram.Telegram
+	TelegramSvc     *telegramSvc.Telegram
+	BlogCtl         *blog.Blog
+	BlogSvc         *blogSvc.Blog
+	WebSearchEngine *google.SearchEngine
+	Rdb             *rlibs.DB
+	AskUserService  *askuser.Service
 }
 
 // NewResolver new resolver
@@ -63,9 +63,9 @@ func (r *Resolver) Mutation() MutationResolver {
 		arweaveMutation: arweaveMutation{
 			MutationResolver: arweave.NewMutationResolver(r.args.TelegramSvc.UploadDao),
 		},
-		bingMutation: bingMutation{
+		webSearchMutation: webSearchMutation{
 			MutationResolver: search.NewMutationResolver(
-				r.args.BingSearchEngine,
+				r.args.WebSearchEngine,
 				r.args.Rdb,
 			),
 		},
@@ -100,7 +100,7 @@ func (r *Resolver) ArweaveItem() ArweaveItemResolver {
 	return r.args.BlogCtl.ArweaveItemResolver
 }
 
-// bing search
+// web search
 
 func (r *Resolver) WebSearchResult() WebSearchResultResolver {
 	return new(search.WebSearchResultResolver)
@@ -172,7 +172,7 @@ type arweaveMutation struct {
 	*arweave.MutationResolver
 }
 
-type bingMutation struct {
+type webSearchMutation struct {
 	*search.MutationResolver
 }
 
@@ -181,5 +181,5 @@ type mutationResolver struct {
 	telegramMutation
 	generalMutation
 	arweaveMutation
-	bingMutation
+	webSearchMutation
 }
