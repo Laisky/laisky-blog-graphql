@@ -7,13 +7,14 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"strings"
 	"time"
 
 	gmw "github.com/Laisky/gin-middlewares/v6"
 	gutils "github.com/Laisky/go-utils/v5"
 	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
+
+	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
 // BillingAPI is the external billing api endpoint
@@ -68,10 +69,9 @@ func CheckUserExternalBilling(ctx context.Context,
 	if err != nil {
 		return errors.Wrap(err, "push cost to external billing api")
 	}
-	if apikey != "" && !strings.HasPrefix(strings.ToLower(apikey), "bearer ") {
-		apikey = "Bearer " + apikey
+	if token := library.StripBearerPrefix(apikey); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.Header.Set("Authorization", apikey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req) //nolint: bodyclose

@@ -318,10 +318,13 @@ const pageHTML = `<!DOCTYPE html>
     h1 { font-size: 1.8rem; margin-bottom: 8px; }
     h2 { font-size: 1.3rem; margin-top: 32px; }
     p.lead { color: #94a3b8; margin-top: 0; }
-    form#auth-form { display: flex; gap: 12px; margin: 24px 0; }
-    form#auth-form input { flex: 1; padding: 10px 14px; border-radius: 8px; border: none; background: rgba(15, 23, 42, 0.6); color: inherit; box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.4); }
-    form#auth-form button { padding: 10px 18px; border-radius: 8px; border: none; background: #38bdf8; color: #0f172a; font-weight: 600; cursor: pointer; }
-    form#auth-form button:hover { background: #0ea5e9; }
+	form#auth-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 24px 0; }
+	form#auth-form .input-wrapper { position: relative; flex: 1; min-width: 240px; }
+	form#auth-form .input-wrapper input { width: 100%; padding: 10px 14px; padding-right: 96px; border-radius: 8px; border: none; background: rgba(15, 23, 42, 0.6); color: inherit; box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.4); }
+	form#auth-form .input-wrapper button { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.5); background: rgba(15, 23, 42, 0.4); color: #e2e8f0; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+	form#auth-form .input-wrapper button:hover { background: rgba(148, 163, 184, 0.2); }
+	form#auth-form > button { padding: 10px 18px; border-radius: 8px; border: none; background: #38bdf8; color: #0f172a; font-weight: 600; cursor: pointer; }
+	form#auth-form > button:hover { background: #0ea5e9; }
     .card { background: rgba(15, 23, 42, 0.85); border-radius: 12px; padding: 18px 20px; margin-top: 16px; box-shadow: 0 12px 24px rgba(15, 23, 42, 0.35); }
     .card.pending { border: 1px solid rgba(56, 189, 248, 0.4); }
     .card.answered { border: 1px solid rgba(74, 222, 128, 0.3); }
@@ -340,10 +343,13 @@ const pageHTML = `<!DOCTYPE html>
 <div class="wrapper">
     <h1>ask_user Console</h1>
     <p class="lead">Review pending questions from your AI assistants and respond directly.</p>
-    <form id="auth-form">
-        <input type="password" id="api-key" placeholder="Enter your API key" autocomplete="off" required />
-        <button type="submit">Connect</button>
-    </form>
+	<form id="auth-form">
+		<div class="input-wrapper">
+			<input type="password" id="api-key" placeholder="Enter your API key" autocomplete="off" required />
+			<button type="button" id="api-key-toggle" aria-pressed="false">Show</button>
+		</div>
+		<button type="submit">Connect</button>
+	</form>
     <div id="status" class="hidden"></div>
     <section>
         <h2>Pending Questions</h2>
@@ -359,9 +365,10 @@ const pageHTML = `<!DOCTYPE html>
     const statusEl = document.getElementById('status');
     const pendingList = document.getElementById('pending-list');
     const historyList = document.getElementById('history-list');
-    const form = document.getElementById('auth-form');
-    const apiKeyInput = document.getElementById('api-key');
-    const STORAGE_KEY = 'ask_user_api_key';
+	const form = document.getElementById('auth-form');
+	const apiKeyInput = document.getElementById('api-key');
+	const toggleBtn = document.getElementById('api-key-toggle');
+	const STORAGE_KEY = 'ask_user_api_key';
 	const API_BASE_PATH = (function() {
 		try {
 			const path = window.location.pathname || '/';
@@ -370,8 +377,46 @@ const pageHTML = `<!DOCTYPE html>
 			return '/';
 		}
 	})();
-    let apiKey = localStorage.getItem(STORAGE_KEY) || '';
-    let pollTimer = null;
+	function normalizeApiKey(value) {
+		let output = (value || '').trim();
+		if (!output) {
+			return '';
+		}
+		const prefix = /^Bearer\s+/i;
+		while (prefix.test(output)) {
+			output = output.replace(prefix, '').trim();
+		}
+		return output;
+	}
+	function buildAuthorizationHeader(key) {
+		const token = normalizeApiKey(key);
+		return token ? 'Bearer ' + token : '';
+	}
+	let apiKey = normalizeApiKey(localStorage.getItem(STORAGE_KEY) || '');
+	let pollTimer = null;
+	let isKeyVisible = false;
+
+	function setKeyVisibility(visible) {
+		isKeyVisible = Boolean(visible);
+		if (apiKeyInput) {
+			apiKeyInput.type = isKeyVisible ? 'text' : 'password';
+		}
+		if (toggleBtn) {
+			toggleBtn.textContent = isKeyVisible ? 'Hide' : 'Show';
+			toggleBtn.setAttribute('aria-pressed', isKeyVisible ? 'true' : 'false');
+		}
+	}
+
+	if (toggleBtn) {
+		toggleBtn.addEventListener('click', function() {
+			setKeyVisibility(!isKeyVisible);
+		});
+	}
+
+	if (apiKeyInput) {
+		apiKeyInput.value = apiKey;
+	}
+	setKeyVisibility(false);
 
     function setStatus(message, isError) {
         if (!message) {
@@ -384,22 +429,41 @@ const pageHTML = `<!DOCTYPE html>
         statusEl.style.color = isError ? '#f87171' : '#22c55e';
     }
 
-    function applyApiKey(key) {
-        apiKey = key.trim();
-        if (apiKey) {
-            localStorage.setItem(STORAGE_KEY, apiKey);
-            apiKeyInput.value = '********';
-            setStatus('Connected. Fetching requests...', false);
-            schedulePoll(0);
-        } else {
-            localStorage.removeItem(STORAGE_KEY);
-            apiKeyInput.value = '';
-            pendingList.innerHTML = '';
-            historyList.innerHTML = '';
-            setStatus('Disconnected.', false);
-            stopPolling();
-        }
-    }
+	function applyApiKey(key, options) {
+		const normalized = normalizeApiKey(key);
+		if (!normalized) {
+			apiKey = '';
+			localStorage.removeItem(STORAGE_KEY);
+			if (apiKeyInput) {
+				apiKeyInput.value = '';
+			}
+			pendingList.innerHTML = '';
+			historyList.innerHTML = '';
+			setKeyVisibility(false);
+			setStatus('Disconnected.', false);
+			stopPolling();
+			return false;
+		}
+
+		const sameKey = normalized === apiKey;
+		apiKey = normalized;
+		localStorage.setItem(STORAGE_KEY, apiKey);
+		if (apiKeyInput) {
+			apiKeyInput.value = apiKey;
+		}
+		setKeyVisibility(false);
+
+		if (options && options.initial) {
+			setStatus('Connected. Fetching requests...', false);
+		} else if (sameKey) {
+			setStatus('Using stored API key.', false);
+		} else {
+			setStatus('Connecting…', false);
+		}
+
+		schedulePoll(0);
+		return true;
+	}
 
     function stopPolling() {
         if (pollTimer) {
@@ -417,9 +481,15 @@ const pageHTML = `<!DOCTYPE html>
         if (!apiKey) {
             return;
         }
+		const authorization = buildAuthorizationHeader(apiKey);
+		if (!authorization) {
+			setStatus('Please provide an API key.', true);
+			stopPolling();
+			return;
+		}
         try {
-			const response = await fetch(API_BASE_PATH + 'api/requests', {
-                headers: { 'Authorization': 'Bearer ' + apiKey }
+		const response = await fetch(API_BASE_PATH + 'api/requests', {
+				headers: { 'Authorization': authorization }
             });
             if (!response.ok) {
                 throw new Error(await response.text() || 'Failed to fetch requests');
@@ -499,13 +569,18 @@ const pageHTML = `<!DOCTYPE html>
         if (!answer) {
             return;
         }
+		const authorization = buildAuthorizationHeader(apiKey);
+		if (!authorization) {
+			setStatus('Connect with your API key before answering.', true);
+			return;
+		}
         formEl.querySelector('button')?.setAttribute('disabled', 'disabled');
         try {
 			const response = await fetch(API_BASE_PATH + 'api/requests/' + requestId, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + apiKey
+					'Authorization': authorization
                 },
                 body: JSON.stringify({ answer: answer })
             });
@@ -540,14 +615,26 @@ const pageHTML = `<!DOCTYPE html>
         });
     }
 
-    form.addEventListener('submit', function(event) {
-        event.preventDefault();
-        applyApiKey(apiKeyInput.value);
-    });
+	form.addEventListener('submit', function(event) {
+		event.preventDefault();
+		const rawValue = apiKeyInput ? apiKeyInput.value : '';
+		const normalized = normalizeApiKey(rawValue);
+		if (!normalized) {
+			if (apiKey) {
+				applyApiKey('');
+			} else {
+				setStatus('Please provide an API key.', true);
+			}
+			return;
+		}
+		applyApiKey(rawValue);
+	});
 
-    if (apiKey) {
-        applyApiKey(apiKey);
-    }
+	if (apiKey) {
+		applyApiKey(apiKey, { initial: true });
+	} else {
+		setStatus('Disconnected.', false);
+	}
 })();
 </script>
 </body>

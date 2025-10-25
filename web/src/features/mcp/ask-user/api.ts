@@ -6,6 +6,21 @@ const API_BASE_PATH = (() => {
   return path.endsWith('/') ? path : `${path}/`
 })()
 
+const BEARER_PREFIX = /^Bearer\s+/i
+
+export function normalizeApiKey(value: string): string {
+  let output = (value ?? '').trim()
+  while (output && BEARER_PREFIX.test(output)) {
+    output = output.replace(BEARER_PREFIX, '').trim()
+  }
+  return output
+}
+
+export function buildAuthorizationHeader(apiKey: string): string {
+  const token = normalizeApiKey(apiKey)
+  return token ? `Bearer ${token}` : ''
+}
+
 export interface AskUserRequest {
   id: string
   question: string
@@ -27,9 +42,13 @@ export interface AskUserListResponse {
 }
 
 export async function listRequests(apiKey: string, signal?: AbortSignal): Promise<AskUserListResponse> {
+  const authorization = buildAuthorizationHeader(apiKey)
+  if (!authorization) {
+    throw new Error('API key is required')
+  }
   const response = await fetch(`${API_BASE_PATH}api/requests`, {
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: authorization,
     },
     signal,
   })
@@ -47,11 +66,15 @@ export async function submitAnswer(
   requestId: string,
   answer: string,
 ): Promise<void> {
+  const authorization = buildAuthorizationHeader(apiKey)
+  if (!authorization) {
+    throw new Error('API key is required')
+  }
   const response = await fetch(`${API_BASE_PATH}api/requests/${requestId}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: authorization,
     },
     body: JSON.stringify({ answer }),
   })

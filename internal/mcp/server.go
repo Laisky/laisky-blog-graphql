@@ -12,6 +12,7 @@ import (
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
@@ -166,17 +167,7 @@ func (s *Server) handleWebSearch(ctx context.Context, req mcp.CallToolRequest) (
 }
 
 func extractAPIKey(authHeader string) string {
-	if authHeader == "" {
-		return ""
-	}
-
-	value := strings.TrimSpace(authHeader)
-	const prefix = "Bearer "
-	if strings.HasPrefix(strings.ToLower(value), strings.ToLower(prefix)) {
-		return strings.TrimSpace(value[len(prefix):])
-	}
-
-	return value
+	return library.StripBearerPrefix(authHeader)
 }
 
 func (s *Server) handleAskUser(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

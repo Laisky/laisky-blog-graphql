@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"encoding/base64"
-	"strings"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v6"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
 	telegramDao "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
+	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 )
@@ -38,7 +38,7 @@ func (r *MutationResolver) ArweaveUpload(ctx context.Context, fileB64 string, co
 			return nil, errors.New("cannot get gin context from standard context")
 		}
 
-		apikey = strings.TrimSpace(strings.TrimPrefix(gctx.GetHeader("Authorization"), "Bearer "))
+		apikey = library.StripBearerPrefix(gctx.GetHeader("Authorization"))
 		if apikey == "" {
 			return nil, errors.Wrap(err, "cannot get user claims")
 		}

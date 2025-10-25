@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
-import { listRequests, submitAnswer, type AskUserRequest } from './api'
+import { listRequests, submitAnswer, normalizeApiKey, type AskUserRequest } from './api'
 
 const STORAGE_KEY = 'ask_user_api_key'
 
@@ -24,13 +24,24 @@ interface IdentityState {
 }
 
 export function AskUserPage() {
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem(STORAGE_KEY) ?? '')
+  const [apiKey, setApiKey] = useState<string>(() => {
+    if (typeof window === 'undefined') {
+      return ''
+    }
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY)
+      return normalizeApiKey(stored ?? '')
+    } catch {
+      return ''
+    }
+  })
   const [pendingRequests, setPendingRequests] = useState<AskUserRequest[]>([])
   const [historyRequests, setHistoryRequests] = useState<AskUserRequest[]>([])
   const [identity, setIdentity] = useState<IdentityState | null>(null)
   const [status, setStatus] = useState<StatusState | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [formValue, setFormValue] = useState(apiKey ? '********' : '')
+  const [formValue, setFormValue] = useState(apiKey)
+  const [isKeyVisible, setIsKeyVisible] = useState(false)
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({})
   const [pendingSubmissions, setPendingSubmissions] = useState<Record<string, boolean>>({})
 
@@ -40,11 +51,27 @@ export function AskUserPage() {
   )
 
   useEffect(() => {
-    if (apiKey) {
-      localStorage.setItem(STORAGE_KEY, apiKey)
-    } else {
-      localStorage.removeItem(STORAGE_KEY)
+    if (typeof window === 'undefined') {
+      return
     }
+    try {
+      const sanitized = normalizeApiKey(apiKey)
+      if (sanitized) {
+        window.localStorage.setItem(STORAGE_KEY, sanitized)
+      } else {
+        window.localStorage.removeItem(STORAGE_KEY)
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [apiKey])
+
+  useEffect(() => {
+    setFormValue(apiKey)
+  }, [apiKey])
+
+  useEffect(() => {
+    setIsKeyVisible(false)
   }, [apiKey])
 
   useEffect(() => {
@@ -132,18 +159,19 @@ export function AskUserPage() {
   const handleAuthSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-      const value = formValue.trim()
-      if (!value) {
+      const normalized = normalizeApiKey(formValue)
+      if (!normalized) {
         setStatus({ message: 'Please provide an API key.', tone: 'error' })
         return
       }
-      if (value === '********' && apiKey) {
+      if (normalized === apiKey) {
         setStatus({ message: 'Using stored API key.', tone: 'info' })
         pollControlsRef.current?.refresh()
         return
       }
-      setApiKey(value)
-      setFormValue('********')
+      setApiKey(normalized)
+      setFormValue(normalized)
+      setIsKeyVisible(false)
       setStatus({ message: 'Connecting…', tone: 'info' })
     },
     [apiKey, formValue]
@@ -152,6 +180,7 @@ export function AskUserPage() {
   const handleDisconnect = useCallback(() => {
     setApiKey('')
     setFormValue('')
+    setIsKeyVisible(false)
     setStatus({ message: 'Disconnected.', tone: 'info' })
     if (pollTimerRef.current) {
       clearTimeout(pollTimerRef.current)
@@ -165,7 +194,7 @@ export function AskUserPage() {
 
   const handleAnswerSubmit = useCallback(
     async (requestId: string) => {
-      const key = apiKey.trim()
+      const key = normalizeApiKey(apiKey)
       if (!key) {
         setStatus({ message: 'Connect with your API key before answering.', tone: 'error' })
         return
@@ -231,16 +260,32 @@ export function AskUserPage() {
           )}
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3 md:flex-row">
-            <Input
-              value={formValue}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setFormValue(event.target.value)}
-              type="password"
-              placeholder="Enter your API key"
-              autoComplete="off"
-              className="md:max-w-md"
-              required
-            />
+          <form
+            onSubmit={handleAuthSubmit}
+            className="flex flex-col gap-3 md:flex-row md:items-center"
+          >
+            <div className="relative w-full md:max-w-md">
+              <Input
+                value={formValue}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setFormValue(event.target.value)}
+                type={isKeyVisible ? 'text' : 'password'}
+                placeholder="Enter your API key"
+                autoComplete="off"
+                className="pr-28"
+                required
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsKeyVisible((prev) => !prev)}
+                className="absolute right-1 top-1/2 -translate-y-1/2 px-3"
+                aria-pressed={isKeyVisible}
+                aria-label={isKeyVisible ? 'Hide API key' : 'Show API key'}
+              >
+                {isKeyVisible ? 'Hide' : 'Show'}
+              </Button>
+            </div>
             <div className="flex gap-2">
               <Button type="submit">Connect</Button>
               {apiKey && (

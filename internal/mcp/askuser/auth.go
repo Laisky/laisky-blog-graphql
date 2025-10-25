@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+
+	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
 // AuthorizationContext captures caller identity derived from the Authorization header.
@@ -17,67 +19,32 @@ type AuthorizationContext struct {
 	AIIdentity   string
 }
 
-// ParseAuthorizationContext extracts identities and API key material from a Bearer token.
-//
-// The header supports the following formats:
-//  1. "Bearer <token>" - the token itself is treated as the user's API key and
-//     both the user and AI identities default to derived values.
-//  2. "Bearer <identity>@<token>" - the string before the last '@' is treated as
-//     a combined identity descriptor. If it contains a ':' character the part
-//     before ':' becomes the user identity and the remaining suffix becomes the
-//     AI identity. When ':' is absent, the descriptor is used for both.
-//
-// The final component after the last '@' is always considered the actual API key
-// that will be forwarded to downstream services (for example, billing).
+// ParseAuthorizationContext extracts API key material from an Authorization
+// header that may or may not include the Bearer prefix. The token itself is the
+// sole source of truth for the caller's identity.
 func ParseAuthorizationContext(header string) (*AuthorizationContext, error) {
-	header = strings.TrimSpace(header)
-	if header == "" {
+	trimmedHeader := strings.TrimSpace(header)
+	if trimmedHeader == "" {
 		return nil, ErrMissingAuthorization
 	}
-	const prefix = "Bearer "
-	if !strings.HasPrefix(strings.ToLower(header), strings.ToLower(prefix)) {
-		return nil, ErrInvalidAuthorization
-	}
 
-	raw := strings.TrimSpace(header[len(prefix):])
+	raw := library.StripBearerPrefix(trimmedHeader)
 	if raw == "" {
 		return nil, ErrInvalidAuthorization
 	}
 
-	token := raw
-	identitySegment := ""
-	if idx := strings.LastIndex(raw, "@"); idx >= 0 {
-		identitySegment = strings.TrimSpace(raw[:idx])
-		token = strings.TrimSpace(raw[idx+1:])
-	}
-
-	if token == "" {
+	trimmedToken := strings.TrimSpace(raw)
+	if trimmedToken == "" {
 		return nil, ErrInvalidAuthorization
 	}
-
-	userID := "user:anonymous"
-	aiID := "ai:unknown"
-	if identitySegment != "" {
-		switch parts := strings.Split(identitySegment, ":"); len(parts) {
-		case 0:
-			// no-op
-		case 1:
-			segment := strings.TrimSpace(parts[0])
-			if segment != "" {
-				userID = segment
-				aiID = segment
-			}
-		default:
-			user := strings.TrimSpace(parts[0])
-			ai := strings.TrimSpace(strings.Join(parts[1:], ":"))
-			if user != "" {
-				userID = user
-			}
-			if ai != "" {
-				aiID = ai
-			}
-		}
+	tokenFields := strings.Fields(trimmedToken)
+	if len(tokenFields) == 0 {
+		return nil, ErrInvalidAuthorization
 	}
+	token := tokenFields[0]
+
+	userID := deriveUserIdentity(token)
+	aiID := userID
 
 	hashed := sha256.Sum256([]byte(token))
 	suffix := ""
@@ -90,7 +57,7 @@ func ParseAuthorizationContext(header string) (*AuthorizationContext, error) {
 	}
 
 	return &AuthorizationContext{
-		RawHeader:    header,
+		RawHeader:    trimmedHeader,
 		APIKey:       token,
 		APIKeyHash:   hex.EncodeToString(hashed[:]),
 		KeySuffix:    suffix,
@@ -108,4 +75,16 @@ func (a *AuthorizationContext) MaskedKey() string {
 		return fmt.Sprintf("***%s", a.APIKey)
 	}
 	return fmt.Sprintf("***%s", a.APIKey[len(a.APIKey)-4:])
+}
+
+func deriveUserIdentity(token string) string {
+	const prefixLength = 7
+	identity := token
+	if len(identity) > prefixLength {
+		identity = identity[:prefixLength]
+	}
+	if identity == "" {
+		return "user:anonymous"
+	}
+	return fmt.Sprintf("user:%s", identity)
 }

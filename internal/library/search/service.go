@@ -3,7 +3,6 @@ package search
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	gmw "github.com/Laisky/gin-middlewares/v6"
@@ -45,7 +44,7 @@ func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.We
 		return nil, errors.New("cannot get gin context from standard context")
 	}
 
-	apikey := strings.TrimSpace(strings.TrimPrefix(gctx.GetHeader("Authorization"), "Bearer "))
+	apikey := library.StripBearerPrefix(gctx.GetHeader("Authorization"))
 	if apikey == "" {
 		return nil, errors.New("cannot get apikey")
 	}
@@ -79,7 +78,7 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 		return nil, errors.New("cannot get gin context from standard context")
 	}
 
-	apikey := strings.TrimSpace(strings.TrimPrefix(gctx.GetHeader("Authorization"), "Bearer "))
+	apikey := library.StripBearerPrefix(gctx.GetHeader("Authorization"))
 	if apikey == "" {
 		return nil, errors.New("cannot get apikey")
 	}
