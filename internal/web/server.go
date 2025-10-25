@@ -213,6 +213,22 @@ func RunServer(addr string, resolver *Resolver) {
 		ctx.String(http.StatusOK, "hello, world")
 	})
 
+	statusHandler := newStatusHandler()
+	statusPath := prefix.join("/status")
+	server.GET(statusPath, statusHandler)
+	server.HEAD(statusPath, statusHandler)
+	server.OPTIONS(statusPath, statusHandler)
+	if trimmed := strings.TrimSuffix(statusPath, "/"); trimmed != statusPath {
+		server.GET(trimmed, statusHandler)
+		server.HEAD(trimmed, statusHandler)
+		server.OPTIONS(trimmed, statusHandler)
+	}
+	if prefix.public == "" {
+		server.GET("/status", statusHandler)
+		server.HEAD("/status", statusHandler)
+		server.OPTIONS("/status", statusHandler)
+	}
+
 	h := handler.New(NewExecutableSchema(Config{Resolvers: resolver}))
 	h.AddTransport(transport.Websocket{
 		KeepAlivePingInterval: 10 * time.Second,
@@ -431,6 +447,22 @@ func allowCORS(ctx *gin.Context) {
 	}
 
 	ctx.Next()
+}
+
+// newStatusHandler returns a handler that reports MCP service availability.
+func newStatusHandler() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		ctx.Header("Allow", "GET, HEAD, OPTIONS")
+
+		switch ctx.Request.Method {
+		case http.MethodGet:
+			ctx.String(http.StatusOK, "ok")
+		case http.MethodHead, http.MethodOptions:
+			ctx.Status(http.StatusOK)
+		default:
+			ctx.AbortWithStatus(http.StatusMethodNotAllowed)
+		}
+	}
 }
 
 func isCarrierGradeNatIP(host string) bool {

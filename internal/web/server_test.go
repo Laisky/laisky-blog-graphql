@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -264,5 +265,49 @@ func TestAllowCORSEdgeCases(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "https://blog.laisky.com:8080", w.Header().Get("Access-Control-Allow-Origin"))
+	})
+}
+
+func TestNewStatusHandler(t *testing.T) {
+	setupGinTestMode()
+	t.Parallel()
+
+	handler := newStatusHandler()
+	router := gin.New()
+	router.GET("/status", handler)
+	router.HEAD("/status", handler)
+	router.OPTIONS("/status", handler)
+
+	t.Run("GET returns ok", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet, "/status", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "ok", strings.TrimSpace(w.Body.String()))
+		assert.Equal(t, "GET, HEAD, OPTIONS", w.Header().Get("Allow"))
+	})
+
+	t.Run("HEAD returns 200", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodHead, "/status", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Empty(t, w.Body.String())
+		assert.Equal(t, "GET, HEAD, OPTIONS", w.Header().Get("Allow"))
+	})
+
+	t.Run("OPTIONS returns 200", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodOptions, "/status", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Empty(t, w.Body.String())
+		assert.Equal(t, "GET, HEAD, OPTIONS", w.Header().Get("Allow"))
 	})
 }
