@@ -47,8 +47,11 @@ export async function listRequests(apiKey: string, signal?: AbortSignal): Promis
     throw new Error('API key is required')
   }
   const response = await fetch(`${API_BASE_PATH}api/requests`, {
+    cache: 'no-store',
     headers: {
       Authorization: authorization,
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
     },
     signal,
   })
@@ -71,10 +74,13 @@ export async function submitAnswer(
     throw new Error('API key is required')
   }
   const response = await fetch(`${API_BASE_PATH}api/requests/${requestId}`, {
+    cache: 'no-store',
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: authorization,
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
     },
     body: JSON.stringify({ answer }),
   })
