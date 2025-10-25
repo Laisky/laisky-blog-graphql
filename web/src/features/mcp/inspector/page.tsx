@@ -42,6 +42,8 @@ export function InspectorPage() {
     const authorization = params.get('token') || params.get('authorization') || ''
     setEndpointDisplay(endpointUrl)
 
+  applyInspectorDefaults(params)
+
     async function loadInspector() {
       if (!mount) {
         setError('Unable to mount MCP Inspector container')
@@ -211,4 +213,48 @@ function normalizeBufferSource(source: BufferSource): Uint8Array {
   }
 
   throw new Error('Unsupported BufferSource type for SubtleCrypto polyfill')
+}
+
+function applyInspectorDefaults(params: URLSearchParams): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const defaults: Array<{ key: string; value: string; previous?: string[]; queryOverride?: string }> = [
+    {
+      key: 'lastTransportType',
+      value: 'streamable-http',
+      previous: ['stdio', ''],
+      queryOverride: 'transport',
+    },
+    {
+      key: 'lastSseUrl',
+      value: 'https://mcp.laisky.com',
+      previous: ['http://localhost:3001/sse', ''],
+      queryOverride: 'serverUrl',
+    },
+    {
+      key: 'lastConnectionType',
+      value: 'direct',
+      previous: ['proxy', ''],
+      queryOverride: 'connectionType',
+    },
+  ]
+
+  for (const { key, value, previous = [], queryOverride } of defaults) {
+    try {
+      if (queryOverride && params.has(queryOverride)) {
+        continue
+      }
+
+      const current = window.localStorage.getItem(key)
+      const shouldUpdate = current === null || previous.includes(current)
+
+      if (shouldUpdate) {
+        window.localStorage.setItem(key, value)
+      }
+    } catch (error) {
+      console.warn('Failed to set MCP Inspector default preference', { key, error })
+    }
+  }
 }
