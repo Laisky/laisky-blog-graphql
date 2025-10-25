@@ -1,9 +1,13 @@
 package mcp
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -25,6 +29,7 @@ type ctxKey string
 
 const (
 	keyAuthorization ctxKey = "authorization"
+	httpLogBodyLimit        = 4096
 )
 
 // Server wraps the MCP server state for the HTTP transport.
@@ -62,9 +67,11 @@ func NewServer(searchEngine *bing.SearchEngine, askUserService *askuser.Service,
 		}),
 	)
 
+	serverLogger := logger.Named("mcp")
+
 	s := &Server{
-		handler:        streamable,
-		logger:         logger.Named("mcp"),
+		handler:        withHTTPLogging(streamable, serverLogger.Named("http")),
+		logger:         serverLogger,
 		searchEngine:   searchEngine,
 		askUserService: askUserService,
 	}
@@ -287,4 +294,140 @@ func hookLogFields(ctx context.Context, id any, method mcp.MCPMethod) []zap.Fiel
 	}
 
 	return fields
+}
+
+func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
+	if next == nil {
+		return nil
+	}
+	if logger == nil {
+		return next
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startAt := time.Now()
+		body, truncated, err := readAndRestoreRequestBody(r, httpLogBodyLimit)
+		if err != nil {
+			logger.Error("read request body", zap.Error(err))
+		}
+
+		logger.Debug("incoming http request",
+			zap.String("method", r.Method),
+			zap.String("url", r.URL.String()),
+			zap.String("body", body),
+			zap.Bool("body_truncated", truncated),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+
+		lrw := newLoggingResponseWriter(w, httpLogBodyLimit)
+		next.ServeHTTP(lrw, r)
+
+		status := lrw.Status()
+		respBody, respTruncated := lrw.Body()
+		logger.Debug("outgoing http response",
+			zap.String("method", r.Method),
+			zap.String("url", r.URL.String()),
+			zap.Int("status", status),
+			zap.String("body", respBody),
+			zap.Bool("body_truncated", respTruncated),
+			zap.String("remote_addr", r.RemoteAddr),
+			zap.Duration("cost", time.Since(startAt)),
+		)
+	})
+}
+
+func readAndRestoreRequestBody(r *http.Request, limit int) (string, bool, error) {
+	if r.Body == nil {
+		return "", false, nil
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		return "", false, err
+	}
+	if err := r.Body.Close(); err != nil {
+		return "", false, err
+	}
+
+	r.Body = io.NopCloser(bytes.NewReader(data))
+	truncatedBody, truncated := truncateForLog(data, limit)
+	return truncatedBody, truncated, nil
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status    int
+	buffer    bytes.Buffer
+	truncated bool
+	bodyLimit int
+}
+
+func newLoggingResponseWriter(w http.ResponseWriter, limit int) *loggingResponseWriter {
+	return &loggingResponseWriter{
+		ResponseWriter: w,
+		bodyLimit:      limit,
+	}
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.status = code
+	lrw.ResponseWriter.WriteHeader(code)
+}
+
+func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
+	if lrw.status == 0 {
+		lrw.status = http.StatusOK
+	}
+
+	if lrw.buffer.Len() < lrw.bodyLimit {
+		remaining := lrw.bodyLimit - lrw.buffer.Len()
+		if len(b) > remaining {
+			lrw.buffer.Write(b[:remaining])
+			lrw.truncated = true
+		} else {
+			lrw.buffer.Write(b)
+		}
+	} else {
+		lrw.truncated = true
+	}
+
+	return lrw.ResponseWriter.Write(b)
+}
+
+func (lrw *loggingResponseWriter) Status() int {
+	if lrw.status == 0 {
+		return http.StatusOK
+	}
+	return lrw.status
+}
+
+func (lrw *loggingResponseWriter) Body() (string, bool) {
+	return lrw.buffer.String(), lrw.truncated
+}
+
+func (lrw *loggingResponseWriter) Flush() {
+	if flusher, ok := lrw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := lrw.ResponseWriter.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, errors.New("hijacker not supported")
+}
+
+func (lrw *loggingResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if pusher, ok := lrw.ResponseWriter.(http.Pusher); ok {
+		return pusher.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+func truncateForLog(data []byte, limit int) (string, bool) {
+	if len(data) <= limit {
+		return string(data), false
+	}
+	return string(data[:limit]), true
 }

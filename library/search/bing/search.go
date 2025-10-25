@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	logSDK "github.com/Laisky/go-utils/v5/log"
+	"github.com/Laisky/zap"
 	"github.com/pkg/errors"
+
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // SearchEngineInterface defines the search engine methods.
@@ -18,12 +23,21 @@ type SearchEngineInterface interface {
 // SearchEngine is an empty struct implementing SearchEngineInterface.
 type SearchEngine struct {
 	apikey string
+	client *http.Client
+	logger logSDK.Logger
 }
+
+const (
+	httpRequestTimeout = 10 * time.Second
+	logBodyLimit       = 4096
+)
 
 // NewSearchEngine is a constructor for SearchEngine.
 func NewSearchEngine(apikey string) *SearchEngine {
 	return &SearchEngine{
-		apikey: apikey,
+		apikey: strings.TrimSpace(apikey),
+		client: &http.Client{Timeout: httpRequestTimeout},
+		logger: appLog.Logger.Named("bing_search"),
 	}
 }
 
@@ -94,9 +108,11 @@ type bingResponse struct {
 // Search performs a web search using the Bing Search API and returns a slice of BingAnswer.
 func (se *SearchEngine) Search(ctx context.Context, query string) (*BingAnswer, error) {
 	const endpoint = "https://api.bing.microsoft.com/v7.0/search"
-	// Replace with your valid subscription key.
+	if strings.TrimSpace(se.apikey) == "" {
+		return nil, errors.New("bing api key is not configured")
+	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create request to `%s`", endpoint)
 	}
@@ -109,24 +125,63 @@ func (se *SearchEngine) Search(ctx context.Context, query string) (*BingAnswer, 
 	// Set the subscription key header.
 	req.Header.Add("Ocp-Apim-Subscription-Key", se.apikey)
 
-	client := new(http.Client)
-	resp, err := client.Do(req)
+	logger := se.logger
+	if logger == nil {
+		logger = appLog.Logger.Named("bing_search")
+	}
+
+	logger.Debug("outgoing http request",
+		zap.String("method", req.Method),
+		zap.String("url", req.URL.String()),
+		zap.String("body", ""),
+		zap.String("query", query),
+	)
+
+	startAt := time.Now()
+	resp, err := se.client.Do(req)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to send request")
 	}
 	defer resp.Body.Close()
 
-	// Read the HTTP response.
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read response body")
 	}
 
-	// Unmarshal the JSON response.
+	truncatedBody, truncated := truncateForLog(body, logBodyLimit)
+	logger.Debug("incoming http response",
+		zap.String("method", req.Method),
+		zap.String("url", req.URL.String()),
+		zap.Int("status", resp.StatusCode),
+		zap.String("body", truncatedBody),
+		zap.Bool("body_truncated", truncated),
+		zap.Duration("cost", time.Since(startAt)),
+		zap.String("query", query),
+	)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.Errorf("bing search returned status %d: %s", resp.StatusCode, truncatedBody)
+	}
+
 	result := new(BingAnswer)
-	if err = json.Unmarshal(body, &result); err != nil {
+	if err = json.Unmarshal(body, result); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal JSON response")
 	}
 
+	if len(result.WebPages.Value) == 0 {
+		logger.Warn("bing search returned no results",
+			zap.String("query", query),
+			zap.Int("status", resp.StatusCode),
+		)
+	}
+
 	return result, nil
+}
+
+func truncateForLog(body []byte, limit int) (string, bool) {
+	if len(body) <= limit {
+		return string(body), false
+	}
+	return string(body[:limit]), true
 }
