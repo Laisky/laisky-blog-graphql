@@ -13,7 +13,7 @@ import (
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
-	"github.com/Laisky/laisky-blog-graphql/library/search/google"
+	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 )
 
 // Resolver resolver
@@ -22,13 +22,13 @@ type Resolver struct {
 }
 
 type ResolverArgs struct {
-	TelegramCtl     *telegram.Telegram
-	TelegramSvc     *telegramSvc.Telegram
-	BlogCtl         *blog.Blog
-	BlogSvc         *blogSvc.Blog
-	WebSearchEngine *google.SearchEngine
-	Rdb             *rlibs.DB
-	AskUserService  *askuser.Service
+	TelegramCtl       *telegram.Telegram
+	TelegramSvc       *telegramSvc.Telegram
+	BlogCtl           *blog.Blog
+	BlogSvc           *blogSvc.Blog
+	WebSearchProvider searchlib.Provider
+	Rdb               *rlibs.DB
+	AskUserService    *askuser.Service
 }
 
 // NewResolver new resolver
@@ -65,7 +65,7 @@ func (r *Resolver) Mutation() MutationResolver {
 		},
 		webSearchMutation: webSearchMutation{
 			MutationResolver: search.NewMutationResolver(
-				r.args.WebSearchEngine,
+				r.args.WebSearchProvider,
 				r.args.Rdb,
 			),
 		},

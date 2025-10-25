@@ -26,6 +26,14 @@ settings:
     url_prefix: /mcp           # internal mount path on the Go server
     public_url_prefix: /       # set to '/' to hide the prefix in generated links
   websearch:
-    google:
-      api_key: YOUR_GOOGLE_API_KEY
-      cx: YOUR_PROGRAMMABLE_SEARCH_ENGINE_ID
+    max_retry: 3          # default: 3
+    engines:
+      google:
+        enabled: true     # default: false
+        priority: 1       # lower numbers indicate higher priority; default is 1
+        api_key: YOUR_GOOGLE_API_KEY
+        cx: YOUR_PROGRAMMABLE_SEARCH_ENGINE_ID
+      serp_google:
+        enabled: true
+        priority: 2
+        api_key: YOUR_SERP_API_KEY

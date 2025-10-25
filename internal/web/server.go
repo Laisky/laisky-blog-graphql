@@ -164,8 +164,8 @@ func RunServer(addr string, resolver *Resolver) {
 		log.Logger.Panic("enable metric server", zap.Error(err))
 	}
 
-	if resolver != nil && (resolver.args.WebSearchEngine != nil || resolver.args.AskUserService != nil) {
-		mcpServer, err := mcp.NewServer(resolver.args.WebSearchEngine, resolver.args.AskUserService, resolver.args.Rdb, log.Logger)
+	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil) {
+		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.Rdb, log.Logger)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
@@ -199,11 +199,11 @@ func RunServer(addr string, resolver *Resolver) {
 			}
 		}
 	} else {
-		searchNil := resolver != nil && resolver.args.WebSearchEngine == nil
+		searchNil := resolver != nil && resolver.args.WebSearchProvider == nil
 		askNil := resolver != nil && resolver.args.AskUserService == nil
 		log.Logger.Warn("skip mcp server initialization",
 			zap.Bool("resolver_nil", resolver == nil),
-			zap.Bool("web_search_engine_nil", searchNil),
+			zap.Bool("web_search_provider_nil", searchNil),
 			zap.Bool("ask_user_service_nil", askNil),
 			zap.String("internal_prefix", prefix.display(prefix.internal)),
 		)

@@ -11,8 +11,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-	"github.com/Laisky/laisky-blog-graphql/library/search"
-	"github.com/Laisky/laisky-blog-graphql/library/search/google"
+	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -20,7 +19,7 @@ func TestWebSearchHandleMissingAPIKey(t *testing.T) {
 	tool := mustWebSearchTool(t,
 		func(context.Context) string { return "" },
 		func(context.Context, string, oneapi.Price, string) error { return nil },
-		&stubSearchEngine{},
+		&stubSearchProvider{},
 		fixedClock(time.Unix(0, 0)),
 	)
 
@@ -54,7 +53,7 @@ func TestWebSearchHandleBillingError(t *testing.T) {
 			require.Equal(t, "web search", reason)
 			return expectedErr
 		},
-		&stubSearchEngine{},
+		&stubSearchProvider{},
 		fixedClock(time.Unix(0, 0)),
 	)
 
@@ -78,7 +77,7 @@ func TestWebSearchHandleBillingError(t *testing.T) {
 
 func TestWebSearchHandleSearchError(t *testing.T) {
 	expectedErr := errors.New("search backend down")
-	engine := &stubSearchEngine{err: expectedErr}
+	provider := &stubSearchProvider{err: expectedErr}
 	var billingCalls int
 
 	tool := mustWebSearchTool(t,
@@ -87,7 +86,7 @@ func TestWebSearchHandleSearchError(t *testing.T) {
 			billingCalls++
 			return nil
 		},
-		engine,
+		provider,
 		fixedClock(time.Unix(0, 0)),
 	)
 
@@ -111,14 +110,12 @@ func TestWebSearchHandleSearchError(t *testing.T) {
 
 func TestWebSearchHandleSuccess(t *testing.T) {
 	fixedTime := time.Date(2025, time.October, 25, 12, 0, 0, 0, time.UTC)
-	engine := &stubSearchEngine{
-		result: &google.CustomSearchResponse{
-			Items: []google.SearchResultItem{
-				{
-					Link:    "https://example.com",
-					Title:   "Example",
-					Snippet: "Snippet",
-				},
+	provider := &stubSearchProvider{
+		items: []searchlib.SearchResultItem{
+			{
+				URL:     "https://example.com",
+				Name:    "Example",
+				Snippet: "Snippet",
 			},
 		},
 	}
@@ -126,7 +123,7 @@ func TestWebSearchHandleSuccess(t *testing.T) {
 	tool := mustWebSearchTool(t,
 		func(context.Context) string { return "token" },
 		func(context.Context, string, oneapi.Price, string) error { return nil },
-		engine,
+		provider,
 		fixedClock(fixedTime),
 	)
 
@@ -146,7 +143,7 @@ func TestWebSearchHandleSuccess(t *testing.T) {
 	textContent, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
 
-	var payload search.SearchResult
+	var payload searchlib.SearchResult
 	require.NoError(t, json.Unmarshal([]byte(textContent.Text), &payload))
 	require.Equal(t, "golang", payload.Query)
 	require.True(t, payload.CreatedAt.Equal(fixedTime))
@@ -156,22 +153,22 @@ func TestWebSearchHandleSuccess(t *testing.T) {
 	require.Equal(t, "Snippet", payload.Results[0].Snippet)
 }
 
-type stubSearchEngine struct {
-	result *google.CustomSearchResponse
-	err    error
+type stubSearchProvider struct {
+	items []searchlib.SearchResultItem
+	err   error
 }
 
-func (s *stubSearchEngine) Search(context.Context, string) (*google.CustomSearchResponse, error) {
+func (s *stubSearchProvider) Search(context.Context, string) ([]searchlib.SearchResultItem, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
-	return s.result, nil
+	return s.items, nil
 }
 
-func mustWebSearchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, engine SearchEngine, clock Clock) *WebSearchTool {
+func mustWebSearchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, provider SearchProvider, clock Clock) *WebSearchTool {
 	t.Helper()
 
-	tool, err := NewWebSearchTool(engine, log.Logger.Named("test_web_search"), keyProvider, billing, clock)
+	tool, err := NewWebSearchTool(provider, log.Logger.Named("test_web_search"), keyProvider, billing, clock)
 	require.NoError(t, err)
 	return tool
 }

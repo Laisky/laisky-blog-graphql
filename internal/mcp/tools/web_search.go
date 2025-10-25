@@ -11,14 +11,15 @@ import (
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
-	"github.com/Laisky/laisky-blog-graphql/library/search"
-	"github.com/Laisky/laisky-blog-graphql/library/search/google"
+	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 )
 
-// SearchEngine defines the subset of methods used from the Google search client.
-type SearchEngine interface {
-	Search(context.Context, string) (*google.CustomSearchResponse, error)
+// SearchProvider abstracts the search execution capability used by the tool.
+// The Search method accepts a context and plain-text query string, returning
+// zero or more search items or an error when the lookup fails.
+type SearchProvider interface {
+	Search(context.Context, string) ([]searchlib.SearchResultItem, error)
 }
 
 // BillingChecker validates external billing quotas for tool usage requests.
@@ -26,7 +27,7 @@ type BillingChecker func(context.Context, string, oneapi.Price, string) error
 
 // WebSearchTool implements the web_search MCP tool.
 type WebSearchTool struct {
-	searchEngine   SearchEngine
+	searchProvider SearchProvider
 	logger         logSDK.Logger
 	apiKeyProvider APIKeyProvider
 	billingChecker BillingChecker
@@ -34,9 +35,9 @@ type WebSearchTool struct {
 }
 
 // NewWebSearchTool constructs a WebSearchTool with the provided dependencies.
-func NewWebSearchTool(engine SearchEngine, logger logSDK.Logger, apiKeyProvider APIKeyProvider, billingChecker BillingChecker, clock Clock) (*WebSearchTool, error) {
-	if engine == nil {
-		return nil, errors.New("search engine is required")
+func NewWebSearchTool(provider SearchProvider, logger logSDK.Logger, apiKeyProvider APIKeyProvider, billingChecker BillingChecker, clock Clock) (*WebSearchTool, error) {
+	if provider == nil {
+		return nil, errors.New("search provider is required")
 	}
 	if logger == nil {
 		return nil, errors.New("logger is required")
@@ -54,7 +55,7 @@ func NewWebSearchTool(engine SearchEngine, logger logSDK.Logger, apiKeyProvider 
 	}
 
 	return &WebSearchTool{
-		searchEngine:   engine,
+		searchProvider: provider,
 		logger:         logger,
 		apiKeyProvider: apiKeyProvider,
 		billingChecker: billingChecker,
@@ -66,7 +67,7 @@ func NewWebSearchTool(engine SearchEngine, logger logSDK.Logger, apiKeyProvider 
 func (t *WebSearchTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"web_search",
-		mcp.WithDescription("Search the public web using Google Programmable Search and return a structured result set."),
+		mcp.WithDescription("Search the public web using prioritized search engines and return a structured result set."),
 		mcp.WithString(
 			"query",
 			mcp.Required(),
@@ -101,26 +102,18 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
 	}
 
-	result, err := t.searchEngine.Search(ctx, query)
+	items, err := t.searchProvider.Search(ctx, query)
 	if err != nil {
 		t.logger.Error("web_search failed", zap.Error(err), zap.String("query", query))
 		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 	}
 
-	response := search.SearchResult{
+	response := searchlib.SearchResult{
 		Query:     query,
 		CreatedAt: t.clock(),
 	}
 
-	if result != nil {
-		for _, item := range result.Items {
-			response.Results = append(response.Results, search.SearchResultItem{
-				URL:     item.Link,
-				Name:    item.Title,
-				Snippet: item.Snippet,
-			})
-		}
-	}
+	response.Results = append(response.Results, items...)
 
 	toolResult, err := mcp.NewToolResultJSON(response)
 	if err != nil {

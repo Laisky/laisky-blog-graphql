@@ -17,7 +17,7 @@ Enable the MCP endpoint when starting the API service. The tools are advertised 
 
 | Feature      | Requirement                                                                                                                                      |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `web_search` | `settings.websearch.google.api_key` and `settings.websearch.google.cx` must be configured. Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`. |
+| `web_search` | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`. |
 | `ask_user`   | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM. |
 
 If no tool dependencies are met the server skips MCP initialisation.
@@ -138,7 +138,7 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 | Symptom                                | Possible Cause                                                                                  | Remedy                                                                        |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `ask_user tool is not available`       | PostgreSQL connection could not be opened, or configuration missing.                            | Verify `settings.db.mcp.*` values and database connectivity.                  |
-| `web search is not configured`         | Google API key or search engine ID missing.                                                     | Set `settings.websearch.google.api_key` and `settings.websearch.google.cx`.   |
+| `web search is not configured`         | No web search engines enabled, or required credentials missing.                                 | Configure an engine under `settings.websearch.engines` (e.g. supply Google `api_key`/`cx` and set `enabled: true`). |
 | Repeated `billing check failed` errors | External OneAPI billing request rejected.                                                       | Confirm the bearer token has sufficient quota or check OneAPI service health. |
 | Console shows no pending questions     | The AI has not called `ask_user`, or the API key entered does not match the one used by the AI. | Ensure matching API key and review server logs for request creation.          |
 

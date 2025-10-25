@@ -5,32 +5,28 @@ import (
 	"context"
 	"time"
 
+	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v6"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
-	"github.com/Laisky/laisky-blog-graphql/library/search"
-	"github.com/Laisky/laisky-blog-graphql/library/search/google"
+	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 )
 
 // MutationResolver is the resolver for mutation.
 type MutationResolver struct {
-	engine *google.SearchEngine
-	rdb    *rlibs.DB
+	provider searchlib.Provider
+	rdb      *rlibs.DB
 }
 
 // NewMutationResolver is the constructor for MutationResolver.
-func NewMutationResolver(
-	engine *google.SearchEngine,
-	rdb *rlibs.DB,
-) *MutationResolver {
+func NewMutationResolver(provider searchlib.Provider, rdb *rlibs.DB) *MutationResolver {
 	return &MutationResolver{
-		engine: engine,
-		rdb:    rdb,
+		provider: provider,
+		rdb:      rdb,
 	}
 }
 
@@ -54,7 +50,7 @@ func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.We
 		return nil, errors.Wrap(err, "check user external billing")
 	}
 
-	result, err := search.FetchDynamicURLContent(ctx, r.rdb, url)
+	result, err := searchlib.FetchDynamicURLContent(ctx, r.rdb, url)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch dynamic url content")
 	}
@@ -68,7 +64,7 @@ func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.We
 }
 
 // WebSearch is the resolver for webSearch field.
-func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search.SearchResult, error) {
+func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*searchlib.SearchResult, error) {
 	startAt := time.Now()
 	logger := gmw.GetLogger(ctx).
 		Named("web_search").
@@ -88,23 +84,21 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 		return nil, errors.Wrap(err, "check user external billing")
 	}
 
-	engineResult, err := r.engine.Search(ctx, query)
+	if r.provider == nil {
+		return nil, errors.New("web search provider is not configured")
+	}
+
+	items, err := r.provider.Search(ctx, query)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to search for query `%s`", query)
 	}
 
-	result := &search.SearchResult{
+	result := &searchlib.SearchResult{
 		Query:     query,
 		CreatedAt: time.Now(),
 	}
 
-	for _, item := range engineResult.Items {
-		result.Results = append(result.Results, search.SearchResultItem{
-			URL:     item.Link,
-			Name:    item.Title,
-			Snippet: item.Snippet,
-		})
-	}
+	result.Results = append(result.Results, items...)
 
 	logger.Info("successfully search", zap.Duration("cost", time.Since(startAt)))
 	return result, nil

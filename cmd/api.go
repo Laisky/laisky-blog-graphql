@@ -2,11 +2,16 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 	gcmd "github.com/Laisky/go-utils/v5/cmd"
+	logSDK "github.com/Laisky/go-utils/v5/log"
 	"github.com/Laisky/zap"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -27,7 +32,9 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/db/postgres"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
+	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 	"github.com/Laisky/laisky-blog-graphql/library/search/google"
+	"github.com/Laisky/laisky-blog-graphql/library/search/serpgoogle"
 )
 
 var apiCMD = &cobra.Command{
@@ -60,7 +67,6 @@ func runAPI() error {
 		gconfig.S.GetString("settings.arweave.wallet_file"),
 		gconfig.S.GetString("settings.arweave.folder_id"),
 	)
-
 	minioCli, err := minio.New(
 		gconfig.S.GetString("settings.arweave.s3.endpoint"),
 		&minio.Options{
@@ -129,10 +135,23 @@ func runAPI() error {
 		args.BlogCtl = blogCtl.New(args.BlogSvc)
 	}
 
-	args.WebSearchEngine = google.NewSearchEngine(
-		gconfig.S.GetString("settings.websearch.google.api_key"),
-		gconfig.S.GetString("settings.websearch.google.cx"),
-	)
+	{
+		tiers, maxRetries := buildSearchEngineTiers(logger.Named("web_search_config"))
+		if len(tiers) == 0 {
+			logger.Warn("no web search engines configured")
+		} else {
+			manager, err := searchlib.NewManager(
+				tiers,
+				searchlib.WithLogger(log.Logger.Named("search_manager")),
+				searchlib.WithMaxRetries(maxRetries),
+			)
+			if err != nil {
+				logger.Error("init search manager", zap.Error(err))
+			} else {
+				args.WebSearchProvider = manager
+			}
+		}
+	}
 
 	{ // setup ask_user service
 		dial := postgres.DialInfo{
@@ -159,4 +178,215 @@ func runAPI() error {
 	resolver := web.NewResolver(args)
 	web.RunServer(gconfig.Shared.GetString("listen"), resolver)
 	return nil
+}
+
+// configInt retrieves an integer configuration value using gconfig, falling back to def when missing or invalid.
+func configInt(key string, def int) int {
+	raw := gconfig.S.Get(key)
+	switch value := raw.(type) {
+	case nil:
+		return def
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case string:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return def
+		}
+		if parsed, err := strconv.Atoi(trimmed); err == nil {
+			return parsed
+		}
+	}
+	return def
+}
+
+// buildSearchEngineTiers constructs the prioritized search-engine tiers and max retry setting from configuration.
+func buildSearchEngineTiers(logger logSDK.Logger) ([][]searchlib.Engine, int) {
+	maxRetries := configInt("settings.websearch.max_retry", 3)
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+
+	buckets := make(map[int][]searchlib.Engine)
+
+	rawEngines := toStringMap(gconfig.S.Get("settings.websearch.engines"))
+	for name, value := range rawEngines {
+		cfg := toStringMap(value)
+		if cfg == nil {
+			logger.Warn("skip search engine with invalid config", zap.String("engine", name))
+			continue
+		}
+		if !boolFromValue(cfg["enabled"], false) {
+			continue
+		}
+
+		priority := intFromValue(cfg["priority"], 1)
+		if priority < 1 {
+			priority = 1
+		}
+
+		engine, err := instantiateSearchEngine(name, cfg)
+		if err != nil {
+			logger.Error("init search engine", zap.String("engine", name), zap.Error(err))
+			continue
+		}
+		if engine == nil {
+			logger.Warn("skip unknown search engine", zap.String("engine", name))
+			continue
+		}
+
+		buckets[priority] = append(buckets[priority], engine)
+	}
+
+	if len(buckets) == 0 {
+		addLegacySearchEngines(buckets, logger)
+	}
+
+	if len(buckets) == 0 {
+		return nil, maxRetries
+	}
+
+	priorities := make([]int, 0, len(buckets))
+	for priority := range buckets {
+		priorities = append(priorities, priority)
+	}
+	sort.Ints(priorities)
+
+	tiers := make([][]searchlib.Engine, 0, len(priorities))
+	for _, priority := range priorities {
+		tiers = append(tiers, buckets[priority])
+	}
+
+	return tiers, maxRetries
+}
+
+// instantiateSearchEngine creates a concrete search engine based on its name and raw configuration map.
+func instantiateSearchEngine(name string, cfg map[string]any) (searchlib.Engine, error) {
+	switch name {
+	case "google":
+		apiKey := stringFromValue(cfg["api_key"])
+		cx := stringFromValue(cfg["cx"])
+		if apiKey == "" || cx == "" {
+			return nil, errors.New("missing api_key or cx")
+		}
+		adapter, err := searchlib.NewGoogleEngineAdapter(google.NewSearchEngine(apiKey, cx))
+		if err != nil {
+			return nil, errors.Wrap(err, "wrap google adapter")
+		}
+		return adapter, nil
+	case "serp_google":
+		apiKey := stringFromValue(cfg["api_key"])
+		if apiKey == "" {
+			return nil, errors.New("missing api_key")
+		}
+		return serpgoogle.NewSearchEngine(apiKey), nil
+	default:
+		return nil, nil
+	}
+}
+
+// addLegacySearchEngines populates engines using the legacy flat configuration keys when the new format is absent.
+func addLegacySearchEngines(buckets map[int][]searchlib.Engine, logger logSDK.Logger) {
+	apiKey := strings.TrimSpace(gconfig.S.GetString("settings.websearch.google.api_key"))
+	cx := strings.TrimSpace(gconfig.S.GetString("settings.websearch.google.cx"))
+	if apiKey != "" && cx != "" {
+		adapter, err := searchlib.NewGoogleEngineAdapter(google.NewSearchEngine(apiKey, cx))
+		if err != nil {
+			logger.Error("init legacy google search adapter", zap.Error(err))
+		} else {
+			buckets[1] = append(buckets[1], adapter)
+		}
+	}
+
+	serpKey := strings.TrimSpace(gconfig.S.GetString("settings.websearch.serp_google.api_key"))
+	if serpKey != "" {
+		buckets[2] = append(buckets[2], serpgoogle.NewSearchEngine(serpKey))
+	}
+}
+
+// boolFromValue attempts to coerce the provided value into a boolean, returning def when conversion fails.
+func boolFromValue(value any, def bool) bool {
+	switch v := value.(type) {
+	case nil:
+		return def
+	case bool:
+		return v
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return def
+		}
+		if parsed, err := strconv.ParseBool(trimmed); err == nil {
+			return parsed
+		}
+		if parsed, err := strconv.Atoi(trimmed); err == nil {
+			return parsed != 0
+		}
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	}
+	return def
+}
+
+// intFromValue attempts to coerce the provided value into an integer, returning def when conversion fails.
+func intFromValue(value any, def int) int {
+	switch v := value.(type) {
+	case nil:
+		return def
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return def
+		}
+		if parsed, err := strconv.Atoi(trimmed); err == nil {
+			return parsed
+		}
+	}
+	return def
+}
+
+// stringFromValue coerces the provided value into a trimmed string representation.
+func stringFromValue(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case fmt.Stringer:
+		return strings.TrimSpace(v.String())
+	case []byte:
+		return strings.TrimSpace(string(v))
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+}
+
+// toStringMap converts supported map structures into map[string]any for uniform processing.
+func toStringMap(value any) map[string]any {
+	switch v := value.(type) {
+	case map[string]any:
+		return v
+	case map[interface{}]interface{}:
+		result := make(map[string]any, len(v))
+		for key, item := range v {
+			result[fmt.Sprint(key)] = item
+		}
+		return result
+	default:
+		return nil
+	}
 }

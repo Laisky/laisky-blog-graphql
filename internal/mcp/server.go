@@ -19,8 +19,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-	"github.com/Laisky/laisky-blog-graphql/library/search"
-	"github.com/Laisky/laisky-blog-graphql/library/search/google"
+	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	srv "github.com/mark3labs/mcp-go/server"
 )
@@ -42,13 +41,13 @@ type Server struct {
 }
 
 // NewServer constructs an MCP HTTP server.
-// searchEngine enables the web_search tool when not nil.
+// searchProvider enables the web_search tool when not nil.
 // askUserService enables the ask_user tool when not nil.
 // rdb enables the web_fetch tool when not nil.
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
-func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Service, rdb *rlibs.DB, logger logSDK.Logger) (*Server, error) {
-	if searchEngine == nil && askUserService == nil && rdb == nil {
+func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, rdb *rlibs.DB, logger logSDK.Logger) (*Server, error) {
+	if searchProvider == nil && askUserService == nil && rdb == nil {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
@@ -85,9 +84,9 @@ func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Servic
 		return extractAPIKey(authHeader)
 	}
 
-	if searchEngine != nil {
+	if searchProvider != nil {
 		webSearchTool, err := tools.NewWebSearchTool(
-			searchEngine,
+			searchProvider,
 			serverLogger.Named("web_search"),
 			apiKeyProvider,
 			oneapi.CheckUserExternalBilling,
@@ -106,7 +105,7 @@ func NewServer(searchEngine *google.SearchEngine, askUserService *askuser.Servic
 			serverLogger.Named("web_fetch"),
 			apiKeyProvider,
 			oneapi.CheckUserExternalBilling,
-			search.FetchDynamicURLContent,
+			searchlib.FetchDynamicURLContent,
 			nil,
 		)
 		if err != nil {
