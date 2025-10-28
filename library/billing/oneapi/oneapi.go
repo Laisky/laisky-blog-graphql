@@ -36,10 +36,15 @@ var (
 	// PriceUploadFileEachMB is the price for uploading each MB file
 	//
 	// https://ar-fees.arweave.dev/
-	PriceUploadFileEachMB  = USD(0.02)
+	PriceUploadFileEachMB = USD(0.02)
+	// PriceUploadFileMinimal is the minimal price for uploading a file
 	PriceUploadFileMinimal = USD(0.003)
-	PriceWebSearch         = USD(0.005)
-	PriceWebFetch          = USD(0.0001)
+	// PriceWebSearch is the price for each web search request
+	//
+	// https://developers.google.com/custom-search/v1/overview#pricing
+	PriceWebSearch = USD(0.005)
+	// PriceWebFetch is the price for each web fetch with dynamic rendering
+	PriceWebFetch = USD(0.0001)
 )
 
 // checkUserExternalBilling save and check billing for text-to-image models
