@@ -5,6 +5,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/search"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	arweave "github.com/Laisky/laisky-blog-graphql/internal/web/arweave/controller"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
@@ -29,6 +30,7 @@ type ResolverArgs struct {
 	WebSearchProvider searchlib.Provider
 	Rdb               *rlibs.DB
 	AskUserService    *askuser.Service
+	CallLogService    *calllog.Service
 }
 
 // NewResolver new resolver

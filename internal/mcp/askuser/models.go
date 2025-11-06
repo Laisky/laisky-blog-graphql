@@ -3,6 +3,7 @@ package askuser
 import (
 	"time"
 
+	gutils "github.com/Laisky/go-utils/v5"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -36,7 +37,7 @@ type Request struct {
 // BeforeCreate hook ensures the primary key is populated for new records.
 func (r *Request) BeforeCreate(tx *gorm.DB) error {
 	if r.ID == uuid.Nil {
-		r.ID = uuid.New()
+		r.ID = gutils.UUID7Bytes()
 	}
 	return nil
 }

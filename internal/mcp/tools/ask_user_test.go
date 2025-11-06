@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
+	gutils "github.com/Laisky/go-utils/v5"
 	logSDK "github.com/Laisky/go-utils/v5/log"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -63,7 +64,7 @@ func TestAskUserHandleEmptyQuestion(t *testing.T) {
 
 func TestAskUserHandleTimeout(t *testing.T) {
 	cancelCalled := false
-	storedID := uuid.New()
+	storedID := gutils.UUID7Bytes()
 	service := &fakeAskUserService{
 		create: func(context.Context, *askuser.AuthorizationContext, string) (*askuser.Request, error) {
 			return &askuser.Request{ID: storedID, Question: "Ping"}, nil
@@ -104,7 +105,7 @@ func TestAskUserHandleTimeout(t *testing.T) {
 func TestAskUserHandleSuccess(t *testing.T) {
 	answer := "All good"
 	answeredAt := time.Date(2025, time.October, 25, 12, 0, 0, 0, time.UTC)
-	storedID := uuid.New()
+	storedID := gutils.UUID7Bytes()
 	service := &fakeAskUserService{
 		create: func(context.Context, *askuser.AuthorizationContext, string) (*askuser.Request, error) {
 			return &askuser.Request{ID: storedID, Question: "Ping"}, nil

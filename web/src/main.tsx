@@ -6,6 +6,7 @@ import './index.css'
 import { ThemeProvider } from '@/components/theme/theme-provider'
 import { AppLayout } from '@/components/layout/app-layout'
 import { AskUserPage } from '@/features/mcp/ask-user/page'
+import { CallLogPage } from '@/features/mcp/call-log/page'
 import { InspectorPage } from '@/features/mcp/inspector/page'
 import { HomePage } from '@/pages/home'
 import { NotFoundPage } from '@/pages/not-found'
@@ -19,6 +20,7 @@ const routes = [
     children: [
       { index: true, element: <HomePage /> },
       { path: 'tools/ask_user', element: <AskUserPage /> },
+      { path: 'tools/call_log', element: <CallLogPage /> },
       { path: 'debug/*', element: <InspectorPage /> },
     ],
   },
@@ -46,7 +48,6 @@ async function bootstrap() {
 
 bootstrap().catch((error) => {
   if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
     console.error('Failed to initialize application', error)
   }
 })

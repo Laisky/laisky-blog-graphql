@@ -18,7 +18,6 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig | null> {
     return null
   } catch (error) {
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.warn('Failed to load runtime config', error)
     }
     return null

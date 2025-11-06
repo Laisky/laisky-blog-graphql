@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
 	blogCtl "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogDao "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
@@ -168,10 +169,18 @@ func runAPI() error {
 			)
 		} else if askDB, err := postgres.NewDB(ctx, dial); err != nil {
 			logger.Error("new ask_user postgres", zap.Error(err))
-		} else if svc, err := askuser.NewService(askDB.DB, logger.Named("ask_user")); err != nil {
-			logger.Error("init ask_user service", zap.Error(err))
 		} else {
-			args.AskUserService = svc
+			if svc, err := askuser.NewService(askDB.DB, logger.Named("ask_user")); err != nil {
+				logger.Error("init ask_user service", zap.Error(err))
+			} else {
+				args.AskUserService = svc
+			}
+
+			if callSvc, err := calllog.NewService(askDB.DB, logger.Named("call_log"), nil); err != nil {
+				logger.Error("init call_log service", zap.Error(err))
+			} else {
+				args.CallLogService = callSvc
+			}
 		}
 	}
 

@@ -22,6 +22,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -165,7 +166,7 @@ func RunServer(addr string, resolver *Resolver) {
 	}
 
 	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil) {
-		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.Rdb, log.Logger)
+		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.Rdb, resolver.args.CallLogService, log.Logger)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
@@ -195,6 +196,25 @@ func RunServer(addr string, resolver *Resolver) {
 				if prefix.public == "" {
 					server.Any("/tools/ask_user", askUserHandler)
 					server.Any("/tools/ask_user/*path", gin.WrapH(http.StripPrefix("/tools/ask_user", askUserMux)))
+				}
+			}
+
+			if resolver.args.CallLogService != nil {
+				callLogMux := calllog.NewHTTPHandler(resolver.args.CallLogService, log.Logger.Named("call_log_http"))
+				callLogBase := prefix.join("/tools/call_log")
+				stripPrefix := strings.TrimSuffix(callLogBase, "/")
+				if stripPrefix == "" {
+					stripPrefix = "/"
+				}
+				callLogHandler := gin.WrapH(http.StripPrefix(stripPrefix, callLogMux))
+
+				apiBase := prefix.join("/tools/call_log/api")
+				server.Any(apiBase, callLogHandler)
+				server.Any(apiBase+"/*path", callLogHandler)
+
+				if prefix.public == "" {
+					server.Any("/tools/call_log/api", gin.WrapH(http.StripPrefix("/tools/call_log", callLogMux)))
+					server.Any("/tools/call_log/api/*path", gin.WrapH(http.StripPrefix("/tools/call_log", callLogMux)))
 				}
 			}
 		}

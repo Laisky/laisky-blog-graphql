@@ -6,11 +6,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 )
 
 func TestNewServerRequiresCapability(t *testing.T) {
-	srv, err := NewServer(nil, nil, nil, nil)
+	srv, err := NewServer(nil, nil, nil, nil, nil)
 	require.Nil(t, srv)
 	require.Error(t, err)
 }
@@ -60,4 +61,31 @@ func TestHandleAskUserReturnsConfigurationError(t *testing.T) {
 	textContent, ok := result.Content[0].(mcpgo.TextContent)
 	require.True(t, ok)
 	require.Equal(t, "ask_user tool is not available", textContent.Text)
+}
+
+type mockRecorder struct {
+	records []calllog.RecordInput
+}
+
+func (m *mockRecorder) Record(_ context.Context, input calllog.RecordInput) error {
+	m.records = append(m.records, input)
+	return nil
+}
+
+func TestHandleWebFetchRecordsCallLog(t *testing.T) {
+	recorder := &mockRecorder{}
+	srv := &Server{callLogger: recorder}
+	req := mcpgo.CallToolRequest{Params: mcpgo.CallToolParams{Arguments: map[string]any{"url": "https://example.com"}}}
+
+	result, err := srv.handleWebFetch(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	require.Len(t, recorder.records, 1)
+
+	record := recorder.records[0]
+	require.Equal(t, "web_fetch", record.ToolName)
+	require.Equal(t, calllog.StatusError, record.Status)
+	require.Equal(t, 0, record.Cost)
+	require.Contains(t, record.Parameters, "url")
 }
