@@ -14,7 +14,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
-	ginMw "github.com/Laisky/gin-middlewares/v6"
+	ginMw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"

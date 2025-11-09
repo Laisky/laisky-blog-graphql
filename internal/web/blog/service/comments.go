@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gutils "github.com/Laisky/go-utils/v5"
+	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"

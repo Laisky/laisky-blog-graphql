@@ -5,7 +5,7 @@ import (
 	"context"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/Laisky/go-utils/v5"
+	"github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 	mongoLib "go.mongodb.org/mongo-driver/mongo"

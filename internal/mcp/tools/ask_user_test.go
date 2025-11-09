@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gutils "github.com/Laisky/go-utils/v5"
-	logSDK "github.com/Laisky/go-utils/v5/log"
+	gutils "github.com/Laisky/go-utils/v6"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 

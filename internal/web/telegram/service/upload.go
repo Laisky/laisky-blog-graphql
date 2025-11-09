@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v6"
-	gutils "github.com/Laisky/go-utils/v5"
-	glog "github.com/Laisky/go-utils/v5/log"
+	gmw "github.com/Laisky/gin-middlewares/v7"
+	gutils "github.com/Laisky/go-utils/v6"
+	glog "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	tb "gopkg.in/telebot.v3"
 )

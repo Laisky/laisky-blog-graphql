@@ -3,7 +3,7 @@ package askuser
 import (
 	"time"
 
-	gutils "github.com/Laisky/go-utils/v5"
+	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

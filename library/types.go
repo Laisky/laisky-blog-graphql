@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/Laisky/go-utils/v5/json"
+	"github.com/Laisky/go-utils/v6/json"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"

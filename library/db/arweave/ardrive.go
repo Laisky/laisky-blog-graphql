@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"regexp"
 
-	gutils "github.com/Laisky/go-utils/v5"
+	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/pkg/errors"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"

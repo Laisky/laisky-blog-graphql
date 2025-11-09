@@ -10,8 +10,8 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
-	gcmd "github.com/Laisky/go-utils/v5/cmd"
-	logSDK "github.com/Laisky/go-utils/v5/log"
+	gcmd "github.com/Laisky/go-utils/v6/cmd"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"

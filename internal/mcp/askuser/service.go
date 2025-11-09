@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	logSDK "github.com/Laisky/go-utils/v5/log"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"

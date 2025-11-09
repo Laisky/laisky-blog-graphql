@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	ginMw "github.com/Laisky/gin-middlewares/v6"
-	gutils "github.com/Laisky/go-utils/v5"
+	ginMw "github.com/Laisky/gin-middlewares/v7"
+	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
 	jwtLib "github.com/golang-jwt/jwt/v4"
 	"go.mongodb.org/mongo-driver/bson/primitive"

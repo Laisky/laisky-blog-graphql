@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	logSDK "github.com/Laisky/go-utils/v5/log"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
