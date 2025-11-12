@@ -32,6 +32,29 @@ type Comment struct {
 	Replies       []*Comment        `json:"replies,omitempty"`
 }
 
+type GeneralHTMLCrawlerTask struct {
+	TaskID        string            `json:"task_id"`
+	CreatedAt     library.Datetime  `json:"created_at"`
+	Status        string            `json:"status"`
+	FailedReason  *string           `json:"failed_reason,omitempty"`
+	FinishedAt    *library.Datetime `json:"finished_at,omitempty"`
+	URL           string            `json:"url"`
+	ResultHTMLB64 *string           `json:"result_html_b64,omitempty"`
+}
+
+type GeneralLLMStormTask struct {
+	TaskID           string              `json:"task_id"`
+	CreatedAt        library.Datetime    `json:"created_at"`
+	Status           string              `json:"status"`
+	FailedReason     *string             `json:"failed_reason,omitempty"`
+	FinishedAt       *library.Datetime   `json:"finished_at,omitempty"`
+	Prompt           string              `json:"prompt"`
+	APIKey           string              `json:"api_key"`
+	ResultArticle    *string             `json:"result_article,omitempty"`
+	ResultReferences *library.JSONString `json:"result_references,omitempty"`
+	Runner           string              `json:"runner"`
+}
+
 type GeneralUser struct {
 	Name         string   `json:"name"`
 	LockPrefixes []string `json:"lock_prefixes"`

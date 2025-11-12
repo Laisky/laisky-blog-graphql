@@ -8,3 +8,26 @@ type GeneralUser {
     name: String!
     lock_prefixes: [String!]!
 }
+
+type GeneralLLMStormTask {
+    task_id: String!
+    created_at: Date!
+    status: String!
+    failed_reason: String
+    finished_at: Date
+    prompt: String!
+    api_key: String!
+    result_article: String
+    result_references: JSONString
+    runner: String!
+}
+
+type GeneralHTMLCrawlerTask {
+    task_id: String!
+    created_at: Date!
+    status: String!
+    failed_reason: String
+    finished_at: Date
+    url: String!
+    result_html_b64: String
+}

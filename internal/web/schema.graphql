@@ -106,6 +106,8 @@ type Query {
   # GCP general
   Lock(name: String!): Lock!
   LockPermissions(username: String! = ""): [GeneralUser]!
+  GeneralGetLLMStormTaskResult(task_id: String!): GeneralLLMStormTask!
+  GeneralGetHTMLCrawlerTask: GeneralHTMLCrawlerTask!
 }
 
 
@@ -193,5 +195,12 @@ type Mutation {
   CreateGeneralToken(
     username: String!
     duration_sec: Int! = 604800 # 7d
+  ): String!
+  GeneralAddLLMStormTask(
+    prompt: String!
+    api_key: String!
+  ): String!
+  GeneralAddHTMLCrawlerTask(
+    url: String!
   ): String!
 }

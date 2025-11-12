@@ -9,9 +9,9 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
+	mcp "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
-	mcp "github.com/mark3labs/mcp-go/mcp"
 )
 
 // AskUserService defines the subset of ask_user.Service methods required by the tool.

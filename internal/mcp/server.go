@@ -14,6 +14,8 @@ import (
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+	mcp "github.com/mark3labs/mcp-go/mcp"
+	srv "github.com/mark3labs/mcp-go/server"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
@@ -23,8 +25,6 @@ import (
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
-	mcp "github.com/mark3labs/mcp-go/mcp"
-	srv "github.com/mark3labs/mcp-go/server"
 )
 
 type ctxKey string

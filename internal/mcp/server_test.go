@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
-	mcpgo "github.com/mark3labs/mcp-go/mcp"
 )
 
 func TestNewServerRequiresCapability(t *testing.T) {

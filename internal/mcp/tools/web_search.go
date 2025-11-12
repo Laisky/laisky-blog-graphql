@@ -9,10 +9,10 @@ import (
 	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+	mcp "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
-	mcp "github.com/mark3labs/mcp-go/mcp"
 )
 
 // SearchProvider abstracts the search execution capability used by the tool.

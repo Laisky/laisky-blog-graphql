@@ -148,6 +148,29 @@ type ComplexityRoot struct {
 		Viewers        func(childComplexity int) int
 	}
 
+	GeneralHTMLCrawlerTask struct {
+		CreatedAt     func(childComplexity int) int
+		FailedReason  func(childComplexity int) int
+		FinishedAt    func(childComplexity int) int
+		ResultHTMLB64 func(childComplexity int) int
+		Status        func(childComplexity int) int
+		TaskID        func(childComplexity int) int
+		URL           func(childComplexity int) int
+	}
+
+	GeneralLLMStormTask struct {
+		APIKey           func(childComplexity int) int
+		CreatedAt        func(childComplexity int) int
+		FailedReason     func(childComplexity int) int
+		FinishedAt       func(childComplexity int) int
+		Prompt           func(childComplexity int) int
+		ResultArticle    func(childComplexity int) int
+		ResultReferences func(childComplexity int) int
+		Runner           func(childComplexity int) int
+		Status           func(childComplexity int) int
+		TaskID           func(childComplexity int) int
+	}
+
 	GeneralUser struct {
 		LockPrefixes func(childComplexity int) int
 		Name         func(childComplexity int) int
@@ -160,23 +183,25 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		AcquireLock           func(childComplexity int, lockName string, durationSec int, isRenewal *bool) int
-		ArweaveUpload         func(childComplexity int, fileB64 string, contentType *string) int
-		BlogAmendPost         func(childComplexity int, post models.NewBlogPost, language models.Language) int
-		BlogApproveComment    func(childComplexity int, commentID string) int
-		BlogCreateComment     func(childComplexity int, postName string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) int
-		BlogCreatePost        func(childComplexity int, post models.NewBlogPost, language models.Language) int
-		BlogDeleteComment     func(childComplexity int, commentID string) int
-		BlogLogin             func(childComplexity int, account string, password string) int
-		BlogToggleCommentLike func(childComplexity int, commentID string) int
-		CreateGeneralToken    func(childComplexity int, username string, durationSec int) int
-		TelegramMonitorAlert  func(childComplexity int, typeArg string, token string, msg string) int
-		UserActive            func(childComplexity int, token string) int
-		UserLogin             func(childComplexity int, account string, password string) int
-		UserRegister          func(childComplexity int, account string, password string, displayName string, captcha string) int
-		UserResendActiveEmail func(childComplexity int, account string) int
-		WebFetch              func(childComplexity int, url string) int
-		WebSearch             func(childComplexity int, query string) int
+		AcquireLock               func(childComplexity int, lockName string, durationSec int, isRenewal *bool) int
+		ArweaveUpload             func(childComplexity int, fileB64 string, contentType *string) int
+		BlogAmendPost             func(childComplexity int, post models.NewBlogPost, language models.Language) int
+		BlogApproveComment        func(childComplexity int, commentID string) int
+		BlogCreateComment         func(childComplexity int, postName string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) int
+		BlogCreatePost            func(childComplexity int, post models.NewBlogPost, language models.Language) int
+		BlogDeleteComment         func(childComplexity int, commentID string) int
+		BlogLogin                 func(childComplexity int, account string, password string) int
+		BlogToggleCommentLike     func(childComplexity int, commentID string) int
+		CreateGeneralToken        func(childComplexity int, username string, durationSec int) int
+		GeneralAddHTMLCrawlerTask func(childComplexity int, url string) int
+		GeneralAddLLMStormTask    func(childComplexity int, prompt string, apiKey string) int
+		TelegramMonitorAlert      func(childComplexity int, typeArg string, token string, msg string) int
+		UserActive                func(childComplexity int, token string) int
+		UserLogin                 func(childComplexity int, account string, password string) int
+		UserRegister              func(childComplexity int, account string, password string, displayName string, captcha string) int
+		UserResendActiveEmail     func(childComplexity int, account string) int
+		WebFetch                  func(childComplexity int, url string) int
+		WebSearch                 func(childComplexity int, query string) int
 	}
 
 	PostInfo struct {
@@ -184,23 +209,25 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		BlogCommentCount     func(childComplexity int, postName string) int
-		BlogComments         func(childComplexity int, postName string, page *models.Pagination, sort *models.Sort) int
-		BlogPostCategories   func(childComplexity int) int
-		BlogPostHistory      func(childComplexity int, fileID string, language models.Language) int
-		BlogPostInfo         func(childComplexity int) int
-		BlogPosts            func(childComplexity int, page *models.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language models.Language) int
-		BlogTags             func(childComplexity int) int
-		BlogTwitterCard      func(childComplexity int, name string, language models.Language) int
-		GetBlogPostSeries    func(childComplexity int, page *models.Pagination, key string) int
-		Hello                func(childComplexity int) int
-		Lock                 func(childComplexity int, name string) int
-		LockPermissions      func(childComplexity int, username string) int
-		TelegramAlertTypes   func(childComplexity int, page *models.Pagination, name string) int
-		TelegramMonitorUsers func(childComplexity int, page *models.Pagination, name string) int
-		TwitterStatues       func(childComplexity int, page *models.Pagination, tweetID string, username string, viewerID string, sort *models.Sort, topic string, regexp string) int
-		TwitterThreads       func(childComplexity int, tweetID string) int
-		WhoAmI               func(childComplexity int) int
+		BlogCommentCount             func(childComplexity int, postName string) int
+		BlogComments                 func(childComplexity int, postName string, page *models.Pagination, sort *models.Sort) int
+		BlogPostCategories           func(childComplexity int) int
+		BlogPostHistory              func(childComplexity int, fileID string, language models.Language) int
+		BlogPostInfo                 func(childComplexity int) int
+		BlogPosts                    func(childComplexity int, page *models.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language models.Language) int
+		BlogTags                     func(childComplexity int) int
+		BlogTwitterCard              func(childComplexity int, name string, language models.Language) int
+		GeneralGetHTMLCrawlerTask    func(childComplexity int) int
+		GeneralGetLLMStormTaskResult func(childComplexity int, taskID string) int
+		GetBlogPostSeries            func(childComplexity int, page *models.Pagination, key string) int
+		Hello                        func(childComplexity int) int
+		Lock                         func(childComplexity int, name string) int
+		LockPermissions              func(childComplexity int, username string) int
+		TelegramAlertTypes           func(childComplexity int, page *models.Pagination, name string) int
+		TelegramMonitorUsers         func(childComplexity int, page *models.Pagination, name string) int
+		TwitterStatues               func(childComplexity int, page *models.Pagination, tweetID string, username string, viewerID string, sort *models.Sort, topic string, regexp string) int
+		TwitterThreads               func(childComplexity int, tweetID string) int
+		WhoAmI                       func(childComplexity int) int
 	}
 
 	TelegramAlertType struct {
@@ -333,6 +360,8 @@ type MutationResolver interface {
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*model3.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
 	CreateGeneralToken(ctx context.Context, username string, durationSec int) (string, error)
+	GeneralAddLLMStormTask(ctx context.Context, prompt string, apiKey string) (string, error)
+	GeneralAddHTMLCrawlerTask(ctx context.Context, url string) (string, error)
 }
 type QueryResolver interface {
 	Hello(ctx context.Context) (string, error)
@@ -352,6 +381,8 @@ type QueryResolver interface {
 	TelegramAlertTypes(ctx context.Context, page *models.Pagination, name string) ([]*model3.AlertTypes, error)
 	Lock(ctx context.Context, name string) (*model2.Lock, error)
 	LockPermissions(ctx context.Context, username string) ([]*models.GeneralUser, error)
+	GeneralGetLLMStormTaskResult(ctx context.Context, taskID string) (*models.GeneralLLMStormTask, error)
+	GeneralGetHTMLCrawlerTask(ctx context.Context) (*models.GeneralHTMLCrawlerTask, error)
 }
 type TelegramAlertTypeResolver interface {
 	ID(ctx context.Context, obj *model3.AlertTypes) (string, error)
@@ -412,7 +443,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ArweaveItem.Id(childComplexity), true
-
 	case "ArweaveItem.time":
 		if e.complexity.ArweaveItem.Time == nil {
 			break
@@ -433,7 +463,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.BlogCategory.Name(childComplexity), true
-
 	case "BlogCategory.url":
 		if e.complexity.BlogCategory.URL == nil {
 			break
@@ -447,7 +476,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.BlogLoginResponse.Token(childComplexity), true
-
 	case "BlogLoginResponse.user":
 		if e.complexity.BlogLoginResponse.User == nil {
 			break
@@ -461,98 +489,84 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.BlogPost.AllLanguages(childComplexity), true
-
 	case "BlogPost.arweave_id":
 		if e.complexity.BlogPost.ArweaveId == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.ArweaveId(childComplexity), true
-
 	case "BlogPost.author":
 		if e.complexity.BlogPost.Author == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Author(childComplexity), true
-
 	case "BlogPost.category":
 		if e.complexity.BlogPost.Category == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Category(childComplexity), true
-
 	case "BlogPost.content":
 		if e.complexity.BlogPost.Content == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Content(childComplexity), true
-
 	case "BlogPost.created_at":
 		if e.complexity.BlogPost.CreatedAt == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.CreatedAt(childComplexity), true
-
 	case "BlogPost.id":
 		if e.complexity.BlogPost.ID == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.ID(childComplexity), true
-
 	case "BlogPost.language":
 		if e.complexity.BlogPost.Language == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Language(childComplexity), true
-
 	case "BlogPost.markdown":
 		if e.complexity.BlogPost.Markdown == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Markdown(childComplexity), true
-
 	case "BlogPost.menu":
 		if e.complexity.BlogPost.Menu == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Menu(childComplexity), true
-
 	case "BlogPost.modified_at":
 		if e.complexity.BlogPost.ModifiedAt == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.ModifiedAt(childComplexity), true
-
 	case "BlogPost.name":
 		if e.complexity.BlogPost.Name == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Name(childComplexity), true
-
 	case "BlogPost.tags":
 		if e.complexity.BlogPost.Tags == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Tags(childComplexity), true
-
 	case "BlogPost.title":
 		if e.complexity.BlogPost.Title == nil {
 			break
 		}
 
 		return e.complexity.BlogPost.Title(childComplexity), true
-
 	case "BlogPost.type":
 		if e.complexity.BlogPost.Type == nil {
 			break
@@ -566,21 +580,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.BlogPostSeries.Children(childComplexity), true
-
 	case "BlogPostSeries.key":
 		if e.complexity.BlogPostSeries.Key == nil {
 			break
 		}
 
 		return e.complexity.BlogPostSeries.Key(childComplexity), true
-
 	case "BlogPostSeries.posts":
 		if e.complexity.BlogPostSeries.Posts == nil {
 			break
 		}
 
 		return e.complexity.BlogPostSeries.Posts(childComplexity), true
-
 	case "BlogPostSeries.remark":
 		if e.complexity.BlogPostSeries.Remark == nil {
 			break
@@ -594,7 +605,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.BlogUser.ID(childComplexity), true
-
 	case "BlogUser.username":
 		if e.complexity.BlogUser.Username == nil {
 			break
@@ -608,77 +618,66 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Comment.AuthorEmail(childComplexity), true
-
 	case "Comment.authorName":
 		if e.complexity.Comment.AuthorName == nil {
 			break
 		}
 
 		return e.complexity.Comment.AuthorName(childComplexity), true
-
 	case "Comment.authorWebsite":
 		if e.complexity.Comment.AuthorWebsite == nil {
 			break
 		}
 
 		return e.complexity.Comment.AuthorWebsite(childComplexity), true
-
 	case "Comment.content":
 		if e.complexity.Comment.Content == nil {
 			break
 		}
 
 		return e.complexity.Comment.Content(childComplexity), true
-
 	case "Comment.createdAt":
 		if e.complexity.Comment.CreatedAt == nil {
 			break
 		}
 
 		return e.complexity.Comment.CreatedAt(childComplexity), true
-
 	case "Comment.id":
 		if e.complexity.Comment.ID == nil {
 			break
 		}
 
 		return e.complexity.Comment.ID(childComplexity), true
-
 	case "Comment.isApproved":
 		if e.complexity.Comment.IsApproved == nil {
 			break
 		}
 
 		return e.complexity.Comment.IsApproved(childComplexity), true
-
 	case "Comment.likes":
 		if e.complexity.Comment.Likes == nil {
 			break
 		}
 
 		return e.complexity.Comment.Likes(childComplexity), true
-
 	case "Comment.parentId":
 		if e.complexity.Comment.ParentID == nil {
 			break
 		}
 
 		return e.complexity.Comment.ParentID(childComplexity), true
-
 	case "Comment.postId":
 		if e.complexity.Comment.PostID == nil {
 			break
 		}
 
 		return e.complexity.Comment.PostID(childComplexity), true
-
 	case "Comment.replies":
 		if e.complexity.Comment.Replies == nil {
 			break
 		}
 
 		return e.complexity.Comment.Replies(childComplexity), true
-
 	case "Comment.updatedAt":
 		if e.complexity.Comment.UpdatedAt == nil {
 			break
@@ -692,91 +691,78 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.EmbededTweet.CreatedAt(childComplexity), true
-
 	case "EmbededTweet.id":
 		if e.complexity.EmbededTweet.ID == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.ID(childComplexity), true
-
 	case "EmbededTweet.images":
 		if e.complexity.EmbededTweet.Images == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.Images(childComplexity), true
-
 	case "EmbededTweet.is_quote_status":
 		if e.complexity.EmbededTweet.IsQuoteStatus == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.IsQuoteStatus(childComplexity), true
-
 	case "EmbededTweet.is_retweeted":
 		if e.complexity.EmbededTweet.IsRetweeted == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.IsRetweeted(childComplexity), true
-
 	case "EmbededTweet.quoted_status":
 		if e.complexity.EmbededTweet.QuotedStatus == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.QuotedStatus(childComplexity), true
-
 	case "EmbededTweet.reply_to":
 		if e.complexity.EmbededTweet.ReplyTo == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.ReplyTo(childComplexity), true
-
 	case "EmbededTweet.replys":
 		if e.complexity.EmbededTweet.Replys == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.Replys(childComplexity), true
-
 	case "EmbededTweet.retweeted_tweet":
 		if e.complexity.EmbededTweet.RetweetedTweet == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.RetweetedTweet(childComplexity), true
-
 	case "EmbededTweet.text":
 		if e.complexity.EmbededTweet.Text == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.Text(childComplexity), true
-
 	case "EmbededTweet.topics":
 		if e.complexity.EmbededTweet.Topics == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.Topics(childComplexity), true
-
 	case "EmbededTweet.url":
 		if e.complexity.EmbededTweet.URL == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.URL(childComplexity), true
-
 	case "EmbededTweet.user":
 		if e.complexity.EmbededTweet.User == nil {
 			break
 		}
 
 		return e.complexity.EmbededTweet.User(childComplexity), true
-
 	case "EmbededTweet.viewers":
 		if e.complexity.EmbededTweet.Viewers == nil {
 			break
@@ -784,13 +770,116 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.EmbededTweet.Viewers(childComplexity), true
 
+	case "GeneralHTMLCrawlerTask.created_at":
+		if e.complexity.GeneralHTMLCrawlerTask.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.GeneralHTMLCrawlerTask.CreatedAt(childComplexity), true
+	case "GeneralHTMLCrawlerTask.failed_reason":
+		if e.complexity.GeneralHTMLCrawlerTask.FailedReason == nil {
+			break
+		}
+
+		return e.complexity.GeneralHTMLCrawlerTask.FailedReason(childComplexity), true
+	case "GeneralHTMLCrawlerTask.finished_at":
+		if e.complexity.GeneralHTMLCrawlerTask.FinishedAt == nil {
+			break
+		}
+
+		return e.complexity.GeneralHTMLCrawlerTask.FinishedAt(childComplexity), true
+	case "GeneralHTMLCrawlerTask.result_html_b64":
+		if e.complexity.GeneralHTMLCrawlerTask.ResultHTMLB64 == nil {
+			break
+		}
+
+		return e.complexity.GeneralHTMLCrawlerTask.ResultHTMLB64(childComplexity), true
+	case "GeneralHTMLCrawlerTask.status":
+		if e.complexity.GeneralHTMLCrawlerTask.Status == nil {
+			break
+		}
+
+		return e.complexity.GeneralHTMLCrawlerTask.Status(childComplexity), true
+	case "GeneralHTMLCrawlerTask.task_id":
+		if e.complexity.GeneralHTMLCrawlerTask.TaskID == nil {
+			break
+		}
+
+		return e.complexity.GeneralHTMLCrawlerTask.TaskID(childComplexity), true
+	case "GeneralHTMLCrawlerTask.url":
+		if e.complexity.GeneralHTMLCrawlerTask.URL == nil {
+			break
+		}
+
+		return e.complexity.GeneralHTMLCrawlerTask.URL(childComplexity), true
+
+	case "GeneralLLMStormTask.api_key":
+		if e.complexity.GeneralLLMStormTask.APIKey == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.APIKey(childComplexity), true
+	case "GeneralLLMStormTask.created_at":
+		if e.complexity.GeneralLLMStormTask.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.CreatedAt(childComplexity), true
+	case "GeneralLLMStormTask.failed_reason":
+		if e.complexity.GeneralLLMStormTask.FailedReason == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.FailedReason(childComplexity), true
+	case "GeneralLLMStormTask.finished_at":
+		if e.complexity.GeneralLLMStormTask.FinishedAt == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.FinishedAt(childComplexity), true
+	case "GeneralLLMStormTask.prompt":
+		if e.complexity.GeneralLLMStormTask.Prompt == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.Prompt(childComplexity), true
+	case "GeneralLLMStormTask.result_article":
+		if e.complexity.GeneralLLMStormTask.ResultArticle == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.ResultArticle(childComplexity), true
+	case "GeneralLLMStormTask.result_references":
+		if e.complexity.GeneralLLMStormTask.ResultReferences == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.ResultReferences(childComplexity), true
+	case "GeneralLLMStormTask.runner":
+		if e.complexity.GeneralLLMStormTask.Runner == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.Runner(childComplexity), true
+	case "GeneralLLMStormTask.status":
+		if e.complexity.GeneralLLMStormTask.Status == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.Status(childComplexity), true
+	case "GeneralLLMStormTask.task_id":
+		if e.complexity.GeneralLLMStormTask.TaskID == nil {
+			break
+		}
+
+		return e.complexity.GeneralLLMStormTask.TaskID(childComplexity), true
+
 	case "GeneralUser.lock_prefixes":
 		if e.complexity.GeneralUser.LockPrefixes == nil {
 			break
 		}
 
 		return e.complexity.GeneralUser.LockPrefixes(childComplexity), true
-
 	case "GeneralUser.name":
 		if e.complexity.GeneralUser.Name == nil {
 			break
@@ -804,14 +893,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Lock.ExpiresAt(childComplexity), true
-
 	case "Lock.name":
 		if e.complexity.Lock.Name == nil {
 			break
 		}
 
 		return e.complexity.Lock.Name(childComplexity), true
-
 	case "Lock.owner_id":
 		if e.complexity.Lock.OwnerID == nil {
 			break
@@ -830,7 +917,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.AcquireLock(childComplexity, args["lock_name"].(string), args["duration_sec"].(int), args["is_renewal"].(*bool)), true
-
 	case "Mutation.ArweaveUpload":
 		if e.complexity.Mutation.ArweaveUpload == nil {
 			break
@@ -842,7 +928,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.ArweaveUpload(childComplexity, args["fileB64"].(string), args["contentType"].(*string)), true
-
 	case "Mutation.BlogAmendPost":
 		if e.complexity.Mutation.BlogAmendPost == nil {
 			break
@@ -854,7 +939,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.BlogAmendPost(childComplexity, args["post"].(models.NewBlogPost), args["language"].(models.Language)), true
-
 	case "Mutation.BlogApproveComment":
 		if e.complexity.Mutation.BlogApproveComment == nil {
 			break
@@ -866,7 +950,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.BlogApproveComment(childComplexity, args["commentId"].(string)), true
-
 	case "Mutation.BlogCreateComment":
 		if e.complexity.Mutation.BlogCreateComment == nil {
 			break
@@ -878,7 +961,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.BlogCreateComment(childComplexity, args["postName"].(string), args["content"].(string), args["authorName"].(string), args["authorEmail"].(string), args["authorWebsite"].(*string), args["parentId"].(*string)), true
-
 	case "Mutation.BlogCreatePost":
 		if e.complexity.Mutation.BlogCreatePost == nil {
 			break
@@ -890,7 +972,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.BlogCreatePost(childComplexity, args["post"].(models.NewBlogPost), args["language"].(models.Language)), true
-
 	case "Mutation.BlogDeleteComment":
 		if e.complexity.Mutation.BlogDeleteComment == nil {
 			break
@@ -902,7 +983,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.BlogDeleteComment(childComplexity, args["commentId"].(string)), true
-
 	case "Mutation.BlogLogin":
 		if e.complexity.Mutation.BlogLogin == nil {
 			break
@@ -914,7 +994,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.BlogLogin(childComplexity, args["account"].(string), args["password"].(string)), true
-
 	case "Mutation.BlogToggleCommentLike":
 		if e.complexity.Mutation.BlogToggleCommentLike == nil {
 			break
@@ -926,7 +1005,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.BlogToggleCommentLike(childComplexity, args["commentId"].(string)), true
-
 	case "Mutation.CreateGeneralToken":
 		if e.complexity.Mutation.CreateGeneralToken == nil {
 			break
@@ -938,7 +1016,28 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.CreateGeneralToken(childComplexity, args["username"].(string), args["duration_sec"].(int)), true
+	case "Mutation.GeneralAddHTMLCrawlerTask":
+		if e.complexity.Mutation.GeneralAddHTMLCrawlerTask == nil {
+			break
+		}
 
+		args, err := ec.field_Mutation_GeneralAddHTMLCrawlerTask_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.GeneralAddHTMLCrawlerTask(childComplexity, args["url"].(string)), true
+	case "Mutation.GeneralAddLLMStormTask":
+		if e.complexity.Mutation.GeneralAddLLMStormTask == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_GeneralAddLLMStormTask_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.GeneralAddLLMStormTask(childComplexity, args["prompt"].(string), args["api_key"].(string)), true
 	case "Mutation.TelegramMonitorAlert":
 		if e.complexity.Mutation.TelegramMonitorAlert == nil {
 			break
@@ -950,7 +1049,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.TelegramMonitorAlert(childComplexity, args["type"].(string), args["token"].(string), args["msg"].(string)), true
-
 	case "Mutation.UserActive":
 		if e.complexity.Mutation.UserActive == nil {
 			break
@@ -962,7 +1060,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserActive(childComplexity, args["token"].(string)), true
-
 	case "Mutation.UserLogin":
 		if e.complexity.Mutation.UserLogin == nil {
 			break
@@ -974,7 +1071,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserLogin(childComplexity, args["account"].(string), args["password"].(string)), true
-
 	case "Mutation.UserRegister":
 		if e.complexity.Mutation.UserRegister == nil {
 			break
@@ -986,7 +1082,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserRegister(childComplexity, args["account"].(string), args["password"].(string), args["display_name"].(string), args["captcha"].(string)), true
-
 	case "Mutation.UserResendActiveEmail":
 		if e.complexity.Mutation.UserResendActiveEmail == nil {
 			break
@@ -998,7 +1093,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserResendActiveEmail(childComplexity, args["account"].(string)), true
-
 	case "Mutation.WebFetch":
 		if e.complexity.Mutation.WebFetch == nil {
 			break
@@ -1010,7 +1104,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.WebFetch(childComplexity, args["url"].(string)), true
-
 	case "Mutation.WebSearch":
 		if e.complexity.Mutation.WebSearch == nil {
 			break
@@ -1041,7 +1134,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.BlogCommentCount(childComplexity, args["postName"].(string)), true
-
 	case "Query.BlogComments":
 		if e.complexity.Query.BlogComments == nil {
 			break
@@ -1053,14 +1145,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.BlogComments(childComplexity, args["postName"].(string), args["page"].(*models.Pagination), args["sort"].(*models.Sort)), true
-
 	case "Query.BlogPostCategories":
 		if e.complexity.Query.BlogPostCategories == nil {
 			break
 		}
 
 		return e.complexity.Query.BlogPostCategories(childComplexity), true
-
 	case "Query.BlogPostHistory":
 		if e.complexity.Query.BlogPostHistory == nil {
 			break
@@ -1072,14 +1162,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.BlogPostHistory(childComplexity, args["file_id"].(string), args["language"].(models.Language)), true
-
 	case "Query.BlogPostInfo":
 		if e.complexity.Query.BlogPostInfo == nil {
 			break
 		}
 
 		return e.complexity.Query.BlogPostInfo(childComplexity), true
-
 	case "Query.BlogPosts":
 		if e.complexity.Query.BlogPosts == nil {
 			break
@@ -1091,14 +1179,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.BlogPosts(childComplexity, args["page"].(*models.Pagination), args["tag"].(string), args["category_url"].(*string), args["length"].(int), args["name"].(string), args["regexp"].(string), args["language"].(models.Language)), true
-
 	case "Query.BlogTags":
 		if e.complexity.Query.BlogTags == nil {
 			break
 		}
 
 		return e.complexity.Query.BlogTags(childComplexity), true
-
 	case "Query.BlogTwitterCard":
 		if e.complexity.Query.BlogTwitterCard == nil {
 			break
@@ -1110,7 +1196,23 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.BlogTwitterCard(childComplexity, args["name"].(string), args["language"].(models.Language)), true
+	case "Query.GeneralGetHTMLCrawlerTask":
+		if e.complexity.Query.GeneralGetHTMLCrawlerTask == nil {
+			break
+		}
 
+		return e.complexity.Query.GeneralGetHTMLCrawlerTask(childComplexity), true
+	case "Query.GeneralGetLLMStormTaskResult":
+		if e.complexity.Query.GeneralGetLLMStormTaskResult == nil {
+			break
+		}
+
+		args, err := ec.field_Query_GeneralGetLLMStormTaskResult_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.GeneralGetLLMStormTaskResult(childComplexity, args["task_id"].(string)), true
 	case "Query.GetBlogPostSeries":
 		if e.complexity.Query.GetBlogPostSeries == nil {
 			break
@@ -1122,14 +1224,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.GetBlogPostSeries(childComplexity, args["page"].(*models.Pagination), args["key"].(string)), true
-
 	case "Query.Hello":
 		if e.complexity.Query.Hello == nil {
 			break
 		}
 
 		return e.complexity.Query.Hello(childComplexity), true
-
 	case "Query.Lock":
 		if e.complexity.Query.Lock == nil {
 			break
@@ -1141,7 +1241,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Lock(childComplexity, args["name"].(string)), true
-
 	case "Query.LockPermissions":
 		if e.complexity.Query.LockPermissions == nil {
 			break
@@ -1153,7 +1252,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.LockPermissions(childComplexity, args["username"].(string)), true
-
 	case "Query.TelegramAlertTypes":
 		if e.complexity.Query.TelegramAlertTypes == nil {
 			break
@@ -1165,7 +1263,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.TelegramAlertTypes(childComplexity, args["page"].(*models.Pagination), args["name"].(string)), true
-
 	case "Query.TelegramMonitorUsers":
 		if e.complexity.Query.TelegramMonitorUsers == nil {
 			break
@@ -1177,7 +1274,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.TelegramMonitorUsers(childComplexity, args["page"].(*models.Pagination), args["name"].(string)), true
-
 	case "Query.TwitterStatues":
 		if e.complexity.Query.TwitterStatues == nil {
 			break
@@ -1189,7 +1285,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.TwitterStatues(childComplexity, args["page"].(*models.Pagination), args["tweet_id"].(string), args["username"].(string), args["viewer_id"].(string), args["sort"].(*models.Sort), args["topic"].(string), args["regexp"].(string)), true
-
 	case "Query.TwitterThreads":
 		if e.complexity.Query.TwitterThreads == nil {
 			break
@@ -1201,7 +1296,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.TwitterThreads(childComplexity, args["tweet_id"].(string)), true
-
 	case "Query.WhoAmI":
 		if e.complexity.Query.WhoAmI == nil {
 			break
@@ -1215,28 +1309,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.TelegramAlertType.CreatedAt(childComplexity), true
-
 	case "TelegramAlertType.id":
 		if e.complexity.TelegramAlertType.ID == nil {
 			break
 		}
 
 		return e.complexity.TelegramAlertType.ID(childComplexity), true
-
 	case "TelegramAlertType.modified_at":
 		if e.complexity.TelegramAlertType.ModifiedAt == nil {
 			break
 		}
 
 		return e.complexity.TelegramAlertType.ModifiedAt(childComplexity), true
-
 	case "TelegramAlertType.name":
 		if e.complexity.TelegramAlertType.Name == nil {
 			break
 		}
 
 		return e.complexity.TelegramAlertType.Name(childComplexity), true
-
 	case "TelegramAlertType.sub_users":
 		if e.complexity.TelegramAlertType.SubUsers == nil {
 			break
@@ -1250,35 +1340,30 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.TelegramMonitorUser.CreatedAt(childComplexity), true
-
 	case "TelegramMonitorUser.id":
 		if e.complexity.TelegramMonitorUser.ID == nil {
 			break
 		}
 
 		return e.complexity.TelegramMonitorUser.ID(childComplexity), true
-
 	case "TelegramMonitorUser.modified_at":
 		if e.complexity.TelegramMonitorUser.ModifiedAt == nil {
 			break
 		}
 
 		return e.complexity.TelegramMonitorUser.ModifiedAt(childComplexity), true
-
 	case "TelegramMonitorUser.name":
 		if e.complexity.TelegramMonitorUser.Name == nil {
 			break
 		}
 
 		return e.complexity.TelegramMonitorUser.Name(childComplexity), true
-
 	case "TelegramMonitorUser.sub_alerts":
 		if e.complexity.TelegramMonitorUser.SubAlerts == nil {
 			break
 		}
 
 		return e.complexity.TelegramMonitorUser.SubAlerts(childComplexity), true
-
 	case "TelegramMonitorUser.telegram_id":
 		if e.complexity.TelegramMonitorUser.TelegramID == nil {
 			break
@@ -1292,91 +1377,78 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Tweet.CreatedAt(childComplexity), true
-
 	case "Tweet.id":
 		if e.complexity.Tweet.ID == nil {
 			break
 		}
 
 		return e.complexity.Tweet.ID(childComplexity), true
-
 	case "Tweet.images":
 		if e.complexity.Tweet.Images == nil {
 			break
 		}
 
 		return e.complexity.Tweet.Images(childComplexity), true
-
 	case "Tweet.is_quote_status":
 		if e.complexity.Tweet.IsQuoteStatus == nil {
 			break
 		}
 
 		return e.complexity.Tweet.IsQuoteStatus(childComplexity), true
-
 	case "Tweet.is_retweeted":
 		if e.complexity.Tweet.IsRetweeted == nil {
 			break
 		}
 
 		return e.complexity.Tweet.IsRetweeted(childComplexity), true
-
 	case "Tweet.quoted_status":
 		if e.complexity.Tweet.QuotedStatus == nil {
 			break
 		}
 
 		return e.complexity.Tweet.QuotedStatus(childComplexity), true
-
 	case "Tweet.reply_to":
 		if e.complexity.Tweet.ReplyTo == nil {
 			break
 		}
 
 		return e.complexity.Tweet.ReplyTo(childComplexity), true
-
 	case "Tweet.replys":
 		if e.complexity.Tweet.Replys == nil {
 			break
 		}
 
 		return e.complexity.Tweet.Replys(childComplexity), true
-
 	case "Tweet.retweeted_tweet":
 		if e.complexity.Tweet.RetweetedTweet == nil {
 			break
 		}
 
 		return e.complexity.Tweet.RetweetedTweet(childComplexity), true
-
 	case "Tweet.text":
 		if e.complexity.Tweet.Text == nil {
 			break
 		}
 
 		return e.complexity.Tweet.Text(childComplexity), true
-
 	case "Tweet.topics":
 		if e.complexity.Tweet.Topics == nil {
 			break
 		}
 
 		return e.complexity.Tweet.Topics(childComplexity), true
-
 	case "Tweet.url":
 		if e.complexity.Tweet.URL == nil {
 			break
 		}
 
 		return e.complexity.Tweet.URL(childComplexity), true
-
 	case "Tweet.user":
 		if e.complexity.Tweet.User == nil {
 			break
 		}
 
 		return e.complexity.Tweet.User(childComplexity), true
-
 	case "Tweet.viewers":
 		if e.complexity.Tweet.Viewers == nil {
 			break
@@ -1390,21 +1462,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.TwitterUser.Description(childComplexity), true
-
 	case "TwitterUser.id":
 		if e.complexity.TwitterUser.ID == nil {
 			break
 		}
 
 		return e.complexity.TwitterUser.ID(childComplexity), true
-
 	case "TwitterUser.name":
 		if e.complexity.TwitterUser.Name == nil {
 			break
 		}
 
 		return e.complexity.TwitterUser.Name(childComplexity), true
-
 	case "TwitterUser.screen_name":
 		if e.complexity.TwitterUser.ScreenName == nil {
 			break
@@ -1418,7 +1487,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.UserActiveResponse.Token(childComplexity), true
-
 	case "UserActiveResponse.user":
 		if e.complexity.UserActiveResponse.User == nil {
 			break
@@ -1432,7 +1500,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.UserLoginResponse.Token(childComplexity), true
-
 	case "UserLoginResponse.user":
 		if e.complexity.UserLoginResponse.User == nil {
 			break
@@ -1460,14 +1527,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.WebFetchResult.Content(childComplexity), true
-
 	case "WebFetchResult.created_at":
 		if e.complexity.WebFetchResult.CreatedAt == nil {
 			break
 		}
 
 		return e.complexity.WebFetchResult.CreatedAt(childComplexity), true
-
 	case "WebFetchResult.url":
 		if e.complexity.WebFetchResult.URL == nil {
 			break
@@ -1481,14 +1546,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.WebSearchResult.CreatedAt(childComplexity), true
-
 	case "WebSearchResult.query":
 		if e.complexity.WebSearchResult.Query == nil {
 			break
 		}
 
 		return e.complexity.WebSearchResult.Query(childComplexity), true
-
 	case "WebSearchResult.results":
 		if e.complexity.WebSearchResult.Results == nil {
 			break
@@ -1502,14 +1565,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.WebSearchResultItem.Name(childComplexity), true
-
 	case "WebSearchResultItem.snippet":
 		if e.complexity.WebSearchResultItem.Snippet == nil {
 			break
 		}
 
 		return e.complexity.WebSearchResultItem.Snippet(childComplexity), true
-
 	case "WebSearchResultItem.url":
 		if e.complexity.WebSearchResultItem.URL == nil {
 			break
@@ -1652,1804 +1713,598 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 func (ec *executionContext) field_Mutation_AcquireLock_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_AcquireLock_argsLockName(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "lock_name", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["lock_name"] = arg0
-	arg1, err := ec.field_Mutation_AcquireLock_argsDurationSec(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "duration_sec", ec.unmarshalNInt2int)
 	if err != nil {
 		return nil, err
 	}
 	args["duration_sec"] = arg1
-	arg2, err := ec.field_Mutation_AcquireLock_argsIsRenewal(ctx, rawArgs)
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "is_renewal", ec.unmarshalOBoolean2ᚖbool)
 	if err != nil {
 		return nil, err
 	}
 	args["is_renewal"] = arg2
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_AcquireLock_argsLockName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["lock_name"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("lock_name"))
-	if tmp, ok := rawArgs["lock_name"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_AcquireLock_argsDurationSec(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (int, error) {
-	if _, ok := rawArgs["duration_sec"]; !ok {
-		var zeroVal int
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("duration_sec"))
-	if tmp, ok := rawArgs["duration_sec"]; ok {
-		return ec.unmarshalNInt2int(ctx, tmp)
-	}
-
-	var zeroVal int
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_AcquireLock_argsIsRenewal(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*bool, error) {
-	if _, ok := rawArgs["is_renewal"]; !ok {
-		var zeroVal *bool
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("is_renewal"))
-	if tmp, ok := rawArgs["is_renewal"]; ok {
-		return ec.unmarshalOBoolean2ᚖbool(ctx, tmp)
-	}
-
-	var zeroVal *bool
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_ArweaveUpload_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_ArweaveUpload_argsFileB64(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "fileB64", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["fileB64"] = arg0
-	arg1, err := ec.field_Mutation_ArweaveUpload_argsContentType(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "contentType", ec.unmarshalOString2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
 	args["contentType"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_ArweaveUpload_argsFileB64(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["fileB64"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("fileB64"))
-	if tmp, ok := rawArgs["fileB64"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_ArweaveUpload_argsContentType(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*string, error) {
-	if _, ok := rawArgs["contentType"]; !ok {
-		var zeroVal *string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("contentType"))
-	if tmp, ok := rawArgs["contentType"]; ok {
-		return ec.unmarshalOString2ᚖstring(ctx, tmp)
-	}
-
-	var zeroVal *string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_BlogAmendPost_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_BlogAmendPost_argsPost(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "post", ec.unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐNewBlogPost)
 	if err != nil {
 		return nil, err
 	}
 	args["post"] = arg0
-	arg1, err := ec.field_Mutation_BlogAmendPost_argsLanguage(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "language", ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage)
 	if err != nil {
 		return nil, err
 	}
 	args["language"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_BlogAmendPost_argsPost(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (models.NewBlogPost, error) {
-	if _, ok := rawArgs["post"]; !ok {
-		var zeroVal models.NewBlogPost
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post"))
-	if tmp, ok := rawArgs["post"]; ok {
-		return ec.unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐNewBlogPost(ctx, tmp)
-	}
-
-	var zeroVal models.NewBlogPost
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogAmendPost_argsLanguage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (models.Language, error) {
-	if _, ok := rawArgs["language"]; !ok {
-		var zeroVal models.Language
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
-	if tmp, ok := rawArgs["language"]; ok {
-		return ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
-	}
-
-	var zeroVal models.Language
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_BlogApproveComment_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_BlogApproveComment_argsCommentID(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "commentId", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["commentId"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_BlogApproveComment_argsCommentID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["commentId"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("commentId"))
-	if tmp, ok := rawArgs["commentId"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_BlogCreateComment_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_BlogCreateComment_argsPostName(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "postName", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["postName"] = arg0
-	arg1, err := ec.field_Mutation_BlogCreateComment_argsContent(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "content", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["content"] = arg1
-	arg2, err := ec.field_Mutation_BlogCreateComment_argsAuthorName(ctx, rawArgs)
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "authorName", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["authorName"] = arg2
-	arg3, err := ec.field_Mutation_BlogCreateComment_argsAuthorEmail(ctx, rawArgs)
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "authorEmail", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["authorEmail"] = arg3
-	arg4, err := ec.field_Mutation_BlogCreateComment_argsAuthorWebsite(ctx, rawArgs)
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "authorWebsite", ec.unmarshalOString2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
 	args["authorWebsite"] = arg4
-	arg5, err := ec.field_Mutation_BlogCreateComment_argsParentID(ctx, rawArgs)
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "parentId", ec.unmarshalOString2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
 	args["parentId"] = arg5
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_BlogCreateComment_argsPostName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["postName"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("postName"))
-	if tmp, ok := rawArgs["postName"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogCreateComment_argsContent(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["content"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("content"))
-	if tmp, ok := rawArgs["content"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogCreateComment_argsAuthorName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["authorName"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("authorName"))
-	if tmp, ok := rawArgs["authorName"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogCreateComment_argsAuthorEmail(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["authorEmail"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("authorEmail"))
-	if tmp, ok := rawArgs["authorEmail"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogCreateComment_argsAuthorWebsite(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*string, error) {
-	if _, ok := rawArgs["authorWebsite"]; !ok {
-		var zeroVal *string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("authorWebsite"))
-	if tmp, ok := rawArgs["authorWebsite"]; ok {
-		return ec.unmarshalOString2ᚖstring(ctx, tmp)
-	}
-
-	var zeroVal *string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogCreateComment_argsParentID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*string, error) {
-	if _, ok := rawArgs["parentId"]; !ok {
-		var zeroVal *string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("parentId"))
-	if tmp, ok := rawArgs["parentId"]; ok {
-		return ec.unmarshalOString2ᚖstring(ctx, tmp)
-	}
-
-	var zeroVal *string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_BlogCreatePost_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_BlogCreatePost_argsPost(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "post", ec.unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐNewBlogPost)
 	if err != nil {
 		return nil, err
 	}
 	args["post"] = arg0
-	arg1, err := ec.field_Mutation_BlogCreatePost_argsLanguage(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "language", ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage)
 	if err != nil {
 		return nil, err
 	}
 	args["language"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_BlogCreatePost_argsPost(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (models.NewBlogPost, error) {
-	if _, ok := rawArgs["post"]; !ok {
-		var zeroVal models.NewBlogPost
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("post"))
-	if tmp, ok := rawArgs["post"]; ok {
-		return ec.unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐNewBlogPost(ctx, tmp)
-	}
-
-	var zeroVal models.NewBlogPost
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogCreatePost_argsLanguage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (models.Language, error) {
-	if _, ok := rawArgs["language"]; !ok {
-		var zeroVal models.Language
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
-	if tmp, ok := rawArgs["language"]; ok {
-		return ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
-	}
-
-	var zeroVal models.Language
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_BlogDeleteComment_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_BlogDeleteComment_argsCommentID(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "commentId", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["commentId"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_BlogDeleteComment_argsCommentID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["commentId"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("commentId"))
-	if tmp, ok := rawArgs["commentId"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_BlogLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_BlogLogin_argsAccount(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "account", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["account"] = arg0
-	arg1, err := ec.field_Mutation_BlogLogin_argsPassword(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "password", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["password"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_BlogLogin_argsAccount(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["account"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("account"))
-	if tmp, ok := rawArgs["account"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogLogin_argsPassword(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["password"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("password"))
-	if tmp, ok := rawArgs["password"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_BlogToggleCommentLike_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_BlogToggleCommentLike_argsCommentID(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "commentId", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["commentId"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_BlogToggleCommentLike_argsCommentID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["commentId"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("commentId"))
-	if tmp, ok := rawArgs["commentId"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Mutation_CreateGeneralToken_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_CreateGeneralToken_argsUsername(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["username"] = arg0
-	arg1, err := ec.field_Mutation_CreateGeneralToken_argsDurationSec(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "duration_sec", ec.unmarshalNInt2int)
 	if err != nil {
 		return nil, err
 	}
 	args["duration_sec"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_CreateGeneralToken_argsUsername(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["username"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("username"))
-	if tmp, ok := rawArgs["username"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_CreateGeneralToken_argsDurationSec(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (int, error) {
-	if _, ok := rawArgs["duration_sec"]; !ok {
-		var zeroVal int
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("duration_sec"))
-	if tmp, ok := rawArgs["duration_sec"]; ok {
-		return ec.unmarshalNInt2int(ctx, tmp)
-	}
-
-	var zeroVal int
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_TelegramMonitorAlert_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_Mutation_GeneralAddHTMLCrawlerTask_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_TelegramMonitorAlert_argsType(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["type"] = arg0
-	arg1, err := ec.field_Mutation_TelegramMonitorAlert_argsToken(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["token"] = arg1
-	arg2, err := ec.field_Mutation_TelegramMonitorAlert_argsMsg(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["msg"] = arg2
-	return args, nil
-}
-func (ec *executionContext) field_Mutation_TelegramMonitorAlert_argsType(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["type"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("type"))
-	if tmp, ok := rawArgs["type"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_TelegramMonitorAlert_argsToken(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["token"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("token"))
-	if tmp, ok := rawArgs["token"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_TelegramMonitorAlert_argsMsg(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["msg"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("msg"))
-	if tmp, ok := rawArgs["msg"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_UserActive_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := ec.field_Mutation_UserActive_argsToken(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["token"] = arg0
-	return args, nil
-}
-func (ec *executionContext) field_Mutation_UserActive_argsToken(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["token"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("token"))
-	if tmp, ok := rawArgs["token"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_UserLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := ec.field_Mutation_UserLogin_argsAccount(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["account"] = arg0
-	arg1, err := ec.field_Mutation_UserLogin_argsPassword(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["password"] = arg1
-	return args, nil
-}
-func (ec *executionContext) field_Mutation_UserLogin_argsAccount(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["account"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("account"))
-	if tmp, ok := rawArgs["account"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_UserLogin_argsPassword(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["password"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("password"))
-	if tmp, ok := rawArgs["password"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_UserRegister_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := ec.field_Mutation_UserRegister_argsAccount(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["account"] = arg0
-	arg1, err := ec.field_Mutation_UserRegister_argsPassword(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["password"] = arg1
-	arg2, err := ec.field_Mutation_UserRegister_argsDisplayName(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["display_name"] = arg2
-	arg3, err := ec.field_Mutation_UserRegister_argsCaptcha(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["captcha"] = arg3
-	return args, nil
-}
-func (ec *executionContext) field_Mutation_UserRegister_argsAccount(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["account"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("account"))
-	if tmp, ok := rawArgs["account"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_UserRegister_argsPassword(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["password"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("password"))
-	if tmp, ok := rawArgs["password"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_UserRegister_argsDisplayName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["display_name"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("display_name"))
-	if tmp, ok := rawArgs["display_name"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_UserRegister_argsCaptcha(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["captcha"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("captcha"))
-	if tmp, ok := rawArgs["captcha"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_UserResendActiveEmail_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := ec.field_Mutation_UserResendActiveEmail_argsAccount(ctx, rawArgs)
-	if err != nil {
-		return nil, err
-	}
-	args["account"] = arg0
-	return args, nil
-}
-func (ec *executionContext) field_Mutation_UserResendActiveEmail_argsAccount(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["account"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("account"))
-	if tmp, ok := rawArgs["account"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Mutation_WebFetch_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := ec.field_Mutation_WebFetch_argsURL(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "url", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["url"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_WebFetch_argsURL(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["url"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
 
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("url"))
-	if tmp, ok := rawArgs["url"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
+func (ec *executionContext) field_Mutation_GeneralAddLLMStormTask_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "prompt", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
 	}
+	args["prompt"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "api_key", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["api_key"] = arg1
+	return args, nil
+}
 
-	var zeroVal string
-	return zeroVal, nil
+func (ec *executionContext) field_Mutation_TelegramMonitorAlert_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "type", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["type"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "token", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["token"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "msg", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["msg"] = arg2
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserActive_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "token", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["token"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "account", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["account"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "password", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["password"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserRegister_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "account", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["account"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "password", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["password"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "display_name", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["display_name"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "captcha", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["captcha"] = arg3
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserResendActiveEmail_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "account", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["account"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_WebFetch_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "url", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["url"] = arg0
+	return args, nil
 }
 
 func (ec *executionContext) field_Mutation_WebSearch_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_WebSearch_argsQuery(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "query", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["query"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_WebSearch_argsQuery(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["query"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("query"))
-	if tmp, ok := rawArgs["query"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_BlogCommentCount_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_BlogCommentCount_argsPostName(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "postName", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["postName"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Query_BlogCommentCount_argsPostName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["postName"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("postName"))
-	if tmp, ok := rawArgs["postName"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_BlogComments_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_BlogComments_argsPostName(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "postName", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["postName"] = arg0
-	arg1, err := ec.field_Query_BlogComments_argsPage(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "page", ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination)
 	if err != nil {
 		return nil, err
 	}
 	args["page"] = arg1
-	arg2, err := ec.field_Query_BlogComments_argsSort(ctx, rawArgs)
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "sort", ec.unmarshalOSort2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSort)
 	if err != nil {
 		return nil, err
 	}
 	args["sort"] = arg2
 	return args, nil
 }
-func (ec *executionContext) field_Query_BlogComments_argsPostName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["postName"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("postName"))
-	if tmp, ok := rawArgs["postName"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogComments_argsPage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*models.Pagination, error) {
-	if _, ok := rawArgs["page"]; !ok {
-		var zeroVal *models.Pagination
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("page"))
-	if tmp, ok := rawArgs["page"]; ok {
-		return ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination(ctx, tmp)
-	}
-
-	var zeroVal *models.Pagination
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogComments_argsSort(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*models.Sort, error) {
-	if _, ok := rawArgs["sort"]; !ok {
-		var zeroVal *models.Sort
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("sort"))
-	if tmp, ok := rawArgs["sort"]; ok {
-		return ec.unmarshalOSort2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSort(ctx, tmp)
-	}
-
-	var zeroVal *models.Sort
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_BlogPostHistory_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_BlogPostHistory_argsFileID(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "file_id", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["file_id"] = arg0
-	arg1, err := ec.field_Query_BlogPostHistory_argsLanguage(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "language", ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage)
 	if err != nil {
 		return nil, err
 	}
 	args["language"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Query_BlogPostHistory_argsFileID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["file_id"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("file_id"))
-	if tmp, ok := rawArgs["file_id"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogPostHistory_argsLanguage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (models.Language, error) {
-	if _, ok := rawArgs["language"]; !ok {
-		var zeroVal models.Language
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
-	if tmp, ok := rawArgs["language"]; ok {
-		return ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
-	}
-
-	var zeroVal models.Language
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_BlogPosts_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_BlogPosts_argsPage(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "page", ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination)
 	if err != nil {
 		return nil, err
 	}
 	args["page"] = arg0
-	arg1, err := ec.field_Query_BlogPosts_argsTag(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "tag", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["tag"] = arg1
-	arg2, err := ec.field_Query_BlogPosts_argsCategoryURL(ctx, rawArgs)
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "category_url", ec.unmarshalOString2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
 	args["category_url"] = arg2
-	arg3, err := ec.field_Query_BlogPosts_argsLength(ctx, rawArgs)
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "length", ec.unmarshalNInt2int)
 	if err != nil {
 		return nil, err
 	}
 	args["length"] = arg3
-	arg4, err := ec.field_Query_BlogPosts_argsName(ctx, rawArgs)
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "name", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["name"] = arg4
-	arg5, err := ec.field_Query_BlogPosts_argsRegexp(ctx, rawArgs)
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "regexp", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["regexp"] = arg5
-	arg6, err := ec.field_Query_BlogPosts_argsLanguage(ctx, rawArgs)
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "language", ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage)
 	if err != nil {
 		return nil, err
 	}
 	args["language"] = arg6
 	return args, nil
 }
-func (ec *executionContext) field_Query_BlogPosts_argsPage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*models.Pagination, error) {
-	if _, ok := rawArgs["page"]; !ok {
-		var zeroVal *models.Pagination
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("page"))
-	if tmp, ok := rawArgs["page"]; ok {
-		return ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination(ctx, tmp)
-	}
-
-	var zeroVal *models.Pagination
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogPosts_argsTag(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["tag"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tag"))
-	if tmp, ok := rawArgs["tag"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogPosts_argsCategoryURL(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*string, error) {
-	if _, ok := rawArgs["category_url"]; !ok {
-		var zeroVal *string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("category_url"))
-	if tmp, ok := rawArgs["category_url"]; ok {
-		return ec.unmarshalOString2ᚖstring(ctx, tmp)
-	}
-
-	var zeroVal *string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogPosts_argsLength(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (int, error) {
-	if _, ok := rawArgs["length"]; !ok {
-		var zeroVal int
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("length"))
-	if tmp, ok := rawArgs["length"]; ok {
-		return ec.unmarshalNInt2int(ctx, tmp)
-	}
-
-	var zeroVal int
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogPosts_argsName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["name"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
-	if tmp, ok := rawArgs["name"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogPosts_argsRegexp(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["regexp"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("regexp"))
-	if tmp, ok := rawArgs["regexp"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogPosts_argsLanguage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (models.Language, error) {
-	if _, ok := rawArgs["language"]; !ok {
-		var zeroVal models.Language
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
-	if tmp, ok := rawArgs["language"]; ok {
-		return ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
-	}
-
-	var zeroVal models.Language
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_BlogTwitterCard_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_BlogTwitterCard_argsName(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["name"] = arg0
-	arg1, err := ec.field_Query_BlogTwitterCard_argsLanguage(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "language", ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage)
 	if err != nil {
 		return nil, err
 	}
 	args["language"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Query_BlogTwitterCard_argsName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["name"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
+
+func (ec *executionContext) field_Query_GeneralGetLLMStormTaskResult_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "task_id", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
 	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
-	if tmp, ok := rawArgs["name"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_BlogTwitterCard_argsLanguage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (models.Language, error) {
-	if _, ok := rawArgs["language"]; !ok {
-		var zeroVal models.Language
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("language"))
-	if tmp, ok := rawArgs["language"]; ok {
-		return ec.unmarshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, tmp)
-	}
-
-	var zeroVal models.Language
-	return zeroVal, nil
+	args["task_id"] = arg0
+	return args, nil
 }
 
 func (ec *executionContext) field_Query_GetBlogPostSeries_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_GetBlogPostSeries_argsPage(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "page", ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination)
 	if err != nil {
 		return nil, err
 	}
 	args["page"] = arg0
-	arg1, err := ec.field_Query_GetBlogPostSeries_argsKey(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "key", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["key"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Query_GetBlogPostSeries_argsPage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*models.Pagination, error) {
-	if _, ok := rawArgs["page"]; !ok {
-		var zeroVal *models.Pagination
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("page"))
-	if tmp, ok := rawArgs["page"]; ok {
-		return ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination(ctx, tmp)
-	}
-
-	var zeroVal *models.Pagination
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_GetBlogPostSeries_argsKey(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["key"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("key"))
-	if tmp, ok := rawArgs["key"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_LockPermissions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_LockPermissions_argsUsername(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["username"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Query_LockPermissions_argsUsername(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["username"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("username"))
-	if tmp, ok := rawArgs["username"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_Lock_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_Lock_argsName(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["name"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Query_Lock_argsName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["name"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
-	if tmp, ok := rawArgs["name"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_TelegramAlertTypes_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_TelegramAlertTypes_argsPage(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "page", ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination)
 	if err != nil {
 		return nil, err
 	}
 	args["page"] = arg0
-	arg1, err := ec.field_Query_TelegramAlertTypes_argsName(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "name", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["name"] = arg1
 	return args, nil
-}
-func (ec *executionContext) field_Query_TelegramAlertTypes_argsPage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*models.Pagination, error) {
-	if _, ok := rawArgs["page"]; !ok {
-		var zeroVal *models.Pagination
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("page"))
-	if tmp, ok := rawArgs["page"]; ok {
-		return ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination(ctx, tmp)
-	}
-
-	var zeroVal *models.Pagination
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_TelegramAlertTypes_argsName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["name"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
-	if tmp, ok := rawArgs["name"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
 }
 
 func (ec *executionContext) field_Query_TelegramMonitorUsers_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_TelegramMonitorUsers_argsPage(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "page", ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination)
 	if err != nil {
 		return nil, err
 	}
 	args["page"] = arg0
-	arg1, err := ec.field_Query_TelegramMonitorUsers_argsName(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "name", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["name"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Query_TelegramMonitorUsers_argsPage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*models.Pagination, error) {
-	if _, ok := rawArgs["page"]; !ok {
-		var zeroVal *models.Pagination
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("page"))
-	if tmp, ok := rawArgs["page"]; ok {
-		return ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination(ctx, tmp)
-	}
-
-	var zeroVal *models.Pagination
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_TelegramMonitorUsers_argsName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["name"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
-	if tmp, ok := rawArgs["name"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_TwitterStatues_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_TwitterStatues_argsPage(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "page", ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination)
 	if err != nil {
 		return nil, err
 	}
 	args["page"] = arg0
-	arg1, err := ec.field_Query_TwitterStatues_argsTweetID(ctx, rawArgs)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "tweet_id", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["tweet_id"] = arg1
-	arg2, err := ec.field_Query_TwitterStatues_argsUsername(ctx, rawArgs)
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["username"] = arg2
-	arg3, err := ec.field_Query_TwitterStatues_argsViewerID(ctx, rawArgs)
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "viewer_id", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["viewer_id"] = arg3
-	arg4, err := ec.field_Query_TwitterStatues_argsSort(ctx, rawArgs)
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "sort", ec.unmarshalOSort2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSort)
 	if err != nil {
 		return nil, err
 	}
 	args["sort"] = arg4
-	arg5, err := ec.field_Query_TwitterStatues_argsTopic(ctx, rawArgs)
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "topic", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["topic"] = arg5
-	arg6, err := ec.field_Query_TwitterStatues_argsRegexp(ctx, rawArgs)
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "regexp", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["regexp"] = arg6
 	return args, nil
 }
-func (ec *executionContext) field_Query_TwitterStatues_argsPage(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*models.Pagination, error) {
-	if _, ok := rawArgs["page"]; !ok {
-		var zeroVal *models.Pagination
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("page"))
-	if tmp, ok := rawArgs["page"]; ok {
-		return ec.unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination(ctx, tmp)
-	}
-
-	var zeroVal *models.Pagination
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_TwitterStatues_argsTweetID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["tweet_id"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tweet_id"))
-	if tmp, ok := rawArgs["tweet_id"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_TwitterStatues_argsUsername(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["username"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("username"))
-	if tmp, ok := rawArgs["username"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_TwitterStatues_argsViewerID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["viewer_id"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("viewer_id"))
-	if tmp, ok := rawArgs["viewer_id"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_TwitterStatues_argsSort(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*models.Sort, error) {
-	if _, ok := rawArgs["sort"]; !ok {
-		var zeroVal *models.Sort
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("sort"))
-	if tmp, ok := rawArgs["sort"]; ok {
-		return ec.unmarshalOSort2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSort(ctx, tmp)
-	}
-
-	var zeroVal *models.Sort
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_TwitterStatues_argsTopic(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["topic"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("topic"))
-	if tmp, ok := rawArgs["topic"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
-
-func (ec *executionContext) field_Query_TwitterStatues_argsRegexp(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["regexp"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("regexp"))
-	if tmp, ok := rawArgs["regexp"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query_TwitterThreads_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_TwitterThreads_argsTweetID(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "tweet_id", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["tweet_id"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Query_TwitterThreads_argsTweetID(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["tweet_id"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tweet_id"))
-	if tmp, ok := rawArgs["tweet_id"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query___type_argsName(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name", ec.unmarshalNString2string)
 	if err != nil {
 		return nil, err
 	}
 	args["name"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Query___type_argsName(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (string, error) {
-	if _, ok := rawArgs["name"]; !ok {
-		var zeroVal string
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
-	if tmp, ok := rawArgs["name"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
-	}
-
-	var zeroVal string
-	return zeroVal, nil
-}
 
 func (ec *executionContext) field___Directive_args_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field___Directive_args_argsIncludeDeprecated(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "includeDeprecated", ec.unmarshalOBoolean2ᚖbool)
 	if err != nil {
 		return nil, err
 	}
 	args["includeDeprecated"] = arg0
 	return args, nil
-}
-func (ec *executionContext) field___Directive_args_argsIncludeDeprecated(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*bool, error) {
-	if _, ok := rawArgs["includeDeprecated"]; !ok {
-		var zeroVal *bool
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("includeDeprecated"))
-	if tmp, ok := rawArgs["includeDeprecated"]; ok {
-		return ec.unmarshalOBoolean2ᚖbool(ctx, tmp)
-	}
-
-	var zeroVal *bool
-	return zeroVal, nil
 }
 
 func (ec *executionContext) field___Field_args_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field___Field_args_argsIncludeDeprecated(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "includeDeprecated", ec.unmarshalOBoolean2ᚖbool)
 	if err != nil {
 		return nil, err
 	}
 	args["includeDeprecated"] = arg0
 	return args, nil
-}
-func (ec *executionContext) field___Field_args_argsIncludeDeprecated(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (*bool, error) {
-	if _, ok := rawArgs["includeDeprecated"]; !ok {
-		var zeroVal *bool
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("includeDeprecated"))
-	if tmp, ok := rawArgs["includeDeprecated"]; ok {
-		return ec.unmarshalOBoolean2ᚖbool(ctx, tmp)
-	}
-
-	var zeroVal *bool
-	return zeroVal, nil
 }
 
 func (ec *executionContext) field___Type_enumValues_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field___Type_enumValues_argsIncludeDeprecated(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "includeDeprecated", ec.unmarshalOBoolean2bool)
 	if err != nil {
 		return nil, err
 	}
 	args["includeDeprecated"] = arg0
 	return args, nil
-}
-func (ec *executionContext) field___Type_enumValues_argsIncludeDeprecated(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (bool, error) {
-	if _, ok := rawArgs["includeDeprecated"]; !ok {
-		var zeroVal bool
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("includeDeprecated"))
-	if tmp, ok := rawArgs["includeDeprecated"]; ok {
-		return ec.unmarshalOBoolean2bool(ctx, tmp)
-	}
-
-	var zeroVal bool
-	return zeroVal, nil
 }
 
 func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field___Type_fields_argsIncludeDeprecated(ctx, rawArgs)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "includeDeprecated", ec.unmarshalOBoolean2bool)
 	if err != nil {
 		return nil, err
 	}
 	args["includeDeprecated"] = arg0
 	return args, nil
-}
-func (ec *executionContext) field___Type_fields_argsIncludeDeprecated(
-	ctx context.Context,
-	rawArgs map[string]any,
-) (bool, error) {
-	if _, ok := rawArgs["includeDeprecated"]; !ok {
-		var zeroVal bool
-		return zeroVal, nil
-	}
-
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("includeDeprecated"))
-	if tmp, ok := rawArgs["includeDeprecated"]; ok {
-		return ec.unmarshalOBoolean2bool(ctx, tmp)
-	}
-
-	var zeroVal bool
-	return zeroVal, nil
 }
 
 // endregion ***************************** args.gotpl *****************************
@@ -3461,34 +2316,19 @@ func (ec *executionContext) field___Type_fields_argsIncludeDeprecated(
 // region    **************************** field.gotpl *****************************
 
 func (ec *executionContext) _ArweaveItem_id(ctx context.Context, field graphql.CollectedField, obj *model.ArweaveHistoryItem) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_ArweaveItem_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Id, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ArweaveItem_id,
+		func(ctx context.Context) (any, error) {
+			return obj.Id, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_ArweaveItem_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3505,34 +2345,19 @@ func (ec *executionContext) fieldContext_ArweaveItem_id(_ context.Context, field
 }
 
 func (ec *executionContext) _ArweaveItem_time(ctx context.Context, field graphql.CollectedField, obj *model.ArweaveHistoryItem) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_ArweaveItem_time(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.ArweaveItem().Time(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ArweaveItem_time,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.ArweaveItem().Time(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_ArweaveItem_time(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3549,34 +2374,19 @@ func (ec *executionContext) fieldContext_ArweaveItem_time(_ context.Context, fie
 }
 
 func (ec *executionContext) _ArweaveUploadResponse_file_id(ctx context.Context, field graphql.CollectedField, obj *dto.UploadResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_ArweaveUploadResponse_file_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.FileID, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ArweaveUploadResponse_file_id,
+		func(ctx context.Context) (any, error) {
+			return obj.FileID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_ArweaveUploadResponse_file_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3593,34 +2403,19 @@ func (ec *executionContext) fieldContext_ArweaveUploadResponse_file_id(_ context
 }
 
 func (ec *executionContext) _BlogCategory_name(ctx context.Context, field graphql.CollectedField, obj *model.Category) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogCategory_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogCategory_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogCategory_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3637,34 +2432,19 @@ func (ec *executionContext) fieldContext_BlogCategory_name(_ context.Context, fi
 }
 
 func (ec *executionContext) _BlogCategory_url(ctx context.Context, field graphql.CollectedField, obj *model.Category) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogCategory_url(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.URL, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogCategory_url,
+		func(ctx context.Context) (any, error) {
+			return obj.URL, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogCategory_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3681,34 +2461,19 @@ func (ec *executionContext) fieldContext_BlogCategory_url(_ context.Context, fie
 }
 
 func (ec *executionContext) _BlogLoginResponse_user(ctx context.Context, field graphql.CollectedField, obj *models.BlogLoginResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogLoginResponse_user(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.User, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model.User)
-	fc.Result = res
-	return ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogLoginResponse_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogLoginResponse_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3731,34 +2496,19 @@ func (ec *executionContext) fieldContext_BlogLoginResponse_user(_ context.Contex
 }
 
 func (ec *executionContext) _BlogLoginResponse_token(ctx context.Context, field graphql.CollectedField, obj *models.BlogLoginResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogLoginResponse_token(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Token, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogLoginResponse_token,
+		func(ctx context.Context) (any, error) {
+			return obj.Token, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogLoginResponse_token(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3775,34 +2525,19 @@ func (ec *executionContext) fieldContext_BlogLoginResponse_token(_ context.Conte
 }
 
 func (ec *executionContext) _BlogPost_id(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPost().ID(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_id,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPost().ID(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3819,34 +2554,19 @@ func (ec *executionContext) fieldContext_BlogPost_id(_ context.Context, field gr
 }
 
 func (ec *executionContext) _BlogPost_author(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_author(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPost().Author(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model.User)
-	fc.Result = res
-	return ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_author,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPost().Author(ctx, obj)
+		},
+		nil,
+		ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_author(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3869,34 +2589,19 @@ func (ec *executionContext) fieldContext_BlogPost_author(_ context.Context, fiel
 }
 
 func (ec *executionContext) _BlogPost_created_at(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_created_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPost().CreatedAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_created_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPost().CreatedAt(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3913,34 +2618,19 @@ func (ec *executionContext) fieldContext_BlogPost_created_at(_ context.Context, 
 }
 
 func (ec *executionContext) _BlogPost_modified_at(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_modified_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPost().ModifiedAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_modified_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPost().ModifiedAt(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_modified_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -3957,34 +2647,19 @@ func (ec *executionContext) fieldContext_BlogPost_modified_at(_ context.Context,
 }
 
 func (ec *executionContext) _BlogPost_type(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_type(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPost().Type(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(models.BlogPostType)
-	fc.Result = res
-	return ec.marshalNBlogPostType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogPostType(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_type,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPost().Type(ctx, obj)
+		},
+		nil,
+		ec.marshalNBlogPostType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogPostType,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4001,34 +2676,19 @@ func (ec *executionContext) fieldContext_BlogPost_type(_ context.Context, field 
 }
 
 func (ec *executionContext) _BlogPost_title(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_title(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Title, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_title,
+		func(ctx context.Context) (any, error) {
+			return obj.Title, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_title(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4045,34 +2705,19 @@ func (ec *executionContext) fieldContext_BlogPost_title(_ context.Context, field
 }
 
 func (ec *executionContext) _BlogPost_menu(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_menu(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Menu, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_menu,
+		func(ctx context.Context) (any, error) {
+			return obj.Menu, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_menu(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4089,34 +2734,19 @@ func (ec *executionContext) fieldContext_BlogPost_menu(_ context.Context, field 
 }
 
 func (ec *executionContext) _BlogPost_content(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_content(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Content, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_content,
+		func(ctx context.Context) (any, error) {
+			return obj.Content, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4133,34 +2763,19 @@ func (ec *executionContext) fieldContext_BlogPost_content(_ context.Context, fie
 }
 
 func (ec *executionContext) _BlogPost_name(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4177,31 +2792,19 @@ func (ec *executionContext) fieldContext_BlogPost_name(_ context.Context, field 
 }
 
 func (ec *executionContext) _BlogPost_markdown(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_markdown(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Markdown, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalOString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_markdown,
+		func(ctx context.Context) (any, error) {
+			return obj.Markdown, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_markdown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4218,34 +2821,19 @@ func (ec *executionContext) fieldContext_BlogPost_markdown(_ context.Context, fi
 }
 
 func (ec *executionContext) _BlogPost_tags(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_tags(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Tags, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]string)
-	fc.Result = res
-	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_tags,
+		func(ctx context.Context) (any, error) {
+			return obj.Tags, nil
+		},
+		nil,
+		ec.marshalNString2ᚕstringᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_tags(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4262,31 +2850,19 @@ func (ec *executionContext) fieldContext_BlogPost_tags(_ context.Context, field 
 }
 
 func (ec *executionContext) _BlogPost_category(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_category(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPost().Category(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model.Category)
-	fc.Result = res
-	return ec.marshalOBlogCategory2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_category,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPost().Category(ctx, obj)
+		},
+		nil,
+		ec.marshalOBlogCategory2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_category(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4309,34 +2885,19 @@ func (ec *executionContext) fieldContext_BlogPost_category(_ context.Context, fi
 }
 
 func (ec *executionContext) _BlogPost_language(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_language(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPost().Language(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(models.Language)
-	fc.Result = res
-	return ec.marshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_language,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPost().Language(ctx, obj)
+		},
+		nil,
+		ec.marshalNLanguage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguage,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_language(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4353,34 +2914,19 @@ func (ec *executionContext) fieldContext_BlogPost_language(_ context.Context, fi
 }
 
 func (ec *executionContext) _BlogPost_all_languages(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_all_languages(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPost().AllLanguages(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]models.Language)
-	fc.Result = res
-	return ec.marshalNLanguage2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguageᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_all_languages,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPost().AllLanguages(ctx, obj)
+		},
+		nil,
+		ec.marshalNLanguage2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐLanguageᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_all_languages(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4397,31 +2943,19 @@ func (ec *executionContext) fieldContext_BlogPost_all_languages(_ context.Contex
 }
 
 func (ec *executionContext) _BlogPost_arweave_id(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPost_arweave_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.ArweaveId, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]model.ArweaveHistoryItem)
-	fc.Result = res
-	return ec.marshalOArweaveItem2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐArweaveHistoryItemᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPost_arweave_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ArweaveId, nil
+		},
+		nil,
+		ec.marshalOArweaveItem2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐArweaveHistoryItemᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPost_arweave_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4444,34 +2978,19 @@ func (ec *executionContext) fieldContext_BlogPost_arweave_id(_ context.Context, 
 }
 
 func (ec *executionContext) _BlogPostSeries_key(ctx context.Context, field graphql.CollectedField, obj *model.PostSeries) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPostSeries_key(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Key, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPostSeries_key,
+		func(ctx context.Context) (any, error) {
+			return obj.Key, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPostSeries_key(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4488,34 +3007,19 @@ func (ec *executionContext) fieldContext_BlogPostSeries_key(_ context.Context, f
 }
 
 func (ec *executionContext) _BlogPostSeries_remark(ctx context.Context, field graphql.CollectedField, obj *model.PostSeries) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPostSeries_remark(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Remark, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPostSeries_remark,
+		func(ctx context.Context) (any, error) {
+			return obj.Remark, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPostSeries_remark(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4532,34 +3036,19 @@ func (ec *executionContext) fieldContext_BlogPostSeries_remark(_ context.Context
 }
 
 func (ec *executionContext) _BlogPostSeries_posts(ctx context.Context, field graphql.CollectedField, obj *model.PostSeries) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPostSeries_posts(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPostSeries().Posts(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model.Post)
-	fc.Result = res
-	return ec.marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPostᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPostSeries_posts,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPostSeries().Posts(ctx, obj)
+		},
+		nil,
+		ec.marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPostᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPostSeries_posts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4608,34 +3097,19 @@ func (ec *executionContext) fieldContext_BlogPostSeries_posts(_ context.Context,
 }
 
 func (ec *executionContext) _BlogPostSeries_children(ctx context.Context, field graphql.CollectedField, obj *model.PostSeries) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogPostSeries_children(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogPostSeries().Children(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model.PostSeries)
-	fc.Result = res
-	return ec.marshalNBlogPostSeries2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPostSeriesᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogPostSeries_children,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogPostSeries().Children(ctx, obj)
+		},
+		nil,
+		ec.marshalNBlogPostSeries2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPostSeriesᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogPostSeries_children(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4662,34 +3136,19 @@ func (ec *executionContext) fieldContext_BlogPostSeries_children(_ context.Conte
 }
 
 func (ec *executionContext) _BlogUser_id(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogUser_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.BlogUser().ID(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogUser_id,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.BlogUser().ID(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogUser_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4706,34 +3165,19 @@ func (ec *executionContext) fieldContext_BlogUser_id(_ context.Context, field gr
 }
 
 func (ec *executionContext) _BlogUser_username(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_BlogUser_username(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Username, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_BlogUser_username,
+		func(ctx context.Context) (any, error) {
+			return obj.Username, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_BlogUser_username(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4750,34 +3194,19 @@ func (ec *executionContext) fieldContext_BlogUser_username(_ context.Context, fi
 }
 
 func (ec *executionContext) _Comment_id(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.ID, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4794,34 +3223,19 @@ func (ec *executionContext) fieldContext_Comment_id(_ context.Context, field gra
 }
 
 func (ec *executionContext) _Comment_content(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_content(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Content, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_content,
+		func(ctx context.Context) (any, error) {
+			return obj.Content, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4838,34 +3252,19 @@ func (ec *executionContext) fieldContext_Comment_content(_ context.Context, fiel
 }
 
 func (ec *executionContext) _Comment_authorName(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_authorName(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.AuthorName, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_authorName,
+		func(ctx context.Context) (any, error) {
+			return obj.AuthorName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_authorName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4882,34 +3281,19 @@ func (ec *executionContext) fieldContext_Comment_authorName(_ context.Context, f
 }
 
 func (ec *executionContext) _Comment_authorEmail(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_authorEmail(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.AuthorEmail, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_authorEmail,
+		func(ctx context.Context) (any, error) {
+			return obj.AuthorEmail, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_authorEmail(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4926,31 +3310,19 @@ func (ec *executionContext) fieldContext_Comment_authorEmail(_ context.Context, 
 }
 
 func (ec *executionContext) _Comment_authorWebsite(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_authorWebsite(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.AuthorWebsite, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_authorWebsite,
+		func(ctx context.Context) (any, error) {
+			return obj.AuthorWebsite, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_authorWebsite(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -4967,34 +3339,19 @@ func (ec *executionContext) fieldContext_Comment_authorWebsite(_ context.Context
 }
 
 func (ec *executionContext) _Comment_postId(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_postId(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.PostID, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_postId,
+		func(ctx context.Context) (any, error) {
+			return obj.PostID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_postId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5011,31 +3368,19 @@ func (ec *executionContext) fieldContext_Comment_postId(_ context.Context, field
 }
 
 func (ec *executionContext) _Comment_parentId(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_parentId(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.ParentID, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_parentId,
+		func(ctx context.Context) (any, error) {
+			return obj.ParentID, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_parentId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5052,34 +3397,19 @@ func (ec *executionContext) fieldContext_Comment_parentId(_ context.Context, fie
 }
 
 func (ec *executionContext) _Comment_createdAt(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_createdAt(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.CreatedAt, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_createdAt,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5096,31 +3426,19 @@ func (ec *executionContext) fieldContext_Comment_createdAt(_ context.Context, fi
 }
 
 func (ec *executionContext) _Comment_updatedAt(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_updatedAt(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.UpdatedAt, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_updatedAt,
+		func(ctx context.Context) (any, error) {
+			return obj.UpdatedAt, nil
+		},
+		nil,
+		ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5137,34 +3455,19 @@ func (ec *executionContext) fieldContext_Comment_updatedAt(_ context.Context, fi
 }
 
 func (ec *executionContext) _Comment_isApproved(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_isApproved(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.IsApproved, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_isApproved,
+		func(ctx context.Context) (any, error) {
+			return obj.IsApproved, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_isApproved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5181,34 +3484,19 @@ func (ec *executionContext) fieldContext_Comment_isApproved(_ context.Context, f
 }
 
 func (ec *executionContext) _Comment_likes(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_likes(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Likes, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(int)
-	fc.Result = res
-	return ec.marshalNInt2int(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_likes,
+		func(ctx context.Context) (any, error) {
+			return obj.Likes, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_likes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5225,31 +3513,19 @@ func (ec *executionContext) fieldContext_Comment_likes(_ context.Context, field 
 }
 
 func (ec *executionContext) _Comment_replies(ctx context.Context, field graphql.CollectedField, obj *models.Comment) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Comment_replies(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Replies, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]*models.Comment)
-	fc.Result = res
-	return ec.marshalOComment2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Comment_replies,
+		func(ctx context.Context) (any, error) {
+			return obj.Replies, nil
+		},
+		nil,
+		ec.marshalOComment2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Comment_replies(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5292,34 +3568,19 @@ func (ec *executionContext) fieldContext_Comment_replies(_ context.Context, fiel
 }
 
 func (ec *executionContext) _EmbededTweet_id(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.ID, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5336,34 +3597,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_id(_ context.Context, fiel
 }
 
 func (ec *executionContext) _EmbededTweet_created_at(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_created_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.CreatedAt, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_created_at,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5380,34 +3626,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_created_at(_ context.Conte
 }
 
 func (ec *executionContext) _EmbededTweet_text(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_text(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Text, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_text,
+		func(ctx context.Context) (any, error) {
+			return obj.Text, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_text(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5424,31 +3655,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_text(_ context.Context, fi
 }
 
 func (ec *executionContext) _EmbededTweet_topics(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_topics(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Topics, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]string)
-	fc.Result = res
-	return ec.marshalOString2ᚕstringᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_topics,
+		func(ctx context.Context) (any, error) {
+			return obj.Topics, nil
+		},
+		nil,
+		ec.marshalOString2ᚕstringᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_topics(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5465,31 +3684,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_topics(_ context.Context, 
 }
 
 func (ec *executionContext) _EmbededTweet_user(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_user(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.User, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model1.User)
-	fc.Result = res
-	return ec.marshalOTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUser(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalOTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUser,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5516,31 +3723,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_user(_ context.Context, fi
 }
 
 func (ec *executionContext) _EmbededTweet_reply_to(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_reply_to(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.EmbededTweet().ReplyTo(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model1.Tweet)
-	fc.Result = res
-	return ec.marshalOTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweet(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_reply_to,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.EmbededTweet().ReplyTo(ctx, obj)
+		},
+		nil,
+		ec.marshalOTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweet,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_reply_to(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5587,31 +3782,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_reply_to(_ context.Context
 }
 
 func (ec *executionContext) _EmbededTweet_replys(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_replys(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.EmbededTweet().Replys(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]*model1.Tweet)
-	fc.Result = res
-	return ec.marshalOTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweetᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_replys,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.EmbededTweet().Replys(ctx, obj)
+		},
+		nil,
+		ec.marshalOTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweetᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_replys(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5658,34 +3841,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_replys(_ context.Context, 
 }
 
 func (ec *executionContext) _EmbededTweet_is_quote_status(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_is_quote_status(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.EmbededTweet().IsQuoteStatus(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_is_quote_status,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.EmbededTweet().IsQuoteStatus(ctx, obj)
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_is_quote_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5702,31 +3870,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_is_quote_status(_ context.
 }
 
 func (ec *executionContext) _EmbededTweet_quoted_status(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_quoted_status(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.EmbededTweet().QuotedStatus(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model1.EmbededTweet)
-	fc.Result = res
-	return ec.marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐEmbededTweet(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_quoted_status,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.EmbededTweet().QuotedStatus(ctx, obj)
+		},
+		nil,
+		ec.marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐEmbededTweet,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_quoted_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5773,34 +3929,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_quoted_status(_ context.Co
 }
 
 func (ec *executionContext) _EmbededTweet_is_retweeted(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_is_retweeted(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.IsRetweeted, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_is_retweeted,
+		func(ctx context.Context) (any, error) {
+			return obj.IsRetweeted, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_is_retweeted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5817,31 +3958,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_is_retweeted(_ context.Con
 }
 
 func (ec *executionContext) _EmbededTweet_retweeted_tweet(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_retweeted_tweet(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.RetweetedTweet, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model1.EmbededTweet)
-	fc.Result = res
-	return ec.marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐEmbededTweet(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_retweeted_tweet,
+		func(ctx context.Context) (any, error) {
+			return obj.RetweetedTweet, nil
+		},
+		nil,
+		ec.marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐEmbededTweet,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_retweeted_tweet(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5888,34 +4017,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_retweeted_tweet(_ context.
 }
 
 func (ec *executionContext) _EmbededTweet_url(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_url(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.EmbededTweet().URL(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_url,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.EmbededTweet().URL(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5932,34 +4046,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_url(_ context.Context, fie
 }
 
 func (ec *executionContext) _EmbededTweet_images(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_images(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.EmbededTweet().Images(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]string)
-	fc.Result = res
-	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_images,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.EmbededTweet().Images(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2ᚕstringᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_images(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -5976,31 +4075,19 @@ func (ec *executionContext) fieldContext_EmbededTweet_images(_ context.Context, 
 }
 
 func (ec *executionContext) _EmbededTweet_viewers(ctx context.Context, field graphql.CollectedField, obj *model1.EmbededTweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_EmbededTweet_viewers(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.EmbededTweet().Viewers(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]*model1.User)
-	fc.Result = res
-	return ec.marshalOTwitterUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUserᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_EmbededTweet_viewers,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.EmbededTweet().Viewers(ctx, obj)
+		},
+		nil,
+		ec.marshalOTwitterUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUserᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_EmbededTweet_viewers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6026,35 +4113,513 @@ func (ec *executionContext) fieldContext_EmbededTweet_viewers(_ context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _GeneralHTMLCrawlerTask_task_id(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralHTMLCrawlerTask_task_id,
+		func(ctx context.Context) (any, error) {
+			return obj.TaskID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_task_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralHTMLCrawlerTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralHTMLCrawlerTask_created_at(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralHTMLCrawlerTask_created_at,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralHTMLCrawlerTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralHTMLCrawlerTask_status(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralHTMLCrawlerTask_status,
+		func(ctx context.Context) (any, error) {
+			return obj.Status, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralHTMLCrawlerTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralHTMLCrawlerTask_failed_reason(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralHTMLCrawlerTask_failed_reason,
+		func(ctx context.Context) (any, error) {
+			return obj.FailedReason, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_failed_reason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralHTMLCrawlerTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralHTMLCrawlerTask_finished_at(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralHTMLCrawlerTask_finished_at,
+		func(ctx context.Context) (any, error) {
+			return obj.FinishedAt, nil
+		},
+		nil,
+		ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_finished_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralHTMLCrawlerTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralHTMLCrawlerTask_url(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralHTMLCrawlerTask_url,
+		func(ctx context.Context) (any, error) {
+			return obj.URL, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralHTMLCrawlerTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralHTMLCrawlerTask_result_html_b64(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralHTMLCrawlerTask_result_html_b64,
+		func(ctx context.Context) (any, error) {
+			return obj.ResultHTMLB64, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_result_html_b64(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralHTMLCrawlerTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_task_id(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_task_id,
+		func(ctx context.Context) (any, error) {
+			return obj.TaskID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_task_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_created_at(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_created_at,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_status(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_status,
+		func(ctx context.Context) (any, error) {
+			return obj.Status, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_failed_reason(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_failed_reason,
+		func(ctx context.Context) (any, error) {
+			return obj.FailedReason, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_failed_reason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_finished_at(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_finished_at,
+		func(ctx context.Context) (any, error) {
+			return obj.FinishedAt, nil
+		},
+		nil,
+		ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_finished_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_prompt(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_prompt,
+		func(ctx context.Context) (any, error) {
+			return obj.Prompt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_prompt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_api_key(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_api_key,
+		func(ctx context.Context) (any, error) {
+			return obj.APIKey, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_api_key(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_result_article(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_result_article,
+		func(ctx context.Context) (any, error) {
+			return obj.ResultArticle, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_result_article(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_result_references(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_result_references,
+		func(ctx context.Context) (any, error) {
+			return obj.ResultReferences, nil
+		},
+		nil,
+		ec.marshalOJSONString2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐJSONString,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_result_references(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type JSONString does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GeneralLLMStormTask_runner(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralLLMStormTask_runner,
+		func(ctx context.Context) (any, error) {
+			return obj.Runner, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GeneralLLMStormTask_runner(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralLLMStormTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _GeneralUser_name(ctx context.Context, field graphql.CollectedField, obj *models.GeneralUser) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_GeneralUser_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralUser_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_GeneralUser_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6071,34 +4636,19 @@ func (ec *executionContext) fieldContext_GeneralUser_name(_ context.Context, fie
 }
 
 func (ec *executionContext) _GeneralUser_lock_prefixes(ctx context.Context, field graphql.CollectedField, obj *models.GeneralUser) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_GeneralUser_lock_prefixes(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.LockPrefixes, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]string)
-	fc.Result = res
-	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GeneralUser_lock_prefixes,
+		func(ctx context.Context) (any, error) {
+			return obj.LockPrefixes, nil
+		},
+		nil,
+		ec.marshalNString2ᚕstringᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_GeneralUser_lock_prefixes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6115,34 +4665,19 @@ func (ec *executionContext) fieldContext_GeneralUser_lock_prefixes(_ context.Con
 }
 
 func (ec *executionContext) _Lock_name(ctx context.Context, field graphql.CollectedField, obj *model2.Lock) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Lock_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Lock_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Lock_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6159,34 +4694,19 @@ func (ec *executionContext) fieldContext_Lock_name(_ context.Context, field grap
 }
 
 func (ec *executionContext) _Lock_owner_id(ctx context.Context, field graphql.CollectedField, obj *model2.Lock) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Lock_owner_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.OwnerID, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Lock_owner_id,
+		func(ctx context.Context) (any, error) {
+			return obj.OwnerID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Lock_owner_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6203,34 +4723,19 @@ func (ec *executionContext) fieldContext_Lock_owner_id(_ context.Context, field 
 }
 
 func (ec *executionContext) _Lock_expires_at(ctx context.Context, field graphql.CollectedField, obj *model2.Lock) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Lock_expires_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Lock().ExpiresAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Lock_expires_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Lock().ExpiresAt(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Lock_expires_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6247,34 +4752,20 @@ func (ec *executionContext) fieldContext_Lock_expires_at(_ context.Context, fiel
 }
 
 func (ec *executionContext) _Mutation_BlogCreatePost(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_BlogCreatePost(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogCreatePost(rctx, fc.Args["post"].(models.NewBlogPost), fc.Args["language"].(models.Language))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model.Post)
-	fc.Result = res
-	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_BlogCreatePost,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().BlogCreatePost(ctx, fc.Args["post"].(models.NewBlogPost), fc.Args["language"].(models.Language))
+		},
+		nil,
+		ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_BlogCreatePost(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6334,34 +4825,20 @@ func (ec *executionContext) fieldContext_Mutation_BlogCreatePost(ctx context.Con
 }
 
 func (ec *executionContext) _Mutation_BlogCreateComment(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_BlogCreateComment(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogCreateComment(rctx, fc.Args["postName"].(string), fc.Args["content"].(string), fc.Args["authorName"].(string), fc.Args["authorEmail"].(string), fc.Args["authorWebsite"].(*string), fc.Args["parentId"].(*string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.Comment)
-	fc.Result = res
-	return ec.marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_BlogCreateComment,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().BlogCreateComment(ctx, fc.Args["postName"].(string), fc.Args["content"].(string), fc.Args["authorName"].(string), fc.Args["authorEmail"].(string), fc.Args["authorWebsite"].(*string), fc.Args["parentId"].(*string))
+		},
+		nil,
+		ec.marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_BlogCreateComment(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6415,34 +4892,20 @@ func (ec *executionContext) fieldContext_Mutation_BlogCreateComment(ctx context.
 }
 
 func (ec *executionContext) _Mutation_BlogToggleCommentLike(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_BlogToggleCommentLike(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogToggleCommentLike(rctx, fc.Args["commentId"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.Comment)
-	fc.Result = res
-	return ec.marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_BlogToggleCommentLike,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().BlogToggleCommentLike(ctx, fc.Args["commentId"].(string))
+		},
+		nil,
+		ec.marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_BlogToggleCommentLike(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6496,34 +4959,20 @@ func (ec *executionContext) fieldContext_Mutation_BlogToggleCommentLike(ctx cont
 }
 
 func (ec *executionContext) _Mutation_BlogApproveComment(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_BlogApproveComment(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogApproveComment(rctx, fc.Args["commentId"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.Comment)
-	fc.Result = res
-	return ec.marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_BlogApproveComment,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().BlogApproveComment(ctx, fc.Args["commentId"].(string))
+		},
+		nil,
+		ec.marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_BlogApproveComment(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6577,34 +5026,20 @@ func (ec *executionContext) fieldContext_Mutation_BlogApproveComment(ctx context
 }
 
 func (ec *executionContext) _Mutation_BlogDeleteComment(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_BlogDeleteComment(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogDeleteComment(rctx, fc.Args["commentId"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.Comment)
-	fc.Result = res
-	return ec.marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_BlogDeleteComment,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().BlogDeleteComment(ctx, fc.Args["commentId"].(string))
+		},
+		nil,
+		ec.marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_BlogDeleteComment(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6658,34 +5093,20 @@ func (ec *executionContext) fieldContext_Mutation_BlogDeleteComment(ctx context.
 }
 
 func (ec *executionContext) _Mutation_BlogLogin(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_BlogLogin(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogLogin(rctx, fc.Args["account"].(string), fc.Args["password"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.BlogLoginResponse)
-	fc.Result = res
-	return ec.marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_BlogLogin,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().BlogLogin(ctx, fc.Args["account"].(string), fc.Args["password"].(string))
+		},
+		nil,
+		ec.marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_BlogLogin(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6719,34 +5140,20 @@ func (ec *executionContext) fieldContext_Mutation_BlogLogin(ctx context.Context,
 }
 
 func (ec *executionContext) _Mutation_UserLogin(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_UserLogin(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().UserLogin(rctx, fc.Args["account"].(string), fc.Args["password"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.BlogLoginResponse)
-	fc.Result = res
-	return ec.marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserLogin,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserLogin(ctx, fc.Args["account"].(string), fc.Args["password"].(string))
+		},
+		nil,
+		ec.marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_UserLogin(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6780,34 +5187,20 @@ func (ec *executionContext) fieldContext_Mutation_UserLogin(ctx context.Context,
 }
 
 func (ec *executionContext) _Mutation_UserRegister(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_UserRegister(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().UserRegister(rctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["display_name"].(string), fc.Args["captcha"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.UserRegisterResponse)
-	fc.Result = res
-	return ec.marshalNUserRegisterResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserRegisterResponse(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserRegister,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserRegister(ctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["display_name"].(string), fc.Args["captcha"].(string))
+		},
+		nil,
+		ec.marshalNUserRegisterResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserRegisterResponse,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_UserRegister(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6839,34 +5232,20 @@ func (ec *executionContext) fieldContext_Mutation_UserRegister(ctx context.Conte
 }
 
 func (ec *executionContext) _Mutation_UserActive(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_UserActive(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().UserActive(rctx, fc.Args["token"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.UserActiveResponse)
-	fc.Result = res
-	return ec.marshalNUserActiveResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserActiveResponse(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserActive,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserActive(ctx, fc.Args["token"].(string))
+		},
+		nil,
+		ec.marshalNUserActiveResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserActiveResponse,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_UserActive(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6900,34 +5279,20 @@ func (ec *executionContext) fieldContext_Mutation_UserActive(ctx context.Context
 }
 
 func (ec *executionContext) _Mutation_UserResendActiveEmail(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_UserResendActiveEmail(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().UserResendActiveEmail(rctx, fc.Args["account"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.UserResendActiveEmailResponse)
-	fc.Result = res
-	return ec.marshalNUserResendActiveEmailResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserResendActiveEmailResponse(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserResendActiveEmail,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserResendActiveEmail(ctx, fc.Args["account"].(string))
+		},
+		nil,
+		ec.marshalNUserResendActiveEmailResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserResendActiveEmailResponse,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_UserResendActiveEmail(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -6959,34 +5324,20 @@ func (ec *executionContext) fieldContext_Mutation_UserResendActiveEmail(ctx cont
 }
 
 func (ec *executionContext) _Mutation_BlogAmendPost(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_BlogAmendPost(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().BlogAmendPost(rctx, fc.Args["post"].(models.NewBlogPost), fc.Args["language"].(models.Language))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model.Post)
-	fc.Result = res
-	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_BlogAmendPost,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().BlogAmendPost(ctx, fc.Args["post"].(models.NewBlogPost), fc.Args["language"].(models.Language))
+		},
+		nil,
+		ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_BlogAmendPost(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7046,34 +5397,20 @@ func (ec *executionContext) fieldContext_Mutation_BlogAmendPost(ctx context.Cont
 }
 
 func (ec *executionContext) _Mutation_ArweaveUpload(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_ArweaveUpload(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().ArweaveUpload(rctx, fc.Args["fileB64"].(string), fc.Args["contentType"].(*string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*dto.UploadResponse)
-	fc.Result = res
-	return ec.marshalNArweaveUploadResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋarweaveᚋdtoᚐUploadResponse(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_ArweaveUpload,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().ArweaveUpload(ctx, fc.Args["fileB64"].(string), fc.Args["contentType"].(*string))
+		},
+		nil,
+		ec.marshalNArweaveUploadResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋarweaveᚋdtoᚐUploadResponse,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_ArweaveUpload(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7105,34 +5442,20 @@ func (ec *executionContext) fieldContext_Mutation_ArweaveUpload(ctx context.Cont
 }
 
 func (ec *executionContext) _Mutation_WebSearch(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_WebSearch(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().WebSearch(rctx, fc.Args["query"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*search.SearchResult)
-	fc.Result = res
-	return ec.marshalNWebSearchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚋsearchᚐSearchResult(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_WebSearch,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().WebSearch(ctx, fc.Args["query"].(string))
+		},
+		nil,
+		ec.marshalNWebSearchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚋsearchᚐSearchResult,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_WebSearch(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7168,34 +5491,20 @@ func (ec *executionContext) fieldContext_Mutation_WebSearch(ctx context.Context,
 }
 
 func (ec *executionContext) _Mutation_WebFetch(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_WebFetch(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().WebFetch(rctx, fc.Args["url"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*models.WebFetchResult)
-	fc.Result = res
-	return ec.marshalNWebFetchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐWebFetchResult(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_WebFetch,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().WebFetch(ctx, fc.Args["url"].(string))
+		},
+		nil,
+		ec.marshalNWebFetchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐWebFetchResult,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_WebFetch(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7231,34 +5540,20 @@ func (ec *executionContext) fieldContext_Mutation_WebFetch(ctx context.Context, 
 }
 
 func (ec *executionContext) _Mutation_TelegramMonitorAlert(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_TelegramMonitorAlert(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().TelegramMonitorAlert(rctx, fc.Args["type"].(string), fc.Args["token"].(string), fc.Args["msg"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model3.AlertTypes)
-	fc.Result = res
-	return ec.marshalNTelegramAlertType2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_TelegramMonitorAlert,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().TelegramMonitorAlert(ctx, fc.Args["type"].(string), fc.Args["token"].(string), fc.Args["msg"].(string))
+		},
+		nil,
+		ec.marshalNTelegramAlertType2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_TelegramMonitorAlert(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7298,34 +5593,20 @@ func (ec *executionContext) fieldContext_Mutation_TelegramMonitorAlert(ctx conte
 }
 
 func (ec *executionContext) _Mutation_AcquireLock(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_AcquireLock(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().AcquireLock(rctx, fc.Args["lock_name"].(string), fc.Args["duration_sec"].(int), fc.Args["is_renewal"].(*bool))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_AcquireLock,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().AcquireLock(ctx, fc.Args["lock_name"].(string), fc.Args["duration_sec"].(int), fc.Args["is_renewal"].(*bool))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_AcquireLock(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7353,34 +5634,20 @@ func (ec *executionContext) fieldContext_Mutation_AcquireLock(ctx context.Contex
 }
 
 func (ec *executionContext) _Mutation_CreateGeneralToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_CreateGeneralToken(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().CreateGeneralToken(rctx, fc.Args["username"].(string), fc.Args["duration_sec"].(int))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_CreateGeneralToken,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().CreateGeneralToken(ctx, fc.Args["username"].(string), fc.Args["duration_sec"].(int))
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Mutation_CreateGeneralToken(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7407,35 +5674,102 @@ func (ec *executionContext) fieldContext_Mutation_CreateGeneralToken(ctx context
 	return fc, nil
 }
 
-func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *dto1.PostInfo) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_PostInfo_total(ctx, field)
-	if err != nil {
-		return graphql.Null
+func (ec *executionContext) _Mutation_GeneralAddLLMStormTask(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_GeneralAddLLMStormTask,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().GeneralAddLLMStormTask(ctx, fc.Args["prompt"].(string), fc.Args["api_key"].(string))
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_GeneralAddLLMStormTask(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
 	}
-	ctx = graphql.WithFieldContext(ctx, fc)
 	defer func() {
 		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
 		}
 	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Total, nil
-	})
-	if err != nil {
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_GeneralAddLLMStormTask_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
-		return graphql.Null
+		return fc, err
 	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_GeneralAddHTMLCrawlerTask(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_GeneralAddHTMLCrawlerTask,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().GeneralAddHTMLCrawlerTask(ctx, fc.Args["url"].(string))
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_GeneralAddHTMLCrawlerTask(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
 		}
-		return graphql.Null
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_GeneralAddHTMLCrawlerTask_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
 	}
-	res := resTmp.(int)
-	fc.Result = res
-	return ec.marshalNInt2int(ctx, field.Selections, res)
+	return fc, nil
+}
+
+func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *dto1.PostInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PostInfo_total,
+		func(ctx context.Context) (any, error) {
+			return obj.Total, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_PostInfo_total(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7452,34 +5786,19 @@ func (ec *executionContext) fieldContext_PostInfo_total(_ context.Context, field
 }
 
 func (ec *executionContext) _Query_Hello(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_Hello(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Hello(rctx)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_Hello,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Query().Hello(ctx)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_Hello(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7496,34 +5815,19 @@ func (ec *executionContext) fieldContext_Query_Hello(_ context.Context, field gr
 }
 
 func (ec *executionContext) _Query_WhoAmI(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_WhoAmI(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().WhoAmI(rctx)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model.User)
-	fc.Result = res
-	return ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_WhoAmI,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Query().WhoAmI(ctx)
+		},
+		nil,
+		ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_WhoAmI(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7546,34 +5850,20 @@ func (ec *executionContext) fieldContext_Query_WhoAmI(_ context.Context, field g
 }
 
 func (ec *executionContext) _Query_TwitterStatues(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_TwitterStatues(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().TwitterStatues(rctx, fc.Args["page"].(*models.Pagination), fc.Args["tweet_id"].(string), fc.Args["username"].(string), fc.Args["viewer_id"].(string), fc.Args["sort"].(*models.Sort), fc.Args["topic"].(string), fc.Args["regexp"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model1.Tweet)
-	fc.Result = res
-	return ec.marshalNTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweet(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_TwitterStatues,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().TwitterStatues(ctx, fc.Args["page"].(*models.Pagination), fc.Args["tweet_id"].(string), fc.Args["username"].(string), fc.Args["viewer_id"].(string), fc.Args["sort"].(*models.Sort), fc.Args["topic"].(string), fc.Args["regexp"].(string))
+		},
+		nil,
+		ec.marshalNTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweet,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_TwitterStatues(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7631,31 +5921,20 @@ func (ec *executionContext) fieldContext_Query_TwitterStatues(ctx context.Contex
 }
 
 func (ec *executionContext) _Query_TwitterThreads(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_TwitterThreads(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().TwitterThreads(rctx, fc.Args["tweet_id"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]*model1.Tweet)
-	fc.Result = res
-	return ec.marshalOTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweetᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_TwitterThreads,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().TwitterThreads(ctx, fc.Args["tweet_id"].(string))
+		},
+		nil,
+		ec.marshalOTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweetᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_TwitterThreads(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7713,34 +5992,20 @@ func (ec *executionContext) fieldContext_Query_TwitterThreads(ctx context.Contex
 }
 
 func (ec *executionContext) _Query_BlogPosts(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_BlogPosts(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogPosts(rctx, fc.Args["page"].(*models.Pagination), fc.Args["tag"].(string), fc.Args["category_url"].(*string), fc.Args["length"].(int), fc.Args["name"].(string), fc.Args["regexp"].(string), fc.Args["language"].(models.Language))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model.Post)
-	fc.Result = res
-	return ec.marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_BlogPosts,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().BlogPosts(ctx, fc.Args["page"].(*models.Pagination), fc.Args["tag"].(string), fc.Args["category_url"].(*string), fc.Args["length"].(int), fc.Args["name"].(string), fc.Args["regexp"].(string), fc.Args["language"].(models.Language))
+		},
+		nil,
+		ec.marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_BlogPosts(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7800,34 +6065,20 @@ func (ec *executionContext) fieldContext_Query_BlogPosts(ctx context.Context, fi
 }
 
 func (ec *executionContext) _Query_BlogPostHistory(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_BlogPostHistory(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogPostHistory(rctx, fc.Args["file_id"].(string), fc.Args["language"].(models.Language))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model.Post)
-	fc.Result = res
-	return ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_BlogPostHistory,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().BlogPostHistory(ctx, fc.Args["file_id"].(string), fc.Args["language"].(models.Language))
+		},
+		nil,
+		ec.marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_BlogPostHistory(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7887,34 +6138,19 @@ func (ec *executionContext) fieldContext_Query_BlogPostHistory(ctx context.Conte
 }
 
 func (ec *executionContext) _Query_BlogPostInfo(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_BlogPostInfo(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogPostInfo(rctx)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*dto1.PostInfo)
-	fc.Result = res
-	return ec.marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_BlogPostInfo,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Query().BlogPostInfo(ctx)
+		},
+		nil,
+		ec.marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_BlogPostInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7935,34 +6171,19 @@ func (ec *executionContext) fieldContext_Query_BlogPostInfo(_ context.Context, f
 }
 
 func (ec *executionContext) _Query_BlogPostCategories(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_BlogPostCategories(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogPostCategories(rctx)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model.Category)
-	fc.Result = res
-	return ec.marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_BlogPostCategories,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Query().BlogPostCategories(ctx)
+		},
+		nil,
+		ec.marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_BlogPostCategories(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -7985,34 +6206,19 @@ func (ec *executionContext) fieldContext_Query_BlogPostCategories(_ context.Cont
 }
 
 func (ec *executionContext) _Query_BlogTags(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_BlogTags(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogTags(rctx)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]string)
-	fc.Result = res
-	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_BlogTags,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Query().BlogTags(ctx)
+		},
+		nil,
+		ec.marshalNString2ᚕstringᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_BlogTags(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8029,34 +6235,20 @@ func (ec *executionContext) fieldContext_Query_BlogTags(_ context.Context, field
 }
 
 func (ec *executionContext) _Query_GetBlogPostSeries(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_GetBlogPostSeries(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().GetBlogPostSeries(rctx, fc.Args["page"].(*models.Pagination), fc.Args["key"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model.PostSeries)
-	fc.Result = res
-	return ec.marshalNBlogPostSeries2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPostSeriesᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_GetBlogPostSeries,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().GetBlogPostSeries(ctx, fc.Args["page"].(*models.Pagination), fc.Args["key"].(string))
+		},
+		nil,
+		ec.marshalNBlogPostSeries2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPostSeriesᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_GetBlogPostSeries(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8094,34 +6286,20 @@ func (ec *executionContext) fieldContext_Query_GetBlogPostSeries(ctx context.Con
 }
 
 func (ec *executionContext) _Query_BlogTwitterCard(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_BlogTwitterCard(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogTwitterCard(rctx, fc.Args["name"].(string), fc.Args["language"].(models.Language))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_BlogTwitterCard,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().BlogTwitterCard(ctx, fc.Args["name"].(string), fc.Args["language"].(models.Language))
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_BlogTwitterCard(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8149,34 +6327,20 @@ func (ec *executionContext) fieldContext_Query_BlogTwitterCard(ctx context.Conte
 }
 
 func (ec *executionContext) _Query_BlogComments(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_BlogComments(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogComments(rctx, fc.Args["postName"].(string), fc.Args["page"].(*models.Pagination), fc.Args["sort"].(*models.Sort))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*models.Comment)
-	fc.Result = res
-	return ec.marshalNComment2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_BlogComments,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().BlogComments(ctx, fc.Args["postName"].(string), fc.Args["page"].(*models.Pagination), fc.Args["sort"].(*models.Sort))
+		},
+		nil,
+		ec.marshalNComment2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_BlogComments(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8230,34 +6394,20 @@ func (ec *executionContext) fieldContext_Query_BlogComments(ctx context.Context,
 }
 
 func (ec *executionContext) _Query_BlogCommentCount(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_BlogCommentCount(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().BlogCommentCount(rctx, fc.Args["postName"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(int)
-	fc.Result = res
-	return ec.marshalNInt2int(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_BlogCommentCount,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().BlogCommentCount(ctx, fc.Args["postName"].(string))
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_BlogCommentCount(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8285,34 +6435,20 @@ func (ec *executionContext) fieldContext_Query_BlogCommentCount(ctx context.Cont
 }
 
 func (ec *executionContext) _Query_TelegramMonitorUsers(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_TelegramMonitorUsers(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().TelegramMonitorUsers(rctx, fc.Args["page"].(*models.Pagination), fc.Args["name"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model3.MonitorUsers)
-	fc.Result = res
-	return ec.marshalNTelegramMonitorUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐMonitorUsers(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_TelegramMonitorUsers,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().TelegramMonitorUsers(ctx, fc.Args["page"].(*models.Pagination), fc.Args["name"].(string))
+		},
+		nil,
+		ec.marshalNTelegramMonitorUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐMonitorUsers,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_TelegramMonitorUsers(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8354,34 +6490,20 @@ func (ec *executionContext) fieldContext_Query_TelegramMonitorUsers(ctx context.
 }
 
 func (ec *executionContext) _Query_TelegramAlertTypes(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_TelegramAlertTypes(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().TelegramAlertTypes(rctx, fc.Args["page"].(*models.Pagination), fc.Args["name"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model3.AlertTypes)
-	fc.Result = res
-	return ec.marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_TelegramAlertTypes,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().TelegramAlertTypes(ctx, fc.Args["page"].(*models.Pagination), fc.Args["name"].(string))
+		},
+		nil,
+		ec.marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_TelegramAlertTypes(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8421,34 +6543,20 @@ func (ec *executionContext) fieldContext_Query_TelegramAlertTypes(ctx context.Co
 }
 
 func (ec *executionContext) _Query_Lock(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_Lock(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Lock(rctx, fc.Args["name"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model2.Lock)
-	fc.Result = res
-	return ec.marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚋmodelᚐLock(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_Lock,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().Lock(ctx, fc.Args["name"].(string))
+		},
+		nil,
+		ec.marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚋmodelᚐLock,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_Lock(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8484,34 +6592,20 @@ func (ec *executionContext) fieldContext_Query_Lock(ctx context.Context, field g
 }
 
 func (ec *executionContext) _Query_LockPermissions(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_LockPermissions(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().LockPermissions(rctx, fc.Args["username"].(string))
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*models.GeneralUser)
-	fc.Result = res
-	return ec.marshalNGeneralUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralUser(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_LockPermissions,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().LockPermissions(ctx, fc.Args["username"].(string))
+		},
+		nil,
+		ec.marshalNGeneralUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralUser,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query_LockPermissions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8544,32 +6638,129 @@ func (ec *executionContext) fieldContext_Query_LockPermissions(ctx context.Conte
 	return fc, nil
 }
 
-func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query___type(ctx, field)
-	if err != nil {
-		return graphql.Null
+func (ec *executionContext) _Query_GeneralGetLLMStormTaskResult(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_GeneralGetLLMStormTaskResult,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().GeneralGetLLMStormTaskResult(ctx, fc.Args["task_id"].(string))
+		},
+		nil,
+		ec.marshalNGeneralLLMStormTask2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralLLMStormTask,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_GeneralGetLLMStormTaskResult(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "task_id":
+				return ec.fieldContext_GeneralLLMStormTask_task_id(ctx, field)
+			case "created_at":
+				return ec.fieldContext_GeneralLLMStormTask_created_at(ctx, field)
+			case "status":
+				return ec.fieldContext_GeneralLLMStormTask_status(ctx, field)
+			case "failed_reason":
+				return ec.fieldContext_GeneralLLMStormTask_failed_reason(ctx, field)
+			case "finished_at":
+				return ec.fieldContext_GeneralLLMStormTask_finished_at(ctx, field)
+			case "prompt":
+				return ec.fieldContext_GeneralLLMStormTask_prompt(ctx, field)
+			case "api_key":
+				return ec.fieldContext_GeneralLLMStormTask_api_key(ctx, field)
+			case "result_article":
+				return ec.fieldContext_GeneralLLMStormTask_result_article(ctx, field)
+			case "result_references":
+				return ec.fieldContext_GeneralLLMStormTask_result_references(ctx, field)
+			case "runner":
+				return ec.fieldContext_GeneralLLMStormTask_runner(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type GeneralLLMStormTask", field.Name)
+		},
 	}
-	ctx = graphql.WithFieldContext(ctx, fc)
 	defer func() {
 		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
 		}
 	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.introspectType(fc.Args["name"].(string))
-	})
-	if err != nil {
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_GeneralGetLLMStormTaskResult_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
-		return graphql.Null
+		return fc, err
 	}
-	if resTmp == nil {
-		return graphql.Null
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_GeneralGetHTMLCrawlerTask(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_GeneralGetHTMLCrawlerTask,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Query().GeneralGetHTMLCrawlerTask(ctx)
+		},
+		nil,
+		ec.marshalNGeneralHTMLCrawlerTask2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralHTMLCrawlerTask,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_GeneralGetHTMLCrawlerTask(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "task_id":
+				return ec.fieldContext_GeneralHTMLCrawlerTask_task_id(ctx, field)
+			case "created_at":
+				return ec.fieldContext_GeneralHTMLCrawlerTask_created_at(ctx, field)
+			case "status":
+				return ec.fieldContext_GeneralHTMLCrawlerTask_status(ctx, field)
+			case "failed_reason":
+				return ec.fieldContext_GeneralHTMLCrawlerTask_failed_reason(ctx, field)
+			case "finished_at":
+				return ec.fieldContext_GeneralHTMLCrawlerTask_finished_at(ctx, field)
+			case "url":
+				return ec.fieldContext_GeneralHTMLCrawlerTask_url(ctx, field)
+			case "result_html_b64":
+				return ec.fieldContext_GeneralHTMLCrawlerTask_result_html_b64(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type GeneralHTMLCrawlerTask", field.Name)
+		},
 	}
-	res := resTmp.(*introspection.Type)
-	fc.Result = res
-	return ec.marshalO__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType(ctx, field.Selections, res)
+	return fc, nil
+}
+
+func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query___type,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.introspectType(fc.Args["name"].(string))
+		},
+		nil,
+		ec.marshalO__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query___type(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8621,31 +6812,19 @@ func (ec *executionContext) fieldContext_Query___type(ctx context.Context, field
 }
 
 func (ec *executionContext) _Query___schema(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query___schema(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.introspectSchema()
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*introspection.Schema)
-	fc.Result = res
-	return ec.marshalO__Schema2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐSchema(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query___schema,
+		func(ctx context.Context) (any, error) {
+			return ec.introspectSchema()
+		},
+		nil,
+		ec.marshalO__Schema2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐSchema,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8676,34 +6855,19 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 }
 
 func (ec *executionContext) _TelegramAlertType_id(ctx context.Context, field graphql.CollectedField, obj *model3.AlertTypes) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramAlertType_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramAlertType().ID(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramAlertType_id,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramAlertType().ID(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramAlertType_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8720,34 +6884,19 @@ func (ec *executionContext) fieldContext_TelegramAlertType_id(_ context.Context,
 }
 
 func (ec *executionContext) _TelegramAlertType_created_at(ctx context.Context, field graphql.CollectedField, obj *model3.AlertTypes) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramAlertType_created_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramAlertType().CreatedAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramAlertType_created_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramAlertType().CreatedAt(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramAlertType_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8764,34 +6913,19 @@ func (ec *executionContext) fieldContext_TelegramAlertType_created_at(_ context.
 }
 
 func (ec *executionContext) _TelegramAlertType_modified_at(ctx context.Context, field graphql.CollectedField, obj *model3.AlertTypes) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramAlertType_modified_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramAlertType().ModifiedAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramAlertType_modified_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramAlertType().ModifiedAt(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramAlertType_modified_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8808,34 +6942,19 @@ func (ec *executionContext) fieldContext_TelegramAlertType_modified_at(_ context
 }
 
 func (ec *executionContext) _TelegramAlertType_name(ctx context.Context, field graphql.CollectedField, obj *model3.AlertTypes) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramAlertType_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramAlertType_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramAlertType_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8852,34 +6971,19 @@ func (ec *executionContext) fieldContext_TelegramAlertType_name(_ context.Contex
 }
 
 func (ec *executionContext) _TelegramAlertType_sub_users(ctx context.Context, field graphql.CollectedField, obj *model3.AlertTypes) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramAlertType_sub_users(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramAlertType().SubUsers(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model3.MonitorUsers)
-	fc.Result = res
-	return ec.marshalNTelegramMonitorUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐMonitorUsers(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramAlertType_sub_users,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramAlertType().SubUsers(ctx, obj)
+		},
+		nil,
+		ec.marshalNTelegramMonitorUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐMonitorUsers,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramAlertType_sub_users(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8910,34 +7014,19 @@ func (ec *executionContext) fieldContext_TelegramAlertType_sub_users(_ context.C
 }
 
 func (ec *executionContext) _TelegramMonitorUser_id(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramMonitorUser_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramMonitorUser().ID(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramMonitorUser_id,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramMonitorUser().ID(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramMonitorUser_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8954,34 +7043,19 @@ func (ec *executionContext) fieldContext_TelegramMonitorUser_id(_ context.Contex
 }
 
 func (ec *executionContext) _TelegramMonitorUser_created_at(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramMonitorUser_created_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramMonitorUser().CreatedAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramMonitorUser_created_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramMonitorUser().CreatedAt(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramMonitorUser_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -8998,34 +7072,19 @@ func (ec *executionContext) fieldContext_TelegramMonitorUser_created_at(_ contex
 }
 
 func (ec *executionContext) _TelegramMonitorUser_modified_at(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramMonitorUser_modified_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramMonitorUser().ModifiedAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramMonitorUser_modified_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramMonitorUser().ModifiedAt(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramMonitorUser_modified_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9042,34 +7101,19 @@ func (ec *executionContext) fieldContext_TelegramMonitorUser_modified_at(_ conte
 }
 
 func (ec *executionContext) _TelegramMonitorUser_telegram_id(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramMonitorUser_telegram_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramMonitorUser().TelegramID(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramMonitorUser_telegram_id,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramMonitorUser().TelegramID(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramMonitorUser_telegram_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9086,34 +7130,19 @@ func (ec *executionContext) fieldContext_TelegramMonitorUser_telegram_id(_ conte
 }
 
 func (ec *executionContext) _TelegramMonitorUser_name(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramMonitorUser_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramMonitorUser_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramMonitorUser_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9130,34 +7159,19 @@ func (ec *executionContext) fieldContext_TelegramMonitorUser_name(_ context.Cont
 }
 
 func (ec *executionContext) _TelegramMonitorUser_sub_alerts(ctx context.Context, field graphql.CollectedField, obj *model3.MonitorUsers) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TelegramMonitorUser_sub_alerts(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TelegramMonitorUser().SubAlerts(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]*model3.AlertTypes)
-	fc.Result = res
-	return ec.marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TelegramMonitorUser_sub_alerts,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TelegramMonitorUser().SubAlerts(ctx, obj)
+		},
+		nil,
+		ec.marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TelegramMonitorUser_sub_alerts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9186,34 +7200,19 @@ func (ec *executionContext) fieldContext_TelegramMonitorUser_sub_alerts(_ contex
 }
 
 func (ec *executionContext) _Tweet_id(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.ID, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9230,31 +7229,19 @@ func (ec *executionContext) fieldContext_Tweet_id(_ context.Context, field graph
 }
 
 func (ec *executionContext) _Tweet_created_at(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_created_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().CreatedAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_created_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Tweet().CreatedAt(ctx, obj)
+		},
+		nil,
+		ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9271,34 +7258,19 @@ func (ec *executionContext) fieldContext_Tweet_created_at(_ context.Context, fie
 }
 
 func (ec *executionContext) _Tweet_text(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_text(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Text, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_text,
+		func(ctx context.Context) (any, error) {
+			return obj.Text, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_text(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9315,31 +7287,19 @@ func (ec *executionContext) fieldContext_Tweet_text(_ context.Context, field gra
 }
 
 func (ec *executionContext) _Tweet_topics(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_topics(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Topics, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]string)
-	fc.Result = res
-	return ec.marshalOString2ᚕstringᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_topics,
+		func(ctx context.Context) (any, error) {
+			return obj.Topics, nil
+		},
+		nil,
+		ec.marshalOString2ᚕstringᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_topics(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9356,31 +7316,19 @@ func (ec *executionContext) fieldContext_Tweet_topics(_ context.Context, field g
 }
 
 func (ec *executionContext) _Tweet_user(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_user(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.User, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model1.User)
-	fc.Result = res
-	return ec.marshalOTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUser(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalOTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUser,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9407,31 +7355,19 @@ func (ec *executionContext) fieldContext_Tweet_user(_ context.Context, field gra
 }
 
 func (ec *executionContext) _Tweet_reply_to(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_reply_to(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().ReplyTo(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model1.Tweet)
-	fc.Result = res
-	return ec.marshalOTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweet(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_reply_to,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Tweet().ReplyTo(ctx, obj)
+		},
+		nil,
+		ec.marshalOTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweet,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_reply_to(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9478,31 +7414,19 @@ func (ec *executionContext) fieldContext_Tweet_reply_to(_ context.Context, field
 }
 
 func (ec *executionContext) _Tweet_replys(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_replys(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().Replys(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]*model1.Tweet)
-	fc.Result = res
-	return ec.marshalOTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweetᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_replys,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Tweet().Replys(ctx, obj)
+		},
+		nil,
+		ec.marshalOTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweetᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_replys(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9549,34 +7473,19 @@ func (ec *executionContext) fieldContext_Tweet_replys(_ context.Context, field g
 }
 
 func (ec *executionContext) _Tweet_is_quote_status(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_is_quote_status(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().IsQuoteStatus(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_is_quote_status,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Tweet().IsQuoteStatus(ctx, obj)
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_is_quote_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9593,31 +7502,19 @@ func (ec *executionContext) fieldContext_Tweet_is_quote_status(_ context.Context
 }
 
 func (ec *executionContext) _Tweet_quoted_status(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_quoted_status(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().QuotedStatus(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model1.EmbededTweet)
-	fc.Result = res
-	return ec.marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐEmbededTweet(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_quoted_status,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Tweet().QuotedStatus(ctx, obj)
+		},
+		nil,
+		ec.marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐEmbededTweet,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_quoted_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9664,34 +7561,19 @@ func (ec *executionContext) fieldContext_Tweet_quoted_status(_ context.Context, 
 }
 
 func (ec *executionContext) _Tweet_is_retweeted(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_is_retweeted(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.IsRetweeted, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_is_retweeted,
+		func(ctx context.Context) (any, error) {
+			return obj.IsRetweeted, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_is_retweeted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9708,31 +7590,19 @@ func (ec *executionContext) fieldContext_Tweet_is_retweeted(_ context.Context, f
 }
 
 func (ec *executionContext) _Tweet_retweeted_tweet(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_retweeted_tweet(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.RetweetedTweet, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model1.EmbededTweet)
-	fc.Result = res
-	return ec.marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐEmbededTweet(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_retweeted_tweet,
+		func(ctx context.Context) (any, error) {
+			return obj.RetweetedTweet, nil
+		},
+		nil,
+		ec.marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐEmbededTweet,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_retweeted_tweet(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9779,34 +7649,19 @@ func (ec *executionContext) fieldContext_Tweet_retweeted_tweet(_ context.Context
 }
 
 func (ec *executionContext) _Tweet_url(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_url(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().URL(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_url,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Tweet().URL(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9823,34 +7678,19 @@ func (ec *executionContext) fieldContext_Tweet_url(_ context.Context, field grap
 }
 
 func (ec *executionContext) _Tweet_images(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_images(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().Images(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]string)
-	fc.Result = res
-	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_images,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Tweet().Images(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2ᚕstringᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_images(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9867,31 +7707,19 @@ func (ec *executionContext) fieldContext_Tweet_images(_ context.Context, field g
 }
 
 func (ec *executionContext) _Tweet_viewers(ctx context.Context, field graphql.CollectedField, obj *model1.Tweet) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tweet_viewers(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Tweet().Viewers(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]*model1.User)
-	fc.Result = res
-	return ec.marshalOTwitterUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUserᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Tweet_viewers,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Tweet().Viewers(ctx, obj)
+		},
+		nil,
+		ec.marshalOTwitterUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUserᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext_Tweet_viewers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9918,34 +7746,19 @@ func (ec *executionContext) fieldContext_Tweet_viewers(_ context.Context, field 
 }
 
 func (ec *executionContext) _TwitterUser_id(ctx context.Context, field graphql.CollectedField, obj *model1.User) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TwitterUser_id(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.ID, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TwitterUser_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TwitterUser_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -9962,34 +7775,19 @@ func (ec *executionContext) fieldContext_TwitterUser_id(_ context.Context, field
 }
 
 func (ec *executionContext) _TwitterUser_screen_name(ctx context.Context, field graphql.CollectedField, obj *model1.User) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TwitterUser_screen_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.ScreenName, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TwitterUser_screen_name,
+		func(ctx context.Context) (any, error) {
+			return obj.ScreenName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TwitterUser_screen_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10006,34 +7804,19 @@ func (ec *executionContext) fieldContext_TwitterUser_screen_name(_ context.Conte
 }
 
 func (ec *executionContext) _TwitterUser_name(ctx context.Context, field graphql.CollectedField, obj *model1.User) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TwitterUser_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TwitterUser_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TwitterUser_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10050,34 +7833,19 @@ func (ec *executionContext) fieldContext_TwitterUser_name(_ context.Context, fie
 }
 
 func (ec *executionContext) _TwitterUser_description(ctx context.Context, field graphql.CollectedField, obj *model1.User) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_TwitterUser_description(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.TwitterUser().Description(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TwitterUser_description,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.TwitterUser().Description(ctx, obj)
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_TwitterUser_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10094,34 +7862,19 @@ func (ec *executionContext) fieldContext_TwitterUser_description(_ context.Conte
 }
 
 func (ec *executionContext) _UserActiveResponse_user(ctx context.Context, field graphql.CollectedField, obj *models.UserActiveResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_UserActiveResponse_user(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.User, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model.User)
-	fc.Result = res
-	return ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserActiveResponse_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_UserActiveResponse_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10144,34 +7897,19 @@ func (ec *executionContext) fieldContext_UserActiveResponse_user(_ context.Conte
 }
 
 func (ec *executionContext) _UserActiveResponse_token(ctx context.Context, field graphql.CollectedField, obj *models.UserActiveResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_UserActiveResponse_token(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Token, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserActiveResponse_token,
+		func(ctx context.Context) (any, error) {
+			return obj.Token, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_UserActiveResponse_token(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10188,34 +7926,19 @@ func (ec *executionContext) fieldContext_UserActiveResponse_token(_ context.Cont
 }
 
 func (ec *executionContext) _UserLoginResponse_user(ctx context.Context, field graphql.CollectedField, obj *models.UserLoginResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_UserLoginResponse_user(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.User, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*model.User)
-	fc.Result = res
-	return ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserLoginResponse_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_UserLoginResponse_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10238,34 +7961,19 @@ func (ec *executionContext) fieldContext_UserLoginResponse_user(_ context.Contex
 }
 
 func (ec *executionContext) _UserLoginResponse_token(ctx context.Context, field graphql.CollectedField, obj *models.UserLoginResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_UserLoginResponse_token(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Token, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserLoginResponse_token,
+		func(ctx context.Context) (any, error) {
+			return obj.Token, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_UserLoginResponse_token(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10282,34 +7990,19 @@ func (ec *executionContext) fieldContext_UserLoginResponse_token(_ context.Conte
 }
 
 func (ec *executionContext) _UserRegisterResponse_msg(ctx context.Context, field graphql.CollectedField, obj *models.UserRegisterResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_UserRegisterResponse_msg(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Msg, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserRegisterResponse_msg,
+		func(ctx context.Context) (any, error) {
+			return obj.Msg, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_UserRegisterResponse_msg(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10326,34 +8019,19 @@ func (ec *executionContext) fieldContext_UserRegisterResponse_msg(_ context.Cont
 }
 
 func (ec *executionContext) _UserResendActiveEmailResponse_msg(ctx context.Context, field graphql.CollectedField, obj *models.UserResendActiveEmailResponse) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_UserResendActiveEmailResponse_msg(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Msg, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserResendActiveEmailResponse_msg,
+		func(ctx context.Context) (any, error) {
+			return obj.Msg, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_UserResendActiveEmailResponse_msg(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10370,34 +8048,19 @@ func (ec *executionContext) fieldContext_UserResendActiveEmailResponse_msg(_ con
 }
 
 func (ec *executionContext) _WebFetchResult_url(ctx context.Context, field graphql.CollectedField, obj *models.WebFetchResult) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebFetchResult_url(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.URL, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebFetchResult_url,
+		func(ctx context.Context) (any, error) {
+			return obj.URL, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebFetchResult_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10414,34 +8077,19 @@ func (ec *executionContext) fieldContext_WebFetchResult_url(_ context.Context, f
 }
 
 func (ec *executionContext) _WebFetchResult_created_at(ctx context.Context, field graphql.CollectedField, obj *models.WebFetchResult) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebFetchResult_created_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.CreatedAt, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebFetchResult_created_at,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebFetchResult_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10458,34 +8106,19 @@ func (ec *executionContext) fieldContext_WebFetchResult_created_at(_ context.Con
 }
 
 func (ec *executionContext) _WebFetchResult_content(ctx context.Context, field graphql.CollectedField, obj *models.WebFetchResult) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebFetchResult_content(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Content, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebFetchResult_content,
+		func(ctx context.Context) (any, error) {
+			return obj.Content, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebFetchResult_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10502,34 +8135,19 @@ func (ec *executionContext) fieldContext_WebFetchResult_content(_ context.Contex
 }
 
 func (ec *executionContext) _WebSearchResult_query(ctx context.Context, field graphql.CollectedField, obj *search.SearchResult) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebSearchResult_query(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Query, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebSearchResult_query,
+		func(ctx context.Context) (any, error) {
+			return obj.Query, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebSearchResult_query(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10546,34 +8164,19 @@ func (ec *executionContext) fieldContext_WebSearchResult_query(_ context.Context
 }
 
 func (ec *executionContext) _WebSearchResult_created_at(ctx context.Context, field graphql.CollectedField, obj *search.SearchResult) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebSearchResult_created_at(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.WebSearchResult().CreatedAt(rctx, obj)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*library.Datetime)
-	fc.Result = res
-	return ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebSearchResult_created_at,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.WebSearchResult().CreatedAt(ctx, obj)
+		},
+		nil,
+		ec.marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebSearchResult_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10590,34 +8193,19 @@ func (ec *executionContext) fieldContext_WebSearchResult_created_at(_ context.Co
 }
 
 func (ec *executionContext) _WebSearchResult_results(ctx context.Context, field graphql.CollectedField, obj *search.SearchResult) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebSearchResult_results(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Results, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]search.SearchResultItem)
-	fc.Result = res
-	return ec.marshalNWebSearchResultItem2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚋsearchᚐSearchResultItemᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebSearchResult_results,
+		func(ctx context.Context) (any, error) {
+			return obj.Results, nil
+		},
+		nil,
+		ec.marshalNWebSearchResultItem2ᚕgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚋsearchᚐSearchResultItemᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebSearchResult_results(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10642,34 +8230,19 @@ func (ec *executionContext) fieldContext_WebSearchResult_results(_ context.Conte
 }
 
 func (ec *executionContext) _WebSearchResultItem_name(ctx context.Context, field graphql.CollectedField, obj *search.SearchResultItem) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebSearchResultItem_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebSearchResultItem_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebSearchResultItem_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10686,34 +8259,19 @@ func (ec *executionContext) fieldContext_WebSearchResultItem_name(_ context.Cont
 }
 
 func (ec *executionContext) _WebSearchResultItem_url(ctx context.Context, field graphql.CollectedField, obj *search.SearchResultItem) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebSearchResultItem_url(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.URL, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebSearchResultItem_url,
+		func(ctx context.Context) (any, error) {
+			return obj.URL, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebSearchResultItem_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10730,34 +8288,19 @@ func (ec *executionContext) fieldContext_WebSearchResultItem_url(_ context.Conte
 }
 
 func (ec *executionContext) _WebSearchResultItem_snippet(ctx context.Context, field graphql.CollectedField, obj *search.SearchResultItem) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_WebSearchResultItem_snippet(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Snippet, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebSearchResultItem_snippet,
+		func(ctx context.Context) (any, error) {
+			return obj.Snippet, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext_WebSearchResultItem_snippet(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10774,34 +8317,19 @@ func (ec *executionContext) fieldContext_WebSearchResultItem_snippet(_ context.C
 }
 
 func (ec *executionContext) ___Directive_name(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Directive_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Directive_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Directive_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10818,31 +8346,19 @@ func (ec *executionContext) fieldContext___Directive_name(_ context.Context, fie
 }
 
 func (ec *executionContext) ___Directive_description(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Directive_description(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Description(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Directive_description,
+		func(ctx context.Context) (any, error) {
+			return obj.Description(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Directive_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10859,34 +8375,19 @@ func (ec *executionContext) fieldContext___Directive_description(_ context.Conte
 }
 
 func (ec *executionContext) ___Directive_isRepeatable(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Directive_isRepeatable(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.IsRepeatable, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Directive_isRepeatable,
+		func(ctx context.Context) (any, error) {
+			return obj.IsRepeatable, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Directive_isRepeatable(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10903,34 +8404,19 @@ func (ec *executionContext) fieldContext___Directive_isRepeatable(_ context.Cont
 }
 
 func (ec *executionContext) ___Directive_locations(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Directive_locations(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Locations, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]string)
-	fc.Result = res
-	return ec.marshalN__DirectiveLocation2ᚕstringᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Directive_locations,
+		func(ctx context.Context) (any, error) {
+			return obj.Locations, nil
+		},
+		nil,
+		ec.marshalN__DirectiveLocation2ᚕstringᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Directive_locations(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -10947,34 +8433,19 @@ func (ec *executionContext) fieldContext___Directive_locations(_ context.Context
 }
 
 func (ec *executionContext) ___Directive_args(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Directive_args(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Args, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.InputValue)
-	fc.Result = res
-	return ec.marshalN__InputValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐInputValueᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Directive_args,
+		func(ctx context.Context) (any, error) {
+			return obj.Args, nil
+		},
+		nil,
+		ec.marshalN__InputValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐInputValueᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Directive_args(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11016,34 +8487,19 @@ func (ec *executionContext) fieldContext___Directive_args(ctx context.Context, f
 }
 
 func (ec *executionContext) ___EnumValue_name(ctx context.Context, field graphql.CollectedField, obj *introspection.EnumValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___EnumValue_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___EnumValue_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___EnumValue_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11060,31 +8516,19 @@ func (ec *executionContext) fieldContext___EnumValue_name(_ context.Context, fie
 }
 
 func (ec *executionContext) ___EnumValue_description(ctx context.Context, field graphql.CollectedField, obj *introspection.EnumValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___EnumValue_description(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Description(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___EnumValue_description,
+		func(ctx context.Context) (any, error) {
+			return obj.Description(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___EnumValue_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11101,34 +8545,19 @@ func (ec *executionContext) fieldContext___EnumValue_description(_ context.Conte
 }
 
 func (ec *executionContext) ___EnumValue_isDeprecated(ctx context.Context, field graphql.CollectedField, obj *introspection.EnumValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___EnumValue_isDeprecated(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.IsDeprecated(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___EnumValue_isDeprecated,
+		func(ctx context.Context) (any, error) {
+			return obj.IsDeprecated(), nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___EnumValue_isDeprecated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11145,31 +8574,19 @@ func (ec *executionContext) fieldContext___EnumValue_isDeprecated(_ context.Cont
 }
 
 func (ec *executionContext) ___EnumValue_deprecationReason(ctx context.Context, field graphql.CollectedField, obj *introspection.EnumValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___EnumValue_deprecationReason(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.DeprecationReason(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___EnumValue_deprecationReason,
+		func(ctx context.Context) (any, error) {
+			return obj.DeprecationReason(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___EnumValue_deprecationReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11186,34 +8603,19 @@ func (ec *executionContext) fieldContext___EnumValue_deprecationReason(_ context
 }
 
 func (ec *executionContext) ___Field_name(ctx context.Context, field graphql.CollectedField, obj *introspection.Field) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Field_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Field_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Field_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11230,31 +8632,19 @@ func (ec *executionContext) fieldContext___Field_name(_ context.Context, field g
 }
 
 func (ec *executionContext) ___Field_description(ctx context.Context, field graphql.CollectedField, obj *introspection.Field) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Field_description(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Description(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Field_description,
+		func(ctx context.Context) (any, error) {
+			return obj.Description(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Field_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11271,34 +8661,19 @@ func (ec *executionContext) fieldContext___Field_description(_ context.Context, 
 }
 
 func (ec *executionContext) ___Field_args(ctx context.Context, field graphql.CollectedField, obj *introspection.Field) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Field_args(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Args, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.InputValue)
-	fc.Result = res
-	return ec.marshalN__InputValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐInputValueᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Field_args,
+		func(ctx context.Context) (any, error) {
+			return obj.Args, nil
+		},
+		nil,
+		ec.marshalN__InputValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐInputValueᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Field_args(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11340,34 +8715,19 @@ func (ec *executionContext) fieldContext___Field_args(ctx context.Context, field
 }
 
 func (ec *executionContext) ___Field_type(ctx context.Context, field graphql.CollectedField, obj *introspection.Field) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Field_type(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Type, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*introspection.Type)
-	fc.Result = res
-	return ec.marshalN__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Field_type,
+		func(ctx context.Context) (any, error) {
+			return obj.Type, nil
+		},
+		nil,
+		ec.marshalN__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Field_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11408,34 +8768,19 @@ func (ec *executionContext) fieldContext___Field_type(_ context.Context, field g
 }
 
 func (ec *executionContext) ___Field_isDeprecated(ctx context.Context, field graphql.CollectedField, obj *introspection.Field) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Field_isDeprecated(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.IsDeprecated(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Field_isDeprecated,
+		func(ctx context.Context) (any, error) {
+			return obj.IsDeprecated(), nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Field_isDeprecated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11452,31 +8797,19 @@ func (ec *executionContext) fieldContext___Field_isDeprecated(_ context.Context,
 }
 
 func (ec *executionContext) ___Field_deprecationReason(ctx context.Context, field graphql.CollectedField, obj *introspection.Field) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Field_deprecationReason(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.DeprecationReason(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Field_deprecationReason,
+		func(ctx context.Context) (any, error) {
+			return obj.DeprecationReason(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Field_deprecationReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11493,34 +8826,19 @@ func (ec *executionContext) fieldContext___Field_deprecationReason(_ context.Con
 }
 
 func (ec *executionContext) ___InputValue_name(ctx context.Context, field graphql.CollectedField, obj *introspection.InputValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___InputValue_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___InputValue_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___InputValue_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11537,31 +8855,19 @@ func (ec *executionContext) fieldContext___InputValue_name(_ context.Context, fi
 }
 
 func (ec *executionContext) ___InputValue_description(ctx context.Context, field graphql.CollectedField, obj *introspection.InputValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___InputValue_description(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Description(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___InputValue_description,
+		func(ctx context.Context) (any, error) {
+			return obj.Description(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___InputValue_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11578,34 +8884,19 @@ func (ec *executionContext) fieldContext___InputValue_description(_ context.Cont
 }
 
 func (ec *executionContext) ___InputValue_type(ctx context.Context, field graphql.CollectedField, obj *introspection.InputValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___InputValue_type(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Type, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*introspection.Type)
-	fc.Result = res
-	return ec.marshalN__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___InputValue_type,
+		func(ctx context.Context) (any, error) {
+			return obj.Type, nil
+		},
+		nil,
+		ec.marshalN__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___InputValue_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11646,31 +8937,19 @@ func (ec *executionContext) fieldContext___InputValue_type(_ context.Context, fi
 }
 
 func (ec *executionContext) ___InputValue_defaultValue(ctx context.Context, field graphql.CollectedField, obj *introspection.InputValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___InputValue_defaultValue(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.DefaultValue, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___InputValue_defaultValue,
+		func(ctx context.Context) (any, error) {
+			return obj.DefaultValue, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___InputValue_defaultValue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11687,34 +8966,19 @@ func (ec *executionContext) fieldContext___InputValue_defaultValue(_ context.Con
 }
 
 func (ec *executionContext) ___InputValue_isDeprecated(ctx context.Context, field graphql.CollectedField, obj *introspection.InputValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___InputValue_isDeprecated(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.IsDeprecated(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___InputValue_isDeprecated,
+		func(ctx context.Context) (any, error) {
+			return obj.IsDeprecated(), nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___InputValue_isDeprecated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11731,31 +8995,19 @@ func (ec *executionContext) fieldContext___InputValue_isDeprecated(_ context.Con
 }
 
 func (ec *executionContext) ___InputValue_deprecationReason(ctx context.Context, field graphql.CollectedField, obj *introspection.InputValue) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___InputValue_deprecationReason(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.DeprecationReason(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___InputValue_deprecationReason,
+		func(ctx context.Context) (any, error) {
+			return obj.DeprecationReason(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___InputValue_deprecationReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11772,31 +9024,19 @@ func (ec *executionContext) fieldContext___InputValue_deprecationReason(_ contex
 }
 
 func (ec *executionContext) ___Schema_description(ctx context.Context, field graphql.CollectedField, obj *introspection.Schema) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Schema_description(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Description(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Schema_description,
+		func(ctx context.Context) (any, error) {
+			return obj.Description(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Schema_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11813,34 +9053,19 @@ func (ec *executionContext) fieldContext___Schema_description(_ context.Context,
 }
 
 func (ec *executionContext) ___Schema_types(ctx context.Context, field graphql.CollectedField, obj *introspection.Schema) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Schema_types(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Types(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.Type)
-	fc.Result = res
-	return ec.marshalN__Type2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐTypeᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Schema_types,
+		func(ctx context.Context) (any, error) {
+			return obj.Types(), nil
+		},
+		nil,
+		ec.marshalN__Type2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐTypeᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Schema_types(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11881,34 +9106,19 @@ func (ec *executionContext) fieldContext___Schema_types(_ context.Context, field
 }
 
 func (ec *executionContext) ___Schema_queryType(ctx context.Context, field graphql.CollectedField, obj *introspection.Schema) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Schema_queryType(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.QueryType(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(*introspection.Type)
-	fc.Result = res
-	return ec.marshalN__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Schema_queryType,
+		func(ctx context.Context) (any, error) {
+			return obj.QueryType(), nil
+		},
+		nil,
+		ec.marshalN__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Schema_queryType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11949,31 +9159,19 @@ func (ec *executionContext) fieldContext___Schema_queryType(_ context.Context, f
 }
 
 func (ec *executionContext) ___Schema_mutationType(ctx context.Context, field graphql.CollectedField, obj *introspection.Schema) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Schema_mutationType(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.MutationType(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*introspection.Type)
-	fc.Result = res
-	return ec.marshalO__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Schema_mutationType,
+		func(ctx context.Context) (any, error) {
+			return obj.MutationType(), nil
+		},
+		nil,
+		ec.marshalO__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Schema_mutationType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12014,31 +9212,19 @@ func (ec *executionContext) fieldContext___Schema_mutationType(_ context.Context
 }
 
 func (ec *executionContext) ___Schema_subscriptionType(ctx context.Context, field graphql.CollectedField, obj *introspection.Schema) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Schema_subscriptionType(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.SubscriptionType(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*introspection.Type)
-	fc.Result = res
-	return ec.marshalO__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Schema_subscriptionType,
+		func(ctx context.Context) (any, error) {
+			return obj.SubscriptionType(), nil
+		},
+		nil,
+		ec.marshalO__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Schema_subscriptionType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12079,34 +9265,19 @@ func (ec *executionContext) fieldContext___Schema_subscriptionType(_ context.Con
 }
 
 func (ec *executionContext) ___Schema_directives(ctx context.Context, field graphql.CollectedField, obj *introspection.Schema) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Schema_directives(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Directives(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.Directive)
-	fc.Result = res
-	return ec.marshalN__Directive2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐDirectiveᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Schema_directives,
+		func(ctx context.Context) (any, error) {
+			return obj.Directives(), nil
+		},
+		nil,
+		ec.marshalN__Directive2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐDirectiveᚄ,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Schema_directives(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12135,34 +9306,19 @@ func (ec *executionContext) fieldContext___Schema_directives(_ context.Context, 
 }
 
 func (ec *executionContext) ___Type_kind(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_kind(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Kind(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(string)
-	fc.Result = res
-	return ec.marshalN__TypeKind2string(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_kind,
+		func(ctx context.Context) (any, error) {
+			return obj.Kind(), nil
+		},
+		nil,
+		ec.marshalN__TypeKind2string,
+		true,
+		true,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_kind(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12179,31 +9335,19 @@ func (ec *executionContext) fieldContext___Type_kind(_ context.Context, field gr
 }
 
 func (ec *executionContext) ___Type_name(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_name(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Name(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12220,31 +9364,19 @@ func (ec *executionContext) fieldContext___Type_name(_ context.Context, field gr
 }
 
 func (ec *executionContext) ___Type_description(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_description(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Description(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_description,
+		func(ctx context.Context) (any, error) {
+			return obj.Description(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12261,31 +9393,19 @@ func (ec *executionContext) fieldContext___Type_description(_ context.Context, f
 }
 
 func (ec *executionContext) ___Type_specifiedByURL(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_specifiedByURL(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.SpecifiedByURL(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*string)
-	fc.Result = res
-	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_specifiedByURL,
+		func(ctx context.Context) (any, error) {
+			return obj.SpecifiedByURL(), nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_specifiedByURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12302,31 +9422,20 @@ func (ec *executionContext) fieldContext___Type_specifiedByURL(_ context.Context
 }
 
 func (ec *executionContext) ___Type_fields(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_fields(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Fields(fc.Args["includeDeprecated"].(bool)), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.Field)
-	fc.Result = res
-	return ec.marshalO__Field2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐFieldᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_fields,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return obj.Fields(fc.Args["includeDeprecated"].(bool)), nil
+		},
+		nil,
+		ec.marshalO__Field2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐFieldᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_fields(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12368,31 +9477,19 @@ func (ec *executionContext) fieldContext___Type_fields(ctx context.Context, fiel
 }
 
 func (ec *executionContext) ___Type_interfaces(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_interfaces(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Interfaces(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.Type)
-	fc.Result = res
-	return ec.marshalO__Type2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐTypeᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_interfaces,
+		func(ctx context.Context) (any, error) {
+			return obj.Interfaces(), nil
+		},
+		nil,
+		ec.marshalO__Type2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐTypeᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_interfaces(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12433,31 +9530,19 @@ func (ec *executionContext) fieldContext___Type_interfaces(_ context.Context, fi
 }
 
 func (ec *executionContext) ___Type_possibleTypes(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_possibleTypes(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.PossibleTypes(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.Type)
-	fc.Result = res
-	return ec.marshalO__Type2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐTypeᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_possibleTypes,
+		func(ctx context.Context) (any, error) {
+			return obj.PossibleTypes(), nil
+		},
+		nil,
+		ec.marshalO__Type2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐTypeᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_possibleTypes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12498,31 +9583,20 @@ func (ec *executionContext) fieldContext___Type_possibleTypes(_ context.Context,
 }
 
 func (ec *executionContext) ___Type_enumValues(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_enumValues(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.EnumValues(fc.Args["includeDeprecated"].(bool)), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.EnumValue)
-	fc.Result = res
-	return ec.marshalO__EnumValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐEnumValueᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_enumValues,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return obj.EnumValues(fc.Args["includeDeprecated"].(bool)), nil
+		},
+		nil,
+		ec.marshalO__EnumValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐEnumValueᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_enumValues(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12560,31 +9634,19 @@ func (ec *executionContext) fieldContext___Type_enumValues(ctx context.Context, 
 }
 
 func (ec *executionContext) ___Type_inputFields(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_inputFields(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.InputFields(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]introspection.InputValue)
-	fc.Result = res
-	return ec.marshalO__InputValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐInputValueᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_inputFields,
+		func(ctx context.Context) (any, error) {
+			return obj.InputFields(), nil
+		},
+		nil,
+		ec.marshalO__InputValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐInputValueᚄ,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_inputFields(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12615,31 +9677,19 @@ func (ec *executionContext) fieldContext___Type_inputFields(_ context.Context, f
 }
 
 func (ec *executionContext) ___Type_ofType(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_ofType(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.OfType(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*introspection.Type)
-	fc.Result = res
-	return ec.marshalO__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_ofType,
+		func(ctx context.Context) (any, error) {
+			return obj.OfType(), nil
+		},
+		nil,
+		ec.marshalO__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_ofType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -12680,31 +9730,19 @@ func (ec *executionContext) fieldContext___Type_ofType(_ context.Context, field 
 }
 
 func (ec *executionContext) ___Type_isOneOf(ctx context.Context, field graphql.CollectedField, obj *introspection.Type) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext___Type_isOneOf(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.IsOneOf(), nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(bool)
-	fc.Result = res
-	return ec.marshalOBoolean2bool(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext___Type_isOneOf,
+		func(ctx context.Context) (any, error) {
+			return obj.IsOneOf(), nil
+		},
+		nil,
+		ec.marshalOBoolean2bool,
+		true,
+		false,
+	)
 }
 
 func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -13993,6 +11031,138 @@ func (ec *executionContext) _EmbededTweet(ctx context.Context, sel ast.Selection
 	return out
 }
 
+var generalHTMLCrawlerTaskImplementors = []string{"GeneralHTMLCrawlerTask"}
+
+func (ec *executionContext) _GeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, obj *models.GeneralHTMLCrawlerTask) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, generalHTMLCrawlerTaskImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("GeneralHTMLCrawlerTask")
+		case "task_id":
+			out.Values[i] = ec._GeneralHTMLCrawlerTask_task_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._GeneralHTMLCrawlerTask_created_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._GeneralHTMLCrawlerTask_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "failed_reason":
+			out.Values[i] = ec._GeneralHTMLCrawlerTask_failed_reason(ctx, field, obj)
+		case "finished_at":
+			out.Values[i] = ec._GeneralHTMLCrawlerTask_finished_at(ctx, field, obj)
+		case "url":
+			out.Values[i] = ec._GeneralHTMLCrawlerTask_url(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "result_html_b64":
+			out.Values[i] = ec._GeneralHTMLCrawlerTask_result_html_b64(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var generalLLMStormTaskImplementors = []string{"GeneralLLMStormTask"}
+
+func (ec *executionContext) _GeneralLLMStormTask(ctx context.Context, sel ast.SelectionSet, obj *models.GeneralLLMStormTask) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, generalLLMStormTaskImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("GeneralLLMStormTask")
+		case "task_id":
+			out.Values[i] = ec._GeneralLLMStormTask_task_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._GeneralLLMStormTask_created_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._GeneralLLMStormTask_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "failed_reason":
+			out.Values[i] = ec._GeneralLLMStormTask_failed_reason(ctx, field, obj)
+		case "finished_at":
+			out.Values[i] = ec._GeneralLLMStormTask_finished_at(ctx, field, obj)
+		case "prompt":
+			out.Values[i] = ec._GeneralLLMStormTask_prompt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "api_key":
+			out.Values[i] = ec._GeneralLLMStormTask_api_key(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "result_article":
+			out.Values[i] = ec._GeneralLLMStormTask_result_article(ctx, field, obj)
+		case "result_references":
+			out.Values[i] = ec._GeneralLLMStormTask_result_references(ctx, field, obj)
+		case "runner":
+			out.Values[i] = ec._GeneralLLMStormTask_runner(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var generalUserImplementors = []string{"GeneralUser"}
 
 func (ec *executionContext) _GeneralUser(ctx context.Context, sel ast.SelectionSet, obj *models.GeneralUser) graphql.Marshaler {
@@ -14251,6 +11421,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "CreateGeneralToken":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_CreateGeneralToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "GeneralAddLLMStormTask":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_GeneralAddLLMStormTask(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "GeneralAddHTMLCrawlerTask":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_GeneralAddHTMLCrawlerTask(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -14695,6 +11879,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_LockPermissions(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "GeneralGetLLMStormTaskResult":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_GeneralGetLLMStormTaskResult(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "GeneralGetHTMLCrawlerTask":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_GeneralGetHTMLCrawlerTask(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -16570,6 +13798,34 @@ func (ec *executionContext) marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblo
 	return v
 }
 
+func (ec *executionContext) marshalNGeneralHTMLCrawlerTask2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, v models.GeneralHTMLCrawlerTask) graphql.Marshaler {
+	return ec._GeneralHTMLCrawlerTask(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNGeneralHTMLCrawlerTask2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, v *models.GeneralHTMLCrawlerTask) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._GeneralHTMLCrawlerTask(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNGeneralLLMStormTask2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralLLMStormTask(ctx context.Context, sel ast.SelectionSet, v models.GeneralLLMStormTask) graphql.Marshaler {
+	return ec._GeneralLLMStormTask(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNGeneralLLMStormTask2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralLLMStormTask(ctx context.Context, sel ast.SelectionSet, v *models.GeneralLLMStormTask) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._GeneralLLMStormTask(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNGeneralUser2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralUser(ctx context.Context, sel ast.SelectionSet, v []*models.GeneralUser) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -17484,6 +14740,22 @@ func (ec *executionContext) marshalOGeneralUser2ᚖgithubᚗcomᚋLaiskyᚋlaisk
 		return graphql.Null
 	}
 	return ec._GeneralUser(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOJSONString2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐJSONString(ctx context.Context, v any) (*library.JSONString, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(library.JSONString)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOJSONString2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐJSONString(ctx context.Context, sel ast.SelectionSet, v *library.JSONString) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
 }
 
 func (ec *executionContext) unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination(ctx context.Context, v any) (*models.Pagination, error) {

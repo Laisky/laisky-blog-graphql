@@ -12,9 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	mcp "github.com/mark3labs/mcp-go/mcp"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-	mcp "github.com/mark3labs/mcp-go/mcp"
 )
 
 func TestAskUserHandleInvalidAuthorization(t *testing.T) {

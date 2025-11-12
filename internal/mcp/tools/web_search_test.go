@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
+	mcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
-	mcp "github.com/mark3labs/mcp-go/mcp"
 )
 
 func TestWebSearchHandleMissingAPIKey(t *testing.T) {

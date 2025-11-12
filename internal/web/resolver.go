@@ -35,6 +35,9 @@ type ResolverArgs struct {
 
 // NewResolver new resolver
 func NewResolver(args ResolverArgs) *Resolver {
+	if args.Rdb != nil {
+		general.ConfigureTaskStore(args.Rdb)
+	}
 	return &Resolver{
 		args: args,
 	}
