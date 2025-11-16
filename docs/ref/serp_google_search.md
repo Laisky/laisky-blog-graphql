@@ -6,8 +6,6 @@
 
 The `/search` API endpoint allows you to scrape the results from the Google search engine via our SerpApi service. Head to the playground for a live and interactive demo. You can query `https://serpapi.com/search` using a GET request.
 
----
-
 ## API Parameters
 
 ### Search Query
@@ -81,8 +79,6 @@ The `/search` API endpoint allows you to scrape the results from the Google sear
 
 **Note on Search Queries using the `num` parameter:** Due to Google's new Knowledge Graph layout, the `num` parameter may be ignored for the first page of results in many searches. When the `start` parameter is used and set to 1 or higher, the `num` parameter works as expected.
 
----
-
 ## API Results
 
 ### JSON Results
@@ -92,8 +88,6 @@ JSON output includes structured data for organic results, local results, ad resu
 ### HTML Results
 
 HTML output is useful to debug JSON results or support features not yet supported by SerpApi. It gives you the raw HTML results from Google.
-
----
 
 ## API Examples
 
