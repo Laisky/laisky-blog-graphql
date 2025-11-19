@@ -468,10 +468,10 @@ function formatTimestamp(value: string, formatter: Intl.DateTimeFormat): string 
 
 function formatCost(value: number, quotesPerUsd: number, formatter: Intl.NumberFormat): string {
   if (!value) {
-    return '0 (0.0000 USD)'
+    return '0 ($0.0000)'
   }
   const usd = quotesPerUsd > 0 ? value / quotesPerUsd : 0
-  return `${value.toLocaleString()} (${formatter.format(usd)} USD)`
+  return `${value.toLocaleString()} ($${formatter.format(usd)})`
 }
 
 function formatDuration(ms: number): string {
