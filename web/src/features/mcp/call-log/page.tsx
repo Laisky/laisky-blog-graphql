@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Server } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -156,10 +157,15 @@ export function CallLogPage() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-2">
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">MCP tools</p>
-        <h1 className="text-3xl font-semibold text-foreground">Call Log</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
+          <Server className="h-4 w-4" />
+          <span>MCP Tools</span>
+        </div>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+          Call Log
+        </h1>
+        <p className="max-w-2xl text-lg text-muted-foreground">
           Review every MCP tool invocation associated with your bearer token. Filter by tool, time range, or
           API key prefix to monitor usage and costs.
         </p>

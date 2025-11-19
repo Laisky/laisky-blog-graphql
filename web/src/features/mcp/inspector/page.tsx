@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { sha256 } from 'js-sha256'
+import { Activity } from 'lucide-react'
 
 const inspectorScriptModules = import.meta.glob<InspectorModule>(
   '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.js'
@@ -120,12 +121,17 @@ export function InspectorPage() {
   return (
     <div className="flex h-full min-h-[calc(100vh-8rem)] flex-col bg-background text-foreground">
       <header className="border-b border-border bg-card/80 px-6 py-3 text-sm text-muted-foreground">
-        <strong className="block text-base text-foreground">MCP Inspector</strong>
+        <div className="flex items-center gap-2">
+          <Activity className="h-5 w-5 text-primary" />
+          <strong className="block text-base text-foreground">MCP Inspector</strong>
+        </div>
         <div className="mt-1">
           Endpoint:&nbsp;
           <code className="break-all text-xs text-foreground/80">{endpointDisplay}</code>
         </div>
-        <span className="mt-1 block">Use query parameters ?endpoint=&lt;url&gt; and ?token=&lt;value&gt; to override defaults.</span>
+        <span className="mt-1 block">
+          Use query parameters ?endpoint=&lt;url&gt; and ?token=&lt;value&gt; to override defaults.
+        </span>
       </header>
       <div className="relative flex-1 overflow-hidden">
         {error ? (

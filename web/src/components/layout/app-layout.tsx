@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
+import { Cpu } from 'lucide-react'
 
 import { ThemeToggle } from '@/components/theme/theme-toggle'
 import { cn } from '@/lib/utils'
@@ -29,8 +30,9 @@ export function AppLayout() {
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="border-b border-border bg-card/80 backdrop-blur">
         <div className="container mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4 md:flex-nowrap">
-          <Link to="/" className="text-lg font-semibold tracking-tight text-foreground">
-            laisky MCP
+          <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
+            <Cpu className="h-5 w-5" />
+            <span>laisky MCP</span>
           </Link>
           <div className="flex w-full items-center justify-between gap-4 md:w-auto md:justify-end">
             <nav className="flex flex-1 flex-wrap items-center gap-3 text-sm font-medium text-muted-foreground md:flex-none">

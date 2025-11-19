@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
+import { MessageSquare } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -234,10 +235,15 @@ export function AskUserPage() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-2">
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">MCP tools</p>
-        <h1 className="text-3xl font-semibold text-foreground">ask_user console</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
+          <MessageSquare className="h-4 w-4" />
+          <span>MCP Tools</span>
+        </div>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+          Ask User Console
+        </h1>
+        <p className="max-w-2xl text-lg text-muted-foreground">
           Review pending MCP questions routed to your bearer token, send human answers, and browse
           the recent history. The HTTP API remains available under <code>/tools/ask_user/api</code> and
           respects the configured public base path.
