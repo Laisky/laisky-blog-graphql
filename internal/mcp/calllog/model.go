@@ -5,22 +5,23 @@ import (
 
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 // Record persists a single MCP tool invocation.
 type Record struct {
-	ID             uuid.UUID `gorm:"type:uuid;primaryKey"`
-	ToolName       string    `gorm:"type:varchar(64);not null;index"`
-	APIKeyHash     string    `gorm:"type:char(64);index"`
-	KeyPrefix      string    `gorm:"type:varchar(16);index"`
-	Status         string    `gorm:"type:varchar(16);not null;index"`
-	Cost           int       `gorm:"type:bigint;not null"`
-	CostUnit       string    `gorm:"type:varchar(16);not null;default:'quota'"`
-	DurationMillis int64     `gorm:"type:bigint"`
-	Parameters     []byte    `gorm:"type:jsonb"`
-	ErrorMessage   string    `gorm:"type:text"`
-	OccurredAt     time.Time `gorm:"index"`
+	ID             uuid.UUID      `gorm:"type:uuid;primaryKey"`
+	ToolName       string         `gorm:"type:varchar(64);not null;index"`
+	APIKeyHash     string         `gorm:"type:char(64);index"`
+	KeyPrefix      string         `gorm:"type:varchar(16);index"`
+	Status         string         `gorm:"type:varchar(16);not null;index"`
+	Cost           int            `gorm:"type:bigint;not null"`
+	CostUnit       string         `gorm:"type:varchar(16);not null;default:'quota'"`
+	DurationMillis int64          `gorm:"type:bigint"`
+	Parameters     datatypes.JSON `gorm:"type:jsonb"`
+	ErrorMessage   string         `gorm:"type:text"`
+	OccurredAt     time.Time      `gorm:"index"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

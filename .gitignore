@@ -54,3 +54,5 @@ docs/example/config/settings-laisky.yml
 *.njsproj
 *.sln
 *.sw?
+
+/errlog

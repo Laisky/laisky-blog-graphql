@@ -45,6 +45,7 @@ export function CallLogPage() {
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -110,7 +111,7 @@ export function CallLogPage() {
       })
 
     return () => controller.abort()
-  }, [apiKey, page, pageSize, sortBy, sortOrder, toolFilter, userFilter, fromDate, toDate])
+  }, [apiKey, page, pageSize, sortBy, sortOrder, toolFilter, userFilter, fromDate, toDate, refreshKey])
 
   const handleAuthSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -210,7 +211,7 @@ export function CallLogPage() {
             <div className="flex gap-2">
               <Button type="submit">Connect</Button>
               {apiKey && (
-                <Button type="button" variant="secondary" onClick={() => setPage((prev) => prev)}>
+                <Button type="button" variant="secondary" onClick={() => setRefreshKey((prev) => prev + 1)}>
                   Refresh
                 </Button>
               )}

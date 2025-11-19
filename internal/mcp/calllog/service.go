@@ -12,6 +12,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -150,12 +151,19 @@ func (s *Service) Record(ctx context.Context, input RecordInput) error {
 		Cost:           input.Cost,
 		CostUnit:       costUnit,
 		DurationMillis: input.Duration.Milliseconds(),
-		Parameters:     payload,
+		Parameters:     datatypes.JSON(payload),
 		ErrorMessage:   strings.TrimSpace(input.ErrorMessage),
 		OccurredAt:     occurred,
 	}
 
-	return errors.Wrap(s.db.WithContext(ctx).Create(record).Error, "create call log record")
+	// Use a detached context to ensure logging completes even if the request is cancelled.
+	ctx = context.WithoutCancel(ctx)
+	if err := s.db.WithContext(ctx).Create(record).Error; err != nil {
+		return errors.Wrap(err, "create call log record")
+	}
+
+	s.logger.Debug("recorded call log", zap.String("tool", trimmedTool), zap.String("status", status))
+	return nil
 }
 
 // List retrieves records that match the provided filters and pagination options.

@@ -11,8 +11,12 @@ import (
 )
 
 func TestServiceRecordAndList(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:memdb1?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		sqlDB, _ := db.DB()
+		sqlDB.Close()
+	})
 
 	ctx := context.Background()
 	svc, err := NewService(db, nil, func() time.Time { return time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC) })
@@ -57,8 +61,12 @@ func TestServiceRecordAndList(t *testing.T) {
 }
 
 func TestServiceListFilters(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:memdb2?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		sqlDB, _ := db.DB()
+		sqlDB.Close()
+	})
 
 	svc, err := NewService(db, nil, nil)
 	require.NoError(t, err)
@@ -88,4 +96,30 @@ func TestServiceListFilters(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list.Entries, 1)
 	require.Equal(t, "web_fetch", list.Entries[0].ToolName)
+}
+
+func TestServiceRecordWithCancelledContext(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:memdb3?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		sqlDB, _ := db.DB()
+		sqlDB.Close()
+	})
+
+	svc, err := NewService(db, nil, nil)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err = svc.Record(ctx, RecordInput{
+		ToolName: "web_search",
+		APIKey:   "test-key",
+	})
+	require.NoError(t, err)
+
+	// Verify record exists
+	list, err := svc.List(context.Background(), ListOptions{})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), list.Total)
 }

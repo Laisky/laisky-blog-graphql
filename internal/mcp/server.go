@@ -216,6 +216,7 @@ func apiKeyFromContext(ctx context.Context) string {
 
 func (s *Server) recordToolInvocation(ctx context.Context, toolName string, apiKey string, args map[string]any, startedAt time.Time, duration time.Duration, baseCost int, result *mcp.CallToolResult, invokeErr error) {
 	if s.callLogger == nil {
+		s.logger.Debug("call logger is nil, skipping record", zap.String("tool", toolName))
 		return
 	}
 
