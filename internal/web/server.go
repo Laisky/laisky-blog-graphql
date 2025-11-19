@@ -165,8 +165,8 @@ func RunServer(addr string, resolver *Resolver) {
 		log.Logger.Panic("enable metric server", zap.Error(err))
 	}
 
-	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil) {
-		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.Rdb, resolver.args.CallLogService, log.Logger)
+	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil || resolver.args.RAGService != nil) {
+		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.Rdb, resolver.args.CallLogService, log.Logger)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {

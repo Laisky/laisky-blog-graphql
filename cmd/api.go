@@ -20,6 +20,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
 	blogCtl "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogDao "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
@@ -154,6 +155,8 @@ func runAPI() error {
 		}
 	}
 
+	var mcpDB *postgres.DB
+
 	{ // setup ask_user service
 		dial := postgres.DialInfo{
 			Addr:   gconfig.S.GetString("settings.db.mcp.addr"),
@@ -170,6 +173,7 @@ func runAPI() error {
 		} else if askDB, err := postgres.NewDB(ctx, dial); err != nil {
 			logger.Error("new ask_user postgres", zap.Error(err))
 		} else {
+			mcpDB = askDB
 			if svc, err := askuser.NewService(askDB.DB, logger.Named("ask_user")); err != nil {
 				logger.Error("init ask_user service", zap.Error(err))
 			} else {
@@ -180,6 +184,22 @@ func runAPI() error {
 				logger.Error("init call_log service", zap.Error(err))
 			} else {
 				args.CallLogService = callSvc
+			}
+		}
+	}
+
+	ragSettings := rag.LoadSettingsFromConfig()
+	args.RAGSettings = ragSettings
+	if ragSettings.Enabled {
+		if mcpDB == nil {
+			logger.Warn("extract_key_info dependencies missing", zap.Bool("mcp_db_nil", true))
+		} else {
+			embedder := rag.NewOpenAIEmbedder(ragSettings.OpenAIBaseURL, ragSettings.EmbeddingModel, nil)
+			chunker := rag.ParagraphChunker{}
+			if svc, err := rag.NewService(mcpDB.DB, embedder, chunker, ragSettings, logger.Named("extract_key_info")); err != nil {
+				logger.Error("init extract_key_info service", zap.Error(err))
+			} else {
+				args.RAGService = svc
 			}
 		}
 	}

@@ -4,7 +4,7 @@
 
 The purpose of this project is to implement a GraphQL API server and a remote MCP server that provides AI-assisted features.
 
-This project including server side code written in Go and web front-end code written in TypeScript/React.
+This project including server side code written in Go and web front-end code (located in the `web` directory) written in TypeScript/React.
 
 ## General
 

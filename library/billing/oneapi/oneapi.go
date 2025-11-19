@@ -45,6 +45,8 @@ var (
 	PriceWebSearch = USD(0.005)
 	// PriceWebFetch is the price for each web fetch with dynamic rendering
 	PriceWebFetch = USD(0.0001)
+	// PriceExtractKeyInfo is the price for each extract_key_info invocation
+	PriceExtractKeyInfo = USD(0.002)
 )
 
 // checkUserExternalBilling save and check billing for text-to-image models

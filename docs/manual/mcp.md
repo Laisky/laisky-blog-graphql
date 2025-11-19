@@ -4,10 +4,12 @@ This guide explains how to connect to the remote Model Context Protocol (MCP) en
 
 ## Overview
 
-The service mounts an MCP-compatible JSON-RPC endpoint at `/mcp`. Clients may connect over HTTP(S) using any MCP client, such as the [MCP Inspector](https://modelcontextprotocol.io/), and interact with two tools:
+The service mounts an MCP-compatible JSON-RPC endpoint at `/mcp`. Clients may connect over HTTP(S) using any MCP client, such as the [MCP Inspector](https://modelcontextprotocol.io/), and interact with these tools:
 
 - `web_search` — runs a Google Programmable Search query.
+- `web_fetch` — renders a dynamic web page through the Redis-backed fetcher.
 - `ask_user` — forwards a question to the authenticated human and waits for their reply.
+- `extract_key_info` — chunks caller-provided materials, stores them in PostgreSQL with pgvector, and returns the most relevant contexts for a query.
 
 Both tools require a valid `Authorization: Bearer <token>` header. Tokens are also used for billing and for routing questions to the correct user.
 
@@ -21,6 +23,10 @@ Enable the MCP endpoint when starting the API service. The tools are advertised 
 | `ask_user`   | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM. |
 
 If no tool dependencies are met the server skips MCP initialisation.
+
+| Feature             | Requirement |
+| ------------------- | ----------- |
+| `extract_key_info`  | `settings.db.mcp.*` connection info, `settings.openai.embedding_model`, and `settings.mcp.extract_key_info.enabled=true`. Requires pgvector-enabled PostgreSQL. |
 
 ## Authentication Model
 
@@ -117,6 +123,35 @@ The raw token is checked against the external billing service, hashed with SHA-2
 5. The history section lists previously answered or expired requests for audit purposes.
 
 The console stores the API key locally (browser `localStorage`) so it can resume polling automatically. Clear the key using the form to stop receiving updates.
+
+### `extract_key_info`
+
+- **Description:** Chunk arbitrary materials, compute embeddings with the caller's OpenAI-compatible key, and return the top-matching context slices.
+- **Input Parameters:**
+  - `query` (string, required) — natural-language question.
+  - `materials` (string, required) — source text to analyse.
+  - `top_k` (int, optional) — number of contexts to return (default `5`, max `20`).
+- **Behaviour:**
+  1. Validates payload size (`settings.mcp.extract_key_info.max_materials_size`).
+  2. Bills the caller via `oneapi.CheckUserExternalBilling` using `PriceExtractKeyInfo`.
+  3. Derives `user_id` (hashed token) and `task_id` (prefix before `@`) from the Authorization header.
+  4. Splits `materials` into paragraphs (<1500 chars), cleans whitespace, and tokenises for BM25-style scoring.
+  5. Embeds each chunk plus the query with the configured model (default `text-embedding-3-small`) and persists to PostgreSQL tables `mcp_rag_tasks`, `mcp_rag_chunks`, `mcp_rag_embeddings`, and `mcp_rag_bm25`.
+  6. Executes a hybrid ranking (semantic cosine similarity + keyword overlap) and returns the top `top_k` chunks preserving order.
+- **Sample Response:**
+
+```json
+{
+  "contexts": [
+    "The billing service must receive tenant-specific quotas...",
+    "Each chunk stores user_id, task_id, and materials_hash metadata..."
+  ],
+  "count": 2,
+  "task_id": "workspace"
+}
+```
+
+- **Error Cases:** invalid/missing token, payload too large, `top_k` outside allowed range, billing refusal, or upstream embedding failures.
 
 ### Data Storage Notes
 

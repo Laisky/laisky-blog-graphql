@@ -7,11 +7,14 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
+	glog "github.com/Laisky/go-utils/v6/log"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 )
 
 func TestNewServerRequiresCapability(t *testing.T) {
-	srv, err := NewServer(nil, nil, nil, nil, nil)
+	srv, err := NewServer(nil, nil, nil, rag.Settings{}, nil, nil, glog.Shared)
 	require.Nil(t, srv)
 	require.Error(t, err)
 }

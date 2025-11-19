@@ -19,6 +19,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
@@ -40,12 +41,13 @@ type callRecorder interface {
 
 // Server wraps the MCP server state for the HTTP transport.
 type Server struct {
-	handler    http.Handler
-	logger     logSDK.Logger
-	webSearch  *tools.WebSearchTool
-	webFetch   *tools.WebFetchTool
-	askUser    *tools.AskUserTool
-	callLogger callRecorder
+	handler        http.Handler
+	logger         logSDK.Logger
+	webSearch      *tools.WebSearchTool
+	webFetch       *tools.WebFetchTool
+	askUser        *tools.AskUserTool
+	extractKeyInfo *tools.ExtractKeyInfoTool
+	callLogger     callRecorder
 }
 
 // NewServer constructs an MCP HTTP server.
@@ -55,8 +57,9 @@ type Server struct {
 // callLogger records tool invocations for auditing when provided.
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
-func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, rdb *rlibs.DB, callLogger callRecorder, logger logSDK.Logger) (*Server, error) {
-	if searchProvider == nil && askUserService == nil && rdb == nil {
+
+func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, ragService *rag.Service, ragSettings rag.Settings, rdb *rlibs.DB, callLogger callRecorder, logger logSDK.Logger) (*Server, error) {
+	if searchProvider == nil && askUserService == nil && ragService == nil && rdb == nil {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
@@ -93,6 +96,10 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		authHeader, _ := ctx.Value(keyAuthorization).(string)
 		return extractAPIKey(authHeader)
 	}
+	headerProvider := func(ctx context.Context) string {
+		authHeader, _ := ctx.Value(keyAuthorization).(string)
+		return authHeader
+	}
 
 	if searchProvider != nil {
 		webSearchTool, err := tools.NewWebSearchTool(
@@ -126,11 +133,6 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 	}
 
 	if askUserService != nil {
-		headerProvider := func(ctx context.Context) string {
-			authHeader, _ := ctx.Value(keyAuthorization).(string)
-			return authHeader
-		}
-
 		askUserTool, err := tools.NewAskUserTool(
 			askUserService,
 			serverLogger.Named("ask_user"),
@@ -143,6 +145,21 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		}
 		s.askUser = askUserTool
 		mcpServer.AddTool(askUserTool.Definition(), s.handleAskUser)
+	}
+
+	if ragService != nil {
+		ragTool, err := tools.NewExtractKeyInfoTool(
+			ragService,
+			serverLogger.Named("extract_key_info"),
+			headerProvider,
+			oneapi.CheckUserExternalBilling,
+			ragSettings,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "init extract_key_info tool")
+		}
+		s.extractKeyInfo = ragTool
+		mcpServer.AddTool(ragTool.Definition(), s.handleExtractKeyInfo)
 	}
 
 	return s, nil
@@ -318,6 +335,22 @@ func (s *Server) handleAskUser(ctx context.Context, req mcp.CallToolRequest) (*m
 	result, err := s.askUser.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "ask_user", apiKey, args, start, duration, 0, result, err)
+	return result, err
+}
+
+func (s *Server) handleExtractKeyInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.extractKeyInfo == nil {
+		result := mcp.NewToolResultError("extract_key_info tool is not available")
+		s.recordToolInvocation(ctx, "extract_key_info", apiKey, args, time.Now().UTC(), 0, oneapi.PriceExtractKeyInfo.Int(), result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.extractKeyInfo.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "extract_key_info", apiKey, args, start, duration, oneapi.PriceExtractKeyInfo.Int(), result, err)
 	return result, err
 }
 
