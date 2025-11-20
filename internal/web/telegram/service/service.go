@@ -49,6 +49,7 @@ type Telegram struct {
 
 	askUserService  *askuser.Service
 	askUserRequests *sync.Map // map[int]uuid.UUID (MessageID -> RequestID)
+	askUserSessions *sync.Map // map[int64]*askUserSession (Telegram UID -> session)
 }
 
 type userStat struct {
@@ -86,6 +87,7 @@ func New(ctx context.Context,
 		bot:             bot,
 		userStats:       new(sync.Map),
 		askUserRequests: new(sync.Map),
+		askUserSessions: new(sync.Map),
 	}
 
 	if gutils.Contains(gconfig.Shared.GetStringSlice("tasks"), "telegram") {
@@ -126,8 +128,16 @@ func (s *Telegram) registerDefaultHandler(ctx context.Context) {
 		// Check if it's a reply to an ask_user question
 		if m.ReplyTo != nil {
 			if reqID, ok := s.askUserRequests.Load(m.ReplyTo.ID); ok {
-				return s.handleAskUserReply(ctx, tbctx, reqID.(uuid.UUID))
+				logger.Debug("handling ask_user reply", zap.Int64("uid", m.Sender.ID))
+				return s.handleAskUserAnswer(ctx, tbctx, reqID.(uuid.UUID), m.ReplyTo.ID)
 			}
+		}
+
+		if session, ok := s.getAskUserSession(m.Sender.ID); ok {
+			logger.Debug("handling ask_user fallback message",
+				zap.Int64("uid", m.Sender.ID),
+				zap.String("request_id", session.RequestID.String()))
+			return s.handleAskUserAnswer(ctx, tbctx, session.RequestID, session.PromptMsgID)
 		}
 
 		if _, ok := s.userStats.Load(m.Sender.ID); ok {

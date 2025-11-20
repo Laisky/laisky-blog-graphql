@@ -41,6 +41,8 @@ func (s *Telegram) OnNewRequest(req *askuser.Request) {
 	}
 
 	s.askUserRequests.Store(msg.ID, req.ID)
+	s.trackAskUserSession(int64(uid), msg.ID, req.ID)
+	log.Logger.Debug("tracked ask_user session", zap.Int("uid", uid), zap.Int("prompt_msg_id", msg.ID), zap.String("request_id", req.ID.String()))
 }
 
 func (s *Telegram) OnRequestCancelled(req *askuser.Request) {
@@ -56,6 +58,9 @@ func (s *Telegram) OnRequestCancelled(req *askuser.Request) {
 	}); err != nil {
 		log.Logger.Error("failed to send ask_user cancellation to telegram", zap.Error(err), zap.Int("uid", uid))
 	}
+
+	s.clearAskUserSession(int64(uid), 0, req.ID)
+	log.Logger.Debug("cleared ask_user session due to cancellation", zap.Int("uid", uid), zap.String("request_id", req.ID.String()))
 }
 
 func (s *Telegram) registerAskUserHandler(ctx context.Context) {
@@ -250,7 +255,7 @@ func (s *Telegram) lookupTelegramUID(ctx context.Context, tokenHash string) (int
 	return s.askUserTokenDao.GetTelegramUIDByTokenHash(ctx, tokenHash)
 }
 
-func (s *Telegram) handleAskUserReply(ctx context.Context, c tb.Context, reqID uuid.UUID) error {
+func (s *Telegram) handleAskUserAnswer(ctx context.Context, c tb.Context, reqID uuid.UUID, promptMsgID int) error {
 	if s.askUserService == nil {
 		return c.Send("AskUser service is not available.")
 	}
@@ -283,7 +288,7 @@ func (s *Telegram) handleAskUserReply(ctx context.Context, c tb.Context, reqID u
 		return c.Send("Failed to submit your answer. Please try again.")
 	}
 
-	s.askUserRequests.Delete(c.Message().ReplyTo.ID)
+	s.clearAskUserSession(c.Sender().ID, promptMsgID, reqID)
 	return c.Send("✅ Answer submitted!")
 }
 
