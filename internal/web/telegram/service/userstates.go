@@ -7,4 +7,6 @@ const (
 	userWaitNotesSearchCmd
 	userWaitUploadFile
 	userWaitAuthToUploadFile
+	userWaitAskUserToken
+	userWaitAskUserConfirm
 )

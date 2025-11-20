@@ -45,7 +45,7 @@ func (s *Telegram) uploadCmdHandler(ctx context.Context, msg *tb.Message) {
 		reply := "Save files to the permanent storage [ARweave network](https://arweave.org/) by sending files in Telegram.\n" +
 			"This feature requires payment, so you need to bind to a supported payment account.\n\n" +
 			"Please choose the way you want to bind your account. The fee will be deducted from your account each time you upload a file:\n\n" +
-			"1. [oneapi apikey](https://wiki.laisky.com/projects/gpt/pay/cn/#page_gpt_pay_cn): Please reply `1 - <YOUR_ONEAPI_APIKEY>`\n"
+			"1. [oneapi apikey](https://wiki.laisky.com/projects/gpt/pay/): Please reply `1 - <YOUR_ONEAPI_APIKEY>`\n"
 		_, err = s.bot.Send(msg.Sender, reply, &tb.SendOptions{
 			ParseMode:             tb.ModeMarkdown,
 			DisableWebPagePreview: true,
@@ -100,7 +100,21 @@ func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.
 	var err error
 	switch ansers[0] {
 	case "1":
-		err = s.UploadDao.SaveOneapiUser(ctx, us.user.ID, ansers[1])
+		validatedKey, valErr := s.validateOneAPIToken(ctx, ansers[1])
+		if valErr != nil {
+			logger.Warn("validate oneapi key", zap.Error(valErr), zap.String("token_mask", maskToken(ansers[1])))
+			if _, sendErr := s.bot.Send(us.user,
+				"Invalid OneAPI API key. Please double-check and try again.",
+				&tb.SendOptions{
+					ParseMode:             tb.ModeMarkdown,
+					DisableWebPagePreview: true,
+				},
+			); sendErr != nil {
+				logger.Error("send upload invalid key msg", zap.Error(sendErr))
+			}
+			return
+		}
+		err = s.UploadDao.SaveOneapiUser(ctx, us.user.ID, validatedKey)
 	default:
 		err = errors.New(errMsg)
 	}

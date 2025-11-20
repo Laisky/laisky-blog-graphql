@@ -21,8 +21,20 @@ const (
 
 // Service provides persistence and coordination helpers for ask_user requests.
 type Service struct {
-	db     *gorm.DB
-	logger logSDK.Logger
+	db        *gorm.DB
+	logger    logSDK.Logger
+	notifiers []Notifier
+}
+
+// Notifier receives lifecycle events for ask_user requests.
+type Notifier interface {
+	OnNewRequest(req *Request)
+	OnRequestCancelled(req *Request)
+}
+
+// RegisterNotifier adds a listener for request lifecycle events.
+func (s *Service) RegisterNotifier(n Notifier) {
+	s.notifiers = append(s.notifiers, n)
 }
 
 // NewService constructs the service and performs required migrations.
@@ -63,6 +75,11 @@ func (s *Service) CreateRequest(ctx context.Context, auth *AuthorizationContext,
 		zap.String("user", auth.UserIdentity),
 		zap.String("ai", auth.AIIdentity),
 	)
+
+	for _, n := range s.notifiers {
+		n.OnNewRequest(req)
+	}
+
 	return req, nil
 }
 
@@ -97,12 +114,33 @@ func (s *Service) CancelRequest(ctx context.Context, id uuid.UUID, status string
 	if !allowed[status] {
 		status = StatusCancelled
 	}
-	return s.db.WithContext(ctx).Model(&Request{}).
+
+	// First, fetch the request to notify listeners
+	var req Request
+	if err := s.db.WithContext(ctx).First(&req, "id = ?", id).Error; err != nil {
+		return errors.Wrap(err, "fetch request for cancellation")
+	}
+
+	if req.Status != StatusPending {
+		return nil
+	}
+
+	if err := s.db.WithContext(ctx).Model(&Request{}).
 		Where("id = ? AND status = ?", id, StatusPending).
 		Updates(map[string]any{
 			"status":     status,
 			"updated_at": time.Now().UTC(),
-		}).Error
+		}).Error; err != nil {
+		return err
+	}
+
+	// Update local object for notification
+	req.Status = status
+	for _, n := range s.notifiers {
+		n.OnRequestCancelled(&req)
+	}
+
+	return nil
 }
 
 // ListRequests returns pending and recent records for the provided authorization scope.
@@ -184,6 +222,11 @@ func (s *Service) getByID(ctx context.Context, id uuid.UUID) (*Request, error) {
 		return nil, errors.Wrap(err, "query ask_user request")
 	}
 	return &req, nil
+}
+
+// GetRequest retrieves a request by ID.
+func (s *Service) GetRequest(ctx context.Context, id uuid.UUID) (*Request, error) {
+	return s.getByID(ctx, id)
 }
 
 func (s *Service) log() logSDK.Logger {

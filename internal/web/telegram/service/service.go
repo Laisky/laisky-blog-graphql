@@ -11,8 +11,10 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
+	"github.com/google/uuid"
 	tb "gopkg.in/telebot.v3"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
@@ -31,6 +33,7 @@ type Interface interface {
 	LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.MonitorUsers, err error)
 	LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.MonitorUsers, err error)
 	ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error)
+	SetAskUserService(svc *askuser.Service)
 }
 
 // Telegram client
@@ -39,15 +42,20 @@ type Telegram struct {
 	bot       *tb.Bot
 	userStats *sync.Map
 
-	monitorDao  *dao.Monitor
-	telegramDao *dao.Telegram
-	UploadDao   *dao.Upload
+	monitorDao      *dao.Monitor
+	telegramDao     *dao.Telegram
+	UploadDao       *dao.Upload
+	askUserTokenDao *dao.AskUserToken
+
+	askUserService  *askuser.Service
+	askUserRequests *sync.Map // map[int]uuid.UUID (MessageID -> RequestID)
 }
 
 type userStat struct {
 	user  *tb.User
 	state int
 	lastT time.Time
+	data  map[string]string
 }
 
 // New create new telegram client
@@ -55,6 +63,7 @@ func New(ctx context.Context,
 	monitorDao *dao.Monitor,
 	telegramDao *dao.Telegram,
 	uploadDao *dao.Upload,
+	askUserTokenDao *dao.AskUserToken,
 	token, api string,
 ) (*Telegram, error) {
 	bot, err := tb.NewBot(tb.Settings{
@@ -69,12 +78,14 @@ func New(ctx context.Context,
 	}
 
 	tel := &Telegram{
-		monitorDao:  monitorDao,
-		telegramDao: telegramDao,
-		UploadDao:   uploadDao,
-		stop:        make(chan struct{}),
-		bot:         bot,
-		userStats:   new(sync.Map),
+		monitorDao:      monitorDao,
+		telegramDao:     telegramDao,
+		UploadDao:       uploadDao,
+		askUserTokenDao: askUserTokenDao,
+		stop:            make(chan struct{}),
+		bot:             bot,
+		userStats:       new(sync.Map),
+		askUserRequests: new(sync.Map),
 	}
 
 	if gutils.Contains(gconfig.Shared.GetStringSlice("tasks"), "telegram") {
@@ -87,6 +98,7 @@ func New(ctx context.Context,
 		tel.registerArweaveAliasHandler()
 		tel.registerNotesSearchHandler()
 		tel.registerUploadHandler(ctx)
+		tel.registerAskUserHandler(ctx)
 
 		go func() {
 			select {
@@ -110,6 +122,14 @@ func (s *Telegram) registerDefaultHandler(ctx context.Context) {
 	handler := func(tbctx tb.Context) error {
 		m := tbctx.Message()
 		logger.Debug("got message", zap.String("msg", m.Text), zap.Int64("sender", m.Sender.ID))
+
+		// Check if it's a reply to an ask_user question
+		if m.ReplyTo != nil {
+			if reqID, ok := s.askUserRequests.Load(m.ReplyTo.ID); ok {
+				return s.handleAskUserReply(ctx, tbctx, reqID.(uuid.UUID))
+			}
+		}
+
 		if _, ok := s.userStats.Load(m.Sender.ID); ok {
 			s.dispatcher(ctx, m)
 			return nil
@@ -159,6 +179,10 @@ func (s *Telegram) dispatcher(ctx context.Context, msg *tb.Message) {
 		s.uploadHandler(ctx, us.(*userStat), msg)
 	case userWaitAuthToUploadFile:
 		s.uploadAuthHandler(ctx, us.(*userStat), msg)
+	case userWaitAskUserToken:
+		s.askUserTokenHandler(ctx, us.(*userStat), msg)
+	case userWaitAskUserConfirm:
+		s.askUserTokenConfirmHandler(ctx, us.(*userStat), msg)
 	default:
 		logger.Warn("unknown msg", zap.Int("user_state", us.(*userStat).state))
 		if _, err := s.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {

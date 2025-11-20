@@ -112,6 +112,7 @@ func runAPI() error {
 			telegramDao.NewMonitor(monitorDB),
 			telegramDao.NewTelegram(telegramDB),
 			telegramDao.NewUpload(telegramDB, arweave, minioCli),
+			telegramDao.NewAskUserToken(monitorDB),
 			botToken,
 			gconfig.Shared.GetString("settings.telegram.api"),
 		)
@@ -178,6 +179,9 @@ func runAPI() error {
 				logger.Error("init ask_user service", zap.Error(err))
 			} else {
 				args.AskUserService = svc
+				if args.TelegramSvc != nil {
+					args.TelegramSvc.SetAskUserService(svc)
+				}
 			}
 
 			if callSvc, err := calllog.NewService(askDB.DB, logger.Named("call_log"), nil); err != nil {
