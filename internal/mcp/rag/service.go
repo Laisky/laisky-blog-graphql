@@ -13,6 +13,7 @@ import (
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+	"github.com/jackc/pgx/v5/pgconn"
 	pgvector "github.com/pgvector/pgvector-go"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -58,9 +59,18 @@ func NewService(db *gorm.DB, embedder Embedder, chunker Chunker, settings Settin
 		logger = log.Logger.Named("mcp_rag_service")
 	}
 
+	ctx := context.Background()
+	logger.Debug("ensuring pgvector extension for rag service")
+	if err := ensureVectorExtension(ctx, db, logger); err != nil {
+		return nil, errors.Wrap(err, "ensure pgvector extension")
+	}
+	logger.Debug("pgvector extension ensured for rag service")
+
+	logger.Debug("running rag auto migrations")
 	if err := db.AutoMigrate(&Task{}, &Chunk{}, &Embedding{}, &BM25Row{}); err != nil {
 		return nil, errors.Wrap(err, "auto migrate rag tables")
 	}
+	logger.Debug("rag auto migrations finished")
 
 	svc := &Service{
 		db:       db,
@@ -74,6 +84,48 @@ func NewService(db *gorm.DB, embedder Embedder, chunker Chunker, settings Settin
 	}
 
 	return svc, nil
+}
+
+func ensureVectorExtension(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error {
+	if db == nil {
+		return errors.New("gorm db is nil")
+	}
+	if !isPostgresDialect(db) {
+		return nil
+	}
+
+	if err := db.WithContext(ctx).Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+		if shouldFallbackToPgvector(err) {
+			if logger != nil {
+				logger.Debug("pgvector extension unavailable under name 'vector', retrying with legacy name")
+			}
+			if execErr := db.WithContext(ctx).Exec("CREATE EXTENSION IF NOT EXISTS pgvector").Error; execErr != nil {
+				return errors.Wrap(execErr, "create pgvector extension")
+			}
+			return nil
+		}
+		return errors.Wrap(err, "create vector extension")
+	}
+	return nil
+}
+
+func isPostgresDialect(db *gorm.DB) bool {
+	if db == nil || db.Dialector == nil {
+		return false
+	}
+	return strings.EqualFold(db.Dialector.Name(), "postgres")
+}
+
+func shouldFallbackToPgvector(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "58P01", "42704":
+			return true
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "extension \"vector\"") && strings.Contains(msg, "not") && strings.Contains(msg, "available")
 }
 
 // ExtractKeyInfo orchestrates ingestion (if needed) and hybrid retrieval for the request.
