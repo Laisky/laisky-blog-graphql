@@ -66,11 +66,11 @@ func NewAskUserTool(service AskUserService, logger logSDK.Logger, headerProvider
 func (t *AskUserTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"ask_user",
-		mcp.WithDescription("Forward a question to the authenticated user and wait for a response."),
+		mcp.WithDescription("Ask a question to the user if you need more information or clarification."),
 		mcp.WithString(
 			"question",
 			mcp.Required(),
-			mcp.Description("The question that should be surfaced to the user."),
+			mcp.Description("The question to ask the user."),
 		),
 		mcp.WithIdempotentHintAnnotation(false),
 	)

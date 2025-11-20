@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Cpu,
   Server,
+  Key,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -31,6 +32,30 @@ export function HomePage() {
           A unified interface for AI agents to interact with external tools and data. This workspace
           provides management consoles and documentation for the available capabilities.
         </p>
+
+        <Card className="max-w-3xl border-primary/20 bg-primary/5">
+          <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <h3 className="flex items-center gap-2 font-semibold text-foreground">
+                <Key className="h-4 w-4 text-primary" />
+                API Key Required
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Access to all tools in this MCP requires an API key.
+              </p>
+            </div>
+            <Button asChild className="shrink-0">
+              <a
+                href="https://wiki.laisky.com/projects/gpt/pay/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Get API Key
+                <ExternalLink className="ml-2 h-4 w-4" />
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
       </section>
 
       {/* Consoles Section */}
