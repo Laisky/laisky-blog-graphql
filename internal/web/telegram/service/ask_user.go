@@ -94,7 +94,8 @@ func (s *Telegram) askUserTokenHandler(ctx context.Context, us *userStat, msg *t
 	logger := gmw.GetLogger(ctx).With(zap.Int64("uid", msg.Sender.ID))
 	input := strings.TrimSpace(msg.Text)
 	if input == "" {
-		if _, err := s.bot.Send(us.user, "Please reply with your API key as plain text or send `cancel` to stop.", &tb.SendOptions{
+		if _, err := s.bot.Send(us.user, "Please reply with your API key as plain text or send `cancel` to stop. "+
+			"If you don't have an API key, you can get one at https://wiki.laisky.com/projects/gpt/pay/", &tb.SendOptions{
 			ParseMode:             tb.ModeMarkdown,
 			DisableWebPagePreview: true,
 		}); err != nil {
@@ -125,86 +126,19 @@ func (s *Telegram) askUserTokenHandler(ctx context.Context, us *userStat, msg *t
 
 	hashed := sha256.Sum256([]byte(validatedKey))
 	tokenHash := hex.EncodeToString(hashed[:])
-	mask := maskToken(validatedKey)
-	if us.data == nil {
-		us.data = make(map[string]string)
-	}
-	us.data["token_hash"] = tokenHash
-	us.data["token_mask"] = mask
-	us.state = userWaitAskUserConfirm
 	us.lastT = gutils.Clock.GetUTCNow()
-	s.userStats.Store(us.user.ID, us)
-
-	prompt := buildAskUserConfirmPrompt(mask)
-	if _, err := s.bot.Send(us.user, prompt, &tb.SendOptions{
-		ParseMode:             tb.ModeMarkdown,
-		DisableWebPagePreview: true,
-	}); err != nil {
-		logger.Error("send ask_user confirm prompt", zap.Error(err))
-	}
-}
-
-func (s *Telegram) askUserTokenConfirmHandler(ctx context.Context, us *userStat, msg *tb.Message) {
-	logger := gmw.GetLogger(ctx).With(zap.Int64("uid", msg.Sender.ID))
-	input := strings.TrimSpace(msg.Text)
-	if input == "" {
-		if _, err := s.bot.Send(us.user, "Please reply `yes` to confirm or `cancel` to abort.", &tb.SendOptions{
-			ParseMode:             tb.ModeMarkdown,
-			DisableWebPagePreview: true,
-		}); err != nil {
-			logger.Error("send ask_user confirm reminder", zap.Error(err))
-		}
-		return
-	}
-
-	if strings.EqualFold(input, "cancel") {
-		s.userStats.Delete(us.user.ID)
-		if _, err := s.bot.Send(us.user, "Linking cancelled. You can run /askuser again anytime.", nil); err != nil {
-			logger.Error("send ask_user cancel ack", zap.Error(err))
-		}
-		return
-	}
-
-	if !(strings.EqualFold(input, "yes") || strings.EqualFold(input, "y") || strings.EqualFold(input, "confirm")) {
-		if _, err := s.bot.Send(us.user, "Reply `yes` to confirm linking or `cancel` to abort.", &tb.SendOptions{
-			ParseMode:             tb.ModeMarkdown,
-			DisableWebPagePreview: true,
-		}); err != nil {
-			logger.Error("send ask_user confirm reminder", zap.Error(err))
-		}
-		return
-	}
-
-	var tokenHash string
-	if us.data != nil {
-		tokenHash = us.data["token_hash"]
-	}
-	if tokenHash == "" {
-		logger.Warn("ask_user token hash missing during confirm")
-		s.userStats.Delete(us.user.ID)
-		if _, err := s.bot.Send(us.user, "Session expired. Please run /askuser again.", nil); err != nil {
-			logger.Error("send ask_user session expired", zap.Error(err))
-		}
-		return
-	}
+	mask := maskToken(validatedKey)
 
 	if err := s.registerTelegramUID(ctx, int(us.user.ID), tokenHash); err != nil {
 		logger.Error("register ask_user token", zap.Error(err))
-		if _, err := s.bot.Send(us.user, "Failed to register token. Please try again later.", nil); err != nil {
-			logger.Error("send ask_user register error", zap.Error(err))
+		if _, sendErr := s.bot.Send(us.user, "Failed to register token. Please try again later.", nil); sendErr != nil {
+			logger.Error("send ask_user register error", zap.Error(sendErr))
 		}
 		return
 	}
 
-	mask := ""
-	if us.data != nil {
-		mask = us.data["token_mask"]
-	}
 	s.userStats.Delete(us.user.ID)
-	message := "✅ Successfully linked your OneAPI API key. You'll now receive ask\\_user questions here."
-	if mask != "" {
-		message = fmt.Sprintf("✅ Successfully linked API key `%s`. You'll now receive ask\\_user questions here.", mask)
-	}
+	message := fmt.Sprintf("✅ Successfully linked API key `%s`. You'll now receive ask\\_user questions here.", mask)
 	if _, err := s.bot.Send(us.user, message, &tb.SendOptions{
 		ParseMode:             tb.ModeMarkdown,
 		DisableWebPagePreview: true,
@@ -225,20 +159,13 @@ func maskToken(token string) string {
 }
 
 func buildAskUserIntroPrompt(payloadProvided bool) string {
-	base := "Step 1/2: Reply with the OneAPI API key you want to link to MCP ask\\_user.\n" +
-		"Send `cancel` at any time to stop."
+	base := "Reply with the OneAPI API key you want to link to MCP ask\\_user.\n" +
+		"Send `cancel` at any time to stop. \n" +
+		"If you don't have an API key, you can get one at https://wiki.laisky.com/projects/gpt/pay/"
 	if payloadProvided {
 		base += "\n\nFor safety, please send the key as a normal message instead of embedding it in the command."
 	}
 	return base
-}
-
-func buildAskUserConfirmPrompt(mask string) string {
-	safeMask := mask
-	if safeMask == "" {
-		safeMask = "***"
-	}
-	return fmt.Sprintf("Step 2/2: We'll link API key `%s`.\nReply `yes` to confirm or `cancel` to abort.\nWe only store a hashed copy of your key.", safeMask)
 }
 
 func (s *Telegram) registerTelegramUID(ctx context.Context, uid int, tokenHash string) error {

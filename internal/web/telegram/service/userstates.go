@@ -8,5 +8,4 @@ const (
 	userWaitUploadFile
 	userWaitAuthToUploadFile
 	userWaitAskUserToken
-	userWaitAskUserConfirm
 )

@@ -13,6 +13,7 @@ func TestBuildAskUserIntroPrompt(t *testing.T) {
 		require.Contains(t, prompt, "ask\\_user")
 		require.NotContains(t, prompt, "ask_user")
 		require.True(t, strings.Contains(prompt, "OneAPI API key"))
+		require.Contains(t, prompt, "hashed copy")
 	})
 
 	t.Run("with payload", func(t *testing.T) {
@@ -20,13 +21,4 @@ func TestBuildAskUserIntroPrompt(t *testing.T) {
 		require.Contains(t, prompt, "ask\\_user")
 		require.Contains(t, prompt, "send the key as a normal message")
 	})
-}
-
-func TestBuildAskUserConfirmPrompt(t *testing.T) {
-	prompt := buildAskUserConfirmPrompt("***abcd")
-	require.Contains(t, prompt, "`***abcd`")
-	require.Contains(t, prompt, "Reply `yes` to confirm")
-
-	fallback := buildAskUserConfirmPrompt("")
-	require.Contains(t, fallback, "`***`")
 }

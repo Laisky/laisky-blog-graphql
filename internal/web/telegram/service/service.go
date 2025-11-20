@@ -191,8 +191,6 @@ func (s *Telegram) dispatcher(ctx context.Context, msg *tb.Message) {
 		s.uploadAuthHandler(ctx, us.(*userStat), msg)
 	case userWaitAskUserToken:
 		s.askUserTokenHandler(ctx, us.(*userStat), msg)
-	case userWaitAskUserConfirm:
-		s.askUserTokenConfirmHandler(ctx, us.(*userStat), msg)
 	default:
 		logger.Warn("unknown msg", zap.Int("user_state", us.(*userStat).state))
 		if _, err := s.bot.Send(msg.Sender, "unknown msg, please retry"); err != nil {
