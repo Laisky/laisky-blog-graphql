@@ -2,8 +2,6 @@ import { buildAuthorizationHeader, resolveCurrentApiBasePath } from '../shared/a
 
 export { normalizeApiKey } from '../shared/auth'
 
-const API_BASE_PATH = resolveCurrentApiBasePath()
-
 export interface AskUserRequest {
   id: string
   question: string
@@ -29,7 +27,8 @@ export async function listRequests(apiKey: string, signal?: AbortSignal): Promis
   if (!authorization) {
     throw new Error('API key is required')
   }
-  const response = await fetch(`${API_BASE_PATH}api/requests`, {
+  const apiBasePath = resolveCurrentApiBasePath()
+  const response = await fetch(`${apiBasePath}api/requests`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -56,7 +55,8 @@ export async function submitAnswer(
   if (!authorization) {
     throw new Error('API key is required')
   }
-  const response = await fetch(`${API_BASE_PATH}api/requests/${requestId}`, {
+  const apiBasePath = resolveCurrentApiBasePath()
+  const response = await fetch(`${apiBasePath}api/requests/${requestId}`, {
     cache: 'no-store',
     method: 'POST',
     headers: {

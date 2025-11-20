@@ -10,7 +10,7 @@ var Logger logSDK.Logger
 
 func init() {
 	var err error
-	if Logger, err = logSDK.NewConsoleWithName("graphql", logSDK.LevelDebug); err != nil {
+	if Logger, err = logSDK.NewConsoleWithName("graphql", logSDK.LevelInfo); err != nil {
 		logSDK.Shared.Panic("new logger", zap.Error(err))
 	}
 }

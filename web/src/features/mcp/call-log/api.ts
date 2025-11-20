@@ -1,7 +1,5 @@
 import { buildAuthorizationHeader, resolveCurrentApiBasePath } from '../shared/auth'
 
-const API_BASE_PATH = resolveCurrentApiBasePath()
-
 export interface CallLogEntry {
   id: string
   tool: string
@@ -58,6 +56,8 @@ export async function fetchCallLogs(
     throw new Error('API key is required')
   }
 
+  const apiBasePath = resolveCurrentApiBasePath()
+
   const params = new URLSearchParams()
   if (query.page && query.page > 0) params.set('page', String(query.page))
   if (query.pageSize && query.pageSize > 0) params.set('page_size', String(query.pageSize))
@@ -69,7 +69,7 @@ export async function fetchCallLogs(
   if (query.to) params.set('to', query.to)
 
   const qs = params.toString()
-  const url = `${API_BASE_PATH}api/logs${qs ? `?${qs}` : ''}`
+  const url = `${apiBasePath}api/logs${qs ? `?${qs}` : ''}`
 
   const response = await fetch(url, {
     cache: 'no-store',

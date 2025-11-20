@@ -16,6 +16,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/playground"
 	ginMw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
+	glog "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -147,6 +148,16 @@ func RunServer(addr string, resolver *Resolver) {
 		zap.String("public_prefix", prefix.display(prefix.public)),
 	)
 
+	gin.SetMode(gin.ReleaseMode)
+	if gconfig.Shared.GetBool("debug") {
+		err := log.Logger.ChangeLevel(glog.LevelDebug)
+		if err != nil {
+			log.Logger.Panic("change logger level", zap.Error(err))
+		}
+
+		log.Logger.Info("debug mode enabled")
+	}
+
 	frontendSPA := newFrontendSPAHandler(log.Logger.Named("frontend_spa"), prefix.internal)
 	server.Use(
 		gin.Recovery(),
@@ -157,9 +168,6 @@ func RunServer(addr string, resolver *Resolver) {
 		),
 		allowCORS,
 	)
-	if !gconfig.Shared.GetBool("debug") {
-		gin.SetMode(gin.ReleaseMode)
-	}
 
 	if err := ginMw.EnableMetric(server); err != nil {
 		log.Logger.Panic("enable metric server", zap.Error(err))

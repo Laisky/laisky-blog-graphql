@@ -67,6 +67,18 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
+	h.log().Debug("call log list request",
+		zap.String("api_key_hash", authCtx.APIKeyHash),
+		zap.String("tool", tool),
+		zap.String("user_prefix", userPrefix),
+		zap.Int("page", page),
+		zap.Int("page_size", pageSize),
+		zap.String("sort_field", sortField),
+		zap.String("sort_order", strings.ToUpper(sortOrder)),
+		zap.Time("from", from),
+		zap.Time("to", to),
+	)
+
 	result, err := h.service.List(ctx, ListOptions{
 		Page:       page,
 		PageSize:   pageSize,
