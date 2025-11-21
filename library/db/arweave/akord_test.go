@@ -11,6 +11,9 @@ func TestAkrod_Upload(t *testing.T) {
 		// "api-key-1",
 		// "api-key-2",
 	}
+	if len(apis) == 0 {
+		t.Skip("no api keys provided")
+	}
 	akord := NewAkrod(apis)
 
 	ctx := context.Background()

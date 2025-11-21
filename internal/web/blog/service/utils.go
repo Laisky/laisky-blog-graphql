@@ -95,9 +95,9 @@ func ExtractMenu(html string) string {
 			l2cnt = `<a class="nav-link" href="#` + escapedTl + `">` + tl + `</a>`
 		} else if level == "h3" {
 			if l3cnt == "" {
-				l3cnt = `<nav class="nav nav-pills flex-column"><a class="nav-link ms-3" href="#` + escapedTl + `">` + tl + `</a>`
+				l3cnt = `<nav class="nav nav-pills flex-column"><a class="nav-link ms-3 my-1" href="#` + escapedTl + `">` + tl + `</a>`
 			} else {
-				l3cnt += `<a class="nav-link ms-3" href="#` + escapedTl + `">` + tl + `</a>`
+				l3cnt += `<a class="nav-link ms-3 my-1" href="#` + escapedTl + `">` + tl + `</a>`
 			}
 		}
 	}

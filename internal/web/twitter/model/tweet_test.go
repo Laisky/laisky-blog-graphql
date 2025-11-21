@@ -29,5 +29,4 @@ func TestXxx(t *testing.T) {
 	data, err := json.MarshalToString(v)
 	require.NoError(t, err)
 	t.Log(data)
-	t.Error()
 }

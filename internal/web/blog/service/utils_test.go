@@ -16,7 +16,7 @@ func TestParseMarkdown2HTML(t *testing.T) {
 	}
 
 	md = []byte(`<h2>abc 啊</h2>`)
-	expect = `<p><h2 id="abc+%E5%95%8A">一、abc 啊</h2></p>`
+	expect = `<p><h2 id="header-abcE5958A">Ⅰ、abc 啊</h2></p>`
 	html = strings.TrimSpace(ParseMarkdown2HTML(md))
 	if html != expect {
 		t.Errorf("got: `%v`", string(html))

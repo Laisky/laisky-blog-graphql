@@ -41,6 +41,10 @@ func (a *Akord) Upload(ctx context.Context,
 		return "", err
 	}
 
+	if len(a.apis) == 0 {
+		return "", errors.New("no api keys provided")
+	}
+
 	headers := map[string]string{
 		"Accept":       "application/json",
 		"Api-Key":      gutils.RandomChoice(a.apis, 1)[0],

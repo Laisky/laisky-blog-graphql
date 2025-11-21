@@ -13,7 +13,7 @@ func TestBuildAskUserIntroPrompt(t *testing.T) {
 		require.Contains(t, prompt, "ask\\_user")
 		require.NotContains(t, prompt, "ask_user")
 		require.True(t, strings.Contains(prompt, "OneAPI API key"))
-		require.Contains(t, prompt, "hashed copy")
+		require.Contains(t, prompt, "wiki.laisky.com")
 	})
 
 	t.Run("with payload", func(t *testing.T) {
