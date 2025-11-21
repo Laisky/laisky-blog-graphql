@@ -1,4 +1,4 @@
-FROM golang:1.25.3-bookworm AS gobuild
+FROM golang:1.25.4-bookworm AS gobuild
 
 # install dependencies
 RUN apt-get update \
