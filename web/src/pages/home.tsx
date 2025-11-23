@@ -1,20 +1,20 @@
-import { Link } from 'react-router-dom'
 import {
-  Search,
-  Globe,
-  MessageSquare,
-  Database,
-  Terminal,
   Activity,
-  ExternalLink,
   Cpu,
-  Server,
+  Database,
+  ExternalLink,
+  Globe,
   Key,
+  MessageSquare,
+  Search,
+  Server,
+  Terminal,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 
 export function HomePage() {
   return (

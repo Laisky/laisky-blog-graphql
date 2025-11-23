@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
 import { Server } from 'lucide-react'
+import type { FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,9 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
+import { normalizeApiKey } from '../shared/auth'
 import type { CallLogEntry, CallLogListResponse } from './api'
 import { fetchCallLogs } from './api'
-import { normalizeApiKey } from '../shared/auth'
 
 const STORAGE_KEY = 'call_log_api_key'
 const TOOL_OPTIONS: Array<{ label: string; value: string }> = [

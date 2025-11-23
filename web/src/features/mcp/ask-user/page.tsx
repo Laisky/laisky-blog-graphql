@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
 import { MessageSquare } from 'lucide-react'
+import type { ChangeEvent, FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
-import { listRequests, submitAnswer, normalizeApiKey, type AskUserRequest } from './api'
+import { listRequests, normalizeApiKey, submitAnswer, type AskUserRequest } from './api'
 
 const STORAGE_KEY = 'ask_user_api_key'
 

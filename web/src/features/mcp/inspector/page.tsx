@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
 import { sha256 } from 'js-sha256'
 import { Activity } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 
 const inspectorScriptModules = import.meta.glob<InspectorModule>(
   '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.js'

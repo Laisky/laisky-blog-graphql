@@ -2,15 +2,15 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 
-import './index.css'
-import { ThemeProvider } from '@/components/theme/theme-provider'
 import { AppLayout } from '@/components/layout/app-layout'
+import { ThemeProvider } from '@/components/theme/theme-provider'
 import { AskUserPage } from '@/features/mcp/ask-user/page'
 import { CallLogPage } from '@/features/mcp/call-log/page'
 import { InspectorPage } from '@/features/mcp/inspector/page'
+import { loadRuntimeConfig } from '@/lib/runtime-config'
 import { HomePage } from '@/pages/home'
 import { NotFoundPage } from '@/pages/not-found'
-import { loadRuntimeConfig } from '@/lib/runtime-config'
+import './index.css'
 
 const routes = [
   {
