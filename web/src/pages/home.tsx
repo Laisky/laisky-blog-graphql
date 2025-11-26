@@ -16,8 +16,135 @@ import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useToolsConfig } from '@/lib/tools-config-context'
 
 export function HomePage() {
+  const toolsConfig = useToolsConfig()
+
+  // Filter console cards based on enabled tools
+  const consoleCards = [
+    {
+      key: 'ask_user',
+      enabled: toolsConfig.ask_user,
+      element: (
+        <ConsoleCard
+          title="Ask User Console"
+          description="Interface for human-in-the-loop interactions. Respond to pending questions from AI agents."
+          icon={<MessageSquare className="h-6 w-6" />}
+          href="/tools/ask_user"
+          action="Open Console"
+        />
+      ),
+    },
+    {
+      key: 'get_user_request',
+      enabled: toolsConfig.get_user_request,
+      element: (
+        <ConsoleCard
+          title="User Requests Console"
+          description="Queue new directives for AI assistants and track consumed history. Manage get_user_request inputs."
+          icon={<ClipboardList className="h-6 w-6" />}
+          href="/tools/get_user_requests"
+          action="Open Console"
+        />
+      ),
+    },
+    {
+      key: 'inspector',
+      enabled: true, // Inspector is always available
+      element: (
+        <ConsoleCard
+          title="MCP Inspector"
+          description="Debug and test MCP tools directly. Inspect JSON-RPC traffic and tool definitions."
+          icon={<Activity className="h-6 w-6" />}
+          href="/debug"
+          action="Launch Inspector"
+          external
+        />
+      ),
+    },
+    {
+      key: 'call_logs',
+      enabled: true, // Call logs are always available
+      element: (
+        <ConsoleCard
+          title="Call Logs"
+          description="Audit trail of all tool invocations, including costs, duration, and error rates."
+          icon={<Server className="h-6 w-6" />}
+          href="/tools/call_log"
+          action="View Logs"
+        />
+      ),
+    },
+  ]
+
+  // Filter tool cards based on enabled tools
+  const toolCards = [
+    {
+      key: 'web_search',
+      enabled: toolsConfig.web_search,
+      element: (
+        <ToolCard
+          title="web_search"
+          description="Performs Google Programmable Search queries to retrieve relevant web results."
+          icon={<Search className="h-5 w-5" />}
+          tags={['External API', 'Billing']}
+        />
+      ),
+    },
+    {
+      key: 'web_fetch',
+      enabled: toolsConfig.web_fetch,
+      element: (
+        <ToolCard
+          title="web_fetch"
+          description="Fetches and renders dynamic web pages using a headless browser (via Redis)."
+          icon={<Globe className="h-5 w-5" />}
+          tags={['Headless Browser', 'Content Extraction']}
+        />
+      ),
+    },
+    {
+      key: 'ask_user',
+      enabled: toolsConfig.ask_user,
+      element: (
+        <ToolCard
+          title="ask_user"
+          description="Suspends execution to request input from a human operator via the console."
+          icon={<MessageSquare className="h-5 w-5" />}
+          tags={['Human-in-the-loop', 'Async']}
+        />
+      ),
+    },
+    {
+      key: 'get_user_request',
+      enabled: toolsConfig.get_user_request,
+      element: (
+        <ToolCard
+          title="get_user_request"
+          description="Delivers the latest human-authored directive queued for the AI agent."
+          icon={<ClipboardList className="h-5 w-5" />}
+          tags={['Human-in-the-loop', 'Push-based']}
+        />
+      ),
+    },
+    {
+      key: 'extract_key_info',
+      enabled: toolsConfig.extract_key_info,
+      element: (
+        <ToolCard
+          title="extract_key_info"
+          description="RAG capability that chunks text and retrieves relevant context using vector embeddings."
+          icon={<Database className="h-5 w-5" />}
+          tags={['RAG', 'Vector DB', 'Embeddings']}
+        />
+      ),
+    },
+  ]
+
+  const enabledConsoles = consoleCards.filter((card) => card.enabled)
+  const enabledTools = toolCards.filter((card) => card.enabled)
+
   return (
     <div className="space-y-12">
       {/* Hero Section */}
@@ -60,83 +187,34 @@ export function HomePage() {
       </section>
 
       {/* Consoles Section */}
-      <section className="space-y-6">
-        <div className="flex items-center gap-2 border-b border-border pb-2">
-          <Terminal className="h-5 w-5 text-foreground" />
-          <h2 className="text-2xl font-semibold tracking-tight">Management Consoles</h2>
-        </div>
-        <div className="grid gap-6 md:grid-cols-3">
-          <ConsoleCard
-            title="Ask User Console"
-            description="Interface for human-in-the-loop interactions. Respond to pending questions from AI agents."
-            icon={<MessageSquare className="h-6 w-6" />}
-            href="/tools/ask_user"
-            action="Open Console"
-          />
-          <ConsoleCard
-            title="User Requests Console"
-            description="Queue new directives for AI assistants and track consumed history. Manage get_user_request inputs."
-            icon={<ClipboardList className="h-6 w-6" />}
-            href="/tools/get_user_requests"
-            action="Open Console"
-          />
-          <ConsoleCard
-            title="MCP Inspector"
-            description="Debug and test MCP tools directly. Inspect JSON-RPC traffic and tool definitions."
-            icon={<Activity className="h-6 w-6" />}
-            href="/debug"
-            action="Launch Inspector"
-            external
-          />
-          <ConsoleCard
-            title="Call Logs"
-            description="Audit trail of all tool invocations, including costs, duration, and error rates."
-            icon={<Server className="h-6 w-6" />}
-            href="/tools/call_log"
-            action="View Logs"
-          />
-        </div>
-      </section>
+      {enabledConsoles.length > 0 && (
+        <section className="space-y-6">
+          <div className="flex items-center gap-2 border-b border-border pb-2">
+            <Terminal className="h-5 w-5 text-foreground" />
+            <h2 className="text-2xl font-semibold tracking-tight">Management Consoles</h2>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3">
+            {enabledConsoles.map((card) => (
+              <div key={card.key}>{card.element}</div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Tools Section */}
-      <section className="space-y-6">
-        <div className="flex items-center gap-2 border-b border-border pb-2">
-          <Database className="h-5 w-5 text-foreground" />
-          <h2 className="text-2xl font-semibold tracking-tight">Available Tools</h2>
-        </div>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
-          <ToolCard
-            title="web_search"
-            description="Performs Google Programmable Search queries to retrieve relevant web results."
-            icon={<Search className="h-5 w-5" />}
-            tags={['External API', 'Billing']}
-          />
-          <ToolCard
-            title="web_fetch"
-            description="Fetches and renders dynamic web pages using a headless browser (via Redis)."
-            icon={<Globe className="h-5 w-5" />}
-            tags={['Headless Browser', 'Content Extraction']}
-          />
-          <ToolCard
-            title="ask_user"
-            description="Suspends execution to request input from a human operator via the console."
-            icon={<MessageSquare className="h-5 w-5" />}
-            tags={['Human-in-the-loop', 'Async']}
-          />
-          <ToolCard
-            title="get_user_request"
-            description="Delivers the latest human-authored directive queued for the AI agent."
-            icon={<ClipboardList className="h-5 w-5" />}
-            tags={['Human-in-the-loop', 'Push-based']}
-          />
-          <ToolCard
-            title="extract_key_info"
-            description="RAG capability that chunks text and retrieves relevant context using vector embeddings."
-            icon={<Database className="h-5 w-5" />}
-            tags={['RAG', 'Vector DB', 'Embeddings']}
-          />
-        </div>
-      </section>
+      {enabledTools.length > 0 && (
+        <section className="space-y-6">
+          <div className="flex items-center gap-2 border-b border-border pb-2">
+            <Database className="h-5 w-5 text-foreground" />
+            <h2 className="text-2xl font-semibold tracking-tight">Available Tools</h2>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
+            {enabledTools.map((card) => (
+              <div key={card.key}>{card.element}</div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

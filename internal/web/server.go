@@ -175,7 +175,7 @@ func RunServer(addr string, resolver *Resolver) {
 	}
 
 	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil || resolver.args.UserRequestService != nil || resolver.args.RAGService != nil) {
-		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.UserRequestService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.Rdb, resolver.args.CallLogService, log.Logger)
+		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.UserRequestService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.Rdb, resolver.args.CallLogService, resolver.args.MCPToolsSettings, log.Logger)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
@@ -352,9 +352,26 @@ func RunServer(addr string, resolver *Resolver) {
 			return
 		}
 
+		// Build tools configuration for frontend
+		toolsConfig := gin.H{
+			"web_search":       true,
+			"web_fetch":        true,
+			"ask_user":         true,
+			"get_user_request": true,
+			"extract_key_info": true,
+		}
+		if resolver != nil {
+			toolsConfig["web_search"] = resolver.args.MCPToolsSettings.WebSearchEnabled
+			toolsConfig["web_fetch"] = resolver.args.MCPToolsSettings.WebFetchEnabled
+			toolsConfig["ask_user"] = resolver.args.MCPToolsSettings.AskUserEnabled
+			toolsConfig["get_user_request"] = resolver.args.MCPToolsSettings.GetUserRequestEnabled
+			toolsConfig["extract_key_info"] = resolver.args.MCPToolsSettings.ExtractKeyInfoEnabled
+		}
+
 		ctx.JSON(http.StatusOK, gin.H{
 			"urlPrefix":      prefix.internal,
 			"publicBasePath": prefix.public,
+			"tools":          toolsConfig,
 		})
 	}
 

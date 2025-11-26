@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
@@ -214,6 +215,16 @@ func runAPI() error {
 			}
 		}
 	}
+
+	// Load MCP tools settings to control which tools are enabled
+	args.MCPToolsSettings = mcp.LoadToolsSettingsFromConfig()
+	logger.Info("loaded MCP tools settings",
+		zap.Bool("web_search_enabled", args.MCPToolsSettings.WebSearchEnabled),
+		zap.Bool("web_fetch_enabled", args.MCPToolsSettings.WebFetchEnabled),
+		zap.Bool("ask_user_enabled", args.MCPToolsSettings.AskUserEnabled),
+		zap.Bool("get_user_request_enabled", args.MCPToolsSettings.GetUserRequestEnabled),
+		zap.Bool("extract_key_info_enabled", args.MCPToolsSettings.ExtractKeyInfoEnabled),
+	)
 
 	resolver := web.NewResolver(args)
 	web.RunServer(gconfig.Shared.GetString("listen"), resolver)

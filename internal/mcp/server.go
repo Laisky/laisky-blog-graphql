@@ -53,14 +53,15 @@ type Server struct {
 }
 
 // NewServer constructs an MCP HTTP server.
-// searchProvider enables the web_search tool when not nil.
-// askUserService enables the ask_user tool when not nil.
-// rdb enables the web_fetch tool when not nil.
+// searchProvider enables the web_search tool when not nil and toolsSettings.WebSearchEnabled is true.
+// askUserService enables the ask_user tool when not nil and toolsSettings.AskUserEnabled is true.
+// rdb enables the web_fetch tool when not nil and toolsSettings.WebFetchEnabled is true.
+// userRequestService enables the get_user_request tool when not nil and toolsSettings.GetUserRequestEnabled is true.
+// ragService enables the extract_key_info tool when not nil and toolsSettings.ExtractKeyInfoEnabled is true.
 // callLogger records tool invocations for auditing when provided.
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
-
-func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, rdb *rlibs.DB, callLogger callRecorder, logger logSDK.Logger) (*Server, error) {
+func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, rdb *rlibs.DB, callLogger callRecorder, toolsSettings ToolsSettings, logger logSDK.Logger) (*Server, error) {
 	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && rdb == nil {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
@@ -103,7 +104,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		return authHeader
 	}
 
-	if searchProvider != nil {
+	if searchProvider != nil && toolsSettings.WebSearchEnabled {
 		webSearchTool, err := tools.NewWebSearchTool(
 			searchProvider,
 			serverLogger.Named("web_search"),
@@ -116,9 +117,11 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		}
 		s.webSearch = webSearchTool
 		mcpServer.AddTool(webSearchTool.Definition(), s.handleWebSearch)
+	} else if searchProvider != nil && !toolsSettings.WebSearchEnabled {
+		serverLogger.Info("web_search tool disabled by configuration")
 	}
 
-	if rdb != nil {
+	if rdb != nil && toolsSettings.WebFetchEnabled {
 		webFetchTool, err := tools.NewWebFetchTool(
 			rdb,
 			serverLogger.Named("web_fetch"),
@@ -132,9 +135,11 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		}
 		s.webFetch = webFetchTool
 		mcpServer.AddTool(webFetchTool.Definition(), s.handleWebFetch)
+	} else if rdb != nil && !toolsSettings.WebFetchEnabled {
+		serverLogger.Info("web_fetch tool disabled by configuration")
 	}
 
-	if askUserService != nil {
+	if askUserService != nil && toolsSettings.AskUserEnabled {
 		askUserTool, err := tools.NewAskUserTool(
 			askUserService,
 			serverLogger.Named("ask_user"),
@@ -147,9 +152,11 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		}
 		s.askUser = askUserTool
 		mcpServer.AddTool(askUserTool.Definition(), s.handleAskUser)
+	} else if askUserService != nil && !toolsSettings.AskUserEnabled {
+		serverLogger.Info("ask_user tool disabled by configuration")
 	}
 
-	if userRequestService != nil {
+	if userRequestService != nil && toolsSettings.GetUserRequestEnabled {
 		getUserRequestTool, err := tools.NewGetUserRequestTool(
 			userRequestService,
 			serverLogger.Named("get_user_request"),
@@ -161,9 +168,11 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		}
 		s.getUserRequest = getUserRequestTool
 		mcpServer.AddTool(getUserRequestTool.Definition(), s.handleGetUserRequest)
+	} else if userRequestService != nil && !toolsSettings.GetUserRequestEnabled {
+		serverLogger.Info("get_user_request tool disabled by configuration")
 	}
 
-	if ragService != nil {
+	if ragService != nil && toolsSettings.ExtractKeyInfoEnabled {
 		ragTool, err := tools.NewExtractKeyInfoTool(
 			ragService,
 			serverLogger.Named("extract_key_info"),
@@ -176,6 +185,8 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		}
 		s.extractKeyInfo = ragTool
 		mcpServer.AddTool(ragTool.Definition(), s.handleExtractKeyInfo)
+	} else if ragService != nil && !toolsSettings.ExtractKeyInfoEnabled {
+		serverLogger.Info("extract_key_info tool disabled by configuration")
 	}
 
 	return s, nil

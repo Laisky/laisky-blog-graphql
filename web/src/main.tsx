@@ -9,7 +9,8 @@ import { CallLogPage } from '@/features/mcp/call-log/page'
 import { InspectorPage } from '@/features/mcp/inspector/page'
 import { UserRequestsPage } from '@/features/mcp/user-requests/page'
 import { ApiKeyProvider } from '@/lib/api-key-context'
-import { loadRuntimeConfig } from '@/lib/runtime-config'
+import { defaultToolsConfig, loadRuntimeConfig, type ToolsConfig } from '@/lib/runtime-config'
+import { ToolsConfigProvider } from '@/lib/tools-config-context'
 import { HomePage } from '@/pages/home'
 import { NotFoundPage } from '@/pages/not-found'
 import './index.css'
@@ -33,6 +34,7 @@ const routes = [
 async function bootstrap() {
   const runtimeConfig = await loadRuntimeConfig()
   const basename = normalizeBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL)
+  const toolsConfig: ToolsConfig = runtimeConfig?.tools ?? defaultToolsConfig
   const router = createBrowserRouter(routes, { basename })
 
   const container = document.getElementById('root')
@@ -43,9 +45,11 @@ async function bootstrap() {
   createRoot(container).render(
     <StrictMode>
       <ThemeProvider>
-        <ApiKeyProvider>
-          <RouterProvider router={router} />
-        </ApiKeyProvider>
+        <ToolsConfigProvider config={toolsConfig}>
+          <ApiKeyProvider>
+            <RouterProvider router={router} />
+          </ApiKeyProvider>
+        </ToolsConfigProvider>
       </ThemeProvider>
     </StrictMode>
   )

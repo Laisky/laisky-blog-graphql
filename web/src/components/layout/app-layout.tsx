@@ -1,8 +1,9 @@
 import { Cpu } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { ThemeToggle } from '@/components/theme/theme-toggle'
+import { useToolsConfig } from '@/lib/tools-config-context'
 import { cn } from '@/lib/utils'
 
 interface NavItemConfig {
@@ -12,20 +13,34 @@ interface NavItemConfig {
 
 interface ConsoleMenuItem extends NavItemConfig {
   newTab?: boolean
+  /** Tool key to check if enabled. If undefined, item is always shown. */
+  toolKey?: 'ask_user' | 'get_user_request' | 'web_search' | 'web_fetch' | 'extract_key_info'
 }
 
 const navItems: NavItemConfig[] = [{ to: '/', label: 'Overview' }]
 
 const consoleItems: ConsoleMenuItem[] = [
-	{ to: '/tools/ask_user', label: 'ask_user' },
-	{ to: '/tools/get_user_requests', label: 'get_user_requests' },
+	{ to: '/tools/ask_user', label: 'ask_user', toolKey: 'ask_user' },
+	{ to: '/tools/get_user_requests', label: 'get_user_requests', toolKey: 'get_user_request' },
 	{ to: '/debug', label: 'Inspector', newTab: true },
 ]
 
 export function AppLayout() {
   const location = useLocation()
+  const toolsConfig = useToolsConfig()
+
+  // Filter console items based on enabled tools
+  const filteredConsoleItems = useMemo(() => {
+    return consoleItems.filter((item) => {
+      if (!item.toolKey) {
+        return true // Always show items without a toolKey
+      }
+      return toolsConfig[item.toolKey]
+    })
+  }, [toolsConfig])
+
   const isInspectorRoute = location.pathname.startsWith('/debug')
-  const isConsoleRoute = consoleItems.some((item) => location.pathname.startsWith(item.to))
+  const isConsoleRoute = filteredConsoleItems.some((item) => location.pathname.startsWith(item.to))
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -40,7 +55,9 @@ export function AppLayout() {
               {navItems.map((item) => (
                 <NavItem key={item.to} to={item.to} label={item.label} />
               ))}
-              <ConsoleMenu items={consoleItems} isActive={isConsoleRoute} />
+              {filteredConsoleItems.length > 0 && (
+                <ConsoleMenu items={filteredConsoleItems} isActive={isConsoleRoute} />
+              )}
               <NavItem to="/tools/call_log" label="Logs" />
             </nav>
             <ThemeToggle />

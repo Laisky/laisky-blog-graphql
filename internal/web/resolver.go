@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/search"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
@@ -36,6 +37,7 @@ type ResolverArgs struct {
 	UserRequestService *userrequests.Service
 	RAGService         *rag.Service
 	RAGSettings        rag.Settings
+	MCPToolsSettings   mcp.ToolsSettings
 }
 
 // NewResolver new resolver

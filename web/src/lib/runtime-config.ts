@@ -1,6 +1,24 @@
+export interface ToolsConfig {
+  web_search: boolean
+  web_fetch: boolean
+  ask_user: boolean
+  get_user_request: boolean
+  extract_key_info: boolean
+}
+
 export interface RuntimeConfig {
   urlPrefix?: string
   publicBasePath?: string
+  tools?: ToolsConfig
+}
+
+// Default tools config with all tools enabled
+export const defaultToolsConfig: ToolsConfig = {
+  web_search: true,
+  web_fetch: true,
+  ask_user: true,
+  get_user_request: true,
+  extract_key_info: true,
 }
 
 export async function loadRuntimeConfig(): Promise<RuntimeConfig | null> {

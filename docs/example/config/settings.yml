@@ -26,6 +26,17 @@ settings:
     base_url: https://api.openai.com/v1
     embedding_model: text-embedding-3-small
   mcp:
+    tools:
+      web_search:
+        enabled: true       # Enable/disable web_search tool
+      web_fetch:
+        enabled: true       # Enable/disable web_fetch tool
+      ask_user:
+        enabled: true       # Enable/disable ask_user tool
+      get_user_request:
+        enabled: true       # Enable/disable get_user_request tool
+      extract_key_info:
+        enabled: true       # Enable/disable extract_key_info tool
     extract_key_info:
       enabled: true
       top_k_default: 5
