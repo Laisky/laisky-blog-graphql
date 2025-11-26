@@ -146,11 +146,12 @@ func TestAskUserHandleSuccess(t *testing.T) {
 
 	payload := make(map[string]any)
 	require.NoError(t, json.Unmarshal([]byte(textContent.Text), &payload))
-	require.Equal(t, storedID.String(), payload["request_id"])
-	require.Equal(t, "Ping", payload["question"])
 	require.Equal(t, answer, payload["answer"])
-	require.Equal(t, answeredAt.Add(-time.Minute).Format(time.RFC3339Nano), payload["asked_at"])
-	require.Equal(t, answeredAt.Format(time.RFC3339Nano), payload["answered_at"])
+	// Verify auxiliary metadata is not included
+	require.NotContains(t, payload, "request_id")
+	require.NotContains(t, payload, "question")
+	require.NotContains(t, payload, "asked_at")
+	require.NotContains(t, payload, "answered_at")
 }
 
 func mustAskUserTool(t *testing.T, service AskUserService, header AuthorizationHeaderProvider, parser AuthorizationParser, timeout time.Duration) *AskUserTool {

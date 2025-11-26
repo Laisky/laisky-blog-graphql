@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/Laisky/errors/v2"
 	mcp "github.com/mark3labs/mcp-go/mcp"
@@ -20,7 +19,6 @@ func TestWebFetchHandleMissingAPIKey(t *testing.T) {
 		func(context.Context) string { return "" },
 		func(context.Context, string, oneapi.Price, string) error { return nil },
 		func(context.Context, *rlibs.DB, string) ([]byte, error) { return []byte("ignored"), nil },
-		fixedClock(time.Unix(0, 0)),
 	)
 
 	req := mcp.CallToolRequest{
@@ -56,7 +54,6 @@ func TestWebFetchHandleBillingError(t *testing.T) {
 			return expectedErr
 		},
 		func(context.Context, *rlibs.DB, string) ([]byte, error) { return []byte("ignored"), nil },
-		fixedClock(time.Unix(0, 0)),
 	)
 
 	req := mcp.CallToolRequest{
@@ -81,7 +78,6 @@ func TestWebFetchHandleBillingError(t *testing.T) {
 func TestWebFetchHandleSuccess(t *testing.T) {
 	var billingCalls int
 	var fetchCalls int
-	fixedTime := time.Date(2025, time.October, 25, 12, 0, 0, 0, time.UTC)
 
 	tool := mustWebFetchTool(t,
 		func(context.Context) string { return "token" },
@@ -94,7 +90,6 @@ func TestWebFetchHandleSuccess(t *testing.T) {
 			require.Equal(t, "https://example.com", url)
 			return []byte("<html>ok</html>"), nil
 		},
-		fixedClock(fixedTime),
 	)
 
 	req := mcp.CallToolRequest{
@@ -117,21 +112,15 @@ func TestWebFetchHandleSuccess(t *testing.T) {
 
 	payload := make(map[string]any)
 	require.NoError(t, json.Unmarshal([]byte(textContent.Text), &payload))
-	require.Equal(t, "https://example.com", payload["url"])
 	require.Equal(t, "<html>ok</html>", payload["content"])
-	require.Equal(t, fixedTime.Format(time.RFC3339Nano), payload["fetched_at"])
+	require.NotContains(t, payload, "url")
+	require.NotContains(t, payload, "fetched_at")
 }
 
-func mustWebFetchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, fetcher DynamicFetcher, clock Clock) *WebFetchTool {
+func mustWebFetchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, fetcher DynamicFetcher) *WebFetchTool {
 	t.Helper()
 
-	tool, err := NewWebFetchTool(&rlibs.DB{}, log.Logger.Named("test_web_fetch"), keyProvider, billing, fetcher, clock)
+	tool, err := NewWebFetchTool(&rlibs.DB{}, log.Logger.Named("test_web_fetch"), keyProvider, billing, fetcher)
 	require.NoError(t, err)
 	return tool
-}
-
-func fixedClock(now time.Time) Clock {
-	return func() time.Time {
-		return now
-	}
 }

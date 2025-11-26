@@ -110,7 +110,6 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			serverLogger.Named("web_search"),
 			apiKeyProvider,
 			oneapi.CheckUserExternalBilling,
-			nil,
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "init web_search tool")
@@ -128,7 +127,6 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			apiKeyProvider,
 			oneapi.CheckUserExternalBilling,
 			searchlib.FetchDynamicURLContent,
-			nil,
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "init web_fetch tool")

@@ -120,14 +120,7 @@ func (t *AskUserTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	resultPayload := map[string]any{
-		"request_id": answered.ID.String(),
-		"question":   answered.Question,
-		"answer":     *answered.Answer,
-		"asked_at":   answered.CreatedAt,
-	}
-
-	if answered.AnsweredAt != nil {
-		resultPayload["answered_at"] = *answered.AnsweredAt
+		"answer": *answered.Answer,
 	}
 
 	toolResult, err := mcp.NewToolResultJSON(resultPayload)

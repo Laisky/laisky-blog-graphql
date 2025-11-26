@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
@@ -31,11 +30,10 @@ type WebSearchTool struct {
 	logger         logSDK.Logger
 	apiKeyProvider APIKeyProvider
 	billingChecker BillingChecker
-	clock          Clock
 }
 
 // NewWebSearchTool constructs a WebSearchTool with the provided dependencies.
-func NewWebSearchTool(provider SearchProvider, logger logSDK.Logger, apiKeyProvider APIKeyProvider, billingChecker BillingChecker, clock Clock) (*WebSearchTool, error) {
+func NewWebSearchTool(provider SearchProvider, logger logSDK.Logger, apiKeyProvider APIKeyProvider, billingChecker BillingChecker) (*WebSearchTool, error) {
 	if provider == nil {
 		return nil, errors.New("search provider is required")
 	}
@@ -48,18 +46,12 @@ func NewWebSearchTool(provider SearchProvider, logger logSDK.Logger, apiKeyProvi
 	if billingChecker == nil {
 		return nil, errors.New("billing checker is required")
 	}
-	if clock == nil {
-		clock = func() time.Time {
-			return time.Now().UTC()
-		}
-	}
 
 	return &WebSearchTool{
 		searchProvider: provider,
 		logger:         logger,
 		apiKeyProvider: apiKeyProvider,
 		billingChecker: billingChecker,
-		clock:          clock,
 	}, nil
 }
 
@@ -108,12 +100,9 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 	}
 
-	response := searchlib.SearchResult{
-		Query:     query,
-		CreatedAt: t.clock(),
+	response := searchlib.SimplifiedSearchResult{
+		Results: items,
 	}
-
-	response.Results = append(response.Results, items...)
 
 	toolResult, err := mcp.NewToolResultJSON(response)
 	if err != nil {

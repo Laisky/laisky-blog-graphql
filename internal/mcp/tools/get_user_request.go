@@ -54,7 +54,7 @@ func NewGetUserRequestTool(service UserRequestService, logger logSDK.Logger, hea
 func (t *GetUserRequestTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"get_user_request",
-		mcp.WithDescription("Fetch the most recent pending user directive and mark it as consumed."),
+		mcp.WithDescription("During the execution of a task, get the latest user instructions to adjust agent's work objectives or processes."),
 		mcp.WithIdempotentHintAnnotation(false),
 	)
 }
@@ -86,16 +86,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	payload := map[string]any{
-		"request_id":    request.ID.String(),
-		"content":       request.Content,
-		"task_id":       request.TaskID,
-		"status":        request.Status,
-		"user_identity": request.UserIdentity,
-		"key_hint":      authCtx.KeySuffix,
-		"created_at":    request.CreatedAt,
-	}
-	if request.ConsumedAt != nil {
-		payload["consumed_at"] = *request.ConsumedAt
+		"content": request.Content,
 	}
 
 	result, encodeErr := mcp.NewToolResultJSON(payload)

@@ -46,10 +46,15 @@ func TestGetUserRequestToolSuccess(t *testing.T) {
 
 	payload := map[string]any{}
 	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
-	require.Equal(t, "11111111-1111-1111-1111-111111111111", payload["request_id"])
 	require.Equal(t, "Review latest copy", payload["content"])
-	require.Equal(t, "consumed", payload["status"])
-	require.Equal(t, "abcd", payload["key_hint"])
+	// Verify auxiliary metadata is not included
+	require.NotContains(t, payload, "request_id")
+	require.NotContains(t, payload, "status")
+	require.NotContains(t, payload, "key_hint")
+	require.NotContains(t, payload, "task_id")
+	require.NotContains(t, payload, "user_identity")
+	require.NotContains(t, payload, "created_at")
+	require.NotContains(t, payload, "consumed_at")
 }
 
 func TestGetUserRequestToolEmpty(t *testing.T) {

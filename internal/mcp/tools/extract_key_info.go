@@ -137,8 +137,6 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 
 	payload := map[string]any{
 		"contexts": contexts,
-		"count":    len(contexts),
-		"task_id":  identity.TaskID,
 	}
 
 	result, err := mcp.NewToolResultJSON(payload)

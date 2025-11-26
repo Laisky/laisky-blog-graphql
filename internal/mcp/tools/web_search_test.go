@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/Laisky/errors/v2"
 	mcp "github.com/mark3labs/mcp-go/mcp"
@@ -20,7 +19,6 @@ func TestWebSearchHandleMissingAPIKey(t *testing.T) {
 		func(context.Context) string { return "" },
 		func(context.Context, string, oneapi.Price, string) error { return nil },
 		&stubSearchProvider{},
-		fixedClock(time.Unix(0, 0)),
 	)
 
 	req := mcp.CallToolRequest{
@@ -54,7 +52,6 @@ func TestWebSearchHandleBillingError(t *testing.T) {
 			return expectedErr
 		},
 		&stubSearchProvider{},
-		fixedClock(time.Unix(0, 0)),
 	)
 
 	req := mcp.CallToolRequest{
@@ -87,7 +84,6 @@ func TestWebSearchHandleSearchError(t *testing.T) {
 			return nil
 		},
 		provider,
-		fixedClock(time.Unix(0, 0)),
 	)
 
 	req := mcp.CallToolRequest{
@@ -109,7 +105,6 @@ func TestWebSearchHandleSearchError(t *testing.T) {
 }
 
 func TestWebSearchHandleSuccess(t *testing.T) {
-	fixedTime := time.Date(2025, time.October, 25, 12, 0, 0, 0, time.UTC)
 	provider := &stubSearchProvider{
 		items: []searchlib.SearchResultItem{
 			{
@@ -124,7 +119,6 @@ func TestWebSearchHandleSuccess(t *testing.T) {
 		func(context.Context) string { return "token" },
 		func(context.Context, string, oneapi.Price, string) error { return nil },
 		provider,
-		fixedClock(fixedTime),
 	)
 
 	req := mcp.CallToolRequest{
@@ -143,10 +137,8 @@ func TestWebSearchHandleSuccess(t *testing.T) {
 	textContent, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
 
-	var payload searchlib.SearchResult
+	var payload searchlib.SimplifiedSearchResult
 	require.NoError(t, json.Unmarshal([]byte(textContent.Text), &payload))
-	require.Equal(t, "golang", payload.Query)
-	require.True(t, payload.CreatedAt.Equal(fixedTime))
 	require.Len(t, payload.Results, 1)
 	require.Equal(t, "https://example.com", payload.Results[0].URL)
 	require.Equal(t, "Example", payload.Results[0].Name)
@@ -165,10 +157,10 @@ func (s *stubSearchProvider) Search(context.Context, string) ([]searchlib.Search
 	return s.items, nil
 }
 
-func mustWebSearchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, provider SearchProvider, clock Clock) *WebSearchTool {
+func mustWebSearchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, provider SearchProvider) *WebSearchTool {
 	t.Helper()
 
-	tool, err := NewWebSearchTool(provider, log.Logger.Named("test_web_search"), keyProvider, billing, clock)
+	tool, err := NewWebSearchTool(provider, log.Logger.Named("test_web_search"), keyProvider, billing)
 	require.NoError(t, err)
 	return tool
 }

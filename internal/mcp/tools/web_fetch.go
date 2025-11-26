@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
@@ -25,11 +24,10 @@ type WebFetchTool struct {
 	apiKeyProvider APIKeyProvider
 	billingChecker BillingChecker
 	fetcher        DynamicFetcher
-	clock          Clock
 }
 
 // NewWebFetchTool constructs a WebFetchTool with the provided dependencies.
-func NewWebFetchTool(store *rlibs.DB, logger logSDK.Logger, apiKeyProvider APIKeyProvider, billingChecker BillingChecker, fetcher DynamicFetcher, clock Clock) (*WebFetchTool, error) {
+func NewWebFetchTool(store *rlibs.DB, logger logSDK.Logger, apiKeyProvider APIKeyProvider, billingChecker BillingChecker, fetcher DynamicFetcher) (*WebFetchTool, error) {
 	if store == nil {
 		return nil, errors.New("redis client is required")
 	}
@@ -45,11 +43,6 @@ func NewWebFetchTool(store *rlibs.DB, logger logSDK.Logger, apiKeyProvider APIKe
 	if fetcher == nil {
 		return nil, errors.New("dynamic fetcher is required")
 	}
-	if clock == nil {
-		clock = func() time.Time {
-			return time.Now().UTC()
-		}
-	}
 
 	return &WebFetchTool{
 		store:          store,
@@ -57,7 +50,6 @@ func NewWebFetchTool(store *rlibs.DB, logger logSDK.Logger, apiKeyProvider APIKe
 		apiKeyProvider: apiKeyProvider,
 		billingChecker: billingChecker,
 		fetcher:        fetcher,
-		clock:          clock,
 	}, nil
 }
 
@@ -107,9 +99,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 
 	payload := map[string]any{
-		"url":        urlValue,
-		"content":    string(content),
-		"fetched_at": t.clock(),
+		"content": string(content),
 	}
 
 	toolResult, err := mcp.NewToolResultJSON(payload)
