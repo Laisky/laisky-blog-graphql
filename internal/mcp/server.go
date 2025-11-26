@@ -21,6 +21,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
@@ -32,7 +33,7 @@ type ctxKey string
 
 const (
 	keyAuthorization ctxKey = "authorization"
-	httpLogBodyLimit        = 4096
+	httpLogBodyLimit int    = 4096
 )
 
 type callRecorder interface {
@@ -46,6 +47,7 @@ type Server struct {
 	webSearch      *tools.WebSearchTool
 	webFetch       *tools.WebFetchTool
 	askUser        *tools.AskUserTool
+	getUserRequest *tools.GetUserRequestTool
 	extractKeyInfo *tools.ExtractKeyInfoTool
 	callLogger     callRecorder
 }
@@ -58,8 +60,8 @@ type Server struct {
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
 
-func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, ragService *rag.Service, ragSettings rag.Settings, rdb *rlibs.DB, callLogger callRecorder, logger logSDK.Logger) (*Server, error) {
-	if searchProvider == nil && askUserService == nil && ragService == nil && rdb == nil {
+func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, rdb *rlibs.DB, callLogger callRecorder, logger logSDK.Logger) (*Server, error) {
+	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && rdb == nil {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
@@ -145,6 +147,20 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		}
 		s.askUser = askUserTool
 		mcpServer.AddTool(askUserTool.Definition(), s.handleAskUser)
+	}
+
+	if userRequestService != nil {
+		getUserRequestTool, err := tools.NewGetUserRequestTool(
+			userRequestService,
+			serverLogger.Named("get_user_request"),
+			headerProvider,
+			askuser.ParseAuthorizationContext,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "init get_user_request tool")
+		}
+		s.getUserRequest = getUserRequestTool
+		mcpServer.AddTool(getUserRequestTool.Definition(), s.handleGetUserRequest)
 	}
 
 	if ragService != nil {
@@ -338,6 +354,22 @@ func (s *Server) handleAskUser(ctx context.Context, req mcp.CallToolRequest) (*m
 	result, err := s.askUser.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "ask_user", apiKey, args, start, duration, 0, result, err)
+	return result, err
+}
+
+func (s *Server) handleGetUserRequest(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.getUserRequest == nil {
+		result := mcp.NewToolResultError("get_user_request tool is not available")
+		s.recordToolInvocation(ctx, "get_user_request", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.getUserRequest.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "get_user_request", apiKey, args, start, duration, 0, result, err)
 	return result, err
 }
 

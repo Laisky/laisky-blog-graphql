@@ -1,17 +1,16 @@
 import { MessageSquare } from 'lucide-react'
-import type { ChangeEvent, FormEvent } from 'react'
+import type { ChangeEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { ApiKeyInput } from '@/components/api-key-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { normalizeApiKey, useApiKey } from '@/lib/api-key-context'
 import { cn } from '@/lib/utils'
 
-import { listRequests, normalizeApiKey, submitAnswer, type AskUserRequest } from './api'
-
-const STORAGE_KEY = 'ask_user_api_key'
+import { listRequests, submitAnswer, type AskUserRequest } from './api'
 
 interface StatusState {
   message: string
@@ -25,24 +24,12 @@ interface IdentityState {
 }
 
 export function AskUserPage() {
-  const [apiKey, setApiKey] = useState<string>(() => {
-    if (typeof window === 'undefined') {
-      return ''
-    }
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY)
-      return normalizeApiKey(stored ?? '')
-    } catch {
-      return ''
-    }
-  })
+  const { apiKey } = useApiKey()
   const [pendingRequests, setPendingRequests] = useState<AskUserRequest[]>([])
   const [historyRequests, setHistoryRequests] = useState<AskUserRequest[]>([])
   const [identity, setIdentity] = useState<IdentityState | null>(null)
   const [status, setStatus] = useState<StatusState | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [formValue, setFormValue] = useState(apiKey)
-  const [isKeyVisible, setIsKeyVisible] = useState(false)
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({})
   const [pendingSubmissions, setPendingSubmissions] = useState<Record<string, boolean>>({})
 
@@ -50,30 +37,6 @@ export function AskUserPage() {
   const pollControlsRef = useRef<{ schedule: (delay: number) => void; refresh: () => void } | null>(
     null
   )
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-    try {
-      const sanitized = normalizeApiKey(apiKey)
-      if (sanitized) {
-        window.localStorage.setItem(STORAGE_KEY, sanitized)
-      } else {
-        window.localStorage.removeItem(STORAGE_KEY)
-      }
-    } catch {
-      // ignore storage errors
-    }
-  }, [apiKey])
-
-  useEffect(() => {
-    setFormValue(apiKey)
-  }, [apiKey])
-
-  useEffect(() => {
-    setIsKeyVisible(false)
-  }, [apiKey])
 
   useEffect(() => {
     if (!apiKey) {
@@ -157,36 +120,8 @@ export function AskUserPage() {
     }
   }, [apiKey])
 
-  const handleAuthSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault()
-      const normalized = normalizeApiKey(formValue)
-      if (!normalized) {
-        setStatus({ message: 'Please provide an API key.', tone: 'error' })
-        return
-      }
-      if (normalized === apiKey) {
-        setStatus({ message: 'Using stored API key.', tone: 'info' })
-        pollControlsRef.current?.refresh()
-        return
-      }
-      setApiKey(normalized)
-      setFormValue(normalized)
-      setIsKeyVisible(false)
-      setStatus({ message: 'Connecting…', tone: 'info' })
-    },
-    [apiKey, formValue]
-  )
-
-  const handleDisconnect = useCallback(() => {
-    setApiKey('')
-    setFormValue('')
-    setIsKeyVisible(false)
-    setStatus({ message: 'Disconnected.', tone: 'info' })
-    if (pollTimerRef.current) {
-      clearTimeout(pollTimerRef.current)
-      pollTimerRef.current = null
-    }
+  const handleRefresh = useCallback(() => {
+    pollControlsRef.current?.refresh()
   }, [])
 
   const handleAnswerChange = useCallback((id: string, value: string) => {
@@ -251,62 +186,20 @@ export function AskUserPage() {
       </section>
 
       <Card className="border border-border/60 bg-card shadow-sm">
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <CardTitle className="text-lg text-foreground">Authenticate</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Enter the bearer token shared with your AI agent. The token is stored locally and never
-              sent elsewhere.
-            </p>
-          </div>
-          {apiKey && (
-            <Button variant="outline" onClick={handleDisconnect}>
-              Disconnect
-            </Button>
-          )}
+        <CardHeader>
+          <CardTitle className="text-lg text-foreground">Authenticate</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Enter the bearer token shared with your AI agent. The token is stored locally and never
+            sent elsewhere.
+          </p>
         </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={handleAuthSubmit}
-            className="flex flex-col gap-3 md:flex-row md:items-center"
-          >
-            <div className="relative w-full md:max-w-md">
-              <Input
-                value={formValue}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => setFormValue(event.target.value)}
-                type={isKeyVisible ? 'text' : 'password'}
-                placeholder="Enter your API key"
-                autoComplete="off"
-                className="pr-28"
-                required
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsKeyVisible((prev) => !prev)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 px-3"
-                aria-pressed={isKeyVisible}
-                aria-label={isKeyVisible ? 'Hide API key' : 'Show API key'}
-              >
-                {isKeyVisible ? 'Hide' : 'Show'}
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button type="submit">Connect</Button>
-              {apiKey && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => pollControlsRef.current?.refresh()}
-                >
-                  Refresh
-                </Button>
-              )}
-            </div>
-          </form>
+        <CardContent className="space-y-4">
+          <ApiKeyInput
+            showRefresh
+            onRefresh={handleRefresh}
+          />
           {status && (
-            <StatusBanner status={status} className="mt-4" maskedKeySuffix={maskedKeySuffix} />
+            <StatusBanner status={status} maskedKeySuffix={maskedKeySuffix} />
           )}
         </CardContent>
       </Card>

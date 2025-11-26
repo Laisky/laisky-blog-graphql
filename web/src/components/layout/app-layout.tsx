@@ -1,6 +1,6 @@
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { useEffect, useRef, useState } from 'react'
 import { Cpu } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { ThemeToggle } from '@/components/theme/theme-toggle'
 import { cn } from '@/lib/utils'
@@ -17,8 +17,9 @@ interface ConsoleMenuItem extends NavItemConfig {
 const navItems: NavItemConfig[] = [{ to: '/', label: 'Overview' }]
 
 const consoleItems: ConsoleMenuItem[] = [
-  { to: '/tools/ask_user', label: 'ask_user' },
-  { to: '/debug', label: 'Inspector', newTab: true },
+	{ to: '/tools/ask_user', label: 'ask_user' },
+	{ to: '/tools/get_user_requests', label: 'get_user_requests' },
+	{ to: '/debug', label: 'Inspector', newTab: true },
 ]
 
 export function AppLayout() {

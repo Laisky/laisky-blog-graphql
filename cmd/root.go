@@ -75,7 +75,7 @@ func setupSettings(_ context.Context) {
 	config.LoadFromFile(cfgPath)
 }
 
-func setupLogger(ctx context.Context) {
+func setupLogger(_ context.Context) {
 	// log
 	// alertPusher, err := glog.NewAlert(
 	// 	ctx,

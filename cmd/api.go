@@ -21,6 +21,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
 	blogCtl "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogDao "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
@@ -188,6 +189,12 @@ func runAPI() error {
 				logger.Error("init call_log service", zap.Error(err))
 			} else {
 				args.CallLogService = callSvc
+			}
+
+			if userSvc, err := userrequests.NewService(askDB.DB, logger.Named("user_requests"), nil); err != nil {
+				logger.Error("init user_requests service", zap.Error(err))
+			} else {
+				args.UserRequestService = userSvc
 			}
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	arweave "github.com/Laisky/laisky-blog-graphql/internal/web/arweave/controller"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
@@ -24,16 +25,17 @@ type Resolver struct {
 }
 
 type ResolverArgs struct {
-	TelegramCtl       *telegram.Telegram
-	TelegramSvc       *telegramSvc.Telegram
-	BlogCtl           *blog.Blog
-	BlogSvc           *blogSvc.Blog
-	WebSearchProvider searchlib.Provider
-	Rdb               *rlibs.DB
-	AskUserService    *askuser.Service
-	CallLogService    *calllog.Service
-	RAGService        *rag.Service
-	RAGSettings       rag.Settings
+	TelegramCtl        *telegram.Telegram
+	TelegramSvc        *telegramSvc.Telegram
+	BlogCtl            *blog.Blog
+	BlogSvc            *blogSvc.Blog
+	WebSearchProvider  searchlib.Provider
+	Rdb                *rlibs.DB
+	AskUserService     *askuser.Service
+	CallLogService     *calllog.Service
+	UserRequestService *userrequests.Service
+	RAGService         *rag.Service
+	RAGSettings        rag.Settings
 }
 
 // NewResolver new resolver

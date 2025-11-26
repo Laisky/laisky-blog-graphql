@@ -24,6 +24,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -173,8 +174,8 @@ func RunServer(addr string, resolver *Resolver) {
 		log.Logger.Panic("enable metric server", zap.Error(err))
 	}
 
-	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil || resolver.args.RAGService != nil) {
-		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.Rdb, resolver.args.CallLogService, log.Logger)
+	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil || resolver.args.UserRequestService != nil || resolver.args.RAGService != nil) {
+		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.UserRequestService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.Rdb, resolver.args.CallLogService, log.Logger)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
@@ -225,14 +226,35 @@ func RunServer(addr string, resolver *Resolver) {
 					server.Any("/tools/call_log/api/*path", gin.WrapH(http.StripPrefix("/tools/call_log", callLogMux)))
 				}
 			}
+
+			if resolver.args.UserRequestService != nil {
+				userReqMux := userrequests.NewHTTPHandler(resolver.args.UserRequestService, log.Logger.Named("get_user_requests_http"))
+				userReqBase := prefix.join("/tools/get_user_requests")
+				stripPrefix := strings.TrimSuffix(userReqBase, "/")
+				if stripPrefix == "" {
+					stripPrefix = "/"
+				}
+				userReqHandler := gin.WrapH(http.StripPrefix(stripPrefix, userReqMux))
+
+				apiBase := prefix.join("/tools/get_user_requests/api")
+				server.Any(apiBase, userReqHandler)
+				server.Any(apiBase+"/*path", userReqHandler)
+
+				if prefix.public == "" {
+					server.Any("/tools/get_user_requests/api", gin.WrapH(http.StripPrefix("/tools/get_user_requests", userReqMux)))
+					server.Any("/tools/get_user_requests/api/*path", gin.WrapH(http.StripPrefix("/tools/get_user_requests", userReqMux)))
+				}
+			}
 		}
 	} else {
 		searchNil := resolver != nil && resolver.args.WebSearchProvider == nil
 		askNil := resolver != nil && resolver.args.AskUserService == nil
+		userReqNil := resolver != nil && resolver.args.UserRequestService == nil
 		log.Logger.Warn("skip mcp server initialization",
 			zap.Bool("resolver_nil", resolver == nil),
 			zap.Bool("web_search_provider_nil", searchNil),
 			zap.Bool("ask_user_service_nil", askNil),
+			zap.Bool("user_request_service_nil", userReqNil),
 			zap.String("internal_prefix", prefix.display(prefix.internal)),
 		)
 	}

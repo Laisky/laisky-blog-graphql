@@ -9,18 +9,20 @@ The service mounts an MCP-compatible JSON-RPC endpoint at `/mcp`. Clients may co
 - `web_search` — runs a Google Programmable Search query.
 - `web_fetch` — renders a dynamic web page through the Redis-backed fetcher.
 - `ask_user` — forwards a question to the authenticated human and waits for their reply.
+- `get_user_request` — delivers the most recent human directive queued for the calling API key.
 - `extract_key_info` — chunks caller-provided materials, stores them in PostgreSQL with pgvector, and returns the most relevant contexts for a query.
 
-Both tools require a valid `Authorization: Bearer <token>` header. Tokens are also used for billing and for routing questions to the correct user.
+Every tool requires a valid `Authorization: Bearer <token>` header. Tokens are also used for billing and for routing questions to the correct user.
 
 ## Deployment Prerequisites
 
 Enable the MCP endpoint when starting the API service. The tools are advertised automatically when their dependencies are available.
 
-| Feature      | Requirement                                                                                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `web_search` | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`. |
-| `ask_user`   | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM. |
+| Feature           | Requirement                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `web_search`      | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`. |
+| `ask_user`        | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM. |
+| `get_user_request` | Same `settings.db.mcp.*` configuration. Stores directives in the `mcp_user_requests` table keyed by the caller’s token hash. |
 
 If no tool dependencies are met the server skips MCP initialisation.
 
@@ -53,6 +55,9 @@ The raw token is checked against the external billing service, hashed with SHA-2
 | `/mcp/tools/ask_user`                   | `GET`             | Web console for human operators. Prompts for the API key and then shows pending questions and history.        |
 | `/mcp/tools/ask_user/api/requests`      | `GET`             | JSON API used by the console. Requires the same `Authorization` header.                                       |
 | `/mcp/tools/ask_user/api/requests/{id}` | `POST`            | Submits the human response for a pending request.                                                             |
+| `/mcp/tools/get_user_requests`              | `GET`             | React console that lets humans queue, review, and delete directives for `get_user_request`.                    |
+| `/mcp/tools/get_user_requests/api/requests` | `GET`, `POST`, `DELETE` | Lists, creates, or bulk-deletes user directives scoped to the bearer token.                                    |
+| `/mcp/tools/get_user_requests/api/requests/{id}` | `DELETE`       | Removes a single directive.                                                                                   |
 
 > **Note:** The console endpoints are intended for browsers. They are protected only by the bearer token, so deploy behind HTTPS and avoid exposing them publicly without additional access controls.
 
@@ -124,6 +129,39 @@ The raw token is checked against the external billing service, hashed with SHA-2
 
 The console stores the API key locally (browser `localStorage`) so it can resume polling automatically. Clear the key using the form to stop receiving updates.
 
+### `get_user_request`
+
+- **Description:** Deliver the most recent human-authored directive waiting for the authenticated API key and immediately mark it as consumed so it is not replayed.
+- **Input Parameters:** _None._ Future iterations may allow an optional `task_id` filter; today every caller operates on a single default task.
+- **Behaviour:**
+  1. Parses and validates the bearer token, deriving `user_identity` and the hashed key.
+  2. Looks up the newest `pending` entry in `mcp_user_requests` for that key.
+  3. Atomically flips the entry to `consumed`, stamps `consumed_at`, and returns the payload to the caller.
+  4. When the queue is empty the tool responds immediately with `{ "status": "empty" }` instead of raising an error.
+- **Response Shape:**
+
+```json
+{
+  "request_id": "22222222-2222-2222-2222-222222222222",
+  "content": "Ship release v2 after the smoke tests finish.",
+  "task_id": "default",
+  "status": "consumed",
+  "created_at": "2025-10-23T18:20:00Z",
+  "consumed_at": "2025-10-23T18:21:42Z",
+  "user_identity": "user:workspace",
+  "key_hint": "9f42"
+}
+```
+
+- **Error Cases:** missing/invalid token (`invalid authorization header`), database outages (`failed to fetch user request`), or context cancellations/timeouts inherited from the MCP caller. Running with an empty queue is treated as a successful call and returns a descriptive JSON payload.
+
+#### User Requests Console Workflow
+
+1. Open `/mcp/tools/get_user_requests` and authenticate with the same bearer token the AI will use.
+2. Draft directives in the editor and optionally label them with a `task_id`. The newest entry is what `get_user_request` returns first.
+3. Review two columns: `Pending` items are still waiting to be consumed, while `Consumed history` shows everything that has already been delivered.
+4. Remove obsolete entries individually or purge everything with the “Delete all” button. Deletions only affect the authenticated API key and do not change other tenants.
+
 ### `extract_key_info`
 
 - **Description:** Chunk arbitrary materials, compute embeddings with the caller's OpenAI-compatible key, and return the top-matching context slices.
@@ -156,6 +194,7 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 ### Data Storage Notes
 
 - Requests are stored in the `mcp` PostgreSQL database, table inferred from the GORM model `askuser.Request`.
+- User-authored directives powering `get_user_request` live in the `mcp_user_requests` table (model `userrequests.Request`) and are scoped by the hashed API key plus optional `task_id`.
 - Primary key: UUID generated on insert.
 - Sensitive fields:
   - `api_key_hash` holds the SHA-256 hash of the bearer token.

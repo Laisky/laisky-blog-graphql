@@ -7,6 +7,8 @@ import { ThemeProvider } from '@/components/theme/theme-provider'
 import { AskUserPage } from '@/features/mcp/ask-user/page'
 import { CallLogPage } from '@/features/mcp/call-log/page'
 import { InspectorPage } from '@/features/mcp/inspector/page'
+import { UserRequestsPage } from '@/features/mcp/user-requests/page'
+import { ApiKeyProvider } from '@/lib/api-key-context'
 import { loadRuntimeConfig } from '@/lib/runtime-config'
 import { HomePage } from '@/pages/home'
 import { NotFoundPage } from '@/pages/not-found'
@@ -20,6 +22,7 @@ const routes = [
     children: [
       { index: true, element: <HomePage /> },
       { path: 'tools/ask_user', element: <AskUserPage /> },
+      { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
       { path: 'tools/call_log', element: <CallLogPage /> },
       { path: 'debug/*', element: <InspectorPage /> },
     ],
@@ -40,7 +43,9 @@ async function bootstrap() {
   createRoot(container).render(
     <StrictMode>
       <ThemeProvider>
-        <RouterProvider router={router} />
+        <ApiKeyProvider>
+          <RouterProvider router={router} />
+        </ApiKeyProvider>
       </ThemeProvider>
     </StrictMode>
   )

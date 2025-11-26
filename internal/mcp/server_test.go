@@ -14,7 +14,7 @@ import (
 )
 
 func TestNewServerRequiresCapability(t *testing.T) {
-	srv, err := NewServer(nil, nil, nil, rag.Settings{}, nil, nil, glog.Shared)
+	srv, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, glog.Shared)
 	require.Nil(t, srv)
 	require.Error(t, err)
 }
@@ -64,6 +64,20 @@ func TestHandleAskUserReturnsConfigurationError(t *testing.T) {
 	textContent, ok := result.Content[0].(mcpgo.TextContent)
 	require.True(t, ok)
 	require.Equal(t, "ask_user tool is not available", textContent.Text)
+}
+
+func TestHandleGetUserRequestReturnsConfigurationError(t *testing.T) {
+	srv := &Server{}
+
+	result, err := srv.handleGetUserRequest(context.Background(), mcpgo.CallToolRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+
+	textContent, ok := result.Content[0].(mcpgo.TextContent)
+	require.True(t, ok)
+	require.Equal(t, "get_user_request tool is not available", textContent.Text)
 }
 
 type mockRecorder struct {

@@ -1,23 +1,23 @@
 import { Server } from 'lucide-react'
-import type { FormEvent } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ApiKeyInput } from '@/components/api-key-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { useApiKey } from '@/lib/api-key-context'
 import { cn } from '@/lib/utils'
 
-import { normalizeApiKey } from '../shared/auth'
 import type { CallLogEntry, CallLogListResponse } from './api'
 import { fetchCallLogs } from './api'
 
-const STORAGE_KEY = 'call_log_api_key'
 const TOOL_OPTIONS: Array<{ label: string; value: string }> = [
   { label: 'All tools', value: 'all' },
   { label: 'web_search', value: 'web_search' },
   { label: 'web_fetch', value: 'web_fetch' },
   { label: 'ask_user', value: 'ask_user' },
+  { label: 'get_user_request', value: 'get_user_request' },
 ]
 const SORT_FIELDS: Array<{ label: string; value: string }> = [
   { label: 'Newest first', value: 'occurred_at' },
@@ -27,9 +27,7 @@ const SORT_FIELDS: Array<{ label: string; value: string }> = [
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
 
 export function CallLogPage() {
-  const [apiKey, setApiKey] = useState<string>(() => loadStoredApiKey())
-  const [formValue, setFormValue] = useState(apiKey)
-  const [isKeyVisible, setIsKeyVisible] = useState(false)
+  const { apiKey } = useApiKey()
   const [entries, setEntries] = useState<CallLogEntry[]>([])
   const [responseMeta, setResponseMeta] = useState<CallLogListResponse['meta'] | null>(null)
   const [pagination, setPagination] = useState<CallLogListResponse['pagination'] | null>(null)
@@ -46,24 +44,6 @@ export function CallLogPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [refreshKey, setRefreshKey] = useState(0)
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const normalized = normalizeApiKey(apiKey)
-      if (normalized) {
-        window.localStorage.setItem(STORAGE_KEY, normalized)
-      } else {
-        window.localStorage.removeItem(STORAGE_KEY)
-      }
-    } catch {
-      // ignore storage errors
-    }
-  }, [apiKey])
-
-  useEffect(() => {
-    setFormValue(apiKey)
-  }, [apiKey])
 
   useEffect(() => {
     if (!apiKey) {
@@ -113,33 +93,8 @@ export function CallLogPage() {
     return () => controller.abort()
   }, [apiKey, page, pageSize, sortBy, sortOrder, toolFilter, userFilter, fromDate, toDate, refreshKey])
 
-  const handleAuthSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault()
-      const normalized = normalizeApiKey(formValue)
-      if (!normalized) {
-        setStatus('Please provide an API key to connect.')
-        return
-      }
-      if (normalized === apiKey) {
-        setStatus('Already connected with this API key.')
-        return
-      }
-      setApiKey(normalized)
-      setPage(1)
-      setStatus('Connecting…')
-    },
-    [apiKey, formValue]
-  )
-
-  const handleDisconnect = useCallback(() => {
-    setApiKey('')
-    setFormValue('')
-    setPage(1)
-    setEntries([])
-    setPagination(null)
-    setResponseMeta(null)
-    setStatus('Disconnected.')
+  const handleRefresh = useCallback(() => {
+    setRefreshKey((prev) => prev + 1)
   }, [])
 
   const quotesPerUsd = responseMeta?.quotes_per_usd ?? 0
@@ -173,51 +128,18 @@ export function CallLogPage() {
       </section>
 
       <Card className="border border-border/60 bg-card shadow-sm">
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <CardTitle className="text-lg text-foreground">Authenticate</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Enter the bearer token assigned to your agent. The API key is stored locally only.
-            </p>
-          </div>
-          {apiKey && (
-            <Button variant="outline" onClick={handleDisconnect}>
-              Disconnect
-            </Button>
-          )}
+        <CardHeader>
+          <CardTitle className="text-lg text-foreground">Authenticate</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Enter the bearer token assigned to your agent. The API key is stored locally only.
+          </p>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="relative w-full md:max-w-md">
-              <Input
-                value={formValue}
-                onChange={(event) => setFormValue(event.target.value)}
-                type={isKeyVisible ? 'text' : 'password'}
-                placeholder="Enter your API key"
-                autoComplete="off"
-                className="pr-28"
-                required
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsKeyVisible((prev) => !prev)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 px-3"
-              >
-                {isKeyVisible ? 'Hide' : 'Show'}
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button type="submit">Connect</Button>
-              {apiKey && (
-                <Button type="button" variant="secondary" onClick={() => setRefreshKey((prev) => prev + 1)}>
-                  Refresh
-                </Button>
-              )}
-            </div>
-          </form>
-          <div className="mt-3 text-sm text-muted-foreground">{status}</div>
+        <CardContent className="space-y-4">
+          <ApiKeyInput
+            showRefresh
+            onRefresh={handleRefresh}
+          />
+          <div className="text-sm text-muted-foreground">{status}</div>
         </CardContent>
       </Card>
 
@@ -421,18 +343,6 @@ export function CallLogPage() {
       </div>
     </div>
   )
-}
-
-function loadStoredApiKey(): string {
-  if (typeof window === 'undefined') {
-    return ''
-  }
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    return normalizeApiKey(stored ?? '')
-  } catch {
-    return ''
-  }
 }
 
 type CallLogQueryInput = {

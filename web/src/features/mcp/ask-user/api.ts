@@ -1,7 +1,5 @@
 import { buildAuthorizationHeader, resolveCurrentApiBasePath } from '../shared/auth'
 
-export { normalizeApiKey } from '../shared/auth'
-
 export interface AskUserRequest {
   id: string
   question: string

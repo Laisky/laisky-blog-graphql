@@ -1,5 +1,6 @@
 import {
   Activity,
+  ClipboardList,
   Cpu,
   Database,
   ExternalLink,
@@ -73,6 +74,13 @@ export function HomePage() {
             action="Open Console"
           />
           <ConsoleCard
+            title="User Requests Console"
+            description="Queue new directives for AI assistants and track consumed history. Manage get_user_request inputs."
+            icon={<ClipboardList className="h-6 w-6" />}
+            href="/tools/get_user_requests"
+            action="Open Console"
+          />
+          <ConsoleCard
             title="MCP Inspector"
             description="Debug and test MCP tools directly. Inspect JSON-RPC traffic and tool definitions."
             icon={<Activity className="h-6 w-6" />}
@@ -114,6 +122,12 @@ export function HomePage() {
             description="Suspends execution to request input from a human operator via the console."
             icon={<MessageSquare className="h-5 w-5" />}
             tags={['Human-in-the-loop', 'Async']}
+          />
+          <ToolCard
+            title="get_user_request"
+            description="Delivers the latest human-authored directive queued for the AI agent."
+            icon={<ClipboardList className="h-5 w-5" />}
+            tags={['Human-in-the-loop', 'Push-based']}
           />
           <ToolCard
             title="extract_key_info"
