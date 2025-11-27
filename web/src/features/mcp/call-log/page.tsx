@@ -29,7 +29,6 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50]
 export function CallLogPage() {
   const { apiKey } = useApiKey()
   const [entries, setEntries] = useState<CallLogEntry[]>([])
-  const [responseMeta, setResponseMeta] = useState<CallLogListResponse['meta'] | null>(null)
   const [pagination, setPagination] = useState<CallLogListResponse['pagination'] | null>(null)
   const [status, setStatus] = useState<string>('Connect with your API key to view call history.')
   const [error, setError] = useState<string | null>(null)
@@ -73,7 +72,6 @@ export function CallLogPage() {
         if (controller.signal.aborted) return
         setEntries(data.data)
         setPagination(data.pagination)
-        setResponseMeta(data.meta)
         setPage(data.pagination.page)
         setStatus(`Loaded ${data.data.length} entries.`)
       })
@@ -81,7 +79,6 @@ export function CallLogPage() {
         if (controller.signal.aborted) return
         setEntries([])
         setPagination(null)
-        setResponseMeta(null)
         setError(err instanceof Error ? err.message : 'Failed to load call logs.')
       })
       .finally(() => {
@@ -97,8 +94,6 @@ export function CallLogPage() {
     setRefreshKey((prev) => prev + 1)
   }, [])
 
-  const quotesPerUsd = responseMeta?.quotes_per_usd ?? 0
-  const costFormatter = useMemo(() => new Intl.NumberFormat(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }), [])
   const dateFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat(undefined, {
@@ -258,11 +253,6 @@ export function CallLogPage() {
             Page {displayedPage} of {totalPages || 1}
             {pagination ? ` • ${pagination.total_items} total entries` : ''}
           </div>
-          {quotesPerUsd > 0 && (
-            <div className="text-xs text-muted-foreground/80">
-              {quotesPerUsd.toLocaleString()} credits = 1 USD
-            </div>
-          )}
         </div>
         <div className="relative overflow-x-auto">
           <table className="min-w-full divide-y divide-border/60 text-sm">
@@ -295,7 +285,7 @@ export function CallLogPage() {
                       <code className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">{entry.user_prefix || 'unknown'}</code>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {formatCost(entry.cost_credits, quotesPerUsd, costFormatter)}
+                      {formatCost(entry.cost_usd)}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">{formatDuration(entry.duration_ms)}</td>
                     <td className="px-4 py-3">
@@ -376,12 +366,11 @@ function formatTimestamp(value: string, formatter: Intl.DateTimeFormat): string 
   return formatter.format(time)
 }
 
-function formatCost(value: number, quotesPerUsd: number, formatter: Intl.NumberFormat): string {
-  if (!value) {
-    return '0 ($0.0000)'
+function formatCost(costUsd: string): string {
+  if (!costUsd || costUsd === '0') {
+    return '$0.0000'
   }
-  const usd = quotesPerUsd > 0 ? value / quotesPerUsd : 0
-  return `${value.toLocaleString()} ($${formatter.format(usd)})`
+  return `$${costUsd}`
 }
 
 function formatDuration(ms: number): string {

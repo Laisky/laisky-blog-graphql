@@ -16,4 +16,6 @@ Project-wide engineering conventions (error handling, logging, ORM usage, CSS ru
 
 * use `web_search` tool to search the web for up-to-date information
 * use `web_fetch` tool to fetch the rendered content of a web page.
-* use `ask_user` tool to ask for clarifications when requirements are ambiguous or insufficient.
+* use `get_user_requests` to get the user's latest requirements. You should always check the user's latest requirements frequently to ensure you are meeting their needs.
+
+Before completing any sub-tasks or returning results to the user, you must call `get_user_requests` at least once until the tool returns an empty list, indicating that there are no new requests from the user.
