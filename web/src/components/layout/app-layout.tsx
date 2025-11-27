@@ -48,7 +48,7 @@ export function AppLayout() {
         <div className="container mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4 md:flex-nowrap">
           <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
             <Cpu className="h-5 w-5" />
-            <span>laisky MCP</span>
+            <span>Laisky MCP</span>
           </Link>
           <div className="flex w-full items-center justify-between gap-4 md:w-auto md:justify-end">
             <nav className="flex flex-1 flex-wrap items-center gap-3 text-sm font-medium text-muted-foreground md:flex-none">

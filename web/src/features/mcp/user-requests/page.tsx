@@ -18,6 +18,7 @@ import {
   listUserRequests,
   type UserRequest,
 } from './api'
+import { SavedCommands } from './saved-commands'
 
 interface StatusState {
   message: string
@@ -224,6 +225,15 @@ export function UserRequestsPage() {
 
   const totalRequests = pending.length + consumed.length
 
+  const handleSelectSavedCommand = useCallback((content: string) => {
+    setNewContent(content)
+    setStatus({ message: 'Command loaded into editor.', tone: 'success' })
+  }, [])
+
+  const handleSaveCurrentContent = useCallback((label: string) => {
+    setStatus({ message: `Saved "${label}" to your commands.`, tone: 'success' })
+  }, [])
+
   return (
     <div className="space-y-8">
       <section className="space-y-4">
@@ -297,6 +307,13 @@ export function UserRequestsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <SavedCommands
+        currentContent={newContent}
+        onSelectCommand={handleSelectSavedCommand}
+        onSaveCurrentContent={handleSaveCurrentContent}
+        disabled={!apiKey || isSubmitting}
+      />
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">

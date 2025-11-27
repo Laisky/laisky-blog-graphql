@@ -228,21 +228,22 @@ func RunServer(addr string, resolver *Resolver) {
 			}
 
 			if resolver.args.UserRequestService != nil {
-				userReqMux := userrequests.NewHTTPHandler(resolver.args.UserRequestService, log.Logger.Named("get_user_requests_http"))
+				// Combined handler that routes to either user requests or saved commands based on path
+				combinedMux := userrequests.NewCombinedHTTPHandler(resolver.args.UserRequestService, log.Logger.Named("user_requests_http"))
 				userReqBase := prefix.join("/tools/get_user_requests")
 				stripPrefix := strings.TrimSuffix(userReqBase, "/")
 				if stripPrefix == "" {
 					stripPrefix = "/"
 				}
-				userReqHandler := gin.WrapH(http.StripPrefix(stripPrefix, userReqMux))
+				userReqHandler := gin.WrapH(http.StripPrefix(stripPrefix, combinedMux))
 
 				apiBase := prefix.join("/tools/get_user_requests/api")
 				server.Any(apiBase, userReqHandler)
 				server.Any(apiBase+"/*path", userReqHandler)
 
 				if prefix.public == "" {
-					server.Any("/tools/get_user_requests/api", gin.WrapH(http.StripPrefix("/tools/get_user_requests", userReqMux)))
-					server.Any("/tools/get_user_requests/api/*path", gin.WrapH(http.StripPrefix("/tools/get_user_requests", userReqMux)))
+					server.Any("/tools/get_user_requests/api", gin.WrapH(http.StripPrefix("/tools/get_user_requests", combinedMux)))
+					server.Any("/tools/get_user_requests/api/*path", gin.WrapH(http.StripPrefix("/tools/get_user_requests", combinedMux)))
 				}
 			}
 		}

@@ -16,6 +16,29 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 )
 
+// NewCombinedHTTPHandler creates a handler that routes both user requests and saved commands APIs.
+// This avoids route conflicts in Gin by handling all paths under /api/* in a single handler.
+func NewCombinedHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
+	return &combinedHTTPHandler{
+		requestsHandler:     &httpHandler{service: service, logger: logger},
+		savedCommandHandler: &savedCommandsHTTPHandler{service: service, logger: logger},
+	}
+}
+
+type combinedHTTPHandler struct {
+	requestsHandler     *httpHandler
+	savedCommandHandler *savedCommandsHTTPHandler
+}
+
+// ServeHTTP routes requests to the appropriate handler based on the URL path.
+func (h *combinedHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/saved-commands") {
+		h.savedCommandHandler.ServeHTTP(w, r)
+	} else {
+		h.requestsHandler.ServeHTTP(w, r)
+	}
+}
+
 // NewHTTPHandler constructs an HTTP mux exposing the user request APIs under /api/requests.
 func NewHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
 	return &httpHandler{service: service, logger: logger}

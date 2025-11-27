@@ -11,4 +11,8 @@ var (
 	ErrNoPendingRequests = errors.New("no pending user requests")
 	// ErrEmptyContent indicates the payload provided by the human operator was empty.
 	ErrEmptyContent = errors.New("request content cannot be empty")
+	// ErrSavedCommandNotFound is returned when a referenced saved command cannot be located for the authenticated user.
+	ErrSavedCommandNotFound = errors.New("saved command not found")
+	// ErrSavedCommandLimitReached indicates the user has reached the maximum number of saved commands.
+	ErrSavedCommandLimitReached = errors.New("saved command limit reached")
 )
