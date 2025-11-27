@@ -78,7 +78,7 @@ export function HomePage() {
     },
   ]
 
-  // Filter tool cards based on enabled tools
+  // Tool cards - show all tools with enabled state for visual distinction
   const toolCards = [
     {
       key: 'web_search',
@@ -89,6 +89,7 @@ export function HomePage() {
           description="Performs Google Programmable Search queries to retrieve relevant web results."
           icon={<Search className="h-5 w-5" />}
           tags={['External API', 'Billing']}
+          enabled={toolsConfig.web_search}
         />
       ),
     },
@@ -101,6 +102,7 @@ export function HomePage() {
           description="Fetches and renders dynamic web pages using a headless browser (via Redis)."
           icon={<Globe className="h-5 w-5" />}
           tags={['Headless Browser', 'Content Extraction']}
+          enabled={toolsConfig.web_fetch}
         />
       ),
     },
@@ -113,6 +115,7 @@ export function HomePage() {
           description="Suspends execution to request input from a human operator via the console."
           icon={<MessageSquare className="h-5 w-5" />}
           tags={['Human-in-the-loop', 'Async']}
+          enabled={toolsConfig.ask_user}
         />
       ),
     },
@@ -125,6 +128,7 @@ export function HomePage() {
           description="Delivers the latest human-authored directive queued for the AI agent."
           icon={<ClipboardList className="h-5 w-5" />}
           tags={['Human-in-the-loop', 'Push-based']}
+          enabled={toolsConfig.get_user_request}
         />
       ),
     },
@@ -137,13 +141,13 @@ export function HomePage() {
           description="RAG capability that chunks text and retrieves relevant context using vector embeddings."
           icon={<Database className="h-5 w-5" />}
           tags={['RAG', 'Vector DB', 'Embeddings']}
+          enabled={toolsConfig.extract_key_info}
         />
       ),
     },
   ]
 
   const enabledConsoles = consoleCards.filter((card) => card.enabled)
-  const enabledTools = toolCards.filter((card) => card.enabled)
 
   return (
     <div className="space-y-12">
@@ -202,14 +206,14 @@ export function HomePage() {
       )}
 
       {/* Tools Section */}
-      {enabledTools.length > 0 && (
+      {toolCards.length > 0 && (
         <section className="space-y-6">
           <div className="flex items-center gap-2 border-b border-border pb-2">
             <Database className="h-5 w-5 text-foreground" />
             <h2 className="text-2xl font-semibold tracking-tight">Available Tools</h2>
           </div>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
-            {enabledTools.map((card) => (
+            {toolCards.map((card) => (
               <div key={card.key}>{card.element}</div>
             ))}
           </div>
@@ -268,27 +272,58 @@ function ToolCard({
   description,
   icon,
   tags,
+  enabled = true,
 }: {
   title: string
   description: string
   icon: React.ReactNode
   tags: string[]
+  enabled?: boolean
 }) {
   return (
-    <Card className="border-border/40 bg-card/50">
+    <Card
+      className={`transition-all ${enabled
+          ? 'border-sky-200/60 bg-sky-50/30 hover:border-sky-300/80 hover:shadow-sm dark:border-sky-800/40 dark:bg-sky-950/20 dark:hover:border-sky-700/60'
+          : 'cursor-not-allowed border-gray-200/40 bg-gray-100/30 opacity-60 dark:border-gray-700/30 dark:bg-gray-800/20'
+        }`}
+    >
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-foreground">
+          <div
+            className={`flex h-8 w-8 items-center justify-center rounded-md ${enabled
+                ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300'
+                : 'bg-gray-200 text-gray-400 dark:bg-gray-700/50 dark:text-gray-500'
+              }`}
+          >
             {icon}
           </div>
-          <CardTitle className="font-mono text-lg font-medium">{title}</CardTitle>
+          <CardTitle
+            className={`font-mono text-lg font-medium ${enabled ? '' : 'text-muted-foreground'
+              }`}
+          >
+            {title}
+          </CardTitle>
+          {!enabled && (
+            <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
+              Disabled
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <CardDescription className="text-sm leading-relaxed">{description}</CardDescription>
+        <CardDescription
+          className={`text-sm leading-relaxed ${enabled ? '' : 'text-muted-foreground/70'}`}
+        >
+          {description}
+        </CardDescription>
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => (
-            <Badge key={tag} variant="secondary" className="text-xs font-normal">
+            <Badge
+              key={tag}
+              variant="secondary"
+              className={`text-xs font-normal ${enabled ? '' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
+                }`}
+            >
               {tag}
             </Badge>
           ))}
