@@ -229,7 +229,8 @@ func RunServer(addr string, resolver *Resolver) {
 
 			if resolver.args.UserRequestService != nil {
 				// Combined handler that routes to either user requests or saved commands based on path
-				combinedMux := userrequests.NewCombinedHTTPHandler(resolver.args.UserRequestService, log.Logger.Named("user_requests_http"))
+				// The HoldManager is obtained from the MCP server to share state with the get_user_request tool
+				combinedMux := userrequests.NewCombinedHTTPHandler(resolver.args.UserRequestService, mcpServer.HoldManager(), log.Logger.Named("user_requests_http"))
 				userReqBase := prefix.join("/tools/get_user_requests")
 				stripPrefix := strings.TrimSuffix(userReqBase, "/")
 				if stripPrefix == "" {

@@ -19,15 +19,26 @@ import (
 func TestGetUserRequestToolSuccess(t *testing.T) {
 	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
 	service := &fakeUserRequestService{
-		consume: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
-			return &userrequests.Request{
-				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
-				Content:      "Review latest copy",
-				Status:       userrequests.StatusConsumed,
-				TaskID:       "default",
-				UserIdentity: "user-alpha",
-				CreatedAt:    consumedAt.Add(-time.Hour),
-				ConsumedAt:   &consumedAt,
+		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+			return []userrequests.Request{
+				{
+					ID:           testUUID("11111111-1111-1111-1111-111111111111"),
+					Content:      "First command",
+					Status:       userrequests.StatusConsumed,
+					TaskID:       "default",
+					UserIdentity: "user-alpha",
+					CreatedAt:    consumedAt.Add(-2 * time.Hour),
+					ConsumedAt:   &consumedAt,
+				},
+				{
+					ID:           testUUID("22222222-2222-2222-2222-222222222222"),
+					Content:      "Second command",
+					Status:       userrequests.StatusConsumed,
+					TaskID:       "default",
+					UserIdentity: "user-alpha",
+					CreatedAt:    consumedAt.Add(-time.Hour),
+					ConsumedAt:   &consumedAt,
+				},
 			}, nil
 		},
 	}
@@ -46,20 +57,31 @@ func TestGetUserRequestToolSuccess(t *testing.T) {
 
 	payload := map[string]any{}
 	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
-	require.Equal(t, "Review latest copy", payload["content"])
+
+	// Verify commands list is returned
+	commands, ok := payload["commands"].([]any)
+	require.True(t, ok, "commands should be a list")
+	require.Len(t, commands, 2)
+
+	// Verify first command (FIFO order)
+	cmd1, ok := commands[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "First command", cmd1["content"])
+
+	// Verify second command
+	cmd2, ok := commands[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "Second command", cmd2["content"])
+
 	// Verify auxiliary metadata is not included
-	require.NotContains(t, payload, "request_id")
-	require.NotContains(t, payload, "status")
-	require.NotContains(t, payload, "key_hint")
-	require.NotContains(t, payload, "task_id")
-	require.NotContains(t, payload, "user_identity")
-	require.NotContains(t, payload, "created_at")
-	require.NotContains(t, payload, "consumed_at")
+	require.NotContains(t, cmd1, "request_id")
+	require.NotContains(t, cmd1, "status")
+	require.NotContains(t, cmd1, "task_id")
 }
 
 func TestGetUserRequestToolEmpty(t *testing.T) {
 	service := &fakeUserRequestService{
-		consume: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
 			return nil, userrequests.ErrNoPendingRequests
 		},
 	}
@@ -93,18 +115,18 @@ func TestGetUserRequestToolAuthorizationFailure(t *testing.T) {
 
 func mustGetUserRequestTool(t *testing.T, service UserRequestService, header AuthorizationHeaderProvider, parser AuthorizationParser) *GetUserRequestTool {
 	t.Helper()
-	tool, err := NewGetUserRequestTool(service, testLogger(), header, parser)
+	tool, err := NewGetUserRequestTool(service, nil, testLogger(), header, parser)
 	require.NoError(t, err)
 	return tool
 }
 
 type fakeUserRequestService struct {
-	consume func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
+	consumeAll func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
 }
 
-func (f *fakeUserRequestService) ConsumeLatestPending(ctx context.Context, auth *askuser.AuthorizationContext) (*userrequests.Request, error) {
-	if f.consume != nil {
-		return f.consume(ctx, auth)
+func (f *fakeUserRequestService) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+	if f.consumeAll != nil {
+		return f.consumeAll(ctx, auth)
 	}
 	return nil, errors.New("not implemented")
 }

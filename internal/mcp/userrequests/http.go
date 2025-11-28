@@ -18,23 +18,36 @@ import (
 
 // NewCombinedHTTPHandler creates a handler that routes both user requests and saved commands APIs.
 // This avoids route conflicts in Gin by handling all paths under /api/* in a single handler.
-func NewCombinedHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
-	return &combinedHTTPHandler{
-		requestsHandler:     &httpHandler{service: service, logger: logger},
+// holdManager may be nil if the hold feature is not enabled.
+func NewCombinedHTTPHandler(service *Service, holdManager *HoldManager, logger logSDK.Logger) http.Handler {
+	handler := &combinedHTTPHandler{
+		requestsHandler:     &httpHandler{service: service, holdManager: holdManager, logger: logger},
 		savedCommandHandler: &savedCommandsHTTPHandler{service: service, logger: logger},
 	}
+	if holdManager != nil {
+		handler.holdHandler = &holdHTTPHandler{holdManager: holdManager, logger: logger}
+	}
+	return handler
 }
 
 type combinedHTTPHandler struct {
 	requestsHandler     *httpHandler
 	savedCommandHandler *savedCommandsHTTPHandler
+	holdHandler         *holdHTTPHandler
 }
 
 // ServeHTTP routes requests to the appropriate handler based on the URL path.
 func (h *combinedHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if strings.HasPrefix(r.URL.Path, "/api/saved-commands") {
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/api/saved-commands"):
 		h.savedCommandHandler.ServeHTTP(w, r)
-	} else {
+	case strings.HasPrefix(r.URL.Path, "/api/hold"):
+		if h.holdHandler == nil {
+			http.Error(w, "hold feature not enabled", http.StatusNotFound)
+			return
+		}
+		h.holdHandler.ServeHTTP(w, r)
+	default:
 		h.requestsHandler.ServeHTTP(w, r)
 	}
 }
@@ -45,8 +58,9 @@ func NewHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
 }
 
 type httpHandler struct {
-	service *Service
-	logger  logSDK.Logger
+	service     *Service
+	holdManager *HoldManager
+	logger      logSDK.Logger
 }
 
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +71,8 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleCreate(w, r)
 	case r.URL.Path == "/api/requests" && r.Method == http.MethodDelete:
 		h.handleDeleteAll(w, r)
+	case r.URL.Path == "/api/requests/pending" && r.Method == http.MethodDelete:
+		h.handleDeleteAllPending(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/requests/") && r.Method == http.MethodDelete:
 		h.handleDeleteOne(w, r)
 	default:
@@ -137,6 +153,11 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Notify hold manager if a hold is active for this user
+	if h.holdManager != nil {
+		h.holdManager.SubmitCommand(ctx, auth.APIKeyHash, req)
+	}
+
 	h.writeJSON(w, map[string]any{
 		"request": serializeRequest(*req),
 	})
@@ -201,6 +222,32 @@ func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.log().Error("delete all user requests", zap.Error(err))
 		h.writeError(w, http.StatusInternalServerError, "failed to delete requests")
+		return
+	}
+
+	h.writeJSON(w, map[string]any{"deleted": deleted})
+}
+
+func (h *httpHandler) handleDeleteAllPending(w http.ResponseWriter, r *http.Request) {
+	service := h.service
+	if service == nil {
+		h.writeError(w, http.StatusServiceUnavailable, "user requests service unavailable")
+		return
+	}
+
+	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	if err != nil {
+		h.writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	deleted, err := service.DeleteAllPending(ctx, auth)
+	if err != nil {
+		h.log().Error("delete pending user requests", zap.Error(err))
+		h.writeError(w, http.StatusInternalServerError, "failed to delete pending requests")
 		return
 	}
 

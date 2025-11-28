@@ -78,7 +78,7 @@ func (a *AuthorizationContext) MaskedKey() string {
 }
 
 func deriveUserIdentity(token string) string {
-	const prefixLength = 7
+	const prefixLength = 8
 	identity := token
 	if len(identity) > prefixLength {
 		identity = identity[:prefixLength]

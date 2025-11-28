@@ -110,49 +110,56 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 	return pending, consumed, nil
 }
 
-// ConsumeLatestPending fetches the newest pending request and atomically marks it as consumed.
-func (s *Service) ConsumeLatestPending(ctx context.Context, auth *askuser.AuthorizationContext) (*Request, error) {
+// ConsumeAllPending fetches all pending requests in FIFO order (oldest first) and atomically marks them as consumed.
+// Returns the list of consumed requests or an empty slice if none are pending.
+func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext) ([]Request, error) {
 	if auth == nil {
 		return nil, ErrInvalidAuthorization
 	}
 
-	const maxAttempts = 5
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		var candidate Request
-		err := s.db.WithContext(ctx).
-			Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
-			Order("created_at DESC").
-			First(&candidate).Error
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, ErrNoPendingRequests
-			}
-			return nil, errors.Wrap(err, "fetch latest pending user request")
-		}
-
-		now := s.clock()
-		update := s.db.WithContext(ctx).
-			Model(&Request{}).
-			Where("id = ? AND status = ?", candidate.ID, StatusPending).
-			Updates(map[string]any{
-				"status":      StatusConsumed,
-				"consumed_at": now,
-				"updated_at":  now,
-			})
-		if update.Error != nil {
-			return nil, errors.Wrap(update.Error, "consume user request")
-		}
-		if update.RowsAffected == 0 {
-			continue
-		}
-
-		candidate.Status = StatusConsumed
-		candidate.ConsumedAt = &now
-		candidate.UpdatedAt = now
-		return &candidate, nil
+	// Fetch all pending requests in FIFO order (oldest first)
+	var candidates []Request
+	err := s.db.WithContext(ctx).
+		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
+		Order("created_at ASC").
+		Find(&candidates).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch pending user requests")
 	}
 
-	return nil, errors.New("failed to consume user request due to concurrent updates")
+	if len(candidates) == 0 {
+		return nil, ErrNoPendingRequests
+	}
+
+	// Extract IDs for batch update
+	ids := make([]string, len(candidates))
+	for i, c := range candidates {
+		ids[i] = c.ID.String()
+	}
+
+	now := s.clock()
+	update := s.db.WithContext(ctx).
+		Model(&Request{}).
+		Where("id IN ? AND status = ?", ids, StatusPending).
+		Updates(map[string]any{
+			"status":      StatusConsumed,
+			"consumed_at": now,
+			"updated_at":  now,
+		})
+	if update.Error != nil {
+		return nil, errors.Wrap(update.Error, "consume user requests")
+	}
+
+	// Update in-memory objects
+	consumed := make([]Request, 0, len(candidates))
+	for _, c := range candidates {
+		c.Status = StatusConsumed
+		c.ConsumedAt = &now
+		c.UpdatedAt = now
+		consumed = append(consumed, c)
+	}
+
+	return consumed, nil
 }
 
 // DeleteRequest removes a single request belonging to the authenticated user.
@@ -184,6 +191,21 @@ func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationCont
 		Delete(&Request{})
 	if result.Error != nil {
 		return 0, errors.Wrap(result.Error, "delete all user requests")
+	}
+	return result.RowsAffected, nil
+}
+
+// DeleteAllPending removes only pending requests tied to the authenticated user and returns the number of rows deleted.
+func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.AuthorizationContext) (int64, error) {
+	if auth == nil {
+		return 0, ErrInvalidAuthorization
+	}
+
+	result := s.db.WithContext(ctx).
+		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
+		Delete(&Request{})
+	if result.Error != nil {
+		return 0, errors.Wrap(result.Error, "delete pending user requests")
 	}
 	return result.RowsAffected, nil
 }

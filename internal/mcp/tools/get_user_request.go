@@ -16,19 +16,27 @@ import (
 
 // UserRequestService exposes the subset of user request operations required by the tool.
 type UserRequestService interface {
-	ConsumeLatestPending(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
+	ConsumeAllPending(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
 }
 
-// GetUserRequestTool streams the newest pending human directive back to the AI agent.
+// HoldWaiter waits for a command to be submitted during an active hold.
+type HoldWaiter interface {
+	IsHoldActive(apiKeyHash string) bool
+	WaitForCommand(ctx context.Context, apiKeyHash string) *userrequests.Request
+}
+
+// GetUserRequestTool streams pending human directives back to the AI agent.
 type GetUserRequestTool struct {
 	service        UserRequestService
+	holdWaiter     HoldWaiter
 	logger         logSDK.Logger
 	headerProvider AuthorizationHeaderProvider
 	parser         AuthorizationParser
 }
 
 // NewGetUserRequestTool constructs the tool with the required dependencies.
-func NewGetUserRequestTool(service UserRequestService, logger logSDK.Logger, headerProvider AuthorizationHeaderProvider, parser AuthorizationParser) (*GetUserRequestTool, error) {
+// holdWaiter may be nil if hold functionality is not enabled.
+func NewGetUserRequestTool(service UserRequestService, holdWaiter HoldWaiter, logger logSDK.Logger, headerProvider AuthorizationHeaderProvider, parser AuthorizationParser) (*GetUserRequestTool, error) {
 	if service == nil {
 		return nil, errors.New("user request service is required")
 	}
@@ -44,6 +52,7 @@ func NewGetUserRequestTool(service UserRequestService, logger logSDK.Logger, hea
 
 	return &GetUserRequestTool{
 		service:        service,
+		holdWaiter:     holdWaiter,
 		logger:         logger,
 		headerProvider: headerProvider,
 		parser:         parser,
@@ -68,7 +77,37 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("invalid authorization header"), nil
 	}
 
-	request, err := t.service.ConsumeLatestPending(ctx, authCtx)
+	// If hold is active, wait for a command to be submitted
+	if t.holdWaiter != nil && t.holdWaiter.IsHoldActive(authCtx.APIKeyHash) {
+		t.log().Debug("hold active, waiting for command",
+			zap.String("user", authCtx.UserIdentity),
+		)
+		waitedRequest := t.holdWaiter.WaitForCommand(ctx, authCtx.APIKeyHash)
+		if waitedRequest != nil {
+			t.log().Info("command received during hold",
+				zap.String("user", authCtx.UserIdentity),
+				zap.String("request_id", waitedRequest.ID.String()),
+			)
+			// Return the single waited command as a list
+			payload := map[string]any{
+				"commands": []map[string]any{
+					{"content": waitedRequest.Content},
+				},
+			}
+			result, encodeErr := mcp.NewToolResultJSON(payload)
+			if encodeErr != nil {
+				t.log().Error("encode get_user_request response", zap.Error(encodeErr))
+				return mcp.NewToolResultError("failed to encode response"), nil
+			}
+			return result, nil
+		}
+		// Hold expired or was released without a command, fall through to normal flow
+		t.log().Debug("hold expired without command, checking for pending requests",
+			zap.String("user", authCtx.UserIdentity),
+		)
+	}
+
+	requests, err := t.service.ConsumeAllPending(ctx, authCtx)
 	switch {
 	case errors.Is(err, userrequests.ErrInvalidAuthorization):
 		t.log().Warn("invalid user request authorization", zap.Error(err))
@@ -79,14 +118,22 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return mcp.NewToolResultError(http.StatusText(http.StatusRequestTimeout)), nil
 		}
-		t.log().Error("consume user request", zap.Error(err))
-		return mcp.NewToolResultError("failed to fetch user request"), nil
-	case request == nil:
+		t.log().Error("consume user requests", zap.Error(err))
+		return mcp.NewToolResultError("failed to fetch user requests"), nil
+	case len(requests) == 0:
 		return t.emptyResponse(authCtx), nil
 	}
 
+	// Build list of commands in FIFO order
+	commands := make([]map[string]any, len(requests))
+	for i, r := range requests {
+		commands[i] = map[string]any{
+			"content": r.Content,
+		}
+	}
+
 	payload := map[string]any{
-		"content": request.Content,
+		"commands": commands,
 	}
 
 	result, encodeErr := mcp.NewToolResultJSON(payload)

@@ -50,6 +50,7 @@ type Server struct {
 	getUserRequest *tools.GetUserRequestTool
 	extractKeyInfo *tools.ExtractKeyInfoTool
 	callLogger     callRecorder
+	holdManager    *userrequests.HoldManager
 }
 
 // NewServer constructs an MCP HTTP server.
@@ -155,8 +156,13 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 	}
 
 	if userRequestService != nil && toolsSettings.GetUserRequestEnabled {
+		// Create HoldManager for this user request service
+		holdMgr := userrequests.NewHoldManager(userRequestService, serverLogger.Named("hold_manager"), nil)
+		s.holdManager = holdMgr
+
 		getUserRequestTool, err := tools.NewGetUserRequestTool(
 			userRequestService,
+			holdMgr,
 			serverLogger.Named("get_user_request"),
 			headerProvider,
 			askuser.ParseAuthorizationContext,
@@ -193,6 +199,12 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 // Handler returns the HTTP handler that should be mounted to serve MCP traffic.
 func (s *Server) Handler() http.Handler {
 	return s.handler
+}
+
+// HoldManager returns the HoldManager instance for the user requests feature.
+// Returns nil if the get_user_request tool is not enabled.
+func (s *Server) HoldManager() *userrequests.HoldManager {
+	return s.holdManager
 }
 
 func (s *Server) handleWebSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

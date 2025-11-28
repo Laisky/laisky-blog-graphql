@@ -39,24 +39,24 @@ func TestServiceLifecycle(t *testing.T) {
 	_, _, err = svc.ListRequests(ctx, auth)
 	require.NoError(t, err)
 
-	consumedReq, err := svc.ConsumeLatestPending(ctx, auth)
+	// ConsumeAllPending should return all pending in FIFO order (oldest first)
+	consumedReqs, err := svc.ConsumeAllPending(ctx, auth)
 	require.NoError(t, err)
-	require.Equal(t, second.ID, consumedReq.ID, "latest request should be consumed first")
-	require.Equal(t, StatusConsumed, consumedReq.Status)
-	require.NotNil(t, consumedReq.ConsumedAt)
+	require.Len(t, consumedReqs, 2)
+	require.Equal(t, created.ID, consumedReqs[0].ID, "first created should be first (FIFO)")
+	require.Equal(t, second.ID, consumedReqs[1].ID, "second created should be second (FIFO)")
+	require.Equal(t, StatusConsumed, consumedReqs[0].Status)
+	require.Equal(t, StatusConsumed, consumedReqs[1].Status)
+	require.NotNil(t, consumedReqs[0].ConsumedAt)
+	require.NotNil(t, consumedReqs[1].ConsumedAt)
 
 	pending, consumed, err = svc.ListRequests(ctx, auth)
 	require.NoError(t, err)
-	require.Len(t, pending, 1)
-	require.Equal(t, created.ID, pending[0].ID)
-	require.Len(t, consumed, 1)
-	require.Equal(t, consumedReq.ID, consumed[0].ID)
+	require.Len(t, pending, 0)
+	require.Len(t, consumed, 2)
 
-	// consume remaining request
-	_, err = svc.ConsumeLatestPending(ctx, auth)
-	require.NoError(t, err)
-
-	_, err = svc.ConsumeLatestPending(ctx, auth)
+	// No more pending requests
+	_, err = svc.ConsumeAllPending(ctx, auth)
 	require.ErrorIs(t, err, ErrNoPendingRequests)
 }
 
