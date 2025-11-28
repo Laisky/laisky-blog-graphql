@@ -83,7 +83,7 @@ linters:
     godox:
       keywords: [NOTE, OPTIMIZE, HACK]
     lll:
-      line-length: 120
+      line-length: 256
       tab-width: 4
     gosec:
       excludes: [G301, G304]

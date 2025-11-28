@@ -543,10 +543,7 @@ export function UserRequestsPage() {
                 onRelease={handleReleaseHold}
                 disabled={!apiKey}
               />
-              <Button
-                onClick={handleCreateRequest}
-                disabled={isEditorDisabled}
-              >
+              <Button onClick={handleCreateRequest} disabled={isEditorDisabled}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 {isSubmitting ? "Queuing…" : "Queue request"}
               </Button>
@@ -711,18 +708,20 @@ function PendingRequestCard({
   deleting: boolean;
 }) {
   return (
-    <Card className="border border-primary/30 bg-card shadow-sm">
-      <CardHeader className="gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+    <Card className="border border-primary/30 bg-card shadow-sm min-h-32 max-h-65 flex flex-col">
+      <CardHeader className="gap-2 flex-1 min-h-0 overflow-hidden flex flex-col">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground shrink-0">
           <span>ID: {request.id}</span>
           <span>Queued: {formatDate(request.created_at)}</span>
           {request.task_id && <span>Task: {request.task_id}</span>}
         </div>
-        <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap">
-          {request.content}
-        </CardTitle>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap line-clamp-none">
+            {request.content}
+          </CardTitle>
+        </div>
       </CardHeader>
-      <CardContent className="flex justify-end">
+      <CardContent className="flex justify-end shrink-0 pt-0">
         <Button
           variant="destructive"
           onClick={() => onDelete(request.id)}
@@ -752,9 +751,9 @@ function ConsumedCard({
   isEditorDisabled: boolean;
 }) {
   return (
-    <Card className="border border-border/60 bg-card">
-      <CardHeader className="gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+    <Card className="border border-border/60 bg-card min-h-32 max-h-65 flex flex-col">
+      <CardHeader className="gap-2 flex-1 min-h-0 overflow-hidden flex flex-col">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground shrink-0">
           <span>ID: {request.id}</span>
           <span>Queued: {formatDate(request.created_at)}</span>
           {request.consumed_at && (
@@ -762,11 +761,13 @@ function ConsumedCard({
           )}
           {request.task_id && <span>Task: {request.task_id}</span>}
         </div>
-        <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap">
-          {request.content}
-        </CardTitle>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap line-clamp-none">
+            {request.content}
+          </CardTitle>
+        </div>
       </CardHeader>
-      <CardContent className="flex flex-wrap justify-end gap-2">
+      <CardContent className="flex flex-wrap justify-end gap-2 shrink-0 pt-0">
         <Button
           variant={isPicked ? "secondary" : "outline"}
           size="sm"
