@@ -22,7 +22,7 @@ type UserRequestService interface {
 // HoldWaiter waits for a command to be submitted during an active hold.
 type HoldWaiter interface {
 	IsHoldActive(apiKeyHash string) bool
-	WaitForCommand(ctx context.Context, apiKeyHash string) *userrequests.Request
+	WaitForCommand(ctx context.Context, apiKeyHash string) (*userrequests.Request, bool)
 }
 
 // GetUserRequestTool streams pending human directives back to the AI agent.
@@ -82,7 +82,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		t.log().Debug("hold active, waiting for command",
 			zap.String("user", authCtx.UserIdentity),
 		)
-		waitedRequest := t.holdWaiter.WaitForCommand(ctx, authCtx.APIKeyHash)
+		waitedRequest, timedOut := t.holdWaiter.WaitForCommand(ctx, authCtx.APIKeyHash)
 		if waitedRequest != nil {
 			t.log().Info("command received during hold",
 				zap.String("user", authCtx.UserIdentity),
@@ -101,8 +101,14 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 			}
 			return result, nil
 		}
-		// Hold expired or was released without a command, fall through to normal flow
-		t.log().Debug("hold expired without command, checking for pending requests",
+		if timedOut {
+			t.log().Info("hold timeout without user command",
+				zap.String("user", authCtx.UserIdentity),
+			)
+			return t.holdTimeoutResponse(authCtx), nil
+		}
+		// Hold released without a command, fall through to normal flow
+		t.log().Debug("hold released without command, checking for pending requests",
 			zap.String("user", authCtx.UserIdentity),
 		)
 	}
@@ -155,6 +161,18 @@ func (t *GetUserRequestTool) emptyResponse(auth *askuser.AuthorizationContext) *
 	})
 	if err != nil {
 		return mcp.NewToolResultError("failed to encode empty response")
+	}
+	return result
+}
+
+func (t *GetUserRequestTool) holdTimeoutResponse(auth *askuser.AuthorizationContext) *mcp.CallToolResult {
+	message := "User is still typing their next directive. Call get_user_request again later to retrieve it."
+	result, err := mcp.NewToolResultJSON(map[string]any{
+		"status":  "hold_timeout",
+		"message": message,
+	})
+	if err != nil {
+		return mcp.NewToolResultError("failed to encode hold-timeout response")
 	}
 	return result
 }

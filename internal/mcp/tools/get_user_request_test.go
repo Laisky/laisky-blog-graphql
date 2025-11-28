@@ -43,7 +43,7 @@ func TestGetUserRequestToolSuccess(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-alpha", KeySuffix: "abcd"}, nil
 	})
 
@@ -86,7 +86,7 @@ func TestGetUserRequestToolEmpty(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-bravo"}, nil
 	})
 
@@ -100,7 +100,7 @@ func TestGetUserRequestToolEmpty(t *testing.T) {
 }
 
 func TestGetUserRequestToolAuthorizationFailure(t *testing.T) {
-	tool := mustGetUserRequestTool(t, &fakeUserRequestService{}, func(context.Context) string { return "token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, &fakeUserRequestService{}, nil, func(context.Context) string { return "token" }, func(string) (*askuser.AuthorizationContext, error) {
 		return nil, errors.New("invalid header")
 	})
 
@@ -113,11 +113,44 @@ func TestGetUserRequestToolAuthorizationFailure(t *testing.T) {
 	require.Equal(t, "invalid authorization header", text.Text)
 }
 
-func mustGetUserRequestTool(t *testing.T, service UserRequestService, header AuthorizationHeaderProvider, parser AuthorizationParser) *GetUserRequestTool {
+func mustGetUserRequestTool(t *testing.T, service UserRequestService, hold HoldWaiter, header AuthorizationHeaderProvider, parser AuthorizationParser) *GetUserRequestTool {
 	t.Helper()
-	tool, err := NewGetUserRequestTool(service, nil, testLogger(), header, parser)
+	tool, err := NewGetUserRequestTool(service, hold, testLogger(), header, parser)
 	require.NoError(t, err)
 	return tool
+}
+
+func TestGetUserRequestToolHoldTimeout(t *testing.T) {
+	service := &fakeUserRequestService{
+		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+			t.Fatalf("service should not be called when hold times out")
+			return nil, nil
+		},
+	}
+
+	waiter := &fakeHoldWaiter{
+		active: true,
+		wait: func(context.Context, string) (*userrequests.Request, bool) {
+			return nil, true
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "user-hold"}, nil
+	})
+
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+
+	text, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+	payload := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
+	require.Equal(t, "hold_timeout", payload["status"])
+	require.Contains(t, payload["message"], "typing")
+	require.Contains(t, payload["message"], "get_user_request")
 }
 
 type fakeUserRequestService struct {
@@ -129,6 +162,22 @@ func (f *fakeUserRequestService) ConsumeAllPending(ctx context.Context, auth *as
 		return f.consumeAll(ctx, auth)
 	}
 	return nil, errors.New("not implemented")
+}
+
+type fakeHoldWaiter struct {
+	active bool
+	wait   func(ctx context.Context, apiKeyHash string) (*userrequests.Request, bool)
+}
+
+func (f *fakeHoldWaiter) IsHoldActive(string) bool {
+	return f.active
+}
+
+func (f *fakeHoldWaiter) WaitForCommand(ctx context.Context, apiKeyHash string) (*userrequests.Request, bool) {
+	if f.wait != nil {
+		return f.wait(ctx, apiKeyHash)
+	}
+	return nil, false
 }
 
 func testUUID(value string) uuid.UUID {

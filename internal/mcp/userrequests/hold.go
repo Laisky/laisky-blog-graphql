@@ -37,6 +37,8 @@ type holdEntry struct {
 	cancel context.CancelFunc
 	// waiting indicates if an agent is currently waiting.
 	waiting bool
+	// timedOut indicates whether the hold ended due to the timeout elapsing.
+	timedOut bool
 }
 
 // HoldManager coordinates hold states for multiple users.
@@ -88,6 +90,7 @@ func (m *HoldManager) SetHold(apiKeyHash string) HoldState {
 		submitted: make(chan *Request, 1),
 		cancel:    nil,
 		waiting:   false,
+		timedOut:  false,
 	}
 	m.holds[apiKeyHash] = entry
 
@@ -107,6 +110,7 @@ func (m *HoldManager) ReleaseHold(apiKeyHash string) {
 	defer m.mu.Unlock()
 
 	if entry, ok := m.holds[apiKeyHash]; ok {
+		entry.timedOut = false
 		if entry.cancel != nil {
 			entry.cancel()
 		}
@@ -149,6 +153,7 @@ func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, requ
 	m.mu.Unlock()
 
 	if ok && entry != nil {
+		entry.timedOut = false
 		// Notify waiting consumer
 		select {
 		case entry.submitted <- request:
@@ -167,14 +172,14 @@ func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, requ
 
 // WaitForCommand blocks until a command is submitted or the hold expires.
 // When called, this starts the expiration timer (20s) to prevent agent timeout.
-// Returns the submitted request if one arrives, or nil if the hold expired/was released.
-// If no hold is active, returns immediately with nil.
-func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string) *Request {
+// Returns the submitted request if one arrives, or nil along with whether the hold timed out.
+// If no hold is active, returns immediately with nil and false.
+func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string) (*Request, bool) {
 	m.mu.Lock()
 	entry, ok := m.holds[apiKeyHash]
 	if !ok {
 		m.mu.Unlock()
-		return nil
+		return nil, false
 	}
 
 	// Start the expiration timer when agent begins waiting
@@ -196,10 +201,13 @@ func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string) *Re
 	m.mu.Unlock()
 
 	select {
-	case req := <-entry.submitted:
-		return req
+	case req, ok := <-entry.submitted:
+		if !ok {
+			return nil, entry.timedOut
+		}
+		return req, false
 	case <-ctx.Done():
-		return nil
+		return nil, false
 	}
 }
 
@@ -226,6 +234,7 @@ func (m *HoldManager) expireHold(ctx context.Context, apiKeyHash string, expires
 		m.mu.Lock()
 		entry, ok := m.holds[apiKeyHash]
 		if ok && !entry.expiresAt.IsZero() && entry.expiresAt.Equal(expiresAt) {
+			entry.timedOut = true
 			delete(m.holds, apiKeyHash)
 			if entry.cancel != nil {
 				entry.cancel()

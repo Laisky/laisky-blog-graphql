@@ -45,6 +45,8 @@ export function UserRequestsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [newContent, setNewContent] = useState("");
   const [taskId, setTaskId] = useState("");
+  const [pickedRequestId, setPickedRequestId] = useState<string | null>(null);
+  const [editorBackup, setEditorBackup] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeletingAllPending, setIsDeletingAllPending] = useState(false);
   const [pendingDeletes, setPendingDeletes] = useState<Record<string, boolean>>(
@@ -212,6 +214,8 @@ export function UserRequestsPage() {
     try {
       await createUserRequest(key, trimmed, taskId.trim() || undefined);
       setNewContent("");
+      setPickedRequestId(null);
+      setEditorBackup(null);
       // If hold was active, it will be automatically released by the server
       if (holdState.active) {
         setHoldState({ active: false, waiting: false, remaining_secs: 0 });
@@ -292,6 +296,10 @@ export function UserRequestsPage() {
       try {
         await deleteUserRequest(key, requestId);
         setStatus({ message: "Request deleted.", tone: "success" });
+        if (requestId === pickedRequestId) {
+          setPickedRequestId(null);
+          setEditorBackup(null);
+        }
         pollControlsRef.current?.schedule(0);
       } catch (error) {
         setStatus({
@@ -309,13 +317,15 @@ export function UserRequestsPage() {
         });
       }
     },
-    [apiKey]
+    [apiKey, pickedRequestId]
   );
 
   const maskedKeySuffix = useMemo(() => {
     if (!identity?.keyHint) return "";
     return `token •••${identity.keyHint}`;
   }, [identity]);
+
+  const isEditorDisabled = !apiKey || isSubmitting;
 
   // Opens the confirmation dialog for deleting all pending requests
   const handleDeleteAllPendingClick = useCallback(() => {
@@ -360,6 +370,8 @@ export function UserRequestsPage() {
   }, [apiKey]);
 
   const handleSelectSavedCommand = useCallback((content: string) => {
+    setPickedRequestId(null);
+    setEditorBackup(null);
     setNewContent(content);
     setStatus({ message: "Command loaded into editor.", tone: "success" });
   }, []);
@@ -370,6 +382,56 @@ export function UserRequestsPage() {
       tone: "success",
     });
   }, []);
+
+  const handleEditorChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      if (pickedRequestId) {
+        setPickedRequestId(null);
+        setEditorBackup(null);
+      }
+      setNewContent(event.target.value);
+    },
+    [pickedRequestId]
+  );
+
+  const handleToggleConsumedPickup = useCallback(
+    (request: UserRequest) => {
+      if (!apiKey) {
+        setStatus({
+          message: "Connect with your API key before editing directives.",
+          tone: "error",
+        });
+        return;
+      }
+      if (isSubmitting) {
+        setStatus({
+          message: "Please wait for the current submission to finish.",
+          tone: "info",
+        });
+        return;
+      }
+
+      if (pickedRequestId === request.id) {
+        setPickedRequestId(null);
+        setNewContent(editorBackup ?? "");
+        setEditorBackup(null);
+        setStatus({
+          message: "Put the directive back into history.",
+          tone: "info",
+        });
+        return;
+      }
+
+      setEditorBackup((prev) => (pickedRequestId ? prev : newContent));
+      setPickedRequestId(request.id);
+      setNewContent(request.content);
+      setStatus({
+        message: "Loaded consumed directive into the editor.",
+        tone: "success",
+      });
+    },
+    [apiKey, editorBackup, isSubmitting, newContent, pickedRequestId]
+  );
 
   return (
     <div className="space-y-8">
@@ -458,11 +520,9 @@ export function UserRequestsPage() {
         <CardContent className="space-y-3">
           <Textarea
             value={newContent}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-              setNewContent(event.target.value)
-            }
+            onChange={handleEditorChange}
             placeholder="Describe the feedback or task for your AI assistant…"
-            disabled={!apiKey || isSubmitting}
+            disabled={isEditorDisabled}
           />
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <Input
@@ -471,7 +531,7 @@ export function UserRequestsPage() {
                 setTaskId(event.target.value)
               }
               placeholder="Optional task identifier"
-              disabled={!apiKey || isSubmitting}
+              disabled={isEditorDisabled}
               className="md:flex-1"
             />
             <div className="flex gap-2">
@@ -485,7 +545,7 @@ export function UserRequestsPage() {
               />
               <Button
                 onClick={handleCreateRequest}
-                disabled={isSubmitting || !apiKey}
+                disabled={isEditorDisabled}
               >
                 <PlusCircle className="mr-2 h-4 w-4" />
                 {isSubmitting ? "Queuing…" : "Queue request"}
@@ -499,7 +559,7 @@ export function UserRequestsPage() {
         currentContent={newContent}
         onSelectCommand={handleSelectSavedCommand}
         onSaveCurrentContent={handleSaveCurrentContent}
-        disabled={!apiKey || isSubmitting}
+        disabled={isEditorDisabled}
       />
 
       <section className="grid gap-6 lg:grid-cols-2">
@@ -558,6 +618,9 @@ export function UserRequestsPage() {
                   request={request}
                   onDelete={handleDeleteRequest}
                   deleting={Boolean(pendingDeletes[request.id])}
+                  onTogglePickup={handleToggleConsumedPickup}
+                  isPicked={pickedRequestId === request.id}
+                  isEditorDisabled={isEditorDisabled}
                 />
               ))
             )}
@@ -677,10 +740,16 @@ function ConsumedCard({
   request,
   onDelete,
   deleting,
+  onTogglePickup,
+  isPicked,
+  isEditorDisabled,
 }: {
   request: UserRequest;
   onDelete: (id: string) => void;
   deleting: boolean;
+  onTogglePickup: (request: UserRequest) => void;
+  isPicked: boolean;
+  isEditorDisabled: boolean;
 }) {
   return (
     <Card className="border border-border/60 bg-card">
@@ -697,7 +766,15 @@ function ConsumedCard({
           {request.content}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex justify-end">
+      <CardContent className="flex flex-wrap justify-end gap-2">
+        <Button
+          variant={isPicked ? "secondary" : "outline"}
+          size="sm"
+          onClick={() => onTogglePickup(request)}
+          disabled={isEditorDisabled}
+        >
+          {isPicked ? "Put Back" : "Pick Up"}
+        </Button>
         <Button
           variant="ghost"
           size="sm"

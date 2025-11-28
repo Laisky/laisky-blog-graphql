@@ -69,13 +69,14 @@ func TestHoldManager_SubmitCommand_NotifiesWaiter(t *testing.T) {
 
 	var wg sync.WaitGroup
 	var received *Request
+	var timedOut bool
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		received = mgr.WaitForCommand(ctx, apiKeyHash)
+		received, timedOut = mgr.WaitForCommand(ctx, apiKeyHash)
 	}()
 
 	// Give goroutine time to start waiting
@@ -88,6 +89,7 @@ func TestHoldManager_SubmitCommand_NotifiesWaiter(t *testing.T) {
 	require.NotNil(t, received)
 	require.Equal(t, request.ID, received.ID)
 	require.Equal(t, "Test command", received.Content)
+	require.False(t, timedOut)
 
 	// Hold should be released after submission
 	require.False(t, mgr.IsHoldActive(apiKeyHash))
@@ -102,8 +104,9 @@ func TestHoldManager_WaitForCommand_ReturnsNilWhenNoHold(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	result := mgr.WaitForCommand(ctx, apiKeyHash)
+	result, timedOut := mgr.WaitForCommand(ctx, apiKeyHash)
 	require.Nil(t, result)
+	require.False(t, timedOut)
 }
 
 func TestHoldManager_WaitStartsTimer(t *testing.T) {
@@ -126,7 +129,7 @@ func TestHoldManager_WaitStartsTimer(t *testing.T) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		_ = mgr.WaitForCommand(ctx, apiKeyHash)
+		_, _ = mgr.WaitForCommand(ctx, apiKeyHash)
 	}()
 
 	// Give goroutine time to call WaitForCommand
@@ -137,6 +140,23 @@ func TestHoldManager_WaitStartsTimer(t *testing.T) {
 	require.True(t, state.Active)
 	require.True(t, state.Waiting)
 	require.Equal(t, now.Add(HoldMaxDuration), state.ExpiresAt)
+}
+
+func TestHoldManager_WaitForCommandTimesOut(t *testing.T) {
+	t.Parallel()
+
+	baseline := time.Now().UTC().Add(-HoldMaxDuration)
+	mgr := NewHoldManager(nil, nil, func() time.Time { return baseline })
+	apiKeyHash := "test-api-key-hash-timeout"
+
+	mgr.SetHold(apiKeyHash)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	result, timedOut := mgr.WaitForCommand(ctx, apiKeyHash)
+	require.Nil(t, result)
+	require.True(t, timedOut)
+	require.False(t, mgr.IsHoldActive(apiKeyHash))
 }
 
 func TestHoldManager_ResetHold(t *testing.T) {
