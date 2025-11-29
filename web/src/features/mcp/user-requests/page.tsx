@@ -506,9 +506,9 @@ export function UserRequestsPage() {
         )}
       </Card>
 
-      <Card className="border border-border/60 bg-card shadow-sm">
+      <Card className="border-2 border-primary/40 bg-primary/5 shadow-md dark:bg-primary/10">
         <CardHeader>
-          <CardTitle className="text-lg text-foreground">
+          <CardTitle className="text-lg font-semibold text-foreground">
             Create user directive
           </CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -523,6 +523,7 @@ export function UserRequestsPage() {
             onChange={handleEditorChange}
             placeholder="Describe the feedback or task for your AI assistant…"
             disabled={isEditorDisabled}
+            className="border-primary/20 bg-background focus-visible:ring-primary/30"
           />
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <Input
