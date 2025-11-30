@@ -1,4 +1,4 @@
-import { ClipboardList, PlusCircle, Trash2 } from "lucide-react";
+import { ChevronDown, ClipboardList, Edit3, Package, RotateCcw, Send, Trash2, Undo2 } from "lucide-react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -7,6 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeApiKey, useApiKey } from "@/lib/api-key-context";
@@ -412,7 +418,11 @@ export function UserRequestsPage() {
     [pickedRequestId]
   );
 
-  const handleToggleConsumedPickup = useCallback(
+  /**
+   * handleEditInEditor loads a consumed directive into the editor for modification.
+   * It preserves the current editor content as a backup in case the user wants to restore it.
+   */
+  const handleEditInEditor = useCallback(
     (request: UserRequest) => {
       if (!apiKey) {
         setStatus({
@@ -429,6 +439,7 @@ export function UserRequestsPage() {
         return;
       }
 
+      // If already picked, toggle it off (put back)
       if (pickedRequestId === request.id) {
         setPickedRequestId(null);
         setNewContent(editorBackup ?? "");
@@ -440,6 +451,7 @@ export function UserRequestsPage() {
         return;
       }
 
+      // Backup current content before loading the consumed directive
       setEditorBackup((prev) => (pickedRequestId ? prev : newContent));
       setPickedRequestId(request.id);
       setNewContent(request.content);
@@ -449,6 +461,48 @@ export function UserRequestsPage() {
       });
     },
     [apiKey, editorBackup, isSubmitting, newContent, pickedRequestId]
+  );
+
+  /**
+   * handleAddToPending re-queues a consumed directive directly to the pending list.
+   * This creates a new pending request with the same content as the consumed one.
+   */
+  const handleAddToPending = useCallback(
+    async (request: UserRequest) => {
+      const key = normalizeApiKey(apiKey);
+      if (!key) {
+        setStatus({
+          message: "Connect with your API key before re-queuing.",
+          tone: "error",
+        });
+        return;
+      }
+
+      setIsSubmitting(true);
+      try {
+        await createUserRequest(
+          key,
+          request.content,
+          request.task_id || undefined
+        );
+        setStatus({
+          message: "Directive re-queued to pending.",
+          tone: "success",
+        });
+        pollControlsRef.current?.schedule(0);
+      } catch (error) {
+        setStatus({
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to re-queue directive.",
+          tone: "error",
+        });
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [apiKey]
   );
 
   return (
@@ -603,9 +657,9 @@ export function UserRequestsPage() {
                 onRelease={handleReleaseHold}
                 disabled={!apiKey}
               />
-              <Button onClick={handleCreateRequest} disabled={isEditorDisabled}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                {isSubmitting ? "Queuing…" : "Queue request"}
+              <Button onClick={handleCreateRequest} disabled={isEditorDisabled} title="Queue request">
+                <Send className="mr-2 h-4 w-4" />
+                {isSubmitting ? "Queuing…" : "Queue"}
               </Button>
             </div>
           </div>
@@ -675,7 +729,8 @@ export function UserRequestsPage() {
                   request={request}
                   onDelete={handleDeleteRequest}
                   deleting={Boolean(pendingDeletes[request.id])}
-                  onTogglePickup={handleToggleConsumedPickup}
+                  onEditInEditor={handleEditInEditor}
+                  onAddToPending={handleAddToPending}
                   isPicked={pickedRequestId === request.id}
                   isEditorDisabled={isEditorDisabled}
                 />
@@ -784,11 +839,13 @@ function PendingRequestCard({
       <CardContent className="flex justify-end shrink-0 pt-0">
         <Button
           variant="destructive"
+          size="icon"
           onClick={() => onDelete(request.id)}
           disabled={deleting}
+          title="Delete request"
         >
-          <Trash2 className="mr-2 h-4 w-4" />
-          {deleting ? "Deleting…" : "Delete"}
+          <Trash2 className="h-4 w-4" />
+          <span className="sr-only">{deleting ? "Deleting…" : "Delete"}</span>
         </Button>
       </CardContent>
     </Card>
@@ -799,14 +856,16 @@ function ConsumedCard({
   request,
   onDelete,
   deleting,
-  onTogglePickup,
+  onEditInEditor,
+  onAddToPending,
   isPicked,
   isEditorDisabled,
 }: {
   request: UserRequest;
   onDelete: (id: string) => void;
   deleting: boolean;
-  onTogglePickup: (request: UserRequest) => void;
+  onEditInEditor: (request: UserRequest) => void;
+  onAddToPending: (request: UserRequest) => void;
   isPicked: boolean;
   isEditorDisabled: boolean;
 }) {
@@ -828,22 +887,60 @@ function ConsumedCard({
         </div>
       </CardHeader>
       <CardContent className="flex flex-wrap justify-end gap-2 shrink-0 pt-0">
-        <Button
-          variant={isPicked ? "secondary" : "outline"}
-          size="sm"
-          onClick={() => onTogglePickup(request)}
-          disabled={isEditorDisabled}
-        >
-          {isPicked ? "Put Back" : "Pick Up"}
-        </Button>
+        {isPicked ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onEditInEditor(request)}
+            disabled={isEditorDisabled}
+            title="Put back to history"
+            className="gap-1.5"
+          >
+            <Undo2 className="h-4 w-4" />
+            <span>Put Back</span>
+          </Button>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isEditorDisabled}
+                className="gap-1.5"
+                title="Pick up this directive"
+              >
+                <Package className="h-4 w-4" />
+                <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem
+                onClick={() => onAddToPending(request)}
+                className="gap-2 cursor-pointer"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span>Add to Pending</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onEditInEditor(request)}
+                className="gap-2 cursor-pointer"
+              >
+                <Edit3 className="h-4 w-4" />
+                <span>Edit in Editor</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <Button
           variant="ghost"
-          size="sm"
+          size="icon"
           onClick={() => onDelete(request.id)}
           disabled={deleting}
+          title="Delete from history"
+          className="h-9 w-9 text-muted-foreground hover:text-destructive"
         >
-          <Trash2 className="mr-2 h-4 w-4" />
-          {deleting ? "Deleting…" : "Delete"}
+          <Trash2 className="h-4 w-4" />
+          <span className="sr-only">{deleting ? "Deleting…" : "Delete"}</span>
         </Button>
       </CardContent>
     </Card>
