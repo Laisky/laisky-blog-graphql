@@ -38,6 +38,49 @@ export function setReturnMode(mode: ReturnMode): void {
 }
 
 // ============================================================================
+// Section Collapse State Configuration
+// ============================================================================
+
+const AUTH_COLLAPSED_STORAGE_KEY = "mcp_auth_collapsed";
+const SAVED_COMMANDS_EXPANDED_STORAGE_KEY = "mcp_saved_commands_expanded";
+
+/**
+ * getAuthCollapsed retrieves the collapsed state of the Authenticate section.
+ * Defaults to false (expanded) if not set.
+ */
+export function getAuthCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(AUTH_COLLAPSED_STORAGE_KEY) === "true";
+}
+
+/**
+ * setAuthCollapsed persists the collapsed state of the Authenticate section.
+ */
+export function setAuthCollapsed(collapsed: boolean): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AUTH_COLLAPSED_STORAGE_KEY, String(collapsed));
+}
+
+/**
+ * getSavedCommandsExpanded retrieves the expanded state of the Saved Commands section.
+ * Defaults to true (expanded) if not set.
+ */
+export function getSavedCommandsExpanded(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = localStorage.getItem(SAVED_COMMANDS_EXPANDED_STORAGE_KEY);
+  // Default to true if not set
+  return stored !== "false";
+}
+
+/**
+ * setSavedCommandsExpanded persists the expanded state of the Saved Commands section.
+ */
+export function setSavedCommandsExpanded(expanded: boolean): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(SAVED_COMMANDS_EXPANDED_STORAGE_KEY, String(expanded));
+}
+
+// ============================================================================
 // User Request Types
 // ============================================================================
 

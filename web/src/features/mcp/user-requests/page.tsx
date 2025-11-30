@@ -1,5 +1,5 @@
 import { ClipboardList, PlusCircle, Trash2 } from "lucide-react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiKeyInput } from "@/components/api-key-input";
@@ -16,14 +16,16 @@ import {
   createUserRequest,
   deleteAllPendingRequests,
   deleteUserRequest,
+  getAuthCollapsed,
   getHoldState,
   getReturnMode,
   type HoldState,
   listUserRequests,
-  setReturnMode as persistReturnMode,
   releaseHold,
   type ReturnMode,
+  setAuthCollapsed,
   setHold,
+  setReturnMode as persistReturnMode,
   type UserRequest,
 } from "./api";
 import { HoldButton } from "./hold-button";
@@ -60,7 +62,9 @@ export function UserRequestsPage() {
     waiting: false,
     remaining_secs: 0,
   });
-  const [isAuthCollapsed, setIsAuthCollapsed] = useState(false);
+  const [isAuthCollapsed, setIsAuthCollapsedState] = useState(() =>
+    getAuthCollapsed()
+  );
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [returnMode, setReturnModeState] = useState<ReturnMode>(() =>
     getReturnMode()
@@ -79,7 +83,8 @@ export function UserRequestsPage() {
       setConsumed([]);
       setIdentity(null);
       setStatus({ message: "Disconnected.", tone: "info" });
-      setIsAuthCollapsed(false); // Expand when disconnected
+      setIsAuthCollapsedState(false); // Expand when disconnected
+      setAuthCollapsed(false);
       return;
     }
 
@@ -112,7 +117,8 @@ export function UserRequestsPage() {
           tone: "success",
         });
         // Auto-collapse the Authenticate panel on successful authentication
-        setIsAuthCollapsed(true);
+        setIsAuthCollapsedState(true);
+        setAuthCollapsed(true);
         schedule(5000);
       } catch (error) {
         if (disposed || controller.signal.aborted) return;
@@ -123,7 +129,8 @@ export function UserRequestsPage() {
               : "Failed to fetch requests.",
           tone: "error",
         });
-        setIsAuthCollapsed(false); // Expand on error
+        setIsAuthCollapsedState(false); // Expand on error
+        setAuthCollapsed(false);
         schedule(8000);
       } finally {
         if (initial && !disposed) {
@@ -486,7 +493,9 @@ export function UserRequestsPage() {
           )}
           onClick={() => {
             if (status?.tone === "success") {
-              setIsAuthCollapsed(!isAuthCollapsed);
+              const newValue = !isAuthCollapsed;
+              setIsAuthCollapsedState(newValue);
+              setAuthCollapsed(newValue);
             }
           }}
         >
@@ -561,6 +570,16 @@ export function UserRequestsPage() {
           <Textarea
             value={newContent}
             onChange={handleEditorChange}
+            onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+              // Enter without modifiers: submit the form
+              // Ctrl+Enter or Shift+Enter: insert newline (default behavior)
+              if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+                e.preventDefault();
+                if (!isEditorDisabled && newContent.trim()) {
+                  handleCreateRequest();
+                }
+              }
+            }}
             placeholder="Describe the feedback or task for your AI assistant…"
             disabled={isEditorDisabled}
             className="border-primary/20 bg-background focus-visible:ring-primary/30"

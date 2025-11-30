@@ -24,8 +24,10 @@ import { cn } from "@/lib/utils";
 import {
   createSavedCommand,
   deleteSavedCommand,
+  getSavedCommandsExpanded,
   listSavedCommands,
   reorderSavedCommands,
+  setSavedCommandsExpanded,
   updateSavedCommand,
   type SavedCommand as APISavedCommand,
 } from "./api";
@@ -126,7 +128,7 @@ export function SavedCommands({
   const [commands, setCommands] = useState<SavedCommand[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(() => getSavedCommandsExpanded());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [editContent, setEditContent] = useState("");
@@ -383,7 +385,11 @@ export function SavedCommands({
         <div className="flex items-center justify-between">
           <button
             type="button"
-            onClick={() => setIsExpanded((prev) => !prev)}
+            onClick={() => {
+              const newValue = !isExpanded;
+              setIsExpanded(newValue);
+              setSavedCommandsExpanded(newValue);
+            }}
             className="flex items-center gap-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
           >
             <Star className="h-5 w-5 text-amber-500" />
