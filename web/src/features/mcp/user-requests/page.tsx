@@ -709,7 +709,7 @@ function PendingRequestCard({
   deleting: boolean;
 }) {
   return (
-    <Card className="border border-primary/30 bg-card shadow-sm min-h-32 max-h-65 flex flex-col">
+    <Card className="border border-primary/30 bg-card shadow-sm min-h-32 max-h-56 flex flex-col">
       <CardHeader className="gap-2 flex-1 min-h-0 overflow-hidden flex flex-col">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground shrink-0">
           <span>ID: {request.id}</span>
@@ -752,7 +752,7 @@ function ConsumedCard({
   isEditorDisabled: boolean;
 }) {
   return (
-    <Card className="border border-border/60 bg-card min-h-32 max-h-65 flex flex-col">
+    <Card className="border border-border/60 bg-card min-h-32 max-h-56 flex flex-col">
       <CardHeader className="gap-2 flex-1 min-h-0 overflow-hidden flex flex-col">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground shrink-0">
           <span>ID: {request.id}</span>
