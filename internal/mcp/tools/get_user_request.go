@@ -17,6 +17,7 @@ import (
 // UserRequestService exposes the subset of user request operations required by the tool.
 type UserRequestService interface {
 	ConsumeAllPending(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
+	ConsumeFirstPending(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
 }
 
 // HoldWaiter waits for a command to be submitted during an active hold.
@@ -64,6 +65,12 @@ func (t *GetUserRequestTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"get_user_request",
 		mcp.WithDescription("During the execution of a task, get the latest user instructions to adjust agent's work objectives or processes."),
+		mcp.WithString(
+			"return_mode",
+			mcp.Enum("all", "first"),
+			mcp.DefaultString("all"),
+			mcp.Description("Controls how commands are returned: 'all' returns all pending commands, 'first' returns only the oldest (earliest) command."),
+		),
 		mcp.WithIdempotentHintAnnotation(false),
 	)
 }
@@ -77,9 +84,42 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("invalid authorization header"), nil
 	}
 
-	// If hold is active, wait for a command to be submitted
+	// Parse return_mode parameter (default: "all")
+	returnMode := "all"
+	if args, ok := req.Params.Arguments.(map[string]any); ok && args != nil {
+		if mode, ok := args["return_mode"].(string); ok && mode != "" {
+			returnMode = mode
+		}
+	}
+
+	// If hold is active, first check for existing pending commands.
+	// If there are pending commands, return them immediately without waiting.
+	// Only wait on hold when there are no pending commands.
 	if t.holdWaiter != nil && t.holdWaiter.IsHoldActive(authCtx.APIKeyHash) {
-		t.log().Debug("hold active, waiting for command",
+		// Check for existing pending commands first based on return_mode
+		var existingRequests []userrequests.Request
+		var existingErr error
+		if returnMode == "first" {
+			firstReq, err := t.service.ConsumeFirstPending(ctx, authCtx)
+			if err == nil && firstReq != nil {
+				existingRequests = []userrequests.Request{*firstReq}
+			}
+			existingErr = err
+		} else {
+			existingRequests, existingErr = t.service.ConsumeAllPending(ctx, authCtx)
+		}
+
+		if existingErr == nil && len(existingRequests) > 0 {
+			t.log().Info("hold active but pending commands exist, returning immediately",
+				zap.String("user", authCtx.UserIdentity),
+				zap.Int("count", len(existingRequests)),
+				zap.String("return_mode", returnMode),
+			)
+			return t.buildCommandsResponse(existingRequests)
+		}
+
+		// No pending commands, now wait for a command to be submitted
+		t.log().Debug("hold active, no pending commands, waiting for new command",
 			zap.String("user", authCtx.UserIdentity),
 		)
 		waitedRequest, timedOut := t.holdWaiter.WaitForCommand(ctx, authCtx.APIKeyHash)
@@ -113,41 +153,51 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		)
 	}
 
-	requests, err := t.service.ConsumeAllPending(ctx, authCtx)
-	switch {
-	case errors.Is(err, userrequests.ErrInvalidAuthorization):
-		t.log().Warn("invalid user request authorization", zap.Error(err))
-		return mcp.NewToolResultError("invalid authorization context"), nil
-	case errors.Is(err, userrequests.ErrNoPendingRequests):
-		return t.emptyResponse(authCtx), nil
-	case err != nil:
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return mcp.NewToolResultError(http.StatusText(http.StatusRequestTimeout)), nil
+	// Consume requests based on return_mode
+	var requests []userrequests.Request
+	if returnMode == "first" {
+		firstReq, err := t.service.ConsumeFirstPending(ctx, authCtx)
+		if err != nil {
+			switch {
+			case errors.Is(err, userrequests.ErrInvalidAuthorization):
+				t.log().Warn("invalid user request authorization", zap.Error(err))
+				return mcp.NewToolResultError("invalid authorization context"), nil
+			case errors.Is(err, userrequests.ErrNoPendingRequests):
+				return t.emptyResponse(authCtx), nil
+			default:
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return mcp.NewToolResultError(http.StatusText(http.StatusRequestTimeout)), nil
+				}
+				t.log().Error("consume first user request", zap.Error(err))
+				return mcp.NewToolResultError("failed to fetch user requests"), nil
+			}
 		}
-		t.log().Error("consume user requests", zap.Error(err))
-		return mcp.NewToolResultError("failed to fetch user requests"), nil
-	case len(requests) == 0:
-		return t.emptyResponse(authCtx), nil
-	}
-
-	// Build list of commands in FIFO order
-	commands := make([]map[string]any, len(requests))
-	for i, r := range requests {
-		commands[i] = map[string]any{
-			"content": r.Content,
+		requests = []userrequests.Request{*firstReq}
+	} else {
+		var err error
+		requests, err = t.service.ConsumeAllPending(ctx, authCtx)
+		if err != nil {
+			switch {
+			case errors.Is(err, userrequests.ErrInvalidAuthorization):
+				t.log().Warn("invalid user request authorization", zap.Error(err))
+				return mcp.NewToolResultError("invalid authorization context"), nil
+			case errors.Is(err, userrequests.ErrNoPendingRequests):
+				return t.emptyResponse(authCtx), nil
+			default:
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return mcp.NewToolResultError(http.StatusText(http.StatusRequestTimeout)), nil
+				}
+				t.log().Error("consume user requests", zap.Error(err))
+				return mcp.NewToolResultError("failed to fetch user requests"), nil
+			}
 		}
 	}
 
-	payload := map[string]any{
-		"commands": commands,
+	if len(requests) == 0 {
+		return t.emptyResponse(authCtx), nil
 	}
 
-	result, encodeErr := mcp.NewToolResultJSON(payload)
-	if encodeErr != nil {
-		t.log().Error("encode get_user_request response", zap.Error(encodeErr))
-		return mcp.NewToolResultError("failed to encode response"), nil
-	}
-	return result, nil
+	return t.buildCommandsResponse(requests)
 }
 
 func (t *GetUserRequestTool) emptyResponse(auth *askuser.AuthorizationContext) *mcp.CallToolResult {
@@ -175,6 +225,25 @@ func (t *GetUserRequestTool) holdTimeoutResponse(auth *askuser.AuthorizationCont
 		return mcp.NewToolResultError("failed to encode hold-timeout response")
 	}
 	return result
+}
+
+// buildCommandsResponse constructs the MCP response payload from a list of requests.
+func (t *GetUserRequestTool) buildCommandsResponse(requests []userrequests.Request) (*mcp.CallToolResult, error) {
+	commands := make([]map[string]any, len(requests))
+	for i, r := range requests {
+		commands[i] = map[string]any{
+			"content": r.Content,
+		}
+	}
+	payload := map[string]any{
+		"commands": commands,
+	}
+	result, encodeErr := mcp.NewToolResultJSON(payload)
+	if encodeErr != nil {
+		t.log().Error("encode get_user_request response", zap.Error(encodeErr))
+		return mcp.NewToolResultError("failed to encode response"), nil
+	}
+	return result, nil
 }
 
 func (t *GetUserRequestTool) log() logSDK.Logger {

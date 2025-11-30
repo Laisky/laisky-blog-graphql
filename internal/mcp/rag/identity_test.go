@@ -1,6 +1,10 @@
 package rag
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestParseIdentity(t *testing.T) {
 	cases := []struct {
@@ -29,23 +33,16 @@ func TestParseIdentity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			id, err := ParseIdentity(tc.header)
 			if tc.expectErr {
-				if err == nil {
-					t.Fatalf("expected error")
-				}
+				require.Error(t, err, "expected error")
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			require.NoError(t, err, "unexpected error")
+			require.NotEmpty(t, id.UserID, "user id should not be empty")
+			if tc.expectTask != "" {
+				require.Equal(t, tc.expectTask, id.TaskID, "unexpected task id")
 			}
-			if id.UserID == "" {
-				t.Fatalf("user id should not be empty")
-			}
-			if tc.expectTask != "" && id.TaskID != tc.expectTask {
-				t.Fatalf("unexpected task id: %s", id.TaskID)
-			}
-			if id.APIKey == "" || id.MaskedID == "" {
-				t.Fatalf("missing key fields")
-			}
+			require.NotEmpty(t, id.APIKey, "APIKey should not be empty")
+			require.NotEmpty(t, id.MaskedID, "MaskedID should not be empty")
 		})
 	}
 }

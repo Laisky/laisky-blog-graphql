@@ -1,6 +1,10 @@
 package askuser
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestParseAuthorizationContext(t *testing.T) {
 	tests := map[string]struct {
@@ -39,23 +43,13 @@ func TestParseAuthorizationContext(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, err := ParseAuthorizationContext(tc.header)
 			if tc.expectError {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
+				require.Error(t, err, "expected error")
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if ctx.APIKey != tc.expectKey {
-				t.Fatalf("expected key %q, got %q", tc.expectKey, ctx.APIKey)
-			}
-			if ctx.UserIdentity != tc.expectUser {
-				t.Fatalf("expected user identity %q, got %q", tc.expectUser, ctx.UserIdentity)
-			}
-			if ctx.AIIdentity != tc.expectUser {
-				t.Fatalf("expected ai identity %q, got %q", tc.expectUser, ctx.AIIdentity)
-			}
+			require.NoError(t, err, "unexpected error")
+			require.Equal(t, tc.expectKey, ctx.APIKey, "unexpected key")
+			require.Equal(t, tc.expectUser, ctx.UserIdentity, "unexpected user identity")
+			require.Equal(t, tc.expectUser, ctx.AIIdentity, "unexpected ai identity")
 		})
 	}
 }

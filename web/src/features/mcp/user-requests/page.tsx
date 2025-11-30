@@ -17,9 +17,12 @@ import {
   deleteAllPendingRequests,
   deleteUserRequest,
   getHoldState,
+  getReturnMode,
   type HoldState,
   listUserRequests,
+  setReturnMode as persistReturnMode,
   releaseHold,
+  type ReturnMode,
   setHold,
   type UserRequest,
 } from "./api";
@@ -59,6 +62,9 @@ export function UserRequestsPage() {
   });
   const [isAuthCollapsed, setIsAuthCollapsed] = useState(false);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [returnMode, setReturnModeState] = useState<ReturnMode>(() =>
+    getReturnMode()
+  );
 
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -281,6 +287,11 @@ export function UserRequestsPage() {
       });
     }
   }, [apiKey]);
+
+  const handleReturnModeChange = useCallback((mode: ReturnMode) => {
+    setReturnModeState(mode);
+    persistReturnMode(mode);
+  }, []);
 
   const handleDeleteRequest = useCallback(
     async (requestId: string) => {
@@ -516,6 +527,35 @@ export function UserRequestsPage() {
             FIFO order (oldest first) when they call{" "}
             <code>get_user_request</code>.
           </p>
+          <div className="mt-3 flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">Return mode:</span>
+            <div className="inline-flex rounded-md border border-border bg-background shadow-sm">
+              <button
+                type="button"
+                onClick={() => handleReturnModeChange("all")}
+                className={cn(
+                  "rounded-l-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  returnMode === "all"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                All commands
+              </button>
+              <button
+                type="button"
+                onClick={() => handleReturnModeChange("first")}
+                className={cn(
+                  "rounded-r-md border-l border-border px-3 py-1.5 text-sm font-medium transition-colors",
+                  returnMode === "first"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                First (earliest) only
+              </button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           <Textarea

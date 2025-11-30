@@ -1,6 +1,10 @@
 package library
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestStripBearerPrefix(t *testing.T) {
 	cases := map[string]struct {
@@ -19,9 +23,9 @@ func TestStripBearerPrefix(t *testing.T) {
 	}
 
 	for name, tc := range cases {
-		result := StripBearerPrefix(tc.input)
-		if result != tc.expected {
-			t.Fatalf("%s: expected %q, got %q", name, tc.expected, result)
-		}
+		t.Run(name, func(t *testing.T) {
+			result := StripBearerPrefix(tc.input)
+			require.Equal(t, tc.expected, result)
+		})
 	}
 }

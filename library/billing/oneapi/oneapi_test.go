@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCheckUserExternalBilling_SendsExpectedPayload(t *testing.T) {
@@ -21,9 +23,7 @@ func TestCheckUserExternalBilling_SendsExpectedPayload(t *testing.T) {
 		receivedAuth = r.Header.Get("Authorization")
 		receivedContentType = r.Header.Get("Content-Type")
 		defer r.Body.Close()
-		if err := json.NewDecoder(r.Body).Decode(&receivedPayload); err != nil {
-			t.Fatalf("failed to decode payload: %v", err)
-		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&receivedPayload), "failed to decode payload")
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"success":true}`))
@@ -36,27 +36,21 @@ func TestCheckUserExternalBilling_SendsExpectedPayload(t *testing.T) {
 		BillingAPI = originalBillingAPI
 	}()
 
-	if err := CheckUserExternalBilling(context.Background(), "test-api-key", PriceWebSearch, "unit test"); err != nil {
-		t.Fatalf("CheckUserExternalBilling returned error: %v", err)
-	}
+	err := CheckUserExternalBilling(context.Background(), "test-api-key", PriceWebSearch, "unit test")
+	require.NoError(t, err, "CheckUserExternalBilling returned error")
 
-	if expected := "Bearer test-api-key"; receivedAuth != expected {
-		t.Fatalf("unexpected Authorization header: got %q want %q", receivedAuth, expected)
-	}
+	require.Equal(t, "Bearer test-api-key", receivedAuth, "unexpected Authorization header")
+	require.Equal(t, "application/json", receivedContentType, "unexpected Content-Type header")
 
-	if expected := "application/json"; receivedContentType != expected {
-		t.Fatalf("unexpected Content-Type header: got %q want %q", receivedContentType, expected)
-	}
+	phase, ok := receivedPayload["phase"].(string)
+	require.True(t, ok, "phase should be a string")
+	require.Equal(t, "single", phase, "unexpected phase in payload")
 
-	if phase, ok := receivedPayload["phase"].(string); !ok || phase != "single" {
-		t.Fatalf("unexpected phase in payload: %#v", receivedPayload["phase"])
-	}
+	quota, ok := receivedPayload["add_used_quota"].(float64)
+	require.True(t, ok, "add_used_quota should be a float64")
+	require.Equal(t, PriceWebSearch.Int(), int(quota), "unexpected add_used_quota in payload")
 
-	if quota, ok := receivedPayload["add_used_quota"].(float64); !ok || int(quota) != PriceWebSearch.Int() {
-		t.Fatalf("unexpected add_used_quota in payload: %#v", receivedPayload["add_used_quota"])
-	}
-
-	if reason, ok := receivedPayload["add_reason"].(string); !ok || reason != "unit test" {
-		t.Fatalf("unexpected add_reason in payload: %#v", receivedPayload["add_reason"])
-	}
+	reason, ok := receivedPayload["add_reason"].(string)
+	require.True(t, ok, "add_reason should be a string")
+	require.Equal(t, "unit test", reason, "unexpected add_reason in payload")
 }

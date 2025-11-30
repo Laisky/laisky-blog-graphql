@@ -84,6 +84,7 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 }
 
 // ListRequests returns pending and consumed entries for the authenticated user.
+// Pending requests are returned in FIFO order (oldest first at top).
 func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext) ([]Request, []Request, error) {
 	if auth == nil {
 		return nil, nil, ErrInvalidAuthorization
@@ -92,7 +93,7 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 	pending := make([]Request, 0)
 	if err := s.db.WithContext(ctx).
 		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
-		Order("created_at DESC").
+		Order("created_at ASC").
 		Limit(defaultListLimit).
 		Find(&pending).Error; err != nil {
 		return nil, nil, errors.Wrap(err, "list pending user requests")
@@ -160,6 +161,47 @@ func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.Authoriza
 	}
 
 	return consumed, nil
+}
+
+// ConsumeFirstPending fetches only the oldest pending request (FIFO) and marks it as consumed.
+// Returns the consumed request or ErrNoPendingRequests if none are pending.
+func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.AuthorizationContext) (*Request, error) {
+	if auth == nil {
+		return nil, ErrInvalidAuthorization
+	}
+
+	// Fetch the oldest pending request (FIFO)
+	var candidate Request
+	err := s.db.WithContext(ctx).
+		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
+		Order("created_at ASC").
+		First(&candidate).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNoPendingRequests
+		}
+		return nil, errors.Wrap(err, "fetch first pending user request")
+	}
+
+	now := s.clock()
+	update := s.db.WithContext(ctx).
+		Model(&Request{}).
+		Where("id = ? AND status = ?", candidate.ID, StatusPending).
+		Updates(map[string]any{
+			"status":      StatusConsumed,
+			"consumed_at": now,
+			"updated_at":  now,
+		})
+	if update.Error != nil {
+		return nil, errors.Wrap(update.Error, "consume first user request")
+	}
+
+	// Update in-memory object
+	candidate.Status = StatusConsumed
+	candidate.ConsumedAt = &now
+	candidate.UpdatedAt = now
+
+	return &candidate, nil
 }
 
 // DeleteRequest removes a single request belonging to the authenticated user.

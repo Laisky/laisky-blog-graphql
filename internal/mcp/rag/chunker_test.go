@@ -1,20 +1,18 @@
 package rag
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestParagraphChunkerSplit(t *testing.T) {
 	chunker := ParagraphChunker{}
 	materials := "Paragraph one. Second sentence.\n\nParagraph two that is quite long and should be split into smaller pieces because it exceeds the maximum length."
 	fragments := chunker.Split(materials, 40)
-	if len(fragments) == 0 {
-		t.Fatalf("expected fragments")
-	}
+	require.NotEmpty(t, fragments, "expected fragments")
 	for _, fragment := range fragments {
-		if fragment.Cleaned == "" {
-			t.Fatalf("empty cleaned fragment")
-		}
-		if len(fragment.Text) > 40 {
-			t.Fatalf("fragment exceeds limit: %d", len(fragment.Text))
-		}
+		require.NotEmpty(t, fragment.Cleaned, "empty cleaned fragment")
+		require.LessOrEqual(t, len(fragment.Text), 40, "fragment exceeds limit: %d", len(fragment.Text))
 	}
 }

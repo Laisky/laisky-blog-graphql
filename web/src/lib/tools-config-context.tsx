@@ -1,20 +1,27 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from "react";
 
-import { defaultToolsConfig, type ToolsConfig } from '@/lib/runtime-config'
+import { defaultToolsConfig, type ToolsConfig } from "@/lib/runtime-config";
 
-const ToolsConfigContext = createContext<ToolsConfig>(defaultToolsConfig)
+const ToolsConfigContext = createContext<ToolsConfig>(defaultToolsConfig);
 
 interface ToolsConfigProviderProps {
-  children: ReactNode
-  config: ToolsConfig
+  children: ReactNode;
+  config: ToolsConfig;
 }
 
 /**
  * ToolsConfigProvider provides the tools configuration to the component tree.
  * This allows components to conditionally render based on which tools are enabled.
  */
-export function ToolsConfigProvider({ children, config }: ToolsConfigProviderProps) {
-  return <ToolsConfigContext.Provider value={config}>{children}</ToolsConfigContext.Provider>
+export function ToolsConfigProvider({
+  children,
+  config,
+}: ToolsConfigProviderProps) {
+  return (
+    <ToolsConfigContext.Provider value={config}>
+      {children}
+    </ToolsConfigContext.Provider>
+  );
 }
 
 /**
@@ -22,5 +29,5 @@ export function ToolsConfigProvider({ children, config }: ToolsConfigProviderPro
  * Use this hook to check if specific tools are enabled before rendering related UI.
  */
 export function useToolsConfig(): ToolsConfig {
-  return useContext(ToolsConfigContext)
+  return useContext(ToolsConfigContext);
 }

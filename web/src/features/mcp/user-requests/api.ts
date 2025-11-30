@@ -3,6 +3,44 @@ import {
   resolveCurrentApiBasePath,
 } from "../shared/auth";
 
+// ============================================================================
+// Return Mode Configuration
+// ============================================================================
+
+/**
+ * ReturnMode controls how the get_user_request tool returns pending commands.
+ * - 'all': Returns all pending commands (FIFO order)
+ * - 'first': Returns only the oldest (earliest) pending command
+ */
+export type ReturnMode = "all" | "first";
+
+const RETURN_MODE_STORAGE_KEY = "mcp_return_mode";
+
+/**
+ * getReturnMode retrieves the user's preferred return mode from localStorage.
+ * Defaults to 'all' if not set.
+ */
+export function getReturnMode(): ReturnMode {
+  if (typeof window === "undefined") return "all";
+  const stored = localStorage.getItem(RETURN_MODE_STORAGE_KEY);
+  if (stored === "first" || stored === "all") {
+    return stored;
+  }
+  return "all";
+}
+
+/**
+ * setReturnMode persists the user's preferred return mode to localStorage.
+ */
+export function setReturnMode(mode: ReturnMode): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(RETURN_MODE_STORAGE_KEY, mode);
+}
+
+// ============================================================================
+// User Request Types
+// ============================================================================
+
 export interface UserRequest {
   id: string;
   content: string;

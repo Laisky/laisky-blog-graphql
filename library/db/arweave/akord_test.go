@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAkrod_Upload(t *testing.T) {
@@ -18,18 +20,11 @@ func TestAkrod_Upload(t *testing.T) {
 
 	ctx := context.Background()
 	data, err := json.Marshal([]string{"hello", "world"})
-	if err != nil {
-		t.Errorf("Marshal returned an error: %v", err)
-	}
+	require.NoError(t, err, "Marshal returned an error")
 
 	fileID, err := akord.Upload(ctx, data) // WithContentType("application/json"),
-
-	if err != nil {
-		t.Errorf("Upload returned an error: %v", err)
-	}
+	require.NoError(t, err, "Upload returned an error")
 
 	t.Logf("FileID: %s", fileID)
-	t.Error()
-
-	// Add assertions for the expected fileID value or any other validation you need.
+	require.NotEmpty(t, fileID, "FileID should not be empty")
 }

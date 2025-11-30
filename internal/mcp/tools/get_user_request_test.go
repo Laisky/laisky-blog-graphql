@@ -121,17 +121,19 @@ func mustGetUserRequestTool(t *testing.T, service UserRequestService, hold HoldW
 }
 
 func TestGetUserRequestToolHoldTimeout(t *testing.T) {
+	// When hold is active and there are no pending commands, the tool waits.
+	// If the wait times out, it should return a hold_timeout status.
 	service := &fakeUserRequestService{
 		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
-			t.Fatalf("service should not be called when hold times out")
-			return nil, nil
+			// Return no pending requests so the tool proceeds to wait
+			return nil, userrequests.ErrNoPendingRequests
 		},
 	}
 
 	waiter := &fakeHoldWaiter{
 		active: true,
 		wait: func(context.Context, string) (*userrequests.Request, bool) {
-			return nil, true
+			return nil, true // Simulate timeout
 		},
 	}
 
@@ -153,13 +155,86 @@ func TestGetUserRequestToolHoldTimeout(t *testing.T) {
 	require.Contains(t, payload["message"], "get_user_request")
 }
 
+func TestGetUserRequestToolHoldWithPendingCommands(t *testing.T) {
+	// When hold is active but there are already pending commands,
+	// the tool should return them immediately without waiting.
+	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
+	service := &fakeUserRequestService{
+		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+			return []userrequests.Request{
+				{
+					ID:           testUUID("33333333-3333-3333-3333-333333333333"),
+					Content:      "Existing pending command",
+					Status:       userrequests.StatusConsumed,
+					TaskID:       "default",
+					UserIdentity: "user-hold-pending",
+					CreatedAt:    consumedAt.Add(-time.Hour),
+					ConsumedAt:   &consumedAt,
+				},
+			}, nil
+		},
+	}
+
+	waiter := &fakeHoldWaiter{
+		active: true,
+		wait: func(context.Context, string) (*userrequests.Request, bool) {
+			require.Fail(t, "wait should not be called when pending commands exist")
+			return nil, false
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "user-hold-pending"}, nil
+	})
+
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+
+	text, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+
+	payload := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
+
+	// Verify commands list is returned
+	commands, ok := payload["commands"].([]any)
+	require.True(t, ok, "commands should be a list")
+	require.Len(t, commands, 1)
+
+	// Verify the command content
+	cmd, ok := commands[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "Existing pending command", cmd["content"])
+}
+
 type fakeUserRequestService struct {
-	consumeAll func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
+	consumeAll   func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
+	consumeFirst func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
 }
 
 func (f *fakeUserRequestService) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext) ([]userrequests.Request, error) {
 	if f.consumeAll != nil {
 		return f.consumeAll(ctx, auth)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (f *fakeUserRequestService) ConsumeFirstPending(ctx context.Context, auth *askuser.AuthorizationContext) (*userrequests.Request, error) {
+	if f.consumeFirst != nil {
+		return f.consumeFirst(ctx, auth)
+	}
+	// Default: return first from consumeAll if available
+	if f.consumeAll != nil {
+		requests, err := f.consumeAll(ctx, auth)
+		if err != nil {
+			return nil, err
+		}
+		if len(requests) > 0 {
+			return &requests[0], nil
+		}
+		return nil, userrequests.ErrNoPendingRequests
 	}
 	return nil, errors.New("not implemented")
 }
