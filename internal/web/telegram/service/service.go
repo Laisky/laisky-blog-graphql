@@ -10,6 +10,7 @@ import (
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
 	tb "gopkg.in/telebot.v3"
@@ -18,7 +19,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 var (
@@ -201,9 +201,10 @@ func (s *Telegram) dispatcher(ctx context.Context, msg *tb.Message) {
 
 // PleaseRetry echo retry
 func (s *Telegram) PleaseRetry(sender *tb.User, msg string) {
-	log.Logger.Warn("unknown msg", zap.String("msg", msg))
+	logger := logSDK.Shared.Named("telegram_please_retry")
+	logger.Warn("unknown msg", zap.String("msg", msg))
 	if _, err := s.bot.Send(sender, "[Error] unknown msg, please retry"); err != nil {
-		log.Logger.Error("send msg by telegram", zap.Error(err))
+		logger.Error("send msg by telegram", zap.Error(err))
 	}
 }
 

@@ -22,7 +22,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // PostResolver post resolver
@@ -104,9 +103,10 @@ func (r *QueryResolver) BlogPostHistory(ctx context.Context, fileID string, lang
 }
 
 func (r *QueryResolver) WhoAmI(ctx context.Context) (*model.User, error) {
+	logger := ginMw.GetLogger(ctx).Named("who_am_i")
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
-		log.Logger.Debug("user invalidate", zap.Error(err))
+		logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
@@ -272,6 +272,7 @@ func (r *ArweaveItemResolver) Time(ctx context.Context, obj *model.ArweaveHistor
 
 func (r *PostSeriesResolver) Posts(ctx context.Context,
 	obj *model.PostSeries) (posts []*model.Post, err error) {
+	logger := ginMw.GetLogger(ctx).Named("post_series_posts")
 	se, err := r.svc.LoadPostSeries(ctx, obj.ID, "")
 	if err != nil {
 		return nil, err
@@ -284,7 +285,7 @@ func (r *PostSeriesResolver) Posts(ctx context.Context,
 	for _, postID := range se[0].Posts {
 		ps, err := r.svc.LoadPosts(ctx, &dto.PostCfg{ID: postID})
 		if err != nil {
-			log.Logger.Error("load posts", zap.Error(err), zap.String("id", postID.Hex()))
+			logger.Error("load posts", zap.Error(err), zap.String("id", postID.Hex()))
 			continue
 		}
 
@@ -353,9 +354,10 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 	newpost models.NewBlogPost,
 	language models.Language,
 ) (*model.Post, error) {
+	logger := ginMw.GetLogger(ctx).Named("blog_create_post")
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
-		log.Logger.Debug("user invalidate", zap.Error(err))
+		logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 
@@ -378,6 +380,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
 ) (resp *models.BlogLoginResponse, err error) {
+	logger := ginMw.GetLogger(ctx).Named("blog_login")
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
 		return nil, errors.Wrapf(err, "user `%v` invalidate", account)
@@ -399,7 +402,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	if token, err = auth.Instance.SetAuthHeader(ctx,
 		ginMw.WithSetAuthHeaderClaim(uc),
 	); err != nil {
-		log.Logger.Error("try to set cookie got error", zap.Error(err))
+		logger.Error("try to set cookie got error", zap.Error(err))
 		return nil, errors.Wrap(err, "try to set cookies got error")
 	}
 
@@ -413,9 +416,10 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	post models.NewBlogPost,
 	language models.Language,
 ) (*model.Post, error) {
+	logger := ginMw.GetLogger(ctx).Named("blog_amend_post")
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
-		log.Logger.Debug("user invalidate", zap.Error(err))
+		logger.Debug("user invalidate", zap.Error(err))
 		return nil, err
 	}
 

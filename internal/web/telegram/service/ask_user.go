@@ -10,12 +10,12 @@ import (
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gutils "github.com/Laisky/go-utils/v6"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
 	tb "gopkg.in/telebot.v3"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 func (s *Telegram) SetAskUserService(svc *askuser.Service) {
@@ -24,6 +24,7 @@ func (s *Telegram) SetAskUserService(svc *askuser.Service) {
 }
 
 func (s *Telegram) OnNewRequest(req *askuser.Request) {
+	logger := logSDK.Shared.Named("telegram_ask_user_new_request")
 	ctx := context.Background()
 	uid, err := s.lookupTelegramUID(ctx, req.APIKeyHash)
 	if err != nil {
@@ -36,16 +37,17 @@ func (s *Telegram) OnNewRequest(req *askuser.Request) {
 		ParseMode: tb.ModeMarkdown,
 	})
 	if err != nil {
-		log.Logger.Error("failed to send ask_user question to telegram", zap.Error(err), zap.Int("uid", uid))
+		logger.Error("failed to send ask_user question to telegram", zap.Error(err), zap.Int("uid", uid))
 		return
 	}
 
 	s.askUserRequests.Store(msg.ID, req.ID)
 	s.trackAskUserSession(int64(uid), msg.ID, req.ID)
-	log.Logger.Debug("tracked ask_user session", zap.Int("uid", uid), zap.Int("prompt_msg_id", msg.ID), zap.String("request_id", req.ID.String()))
+	logger.Debug("tracked ask_user session", zap.Int("uid", uid), zap.Int("prompt_msg_id", msg.ID), zap.String("request_id", req.ID.String()))
 }
 
 func (s *Telegram) OnRequestCancelled(req *askuser.Request) {
+	logger := logSDK.Shared.Named("telegram_ask_user_cancelled")
 	ctx := context.Background()
 	uid, err := s.lookupTelegramUID(ctx, req.APIKeyHash)
 	if err != nil {
@@ -56,11 +58,11 @@ func (s *Telegram) OnRequestCancelled(req *askuser.Request) {
 	if _, err := s.bot.Send(&tb.User{ID: int64(uid)}, msgText, &tb.SendOptions{
 		ParseMode: tb.ModeMarkdown,
 	}); err != nil {
-		log.Logger.Error("failed to send ask_user cancellation to telegram", zap.Error(err), zap.Int("uid", uid))
+		logger.Error("failed to send ask_user cancellation to telegram", zap.Error(err), zap.Int("uid", uid))
 	}
 
 	s.clearAskUserSession(int64(uid), 0, req.ID)
-	log.Logger.Debug("cleared ask_user session due to cancellation", zap.Int("uid", uid), zap.String("request_id", req.ID.String()))
+	logger.Debug("cleared ask_user session due to cancellation", zap.Int("uid", uid), zap.String("request_id", req.ID.String()))
 }
 
 func (s *Telegram) registerAskUserHandler(ctx context.Context) {
@@ -183,13 +185,14 @@ func (s *Telegram) lookupTelegramUID(ctx context.Context, tokenHash string) (int
 }
 
 func (s *Telegram) handleAskUserAnswer(ctx context.Context, c tb.Context, reqID uuid.UUID, promptMsgID int) error {
+	logger := gmw.GetLogger(ctx).Named("telegram_ask_user_answer")
 	if s.askUserService == nil {
 		return c.Send("AskUser service is not available.")
 	}
 
 	req, err := s.askUserService.GetRequest(ctx, reqID)
 	if err != nil {
-		log.Logger.Error("failed to get ask_user request", zap.Error(err))
+		logger.Error("failed to get ask_user request", zap.Error(err))
 		return c.Send("Failed to retrieve the question. It might have expired.")
 	}
 
@@ -211,7 +214,7 @@ func (s *Telegram) handleAskUserAnswer(ctx context.Context, c tb.Context, reqID 
 
 	answer := c.Message().Text
 	if _, err := s.askUserService.AnswerRequest(ctx, auth, reqID, answer); err != nil {
-		log.Logger.Error("failed to answer ask_user request", zap.Error(err))
+		logger.Error("failed to answer ask_user request", zap.Error(err))
 		return c.Send("Failed to submit your answer. Please try again.")
 	}
 

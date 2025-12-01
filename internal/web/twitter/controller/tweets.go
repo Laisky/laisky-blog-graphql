@@ -11,9 +11,9 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 )
 
@@ -165,8 +165,9 @@ func (t *TweetResolver) ReplyTo(ctx context.Context, obj *model.Tweet) (tweet *m
 		return tweet, nil
 	}
 
+	logger := gmw.GetLogger(ctx).Named("twitter_reply_to")
 	if tweet, err = service.Instance.LoadTweetByTwitterID(ctx, obj.ReplyToStatusID); err != nil {
-		log.Logger.Warn("try to load tweet by id got error",
+		logger.Warn("try to load tweet by id got error",
 			zap.String("tweet", obj.ReplyToStatusID),
 			zap.Error(err))
 		return nil, errors.Errorf("can not load tweet by tid: %v", obj.ReplyToStatusID)

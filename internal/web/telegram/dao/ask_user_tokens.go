@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
@@ -11,7 +12,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 const askUserTokensColName = "ask_user_tokens"
@@ -32,7 +32,8 @@ func (d *AskUserToken) col() *mongoLib.Collection {
 
 // RegisterAskUserToken associates a hashed API key with a Telegram UID.
 func (d *AskUserToken) RegisterAskUserToken(ctx context.Context, uid int, tokenHash string) error {
-	log.Logger.Info("RegisterAskUserToken", zap.Int("uid", uid))
+	logger := gmw.GetLogger(ctx).Named("telegram_register_ask_user_token")
+	logger.Info("RegisterAskUserToken", zap.Int("uid", uid))
 	_, err := d.col().UpdateOne(ctx,
 		bson.M{"token_hash": tokenHash},
 		bson.M{

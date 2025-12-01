@@ -75,7 +75,8 @@ func (r *QueryResolver) Lock(ctx context.Context, name string) (*model.Lock, err
 }
 
 func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (users []*models.GeneralUser, err error) {
-	log.Logger.Debug("LockPermissions", zap.String("username", username))
+	logger := gmw.GetLogger(ctx).Named("lock_permissions")
+	logger.Debug("LockPermissions", zap.String("username", username))
 	users = []*models.GeneralUser{}
 	var (
 		prefixes []string
@@ -362,7 +363,8 @@ func (r *MutationResolver) CreateGeneralToken(ctx context.Context,
 	username string,
 	durationSec int,
 ) (token string, err error) {
-	log.Logger.Debug("CreateGeneralToken",
+	logger := gmw.GetLogger(ctx).Named("create_general_token")
+	logger.Debug("CreateGeneralToken",
 		zap.String("username", username),
 		zap.Int("durationSec", durationSec))
 	if time.Duration(durationSec)*time.Second > maxTokenExpireDuration {

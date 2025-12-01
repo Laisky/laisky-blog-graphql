@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
@@ -19,7 +20,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 const (
@@ -266,7 +266,8 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 	}
 
 	// Log the new comment
-	log.Logger.Info("new comment created",
+	logger := gmw.GetLogger(ctx).Named("blog_create_comment")
+	logger.Info("new comment created",
 		zap.String("post_id", post.ID.Hex()),
 		zap.String("comment_id", comment.ID.Hex()),
 		zap.String("author", authorName))
@@ -386,7 +387,8 @@ func (s *Blog) BlogApproveComment(ctx context.Context, commentID string) (*model
 		return nil, errors.Wrap(err, "failed to approve comment")
 	}
 
-	log.Logger.Info("comment approved",
+	logger := gmw.GetLogger(ctx).Named("blog_approve_comment")
+	logger.Info("comment approved",
 		zap.String("comment_id", commentID),
 		zap.String("admin", user.Username))
 
@@ -458,7 +460,8 @@ func (s *Blog) BlogDeleteComment(ctx context.Context, commentID string) (*models
 		return nil, errors.Wrap(err, "transaction failed")
 	}
 
-	log.Logger.Info("comment deleted",
+	logger := gmw.GetLogger(ctx).Named("blog_delete_comment")
+	logger.Info("comment deleted",
 		zap.String("comment_id", commentID),
 		zap.String("admin", user.Username))
 

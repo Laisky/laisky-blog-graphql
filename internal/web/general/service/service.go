@@ -8,10 +8,10 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/model"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"cloud.google.com/go/firestore"
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
 )
@@ -110,7 +110,8 @@ func (s *Type) AcquireLock(ctx context.Context,
 	duration time.Duration,
 	isRenewal bool,
 ) (ok bool, err error) {
-	log.Logger.Info("AcquireLock",
+	logger := gmw.GetLogger(ctx).Named("acquire_lock")
+	logger.Info("AcquireLock",
 		zap.String("name", name),
 		zap.String("owner", ownerID),
 		zap.Duration("duration", duration))
@@ -147,7 +148,8 @@ func (s *Type) AcquireLock(ctx context.Context,
 
 func (s *Type) LoadLockByName(ctx context.Context,
 	name string) (lock *model.Lock, err error) {
-	log.Logger.Debug("load lock by name", zap.String("name", name))
+	logger := gmw.GetLogger(ctx).Named("load_lock_by_name")
+	logger.Debug("load lock by name", zap.String("name", name))
 	docu, err := s.dao.GetLocksCol().Doc(name).Get(ctx)
 	if err != nil && docu == nil {
 		return nil, errors.Wrap(err, "load docu by name")

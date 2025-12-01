@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // AlertTypeResolver alert type resolver
@@ -161,14 +161,15 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	typeArg string,
 	token string,
 	msg string) (*model.AlertTypes, error) {
+	logger := gmw.GetLogger(ctx).Named("telegram_monitor_alert")
 	if !telegramRatelimiter.Allow(typeArg) {
-		// log.Logger.Warn("deny by throttle", zap.String("type", typeArg))
+		// logger.Warn("deny by throttle", zap.String("type", typeArg))
 		return nil, errors.Errorf("deny by throttle")
 	}
 
 	maxlen := gconfig.Shared.GetInt("settings.telegram.max_len")
 	if maxlen <= 0 || maxlen > 3000 {
-		log.Logger.Warn("invalid max len, reset to 3000", zap.Int("maxlen", maxlen))
+		logger.Warn("invalid max len, reset to 3000", zap.Int("maxlen", maxlen))
 		maxlen = 3000
 	}
 
@@ -192,7 +193,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
 	for _, user := range users {
 		if err = r.svc.SendMsgToUser(user.UID, msg); err != nil {
-			log.Logger.Error("send msg to user",
+			logger.Error("send msg to user",
 				zap.Error(err),
 				zap.Int("uid", user.UID),
 				zap.String("msg", msg))

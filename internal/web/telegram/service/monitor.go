@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
 	tb "gopkg.in/telebot.v3"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 func (s *Telegram) registerMonitorHandler() {
@@ -48,7 +48,8 @@ func (s *Telegram) registerMonitorHandler() {
 }
 
 func (s *Telegram) monitorHandler(ctx context.Context, us *userStat, msg *tb.Message) {
-	log.Logger.Debug("choose monitor",
+	logger := gmw.GetLogger(ctx).Named("monitor_handler")
+	logger.Debug("choose monitor",
 		zap.String("user", us.user.Username),
 		zap.String("msg", msg.Text))
 	// defer s.userStats.Delete(us.user.ID)
@@ -67,44 +68,44 @@ func (s *Telegram) monitorHandler(ctx context.Context, us *userStat, msg *tb.Mes
 	switch ans[0] {
 	case "1": // create new monitor
 		if err = s.createNewMonitor(ctx, us, ans[1]); err != nil {
-			log.Logger.Warn("createNewMonitor", zap.Error(err))
+			logger.Warn("createNewMonitor", zap.Error(err))
 			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
-				log.Logger.Error("send msg by telegram", zap.Error(err))
+				logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "2":
 		if err = s.listAllMonitorAlerts(ctx, us); err != nil {
-			log.Logger.Warn("listAllMonitorAlerts", zap.Error(err))
+			logger.Warn("listAllMonitorAlerts", zap.Error(err))
 			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
-				log.Logger.Error("send msg by telegram", zap.Error(err))
+				logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "3":
 		if err = s.joinAlertGroup(ctx, us, ans[1]); err != nil {
-			log.Logger.Warn("joinAlertGroup", zap.Error(err))
+			logger.Warn("joinAlertGroup", zap.Error(err))
 			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
-				log.Logger.Error("send msg by telegram", zap.Error(err))
+				logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "4":
 		if err = s.refreshAlertTokenAndKey(ctx, us, ans[1]); err != nil {
-			log.Logger.Warn("refreshAlertTokenAndKey", zap.Error(err))
+			logger.Warn("refreshAlertTokenAndKey", zap.Error(err))
 			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
-				log.Logger.Error("send msg by telegram", zap.Error(err))
+				logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "5":
 		if err = s.userQuitAlert(ctx, us, ans[1]); err != nil {
-			log.Logger.Warn("userQuitAlert", zap.Error(err))
+			logger.Warn("userQuitAlert", zap.Error(err))
 			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
-				log.Logger.Error("send msg by telegram", zap.Error(err))
+				logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	case "6":
 		if err = s.kickUser(ctx, us, ans[1]); err != nil {
-			log.Logger.Warn("kickUser", zap.Error(err))
+			logger.Warn("kickUser", zap.Error(err))
 			if _, err = s.bot.Send(us.user, "[Error] "+err.Error()); err != nil {
-				log.Logger.Error("send msg by telegram", zap.Error(err))
+				logger.Error("send msg by telegram", zap.Error(err))
 			}
 		}
 	default:
@@ -138,7 +139,9 @@ func (s *Telegram) kickUser(ctx context.Context, us *userStat, au string) (err e
 	if err = s.monitorDao.RemoveUAR(ctx, kickedUser.UID, alertName); err != nil {
 		return errors.Wrap(err, "remove user alert relation")
 	}
-	log.Logger.Info("remove user_alert_relation",
+
+	logger := gmw.GetLogger(ctx).Named("kick_user")
+	logger.Info("remove user_alert_relation",
 		zap.String("user_name", kickedUser.Name),
 		zap.String("alert_type", alertName),
 		zap.String("user", kickedUser.ID.Hex()))

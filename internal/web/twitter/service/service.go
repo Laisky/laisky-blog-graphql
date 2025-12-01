@@ -12,9 +12,9 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library/db/mongo"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -69,10 +69,11 @@ func (s *Type) LoadThreadByTweetID(ctx context.Context, id string) (tweets []*mo
 		return nil, errors.Wrapf(err, "load head for tweet `%s`", id)
 	}
 
+	logger := gmw.GetLogger(ctx).Named("twitter_load_thread")
 	tail, err := s.loadTweetsRecur(ctx, tweet, func(status *model.Tweet) (nextID string) {
 		replys, err := s.LoadTweetReplys(ctx, status.ID)
 		if err != nil {
-			log.Logger.Error("load tweet replies", zap.Error(err))
+			logger.Error("load tweet replies", zap.Error(err))
 			return ""
 		}
 
@@ -81,7 +82,7 @@ func (s *Type) LoadThreadByTweetID(ctx context.Context, id string) (tweets []*mo
 		for _, s := range replys {
 			rid, err := strconv.Atoi(s.ID)
 			if err != nil {
-				log.Logger.Error("parse tweet id", zap.Error(err), zap.String("id", s.ID))
+				logger.Error("parse tweet id", zap.Error(err), zap.String("id", s.ID))
 				return ""
 			}
 
@@ -149,11 +150,12 @@ func (s *Type) loadTweetsRecur(ctx context.Context,
 }
 
 func (s *Type) LoadTweetByTwitterID(ctx context.Context, id string) (tweet *model.Tweet, err error) {
+	logger := gmw.GetLogger(ctx).Named("twitter_load_tweet_by_id")
 	tweet = &model.Tweet{}
 	if err = s.tweetDao.GetTweetCol().
 		FindOne(ctx, bson.M{"id_str": id}).
 		Decode(tweet); mongo.NotFound(err) {
-		log.Logger.Debug("tweet not found", zap.String("id", id))
+		logger.Debug("tweet not found", zap.String("id", id))
 		tweet = new(model.Tweet)
 		tweet.ID = id
 		return tweet, nil
@@ -165,11 +167,12 @@ func (s *Type) LoadTweetByTwitterID(ctx context.Context, id string) (tweet *mode
 }
 
 func (s *Type) LoadUserByID(ctx context.Context, id string) (user *model.User, err error) {
+	logger := gmw.GetLogger(ctx).Named("twitter_load_user_by_id")
 	user = new(model.User)
 	if err = s.tweetDao.GetUserCol().
 		FindOne(ctx, bson.M{"id_str": id}).
 		Decode(user); mongo.NotFound(err) {
-		log.Logger.Debug("tweet not found", zap.String("id", id))
+		logger.Debug("tweet not found", zap.String("id", id))
 		return nil, errors.Errorf("user `%s` not found", id)
 	} else if err != nil {
 		return nil, errors.Wrap(err, "try to load tweet by id got error")
@@ -179,7 +182,8 @@ func (s *Type) LoadUserByID(ctx context.Context, id string) (user *model.User, e
 }
 
 func (s *Type) LoadTweets(ctx context.Context, cfg *dto.LoadTweetArgs) (results []*model.Tweet, err error) {
-	log.Logger.Debug("LoadTweets",
+	logger := gmw.GetLogger(ctx).Named("twitter_load_tweets")
+	logger.Debug("LoadTweets",
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("topic", cfg.Topic),
 		zap.String("tweet_id", cfg.TweetID),
@@ -257,7 +261,7 @@ func (s *Type) LoadTweets(ctx context.Context, cfg *dto.LoadTweetArgs) (results 
 		return nil, errors.Wrap(err, "load tweets")
 	}
 
-	log.Logger.Debug("load tweets",
+	logger.Debug("load tweets",
 		zap.Any("sort", sort),
 		zap.Any("query", query),
 		zap.Int("skip", cfg.Page*cfg.Size),

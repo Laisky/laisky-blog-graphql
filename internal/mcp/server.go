@@ -12,6 +12,7 @@ import (
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	gutils "github.com/Laisky/go-utils/v6"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	mcp "github.com/mark3labs/mcp-go/mcp"
@@ -33,6 +34,7 @@ type ctxKey string
 
 const (
 	keyAuthorization ctxKey = "authorization"
+	keyLogger        ctxKey = "logger"
 	httpLogBodyLimit int    = 4096
 )
 
@@ -81,14 +83,25 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		srv.WithHooks(hooks),
 	)
 
+	serverLogger := logger.Named("mcp")
+
 	streamable := srv.NewStreamableHTTPServer(
 		mcpServer,
 		srv.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
-			return context.WithValue(ctx, keyAuthorization, r.Header.Get("Authorization"))
+			// Inject authorization header
+			ctx = context.WithValue(ctx, keyAuthorization, r.Header.Get("Authorization"))
+
+			// Create a per-request logger with request-specific context
+			reqLogger := serverLogger.With(
+				zap.String("request_id", gutils.UUID7()),
+				zap.String("remote_addr", r.RemoteAddr),
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+			)
+			ctx = context.WithValue(ctx, keyLogger, reqLogger)
+			return ctx
 		}),
 	)
-
-	serverLogger := logger.Named("mcp")
 
 	s := &Server{
 		handler:    withHTTPLogging(streamable, serverLogger.Named("http")),
@@ -249,6 +262,15 @@ func extractAPIKey(authHeader string) string {
 func apiKeyFromContext(ctx context.Context) string {
 	authHeader, _ := ctx.Value(keyAuthorization).(string)
 	return extractAPIKey(authHeader)
+}
+
+// LoggerFromContext retrieves the per-request logger from the MCP context.
+// Falls back to a shared logger if none is present in context.
+func LoggerFromContext(ctx context.Context) logSDK.Logger {
+	if logger, ok := ctx.Value(keyLogger).(logSDK.Logger); ok && logger != nil {
+		return logger
+	}
+	return log.Logger.Named("mcp_fallback")
 }
 
 func (s *Server) recordToolInvocation(ctx context.Context, toolName string, apiKey string, args map[string]any, startedAt time.Time, duration time.Duration, baseCost int, result *mcp.CallToolResult, invokeErr error) {
