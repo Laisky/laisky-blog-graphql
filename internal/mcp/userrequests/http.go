@@ -23,6 +23,7 @@ func NewCombinedHTTPHandler(service *Service, holdManager *HoldManager, logger l
 	handler := &combinedHTTPHandler{
 		requestsHandler:     &httpHandler{service: service, holdManager: holdManager, logger: logger},
 		savedCommandHandler: &savedCommandsHTTPHandler{service: service, logger: logger},
+		preferencesHandler:  &preferencesHTTPHandler{service: service, logger: logger},
 	}
 	if holdManager != nil {
 		handler.holdHandler = &holdHTTPHandler{holdManager: holdManager, logger: logger}
@@ -34,6 +35,7 @@ type combinedHTTPHandler struct {
 	requestsHandler     *httpHandler
 	savedCommandHandler *savedCommandsHTTPHandler
 	holdHandler         *holdHTTPHandler
+	preferencesHandler  *preferencesHTTPHandler
 }
 
 // ServeHTTP routes requests to the appropriate handler based on the URL path.
@@ -47,6 +49,8 @@ func (h *combinedHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		h.holdHandler.ServeHTTP(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/preferences"):
+		h.preferencesHandler.ServeHTTP(w, r)
 	default:
 		h.requestsHandler.ServeHTTP(w, r)
 	}

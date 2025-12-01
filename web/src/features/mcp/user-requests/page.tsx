@@ -24,6 +24,7 @@ import {
   deleteUserRequest,
   getAuthCollapsed,
   getHoldState,
+  getPreferencesFromServer,
   getReturnMode,
   type HoldState,
   listUserRequests,
@@ -31,7 +32,8 @@ import {
   type ReturnMode,
   setAuthCollapsed,
   setHold,
-  setReturnMode as persistReturnMode,
+  setReturnMode as persistReturnModeLocal,
+  setReturnModeOnServer,
   type UserRequest,
 } from "./api";
 import { HoldButton } from "./hold-button";
@@ -112,7 +114,11 @@ export function UserRequestsPage() {
       inFlight = controller;
 
       try {
-        const data = await listUserRequests(apiKey, controller.signal);
+        // Fetch both requests and preferences in parallel
+        const [data, prefs] = await Promise.all([
+          listUserRequests(apiKey, controller.signal),
+          initial ? getPreferencesFromServer(apiKey, controller.signal).catch(() => null) : Promise.resolve(null),
+        ]);
         if (disposed) return;
 
         setPending(data.pending ?? []);
@@ -122,6 +128,14 @@ export function UserRequestsPage() {
           message: identityMessage(data.user_id, data.key_hint),
           tone: "success",
         });
+
+        // Update return mode from server preference (if available)
+        if (prefs && prefs.return_mode) {
+          setReturnModeState(prefs.return_mode);
+          // Also sync to localStorage
+          persistReturnModeLocal(prefs.return_mode);
+        }
+
         // Auto-collapse the Authenticate panel on successful authentication
         setIsAuthCollapsedState(true);
         setAuthCollapsed(true);
@@ -301,10 +315,26 @@ export function UserRequestsPage() {
     }
   }, [apiKey]);
 
-  const handleReturnModeChange = useCallback((mode: ReturnMode) => {
+  const handleReturnModeChange = useCallback(async (mode: ReturnMode) => {
     setReturnModeState(mode);
-    persistReturnMode(mode);
-  }, []);
+    // Persist to localStorage as fallback
+    persistReturnModeLocal(mode);
+
+    // Also persist to server so MCP tool uses this preference
+    const key = normalizeApiKey(apiKey);
+    if (key) {
+      try {
+        await setReturnModeOnServer(key, mode);
+        setStatus({
+          message: `Return mode set to "${mode === "first" ? "first only" : "all commands"}".`,
+          tone: "success",
+        });
+      } catch (error) {
+        console.error("Failed to persist return mode to server:", error);
+        // Don't show error - localStorage fallback still works
+      }
+    }
+  }, [apiKey]);
 
   const handleDeleteRequest = useCallback(
     async (requestId: string) => {

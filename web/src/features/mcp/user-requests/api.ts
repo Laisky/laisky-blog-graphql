@@ -19,6 +19,7 @@ const RETURN_MODE_STORAGE_KEY = "mcp_return_mode";
 /**
  * getReturnMode retrieves the user's preferred return mode from localStorage.
  * Defaults to 'all' if not set.
+ * @deprecated Use getReturnModeFromServer for server-persisted preference.
  */
 export function getReturnMode(): ReturnMode {
   if (typeof window === "undefined") return "all";
@@ -31,10 +32,78 @@ export function getReturnMode(): ReturnMode {
 
 /**
  * setReturnMode persists the user's preferred return mode to localStorage.
+ * @deprecated Use setReturnModeOnServer for server-persisted preference.
  */
 export function setReturnMode(mode: ReturnMode): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(RETURN_MODE_STORAGE_KEY, mode);
+}
+
+// ============================================================================
+// Server-Side Preferences API
+// ============================================================================
+
+export interface UserPreferencesResponse {
+  return_mode: ReturnMode;
+  user_id?: string;
+  key_hint?: string;
+}
+
+/**
+ * getPreferencesFromServer retrieves the user's preferences from the server.
+ * This is the authoritative source for return_mode preference.
+ */
+export async function getPreferencesFromServer(
+  apiKey: string,
+  signal?: AbortSignal
+): Promise<UserPreferencesResponse> {
+  const authorization = ensureAuthorization(apiKey);
+  const apiBasePath = resolveCurrentApiBasePath();
+  const response = await fetch(`${apiBasePath}api/preferences`, {
+    cache: "no-store",
+    headers: {
+      Authorization: authorization,
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+    },
+    signal,
+  });
+
+  if (!response.ok) {
+    const message = (await response.text()) || response.statusText;
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+/**
+ * setReturnModeOnServer persists the user's return_mode preference to the server.
+ * This preference is used by the MCP tool when the AI agent doesn't specify return_mode.
+ */
+export async function setReturnModeOnServer(
+  apiKey: string,
+  mode: ReturnMode
+): Promise<UserPreferencesResponse> {
+  const authorization = ensureAuthorization(apiKey);
+  const apiBasePath = resolveCurrentApiBasePath();
+  const response = await fetch(`${apiBasePath}api/preferences`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: authorization,
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+    },
+    body: JSON.stringify({ return_mode: mode }),
+  });
+
+  if (!response.ok) {
+    const message = (await response.text()) || response.statusText;
+    throw new Error(message);
+  }
+
+  return response.json();
 }
 
 // ============================================================================

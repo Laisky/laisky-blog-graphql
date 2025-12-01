@@ -44,7 +44,7 @@ func NewService(db *gorm.DB, logger logSDK.Logger, clock Clock) (*Service, error
 		}
 	}
 
-	if err := db.AutoMigrate(&Request{}, &SavedCommand{}); err != nil {
+	if err := db.AutoMigrate(&Request{}, &SavedCommand{}, &UserPreference{}); err != nil {
 		return nil, errors.Wrap(err, "auto migrate mcp user requests tables")
 	}
 

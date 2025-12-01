@@ -18,6 +18,7 @@ import (
 type UserRequestService interface {
 	ConsumeAllPending(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
 	ConsumeFirstPending(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
+	GetReturnMode(context.Context, *askuser.AuthorizationContext) (string, error)
 }
 
 // HoldWaiter waits for a command to be submitted during an active hold.
@@ -84,12 +85,38 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("invalid authorization header"), nil
 	}
 
-	// Parse return_mode parameter (default: "all")
-	returnMode := "all"
+	// Parse return_mode parameter from the request.
+	// If the AI agent doesn't specify it, fall back to the user's stored preference.
+	returnMode := ""
+	var agentSpecified bool
 	if args, ok := req.Params.Arguments.(map[string]any); ok && args != nil {
 		if mode, ok := args["return_mode"].(string); ok && mode != "" {
 			returnMode = mode
+			agentSpecified = true
 		}
+	}
+
+	// If the agent didn't specify return_mode, retrieve the user's preference
+	if !agentSpecified {
+		userPref, prefErr := t.service.GetReturnMode(ctx, authCtx)
+		if prefErr != nil {
+			t.log().Debug("failed to get user return_mode preference, using default",
+				zap.Error(prefErr),
+				zap.String("user", authCtx.UserIdentity),
+			)
+			returnMode = "all"
+		} else {
+			returnMode = userPref
+			t.log().Debug("using user's stored return_mode preference",
+				zap.String("return_mode", returnMode),
+				zap.String("user", authCtx.UserIdentity),
+			)
+		}
+	} else {
+		t.log().Debug("using agent-specified return_mode",
+			zap.String("return_mode", returnMode),
+			zap.String("user", authCtx.UserIdentity),
+		)
 	}
 
 	// If hold is active, first check for existing pending commands.
@@ -154,6 +181,10 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	// Consume requests based on return_mode
+	t.log().Debug("consuming pending requests",
+		zap.String("return_mode", returnMode),
+		zap.String("user", authCtx.UserIdentity),
+	)
 	var requests []userrequests.Request
 	if returnMode == "first" {
 		firstReq, err := t.service.ConsumeFirstPending(ctx, authCtx)
@@ -163,6 +194,10 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 				t.log().Warn("invalid user request authorization", zap.Error(err))
 				return mcp.NewToolResultError("invalid authorization context"), nil
 			case errors.Is(err, userrequests.ErrNoPendingRequests):
+				t.log().Debug("no pending requests to consume",
+					zap.String("return_mode", returnMode),
+					zap.String("user", authCtx.UserIdentity),
+				)
 				return t.emptyResponse(authCtx), nil
 			default:
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -173,6 +208,10 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 			}
 		}
 		requests = []userrequests.Request{*firstReq}
+		t.log().Debug("consumed first pending request",
+			zap.String("request_id", firstReq.ID.String()),
+			zap.String("user", authCtx.UserIdentity),
+		)
 	} else {
 		var err error
 		requests, err = t.service.ConsumeAllPending(ctx, authCtx)
@@ -182,6 +221,10 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 				t.log().Warn("invalid user request authorization", zap.Error(err))
 				return mcp.NewToolResultError("invalid authorization context"), nil
 			case errors.Is(err, userrequests.ErrNoPendingRequests):
+				t.log().Debug("no pending requests to consume",
+					zap.String("return_mode", returnMode),
+					zap.String("user", authCtx.UserIdentity),
+				)
 				return t.emptyResponse(authCtx), nil
 			default:
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -191,6 +234,10 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 				return mcp.NewToolResultError("failed to fetch user requests"), nil
 			}
 		}
+		t.log().Debug("consumed all pending requests",
+			zap.Int("count", len(requests)),
+			zap.String("user", authCtx.UserIdentity),
+		)
 	}
 
 	if len(requests) == 0 {

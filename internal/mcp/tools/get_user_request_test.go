@@ -210,8 +210,9 @@ func TestGetUserRequestToolHoldWithPendingCommands(t *testing.T) {
 }
 
 type fakeUserRequestService struct {
-	consumeAll   func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
-	consumeFirst func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
+	consumeAll    func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
+	consumeFirst  func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
+	getReturnMode func(context.Context, *askuser.AuthorizationContext) (string, error)
 }
 
 func (f *fakeUserRequestService) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext) ([]userrequests.Request, error) {
@@ -239,6 +240,14 @@ func (f *fakeUserRequestService) ConsumeFirstPending(ctx context.Context, auth *
 	return nil, errors.New("not implemented")
 }
 
+func (f *fakeUserRequestService) GetReturnMode(ctx context.Context, auth *askuser.AuthorizationContext) (string, error) {
+	if f.getReturnMode != nil {
+		return f.getReturnMode(ctx, auth)
+	}
+	// Default to "all" mode
+	return "all", nil
+}
+
 type fakeHoldWaiter struct {
 	active bool
 	wait   func(ctx context.Context, apiKeyHash string) (*userrequests.Request, bool)
@@ -261,4 +270,267 @@ func testUUID(value string) uuid.UUID {
 		panic(err)
 	}
 	return id
+}
+
+// TestGetUserRequestToolReturnModeFirst verifies that when return_mode=first is passed
+// by the agent, only the oldest pending request is returned.
+func TestGetUserRequestToolReturnModeFirst(t *testing.T) {
+	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
+	consumeFirstCalled := false
+	consumeAllCalled := false
+
+	service := &fakeUserRequestService{
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+			consumeFirstCalled = true
+			return &userrequests.Request{
+				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
+				Content:      "First command only",
+				Status:       userrequests.StatusConsumed,
+				TaskID:       "default",
+				UserIdentity: "user-first",
+				CreatedAt:    consumedAt.Add(-2 * time.Hour),
+				ConsumedAt:   &consumedAt,
+			}, nil
+		},
+		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+			consumeAllCalled = true
+			return nil, errors.New("should not be called")
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "user-first", KeySuffix: "abcd"}, nil
+	})
+
+	// Create request with return_mode=first
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"return_mode": "first",
+	}
+
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+
+	text, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+
+	payload := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
+
+	// Verify only one command is returned
+	commands, ok := payload["commands"].([]any)
+	require.True(t, ok, "commands should be a list")
+	require.Len(t, commands, 1, "should return exactly one command")
+
+	// Verify the command content
+	cmd, ok := commands[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "First command only", cmd["content"])
+
+	// Verify consumeFirst was called, not consumeAll
+	require.True(t, consumeFirstCalled, "ConsumeFirstPending should be called")
+	require.False(t, consumeAllCalled, "ConsumeAllPending should not be called")
+}
+
+// TestGetUserRequestToolReturnModeFromUserPreference verifies that when no return_mode
+// is specified by the agent, the tool uses the user's stored preference.
+func TestGetUserRequestToolReturnModeFromUserPreference(t *testing.T) {
+	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
+	consumeFirstCalled := false
+
+	service := &fakeUserRequestService{
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+			consumeFirstCalled = true
+			return &userrequests.Request{
+				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
+				Content:      "First from preference",
+				Status:       userrequests.StatusConsumed,
+				TaskID:       "default",
+				UserIdentity: "user-pref",
+				CreatedAt:    consumedAt.Add(-2 * time.Hour),
+				ConsumedAt:   &consumedAt,
+			}, nil
+		},
+		// User preference is set to "first"
+		getReturnMode: func(context.Context, *askuser.AuthorizationContext) (string, error) {
+			return "first", nil
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "user-pref", KeySuffix: "abcd"}, nil
+	})
+
+	// Call without specifying return_mode - should use user preference
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+
+	text, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+
+	payload := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
+
+	// Verify only one command is returned (using "first" mode from preference)
+	commands, ok := payload["commands"].([]any)
+	require.True(t, ok, "commands should be a list")
+	require.Len(t, commands, 1, "should return exactly one command based on user preference")
+
+	// Verify consumeFirst was called
+	require.True(t, consumeFirstCalled, "ConsumeFirstPending should be called based on user preference")
+}
+
+// TestGetUserRequestToolAgentModeOverridesUserPreference verifies that when the agent
+// explicitly specifies return_mode, it takes precedence over the user's stored preference.
+func TestGetUserRequestToolAgentModeOverridesUserPreference(t *testing.T) {
+	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
+	consumeAllCalled := false
+
+	service := &fakeUserRequestService{
+		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+			consumeAllCalled = true
+			return []userrequests.Request{
+				{
+					ID:           testUUID("11111111-1111-1111-1111-111111111111"),
+					Content:      "First command",
+					Status:       userrequests.StatusConsumed,
+					TaskID:       "default",
+					UserIdentity: "user-override",
+					CreatedAt:    consumedAt.Add(-2 * time.Hour),
+					ConsumedAt:   &consumedAt,
+				},
+				{
+					ID:           testUUID("22222222-2222-2222-2222-222222222222"),
+					Content:      "Second command",
+					Status:       userrequests.StatusConsumed,
+					TaskID:       "default",
+					UserIdentity: "user-override",
+					CreatedAt:    consumedAt.Add(-time.Hour),
+					ConsumedAt:   &consumedAt,
+				},
+			}, nil
+		},
+		// User preference is set to "first", but agent will override with "all"
+		getReturnMode: func(context.Context, *askuser.AuthorizationContext) (string, error) {
+			return "first", nil
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "user-override", KeySuffix: "abcd"}, nil
+	})
+
+	// Agent explicitly specifies return_mode=all, overriding user preference
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"return_mode": "all",
+	}
+
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+
+	text, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+
+	payload := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
+
+	// Verify all commands are returned (agent's "all" overrides user's "first")
+	commands, ok := payload["commands"].([]any)
+	require.True(t, ok, "commands should be a list")
+	require.Len(t, commands, 2, "should return all commands because agent specified 'all'")
+
+	// Verify consumeAll was called
+	require.True(t, consumeAllCalled, "ConsumeAllPending should be called when agent specifies 'all'")
+}
+
+// TestGetUserRequestToolReturnModeFirstEmpty verifies that when return_mode=first
+// and there are no pending requests, the empty response is returned correctly.
+func TestGetUserRequestToolReturnModeFirstEmpty(t *testing.T) {
+	service := &fakeUserRequestService{
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+			return nil, userrequests.ErrNoPendingRequests
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "user-empty"}, nil
+	})
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"return_mode": "first",
+	}
+
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, text.Text, "empty")
+}
+
+// TestGetUserRequestToolReturnModeFirstWithHold verifies that when hold is active
+// and return_mode=first, only the first pending command is returned.
+func TestGetUserRequestToolReturnModeFirstWithHold(t *testing.T) {
+	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
+	consumeFirstCalled := false
+
+	service := &fakeUserRequestService{
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+			consumeFirstCalled = true
+			return &userrequests.Request{
+				ID:           testUUID("44444444-4444-4444-4444-444444444444"),
+				Content:      "First during hold",
+				Status:       userrequests.StatusConsumed,
+				TaskID:       "default",
+				UserIdentity: "user-hold-first",
+				CreatedAt:    consumedAt.Add(-time.Hour),
+				ConsumedAt:   &consumedAt,
+			}, nil
+		},
+	}
+
+	waiter := &fakeHoldWaiter{
+		active: true,
+		wait: func(context.Context, string) (*userrequests.Request, bool) {
+			require.Fail(t, "wait should not be called when pending commands exist")
+			return nil, false
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "user-hold-first"}, nil
+	})
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"return_mode": "first",
+	}
+
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.NotEmpty(t, result.Content)
+
+	text, ok := result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+
+	payload := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
+
+	// Verify only one command is returned
+	commands, ok := payload["commands"].([]any)
+	require.True(t, ok, "commands should be a list")
+	require.Len(t, commands, 1, "should return exactly one command with hold active")
+
+	// Verify consumeFirst was called
+	require.True(t, consumeFirstCalled, "ConsumeFirstPending should be called when return_mode=first with hold")
 }
