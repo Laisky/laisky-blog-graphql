@@ -1,4 +1,4 @@
-import { ChevronDown, ClipboardList, Edit3, Package, RotateCcw, Send, Trash2, Undo2 } from "lucide-react";
+import { ClipboardList, Send, Trash2 } from "lucide-react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -7,13 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { StatusBanner, type StatusState } from "@/components/ui/status-banner";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeApiKey, useApiKey } from "@/lib/api-key-context";
 import { cn } from "@/lib/utils";
@@ -37,12 +32,9 @@ import {
   type UserRequest,
 } from "./api";
 import { HoldButton } from "./hold-button";
+import { ConsumedCard, EmptyState, PendingRequestCard } from "./request-cards";
 import { SavedCommands } from "./saved-commands";
-
-interface StatusState {
-  message: string;
-  tone: "info" | "success" | "error";
-}
+import { identityMessage } from "./utils";
 
 interface IdentityState {
   userId?: string;
@@ -245,15 +237,23 @@ export function UserRequestsPage() {
 
     setIsSubmitting(true);
     try {
-      await createUserRequest(key, trimmed, taskId.trim() || undefined);
+      const createdRequest = await createUserRequest(key, trimmed, taskId.trim() || undefined);
       setNewContent("");
       setPickedRequestId(null);
       setEditorBackup(null);
-      // If hold was active, it will be automatically released by the server
-      if (holdState.active) {
+      // Check if the command was directly delivered to a waiting agent
+      // The server marks the request as "consumed" if it was sent to a waiting agent
+      if (createdRequest.status === "consumed") {
+        // Command was delivered directly to the waiting agent
         setHoldState({ active: false, waiting: false, remaining_secs: 0 });
         setStatus({
-          message: "Request queued and delivered to waiting agent.",
+          message: "Request delivered to waiting agent.",
+          tone: "success",
+        });
+      } else if (holdState.active) {
+        // Hold was active but no agent was waiting, command is queued
+        setStatus({
+          message: "Request queued. Agent will receive it when ready.",
           tone: "success",
         });
       } else {
@@ -604,7 +604,7 @@ export function UserRequestsPage() {
           <CardContent className="space-y-4">
             <ApiKeyInput showRefresh onRefresh={handleRefresh} />
             {status && (
-              <StatusBanner status={status} maskedKeySuffix={maskedKeySuffix} />
+              <StatusBanner status={status} subtext={maskedKeySuffix} />
             )}
           </CardContent>
         )}
@@ -783,202 +783,4 @@ export function UserRequestsPage() {
       />
     </div>
   );
-}
-
-function identityMessage(userId?: string, keyHint?: string) {
-  const user = userId || "unknown user";
-  const suffix = keyHint ? `token •••${keyHint}` : "token hidden";
-  return `Linked identity: ${user} (${suffix})`;
-}
-
-function StatusBanner({
-  status,
-  maskedKeySuffix,
-  className,
-}: {
-  status: StatusState;
-  maskedKeySuffix: string;
-  className?: string;
-}) {
-  const toneStyles = {
-    info: "border-border bg-muted text-muted-foreground",
-    success:
-      "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200 dark:border-emerald-500/40",
-    error:
-      "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-200 dark:border-rose-500/40",
-  } as const;
-
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-1 rounded-lg border px-4 py-3 text-sm transition-colors",
-        toneStyles[status.tone],
-        className
-      )}
-    >
-      <span>{status.message}</span>
-      {status.tone === "success" && maskedKeySuffix && (
-        <span className="text-xs text-inherit/80">{maskedKeySuffix}</span>
-      )}
-    </div>
-  );
-}
-
-function EmptyState({
-  message,
-  subtle = false,
-}: {
-  message: string;
-  subtle?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground",
-        subtle ? "bg-muted/50" : "bg-muted"
-      )}
-    >
-      {message}
-    </div>
-  );
-}
-
-function PendingRequestCard({
-  request,
-  onDelete,
-  deleting,
-}: {
-  request: UserRequest;
-  onDelete: (id: string) => void;
-  deleting: boolean;
-}) {
-  return (
-    <Card className="border border-primary/30 bg-card shadow-sm min-h-32 max-h-56 flex flex-col">
-      <CardHeader className="gap-2 flex-1 min-h-0 overflow-hidden flex flex-col">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground shrink-0">
-          <span>ID: {request.id}</span>
-          <span>Queued: {formatDate(request.created_at)}</span>
-          {request.task_id && <span>Task: {request.task_id}</span>}
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap line-clamp-none">
-            {request.content}
-          </CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent className="flex justify-end shrink-0 pt-0">
-        <Button
-          variant="destructive"
-          size="icon"
-          onClick={() => onDelete(request.id)}
-          disabled={deleting}
-          title="Delete request"
-        >
-          <Trash2 className="h-4 w-4" />
-          <span className="sr-only">{deleting ? "Deleting…" : "Delete"}</span>
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ConsumedCard({
-  request,
-  onDelete,
-  deleting,
-  onEditInEditor,
-  onAddToPending,
-  isPicked,
-  isEditorDisabled,
-}: {
-  request: UserRequest;
-  onDelete: (id: string) => void;
-  deleting: boolean;
-  onEditInEditor: (request: UserRequest) => void;
-  onAddToPending: (request: UserRequest) => void;
-  isPicked: boolean;
-  isEditorDisabled: boolean;
-}) {
-  return (
-    <Card className="border border-border/60 bg-card min-h-32 max-h-56 flex flex-col">
-      <CardHeader className="gap-2 flex-1 min-h-0 overflow-hidden flex flex-col">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground shrink-0">
-          <span>ID: {request.id}</span>
-          <span>Queued: {formatDate(request.created_at)}</span>
-          {request.consumed_at && (
-            <span>Delivered: {formatDate(request.consumed_at)}</span>
-          )}
-          {request.task_id && <span>Task: {request.task_id}</span>}
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap line-clamp-none">
-            {request.content}
-          </CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-wrap justify-end gap-2 shrink-0 pt-0">
-        {isPicked ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => onEditInEditor(request)}
-            disabled={isEditorDisabled}
-            title="Put back to history"
-            className="gap-1.5"
-          >
-            <Undo2 className="h-4 w-4" />
-            <span>Put Back</span>
-          </Button>
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isEditorDisabled}
-                className="gap-1.5"
-                title="Pick up this directive"
-              >
-                <Package className="h-4 w-4" />
-                <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem
-                onClick={() => onAddToPending(request)}
-                className="gap-2 cursor-pointer"
-              >
-                <RotateCcw className="h-4 w-4" />
-                <span>Add to Pending</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onEditInEditor(request)}
-                className="gap-2 cursor-pointer"
-              >
-                <Edit3 className="h-4 w-4" />
-                <span>Edit in Editor</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => onDelete(request.id)}
-          disabled={deleting}
-          title="Delete from history"
-          className="h-9 w-9 text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4" />
-          <span className="sr-only">{deleting ? "Deleting…" : "Delete"}</span>
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

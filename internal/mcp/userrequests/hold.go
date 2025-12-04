@@ -142,11 +142,13 @@ func (m *HoldManager) GetHoldState(apiKeyHash string) HoldState {
 	}
 }
 
-// SubmitCommand creates a new user request and notifies any waiting consumers.
+// SubmitCommand notifies any waiting consumers about a new user request.
 // This automatically releases the hold.
-func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, request *Request) {
+// Returns true if the command was sent to a waiting agent, false otherwise.
+func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, request *Request) bool {
 	m.mu.Lock()
 	entry, ok := m.holds[apiKeyHash]
+	wasWaiting := ok && entry != nil && entry.waiting
 	if ok {
 		delete(m.holds, apiKeyHash)
 	}
@@ -166,8 +168,11 @@ func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, requ
 		m.log().Info("command submitted during hold",
 			zap.String("api_key_hash", apiKeyHash),
 			zap.String("request_id", request.ID.String()),
+			zap.Bool("was_waiting", wasWaiting),
 		)
 	}
+
+	return wasWaiting
 }
 
 // WaitForCommand blocks until a command is submitted or the hold expires.

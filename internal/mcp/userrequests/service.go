@@ -204,6 +204,30 @@ func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.Authori
 	return &candidate, nil
 }
 
+// ConsumeRequestByID marks a specific pending request as consumed.
+// This is used when a command is sent directly to a waiting agent via the hold mechanism.
+func (s *Service) ConsumeRequestByID(ctx context.Context, id uuid.UUID) error {
+	now := s.clock()
+	result := s.db.WithContext(ctx).
+		Model(&Request{}).
+		Where("id = ? AND status = ?", id, StatusPending).
+		Updates(map[string]any{
+			"status":      StatusConsumed,
+			"consumed_at": now,
+			"updated_at":  now,
+		})
+	if result.Error != nil {
+		return errors.Wrap(result.Error, "consume request by id")
+	}
+	if result.RowsAffected == 0 {
+		// Already consumed or not found - this is not an error in this context
+		s.log().Debug("request already consumed or not found",
+			zap.String("request_id", id.String()),
+		)
+	}
+	return nil
+}
+
 // DeleteRequest removes a single request belonging to the authenticated user.
 func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.AuthorizationContext, id uuid.UUID) error {
 	if auth == nil {

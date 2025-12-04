@@ -157,9 +157,21 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notify hold manager if a hold is active for this user
+	// Notify hold manager if a hold is active for this user.
+	// If a waiting agent received the command, mark it as consumed immediately
+	// so it doesn't also appear in the pending queue.
 	if h.holdManager != nil {
-		h.holdManager.SubmitCommand(ctx, auth.APIKeyHash, req)
+		sentToAgent := h.holdManager.SubmitCommand(ctx, auth.APIKeyHash, req)
+		if sentToAgent {
+			if consumeErr := service.ConsumeRequestByID(ctx, req.ID); consumeErr != nil {
+				h.log().Error("consume request after hold submit",
+					zap.Error(consumeErr),
+					zap.String("request_id", req.ID.String()),
+				)
+			}
+			// Update the response to reflect the consumed status
+			req.Status = StatusConsumed
+		}
 	}
 
 	h.writeJSON(w, map[string]any{

@@ -6,16 +6,12 @@ import { ApiKeyInput } from "@/components/api-key-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBanner, type StatusState } from "@/components/ui/status-banner";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeApiKey, useApiKey } from "@/lib/api-key-context";
 import { cn } from "@/lib/utils";
 
 import { listRequests, submitAnswer, type AskUserRequest } from "./api";
-
-interface StatusState {
-  message: string;
-  tone: "info" | "success" | "error";
-}
 
 interface IdentityState {
   userId?: string;
@@ -216,7 +212,7 @@ export function AskUserPage() {
         <CardContent className="space-y-4">
           <ApiKeyInput showRefresh onRefresh={handleRefresh} />
           {status && (
-            <StatusBanner status={status} maskedKeySuffix={maskedKeySuffix} />
+            <StatusBanner status={status} subtext={maskedKeySuffix} />
           )}
         </CardContent>
       </Card>
@@ -273,39 +269,6 @@ function identityMessage(userId?: string, aiId?: string, keyHint?: string) {
   const ai = aiId || "unknown agent";
   const suffix = keyHint ? `token •••${keyHint}` : "token hidden";
   return `Linked identities: ${user} / ${ai} (${suffix})`;
-}
-
-function StatusBanner({
-  status,
-  maskedKeySuffix,
-  className,
-}: {
-  status: StatusState;
-  maskedKeySuffix: string;
-  className?: string;
-}) {
-  const toneStyles = {
-    info: "border-border bg-muted text-muted-foreground",
-    success:
-      "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200 dark:border-emerald-500/40",
-    error:
-      "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-200 dark:border-rose-500/40",
-  } as const;
-
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-1 rounded-lg border px-4 py-3 text-sm transition-colors",
-        toneStyles[status.tone],
-        className
-      )}
-    >
-      <span>{status.message}</span>
-      {status.tone === "success" && maskedKeySuffix && (
-        <span className="text-xs text-inherit/80">{maskedKeySuffix}</span>
-      )}
-    </div>
-  );
 }
 
 function EmptyState({
