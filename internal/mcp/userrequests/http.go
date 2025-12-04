@@ -9,6 +9,7 @@ import (
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
@@ -80,30 +81,32 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/api/requests/") && r.Method == http.MethodDelete:
 		h.handleDeleteOne(w, r)
 	default:
-		h.writeError(w, http.StatusNotFound, "resource not found")
+		logger := h.logFromCtx(r.Context())
+		h.writeErrorWithLogger(w, logger, http.StatusNotFound, "resource not found")
 	}
 }
 
 func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "user requests service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
 	pending, consumed, err := service.ListRequests(ctx, auth)
 	if err != nil {
-		h.log().Error("list user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
-		h.writeError(w, http.StatusInternalServerError, "failed to load user requests")
+		logger.Error("list user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load user requests")
 		return
 	}
 
@@ -118,15 +121,19 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "user requests service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -136,23 +143,20 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}{}
 
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	req, err := service.CreateRequest(ctx, auth, payload.Content, payload.TaskID)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrEmptyContent):
-			h.writeError(w, http.StatusBadRequest, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		case errors.Is(err, ErrInvalidAuthorization):
-			h.writeError(w, http.StatusUnauthorized, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		default:
-			h.log().Error("create user request", zap.Error(err))
-			h.writeError(w, http.StatusInternalServerError, "failed to create user request")
+			logger.Error("create user request", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to create user request")
 		}
 		return
 	}
@@ -164,7 +168,7 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		sentToAgent := h.holdManager.SubmitCommand(ctx, auth.APIKeyHash, req)
 		if sentToAgent {
 			if consumeErr := service.ConsumeRequestByID(ctx, req.ID); consumeErr != nil {
-				h.log().Error("consume request after hold submit",
+				logger.Error("consume request after hold submit",
 					zap.Error(consumeErr),
 					zap.String("request_id", req.ID.String()),
 				)
@@ -180,37 +184,38 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleDeleteOne(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "user requests service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
 		return
 	}
 
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/requests/")
 	id, err := uuid.Parse(strings.TrimSpace(trimmed))
 	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid request id")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid request id")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	if err := service.DeleteRequest(ctx, auth, id); err != nil {
 		switch {
 		case errors.Is(err, ErrRequestNotFound):
-			h.writeError(w, http.StatusNotFound, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusNotFound, err.Error())
 		case errors.Is(err, ErrInvalidAuthorization):
-			h.writeError(w, http.StatusUnauthorized, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		default:
-			h.log().Error("delete user request", zap.Error(err))
-			h.writeError(w, http.StatusInternalServerError, "failed to delete user request")
+			logger.Error("delete user request", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete user request")
 		}
 		return
 	}
@@ -219,25 +224,26 @@ func (h *httpHandler) handleDeleteOne(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "user requests service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
 	deleted, err := service.DeleteAll(ctx, auth)
 	if err != nil {
-		h.log().Error("delete all user requests", zap.Error(err))
-		h.writeError(w, http.StatusInternalServerError, "failed to delete requests")
+		logger.Error("delete all user requests", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete requests")
 		return
 	}
 
@@ -245,36 +251,38 @@ func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleDeleteAllPending(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "user requests service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
 	deleted, err := service.DeleteAllPending(ctx, auth)
 	if err != nil {
-		h.log().Error("delete pending user requests", zap.Error(err))
-		h.writeError(w, http.StatusInternalServerError, "failed to delete pending requests")
+		logger.Error("delete pending user requests", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete pending requests")
 		return
 	}
 
 	h.writeJSON(w, map[string]any{"deleted": deleted})
 }
 
-func (h *httpHandler) writeError(w http.ResponseWriter, status int, message string) {
+// writeErrorWithLogger writes an error response with the provided logger for context-aware logging.
+func (h *httpHandler) writeErrorWithLogger(w http.ResponseWriter, logger logSDK.Logger, status int, message string) {
 	if status >= 500 {
-		h.log().Error("user requests http error", zap.Int("status", status), zap.String("message", message))
+		logger.Error("user requests http error", zap.Int("status", status), zap.String("message", message))
 	} else {
-		h.log().Warn("user requests http warning", zap.Int("status", status), zap.String("message", message))
+		logger.Warn("user requests http warning", zap.Int("status", status), zap.String("message", message))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -288,7 +296,12 @@ func (h *httpHandler) writeJSON(w http.ResponseWriter, payload any) {
 	_ = enc.Encode(payload)
 }
 
-func (h *httpHandler) log() logSDK.Logger {
+// logFromCtx extracts a context-aware logger from the context.
+// Falls back to the handler's logger or a shared logger if context logger is unavailable.
+func (h *httpHandler) logFromCtx(ctx context.Context) logSDK.Logger {
+	if logger := gmw.GetLogger(ctx); logger != nil {
+		return logger.Named("user_requests_http")
+	}
 	if h != nil && h.logger != nil {
 		return h.logger
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
@@ -69,7 +70,18 @@ func (h *httpHandler) log() logSDK.Logger {
 	return serviceLogger()
 }
 
+// logFromCtx extracts a context-aware logger from the context.
+// Falls back to the handler's logger or a shared logger if context logger is unavailable.
+func (h *httpHandler) logFromCtx(ctx context.Context) logSDK.Logger {
+	if logger := gmw.GetLogger(ctx); logger != nil {
+		return logger.Named("ask_user_http")
+	}
+	return h.log()
+}
+
 func (h *httpHandler) servePage(w http.ResponseWriter, r *http.Request) {
+	logger := h.logFromCtx(r.Context())
+
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -81,7 +93,7 @@ func (h *httpHandler) servePage(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Pragma", "no-cache")
 		if r.Method == http.MethodGet {
 			if _, err := w.Write(h.index); err != nil {
-				h.log().Warn("write ask_user index", zap.Error(err))
+				logger.Warn("write ask_user index", zap.Error(err))
 			}
 		}
 		return
@@ -97,7 +109,7 @@ func (h *httpHandler) servePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.page.Execute(w, nil); err != nil {
-		h.log().Warn("render ask_user page", zap.Error(err))
+		logger.Warn("render ask_user page", zap.Error(err))
 	}
 }
 
@@ -132,6 +144,10 @@ func (h *httpHandler) handleRequestByID(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *httpHandler) listRequests(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	auth, err := ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -142,12 +158,9 @@ func (h *httpHandler) listRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
 	pending, history, err := h.service.ListRequests(ctx, auth)
 	if err != nil {
-		h.log().Error("list ask_user requests", zap.Error(err))
+		logger.Error("list ask_user requests", zap.Error(err))
 		http.Error(w, "failed to load requests", http.StatusInternalServerError)
 		return
 	}
@@ -162,6 +175,10 @@ func (h *httpHandler) listRequests(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) answerRequest(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	if h.service == nil {
 		http.Error(w, "ask_user service unavailable", http.StatusServiceUnavailable)
 		return
@@ -185,9 +202,6 @@ func (h *httpHandler) answerRequest(w http.ResponseWriter, r *http.Request, id u
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
 	req, err := h.service.AnswerRequest(ctx, auth, id, payload.Answer)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -197,7 +211,7 @@ func (h *httpHandler) answerRequest(w http.ResponseWriter, r *http.Request, id u
 		case errors.Is(err, ErrForbidden), errors.Is(err, ErrInvalidAuthorization):
 			status = http.StatusForbidden
 		}
-		h.log().Warn("answer ask_user request", zap.Error(err))
+		logger.Warn("answer ask_user request", zap.Error(err))
 		http.Error(w, err.Error(), status)
 		return
 	}

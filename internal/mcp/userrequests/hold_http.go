@@ -1,10 +1,12 @@
 package userrequests
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
 
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
@@ -32,20 +34,23 @@ func (h *holdHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/hold" && r.Method == http.MethodDelete:
 		h.handleReleaseHold(w, r)
 	default:
-		h.writeError(w, http.StatusNotFound, "resource not found")
+		logger := h.logFromCtx(r.Context())
+		h.writeErrorWithLogger(w, logger, http.StatusNotFound, "resource not found")
 	}
 }
 
 // handleGetHold returns the current hold state for the authenticated user.
 func (h *holdHTTPHandler) handleGetHold(w http.ResponseWriter, r *http.Request) {
+	logger := h.logFromCtx(r.Context())
+
 	if h.holdManager == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "hold service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "hold service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -60,19 +65,21 @@ func (h *holdHTTPHandler) handleGetHold(w http.ResponseWriter, r *http.Request) 
 
 // handleSetHold activates the hold for the authenticated user.
 func (h *holdHTTPHandler) handleSetHold(w http.ResponseWriter, r *http.Request) {
+	logger := h.logFromCtx(r.Context())
+
 	if h.holdManager == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "hold service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "hold service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
 	state := h.holdManager.SetHold(auth.APIKeyHash)
-	h.log().Info("hold activated via HTTP",
+	logger.Info("hold activated via HTTP",
 		zap.String("user", auth.UserIdentity),
 	)
 
@@ -86,19 +93,21 @@ func (h *holdHTTPHandler) handleSetHold(w http.ResponseWriter, r *http.Request) 
 
 // handleReleaseHold deactivates the hold for the authenticated user.
 func (h *holdHTTPHandler) handleReleaseHold(w http.ResponseWriter, r *http.Request) {
+	logger := h.logFromCtx(r.Context())
+
 	if h.holdManager == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "hold service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "hold service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
 	h.holdManager.ReleaseHold(auth.APIKeyHash)
-	h.log().Info("hold released via HTTP", zap.String("user", auth.UserIdentity))
+	logger.Info("hold released via HTTP", zap.String("user", auth.UserIdentity))
 
 	h.writeJSON(w, map[string]any{
 		"active":         false,
@@ -108,11 +117,12 @@ func (h *holdHTTPHandler) handleReleaseHold(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func (h *holdHTTPHandler) writeError(w http.ResponseWriter, status int, message string) {
+// writeErrorWithLogger writes an error response with the provided logger for context-aware logging.
+func (h *holdHTTPHandler) writeErrorWithLogger(w http.ResponseWriter, logger logSDK.Logger, status int, message string) {
 	if status >= 500 {
-		h.log().Error("hold http error", zap.Int("status", status), zap.String("message", message))
+		logger.Error("hold http error", zap.Int("status", status), zap.String("message", message))
 	} else {
-		h.log().Warn("hold http warning", zap.Int("status", status), zap.String("message", message))
+		logger.Warn("hold http warning", zap.Int("status", status), zap.String("message", message))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -126,7 +136,12 @@ func (h *holdHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
 	_ = enc.Encode(payload)
 }
 
-func (h *holdHTTPHandler) log() logSDK.Logger {
+// logFromCtx extracts a context-aware logger from the context.
+// Falls back to the handler's logger or a shared logger if context logger is unavailable.
+func (h *holdHTTPHandler) logFromCtx(ctx context.Context) logSDK.Logger {
+	if logger := gmw.GetLogger(ctx); logger != nil {
+		return logger.Named("hold_http")
+	}
 	if h != nil && h.logger != nil {
 		return h.logger
 	}

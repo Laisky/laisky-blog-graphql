@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
@@ -37,14 +38,18 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	if h.service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "call log service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "call log service unavailable")
 		return
 	}
 
 	authCtx, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -64,10 +69,7 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	h.log().Debug("call log list request",
+	logger.Debug("call log list request",
 		zap.String("api_key_hash", authCtx.APIKeyHash),
 		zap.String("tool", tool),
 		zap.String("user_prefix", userPrefix),
@@ -91,8 +93,8 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		To:         to,
 	})
 	if err != nil {
-		h.log().Error("list call logs", zap.Error(err))
-		h.writeError(w, http.StatusInternalServerError, "failed to list call logs")
+		logger.Error("list call logs", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to list call logs")
 		return
 	}
 
@@ -155,14 +157,16 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) notFound(w http.ResponseWriter, r *http.Request) {
-	h.writeError(w, http.StatusNotFound, "resource not found")
+	logger := h.logFromCtx(r.Context())
+	h.writeErrorWithLogger(w, logger, http.StatusNotFound, "resource not found")
 }
 
-func (h *httpHandler) writeError(w http.ResponseWriter, status int, message string) {
+// writeErrorWithLogger writes an error response with the provided logger for context-aware logging.
+func (h *httpHandler) writeErrorWithLogger(w http.ResponseWriter, logger logSDK.Logger, status int, message string) {
 	if status >= 500 {
-		h.log().Error("call log http error", zap.Int("status", status), zap.String("message", message))
+		logger.Error("call log http error", zap.Int("status", status), zap.String("message", message))
 	} else {
-		h.log().Warn("call log http warning", zap.Int("status", status), zap.String("message", message))
+		logger.Warn("call log http warning", zap.Int("status", status), zap.String("message", message))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -176,7 +180,12 @@ func (h *httpHandler) writeJSON(w http.ResponseWriter, payload any) {
 	_ = enc.Encode(payload)
 }
 
-func (h *httpHandler) log() logSDK.Logger {
+// logFromCtx extracts a context-aware logger from the context.
+// Falls back to the handler's logger or a shared logger if context logger is unavailable.
+func (h *httpHandler) logFromCtx(ctx context.Context) logSDK.Logger {
+	if logger := gmw.GetLogger(ctx); logger != nil {
+		return logger.Named("call_log_http")
+	}
 	if h.logger != nil {
 		return h.logger
 	}

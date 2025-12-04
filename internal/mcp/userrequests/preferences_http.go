@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
@@ -27,31 +28,33 @@ func (h *preferencesHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	case http.MethodPut, http.MethodPost:
 		h.handleSet(w, r)
 	default:
-		h.writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		logger := h.logFromCtx(r.Context())
+		h.writeErrorWithLogger(w, logger, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
 // handleGet retrieves the user's preferences.
 func (h *preferencesHTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "preferences service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "preferences service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
 	pref, err := service.GetUserPreference(ctx, auth)
 	if err != nil {
-		h.log().Error("get user preferences", zap.Error(err))
-		h.writeError(w, http.StatusInternalServerError, "failed to get preferences")
+		logger.Error("get user preferences", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to get preferences")
 		return
 	}
 
@@ -70,15 +73,19 @@ func (h *preferencesHTTPHandler) handleGet(w http.ResponseWriter, r *http.Reques
 
 // handleSet updates the user's preferences.
 func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "preferences service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "preferences service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -87,27 +94,24 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 	}{}
 
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&payload); err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
 
 	// Validate return_mode
 	if payload.ReturnMode != ReturnModeAll && payload.ReturnMode != ReturnModeFirst {
-		h.writeError(w, http.StatusBadRequest, "invalid return_mode: must be 'all' or 'first'")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid return_mode: must be 'all' or 'first'")
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	pref, err := service.SetReturnMode(ctx, auth, payload.ReturnMode)
 	if err != nil {
-		h.log().Error("set user preferences", zap.Error(err))
-		h.writeError(w, http.StatusInternalServerError, "failed to save preferences")
+		logger.Error("set user preferences", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to save preferences")
 		return
 	}
 
-	h.log().Debug("user preferences updated",
+	logger.Debug("user preferences updated",
 		zap.String("user", auth.UserIdentity),
 		zap.String("return_mode", pref.Preferences.ReturnMode),
 	)
@@ -119,11 +123,12 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-func (h *preferencesHTTPHandler) writeError(w http.ResponseWriter, status int, message string) {
+// writeErrorWithLogger writes an error response with the provided logger for context-aware logging.
+func (h *preferencesHTTPHandler) writeErrorWithLogger(w http.ResponseWriter, logger logSDK.Logger, status int, message string) {
 	if status >= 500 {
-		h.log().Error("preferences http error", zap.Int("status", status), zap.String("message", message))
+		logger.Error("preferences http error", zap.Int("status", status), zap.String("message", message))
 	} else {
-		h.log().Warn("preferences http warning", zap.Int("status", status), zap.String("message", message))
+		logger.Warn("preferences http warning", zap.Int("status", status), zap.String("message", message))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -137,7 +142,12 @@ func (h *preferencesHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
 	_ = enc.Encode(payload)
 }
 
-func (h *preferencesHTTPHandler) log() logSDK.Logger {
+// logFromCtx extracts a context-aware logger from the context.
+// Falls back to the handler's logger or a shared logger if context logger is unavailable.
+func (h *preferencesHTTPHandler) logFromCtx(ctx context.Context) logSDK.Logger {
+	if logger := gmw.GetLogger(ctx); logger != nil {
+		return logger.Named("preferences_http")
+	}
 	if h != nil && h.logger != nil {
 		return h.logger
 	}

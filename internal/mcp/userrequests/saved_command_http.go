@@ -9,6 +9,7 @@ import (
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
@@ -40,30 +41,32 @@ func (h *savedCommandsHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	case strings.HasPrefix(r.URL.Path, "/api/saved-commands/") && r.Method == http.MethodDelete:
 		h.handleDelete(w, r)
 	default:
-		h.writeError(w, http.StatusNotFound, "resource not found")
+		logger := h.logFromCtx(r.Context())
+		h.writeErrorWithLogger(w, logger, http.StatusNotFound, "resource not found")
 	}
 }
 
 func (h *savedCommandsHTTPHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "saved commands service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "saved commands service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
 	commands, err := service.ListSavedCommands(ctx, auth)
 	if err != nil {
-		h.log().Error("list saved commands", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
-		h.writeError(w, http.StatusInternalServerError, "failed to load saved commands")
+		logger.Error("list saved commands", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load saved commands")
 		return
 	}
 
@@ -80,15 +83,19 @@ func (h *savedCommandsHTTPHandler) handleList(w http.ResponseWriter, r *http.Req
 }
 
 func (h *savedCommandsHTTPHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "saved commands service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "saved commands service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -98,25 +105,22 @@ func (h *savedCommandsHTTPHandler) handleCreate(w http.ResponseWriter, r *http.R
 	}{}
 
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	cmd, err := service.CreateSavedCommand(ctx, auth, payload.Label, payload.Content)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrEmptyContent):
-			h.writeError(w, http.StatusBadRequest, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		case errors.Is(err, ErrInvalidAuthorization):
-			h.writeError(w, http.StatusUnauthorized, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		case errors.Is(err, ErrSavedCommandLimitReached):
-			h.writeError(w, http.StatusBadRequest, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		default:
-			h.log().Error("create saved command", zap.Error(err))
-			h.writeError(w, http.StatusInternalServerError, "failed to create saved command")
+			logger.Error("create saved command", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to create saved command")
 		}
 		return
 	}
@@ -127,22 +131,26 @@ func (h *savedCommandsHTTPHandler) handleCreate(w http.ResponseWriter, r *http.R
 }
 
 func (h *savedCommandsHTTPHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "saved commands service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "saved commands service unavailable")
 		return
 	}
 
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/saved-commands/")
 	id, err := uuid.Parse(strings.TrimSpace(trimmed))
 	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid command id")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid command id")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -153,25 +161,22 @@ func (h *savedCommandsHTTPHandler) handleUpdate(w http.ResponseWriter, r *http.R
 	}{}
 
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	cmd, err := service.UpdateSavedCommand(ctx, auth, id, payload.Label, payload.Content, payload.SortOrder)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrSavedCommandNotFound):
-			h.writeError(w, http.StatusNotFound, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusNotFound, err.Error())
 		case errors.Is(err, ErrEmptyContent):
-			h.writeError(w, http.StatusBadRequest, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		case errors.Is(err, ErrInvalidAuthorization):
-			h.writeError(w, http.StatusUnauthorized, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		default:
-			h.log().Error("update saved command", zap.Error(err))
-			h.writeError(w, http.StatusInternalServerError, "failed to update saved command")
+			logger.Error("update saved command", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to update saved command")
 		}
 		return
 	}
@@ -182,37 +187,38 @@ func (h *savedCommandsHTTPHandler) handleUpdate(w http.ResponseWriter, r *http.R
 }
 
 func (h *savedCommandsHTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "saved commands service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "saved commands service unavailable")
 		return
 	}
 
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/saved-commands/")
 	id, err := uuid.Parse(strings.TrimSpace(trimmed))
 	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid command id")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid command id")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	if err := service.DeleteSavedCommand(ctx, auth, id); err != nil {
 		switch {
 		case errors.Is(err, ErrSavedCommandNotFound):
-			h.writeError(w, http.StatusNotFound, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusNotFound, err.Error())
 		case errors.Is(err, ErrInvalidAuthorization):
-			h.writeError(w, http.StatusUnauthorized, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		default:
-			h.log().Error("delete saved command", zap.Error(err))
-			h.writeError(w, http.StatusInternalServerError, "failed to delete saved command")
+			logger.Error("delete saved command", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete saved command")
 		}
 		return
 	}
@@ -221,15 +227,19 @@ func (h *savedCommandsHTTPHandler) handleDelete(w http.ResponseWriter, r *http.R
 }
 
 func (h *savedCommandsHTTPHandler) handleReorder(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
 	service := h.service
 	if service == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "saved commands service unavailable")
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "saved commands service unavailable")
 		return
 	}
 
 	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
 	if err != nil {
-		h.writeError(w, http.StatusUnauthorized, err.Error())
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -238,7 +248,7 @@ func (h *savedCommandsHTTPHandler) handleReorder(w http.ResponseWriter, r *http.
 	}{}
 
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
 
@@ -246,22 +256,19 @@ func (h *savedCommandsHTTPHandler) handleReorder(w http.ResponseWriter, r *http.
 	for _, idStr := range payload.OrderedIDs {
 		id, err := uuid.Parse(strings.TrimSpace(idStr))
 		if err != nil {
-			h.writeError(w, http.StatusBadRequest, "invalid command id in ordered_ids: "+idStr)
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid command id in ordered_ids: "+idStr)
 			return
 		}
 		orderedUUIDs = append(orderedUUIDs, id)
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
 	if err := service.ReorderSavedCommands(ctx, auth, orderedUUIDs); err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidAuthorization):
-			h.writeError(w, http.StatusUnauthorized, err.Error())
+			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		default:
-			h.log().Error("reorder saved commands", zap.Error(err))
-			h.writeError(w, http.StatusInternalServerError, "failed to reorder saved commands")
+			logger.Error("reorder saved commands", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to reorder saved commands")
 		}
 		return
 	}
@@ -269,11 +276,12 @@ func (h *savedCommandsHTTPHandler) handleReorder(w http.ResponseWriter, r *http.
 	h.writeJSON(w, map[string]any{"success": true})
 }
 
-func (h *savedCommandsHTTPHandler) writeError(w http.ResponseWriter, status int, message string) {
+// writeErrorWithLogger writes an error response with the provided logger for context-aware logging.
+func (h *savedCommandsHTTPHandler) writeErrorWithLogger(w http.ResponseWriter, logger logSDK.Logger, status int, message string) {
 	if status >= 500 {
-		h.log().Error("saved commands http error", zap.Int("status", status), zap.String("message", message))
+		logger.Error("saved commands http error", zap.Int("status", status), zap.String("message", message))
 	} else {
-		h.log().Warn("saved commands http warning", zap.Int("status", status), zap.String("message", message))
+		logger.Warn("saved commands http warning", zap.Int("status", status), zap.String("message", message))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -287,7 +295,12 @@ func (h *savedCommandsHTTPHandler) writeJSON(w http.ResponseWriter, payload any)
 	_ = enc.Encode(payload)
 }
 
-func (h *savedCommandsHTTPHandler) log() logSDK.Logger {
+// logFromCtx extracts a context-aware logger from the context.
+// Falls back to the handler's logger or a shared logger if context logger is unavailable.
+func (h *savedCommandsHTTPHandler) logFromCtx(ctx context.Context) logSDK.Logger {
+	if logger := gmw.GetLogger(ctx); logger != nil {
+		return logger.Named("saved_commands_http")
+	}
 	if h != nil && h.logger != nil {
 		return h.logger
 	}
