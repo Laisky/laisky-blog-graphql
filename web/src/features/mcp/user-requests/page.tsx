@@ -1,4 +1,10 @@
-import { ClipboardList, Send, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ClipboardList,
+  Send,
+  Trash2,
+} from "lucide-react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -7,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Input } from "@/components/ui/input";
 import { StatusBanner, type StatusState } from "@/components/ui/status-banner";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeApiKey, useApiKey } from "@/lib/api-key-context";
@@ -18,6 +23,7 @@ import {
   deleteAllPendingRequests,
   deleteUserRequest,
   getAuthCollapsed,
+  getDescriptionCollapsed,
   getHoldState,
   getPreferencesFromServer,
   getReturnMode,
@@ -26,6 +32,7 @@ import {
   releaseHold,
   type ReturnMode,
   setAuthCollapsed,
+  setDescriptionCollapsed,
   setHold,
   setReturnMode as persistReturnModeLocal,
   setReturnModeOnServer,
@@ -34,6 +41,7 @@ import {
 import { HoldButton } from "./hold-button";
 import { ConsumedCard, EmptyState, PendingRequestCard } from "./request-cards";
 import { SavedCommands } from "./saved-commands";
+import { TaskIdSelector, useTaskIdHistory } from "./task-id-selector";
 import { identityMessage } from "./utils";
 
 interface IdentityState {
@@ -69,6 +77,11 @@ export function UserRequestsPage() {
   const [returnMode, setReturnModeState] = useState<ReturnMode>(() =>
     getReturnMode()
   );
+  const [isDescriptionCollapsed, setIsDescriptionCollapsed] = useState(() =>
+    getDescriptionCollapsed()
+  );
+
+  const { recordUsage: recordTaskIdUsage } = useTaskIdHistory();
 
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -109,7 +122,11 @@ export function UserRequestsPage() {
         // Fetch both requests and preferences in parallel
         const [data, prefs] = await Promise.all([
           listUserRequests(apiKey, controller.signal),
-          initial ? getPreferencesFromServer(apiKey, controller.signal).catch(() => null) : Promise.resolve(null),
+          initial
+            ? getPreferencesFromServer(apiKey, controller.signal).catch(
+                () => null
+              )
+            : Promise.resolve(null),
         ]);
         if (disposed) return;
 
@@ -121,11 +138,18 @@ export function UserRequestsPage() {
           tone: "success",
         });
 
-        // Update return mode from server preference (if available)
+        // Update return mode from server preference only if localStorage has no value
+        // This prevents overwriting user's local choice with server default
         if (prefs && prefs.return_mode) {
-          setReturnModeState(prefs.return_mode);
-          // Also sync to localStorage
-          persistReturnModeLocal(prefs.return_mode);
+          const localMode = getReturnMode();
+          // Only update if localStorage is empty or has default value AND server has non-default
+          if (localMode === "all" && prefs.return_mode !== "all") {
+            setReturnModeState(prefs.return_mode);
+            persistReturnModeLocal(prefs.return_mode);
+          } else {
+            // Keep localStorage value as source of truth for UI
+            setReturnModeState(localMode);
+          }
         }
 
         // Auto-collapse the Authenticate panel on successful authentication
@@ -237,7 +261,15 @@ export function UserRequestsPage() {
 
     setIsSubmitting(true);
     try {
-      const createdRequest = await createUserRequest(key, trimmed, taskId.trim() || undefined);
+      // Record task ID usage for history before creating request
+      if (taskId.trim()) {
+        recordTaskIdUsage(taskId.trim());
+      }
+      const createdRequest = await createUserRequest(
+        key,
+        trimmed,
+        taskId.trim() || undefined
+      );
       setNewContent("");
       setPickedRequestId(null);
       setEditorBackup(null);
@@ -269,7 +301,7 @@ export function UserRequestsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [apiKey, newContent, taskId, holdState.active]);
+  }, [apiKey, newContent, taskId, holdState.active, recordTaskIdUsage]);
 
   const handleActivateHold = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
@@ -315,31 +347,36 @@ export function UserRequestsPage() {
     }
   }, [apiKey]);
 
-  const handleReturnModeChange = useCallback(async (mode: ReturnMode) => {
-    setReturnModeState(mode);
-    // Persist to localStorage as fallback
-    persistReturnModeLocal(mode);
+  const handleReturnModeChange = useCallback(
+    async (mode: ReturnMode) => {
+      setReturnModeState(mode);
+      // Persist to localStorage as fallback
+      persistReturnModeLocal(mode);
 
-    // Also persist to server so MCP tool uses this preference
-    const key = normalizeApiKey(apiKey);
-    if (key) {
-      try {
-        await setReturnModeOnServer(key, mode);
-        setStatus({
-          message: `Return mode set to "${mode === "first" ? "first only" : "all commands"}".`,
-          tone: "success",
-        });
-      } catch (error) {
-        console.error("Failed to persist return mode to server:", error);
-        // Show warning to user - the preference was saved locally but may not persist
-        // across devices or if browser data is cleared
-        setStatus({
-          message: `Return mode saved locally, but server sync failed. The setting may not persist.`,
-          tone: "error",
-        });
+      // Also persist to server so MCP tool uses this preference
+      const key = normalizeApiKey(apiKey);
+      if (key) {
+        try {
+          await setReturnModeOnServer(key, mode);
+          setStatus({
+            message: `Return mode set to "${
+              mode === "first" ? "first only" : "all commands"
+            }".`,
+            tone: "success",
+          });
+        } catch (error) {
+          console.error("Failed to persist return mode to server:", error);
+          // Show warning to user - the preference was saved locally but may not persist
+          // across devices or if browser data is cleared
+          setStatus({
+            message: `Return mode saved locally, but server sync failed. The setting may not persist.`,
+            tone: "error",
+          });
+        }
       }
-    }
-  }, [apiKey]);
+    },
+    [apiKey]
+  );
 
   const handleDeleteRequest = useCallback(
     async (requestId: string) => {
@@ -547,31 +584,63 @@ export function UserRequestsPage() {
           <ClipboardList className="h-4 w-4" />
           <span>MCP Tools</span>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          Get User Requests Console
-        </h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          Queue fresh directives for your AI assistants and inspect everything
-          they have already consumed. This page manages the{" "}
-          <code className="text-sm">get_user_request</code> MCP tool inputs tied
-          to your bearer token.
-        </p>
-        <div className="max-w-2xl space-y-2 text-sm text-muted-foreground">
-          <p>
-            <strong>How it works:</strong> When your AI agent calls{" "}
-            <code className="text-xs">get_user_request</code>, the server
-            returns the newest pending directive from this queue and marks it as
-            consumed. This allows you to provide real-time feedback or adjust
-            the agent's behavior mid-task.
-          </p>
-          <p>
-            <strong>Hold feature:</strong> Click <em>Hold</em> before your agent
-            queries for requests. The hold remains active indefinitely until you
-            submit a command or manually release it. Once an agent connects and
-            starts waiting, a 20-second countdown begins to prevent the agent
-            connection from timing out.
-          </p>
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+            Get User Requests Console
+          </h1>
+          <button
+            type="button"
+            onClick={() => {
+              setIsDescriptionCollapsed((prev) => {
+                const newValue = !prev;
+                setDescriptionCollapsed(newValue);
+                return newValue;
+              });
+            }}
+            className="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title={
+              isDescriptionCollapsed ? "Show description" : "Hide description"
+            }
+          >
+            {isDescriptionCollapsed ? (
+              <>
+                <span>Show info</span>
+                <ChevronDown className="h-4 w-4" />
+              </>
+            ) : (
+              <>
+                <span>Hide info</span>
+                <ChevronUp className="h-4 w-4" />
+              </>
+            )}
+          </button>
         </div>
+        {!isDescriptionCollapsed && (
+          <>
+            <p className="max-w-2xl text-lg text-muted-foreground">
+              Queue fresh directives for your AI assistants and inspect
+              everything they have already consumed. This page manages the{" "}
+              <code className="text-sm">get_user_request</code> MCP tool inputs
+              tied to your bearer token.
+            </p>
+            <div className="max-w-2xl space-y-2 text-sm text-muted-foreground">
+              <p>
+                <strong>How it works:</strong> When your AI agent calls{" "}
+                <code className="text-xs">get_user_request</code>, the server
+                returns the newest pending directive from this queue and marks
+                it as consumed. This allows you to provide real-time feedback or
+                adjust the agent's behavior mid-task.
+              </p>
+              <p>
+                <strong>Hold feature:</strong> Click <em>Hold</em> before your
+                agent queries for requests. The hold remains active indefinitely
+                until you submit a command or manually release it. Once an agent
+                connects and starts waiting, a 20-second countdown begins to
+                prevent the agent connection from timing out.
+              </p>
+            </div>
+          </>
+        )}
       </section>
 
       <Card className="border border-border/60 bg-card shadow-sm">
@@ -662,7 +731,12 @@ export function UserRequestsPage() {
             onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
               // Enter without modifiers: submit the form
               // Ctrl+Enter or Shift+Enter: insert newline (default behavior)
-              if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+              if (
+                e.key === "Enter" &&
+                !e.ctrlKey &&
+                !e.shiftKey &&
+                !e.metaKey
+              ) {
                 e.preventDefault();
                 if (!isEditorDisabled && newContent.trim()) {
                   handleCreateRequest();
@@ -674,13 +748,11 @@ export function UserRequestsPage() {
             className="border-primary/20 bg-background focus-visible:ring-primary/30"
           />
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <Input
+            <TaskIdSelector
               value={taskId}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                setTaskId(event.target.value)
-              }
-              placeholder="Optional task identifier"
+              onChange={setTaskId}
               disabled={isEditorDisabled}
+              placeholder="Optional task identifier"
               className="md:flex-1"
             />
             <div className="flex gap-2">
@@ -692,7 +764,11 @@ export function UserRequestsPage() {
                 onRelease={handleReleaseHold}
                 disabled={!apiKey}
               />
-              <Button onClick={handleCreateRequest} disabled={isEditorDisabled} title="Queue request">
+              <Button
+                onClick={handleCreateRequest}
+                disabled={isEditorDisabled}
+                title="Queue request"
+              >
                 <Send className="mr-2 h-4 w-4" />
                 {isSubmitting ? "Queuing…" : "Queue"}
               </Button>

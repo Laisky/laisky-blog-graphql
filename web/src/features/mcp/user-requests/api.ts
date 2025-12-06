@@ -112,6 +112,7 @@ export async function setReturnModeOnServer(
 
 const AUTH_COLLAPSED_STORAGE_KEY = "mcp_auth_collapsed";
 const SAVED_COMMANDS_EXPANDED_STORAGE_KEY = "mcp_saved_commands_expanded";
+const DESCRIPTION_COLLAPSED_STORAGE_KEY = "mcp_description_collapsed";
 
 /**
  * getAuthCollapsed retrieves the collapsed state of the Authenticate section.
@@ -128,6 +129,23 @@ export function getAuthCollapsed(): boolean {
 export function setAuthCollapsed(collapsed: boolean): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(AUTH_COLLAPSED_STORAGE_KEY, String(collapsed));
+}
+
+/**
+ * getDescriptionCollapsed retrieves the collapsed state of the description section.
+ * Defaults to false (expanded) if not set.
+ */
+export function getDescriptionCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(DESCRIPTION_COLLAPSED_STORAGE_KEY) === "true";
+}
+
+/**
+ * setDescriptionCollapsed persists the collapsed state of the description section.
+ */
+export function setDescriptionCollapsed(collapsed: boolean): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(DESCRIPTION_COLLAPSED_STORAGE_KEY, String(collapsed));
 }
 
 /**
