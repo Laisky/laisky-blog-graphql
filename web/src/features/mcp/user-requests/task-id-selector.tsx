@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "mcp-task-id-history";
 const MAX_HISTORY_ITEMS = 10;
+const HISTORY_UPDATE_EVENT = "mcp-task-id-history-update";
 
 /**
  * TaskIdEntry represents a single task identifier entry in the history.
@@ -139,6 +140,18 @@ export function TaskIdSelector({
   useEffect(() => {
     saveTaskIdHistory(history);
   }, [history]);
+
+  // Listen for history updates from useTaskIdHistory hook
+  useEffect(() => {
+    function handleHistoryUpdate() {
+      setHistory(loadTaskIdHistory());
+    }
+
+    window.addEventListener(HISTORY_UPDATE_EVENT, handleHistoryUpdate);
+    return () => {
+      window.removeEventListener(HISTORY_UPDATE_EVENT, handleHistoryUpdate);
+    };
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -430,6 +443,8 @@ export function useTaskIdHistory() {
       setHistory((prev) => {
         const updated = addOrUpdateTaskId(prev, trimmed);
         saveTaskIdHistory(updated);
+        // Emit event to notify TaskIdSelector components to refresh
+        window.dispatchEvent(new CustomEvent(HISTORY_UPDATE_EVENT));
         return updated;
       });
     }

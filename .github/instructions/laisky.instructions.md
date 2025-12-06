@@ -4,9 +4,11 @@ applyTo: "**/*"
 
 ## Dev Environment
 
-Please note, I use remote SSH for development work. The terminal runs on a remote server, with the server address 100.75.198.70.
+Please note, I use remote SSH for development work. The terminal runs on a remote server, with the server address https://mcp2.laisky.com/tools/get_user_requests.
 
-If you access ports on the server via the terminal, you can use localhost directly. However, if you access server ports via an external browser or headless Chrome, you must use the server’s IP address 100.75.198.70.
+If you access ports on the server via the terminal, you can use localhost directly. However, if you access server ports via an external browser or headless Chrome, you must use the server’s IP address.
+
+BTW, the server start/restart takes about 1 minute, if you find the server is not responding, please wait for a minute and try again.
 
 ## Coding Standards
 
