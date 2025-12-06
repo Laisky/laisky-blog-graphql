@@ -152,11 +152,23 @@ func (s *Service) GetUserPreference(ctx context.Context, auth *askuser.Authoriza
 func (s *Service) GetReturnMode(ctx context.Context, auth *askuser.AuthorizationContext) (string, error) {
 	pref, err := s.GetUserPreference(ctx, auth)
 	if err != nil {
+		s.log().Debug("GetReturnMode failed to get preference",
+			zap.String("user", auth.UserIdentity),
+			zap.Error(err),
+		)
 		return "", err
 	}
 	if pref == nil || pref.Preferences.ReturnMode == "" {
+		s.log().Debug("GetReturnMode returning default (no preference stored)",
+			zap.String("user", auth.UserIdentity),
+			zap.Bool("pref_nil", pref == nil),
+		)
 		return DefaultReturnMode, nil
 	}
+	s.log().Debug("GetReturnMode returning stored preference",
+		zap.String("user", auth.UserIdentity),
+		zap.String("return_mode", pref.Preferences.ReturnMode),
+	)
 	return pref.Preferences.ReturnMode, nil
 }
 
@@ -172,8 +184,9 @@ func (s *Service) SetReturnMode(ctx context.Context, auth *askuser.Authorization
 		return nil, errors.Errorf("invalid return_mode: %s (must be 'all' or 'first')", mode)
 	}
 
-	s.log().Debug("set user return_mode preference",
+	s.log().Debug("SetReturnMode called",
 		zap.String("user", auth.UserIdentity),
+		zap.String("api_key_hash", auth.APIKeyHash[:8]+"..."),
 		zap.String("return_mode", mode),
 	)
 
@@ -197,8 +210,17 @@ func (s *Service) SetReturnMode(ctx context.Context, auth *askuser.Authorization
 		}).
 		FirstOrCreate(pref).Error
 	if err != nil {
+		s.log().Error("SetReturnMode database error",
+			zap.String("user", auth.UserIdentity),
+			zap.Error(err),
+		)
 		return nil, errors.Wrap(err, "set return mode preference")
 	}
+
+	s.log().Debug("SetReturnMode succeeded",
+		zap.String("user", auth.UserIdentity),
+		zap.String("stored_mode", pref.Preferences.ReturnMode),
+	)
 
 	return pref, nil
 }

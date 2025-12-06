@@ -2,11 +2,36 @@ package userrequests
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+// TestPreferenceDataValueSerializesCorrectly verifies that PreferenceData serializes to valid JSON.
+func TestPreferenceDataValueSerializesCorrectly(t *testing.T) {
+	pref := PreferenceData{ReturnMode: ReturnModeFirst}
+	val, err := pref.Value()
+	require.NoError(t, err)
+
+	// Should serialize to JSON bytes
+	bytes, ok := val.([]byte)
+	require.True(t, ok, "Value() should return []byte")
+
+	// Verify the JSON is valid and has expected structure
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(bytes, &parsed))
+	require.Equal(t, "first", parsed["return_mode"])
+}
+
+// TestPreferenceDataScanValidJSON ensures valid JSON is parsed correctly.
+func TestPreferenceDataScanValidJSON(t *testing.T) {
+	var pref PreferenceData
+	err := pref.Scan(`{"return_mode":"first"}`)
+	require.NoError(t, err)
+	require.Equal(t, ReturnModeFirst, pref.ReturnMode)
+}
 
 // TestPreferenceDataScanLegacyEscapedString ensures legacy escaped preference payloads are recovered.
 func TestPreferenceDataScanLegacyEscapedString(t *testing.T) {

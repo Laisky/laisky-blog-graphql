@@ -305,3 +305,61 @@ func TestValidateReturnMode(t *testing.T) {
 	require.Equal(t, ReturnModeFirst, ValidateReturnMode("first"))
 	require.Equal(t, DefaultReturnMode, ValidateReturnMode("invalid"))
 }
+
+// TestServiceReturnModeRawDBVerification verifies return_mode is correctly persisted at DB level.
+// This catches issues where the in-memory struct is correct but DB write fails silently.
+func TestServiceReturnModeRawDBVerification(t *testing.T) {
+	db := newTestDB(t)
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	require.NoError(t, err)
+
+	auth := testAuth("hash-raw-verify", "1234")
+	ctx := context.Background()
+
+	// Set preference to "first"
+	_, err = svc.SetReturnMode(ctx, auth, ReturnModeFirst)
+	require.NoError(t, err)
+
+	// Verify at raw DB level - read the preferences column directly
+	var rawPref string
+	err = db.Raw("SELECT preferences FROM mcp_user_preferences WHERE api_key_hash = ?", auth.APIKeyHash).Scan(&rawPref).Error
+	require.NoError(t, err)
+	require.Contains(t, rawPref, `"return_mode":"first"`, "preferences column should contain first mode")
+
+	// Now update to "all" and verify
+	_, err = svc.SetReturnMode(ctx, auth, ReturnModeAll)
+	require.NoError(t, err)
+
+	err = db.Raw("SELECT preferences FROM mcp_user_preferences WHERE api_key_hash = ?", auth.APIKeyHash).Scan(&rawPref).Error
+	require.NoError(t, err)
+	require.Contains(t, rawPref, `"return_mode":"all"`, "preferences column should contain all mode after update")
+}
+
+// TestServiceReturnModePersistenceAcrossServiceInstances verifies preference survives service restart.
+// This simulates what happens when the server restarts or a new request comes in.
+func TestServiceReturnModePersistenceAcrossServiceInstances(t *testing.T) {
+	db := newTestDB(t)
+	auth := testAuth("hash-persist", "abcd")
+	ctx := context.Background()
+
+	// First service instance sets preference
+	svc1, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	require.NoError(t, err)
+
+	_, err = svc1.SetReturnMode(ctx, auth, ReturnModeFirst)
+	require.NoError(t, err)
+
+	// Verify with same instance
+	mode, err := svc1.GetReturnMode(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, ReturnModeFirst, mode)
+
+	// Create a NEW service instance (simulates server restart)
+	svc2, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	require.NoError(t, err)
+
+	// Verify preference persisted across instances
+	mode, err = svc2.GetReturnMode(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, ReturnModeFirst, mode, "preference should persist across service instances")
+}

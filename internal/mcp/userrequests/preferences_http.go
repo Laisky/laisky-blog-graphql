@@ -64,6 +64,12 @@ func (h *preferencesHTTPHandler) handleGet(w http.ResponseWriter, r *http.Reques
 		returnMode = pref.Preferences.ReturnMode
 	}
 
+	logger.Debug("preferences GET response",
+		zap.String("user", auth.UserIdentity),
+		zap.Bool("pref_exists", pref != nil),
+		zap.String("return_mode", returnMode),
+	)
+
 	h.writeJSON(w, map[string]any{
 		"return_mode": returnMode,
 		"user_id":     auth.UserIdentity,
@@ -98,6 +104,11 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	logger.Debug("preferences SET request received",
+		zap.String("user", auth.UserIdentity),
+		zap.String("requested_mode", payload.ReturnMode),
+	)
+
 	// Validate return_mode
 	if payload.ReturnMode != ReturnModeAll && payload.ReturnMode != ReturnModeFirst {
 		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid return_mode: must be 'all' or 'first'")
@@ -111,9 +122,9 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	logger.Debug("user preferences updated",
+	logger.Debug("preferences SET succeeded",
 		zap.String("user", auth.UserIdentity),
-		zap.String("return_mode", pref.Preferences.ReturnMode),
+		zap.String("saved_mode", pref.Preferences.ReturnMode),
 	)
 
 	h.writeJSON(w, map[string]any{

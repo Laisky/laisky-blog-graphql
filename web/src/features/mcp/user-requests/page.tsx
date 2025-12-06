@@ -331,7 +331,12 @@ export function UserRequestsPage() {
         });
       } catch (error) {
         console.error("Failed to persist return mode to server:", error);
-        // Don't show error - localStorage fallback still works
+        // Show warning to user - the preference was saved locally but may not persist
+        // across devices or if browser data is cleared
+        setStatus({
+          message: `Return mode saved locally, but server sync failed. The setting may not persist.`,
+          tone: "error",
+        });
       }
     }
   }, [apiKey]);
