@@ -59,19 +59,6 @@ func NewService(db *gorm.DB, embedder Embedder, chunker Chunker, settings Settin
 		logger = log.Logger.Named("mcp_rag_service")
 	}
 
-	ctx := context.Background()
-	logger.Debug("ensuring pgvector extension for rag service")
-	if err := ensureVectorExtension(ctx, db, logger); err != nil {
-		return nil, errors.Wrap(err, "ensure pgvector extension")
-	}
-	logger.Debug("pgvector extension ensured for rag service")
-
-	logger.Debug("running rag auto migrations")
-	if err := db.AutoMigrate(&Task{}, &Chunk{}, &Embedding{}, &BM25Row{}); err != nil {
-		return nil, errors.Wrap(err, "auto migrate rag tables")
-	}
-	logger.Debug("rag auto migrations finished")
-
 	svc := &Service{
 		db:       db,
 		embedder: embedder,
@@ -83,7 +70,31 @@ func NewService(db *gorm.DB, embedder Embedder, chunker Chunker, settings Settin
 		},
 	}
 
+	if err := runRAGMigrations(context.Background(), db, logger); err != nil {
+		return nil, err
+	}
+
 	return svc, nil
+}
+
+func runRAGMigrations(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error {
+	if logger == nil {
+		logger = log.Logger.Named("mcp_rag_service")
+	}
+
+	logger.Debug("ensuring pgvector extension for rag service")
+	if err := ensureVectorExtension(ctx, db, logger); err != nil {
+		return errors.Wrap(err, "ensure pgvector extension")
+	}
+	logger.Debug("pgvector extension ensured for rag service")
+
+	logger.Debug("running rag auto migrations")
+	if err := db.WithContext(ctx).AutoMigrate(&Task{}, &Chunk{}, &Embedding{}, &BM25Row{}); err != nil {
+		return errors.Wrap(err, "auto migrate rag tables")
+	}
+	logger.Debug("rag auto migrations finished")
+
+	return nil
 }
 
 func ensureVectorExtension(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error {

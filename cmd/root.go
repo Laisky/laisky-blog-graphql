@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	general "github.com/Laisky/laisky-blog-graphql/internal/web/general/controller"
@@ -43,9 +44,19 @@ func initialize(ctx context.Context, cmd *cobra.Command) error {
 
 func setupModules(ctx context.Context) {
 	// blog.Initialize(ctx)
-	twitter.Initialize(ctx)
-	// telegram.Initialize(ctx)
-	general.Initialize(ctx)
+	// Twitter and general initialization can run in parallel
+	// Both are independent and don't depend on each other
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		twitter.Initialize(ctx)
+	})
+
+	wg.Go(func() {
+		general.Initialize(ctx)
+	})
+
+	wg.Wait()
 }
 
 func setupLibrary(_ context.Context) {

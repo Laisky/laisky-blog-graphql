@@ -37,7 +37,7 @@ func (s *Service) RegisterNotifier(n Notifier) {
 	s.notifiers = append(s.notifiers, n)
 }
 
-// NewService constructs the service and performs required migrations.
+// NewService constructs the service and runs the required migrations.
 func NewService(db *gorm.DB, logger logSDK.Logger) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("gorm db is required")

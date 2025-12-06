@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
@@ -17,6 +19,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
@@ -33,6 +36,7 @@ import (
 	telegramModel "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library/db/arweave"
+	mongodb "github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/db/postgres"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -66,8 +70,9 @@ func init() {
 func runAPI() error {
 	ctx := context.Background()
 	logger := log.Logger.Named("api")
+	startTime := time.Now()
 
-	arweave := arweave.NewArdrive(
+	arweaveClient := arweave.NewArdrive(
 		gconfig.S.GetString("settings.arweave.wallet_file"),
 		gconfig.S.GetString("settings.arweave.folder_id"),
 	)
@@ -88,22 +93,106 @@ func runAPI() error {
 
 	var args web.ResolverArgs
 
-	// setup redis
+	// setup redis (non-blocking, lazy connection)
 	args.Rdb = rlibs.NewDB(&redis.Options{
 		Addr: gconfig.S.GetString("settings.db.redis.addr"),
 		DB:   gconfig.S.GetInt("settings.db.redis.db"),
 	})
 
-	{ // setup telegram
-		monitorDB, err := telegramModel.NewMonitorDB(ctx)
+	// ============================================================
+	// Parallel database initialization using errgroup
+	// ============================================================
+	var (
+		monitorDB  mongodb.DB
+		telegramDB mongodb.DB
+		blogDB     mongodb.DB
+		mcpDB      *postgres.DB
+		dbMutex    sync.Mutex
+	)
+
+	logger.Debug("starting parallel database initialization")
+	dbInitStart := time.Now()
+
+	eg, egCtx := errgroup.WithContext(ctx)
+
+	// MongoDB: monitor
+	eg.Go(func() error {
+		db, err := telegramModel.NewMonitorDB(egCtx)
 		if err != nil {
 			return errors.Wrap(err, "new monitor db")
 		}
-		telegramDB, err := telegramModel.NewTelegramDB(ctx)
+		dbMutex.Lock()
+		monitorDB = db
+		dbMutex.Unlock()
+		return nil
+	})
+
+	// MongoDB: telegram
+	eg.Go(func() error {
+		db, err := telegramModel.NewTelegramDB(egCtx)
 		if err != nil {
 			return errors.Wrap(err, "new telegram db")
 		}
+		dbMutex.Lock()
+		telegramDB = db
+		dbMutex.Unlock()
+		return nil
+	})
 
+	// MongoDB: blog
+	eg.Go(func() error {
+		db, err := blogModel.NewDB(egCtx)
+		if err != nil {
+			return errors.Wrap(err, "new blog db")
+		}
+		dbMutex.Lock()
+		blogDB = db
+		dbMutex.Unlock()
+		return nil
+	})
+
+	// PostgreSQL: MCP database
+	eg.Go(func() error {
+		dial := postgres.DialInfo{
+			Addr:   gconfig.S.GetString("settings.db.mcp.addr"),
+			DBName: gconfig.S.GetString("settings.db.mcp.db"),
+			User:   gconfig.S.GetString("settings.db.mcp.user"),
+			Pwd:    gconfig.S.GetString("settings.db.mcp.pwd"),
+		}
+		if dial.Addr == "" || dial.DBName == "" || dial.User == "" {
+			logger.Warn("mcp database configuration incomplete",
+				zap.Bool("addr_empty", dial.Addr == ""),
+				zap.Bool("db_empty", dial.DBName == ""),
+				zap.Bool("user_empty", dial.User == ""),
+			)
+			return nil // Not a critical error
+		}
+		db, err := postgres.NewDB(egCtx, dial)
+		if err != nil {
+			logger.Error("new mcp postgres", zap.Error(err))
+			return nil // Log but don't fail startup
+		}
+		dbMutex.Lock()
+		mcpDB = db
+		dbMutex.Unlock()
+		return nil
+	})
+
+	// Wait for all database connections
+	if err := eg.Wait(); err != nil {
+		return errors.Wrap(err, "parallel database initialization failed")
+	}
+	logger.Info("parallel database initialization completed",
+		zap.Duration("duration", time.Since(dbInitStart)))
+
+	// ============================================================
+	// Service initialization (depends on database connections)
+	// ============================================================
+	serviceInitStart := time.Now()
+
+	// Setup telegram service
+	telegramStart := time.Now()
+	if monitorDB != nil && telegramDB != nil {
 		var botToken = gconfig.Shared.GetString("settings.telegram.token")
 		if os.Getenv("TELEGRAM_BOT_TOKEN") != "" {
 			logger.Info("rewrite telegram bot token from env")
@@ -113,33 +202,41 @@ func runAPI() error {
 		args.TelegramSvc, err = telegramSvc.New(ctx,
 			telegramDao.NewMonitor(monitorDB),
 			telegramDao.NewTelegram(telegramDB),
-			telegramDao.NewUpload(telegramDB, arweave, minioCli),
+			telegramDao.NewUpload(telegramDB, arweaveClient, minioCli),
 			telegramDao.NewAskUserToken(monitorDB),
 			botToken,
 			gconfig.Shared.GetString("settings.telegram.api"),
 		)
 		if err != nil {
 			logger.Error("new telegram service", zap.Error(err))
-			// return errors.Wrap(err, "new telegram service")
 		} else {
 			args.TelegramCtl = telegramCtl.NewTelegram(ctx, args.TelegramSvc)
 		}
+	} else {
+		logger.Warn("telegram service skipped due to missing database connections",
+			zap.Bool("monitor_nil", monitorDB == nil),
+			zap.Bool("telegram_nil", telegramDB == nil))
 	}
+	logger.Debug("telegram service initialization completed",
+		zap.Duration("duration", time.Since(telegramStart)))
 
-	{ // setup blog
-		blogDB, err := blogModel.NewDB(ctx)
-		if err != nil {
-			return errors.Wrap(err, "new blog db")
-		}
-		blogDao := blogDao.New(logger.Named("blog_dao"), blogDB, arweave)
-		args.BlogSvc, err = blogSvc.New(ctx, logger.Named("blog_svc"), blogDao)
+	// Setup blog service
+	blogStart := time.Now()
+	if blogDB != nil {
+		blogDaoInst := blogDao.New(logger.Named("blog_dao"), blogDB, arweaveClient)
+		args.BlogSvc, err = blogSvc.New(ctx, logger.Named("blog_svc"), blogDaoInst)
 		if err != nil {
 			return errors.Wrap(err, "new blog service")
 		}
-
 		args.BlogCtl = blogCtl.New(args.BlogSvc)
+	} else {
+		logger.Warn("blog service skipped due to missing database connection")
 	}
+	logger.Debug("blog service initialization completed",
+		zap.Duration("duration", time.Since(blogStart)))
 
+	// Setup search engines
+	searchStart := time.Now()
 	{
 		tiers, maxRetries := buildSearchEngineTiers(logger.Named("web_search_config"))
 		if len(tiers) == 0 {
@@ -157,64 +254,128 @@ func runAPI() error {
 			}
 		}
 	}
+	logger.Debug("search engines initialization completed",
+		zap.Duration("duration", time.Since(searchStart)))
 
-	var mcpDB *postgres.DB
-
-	{ // setup ask_user service
-		dial := postgres.DialInfo{
-			Addr:   gconfig.S.GetString("settings.db.mcp.addr"),
-			DBName: gconfig.S.GetString("settings.db.mcp.db"),
-			User:   gconfig.S.GetString("settings.db.mcp.user"),
-			Pwd:    gconfig.S.GetString("settings.db.mcp.pwd"),
-		}
-		if dial.Addr == "" || dial.DBName == "" || dial.User == "" {
-			logger.Warn("ask_user database configuration incomplete",
-				zap.Bool("addr_empty", dial.Addr == ""),
-				zap.Bool("db_empty", dial.DBName == ""),
-				zap.Bool("user_empty", dial.User == ""),
-			)
-		} else if askDB, err := postgres.NewDB(ctx, dial); err != nil {
-			logger.Error("new ask_user postgres", zap.Error(err))
-		} else {
-			mcpDB = askDB
-			if svc, err := askuser.NewService(askDB.DB, logger.Named("ask_user")); err != nil {
-				logger.Error("init ask_user service", zap.Error(err))
-			} else {
-				args.AskUserService = svc
-				if args.TelegramSvc != nil {
-					args.TelegramSvc.SetAskUserService(svc)
-				}
-			}
-
-			if callSvc, err := calllog.NewService(askDB.DB, logger.Named("call_log"), nil); err != nil {
-				logger.Error("init call_log service", zap.Error(err))
-			} else {
-				args.CallLogService = callSvc
-			}
-
-			if userSvc, err := userrequests.NewService(askDB.DB, logger.Named("user_requests"), nil); err != nil {
-				logger.Error("init user_requests service", zap.Error(err))
-			} else {
-				args.UserRequestService = userSvc
-			}
-		}
-	}
-
+	// Setup MCP services (ask_user, call_log, user_requests, RAG)
+	mcpStart := time.Now()
 	ragSettings := rag.LoadSettingsFromConfig()
 	args.RAGSettings = ragSettings
-	if ragSettings.Enabled {
-		if mcpDB == nil {
-			logger.Warn("extract_key_info dependencies missing", zap.Bool("mcp_db_nil", true))
-		} else {
+	if mcpDB != nil {
+		var (
+			askSvc  *askuser.Service
+			callSvc *calllog.Service
+			userSvc *userrequests.Service
+			ragSvc  *rag.Service
+			svcMu   sync.Mutex
+		)
+
+		egServices, _ := errgroup.WithContext(ctx)
+
+		egServices.Go(func() error {
+			start := time.Now()
+			svc, err := askuser.NewService(mcpDB.DB, logger.Named("ask_user"))
+			if err != nil {
+				logger.Error("init ask_user service", zap.Error(err))
+				return nil
+			}
+			svcMu.Lock()
+			askSvc = svc
+			svcMu.Unlock()
+			logger.Debug("ask_user service initialization completed",
+				zap.Duration("duration", time.Since(start)))
+			return nil
+		})
+
+		egServices.Go(func() error {
+			start := time.Now()
+			svc, err := calllog.NewService(mcpDB.DB, logger.Named("call_log"), nil)
+			if err != nil {
+				logger.Error("init call_log service", zap.Error(err))
+				return nil
+			}
+			svcMu.Lock()
+			callSvc = svc
+			svcMu.Unlock()
+			logger.Debug("call_log service initialization completed",
+				zap.Duration("duration", time.Since(start)))
+			return nil
+		})
+
+		egServices.Go(func() error {
+			start := time.Now()
+			svc, err := userrequests.NewService(mcpDB.DB, logger.Named("user_requests"), nil)
+			if err != nil {
+				logger.Error("init user_requests service", zap.Error(err))
+				return nil
+			}
+			svcMu.Lock()
+			userSvc = svc
+			svcMu.Unlock()
+			logger.Debug("user_requests service initialization completed",
+				zap.Duration("duration", time.Since(start)))
+			return nil
+		})
+
+		if ragSettings.Enabled {
 			embedder := rag.NewOpenAIEmbedder(ragSettings.OpenAIBaseURL, ragSettings.EmbeddingModel, nil)
 			chunker := rag.ParagraphChunker{}
-			if svc, err := rag.NewService(mcpDB.DB, embedder, chunker, ragSettings, logger.Named("extract_key_info")); err != nil {
-				logger.Error("init extract_key_info service", zap.Error(err))
+			egServices.Go(func() error {
+				start := time.Now()
+				svc, err := rag.NewService(mcpDB.DB, embedder, chunker, ragSettings, logger.Named("extract_key_info"))
+				if err != nil {
+					logger.Error("init extract_key_info service", zap.Error(err))
+					return nil
+				}
+				svcMu.Lock()
+				ragSvc = svc
+				svcMu.Unlock()
+				logger.Debug("rag service initialization completed",
+					zap.Duration("duration", time.Since(start)))
+				return nil
+			})
+		}
+
+		if err := egServices.Wait(); err != nil {
+			return errors.Wrap(err, "initialize MCP services")
+		}
+
+		if askSvc != nil {
+			args.AskUserService = askSvc
+			if args.TelegramSvc != nil {
+				args.TelegramSvc.SetAskUserService(askSvc)
+			}
+		} else {
+			logger.Warn("ask_user service unavailable")
+		}
+
+		if callSvc != nil {
+			args.CallLogService = callSvc
+		} else {
+			logger.Warn("call_log service unavailable")
+		}
+
+		if userSvc != nil {
+			args.UserRequestService = userSvc
+		} else {
+			logger.Warn("user_requests service unavailable")
+		}
+
+		if ragSettings.Enabled {
+			if ragSvc != nil {
+				args.RAGService = ragSvc
 			} else {
-				args.RAGService = svc
+				logger.Warn("rag service unavailable despite being enabled")
 			}
 		}
+	} else {
+		logger.Warn("MCP services skipped due to missing database connection")
 	}
+	logger.Debug("mcp services initialization completed",
+		zap.Duration("duration", time.Since(mcpStart)))
+
+	logger.Info("service initialization completed",
+		zap.Duration("duration", time.Since(serviceInitStart)))
 
 	// Load MCP tools settings to control which tools are enabled
 	args.MCPToolsSettings = mcp.LoadToolsSettingsFromConfig()
@@ -225,6 +386,9 @@ func runAPI() error {
 		zap.Bool("get_user_request_enabled", args.MCPToolsSettings.GetUserRequestEnabled),
 		zap.Bool("extract_key_info_enabled", args.MCPToolsSettings.ExtractKeyInfoEnabled),
 	)
+
+	logger.Info("total startup initialization completed",
+		zap.Duration("total_duration", time.Since(startTime)))
 
 	resolver := web.NewResolver(args)
 	web.RunServer(gconfig.Shared.GetString("listen"), resolver)
