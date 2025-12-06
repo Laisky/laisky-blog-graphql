@@ -66,12 +66,6 @@ func (t *GetUserRequestTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"get_user_request",
 		mcp.WithDescription("During the execution of a task, get the latest user instructions to adjust agent's work objectives or processes."),
-		mcp.WithString(
-			"return_mode",
-			mcp.Enum("all", "first"),
-			mcp.DefaultString("all"),
-			mcp.Description("Controls how commands are returned: 'all' returns all pending commands, 'first' returns only the oldest (earliest) command."),
-		),
 		mcp.WithIdempotentHintAnnotation(false),
 	)
 }
@@ -85,35 +79,17 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("invalid authorization header"), nil
 	}
 
-	// Parse return_mode parameter from the request.
-	// If the AI agent doesn't specify it, fall back to the user's stored preference.
-	returnMode := ""
-	var agentSpecified bool
-	if args, ok := req.Params.Arguments.(map[string]any); ok && args != nil {
-		if mode, ok := args["return_mode"].(string); ok && mode != "" {
-			returnMode = mode
-			agentSpecified = true
-		}
-	}
-
-	// If the agent didn't specify return_mode, retrieve the user's preference
-	if !agentSpecified {
-		userPref, prefErr := t.service.GetReturnMode(ctx, authCtx)
-		if prefErr != nil {
-			t.log().Debug("failed to get user return_mode preference, using default",
-				zap.Error(prefErr),
-				zap.String("user", authCtx.UserIdentity),
-			)
-			returnMode = "all"
-		} else {
-			returnMode = userPref
-			t.log().Debug("using user's stored return_mode preference",
-				zap.String("return_mode", returnMode),
-				zap.String("user", authCtx.UserIdentity),
-			)
-		}
+	// Always honor the user's stored preference; agent-provided overrides are ignored.
+	returnMode := "all"
+	userPref, prefErr := t.service.GetReturnMode(ctx, authCtx)
+	if prefErr != nil {
+		t.log().Debug("failed to get user return_mode preference, using default",
+			zap.Error(prefErr),
+			zap.String("user", authCtx.UserIdentity),
+		)
 	} else {
-		t.log().Debug("using agent-specified return_mode",
+		returnMode = userPref
+		t.log().Debug("using user's stored return_mode preference",
 			zap.String("return_mode", returnMode),
 			zap.String("user", authCtx.UserIdentity),
 		)

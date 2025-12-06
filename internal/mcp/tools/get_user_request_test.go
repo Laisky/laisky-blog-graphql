@@ -272,9 +272,8 @@ func testUUID(value string) uuid.UUID {
 	return id
 }
 
-// TestGetUserRequestToolReturnModeFirst verifies that when return_mode=first is passed
-// by the agent, only the oldest pending request is returned.
-func TestGetUserRequestToolReturnModeFirst(t *testing.T) {
+// TestGetUserRequestToolIgnoresAgentReturnMode ensures agent-supplied return_mode is ignored.
+func TestGetUserRequestToolIgnoresAgentReturnMode(t *testing.T) {
 	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
 	consumeFirstCalled := false
 	consumeAllCalled := false
@@ -282,7 +281,11 @@ func TestGetUserRequestToolReturnModeFirst(t *testing.T) {
 	service := &fakeUserRequestService{
 		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
 			consumeFirstCalled = true
-			return &userrequests.Request{
+			return &userrequests.Request{ID: testUUID("99999999-9999-9999-9999-999999999999")}, nil
+		},
+		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+			consumeAllCalled = true
+			return []userrequests.Request{{
 				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
 				Content:      "First command only",
 				Status:       userrequests.StatusConsumed,
@@ -290,11 +293,7 @@ func TestGetUserRequestToolReturnModeFirst(t *testing.T) {
 				UserIdentity: "user-first",
 				CreatedAt:    consumedAt.Add(-2 * time.Hour),
 				ConsumedAt:   &consumedAt,
-			}, nil
-		},
-		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
-			consumeAllCalled = true
-			return nil, errors.New("should not be called")
+			}}, nil
 		},
 	}
 
@@ -302,10 +301,9 @@ func TestGetUserRequestToolReturnModeFirst(t *testing.T) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-first", KeySuffix: "abcd"}, nil
 	})
 
-	// Create request with return_mode=first
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
-		"return_mode": "first",
+		"return_mode": "first", // should be ignored
 	}
 
 	result, err := tool.Handle(context.Background(), req)
@@ -319,19 +317,14 @@ func TestGetUserRequestToolReturnModeFirst(t *testing.T) {
 	payload := map[string]any{}
 	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
 
-	// Verify only one command is returned
+	// Verify commands list is returned using default "all" mode
 	commands, ok := payload["commands"].([]any)
 	require.True(t, ok, "commands should be a list")
-	require.Len(t, commands, 1, "should return exactly one command")
+	require.Len(t, commands, 1, "should return commands from consumeAll")
 
-	// Verify the command content
-	cmd, ok := commands[0].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "First command only", cmd["content"])
-
-	// Verify consumeFirst was called, not consumeAll
-	require.True(t, consumeFirstCalled, "ConsumeFirstPending should be called")
-	require.False(t, consumeAllCalled, "ConsumeAllPending should not be called")
+	// Verify consumeAll was called, agent override ignored
+	require.True(t, consumeAllCalled, "ConsumeAllPending should be called when preference is 'all'")
+	require.False(t, consumeFirstCalled, "ConsumeFirstPending should be ignored when agent tries to override")
 }
 
 // TestGetUserRequestToolReturnModeFromUserPreference verifies that when no return_mode
@@ -384,37 +377,38 @@ func TestGetUserRequestToolReturnModeFromUserPreference(t *testing.T) {
 	require.True(t, consumeFirstCalled, "ConsumeFirstPending should be called based on user preference")
 }
 
-// TestGetUserRequestToolAgentModeOverridesUserPreference verifies that when the agent
-// explicitly specifies return_mode, it takes precedence over the user's stored preference.
-func TestGetUserRequestToolAgentModeOverridesUserPreference(t *testing.T) {
+// TestGetUserRequestToolAgentModeDoesNotOverridePreference verifies agent hints are ignored in favor of user preference.
+func TestGetUserRequestToolAgentModeDoesNotOverridePreference(t *testing.T) {
 	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
 	consumeAllCalled := false
+	consumeFirstCalled := false
 
 	service := &fakeUserRequestService{
 		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
 			consumeAllCalled = true
-			return []userrequests.Request{
-				{
-					ID:           testUUID("11111111-1111-1111-1111-111111111111"),
-					Content:      "First command",
-					Status:       userrequests.StatusConsumed,
-					TaskID:       "default",
-					UserIdentity: "user-override",
-					CreatedAt:    consumedAt.Add(-2 * time.Hour),
-					ConsumedAt:   &consumedAt,
-				},
-				{
-					ID:           testUUID("22222222-2222-2222-2222-222222222222"),
-					Content:      "Second command",
-					Status:       userrequests.StatusConsumed,
-					TaskID:       "default",
-					UserIdentity: "user-override",
-					CreatedAt:    consumedAt.Add(-time.Hour),
-					ConsumedAt:   &consumedAt,
-				},
+			return []userrequests.Request{{
+				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
+				Content:      "First command",
+				Status:       userrequests.StatusConsumed,
+				TaskID:       "default",
+				UserIdentity: "user-override",
+				CreatedAt:    consumedAt.Add(-2 * time.Hour),
+				ConsumedAt:   &consumedAt,
+			}}, nil
+		},
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+			consumeFirstCalled = true
+			return &userrequests.Request{
+				ID:           testUUID("33333333-3333-3333-3333-333333333333"),
+				Content:      "First only",
+				Status:       userrequests.StatusConsumed,
+				TaskID:       "default",
+				UserIdentity: "user-override",
+				CreatedAt:    consumedAt.Add(-2 * time.Hour),
+				ConsumedAt:   &consumedAt,
 			}, nil
 		},
-		// User preference is set to "first", but agent will override with "all"
+		// User preference is set to "first"; agent hints should not override.
 		getReturnMode: func(context.Context, *askuser.AuthorizationContext) (string, error) {
 			return "first", nil
 		},
@@ -424,7 +418,7 @@ func TestGetUserRequestToolAgentModeOverridesUserPreference(t *testing.T) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-override", KeySuffix: "abcd"}, nil
 	})
 
-	// Agent explicitly specifies return_mode=all, overriding user preference
+	// Agent explicitly specifies return_mode=all, but preference remains "first"
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
 		"return_mode": "all",
@@ -441,13 +435,14 @@ func TestGetUserRequestToolAgentModeOverridesUserPreference(t *testing.T) {
 	payload := map[string]any{}
 	require.NoError(t, json.Unmarshal([]byte(text.Text), &payload))
 
-	// Verify all commands are returned (agent's "all" overrides user's "first")
+	// Verify only one command is returned (user preference "first" wins)
 	commands, ok := payload["commands"].([]any)
 	require.True(t, ok, "commands should be a list")
-	require.Len(t, commands, 2, "should return all commands because agent specified 'all'")
+	require.Len(t, commands, 1, "should return a single command based on user preference")
 
-	// Verify consumeAll was called
-	require.True(t, consumeAllCalled, "ConsumeAllPending should be called when agent specifies 'all'")
+	// Verify consumeFirst was called and agent override ignored
+	require.True(t, consumeFirstCalled, "ConsumeFirstPending should be called when preference is 'first'")
+	require.False(t, consumeAllCalled, "ConsumeAllPending should not be called when agent tries to override")
 }
 
 // TestGetUserRequestToolReturnModeFirstEmpty verifies that when return_mode=first
@@ -457,18 +452,16 @@ func TestGetUserRequestToolReturnModeFirstEmpty(t *testing.T) {
 		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
 			return nil, userrequests.ErrNoPendingRequests
 		},
+		getReturnMode: func(context.Context, *askuser.AuthorizationContext) (string, error) {
+			return "first", nil
+		},
 	}
 
 	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-empty"}, nil
 	})
 
-	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{
-		"return_mode": "first",
-	}
-
-	result, err := tool.Handle(context.Background(), req)
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{})
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 
@@ -496,6 +489,9 @@ func TestGetUserRequestToolReturnModeFirstWithHold(t *testing.T) {
 				ConsumedAt:   &consumedAt,
 			}, nil
 		},
+		getReturnMode: func(context.Context, *askuser.AuthorizationContext) (string, error) {
+			return "first", nil
+		},
 	}
 
 	waiter := &fakeHoldWaiter{
@@ -510,12 +506,7 @@ func TestGetUserRequestToolReturnModeFirstWithHold(t *testing.T) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-hold-first"}, nil
 	})
 
-	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{
-		"return_mode": "first",
-	}
-
-	result, err := tool.Handle(context.Background(), req)
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{})
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 	require.NotEmpty(t, result.Content)
