@@ -305,6 +305,41 @@ export async function deleteAllUserRequests(apiKey: string): Promise<number> {
   return Number(payload.deleted ?? 0);
 }
 
+export async function deleteConsumedRequests(
+  apiKey: string,
+  options?: { keepCount?: number; keepDays?: number }
+): Promise<number> {
+  const authorization = ensureAuthorization(apiKey);
+  const apiBasePath = resolveCurrentApiBasePath();
+  const params = new URLSearchParams();
+  if (options?.keepCount !== undefined) {
+    params.append("keep_count", options.keepCount.toString());
+  }
+  if (options?.keepDays !== undefined) {
+    params.append("keep_days", options.keepDays.toString());
+  }
+
+  const response = await fetch(
+    `${apiBasePath}api/requests/consumed?${params.toString()}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: authorization,
+        "Cache-Control": "no-store",
+        Pragma: "no-cache",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const message = (await response.text()) || response.statusText;
+    throw new Error(message);
+  }
+
+  const payload = await response.json();
+  return Number(payload.deleted ?? 0);
+}
+
 /**
  * deleteAllPendingRequests deletes only pending requests for the authenticated user.
  * Returns the number of deleted requests.

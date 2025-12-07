@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +79,8 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleDeleteAll(w, r)
 	case r.URL.Path == "/api/requests/pending" && r.Method == http.MethodDelete:
 		h.handleDeleteAllPending(w, r)
+	case r.URL.Path == "/api/requests/consumed" && r.Method == http.MethodDelete:
+		h.handleDeleteConsumed(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/requests/") && r.Method == http.MethodDelete:
 		h.handleDeleteOne(w, r)
 	default:
@@ -244,6 +247,45 @@ func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logger.Error("delete all user requests", zap.Error(err))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete requests")
+		return
+	}
+
+	h.writeJSON(w, map[string]any{"deleted": deleted})
+}
+
+func (h *httpHandler) handleDeleteConsumed(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
+	service := h.service
+	if service == nil {
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
+		return
+	}
+
+	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	if err != nil {
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	var keepCount, keepDays int
+	if val := r.URL.Query().Get("keep_count"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			keepCount = n
+		}
+	}
+	if val := r.URL.Query().Get("keep_days"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			keepDays = n
+		}
+	}
+
+	deleted, err := service.DeleteConsumed(ctx, auth, keepCount, keepDays)
+	if err != nil {
+		logger.Error("delete consumed requests", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete consumed requests")
 		return
 	}
 

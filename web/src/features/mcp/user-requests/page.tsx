@@ -13,6 +13,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { StatusBanner, type StatusState } from "@/components/ui/status-banner";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeApiKey, useApiKey } from "@/lib/api-key-context";
@@ -21,6 +27,7 @@ import { cn } from "@/lib/utils";
 import {
   createUserRequest,
   deleteAllPendingRequests,
+  deleteConsumedRequests,
   deleteUserRequest,
   getAuthCollapsed,
   getDescriptionCollapsed,
@@ -29,12 +36,12 @@ import {
   getReturnMode,
   type HoldState,
   listUserRequests,
+  setReturnMode as persistReturnModeLocal,
   releaseHold,
   type ReturnMode,
   setAuthCollapsed,
   setDescriptionCollapsed,
   setHold,
-  setReturnMode as persistReturnModeLocal,
   setReturnModeOnServer,
   type UserRequest,
 } from "./api";
@@ -48,6 +55,19 @@ interface IdentityState {
   userId?: string;
   keyHint?: string;
 }
+
+type DeleteOption = {
+  label: string;
+  keepCount?: number;
+  keepDays?: number;
+};
+
+const DELETE_OPTIONS: DeleteOption[] = [
+  { label: "Delete everything" },
+  { label: "Keep recent 50", keepCount: 50 },
+  { label: "Keep last 7 days", keepDays: 7 },
+  { label: "Keep last 30 days", keepDays: 30 },
+];
 
 export function UserRequestsPage() {
   const { apiKey } = useApiKey();
@@ -80,6 +100,13 @@ export function UserRequestsPage() {
   const [isDescriptionCollapsed, setIsDescriptionCollapsed] = useState(() =>
     getDescriptionCollapsed()
   );
+  const [selectedDeleteOptionIdx, setSelectedDeleteOptionIdx] = useState(() => {
+    const saved = localStorage.getItem("mcp_delete_consumed_option");
+    return saved ? parseInt(saved, 10) : 0;
+  });
+  const [showDeleteConsumedConfirm, setShowDeleteConsumedConfirm] =
+    useState(false);
+  const [isDeletingConsumed, setIsDeletingConsumed] = useState(false);
 
   const { recordUsage: recordTaskIdUsage } = useTaskIdHistory();
 
@@ -465,6 +492,54 @@ export function UserRequestsPage() {
     }
   }, [apiKey]);
 
+  const handleDeleteConsumedClick = useCallback(() => {
+    const key = normalizeApiKey(apiKey);
+    if (!key) {
+      setStatus({
+        message: "Connect with your API key before deleting.",
+        tone: "error",
+      });
+      return;
+    }
+    setShowDeleteConsumedConfirm(true);
+  }, [apiKey]);
+
+  const handleDeleteConsumedConfirm = useCallback(async () => {
+    const key = normalizeApiKey(apiKey);
+    if (!key) return;
+
+    setIsDeletingConsumed(true);
+    try {
+      const option = DELETE_OPTIONS[selectedDeleteOptionIdx];
+      const deleted = await deleteConsumedRequests(key, {
+        keepCount: option.keepCount,
+        keepDays: option.keepDays,
+      });
+      setStatus({
+        message: deleted
+          ? `Deleted ${deleted} consumed request${deleted === 1 ? "" : "s"}.`
+          : "No matching requests to delete.",
+        tone: "success",
+      });
+      pollControlsRef.current?.schedule(0);
+    } catch (error) {
+      setStatus({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete consumed requests.",
+        tone: "error",
+      });
+    } finally {
+      setIsDeletingConsumed(false);
+    }
+  }, [apiKey, selectedDeleteOptionIdx]);
+
+  const handleSelectDeleteOption = useCallback((idx: number) => {
+    setSelectedDeleteOptionIdx(idx);
+    localStorage.setItem("mcp_delete_consumed_option", idx.toString());
+  }, []);
+
   const handleSelectSavedCommand = useCallback((content: string) => {
     setPickedRequestId(null);
     setEditorBackup(null);
@@ -825,10 +900,55 @@ export function UserRequestsPage() {
         </div>
         <div className="space-y-4">
           <header className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-foreground">
-              Consumed history
-            </h2>
-            <Badge variant="outline">{consumed.length}</Badge>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-semibold text-foreground">
+                Consumed history
+              </h2>
+              <Badge variant="outline">{consumed.length}</Badge>
+            </div>
+            {consumed.length > 0 && (
+              <div className="flex items-center">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="rounded-r-none border-r border-destructive-foreground/20"
+                  onClick={handleDeleteConsumedClick}
+                  disabled={isDeletingConsumed}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {isDeletingConsumed
+                    ? "Deleting…"
+                    : DELETE_OPTIONS[selectedDeleteOptionIdx].label}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="rounded-l-none px-2"
+                      disabled={isDeletingConsumed}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {DELETE_OPTIONS.map((option, idx) => (
+                      <DropdownMenuItem
+                        key={option.label}
+                        onClick={() => handleSelectDeleteOption(idx)}
+                        className={
+                          idx === selectedDeleteOptionIdx ? "bg-accent" : ""
+                        }
+                      >
+                        {option.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
           </header>
           <div className="space-y-4">
             {consumed.length === 0 ? (
@@ -861,6 +981,18 @@ export function UserRequestsPage() {
         confirmVariant="destructive"
         onConfirm={handleDeleteAllPendingConfirm}
         isLoading={isDeletingAllPending}
+      />
+
+      <ConfirmDialog
+        open={showDeleteConsumedConfirm}
+        onOpenChange={setShowDeleteConsumedConfirm}
+        title={`Confirm: ${DELETE_OPTIONS[selectedDeleteOptionIdx].label}?`}
+        description="This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        confirmVariant="destructive"
+        onConfirm={handleDeleteConsumedConfirm}
+        isLoading={isDeletingConsumed}
       />
     </div>
   );

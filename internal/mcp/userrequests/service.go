@@ -293,3 +293,36 @@ func sanitizeTaskID(input string) string {
 	}
 	return trimmed
 }
+
+// DeleteConsumed removes consumed requests based on retention policies.
+// If keepCount > 0, it retains the N most recent consumed requests.
+// If keepDays > 0, it retains requests consumed within the last N days.
+// If both are 0, it deletes all consumed requests.
+func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.AuthorizationContext, keepCount int, keepDays int) (int64, error) {
+	if auth == nil {
+		return 0, ErrInvalidAuthorization
+	}
+
+	query := s.db.WithContext(ctx).Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed)
+
+	if keepCount > 0 {
+		// Retain only the most recent N items.
+		// We use a subquery to identify the IDs to keep.
+		subQuery := s.db.Model(&Request{}).Select("id").
+			Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed).
+			Order("consumed_at DESC").
+			Limit(keepCount)
+
+		query = query.Where("id NOT IN (?)", subQuery)
+	} else if keepDays > 0 {
+		// Retain items from the last N days.
+		cutoff := s.clock().AddDate(0, 0, -keepDays)
+		query = query.Where("consumed_at < ?", cutoff)
+	}
+
+	result := query.Delete(&Request{})
+	if result.Error != nil {
+		return 0, errors.Wrap(result.Error, "delete consumed requests")
+	}
+	return result.RowsAffected, nil
+}
