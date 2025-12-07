@@ -49,6 +49,27 @@ func TestPreferenceDataScanLegacyQuotedMode(t *testing.T) {
 	require.Equal(t, ReturnModeFirst, pref.ReturnMode)
 }
 
+// TestPreferenceDataScanLegacyEscapedObjects covers multiple historical payload encodings.
+func TestPreferenceDataScanLegacyEscapedObjects(t *testing.T) {
+	testCases := []struct {
+		name  string
+		value any
+	}{
+		{name: "LeadingBackslash", value: []byte(`\{"return_mode":"first"}`)},
+		{name: "QuotedEscaped", value: `"{\"return_mode\":\"first\"}"`},
+		{name: "DoubleEscaped", value: `"\\\"return_mode\\\":\\\"first\\\""`},
+		{name: "HexEncoded", value: []byte(`\x7b2272657475726e5f6d6f6465223a226669727374227d`)},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var pref PreferenceData
+			require.NoError(t, pref.Scan(tc.value))
+			require.Equal(t, ReturnModeFirst, pref.ReturnMode)
+		})
+	}
+}
+
 // TestServiceSetReturnModeRecoversLegacyPreference verifies SetReturnMode cleans up legacy rows.
 func TestServiceSetReturnModeRecoversLegacyPreference(t *testing.T) {
 	db := newTestDB(t)
@@ -78,4 +99,47 @@ func TestServiceSetReturnModeRecoversLegacyPreference(t *testing.T) {
 	mode, err = svc.GetReturnMode(ctx, auth)
 	require.NoError(t, err)
 	require.Equal(t, ReturnModeAll, mode)
+}
+
+// TestServiceGetReturnModeHandlesEscapedObject verifies we can read rows stored with a leading backslash.
+func TestServiceGetReturnModeHandlesEscapedObject(t *testing.T) {
+	db := newTestDB(t)
+	clock := fixedClock(time.Date(2024, 12, 2, 0, 0, 0, 0, time.UTC))
+	svc, err := NewService(db, nil, clock.Now)
+	require.NoError(t, err)
+
+	auth := testAuth("hash-escaped", "zzzz")
+	ctx := context.Background()
+	legacyPref := `\{"return_mode":"first"}`
+	now := clock.Now()
+	execErr := db.Exec(
+		`INSERT INTO mcp_user_preferences (api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+		auth.APIKeyHash, auth.KeySuffix, auth.UserIdentity, legacyPref, now, now,
+	).Error
+	require.NoError(t, execErr)
+
+	mode, err := svc.GetReturnMode(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, ReturnModeFirst, mode)
+}
+
+func TestServiceGetReturnModeHandlesHexEncodedPreference(t *testing.T) {
+	db := newTestDB(t)
+	clock := fixedClock(time.Date(2024, 12, 3, 0, 0, 0, 0, time.UTC))
+	svc, err := NewService(db, nil, clock.Now)
+	require.NoError(t, err)
+
+	auth := testAuth("hash-hex", "zzzz")
+	ctx := context.Background()
+	legacyPref := `\x7b2272657475726e5f6d6f6465223a226669727374227d`
+	now := clock.Now()
+	execErr := db.Exec(
+		`INSERT INTO mcp_user_preferences (api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+		auth.APIKeyHash, auth.KeySuffix, auth.UserIdentity, legacyPref, now, now,
+	).Error
+	require.NoError(t, execErr)
+
+	mode, err := svc.GetReturnMode(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, ReturnModeFirst, mode)
 }

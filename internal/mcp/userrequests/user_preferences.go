@@ -1,9 +1,12 @@
 package userrequests
 
 import (
+	"bytes"
 	"context"
 	"database/sql/driver"
+	"encoding/hex"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,68 +49,44 @@ func (p *PreferenceData) Scan(value any) error {
 		return nil
 	}
 
-	var bytes []byte
-	switch v := value.(type) {
-	case []byte:
-		bytes = v
-	case string:
-		bytes = []byte(v)
-	default:
-		return errors.Errorf("unsupported type for PreferenceData: %T", value)
+	rawBytes, err := bytesFromDBValue(value)
+	if err != nil {
+		return err
 	}
 
-	raw := strings.TrimSpace(string(bytes))
-	if len(raw) == 0 {
+	trimmed := bytes.TrimSpace(rawBytes)
+	if len(trimmed) == 0 {
 		*p = PreferenceData{}
 		return nil
 	}
 
-	decodeErr := json.Unmarshal(bytes, p)
-	if decodeErr == nil {
+	normalized, recovered, normErr := normalizePreferencePayload(trimmed)
+	if normErr != nil {
+		prefLogger.Debug("preference data invalid, defaulting",
+			zap.Error(normErr),
+			zap.String("raw_preview", preferencePreview(trimmed)),
+		)
+		p.ReturnMode = DefaultReturnMode
 		return nil
 	}
 
-	// Legacy path: some historical rows stored the JSON as an escaped string
-	// (leading backslashes) or as a quoted value. Try to recover before
-	// falling back to defaults so users are not blocked by legacy data.
-	var unquoted string
-	if err := json.Unmarshal(bytes, &unquoted); err == nil {
-		// The payload was a JSON string; try to unmarshal that string as JSON
-		if err := json.Unmarshal([]byte(unquoted), p); err == nil {
-			prefLogger.Debug("recovered preference from quoted JSON")
-			return nil
-		}
+	if recovered {
+		prefLogger.Debug("normalized legacy preference payload",
+			zap.String("raw_preview", preferencePreview(trimmed)),
+			zap.String("normalized_preview", preferencePreview(normalized)),
+		)
+	}
 
-		mode := ValidateReturnMode(strings.TrimSpace(unquoted))
-		p.ReturnMode = mode
-		prefLogger.Debug("recovered preference from quoted string", zap.String("return_mode", p.ReturnMode))
+	if err := json.Unmarshal(normalized, p); err != nil {
+		prefLogger.Debug("preference data invalid after normalization",
+			zap.Error(err),
+			zap.String("raw_preview", preferencePreview(trimmed)),
+		)
+		p.ReturnMode = DefaultReturnMode
 		return nil
 	}
 
-	// Another legacy form stored a backslash-escaped JSON fragment without wrapping braces.
-	cleaned := strings.ReplaceAll(raw, "\\", "")
-	if err := json.Unmarshal([]byte(cleaned), p); err == nil {
-		prefLogger.Debug("recovered preference from escaped JSON", zap.String("return_mode", p.ReturnMode))
-		return nil
-	}
-
-	if strings.Contains(cleaned, "return_mode") {
-		candidate := strings.TrimSpace(cleaned)
-		if !strings.HasPrefix(candidate, "{") {
-			candidate = "{" + candidate
-		}
-		if !strings.HasSuffix(candidate, "}") {
-			candidate += "}"
-		}
-		if err := json.Unmarshal([]byte(candidate), p); err == nil {
-			prefLogger.Debug("recovered preference from wrapped legacy fragment", zap.String("return_mode", p.ReturnMode))
-			return nil
-		}
-	}
-
-	trimmed := strings.Trim(cleaned, "\"")
-	p.ReturnMode = ValidateReturnMode(strings.TrimSpace(trimmed))
-	prefLogger.Debug("preference data invalid, defaulting", zap.Error(decodeErr), zap.String("return_mode", p.ReturnMode))
+	p.ReturnMode = ValidateReturnMode(p.ReturnMode)
 	return nil
 }
 
@@ -236,4 +215,129 @@ func ValidateReturnMode(mode string) string {
 	default:
 		return DefaultReturnMode
 	}
+}
+
+// bytesFromDBValue converts supported driver values into raw byte slices.
+func bytesFromDBValue(value any) ([]byte, error) {
+	switch v := value.(type) {
+	case []byte:
+		return v, nil
+	case string:
+		return []byte(v), nil
+	default:
+		return nil, errors.Errorf("unsupported type for PreferenceData: %T", value)
+	}
+}
+
+// normalizePreferencePayload attempts to coerce legacy-encoded preference blobs into valid JSON objects.
+// It returns the normalized payload, a flag indicating whether recovery was required, and an error if normalization failed.
+func normalizePreferencePayload(raw []byte) ([]byte, bool, error) {
+	trimmed := bytes.TrimSpace(raw)
+	recovered := false
+
+	hexDecoded, hexRecovered, err := decodeHexPreferencePayload(trimmed)
+	if err != nil {
+		return nil, false, err
+	}
+	if hexRecovered {
+		trimmed = hexDecoded
+		recovered = true
+	}
+
+	if len(trimmed) == 0 {
+		return []byte("{}"), recovered, nil
+	}
+
+	if isPreferenceJSONObject(trimmed) {
+		return trimmed, recovered, nil
+	}
+
+	current := append([]byte(nil), trimmed...)
+	for i := 0; i < 3; i++ {
+		if len(current) < 2 || current[0] != '"' || current[len(current)-1] != '"' {
+			break
+		}
+		decoded, err := strconv.Unquote(string(current))
+		if err != nil {
+			break
+		}
+		current = bytes.TrimSpace([]byte(decoded))
+		if isPreferenceJSONObject(current) {
+			return current, true, nil
+		}
+	}
+
+	withoutSlashes := bytes.ReplaceAll(current, []byte(`\`), nil)
+	withoutSlashes = bytes.TrimSpace(withoutSlashes)
+	if isPreferenceJSONObject(withoutSlashes) {
+		return withoutSlashes, true, nil
+	}
+
+	if bytes.Contains(withoutSlashes, []byte("return_mode")) {
+		candidate := bytes.TrimSpace(withoutSlashes)
+		if len(candidate) > 0 {
+			if candidate[0] != '{' {
+				candidate = append([]byte("{"), candidate...)
+			}
+			if candidate[len(candidate)-1] != '}' {
+				candidate = append(candidate, '}')
+			}
+			if isPreferenceJSONObject(candidate) {
+				return candidate, true, nil
+			}
+		}
+	}
+
+	bare := strings.Trim(string(bytes.TrimSpace(withoutSlashes)), "\" ")
+	if bare != "" {
+		mode := ValidateReturnMode(bare)
+		if mode != "" {
+			payload := []byte(`{"return_mode":"` + mode + `"}`)
+			return payload, true, nil
+		}
+	}
+
+	return nil, recovered, errors.Errorf("unsupported preference payload format")
+}
+
+// decodeHexPreferencePayload converts strings encoded as \x<hex> into their JSON equivalents.
+func decodeHexPreferencePayload(data []byte) ([]byte, bool, error) {
+	if len(data) < 2 {
+		return data, false, nil
+	}
+	if data[0] != '\\' || (data[1] != 'x' && data[1] != 'X') {
+		return data, false, nil
+	}
+
+	hexPayload := bytes.TrimSpace(data[2:])
+	if len(hexPayload) == 0 {
+		return []byte{}, true, nil
+	}
+
+	decoded := make([]byte, hex.DecodedLen(len(hexPayload)))
+	n, err := hex.Decode(decoded, hexPayload)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "decode hex preference payload")
+	}
+	plain := bytes.TrimSpace(decoded[:n])
+	prefLogger.Debug("decoded hex preference payload",
+		zap.String("raw_preview", preferencePreview(data)),
+		zap.String("decoded_preview", preferencePreview(plain)),
+	)
+	return plain, true, nil
+}
+
+// isPreferenceJSONObject checks whether data is valid JSON that starts with an object.
+func isPreferenceJSONObject(data []byte) bool {
+	return json.Valid(data) && len(data) > 0 && data[0] == '{'
+}
+
+const preferencePreviewLimit = 64
+
+// preferencePreview returns a short preview string for logging.
+func preferencePreview(data []byte) string {
+	if len(data) <= preferencePreviewLimit {
+		return string(data)
+	}
+	return string(data[:preferencePreviewLimit]) + "..."
 }
