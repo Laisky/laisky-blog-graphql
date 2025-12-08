@@ -20,6 +20,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
@@ -99,6 +100,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 				zap.String("path", r.URL.Path),
 			)
 			ctx = context.WithValue(ctx, keyLogger, reqLogger)
+			ctx = context.WithValue(ctx, ctxkeys.Logger, reqLogger)
 			return ctx
 		}),
 	)
@@ -267,6 +269,9 @@ func apiKeyFromContext(ctx context.Context) string {
 // LoggerFromContext retrieves the per-request logger from the MCP context.
 // Falls back to a shared logger if none is present in context.
 func LoggerFromContext(ctx context.Context) logSDK.Logger {
+	if logger, ok := ctx.Value(ctxkeys.Logger).(logSDK.Logger); ok && logger != nil {
+		return logger
+	}
 	if logger, ok := ctx.Value(keyLogger).(logSDK.Logger); ok && logger != nil {
 		return logger
 	}

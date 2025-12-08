@@ -56,3 +56,4 @@ docs/example/config/settings-laisky.yml
 *.sw?
 
 /errlog
+.github/instructions/laisky.instructions.md

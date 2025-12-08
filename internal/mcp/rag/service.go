@@ -11,6 +11,7 @@ import (
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -18,6 +19,7 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -95,6 +97,21 @@ func runRAGMigrations(ctx context.Context, db *gorm.DB, logger logSDK.Logger) er
 	logger.Debug("rag auto migrations finished")
 
 	return nil
+}
+
+func (s *Service) loggerFromContext(ctx context.Context) logSDK.Logger {
+	if ctx != nil {
+		if ctxLogger := gmw.GetLogger(ctx); ctxLogger != nil {
+			return ctxLogger
+		}
+		if ctxLogger, ok := ctx.Value(ctxkeys.Logger).(logSDK.Logger); ok && ctxLogger != nil {
+			return ctxLogger
+		}
+	}
+	if s.logger != nil {
+		return s.logger
+	}
+	return log.Logger.Named("mcp_rag_service")
 }
 
 func ensureVectorExtension(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error {
@@ -214,7 +231,8 @@ func (s *Service) ensureTask(ctx context.Context, userID, taskID string) (*Task,
 	if err := s.db.WithContext(ctx).Create(&task).Error; err != nil {
 		return nil, errors.Wrap(err, "create rag task")
 	}
-	s.logger.Info("rag task created", zap.String("user_id", userID), zap.String("task_id", taskID))
+	logger := s.loggerFromContext(ctx)
+	logger.Info("rag task created", zap.String("user_id", userID), zap.String("task_id", taskID))
 	return &task, nil
 }
 
@@ -298,7 +316,8 @@ func (s *Service) ensureChunks(ctx context.Context, task *Task, input ExtractInp
 			}
 		}
 
-		s.logger.Info("rag materials ingested",
+		logger := s.loggerFromContext(ctx)
+		logger.Info("rag materials ingested",
 			zap.String("user_id", task.UserID),
 			zap.String("task_id", task.TaskID),
 			zap.Int("chunks", len(fragments)),
@@ -309,21 +328,24 @@ func (s *Service) ensureChunks(ctx context.Context, task *Task, input ExtractInp
 }
 
 func (s *Service) fetchCandidates(ctx context.Context, taskID int64, queryVec pgvector.Vector, limit int) ([]candidateChunk, error) {
+	logger := s.loggerFromContext(ctx)
+	logger.Debug("fetching rag candidates", zap.Int64("task_id", taskID), zap.Int("limit", limit))
 	rows := make([]candidateChunk, 0, limit)
 	err := s.db.WithContext(ctx).
 		Raw(`
-            SELECT c.id, c.text, c.cleaned_text, e.embedding, b.tokens
+		    SELECT c.id, c.text, c.cleaned_text, e.vector AS embedding, b.tokens
             FROM mcp_rag_chunks c
             JOIN mcp_rag_embeddings e ON e.chunk_id = c.id
             LEFT JOIN mcp_rag_bm25 b ON b.chunk_id = c.id
             WHERE c.task_id = ?
-            ORDER BY e.embedding <=> ? ASC
+		    ORDER BY e.vector <=> ? ASC
             LIMIT ?
         `, taskID, queryVec, limit).
 		Scan(&rows).Error
 	if err != nil {
 		return nil, errors.Wrap(err, "query rag candidates")
 	}
+	logger.Debug("rag candidates fetched", zap.Int64("task_id", taskID), zap.Int("count", len(rows)))
 	return rows, nil
 }
 
