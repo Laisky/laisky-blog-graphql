@@ -22,7 +22,7 @@ Enable the MCP endpoint when starting the API service. The tools are advertised 
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `web_search`      | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`. |
 | `ask_user`        | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM. |
-| `get_user_request` | Same `settings.db.mcp.*` configuration. Stores directives in the `mcp_user_requests` table keyed by the caller’s token hash. |
+| `get_user_request` | Same `settings.db.mcp.*` configuration. Stores directives in the `mcp_user_requests` table keyed by the caller’s token hash **and** `task_id`. Retention is controlled by `settings.mcp.user_requests.retention_days` (default `30`) and pruned by a background worker every `settings.mcp.user_requests.retention_sweep_seconds` (default `21600` / 6h). |
 
 If no tool dependencies are met the server skips MCP initialisation.
 
@@ -131,13 +131,15 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 
 ### `get_user_request`
 
-- **Description:** Deliver the most recent human-authored directive waiting for the authenticated API key and immediately mark it as consumed so it is not replayed.
-- **Input Parameters:** _None._ Future iterations may allow an optional `task_id` filter; today every caller operates on a single default task.
+- **Description:** Deliver the most recent human-authored directive waiting for the authenticated API key and immediately mark it as consumed so it is not replayed. Data is isolated by the combination of hashed API key and `task_id`.
+- **Input Parameters:**
+  - `task_id` (string, optional) — isolates queues for concurrent agent tasks. Defaults to `default` and is normalised to a safe identifier shared across MCP tools.
 - **Behaviour:**
   1. Parses and validates the bearer token, deriving `user_identity` and the hashed key.
-  2. Looks up the newest `pending` entry in `mcp_user_requests` for that key.
+  2. Normalises `task_id` (defaults to `default`) and looks up the newest `pending` entry in `mcp_user_requests` for that key **and task**.
   3. Atomically flips the entry to `consumed`, stamps `consumed_at`, and returns the payload to the caller.
   4. When the queue is empty the tool responds immediately with `{ "status": "empty" }` instead of raising an error.
+  5. A background worker prunes requests older than the configured retention window so stale directives do not leak across sessions.
 - **Response Shape:**
 
 ```json
@@ -153,14 +155,14 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 }
 ```
 
-- **Error Cases:** missing/invalid token (`invalid authorization header`), database outages (`failed to fetch user request`), or context cancellations/timeouts inherited from the MCP caller. Running with an empty queue is treated as a successful call and returns a descriptive JSON payload.
+- **Error Cases:** missing/invalid token (`invalid authorization header`), database outages (`failed to fetch user request`), or context cancellations/timeouts inherited from the MCP caller. Running with an empty queue is treated as a successful call and returns a descriptive JSON payload. Requests older than the retention window are silently pruned.
 
 #### User Requests Console Workflow
 
 1. Open `/mcp/tools/get_user_requests` and authenticate with the same bearer token the AI will use.
-2. Draft directives in the editor and optionally label them with a `task_id`. The newest entry is what `get_user_request` returns first.
+2. Draft directives in the editor and optionally label them with a `task_id`. The newest entry is what `get_user_request` returns first. Separate `task_id` values do not interfere with one another for the same API key.
 3. Review two columns: `Pending` items are still waiting to be consumed, while `Consumed history` shows everything that has already been delivered.
-4. Remove obsolete entries individually or purge everything with the “Delete all” button. Deletions only affect the authenticated API key and do not change other tenants.
+4. Remove obsolete entries individually or purge everything with the “Delete all” button. Deletions only affect the authenticated API key and task combination and do not change other tenants.
 
 ### `extract_key_info`
 
@@ -194,7 +196,7 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 ### Data Storage Notes
 
 - Requests are stored in the `mcp` PostgreSQL database, table inferred from the GORM model `askuser.Request`.
-- User-authored directives powering `get_user_request` live in the `mcp_user_requests` table (model `userrequests.Request`) and are scoped by the hashed API key plus optional `task_id`.
+- User-authored directives powering `get_user_request` live in the `mcp_user_requests` table (model `userrequests.Request`) and are scoped by the hashed API key plus optional `task_id`. A periodic sweeper removes rows older than the configured retention window (default 30 days).
 - Primary key: UUID generated on insert.
 - Sensitive fields:
   - `api_key_hash` holds the SHA-256 hash of the bearer token.

@@ -16,7 +16,7 @@ import (
 func TestServiceLifecycle(t *testing.T) {
 	db := newTestDB(t)
 	clock := fixedClock(time.Date(2024, 10, 1, 12, 0, 0, 0, time.UTC))
-	svc, err := NewService(db, nil, clock.Now)
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-1", "abcd")
@@ -27,20 +27,20 @@ func TestServiceLifecycle(t *testing.T) {
 	require.Equal(t, StatusPending, created.Status)
 	require.Equal(t, DefaultTaskID, created.TaskID)
 
-	pending, consumed, err := svc.ListRequests(ctx, auth)
+	pending, consumed, err := svc.ListRequests(ctx, auth, "")
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	require.Len(t, consumed, 0)
 
-	second, err := svc.CreateRequest(ctx, auth, "Second directive", "alpha")
+	second, err := svc.CreateRequest(ctx, auth, "Second directive", "")
 	require.NoError(t, err)
-	require.Equal(t, "alpha", second.TaskID)
+	require.Equal(t, DefaultTaskID, second.TaskID)
 
-	_, _, err = svc.ListRequests(ctx, auth)
+	_, _, err = svc.ListRequests(ctx, auth, "")
 	require.NoError(t, err)
 
 	// ConsumeAllPending should return all pending in FIFO order (oldest first)
-	consumedReqs, err := svc.ConsumeAllPending(ctx, auth)
+	consumedReqs, err := svc.ConsumeAllPending(ctx, auth, "")
 	require.NoError(t, err)
 	require.Len(t, consumedReqs, 2)
 	require.Equal(t, created.ID, consumedReqs[0].ID, "first created should be first (FIFO)")
@@ -50,19 +50,19 @@ func TestServiceLifecycle(t *testing.T) {
 	require.NotNil(t, consumedReqs[0].ConsumedAt)
 	require.NotNil(t, consumedReqs[1].ConsumedAt)
 
-	pending, consumed, err = svc.ListRequests(ctx, auth)
+	pending, consumed, err = svc.ListRequests(ctx, auth, "")
 	require.NoError(t, err)
 	require.Len(t, pending, 0)
 	require.Len(t, consumed, 2)
 
 	// No more pending requests
-	_, err = svc.ConsumeAllPending(ctx, auth)
+	_, err = svc.ConsumeAllPending(ctx, auth, "")
 	require.ErrorIs(t, err, ErrNoPendingRequests)
 }
 
 func TestServiceDeleteOperations(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	authA := testAuth("hash-a", "aaaa")
@@ -75,12 +75,36 @@ func TestServiceDeleteOperations(t *testing.T) {
 	_, err = svc.CreateRequest(ctx, authB, "Directive B", "")
 	require.NoError(t, err)
 
-	require.NoError(t, svc.DeleteRequest(ctx, authA, reqA.ID))
-	require.ErrorIs(t, svc.DeleteRequest(ctx, authA, reqA.ID), ErrRequestNotFound)
+	require.NoError(t, svc.DeleteRequest(ctx, authA, reqA.ID, ""))
+	require.ErrorIs(t, svc.DeleteRequest(ctx, authA, reqA.ID, ""), ErrRequestNotFound)
 
-	deleted, err := svc.DeleteAll(ctx, authB)
+	deleted, err := svc.DeleteAll(ctx, authB, "")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), deleted)
+}
+
+func TestServicePrunesExpiredRequests(t *testing.T) {
+	db := newTestDB(t)
+	clock := fixedClock(time.Date(2024, 11, 1, 12, 0, 0, 0, time.UTC))
+	settings := Settings{RetentionDays: 30}
+	svc, err := NewService(db, nil, clock.Now, settings)
+	require.NoError(t, err)
+
+	auth := testAuth("hash-prune", "abcd")
+	ctx := context.Background()
+
+	oldReq, err := svc.CreateRequest(ctx, auth, "Expired directive", "task-expired")
+	require.NoError(t, err)
+	recentReq, err := svc.CreateRequest(ctx, auth, "Fresh directive", "task-expired")
+	require.NoError(t, err)
+
+	oldCreatedAt := clock.Now().AddDate(0, 0, -(settings.RetentionDays + 5))
+	require.NoError(t, db.Model(&Request{}).Where("id = ?", oldReq.ID).Update("created_at", oldCreatedAt).Error)
+
+	pending, _, err := svc.ListRequests(ctx, auth, "task-expired")
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.Equal(t, recentReq.ID, pending[0].ID)
 }
 
 type testClock struct {
@@ -110,13 +134,13 @@ func testAuth(hash, suffix string) *askuser.AuthorizationContext {
 	}
 }
 
-func TestSanitizeTaskID(t *testing.T) {
-	require.Equal(t, DefaultTaskID, sanitizeTaskID(""))
-	require.Equal(t, "abc", sanitizeTaskID(" abc "))
+func TestNormalizeTaskID(t *testing.T) {
+	require.Equal(t, DefaultTaskID, normalizeTaskID(""))
+	require.Equal(t, "abc", normalizeTaskID(" abc "))
 
 	long := strings.Repeat("x", maxTaskIDLength+10)
-	trimmed := sanitizeTaskID(long)
-	require.Equal(t, maxTaskIDLength, len(trimmed))
+	trimmed := normalizeTaskID(long)
+	require.Equal(t, 64, len(trimmed))
 }
 
 // TestServiceConsumeFirstPending verifies that ConsumeFirstPending returns
@@ -124,7 +148,7 @@ func TestSanitizeTaskID(t *testing.T) {
 func TestServiceConsumeFirstPending(t *testing.T) {
 	db := newTestDB(t)
 	clock := fixedClock(time.Date(2024, 10, 1, 12, 0, 0, 0, time.UTC))
-	svc, err := NewService(db, nil, clock.Now)
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-first", "abcd")
@@ -141,7 +165,7 @@ func TestServiceConsumeFirstPending(t *testing.T) {
 	require.NoError(t, err)
 
 	// ConsumeFirstPending should return only the first (oldest) request
-	consumed, err := svc.ConsumeFirstPending(ctx, auth)
+	consumed, err := svc.ConsumeFirstPending(ctx, auth, "")
 	require.NoError(t, err)
 	require.NotNil(t, consumed)
 	require.Equal(t, first.ID, consumed.ID, "should return the oldest request")
@@ -150,24 +174,24 @@ func TestServiceConsumeFirstPending(t *testing.T) {
 	require.NotNil(t, consumed.ConsumedAt)
 
 	// Verify second and third are still pending
-	pending, _, err := svc.ListRequests(ctx, auth)
+	pending, _, err := svc.ListRequests(ctx, auth, "")
 	require.NoError(t, err)
 	require.Len(t, pending, 2)
 	require.Equal(t, second.ID, pending[0].ID, "second should be first in pending now")
 	require.Equal(t, third.ID, pending[1].ID, "third should be second in pending")
 
 	// Consume second
-	consumed2, err := svc.ConsumeFirstPending(ctx, auth)
+	consumed2, err := svc.ConsumeFirstPending(ctx, auth, "")
 	require.NoError(t, err)
 	require.Equal(t, second.ID, consumed2.ID)
 
 	// Consume third
-	consumed3, err := svc.ConsumeFirstPending(ctx, auth)
+	consumed3, err := svc.ConsumeFirstPending(ctx, auth, "")
 	require.NoError(t, err)
 	require.Equal(t, third.ID, consumed3.ID)
 
 	// No more pending requests
-	_, err = svc.ConsumeFirstPending(ctx, auth)
+	_, err = svc.ConsumeFirstPending(ctx, auth, "")
 	require.ErrorIs(t, err, ErrNoPendingRequests)
 }
 
@@ -175,14 +199,14 @@ func TestServiceConsumeFirstPending(t *testing.T) {
 // returns ErrNoPendingRequests when there are no pending requests.
 func TestServiceConsumeFirstPendingEmpty(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-empty", "efgh")
 	ctx := context.Background()
 
 	// No requests exist
-	_, err = svc.ConsumeFirstPending(ctx, auth)
+	_, err = svc.ConsumeFirstPending(ctx, auth, "")
 	require.ErrorIs(t, err, ErrNoPendingRequests)
 }
 
@@ -190,7 +214,7 @@ func TestServiceConsumeFirstPendingEmpty(t *testing.T) {
 // only returns requests belonging to the authenticated user.
 func TestServiceConsumeFirstPendingIsolation(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	authA := testAuth("hash-iso-a", "aaaa")
@@ -205,25 +229,48 @@ func TestServiceConsumeFirstPendingIsolation(t *testing.T) {
 	require.NoError(t, err)
 
 	// User A should only get their own request
-	consumedA, err := svc.ConsumeFirstPending(ctx, authA)
+	consumedA, err := svc.ConsumeFirstPending(ctx, authA, "")
 	require.NoError(t, err)
 	require.Equal(t, reqA.ID, consumedA.ID)
 	require.Equal(t, "User A directive", consumedA.Content)
 
 	// User A has no more pending requests
-	_, err = svc.ConsumeFirstPending(ctx, authA)
+	_, err = svc.ConsumeFirstPending(ctx, authA, "")
 	require.ErrorIs(t, err, ErrNoPendingRequests)
 
 	// User B should still have their request
-	consumedB, err := svc.ConsumeFirstPending(ctx, authB)
+	consumedB, err := svc.ConsumeFirstPending(ctx, authB, "")
 	require.NoError(t, err)
 	require.Equal(t, "User B directive", consumedB.Content)
+}
+
+func TestServiceTaskIsolation(t *testing.T) {
+	db := newTestDB(t)
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-task", "abcd")
+	ctx := context.Background()
+
+	defaultReq, err := svc.CreateRequest(ctx, auth, "Default task directive", "")
+	require.NoError(t, err)
+	otherTaskReq, err := svc.CreateRequest(ctx, auth, "Isolated directive", "task-b")
+	require.NoError(t, err)
+
+	consumed, err := svc.ConsumeFirstPending(ctx, auth, "task-b")
+	require.NoError(t, err)
+	require.Equal(t, otherTaskReq.ID, consumed.ID)
+
+	pending, _, err := svc.ListRequests(ctx, auth, "")
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.Equal(t, defaultReq.ID, pending[0].ID)
 }
 
 // TestServiceUserPreferences verifies that user preferences can be stored and retrieved.
 func TestServiceUserPreferences(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-pref", "abcd")
@@ -258,7 +305,7 @@ func TestServiceUserPreferences(t *testing.T) {
 // TestServiceUserPreferencesIsolation verifies that user preferences are isolated per user.
 func TestServiceUserPreferencesIsolation(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	authA := testAuth("hash-pref-a", "aaaa")
@@ -286,7 +333,7 @@ func TestServiceUserPreferencesIsolation(t *testing.T) {
 // TestServiceUserPreferencesInvalidMode verifies that invalid return modes are rejected.
 func TestServiceUserPreferencesInvalidMode(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-invalid", "abcd")
@@ -310,7 +357,7 @@ func TestValidateReturnMode(t *testing.T) {
 // This catches issues where the in-memory struct is correct but DB write fails silently.
 func TestServiceReturnModeRawDBVerification(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-raw-verify", "1234")
@@ -343,7 +390,7 @@ func TestServiceReturnModePersistenceAcrossServiceInstances(t *testing.T) {
 	ctx := context.Background()
 
 	// First service instance sets preference
-	svc1, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc1, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	_, err = svc1.SetReturnMode(ctx, auth, ReturnModeFirst)
@@ -355,7 +402,7 @@ func TestServiceReturnModePersistenceAcrossServiceInstances(t *testing.T) {
 	require.Equal(t, ReturnModeFirst, mode)
 
 	// Create a NEW service instance (simulates server restart)
-	svc2, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc2, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	// Verify preference persisted across instances

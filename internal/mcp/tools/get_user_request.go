@@ -11,20 +11,21 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 )
 
 // UserRequestService exposes the subset of user request operations required by the tool.
 type UserRequestService interface {
-	ConsumeAllPending(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
-	ConsumeFirstPending(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
+	ConsumeAllPending(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error)
+	ConsumeFirstPending(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error)
 	GetReturnMode(context.Context, *askuser.AuthorizationContext) (string, error)
 }
 
 // HoldWaiter waits for a command to be submitted during an active hold.
 type HoldWaiter interface {
-	IsHoldActive(apiKeyHash string) bool
-	WaitForCommand(ctx context.Context, apiKeyHash string) (*userrequests.Request, bool)
+	IsHoldActive(apiKeyHash string, taskID string) bool
+	WaitForCommand(ctx context.Context, apiKeyHash string, taskID string) (*userrequests.Request, bool)
 }
 
 // GetUserRequestTool streams pending human directives back to the AI agent.
@@ -67,6 +68,10 @@ func (t *GetUserRequestTool) Definition() mcp.Tool {
 		"get_user_request",
 		mcp.WithDescription("During the execution of a task, get the latest user instructions to adjust agent's work objectives or processes."),
 		mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithString(
+			"task_id",
+			mcp.Description("Optional task identifier used to isolate commands; defaults to 'default'."),
+		),
 	)
 }
 
@@ -77,6 +82,13 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		t.log().Warn("get_user_request authorization failed", zap.Error(err))
 		return mcp.NewToolResultError("invalid authorization header"), nil
+	}
+
+	taskID := rag.SanitizeTaskID(userrequests.DefaultTaskID)
+	if rawTaskID, ok := findTaskIDArg(req.Params.Arguments); ok {
+		if parsed := rag.SanitizeTaskID(rawTaskID); parsed != "" {
+			taskID = parsed
+		}
 	}
 
 	// Always honor the user's stored preference; agent-provided overrides are ignored.
@@ -98,18 +110,18 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 	// If hold is active, first check for existing pending commands.
 	// If there are pending commands, return them immediately without waiting.
 	// Only wait on hold when there are no pending commands.
-	if t.holdWaiter != nil && t.holdWaiter.IsHoldActive(authCtx.APIKeyHash) {
+	if t.holdWaiter != nil && t.holdWaiter.IsHoldActive(authCtx.APIKeyHash, taskID) {
 		// Check for existing pending commands first based on return_mode
 		var existingRequests []userrequests.Request
 		var existingErr error
 		if returnMode == "first" {
-			firstReq, err := t.service.ConsumeFirstPending(ctx, authCtx)
+			firstReq, err := t.service.ConsumeFirstPending(ctx, authCtx, taskID)
 			if err == nil && firstReq != nil {
 				existingRequests = []userrequests.Request{*firstReq}
 			}
 			existingErr = err
 		} else {
-			existingRequests, existingErr = t.service.ConsumeAllPending(ctx, authCtx)
+			existingRequests, existingErr = t.service.ConsumeAllPending(ctx, authCtx, taskID)
 		}
 
 		if existingErr == nil && len(existingRequests) > 0 {
@@ -117,6 +129,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 				zap.String("user", authCtx.UserIdentity),
 				zap.Int("count", len(existingRequests)),
 				zap.String("return_mode", returnMode),
+				zap.String("task_id", taskID),
 			)
 			return t.buildCommandsResponse(existingRequests)
 		}
@@ -124,12 +137,14 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		// No pending commands, now wait for a command to be submitted
 		t.log().Debug("hold active, no pending commands, waiting for new command",
 			zap.String("user", authCtx.UserIdentity),
+			zap.String("task_id", taskID),
 		)
-		waitedRequest, timedOut := t.holdWaiter.WaitForCommand(ctx, authCtx.APIKeyHash)
+		waitedRequest, timedOut := t.holdWaiter.WaitForCommand(ctx, authCtx.APIKeyHash, taskID)
 		if waitedRequest != nil {
 			t.log().Info("command received during hold",
 				zap.String("user", authCtx.UserIdentity),
 				zap.String("request_id", waitedRequest.ID.String()),
+				zap.String("task_id", taskID),
 			)
 			// Return the single waited command as a list
 			payload := map[string]any{
@@ -160,10 +175,11 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 	t.log().Debug("consuming pending requests",
 		zap.String("return_mode", returnMode),
 		zap.String("user", authCtx.UserIdentity),
+		zap.String("task_id", taskID),
 	)
 	var requests []userrequests.Request
 	if returnMode == "first" {
-		firstReq, err := t.service.ConsumeFirstPending(ctx, authCtx)
+		firstReq, err := t.service.ConsumeFirstPending(ctx, authCtx, taskID)
 		if err != nil {
 			switch {
 			case errors.Is(err, userrequests.ErrInvalidAuthorization):
@@ -187,10 +203,11 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		t.log().Debug("consumed first pending request",
 			zap.String("request_id", firstReq.ID.String()),
 			zap.String("user", authCtx.UserIdentity),
+			zap.String("task_id", taskID),
 		)
 	} else {
 		var err error
-		requests, err = t.service.ConsumeAllPending(ctx, authCtx)
+		requests, err = t.service.ConsumeAllPending(ctx, authCtx, taskID)
 		if err != nil {
 			switch {
 			case errors.Is(err, userrequests.ErrInvalidAuthorization):
@@ -213,6 +230,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		t.log().Debug("consumed all pending requests",
 			zap.Int("count", len(requests)),
 			zap.String("user", authCtx.UserIdentity),
+			zap.String("task_id", taskID),
 		)
 	}
 
@@ -274,4 +292,28 @@ func (t *GetUserRequestTool) log() logSDK.Logger {
 		return t.logger
 	}
 	return logSDK.Shared.Named("get_user_request_tool")
+}
+
+func findTaskIDArg(arguments any) (string, bool) {
+	args, ok := arguments.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	candidates := []string{"task_id", "taskId"}
+	for _, key := range candidates {
+		if value, ok := args[key]; ok {
+			if parsed, ok := stringArg(value); ok {
+				return parsed, true
+			}
+		}
+	}
+	return "", false
+}
+
+func stringArg(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v), true
+	}
+	return "", false
 }

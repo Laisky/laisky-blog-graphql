@@ -74,7 +74,7 @@ func TestPreferenceDataScanLegacyEscapedObjects(t *testing.T) {
 func TestServiceSetReturnModeRecoversLegacyPreference(t *testing.T) {
 	db := newTestDB(t)
 	clock := fixedClock(time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC))
-	svc, err := NewService(db, nil, clock.Now)
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-legacy", "zzzz")
@@ -105,7 +105,7 @@ func TestServiceSetReturnModeRecoversLegacyPreference(t *testing.T) {
 func TestServiceGetReturnModeHandlesEscapedObject(t *testing.T) {
 	db := newTestDB(t)
 	clock := fixedClock(time.Date(2024, 12, 2, 0, 0, 0, 0, time.UTC))
-	svc, err := NewService(db, nil, clock.Now)
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-escaped", "zzzz")
@@ -126,7 +126,7 @@ func TestServiceGetReturnModeHandlesEscapedObject(t *testing.T) {
 func TestServiceGetReturnModeHandlesHexEncodedPreference(t *testing.T) {
 	db := newTestDB(t)
 	clock := fixedClock(time.Date(2024, 12, 3, 0, 0, 0, 0, time.UTC))
-	svc, err := NewService(db, nil, clock.Now)
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	auth := testAuth("hash-hex", "zzzz")

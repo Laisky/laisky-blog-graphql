@@ -47,7 +47,7 @@ type holdEntry struct {
 // 2. Agent connects and waits: 20s countdown begins to prevent agent timeout
 type HoldManager struct {
 	mu      sync.Mutex
-	holds   map[string]*holdEntry // key is APIKeyHash
+	holds   map[string]*holdEntry // key is APIKeyHash + taskID
 	logger  logSDK.Logger
 	clock   Clock
 	service *Service
@@ -73,12 +73,14 @@ func NewHoldManager(service *Service, logger logSDK.Logger, clock Clock) *HoldMa
 // The hold remains indefinitely until an agent connects and starts waiting.
 // If a hold is already active, it resets the state.
 // Returns the new hold state.
-func (m *HoldManager) SetHold(apiKeyHash string) HoldState {
+func (m *HoldManager) SetHold(apiKeyHash string, taskID string) HoldState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	key := holdKey(apiKeyHash, taskID)
+
 	// Cancel any existing hold
-	if existing, ok := m.holds[apiKeyHash]; ok {
+	if existing, ok := m.holds[key]; ok {
 		if existing.cancel != nil {
 			existing.cancel()
 		}
@@ -92,10 +94,11 @@ func (m *HoldManager) SetHold(apiKeyHash string) HoldState {
 		waiting:   false,
 		timedOut:  false,
 	}
-	m.holds[apiKeyHash] = entry
+	m.holds[key] = entry
 
 	m.log().Info("hold activated (indefinite until agent connects)",
 		zap.String("api_key_hash", apiKeyHash),
+		zap.String("task_id", taskID),
 	)
 
 	return HoldState{
@@ -105,27 +108,30 @@ func (m *HoldManager) SetHold(apiKeyHash string) HoldState {
 }
 
 // ReleaseHold deactivates the hold for the given user without submitting a command.
-func (m *HoldManager) ReleaseHold(apiKeyHash string) {
+func (m *HoldManager) ReleaseHold(apiKeyHash string, taskID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if entry, ok := m.holds[apiKeyHash]; ok {
+	key := holdKey(apiKeyHash, taskID)
+
+	if entry, ok := m.holds[key]; ok {
 		entry.timedOut = false
 		if entry.cancel != nil {
 			entry.cancel()
 		}
 		close(entry.submitted)
-		delete(m.holds, apiKeyHash)
-		m.log().Info("hold released", zap.String("api_key_hash", apiKeyHash))
+		delete(m.holds, key)
+		m.log().Info("hold released", zap.String("api_key_hash", apiKeyHash), zap.String("task_id", taskID))
 	}
 }
 
-// GetHoldState returns the current hold state for the given user.
-func (m *HoldManager) GetHoldState(apiKeyHash string) HoldState {
+// GetHoldState returns the current hold state for the given user and task.
+func (m *HoldManager) GetHoldState(apiKeyHash string, taskID string) HoldState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	entry, ok := m.holds[apiKeyHash]
+	key := holdKey(apiKeyHash, taskID)
+	entry, ok := m.holds[key]
 	if !ok {
 		return HoldState{Active: false}
 	}
@@ -145,12 +151,13 @@ func (m *HoldManager) GetHoldState(apiKeyHash string) HoldState {
 // SubmitCommand notifies any waiting consumers about a new user request.
 // This automatically releases the hold.
 // Returns true if the command was sent to a waiting agent, false otherwise.
-func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, request *Request) bool {
+func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, taskID string, request *Request) bool {
 	m.mu.Lock()
-	entry, ok := m.holds[apiKeyHash]
+	key := holdKey(apiKeyHash, taskID)
+	entry, ok := m.holds[key]
 	wasWaiting := ok && entry != nil && entry.waiting
 	if ok {
-		delete(m.holds, apiKeyHash)
+		delete(m.holds, key)
 	}
 	m.mu.Unlock()
 
@@ -167,6 +174,7 @@ func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, requ
 		close(entry.submitted)
 		m.log().Info("command submitted during hold",
 			zap.String("api_key_hash", apiKeyHash),
+			zap.String("task_id", taskID),
 			zap.String("request_id", request.ID.String()),
 			zap.Bool("was_waiting", wasWaiting),
 		)
@@ -179,9 +187,10 @@ func (m *HoldManager) SubmitCommand(ctx context.Context, apiKeyHash string, requ
 // When called, this starts the expiration timer (20s) to prevent agent timeout.
 // Returns the submitted request if one arrives, or nil along with whether the hold timed out.
 // If no hold is active, returns immediately with nil and false.
-func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string) (*Request, bool) {
+func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string, taskID string) (*Request, bool) {
 	m.mu.Lock()
-	entry, ok := m.holds[apiKeyHash]
+	key := holdKey(apiKeyHash, taskID)
+	entry, ok := m.holds[key]
 	if !ok {
 		m.mu.Unlock()
 		return nil, false
@@ -197,11 +206,12 @@ func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string) (*R
 
 		m.log().Info("agent connected, hold timer started",
 			zap.String("api_key_hash", apiKeyHash),
+			zap.String("task_id", taskID),
 			zap.Time("expires_at", entry.expiresAt),
 		)
 
 		// Start expiration goroutine
-		go m.expireHold(expireCtx, apiKeyHash, entry.expiresAt)
+		go m.expireHold(expireCtx, apiKeyHash, taskID, entry.expiresAt)
 	}
 	m.mu.Unlock()
 
@@ -217,12 +227,12 @@ func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string) (*R
 }
 
 // IsHoldActive returns true if a hold is currently active for the given user.
-func (m *HoldManager) IsHoldActive(apiKeyHash string) bool {
-	state := m.GetHoldState(apiKeyHash)
+func (m *HoldManager) IsHoldActive(apiKeyHash string, taskID string) bool {
+	state := m.GetHoldState(apiKeyHash, taskID)
 	return state.Active
 }
 
-func (m *HoldManager) expireHold(ctx context.Context, apiKeyHash string, expiresAt time.Time) {
+func (m *HoldManager) expireHold(ctx context.Context, apiKeyHash string, taskID string, expiresAt time.Time) {
 	waitDuration := time.Until(expiresAt)
 	if waitDuration <= 0 {
 		waitDuration = time.Millisecond
@@ -237,18 +247,23 @@ func (m *HoldManager) expireHold(ctx context.Context, apiKeyHash string, expires
 		return
 	case <-timer.C:
 		m.mu.Lock()
-		entry, ok := m.holds[apiKeyHash]
+		key := holdKey(apiKeyHash, taskID)
+		entry, ok := m.holds[key]
 		if ok && !entry.expiresAt.IsZero() && entry.expiresAt.Equal(expiresAt) {
 			entry.timedOut = true
-			delete(m.holds, apiKeyHash)
+			delete(m.holds, key)
 			if entry.cancel != nil {
 				entry.cancel()
 			}
 			close(entry.submitted)
-			m.log().Info("hold expired (agent timeout)", zap.String("api_key_hash", apiKeyHash))
+			m.log().Info("hold expired (agent timeout)", zap.String("api_key_hash", apiKeyHash), zap.String("task_id", taskID))
 		}
 		m.mu.Unlock()
 	}
+}
+
+func holdKey(apiKeyHash string, taskID string) string {
+	return apiKeyHash + "|" + normalizeTaskID(taskID)
 }
 
 func (m *HoldManager) log() logSDK.Logger {

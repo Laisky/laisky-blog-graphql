@@ -1,4 +1,11 @@
-import { ChevronDown, Edit3, Package, RotateCcw, Trash2, Undo2 } from "lucide-react";
+import {
+  ChevronDown,
+  Edit3,
+  Package,
+  RotateCcw,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,10 +29,7 @@ interface EmptyStateProps {
 /**
  * EmptyState displays a placeholder message when no items are available.
  */
-export function EmptyState({
-  message,
-  subtle = false,
-}: EmptyStateProps) {
+export function EmptyState({ message, subtle = false }: EmptyStateProps) {
   return (
     <div
       className={cn(
@@ -209,7 +213,11 @@ export function RequestListSection({
         <Badge variant="outline">{badge}</Badge>
       </header>
       <div className="space-y-4">
-        {isEmpty ? <EmptyState message={emptyMessage} subtle={subtle} /> : children}
+        {isEmpty ? (
+          <EmptyState message={emptyMessage} subtle={subtle} />
+        ) : (
+          children
+        )}
       </div>
     </div>
   );

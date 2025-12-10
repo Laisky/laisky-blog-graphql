@@ -304,11 +304,12 @@ func runAPI() error {
 
 		egServices.Go(func() error {
 			start := time.Now()
-			svc, err := userrequests.NewService(mcpDB.DB, logger.Named("user_requests"), nil)
+			svc, err := userrequests.NewService(mcpDB.DB, logger.Named("user_requests"), nil, userrequests.LoadSettingsFromConfig())
 			if err != nil {
 				logger.Error("init user_requests service", zap.Error(err))
 				return nil
 			}
+			svc.StartRetentionWorker(ctx)
 			svcMu.Lock()
 			userSvc = svc
 			svcMu.Unlock()

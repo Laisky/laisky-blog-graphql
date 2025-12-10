@@ -23,6 +23,25 @@ type Identity struct {
 
 var safeTaskID = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
+// SanitizeTaskID normalizes a task identifier by removing unsupported characters,
+// trimming dashes, and enforcing a maximum length of 64 characters. Empty or
+// fully stripped inputs return an empty string to signal invalid values.
+func SanitizeTaskID(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	sanitized := safeTaskID.ReplaceAllString(trimmed, "-")
+	sanitized = strings.Trim(sanitized, "-")
+	if sanitized == "" {
+		return ""
+	}
+	if len(sanitized) > 64 {
+		return sanitized[:64]
+	}
+	return sanitized
+}
+
 // ParseIdentity derives multi-tenant identifiers from an Authorization header.
 func ParseIdentity(header string) (*Identity, error) {
 	trimmed := strings.TrimSpace(header)
@@ -54,7 +73,7 @@ func ParseIdentity(header string) (*Identity, error) {
 	}
 
 	userID := fmt.Sprintf("%s_%s", keyPrefix, hashPrefix[:7])
-	taskID := sanitizeTaskID(identityPart)
+	taskID := SanitizeTaskID(identityPart)
 	if taskID == "" {
 		taskID = userID
 	}
@@ -68,22 +87,6 @@ func ParseIdentity(header string) (*Identity, error) {
 		KeyHash:  hashPrefix,
 		MaskedID: masked,
 	}, nil
-}
-
-func sanitizeTaskID(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ""
-	}
-	sanitized := safeTaskID.ReplaceAllString(trimmed, "-")
-	sanitized = strings.Trim(sanitized, "-")
-	if sanitized == "" {
-		return ""
-	}
-	if len(sanitized) > 64 {
-		return sanitized[:64]
-	}
-	return sanitized
 }
 
 func maskKey(token string) string {

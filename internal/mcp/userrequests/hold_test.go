@@ -15,8 +15,9 @@ func TestHoldManager_SetHold(t *testing.T) {
 
 	mgr := NewHoldManager(nil, nil, nil)
 	apiKeyHash := "test-api-key-hash"
+	taskID := "task-1"
 
-	state := mgr.SetHold(apiKeyHash)
+	state := mgr.SetHold(apiKeyHash, taskID)
 	require.True(t, state.Active)
 	// ExpiresAt should be zero until an agent waits
 	require.True(t, state.ExpiresAt.IsZero())
@@ -28,14 +29,15 @@ func TestHoldManager_GetHoldState(t *testing.T) {
 
 	mgr := NewHoldManager(nil, nil, nil)
 	apiKeyHash := "test-api-key-hash-2"
+	taskID := "task-2"
 
 	// Initially no hold
-	state := mgr.GetHoldState(apiKeyHash)
+	state := mgr.GetHoldState(apiKeyHash, taskID)
 	require.False(t, state.Active)
 
 	// Set hold
-	mgr.SetHold(apiKeyHash)
-	state = mgr.GetHoldState(apiKeyHash)
+	mgr.SetHold(apiKeyHash, taskID)
+	state = mgr.GetHoldState(apiKeyHash, taskID)
 	require.True(t, state.Active)
 	require.False(t, state.Waiting)
 }
@@ -45,13 +47,14 @@ func TestHoldManager_ReleaseHold(t *testing.T) {
 
 	mgr := NewHoldManager(nil, nil, nil)
 	apiKeyHash := "test-api-key-hash-3"
+	taskID := "task-3"
 
 	// Set then release
-	mgr.SetHold(apiKeyHash)
-	require.True(t, mgr.IsHoldActive(apiKeyHash))
+	mgr.SetHold(apiKeyHash, taskID)
+	require.True(t, mgr.IsHoldActive(apiKeyHash, taskID))
 
-	mgr.ReleaseHold(apiKeyHash)
-	require.False(t, mgr.IsHoldActive(apiKeyHash))
+	mgr.ReleaseHold(apiKeyHash, taskID)
+	require.False(t, mgr.IsHoldActive(apiKeyHash, taskID))
 }
 
 func TestHoldManager_SubmitCommand_NotifiesWaiter(t *testing.T) {
@@ -59,8 +62,9 @@ func TestHoldManager_SubmitCommand_NotifiesWaiter(t *testing.T) {
 
 	mgr := NewHoldManager(nil, nil, nil)
 	apiKeyHash := "test-api-key-hash-4"
+	taskID := "task-4"
 
-	mgr.SetHold(apiKeyHash)
+	mgr.SetHold(apiKeyHash, taskID)
 
 	request := &Request{
 		ID:      uuid.New(),
@@ -74,14 +78,14 @@ func TestHoldManager_SubmitCommand_NotifiesWaiter(t *testing.T) {
 	wg.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		received, timedOut = mgr.WaitForCommand(ctx, apiKeyHash)
+		received, timedOut = mgr.WaitForCommand(ctx, apiKeyHash, taskID)
 	})
 
 	// Give goroutine time to start waiting
 	time.Sleep(100 * time.Millisecond)
 
 	// Submit command
-	mgr.SubmitCommand(context.Background(), apiKeyHash, request)
+	mgr.SubmitCommand(context.Background(), apiKeyHash, taskID, request)
 
 	wg.Wait()
 	require.NotNil(t, received)
@@ -90,7 +94,7 @@ func TestHoldManager_SubmitCommand_NotifiesWaiter(t *testing.T) {
 	require.False(t, timedOut)
 
 	// Hold should be released after submission
-	require.False(t, mgr.IsHoldActive(apiKeyHash))
+	require.False(t, mgr.IsHoldActive(apiKeyHash, taskID))
 }
 
 func TestHoldManager_WaitForCommand_ReturnsNilWhenNoHold(t *testing.T) {
@@ -98,11 +102,12 @@ func TestHoldManager_WaitForCommand_ReturnsNilWhenNoHold(t *testing.T) {
 
 	mgr := NewHoldManager(nil, nil, nil)
 	apiKeyHash := "test-api-key-hash-5"
+	taskID := "task-5"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	result, timedOut := mgr.WaitForCommand(ctx, apiKeyHash)
+	result, timedOut := mgr.WaitForCommand(ctx, apiKeyHash, taskID)
 	require.Nil(t, result)
 	require.False(t, timedOut)
 }
@@ -116,9 +121,10 @@ func TestHoldManager_WaitStartsTimer(t *testing.T) {
 
 	mgr := NewHoldManager(nil, nil, mockClock)
 	apiKeyHash := "test-api-key-hash-6"
+	taskID := "task-6"
 
 	// Set hold - no expiration initially
-	state := mgr.SetHold(apiKeyHash)
+	state := mgr.SetHold(apiKeyHash, taskID)
 	require.True(t, state.Active)
 	require.True(t, state.ExpiresAt.IsZero())
 	require.False(t, state.Waiting)
@@ -127,14 +133,14 @@ func TestHoldManager_WaitStartsTimer(t *testing.T) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		_, _ = mgr.WaitForCommand(ctx, apiKeyHash)
+		_, _ = mgr.WaitForCommand(ctx, apiKeyHash, taskID)
 	}()
 
 	// Give goroutine time to call WaitForCommand
 	time.Sleep(50 * time.Millisecond)
 
 	// Now check state - should have expiration set and waiting=true
-	state = mgr.GetHoldState(apiKeyHash)
+	state = mgr.GetHoldState(apiKeyHash, taskID)
 	require.True(t, state.Active)
 	require.True(t, state.Waiting)
 	require.Equal(t, now.Add(HoldMaxDuration), state.ExpiresAt)
@@ -146,15 +152,16 @@ func TestHoldManager_WaitForCommandTimesOut(t *testing.T) {
 	baseline := time.Now().UTC().Add(-HoldMaxDuration)
 	mgr := NewHoldManager(nil, nil, func() time.Time { return baseline })
 	apiKeyHash := "test-api-key-hash-timeout"
+	taskID := "task-7"
 
-	mgr.SetHold(apiKeyHash)
+	mgr.SetHold(apiKeyHash, taskID)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	result, timedOut := mgr.WaitForCommand(ctx, apiKeyHash)
+	result, timedOut := mgr.WaitForCommand(ctx, apiKeyHash, taskID)
 	require.Nil(t, result)
 	require.True(t, timedOut)
-	require.False(t, mgr.IsHoldActive(apiKeyHash))
+	require.False(t, mgr.IsHoldActive(apiKeyHash, taskID))
 }
 
 func TestHoldManager_ResetHold(t *testing.T) {
@@ -162,14 +169,15 @@ func TestHoldManager_ResetHold(t *testing.T) {
 
 	mgr := NewHoldManager(nil, nil, nil)
 	apiKeyHash := "test-api-key-hash-7"
+	taskID := "task-8"
 
 	// Set initial hold
-	state1 := mgr.SetHold(apiKeyHash)
+	state1 := mgr.SetHold(apiKeyHash, taskID)
 	require.True(t, state1.Active)
 	require.True(t, state1.ExpiresAt.IsZero()) // No expiration until agent waits
 
 	// Reset hold
-	state2 := mgr.SetHold(apiKeyHash)
+	state2 := mgr.SetHold(apiKeyHash, taskID)
 	require.True(t, state2.Active)
 	require.True(t, state2.ExpiresAt.IsZero()) // Still no expiration
 }

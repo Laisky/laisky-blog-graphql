@@ -2,7 +2,7 @@
 
 ## Scenario Overview
 
-- Provide an MCP tool that retrieves task-specific context for retrieval-augmented generation (RAG) workflows.
+- Provide an MCP tool that retrieves task-specific context for retrieval-augmented generation (RAG) workflows. Task identifiers are normalised by a shared sanitizer used across MCP tools (for example, `get_user_request`) to keep isolation behaviour consistent.
 - Accept a user query, raw materials, and a `topK` limit, returning the top matching context snippets.
 - Reuse existing MCP server patterns (billing, logging, call auditing) while enforcing tenant isolation with `user_id` and `task_id`.
 

@@ -19,7 +19,7 @@ import (
 func TestGetUserRequestToolSuccess(t *testing.T) {
 	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
 	service := &fakeUserRequestService{
-		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
 			return []userrequests.Request{
 				{
 					ID:           testUUID("11111111-1111-1111-1111-111111111111"),
@@ -81,7 +81,7 @@ func TestGetUserRequestToolSuccess(t *testing.T) {
 
 func TestGetUserRequestToolEmpty(t *testing.T) {
 	service := &fakeUserRequestService{
-		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
 			return nil, userrequests.ErrNoPendingRequests
 		},
 	}
@@ -113,6 +113,29 @@ func TestGetUserRequestToolAuthorizationFailure(t *testing.T) {
 	require.Equal(t, "invalid authorization header", text.Text)
 }
 
+func TestGetUserRequestToolTaskIDForwarding(t *testing.T) {
+	capturedTaskID := ""
+	service := &fakeUserRequestService{
+		consumeAll: func(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) ([]userrequests.Request, error) {
+			capturedTaskID = taskID
+			return nil, userrequests.ErrNoPendingRequests
+		},
+		getReturnMode: func(context.Context, *askuser.AuthorizationContext) (string, error) {
+			return "all", nil
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "user-task", KeySuffix: "abcd"}, nil
+	})
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"task_id": "workspace-42"}}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Equal(t, "workspace-42", capturedTaskID)
+}
+
 func mustGetUserRequestTool(t *testing.T, service UserRequestService, hold HoldWaiter, header AuthorizationHeaderProvider, parser AuthorizationParser) *GetUserRequestTool {
 	t.Helper()
 	tool, err := NewGetUserRequestTool(service, hold, testLogger(), header, parser)
@@ -124,7 +147,7 @@ func TestGetUserRequestToolHoldTimeout(t *testing.T) {
 	// When hold is active and there are no pending commands, the tool waits.
 	// If the wait times out, it should return a hold_timeout status.
 	service := &fakeUserRequestService{
-		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
 			// Return no pending requests so the tool proceeds to wait
 			return nil, userrequests.ErrNoPendingRequests
 		},
@@ -132,7 +155,7 @@ func TestGetUserRequestToolHoldTimeout(t *testing.T) {
 
 	waiter := &fakeHoldWaiter{
 		active: true,
-		wait: func(context.Context, string) (*userrequests.Request, bool) {
+		wait: func(context.Context, string, string) (*userrequests.Request, bool) {
 			return nil, true // Simulate timeout
 		},
 	}
@@ -160,7 +183,7 @@ func TestGetUserRequestToolHoldWithPendingCommands(t *testing.T) {
 	// the tool should return them immediately without waiting.
 	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
 	service := &fakeUserRequestService{
-		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
 			return []userrequests.Request{
 				{
 					ID:           testUUID("33333333-3333-3333-3333-333333333333"),
@@ -177,7 +200,7 @@ func TestGetUserRequestToolHoldWithPendingCommands(t *testing.T) {
 
 	waiter := &fakeHoldWaiter{
 		active: true,
-		wait: func(context.Context, string) (*userrequests.Request, bool) {
+		wait: func(context.Context, string, string) (*userrequests.Request, bool) {
 			require.Fail(t, "wait should not be called when pending commands exist")
 			return nil, false
 		},
@@ -210,25 +233,25 @@ func TestGetUserRequestToolHoldWithPendingCommands(t *testing.T) {
 }
 
 type fakeUserRequestService struct {
-	consumeAll    func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error)
-	consumeFirst  func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error)
+	consumeAll    func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error)
+	consumeFirst  func(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error)
 	getReturnMode func(context.Context, *askuser.AuthorizationContext) (string, error)
 }
 
-func (f *fakeUserRequestService) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+func (f *fakeUserRequestService) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) ([]userrequests.Request, error) {
 	if f.consumeAll != nil {
-		return f.consumeAll(ctx, auth)
+		return f.consumeAll(ctx, auth, taskID)
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (f *fakeUserRequestService) ConsumeFirstPending(ctx context.Context, auth *askuser.AuthorizationContext) (*userrequests.Request, error) {
+func (f *fakeUserRequestService) ConsumeFirstPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) (*userrequests.Request, error) {
 	if f.consumeFirst != nil {
-		return f.consumeFirst(ctx, auth)
+		return f.consumeFirst(ctx, auth, taskID)
 	}
 	// Default: return first from consumeAll if available
 	if f.consumeAll != nil {
-		requests, err := f.consumeAll(ctx, auth)
+		requests, err := f.consumeAll(ctx, auth, taskID)
 		if err != nil {
 			return nil, err
 		}
@@ -250,16 +273,16 @@ func (f *fakeUserRequestService) GetReturnMode(ctx context.Context, auth *askuse
 
 type fakeHoldWaiter struct {
 	active bool
-	wait   func(ctx context.Context, apiKeyHash string) (*userrequests.Request, bool)
+	wait   func(ctx context.Context, apiKeyHash string, taskID string) (*userrequests.Request, bool)
 }
 
-func (f *fakeHoldWaiter) IsHoldActive(string) bool {
+func (f *fakeHoldWaiter) IsHoldActive(string, string) bool {
 	return f.active
 }
 
-func (f *fakeHoldWaiter) WaitForCommand(ctx context.Context, apiKeyHash string) (*userrequests.Request, bool) {
+func (f *fakeHoldWaiter) WaitForCommand(ctx context.Context, apiKeyHash string, taskID string) (*userrequests.Request, bool) {
 	if f.wait != nil {
-		return f.wait(ctx, apiKeyHash)
+		return f.wait(ctx, apiKeyHash, taskID)
 	}
 	return nil, false
 }
@@ -279,11 +302,11 @@ func TestGetUserRequestToolIgnoresAgentReturnMode(t *testing.T) {
 	consumeAllCalled := false
 
 	service := &fakeUserRequestService{
-		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error) {
 			consumeFirstCalled = true
 			return &userrequests.Request{ID: testUUID("99999999-9999-9999-9999-999999999999")}, nil
 		},
-		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
 			consumeAllCalled = true
 			return []userrequests.Request{{
 				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
@@ -334,7 +357,7 @@ func TestGetUserRequestToolReturnModeFromUserPreference(t *testing.T) {
 	consumeFirstCalled := false
 
 	service := &fakeUserRequestService{
-		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error) {
 			consumeFirstCalled = true
 			return &userrequests.Request{
 				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
@@ -384,7 +407,7 @@ func TestGetUserRequestToolAgentModeDoesNotOverridePreference(t *testing.T) {
 	consumeFirstCalled := false
 
 	service := &fakeUserRequestService{
-		consumeAll: func(context.Context, *askuser.AuthorizationContext) ([]userrequests.Request, error) {
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
 			consumeAllCalled = true
 			return []userrequests.Request{{
 				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
@@ -396,7 +419,7 @@ func TestGetUserRequestToolAgentModeDoesNotOverridePreference(t *testing.T) {
 				ConsumedAt:   &consumedAt,
 			}}, nil
 		},
-		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error) {
 			consumeFirstCalled = true
 			return &userrequests.Request{
 				ID:           testUUID("33333333-3333-3333-3333-333333333333"),
@@ -449,7 +472,7 @@ func TestGetUserRequestToolAgentModeDoesNotOverridePreference(t *testing.T) {
 // and there are no pending requests, the empty response is returned correctly.
 func TestGetUserRequestToolReturnModeFirstEmpty(t *testing.T) {
 	service := &fakeUserRequestService{
-		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error) {
 			return nil, userrequests.ErrNoPendingRequests
 		},
 		getReturnMode: func(context.Context, *askuser.AuthorizationContext) (string, error) {
@@ -477,7 +500,7 @@ func TestGetUserRequestToolReturnModeFirstWithHold(t *testing.T) {
 	consumeFirstCalled := false
 
 	service := &fakeUserRequestService{
-		consumeFirst: func(context.Context, *askuser.AuthorizationContext) (*userrequests.Request, error) {
+		consumeFirst: func(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error) {
 			consumeFirstCalled = true
 			return &userrequests.Request{
 				ID:           testUUID("44444444-4444-4444-4444-444444444444"),
@@ -496,7 +519,7 @@ func TestGetUserRequestToolReturnModeFirstWithHold(t *testing.T) {
 
 	waiter := &fakeHoldWaiter{
 		active: true,
-		wait: func(context.Context, string) (*userrequests.Request, bool) {
+		wait: func(context.Context, string, string) (*userrequests.Request, bool) {
 			require.Fail(t, "wait should not be called when pending commands exist")
 			return nil, false
 		},

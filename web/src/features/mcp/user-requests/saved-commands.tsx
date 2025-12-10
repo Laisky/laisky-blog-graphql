@@ -128,7 +128,9 @@ export function SavedCommands({
   const [commands, setCommands] = useState<SavedCommand[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isExpanded, setIsExpanded] = useState(() => getSavedCommandsExpanded());
+  const [isExpanded, setIsExpanded] = useState(() =>
+    getSavedCommandsExpanded()
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [editContent, setEditContent] = useState("");

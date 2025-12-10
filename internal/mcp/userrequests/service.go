@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -20,9 +21,10 @@ type Clock func() time.Time
 
 // Service provides persistence helpers for MCP user requests.
 type Service struct {
-	db     *gorm.DB
-	logger logSDK.Logger
-	clock  Clock
+	db       *gorm.DB
+	logger   logSDK.Logger
+	clock    Clock
+	settings Settings
 }
 
 const (
@@ -31,7 +33,7 @@ const (
 )
 
 // NewService constructs a Service backed by the provided gorm database.
-func NewService(db *gorm.DB, logger logSDK.Logger, clock Clock) (*Service, error) {
+func NewService(db *gorm.DB, logger logSDK.Logger, clock Clock, settings Settings) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("gorm db is required")
 	}
@@ -43,12 +45,21 @@ func NewService(db *gorm.DB, logger logSDK.Logger, clock Clock) (*Service, error
 			return time.Now().UTC()
 		}
 	}
+	if settings.RetentionDays <= 0 {
+		settings = LoadSettingsFromConfig()
+	}
+	if settings.RetentionDays <= 0 {
+		settings.RetentionDays = DefaultRetentionDays
+	}
+	if settings.RetentionSweepInterval <= 0 {
+		settings.RetentionSweepInterval = DefaultRetentionSweepInterval
+	}
 
 	if err := db.AutoMigrate(&Request{}, &SavedCommand{}, &UserPreference{}); err != nil {
 		return nil, errors.Wrap(err, "auto migrate mcp user requests tables")
 	}
 
-	return &Service{db: db, logger: logger, clock: clock}, nil
+	return &Service{db: db, logger: logger, clock: clock, settings: settings}, nil
 }
 
 // CreateRequest stores a new user directive scoped to the provided authorization context.
@@ -61,10 +72,12 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 		return nil, ErrEmptyContent
 	}
 
+	taskID = normalizeTaskID(taskID)
+
 	req := &Request{
 		Content:      body,
 		Status:       StatusPending,
-		TaskID:       sanitizeTaskID(taskID),
+		TaskID:       taskID,
 		APIKeyHash:   auth.APIKeyHash,
 		KeySuffix:    auth.KeySuffix,
 		UserIdentity: auth.UserIdentity,
@@ -83,16 +96,21 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 	return req, nil
 }
 
-// ListRequests returns pending and consumed entries for the authenticated user.
+// ListRequests returns pending and consumed entries for the authenticated user and task.
 // Pending requests are returned in FIFO order (oldest first at top).
-func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext) ([]Request, []Request, error) {
+func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) ([]Request, []Request, error) {
 	if auth == nil {
 		return nil, nil, ErrInvalidAuthorization
 	}
 
+	taskID = normalizeTaskID(taskID)
+	if err := s.pruneExpired(ctx); err != nil {
+		return nil, nil, err
+	}
+
 	pending := make([]Request, 0)
 	if err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
+		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
 		Order("created_at ASC").
 		Limit(defaultListLimit).
 		Find(&pending).Error; err != nil {
@@ -101,7 +119,7 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 
 	consumed := make([]Request, 0)
 	if err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed).
+		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusConsumed).
 		Order("consumed_at DESC, updated_at DESC").
 		Limit(defaultListLimit).
 		Find(&consumed).Error; err != nil {
@@ -113,15 +131,20 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 
 // ConsumeAllPending fetches all pending requests in FIFO order (oldest first) and atomically marks them as consumed.
 // Returns the list of consumed requests or an empty slice if none are pending.
-func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext) ([]Request, error) {
+func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) ([]Request, error) {
 	if auth == nil {
 		return nil, ErrInvalidAuthorization
+	}
+
+	taskID = normalizeTaskID(taskID)
+	if err := s.pruneExpired(ctx); err != nil {
+		return nil, err
 	}
 
 	// Fetch all pending requests in FIFO order (oldest first)
 	var candidates []Request
 	err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
+		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
 		Order("created_at ASC").
 		Find(&candidates).Error
 	if err != nil {
@@ -165,15 +188,20 @@ func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.Authoriza
 
 // ConsumeFirstPending fetches only the oldest pending request (FIFO) and marks it as consumed.
 // Returns the consumed request or ErrNoPendingRequests if none are pending.
-func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.AuthorizationContext) (*Request, error) {
+func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) (*Request, error) {
 	if auth == nil {
 		return nil, ErrInvalidAuthorization
+	}
+
+	taskID = normalizeTaskID(taskID)
+	if err := s.pruneExpired(ctx); err != nil {
+		return nil, err
 	}
 
 	// Fetch the oldest pending request (FIFO)
 	var candidate Request
 	err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
+		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
 		Order("created_at ASC").
 		First(&candidate).Error
 	if err != nil {
@@ -229,13 +257,15 @@ func (s *Service) ConsumeRequestByID(ctx context.Context, id uuid.UUID) error {
 }
 
 // DeleteRequest removes a single request belonging to the authenticated user.
-func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.AuthorizationContext, id uuid.UUID) error {
+func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.AuthorizationContext, id uuid.UUID, taskID string) error {
 	if auth == nil {
 		return ErrInvalidAuthorization
 	}
 
+	taskID = normalizeTaskID(taskID)
+
 	result := s.db.WithContext(ctx).
-		Where("id = ? AND api_key_hash = ?", id, auth.APIKeyHash).
+		Where("id = ? AND api_key_hash = ? AND task_id = ?", id, auth.APIKeyHash, taskID).
 		Delete(&Request{})
 	if result.Error != nil {
 		return errors.Wrap(result.Error, "delete user request")
@@ -247,13 +277,15 @@ func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.Authorization
 }
 
 // DeleteAll removes every request tied to the authenticated user and returns the number of rows deleted.
-func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationContext) (int64, error) {
+func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) (int64, error) {
 	if auth == nil {
 		return 0, ErrInvalidAuthorization
 	}
 
+	taskID = normalizeTaskID(taskID)
+
 	result := s.db.WithContext(ctx).
-		Where("api_key_hash = ?", auth.APIKeyHash).
+		Where("api_key_hash = ? AND task_id = ?", auth.APIKeyHash, taskID).
 		Delete(&Request{})
 	if result.Error != nil {
 		return 0, errors.Wrap(result.Error, "delete all user requests")
@@ -262,13 +294,15 @@ func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationCont
 }
 
 // DeleteAllPending removes only pending requests tied to the authenticated user and returns the number of rows deleted.
-func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.AuthorizationContext) (int64, error) {
+func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) (int64, error) {
 	if auth == nil {
 		return 0, ErrInvalidAuthorization
 	}
 
+	taskID = normalizeTaskID(taskID)
+
 	result := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
+		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
 		Delete(&Request{})
 	if result.Error != nil {
 		return 0, errors.Wrap(result.Error, "delete pending user requests")
@@ -283,27 +317,43 @@ func (s *Service) log() logSDK.Logger {
 	return log.Logger.Named("user_requests_service")
 }
 
-func sanitizeTaskID(input string) string {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return DefaultTaskID
+func normalizeTaskID(input string) string {
+	sanitized := rag.SanitizeTaskID(input)
+	if sanitized == "" {
+		sanitized = DefaultTaskID
 	}
-	if len(trimmed) > maxTaskIDLength {
-		return trimmed[:maxTaskIDLength]
+	if len(sanitized) > maxTaskIDLength {
+		sanitized = sanitized[:maxTaskIDLength]
 	}
-	return trimmed
+	return sanitized
+}
+
+func (s *Service) pruneExpired(ctx context.Context) error {
+	if s == nil || s.settings.RetentionDays <= 0 {
+		return nil
+	}
+	cutoff := s.clock().AddDate(0, 0, -s.settings.RetentionDays)
+	result := s.db.WithContext(ctx).
+		Where("created_at < ?", cutoff).
+		Delete(&Request{})
+	if result.Error != nil {
+		return errors.Wrap(result.Error, "prune expired user requests")
+	}
+	return nil
 }
 
 // DeleteConsumed removes consumed requests based on retention policies.
 // If keepCount > 0, it retains the N most recent consumed requests.
 // If keepDays > 0, it retains requests consumed within the last N days.
 // If both are 0, it deletes all consumed requests.
-func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.AuthorizationContext, keepCount int, keepDays int) (int64, error) {
+func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.AuthorizationContext, keepCount int, keepDays int, taskID string) (int64, error) {
 	if auth == nil {
 		return 0, ErrInvalidAuthorization
 	}
 
-	query := s.db.WithContext(ctx).Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed)
+	taskID = normalizeTaskID(taskID)
+
+	query := s.db.WithContext(ctx).Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusConsumed)
 
 	if keepCount > 0 {
 		// Retain only the most recent N items.
@@ -325,4 +375,30 @@ func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.Authorizatio
 		return 0, errors.Wrap(result.Error, "delete consumed requests")
 	}
 	return result.RowsAffected, nil
+}
+
+// StartRetentionWorker launches a background pruner that periodically removes expired requests based on TTL settings.
+// The worker stops when the provided context is canceled. When RetentionSweepInterval is zero, no worker is started.
+func (s *Service) StartRetentionWorker(ctx context.Context) {
+	if s == nil || s.settings.RetentionSweepInterval <= 0 {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(s.settings.RetentionSweepInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sweepCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				if err := s.pruneExpired(sweepCtx); err != nil {
+					s.log().Error("prune expired user requests", zap.Error(err))
+				}
+				cancel()
+			}
+		}
+	}()
 }

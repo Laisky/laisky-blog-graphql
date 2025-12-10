@@ -106,7 +106,8 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pending, consumed, err := service.ListRequests(ctx, auth)
+	taskID := r.URL.Query().Get("task_id")
+	pending, consumed, err := service.ListRequests(ctx, auth, taskID)
 	if err != nil {
 		logger.Error("list user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load user requests")
@@ -168,7 +169,7 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// If a waiting agent received the command, mark it as consumed immediately
 	// so it doesn't also appear in the pending queue.
 	if h.holdManager != nil {
-		sentToAgent := h.holdManager.SubmitCommand(ctx, auth.APIKeyHash, req)
+		sentToAgent := h.holdManager.SubmitCommand(ctx, auth.APIKeyHash, req.TaskID, req)
 		if sentToAgent {
 			if consumeErr := service.ConsumeRequestByID(ctx, req.ID); consumeErr != nil {
 				logger.Error("consume request after hold submit",
@@ -210,7 +211,8 @@ func (h *httpHandler) handleDeleteOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := service.DeleteRequest(ctx, auth, id); err != nil {
+	taskID := r.URL.Query().Get("task_id")
+	if err := service.DeleteRequest(ctx, auth, id, taskID); err != nil {
 		switch {
 		case errors.Is(err, ErrRequestNotFound):
 			h.writeErrorWithLogger(w, logger, http.StatusNotFound, err.Error())
@@ -243,7 +245,8 @@ func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deleted, err := service.DeleteAll(ctx, auth)
+	taskID := r.URL.Query().Get("task_id")
+	deleted, err := service.DeleteAll(ctx, auth, taskID)
 	if err != nil {
 		logger.Error("delete all user requests", zap.Error(err))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete requests")
@@ -271,18 +274,20 @@ func (h *httpHandler) handleDeleteConsumed(w http.ResponseWriter, r *http.Reques
 	}
 
 	var keepCount, keepDays int
-	if val := r.URL.Query().Get("keep_count"); val != "" {
+	query := r.URL.Query()
+	taskID := query.Get("task_id")
+	if val := query.Get("keep_count"); val != "" {
 		if n, err := strconv.Atoi(val); err == nil {
 			keepCount = n
 		}
 	}
-	if val := r.URL.Query().Get("keep_days"); val != "" {
+	if val := query.Get("keep_days"); val != "" {
 		if n, err := strconv.Atoi(val); err == nil {
 			keepDays = n
 		}
 	}
 
-	deleted, err := service.DeleteConsumed(ctx, auth, keepCount, keepDays)
+	deleted, err := service.DeleteConsumed(ctx, auth, keepCount, keepDays, taskID)
 	if err != nil {
 		logger.Error("delete consumed requests", zap.Error(err))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete consumed requests")
@@ -309,7 +314,8 @@ func (h *httpHandler) handleDeleteAllPending(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	deleted, err := service.DeleteAllPending(ctx, auth)
+	taskID := r.URL.Query().Get("task_id")
+	deleted, err := service.DeleteAllPending(ctx, auth, taskID)
 	if err != nil {
 		logger.Error("delete pending user requests", zap.Error(err))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete pending requests")

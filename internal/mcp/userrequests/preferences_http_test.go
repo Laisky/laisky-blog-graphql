@@ -17,7 +17,7 @@ import (
 // persists and retrieves user preferences including return_mode.
 func TestPreferencesHTTPSetAndGet(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"))
@@ -90,7 +90,7 @@ func TestPreferencesHTTPSetAndGet(t *testing.T) {
 // TestPreferencesHTTPInvalidMode verifies invalid mode values are rejected.
 func TestPreferencesHTTPInvalidMode(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"))
@@ -112,7 +112,7 @@ func TestPreferencesHTTPInvalidMode(t *testing.T) {
 // TestPreferencesHTTPMissingAuth verifies unauthorized requests are rejected.
 func TestPreferencesHTTPMissingAuth(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"))
@@ -128,7 +128,7 @@ func TestPreferencesHTTPMissingAuth(t *testing.T) {
 // TestPreferencesHTTPUserIsolation verifies preferences are isolated per user.
 func TestPreferencesHTTPUserIsolation(t *testing.T) {
 	db := newTestDB(t)
-	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
 	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"))

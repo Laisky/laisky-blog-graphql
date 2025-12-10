@@ -70,6 +70,10 @@ func (t *ExtractKeyInfoTool) Definition() mcp.Tool {
 			mcp.Required(),
 			mcp.Description("Source text to scan for relevant information."),
 		),
+		mcp.WithString(
+			"task_id",
+			mcp.Description("Optional task identifier used to segregate materials; defaults to 'default'."),
+		),
 		mcp.WithNumber(
 			"top_k",
 			mcp.Description("Maximum number of contexts to return."),
@@ -100,6 +104,14 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError(fmt.Sprintf("materials exceed maximum size (%d bytes)", t.settings.MaxMaterialsSize)), nil
 	}
 
+	taskID := rag.SanitizeTaskID("default")
+	if rawTaskID, ok := findTaskID(req.Params.Arguments); ok {
+		taskID = rag.SanitizeTaskID(rawTaskID)
+	}
+	if taskID == "" {
+		return mcp.NewToolResultError("task_id cannot be empty"), nil
+	}
+
 	topK := t.settings.TopKDefault
 	if rawTopK, ok := findTopK(req.Params.Arguments); ok {
 		topK = rawTopK
@@ -122,7 +134,7 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 
 	input := rag.ExtractInput{
 		UserID:    identity.UserID,
-		TaskID:    identity.TaskID,
+		TaskID:    taskID,
 		APIKey:    identity.APIKey,
 		Query:     query,
 		Materials: materials,
@@ -131,7 +143,7 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 
 	contexts, err := t.service.ExtractKeyInfo(ctx, input)
 	if err != nil {
-		t.logger.Error("extract_key_info failed", zap.Error(err), zap.String("user_id", identity.UserID), zap.String("task_id", identity.TaskID))
+		t.logger.Error("extract_key_info failed", zap.Error(err), zap.String("user_id", identity.UserID), zap.String("task_id", taskID))
 		return mcp.NewToolResultError("failed to extract key information"), nil
 	}
 
@@ -164,6 +176,22 @@ func findTopK(arguments any) (int, bool) {
 	return 0, false
 }
 
+func findTaskID(arguments any) (string, bool) {
+	args, ok := arguments.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	candidates := []string{"task_id", "taskId"}
+	for _, key := range candidates {
+		if value, ok := args[key]; ok {
+			if parsed, ok := toString(value); ok {
+				return parsed, true
+			}
+		}
+	}
+	return "", false
+}
+
 func toInt(value any) (int, bool) {
 	switch v := value.(type) {
 	case int:
@@ -187,4 +215,12 @@ func toInt(value any) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+func toString(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v), true
+	}
+	return "", false
 }

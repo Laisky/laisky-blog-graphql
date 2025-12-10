@@ -211,9 +211,7 @@ export function AskUserPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <ApiKeyInput showRefresh onRefresh={handleRefresh} />
-          {status && (
-            <StatusBanner status={status} subtext={maskedKeySuffix} />
-          )}
+          {status && <StatusBanner status={status} subtext={maskedKeySuffix} />}
         </CardContent>
       </Card>
 

@@ -42,7 +42,27 @@ func TestExtractKeyInfoTool_HandleSuccess(t *testing.T) {
 	result, err := tool.Handle(context.Background(), req)
 	require.NoError(t, err)
 	require.False(t, result.IsError)
+	require.Equal(t, "default", svc.input.TaskID)
 	require.Equal(t, 1, len(svc.contexts))
+}
+
+func TestExtractKeyInfoTool_HandleCustomTaskID(t *testing.T) {
+	svc := &stubKeyInfoService{contexts: []string{"ctx"}}
+	settings := rag.Settings{TopKDefault: 2, TopKLimit: 5, MaxMaterialsSize: 1000, SemanticWeight: 0.5, LexicalWeight: 0.5}
+	tool, err := NewExtractKeyInfoTool(
+		svc,
+		log.Logger.Named("extract_key_info_test"),
+		func(ctx context.Context) string { return "Bearer sk-test" },
+		func(context.Context, string, oneapi.Price, string) error { return nil },
+		settings,
+	)
+	require.NoError(t, err)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"query": "q", "materials": "text", "task_id": "workspace-1"}}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Equal(t, "workspace-1", svc.input.TaskID)
 }
 
 func TestExtractKeyInfoTool_InvalidTopK(t *testing.T) {
@@ -61,6 +81,28 @@ func TestExtractKeyInfoTool_InvalidTopK(t *testing.T) {
 		"query":     "q",
 		"materials": "text",
 		"top_k":     10,
+	}}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+}
+
+func TestExtractKeyInfoTool_InvalidTaskID(t *testing.T) {
+	svc := &stubKeyInfoService{}
+	settings := rag.Settings{TopKDefault: 2, TopKLimit: 5, MaxMaterialsSize: 1000, SemanticWeight: 0.5, LexicalWeight: 0.5}
+	tool, err := NewExtractKeyInfoTool(
+		svc,
+		log.Logger.Named("extract_key_info_test"),
+		func(ctx context.Context) string { return "Bearer sk-test" },
+		func(context.Context, string, oneapi.Price, string) error { return nil },
+		settings,
+	)
+	require.NoError(t, err)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"query":     "q",
+		"materials": "text",
+		"task_id":   "   ",
 	}}}
 	result, err := tool.Handle(context.Background(), req)
 	require.NoError(t, err)

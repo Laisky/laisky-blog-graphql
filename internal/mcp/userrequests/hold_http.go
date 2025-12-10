@@ -42,6 +42,8 @@ func (h *holdHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handleGetHold returns the current hold state for the authenticated user.
 func (h *holdHTTPHandler) handleGetHold(w http.ResponseWriter, r *http.Request) {
 	logger := h.logFromCtx(r.Context())
+	query := r.URL.Query()
+	taskID := normalizeTaskID(query.Get("task_id"))
 
 	if h.holdManager == nil {
 		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "hold service unavailable")
@@ -54,7 +56,7 @@ func (h *holdHTTPHandler) handleGetHold(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	state := h.holdManager.GetHoldState(auth.APIKeyHash)
+	state := h.holdManager.GetHoldState(auth.APIKeyHash, taskID)
 	h.writeJSON(w, map[string]any{
 		"active":         state.Active,
 		"waiting":        state.Waiting,
@@ -66,6 +68,8 @@ func (h *holdHTTPHandler) handleGetHold(w http.ResponseWriter, r *http.Request) 
 // handleSetHold activates the hold for the authenticated user.
 func (h *holdHTTPHandler) handleSetHold(w http.ResponseWriter, r *http.Request) {
 	logger := h.logFromCtx(r.Context())
+	query := r.URL.Query()
+	taskID := normalizeTaskID(query.Get("task_id"))
 
 	if h.holdManager == nil {
 		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "hold service unavailable")
@@ -78,9 +82,10 @@ func (h *holdHTTPHandler) handleSetHold(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	state := h.holdManager.SetHold(auth.APIKeyHash)
+	state := h.holdManager.SetHold(auth.APIKeyHash, taskID)
 	logger.Info("hold activated via HTTP",
 		zap.String("user", auth.UserIdentity),
+		zap.String("task_id", taskID),
 	)
 
 	h.writeJSON(w, map[string]any{
@@ -94,6 +99,8 @@ func (h *holdHTTPHandler) handleSetHold(w http.ResponseWriter, r *http.Request) 
 // handleReleaseHold deactivates the hold for the authenticated user.
 func (h *holdHTTPHandler) handleReleaseHold(w http.ResponseWriter, r *http.Request) {
 	logger := h.logFromCtx(r.Context())
+	query := r.URL.Query()
+	taskID := normalizeTaskID(query.Get("task_id"))
 
 	if h.holdManager == nil {
 		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "hold service unavailable")
@@ -106,8 +113,8 @@ func (h *holdHTTPHandler) handleReleaseHold(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	h.holdManager.ReleaseHold(auth.APIKeyHash)
-	logger.Info("hold released via HTTP", zap.String("user", auth.UserIdentity))
+	h.holdManager.ReleaseHold(auth.APIKeyHash, taskID)
+	logger.Info("hold released via HTTP", zap.String("user", auth.UserIdentity), zap.String("task_id", taskID))
 
 	h.writeJSON(w, map[string]any{
 		"active":         false,
