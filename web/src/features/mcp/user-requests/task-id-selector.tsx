@@ -133,7 +133,9 @@ export function TaskIdSelector({
   const filteredEntries = useMemo(() => {
     const query = value.trim().toLowerCase();
     if (!query) return sortedEntries;
-    return sortedEntries.filter((e) => e.value.toLowerCase().includes(query));
+    return sortedEntries.filter(
+      (e) => e.pinned || e.value.toLowerCase().includes(query)
+    );
   }, [sortedEntries, value]);
 
   // Persist history changes

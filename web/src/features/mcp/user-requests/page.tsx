@@ -569,7 +569,7 @@ export function UserRequestsPage() {
   );
 
   /**
-   * handleEditInEditor loads a consumed directive into the editor for modification.
+   * handleEditInEditor loads a directive (pending or consumed) into the editor for modification.
    * It preserves the current editor content as a backup in case the user wants to restore it.
    */
   const handleEditInEditor = useCallback(
@@ -595,23 +595,57 @@ export function UserRequestsPage() {
         setNewContent(editorBackup ?? "");
         setEditorBackup(null);
         setStatus({
-          message: "Put the directive back into history.",
+          message: "Cancelled editing.",
           tone: "info",
         });
         return;
       }
 
-      // Backup current content before loading the consumed directive
+      // Backup current content before loading the directive
       setEditorBackup((prev) => (pickedRequestId ? prev : newContent));
       setPickedRequestId(request.id);
       setNewContent(request.content);
       setStatus({
-        message: "Loaded consumed directive into the editor.",
+        message: `Loaded ${
+          request.status === "pending" ? "pending" : "consumed"
+        } directive into the editor.`,
         tone: "success",
       });
     },
     [apiKey, editorBackup, isSubmitting, newContent, pickedRequestId]
   );
+
+  const handlePickUpPending = useCallback(
+    async (request: UserRequest) => {
+      if (!apiKey) return;
+
+      // Load into editor
+      setNewContent(request.content);
+      if (request.task_id) {
+        setTaskId(request.task_id);
+      }
+
+      // Delete from pending
+      await handleDeleteRequest(request);
+
+      setStatus({
+        message: "Request picked up for editing.",
+        tone: "success",
+      });
+    },
+    [apiKey, handleDeleteRequest]
+  );
+
+  const handleCopyPending = useCallback((request: UserRequest) => {
+    setNewContent(request.content);
+    if (request.task_id) {
+      setTaskId(request.task_id);
+    }
+    setStatus({
+      message: "Request copied to editor.",
+      tone: "success",
+    });
+  }, []);
 
   /**
    * handleAddToPending re-queues a consumed directive directly to the pending list.
@@ -896,6 +930,9 @@ export function UserRequestsPage() {
                   request={request}
                   onDelete={handleDeleteRequest}
                   deleting={Boolean(pendingDeletes[request.id])}
+                  onPickup={handlePickUpPending}
+                  onCopy={handleCopyPending}
+                  isEditorDisabled={isEditorDisabled}
                 />
               ))
             )}

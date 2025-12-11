@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  Copy,
   Edit3,
   Package,
   RotateCcw,
@@ -46,6 +47,9 @@ interface PendingRequestCardProps {
   request: UserRequest;
   onDelete: (request: UserRequest) => void | Promise<void>;
   deleting: boolean;
+  onPickup: (request: UserRequest) => void;
+  onCopy: (request: UserRequest) => void;
+  isEditorDisabled: boolean;
 }
 
 /**
@@ -55,6 +59,9 @@ export function PendingRequestCard({
   request,
   onDelete,
   deleting,
+  onPickup,
+  onCopy,
+  isEditorDisabled,
 }: PendingRequestCardProps) {
   return (
     <Card className="border border-primary/30 bg-card shadow-sm min-h-32 max-h-56 flex flex-col">
@@ -70,7 +77,37 @@ export function PendingRequestCard({
           </CardTitle>
         </div>
       </CardHeader>
-      <CardContent className="flex justify-end shrink-0 pt-0">
+      <CardContent className="flex justify-end gap-2 shrink-0 pt-0">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isEditorDisabled}
+              className="gap-1.5"
+              title="Edit options"
+            >
+              <Edit3 className="h-4 w-4" />
+              <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem
+              onClick={() => onPickup(request)}
+              className="gap-2 cursor-pointer"
+            >
+              <Edit3 className="h-4 w-4" />
+              <span>Edit & Delete</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onCopy(request)}
+              className="gap-2 cursor-pointer"
+            >
+              <Copy className="h-4 w-4" />
+              <span>Edit</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           variant="destructive"
           size="icon"
