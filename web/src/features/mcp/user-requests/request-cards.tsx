@@ -44,7 +44,7 @@ export function EmptyState({ message, subtle = false }: EmptyStateProps) {
 
 interface PendingRequestCardProps {
   request: UserRequest;
-  onDelete: (id: string) => void;
+  onDelete: (request: UserRequest) => void | Promise<void>;
   deleting: boolean;
 }
 
@@ -74,7 +74,7 @@ export function PendingRequestCard({
         <Button
           variant="destructive"
           size="icon"
-          onClick={() => onDelete(request.id)}
+          onClick={() => onDelete(request)}
           disabled={deleting}
           title="Delete request"
         >
@@ -88,7 +88,7 @@ export function PendingRequestCard({
 
 interface ConsumedCardProps {
   request: UserRequest;
-  onDelete: (id: string) => void;
+  onDelete: (request: UserRequest) => void | Promise<void>;
   deleting: boolean;
   onEditInEditor: (request: UserRequest) => void;
   onAddToPending: (request: UserRequest) => void;
@@ -173,7 +173,7 @@ export function ConsumedCard({
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => onDelete(request.id)}
+          onClick={() => onDelete(request)}
           disabled={deleting}
           title="Delete from history"
           className="h-9 w-9 text-muted-foreground hover:text-destructive"

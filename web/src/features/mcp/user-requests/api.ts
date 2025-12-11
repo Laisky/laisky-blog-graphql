@@ -204,6 +204,11 @@ export interface SavedCommandListResponse {
   key_hint?: string;
 }
 
+type TaskScopeOptions = {
+  taskId?: string;
+  allTasks?: boolean;
+};
+
 function ensureAuthorization(apiKey: string): string {
   const authorization = buildAuthorizationHeader(apiKey);
   if (!authorization) {
@@ -212,13 +217,25 @@ function ensureAuthorization(apiKey: string): string {
   return authorization;
 }
 
+function appendTaskScope(params: URLSearchParams, scope?: TaskScopeOptions) {
+  if (!scope) {
+    return;
+  }
+  if (scope.taskId) {
+    params.append("task_id", scope.taskId);
+  }
+  if (scope.allTasks) {
+    params.append("all_tasks", "true");
+  }
+}
+
 export async function listUserRequests(
   apiKey: string,
   signal?: AbortSignal
 ): Promise<UserRequestListResponse> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveCurrentApiBasePath();
-  const response = await fetch(`${apiBasePath}api/requests`, {
+  const response = await fetch(`${apiBasePath}api/requests?all_tasks=true`, {
     cache: "no-store",
     headers: {
       Authorization: authorization,
@@ -265,18 +282,27 @@ export async function createUserRequest(
 
 export async function deleteUserRequest(
   apiKey: string,
-  requestId: string
+  requestId: string,
+  scope?: TaskScopeOptions
 ): Promise<void> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveCurrentApiBasePath();
-  const response = await fetch(`${apiBasePath}api/requests/${requestId}`, {
-    method: "DELETE",
-    headers: {
-      Authorization: authorization,
-      "Cache-Control": "no-store",
-      Pragma: "no-cache",
-    },
-  });
+  const params = new URLSearchParams();
+  appendTaskScope(params, scope ? { taskId: scope.taskId } : undefined);
+  const query = params.toString();
+  const response = await fetch(
+    query
+      ? `${apiBasePath}api/requests/${requestId}?${query}`
+      : `${apiBasePath}api/requests/${requestId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: authorization,
+        "Cache-Control": "no-store",
+        Pragma: "no-cache",
+      },
+    }
+  );
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
@@ -284,10 +310,18 @@ export async function deleteUserRequest(
   }
 }
 
-export async function deleteAllUserRequests(apiKey: string): Promise<number> {
+export async function deleteAllUserRequests(
+  apiKey: string,
+  scope?: TaskScopeOptions
+): Promise<number> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveCurrentApiBasePath();
-  const response = await fetch(`${apiBasePath}api/requests`, {
+  const params = new URLSearchParams();
+  appendTaskScope(params, scope);
+  const url = params.toString()
+    ? `${apiBasePath}api/requests?${params.toString()}`
+    : `${apiBasePath}api/requests`;
+  const response = await fetch(url, {
     method: "DELETE",
     headers: {
       Authorization: authorization,
@@ -305,9 +339,14 @@ export async function deleteAllUserRequests(apiKey: string): Promise<number> {
   return Number(payload.deleted ?? 0);
 }
 
+type DeleteConsumedOptions = TaskScopeOptions & {
+  keepCount?: number;
+  keepDays?: number;
+};
+
 export async function deleteConsumedRequests(
   apiKey: string,
-  options?: { keepCount?: number; keepDays?: number }
+  options?: DeleteConsumedOptions
 ): Promise<number> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveCurrentApiBasePath();
@@ -318,6 +357,7 @@ export async function deleteConsumedRequests(
   if (options?.keepDays !== undefined) {
     params.append("keep_days", options.keepDays.toString());
   }
+  appendTaskScope(params, options);
 
   const response = await fetch(
     `${apiBasePath}api/requests/consumed?${params.toString()}`,
@@ -345,11 +385,17 @@ export async function deleteConsumedRequests(
  * Returns the number of deleted requests.
  */
 export async function deleteAllPendingRequests(
-  apiKey: string
+  apiKey: string,
+  scope?: TaskScopeOptions
 ): Promise<number> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveCurrentApiBasePath();
-  const response = await fetch(`${apiBasePath}api/requests/pending`, {
+  const params = new URLSearchParams();
+  appendTaskScope(params, scope);
+  const url = params.toString()
+    ? `${apiBasePath}api/requests/pending?${params.toString()}`
+    : `${apiBasePath}api/requests/pending`;
+  const response = await fetch(url, {
     method: "DELETE",
     headers: {
       Authorization: authorization,

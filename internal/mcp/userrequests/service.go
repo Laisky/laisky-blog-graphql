@@ -96,21 +96,31 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 	return req, nil
 }
 
-// ListRequests returns pending and consumed entries for the authenticated user and task.
-// Pending requests are returned in FIFO order (oldest first at top).
-func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) ([]Request, []Request, error) {
+// ListRequests returns pending and consumed entries for the authenticated user.
+// Pending requests are returned in FIFO order (oldest first at top). When
+// includeAllTasks is true, results span every task owned by the caller.
+func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool) ([]Request, []Request, error) {
 	if auth == nil {
 		return nil, nil, ErrInvalidAuthorization
 	}
 
-	taskID = normalizeTaskID(taskID)
 	if err := s.pruneExpired(ctx); err != nil {
 		return nil, nil, err
 	}
 
+	filteredTaskID := normalizeTaskID(taskID)
+	pendingQuery := s.db.WithContext(ctx).
+		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending)
+	consumedQuery := s.db.WithContext(ctx).
+		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed)
+
+	if !includeAllTasks {
+		pendingQuery = pendingQuery.Where("task_id = ?", filteredTaskID)
+		consumedQuery = consumedQuery.Where("task_id = ?", filteredTaskID)
+	}
+
 	pending := make([]Request, 0)
-	if err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
+	if err := pendingQuery.
 		Order("created_at ASC").
 		Limit(defaultListLimit).
 		Find(&pending).Error; err != nil {
@@ -118,13 +128,24 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 	}
 
 	consumed := make([]Request, 0)
-	if err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusConsumed).
+	if err := consumedQuery.
 		Order("consumed_at DESC, updated_at DESC").
 		Limit(defaultListLimit).
 		Find(&consumed).Error; err != nil {
 		return nil, nil, errors.Wrap(err, "list consumed user requests")
 	}
+
+	logTaskID := filteredTaskID
+	if includeAllTasks {
+		logTaskID = "*"
+	}
+	s.log().Debug("listed user requests",
+		zap.String("user", auth.UserIdentity),
+		zap.Bool("all_tasks", includeAllTasks),
+		zap.String("task_id", logTaskID),
+		zap.Int("pending_count", len(pending)),
+		zap.Int("consumed_count", len(consumed)),
+	)
 
 	return pending, consumed, nil
 }
@@ -262,10 +283,8 @@ func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.Authorization
 		return ErrInvalidAuthorization
 	}
 
-	taskID = normalizeTaskID(taskID)
-
 	result := s.db.WithContext(ctx).
-		Where("id = ? AND api_key_hash = ? AND task_id = ?", id, auth.APIKeyHash, taskID).
+		Where("id = ? AND api_key_hash = ?", id, auth.APIKeyHash).
 		Delete(&Request{})
 	if result.Error != nil {
 		return errors.Wrap(result.Error, "delete user request")
@@ -273,40 +292,73 @@ func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.Authorization
 	if result.RowsAffected == 0 {
 		return ErrRequestNotFound
 	}
+	s.log().Debug("deleted user request",
+		zap.String("user", auth.UserIdentity),
+		zap.String("request_id", id.String()),
+		zap.Int64("deleted", result.RowsAffected),
+	)
 	return nil
 }
 
-// DeleteAll removes every request tied to the authenticated user and returns the number of rows deleted.
-func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) (int64, error) {
+// DeleteAll removes requests tied to the authenticated user. When includeAllTasks is false,
+// only the provided taskID is affected.
+func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool) (int64, error) {
 	if auth == nil {
 		return 0, ErrInvalidAuthorization
 	}
 
-	taskID = normalizeTaskID(taskID)
+	filteredTaskID := normalizeTaskID(taskID)
+	query := s.db.WithContext(ctx).
+		Where("api_key_hash = ?", auth.APIKeyHash)
+	if !includeAllTasks {
+		query = query.Where("task_id = ?", filteredTaskID)
+	}
 
-	result := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND task_id = ?", auth.APIKeyHash, taskID).
-		Delete(&Request{})
+	result := query.Delete(&Request{})
 	if result.Error != nil {
 		return 0, errors.Wrap(result.Error, "delete all user requests")
 	}
+	logTaskID := filteredTaskID
+	if includeAllTasks {
+		logTaskID = "*"
+	}
+	s.log().Debug("deleted user requests",
+		zap.String("user", auth.UserIdentity),
+		zap.Bool("all_tasks", includeAllTasks),
+		zap.String("task_id", logTaskID),
+		zap.Int64("deleted", result.RowsAffected),
+	)
 	return result.RowsAffected, nil
 }
 
-// DeleteAllPending removes only pending requests tied to the authenticated user and returns the number of rows deleted.
-func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) (int64, error) {
+// DeleteAllPending removes pending requests. When includeAllTasks is false the operation is
+// restricted to the provided taskID.
+func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool) (int64, error) {
 	if auth == nil {
 		return 0, ErrInvalidAuthorization
 	}
 
-	taskID = normalizeTaskID(taskID)
+	filteredTaskID := normalizeTaskID(taskID)
+	query := s.db.WithContext(ctx).
+		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending)
+	if !includeAllTasks {
+		query = query.Where("task_id = ?", filteredTaskID)
+	}
 
-	result := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
-		Delete(&Request{})
+	result := query.Delete(&Request{})
 	if result.Error != nil {
 		return 0, errors.Wrap(result.Error, "delete pending user requests")
 	}
+	logTaskID := filteredTaskID
+	if includeAllTasks {
+		logTaskID = "*"
+	}
+	s.log().Debug("deleted pending user requests",
+		zap.String("user", auth.UserIdentity),
+		zap.Bool("all_tasks", includeAllTasks),
+		zap.String("task_id", logTaskID),
+		zap.Int64("deleted", result.RowsAffected),
+	)
 	return result.RowsAffected, nil
 }
 
@@ -337,7 +389,13 @@ func (s *Service) pruneExpired(ctx context.Context) error {
 		Where("created_at < ?", cutoff).
 		Delete(&Request{})
 	if result.Error != nil {
-		return errors.Wrap(result.Error, "prune expired user requests")
+		switch {
+		case errors.Is(result.Error, context.Canceled), errors.Is(result.Error, context.DeadlineExceeded):
+			s.log().Debug("prune expired aborted", zap.Error(result.Error))
+			return nil
+		default:
+			return errors.Wrap(result.Error, "prune expired user requests")
+		}
 	}
 	return nil
 }
@@ -345,23 +403,30 @@ func (s *Service) pruneExpired(ctx context.Context) error {
 // DeleteConsumed removes consumed requests based on retention policies.
 // If keepCount > 0, it retains the N most recent consumed requests.
 // If keepDays > 0, it retains requests consumed within the last N days.
-// If both are 0, it deletes all consumed requests.
-func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.AuthorizationContext, keepCount int, keepDays int, taskID string) (int64, error) {
+// If both are 0, it deletes all consumed requests. When includeAllTasks is false, only the
+// provided taskID is considered.
+func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.AuthorizationContext, keepCount int, keepDays int, taskID string, includeAllTasks bool) (int64, error) {
 	if auth == nil {
 		return 0, ErrInvalidAuthorization
 	}
 
-	taskID = normalizeTaskID(taskID)
-
-	query := s.db.WithContext(ctx).Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusConsumed)
+	filteredTaskID := normalizeTaskID(taskID)
+	query := s.db.WithContext(ctx).
+		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed)
+	if !includeAllTasks {
+		query = query.Where("task_id = ?", filteredTaskID)
+	}
 
 	if keepCount > 0 {
 		// Retain only the most recent N items.
 		// We use a subquery to identify the IDs to keep.
-		subQuery := s.db.Model(&Request{}).Select("id").
-			Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed).
-			Order("consumed_at DESC").
-			Limit(keepCount)
+		subQuery := s.db.Model(&Request{}).
+			Select("id").
+			Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed)
+		if !includeAllTasks {
+			subQuery = subQuery.Where("task_id = ?", filteredTaskID)
+		}
+		subQuery = subQuery.Order("consumed_at DESC").Limit(keepCount)
 
 		query = query.Where("id NOT IN (?)", subQuery)
 	} else if keepDays > 0 {
@@ -374,6 +439,16 @@ func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.Authorizatio
 	if result.Error != nil {
 		return 0, errors.Wrap(result.Error, "delete consumed requests")
 	}
+	logTaskID := filteredTaskID
+	if includeAllTasks {
+		logTaskID = "*"
+	}
+	s.log().Debug("deleted consumed user requests",
+		zap.String("user", auth.UserIdentity),
+		zap.Bool("all_tasks", includeAllTasks),
+		zap.String("task_id", logTaskID),
+		zap.Int64("deleted", result.RowsAffected),
+	)
 	return result.RowsAffected, nil
 }
 

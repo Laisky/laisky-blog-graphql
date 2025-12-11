@@ -406,7 +406,7 @@ export function UserRequestsPage() {
   );
 
   const handleDeleteRequest = useCallback(
-    async (requestId: string) => {
+    async (request: UserRequest) => {
       const key = normalizeApiKey(apiKey);
       if (!key) {
         setStatus({
@@ -415,11 +415,11 @@ export function UserRequestsPage() {
         });
         return;
       }
-      setPendingDeletes((prev) => ({ ...prev, [requestId]: true }));
+      setPendingDeletes((prev) => ({ ...prev, [request.id]: true }));
       try {
-        await deleteUserRequest(key, requestId);
+        await deleteUserRequest(key, request.id, { taskId: request.task_id });
         setStatus({ message: "Request deleted.", tone: "success" });
-        if (requestId === pickedRequestId) {
+        if (request.id === pickedRequestId) {
           setPickedRequestId(null);
           setEditorBackup(null);
         }
@@ -435,7 +435,7 @@ export function UserRequestsPage() {
       } finally {
         setPendingDeletes((prev) => {
           const next = { ...prev };
-          delete next[requestId];
+          delete next[request.id];
           return next;
         });
       }
@@ -471,7 +471,9 @@ export function UserRequestsPage() {
     }
     setIsDeletingAllPending(true);
     try {
-      const deleted = await deleteAllPendingRequests(key);
+      const deleted = await deleteAllPendingRequests(key, {
+        allTasks: true,
+      });
       setStatus({
         message: deleted
           ? `Deleted ${deleted} pending request${deleted === 1 ? "" : "s"}.`
@@ -514,6 +516,7 @@ export function UserRequestsPage() {
       const deleted = await deleteConsumedRequests(key, {
         keepCount: option.keepCount,
         keepDays: option.keepDays,
+        allTasks: true,
       });
       setStatus({
         message: deleted

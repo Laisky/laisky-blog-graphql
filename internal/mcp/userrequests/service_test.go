@@ -27,7 +27,7 @@ func TestServiceLifecycle(t *testing.T) {
 	require.Equal(t, StatusPending, created.Status)
 	require.Equal(t, DefaultTaskID, created.TaskID)
 
-	pending, consumed, err := svc.ListRequests(ctx, auth, "")
+	pending, consumed, err := svc.ListRequests(ctx, auth, "", false)
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	require.Len(t, consumed, 0)
@@ -36,7 +36,7 @@ func TestServiceLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, DefaultTaskID, second.TaskID)
 
-	_, _, err = svc.ListRequests(ctx, auth, "")
+	_, _, err = svc.ListRequests(ctx, auth, "", false)
 	require.NoError(t, err)
 
 	// ConsumeAllPending should return all pending in FIFO order (oldest first)
@@ -50,7 +50,7 @@ func TestServiceLifecycle(t *testing.T) {
 	require.NotNil(t, consumedReqs[0].ConsumedAt)
 	require.NotNil(t, consumedReqs[1].ConsumedAt)
 
-	pending, consumed, err = svc.ListRequests(ctx, auth, "")
+	pending, consumed, err = svc.ListRequests(ctx, auth, "", false)
 	require.NoError(t, err)
 	require.Len(t, pending, 0)
 	require.Len(t, consumed, 2)
@@ -78,7 +78,11 @@ func TestServiceDeleteOperations(t *testing.T) {
 	require.NoError(t, svc.DeleteRequest(ctx, authA, reqA.ID, ""))
 	require.ErrorIs(t, svc.DeleteRequest(ctx, authA, reqA.ID, ""), ErrRequestNotFound)
 
-	deleted, err := svc.DeleteAll(ctx, authB, "")
+	customReq, err := svc.CreateRequest(ctx, authA, "Directive custom", "task-x")
+	require.NoError(t, err)
+	require.NoError(t, svc.DeleteRequest(ctx, authA, customReq.ID, ""))
+
+	deleted, err := svc.DeleteAll(ctx, authB, "", false)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), deleted)
 }
@@ -101,7 +105,7 @@ func TestServicePrunesExpiredRequests(t *testing.T) {
 	oldCreatedAt := clock.Now().AddDate(0, 0, -(settings.RetentionDays + 5))
 	require.NoError(t, db.Model(&Request{}).Where("id = ?", oldReq.ID).Update("created_at", oldCreatedAt).Error)
 
-	pending, _, err := svc.ListRequests(ctx, auth, "task-expired")
+	pending, _, err := svc.ListRequests(ctx, auth, "task-expired", false)
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	require.Equal(t, recentReq.ID, pending[0].ID)
@@ -174,7 +178,7 @@ func TestServiceConsumeFirstPending(t *testing.T) {
 	require.NotNil(t, consumed.ConsumedAt)
 
 	// Verify second and third are still pending
-	pending, _, err := svc.ListRequests(ctx, auth, "")
+	pending, _, err := svc.ListRequests(ctx, auth, "", false)
 	require.NoError(t, err)
 	require.Len(t, pending, 2)
 	require.Equal(t, second.ID, pending[0].ID, "second should be first in pending now")
@@ -261,10 +265,104 @@ func TestServiceTaskIsolation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, otherTaskReq.ID, consumed.ID)
 
-	pending, _, err := svc.ListRequests(ctx, auth, "")
+	pending, _, err := svc.ListRequests(ctx, auth, "", false)
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	require.Equal(t, defaultReq.ID, pending[0].ID)
+}
+
+func TestServiceListRequestsAllTasks(t *testing.T) {
+	db := newTestDB(t)
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-all", "abcd")
+	ctx := context.Background()
+
+	firstDefault, err := svc.CreateRequest(ctx, auth, "Default directive", "")
+	require.NoError(t, err)
+	secondTask, err := svc.CreateRequest(ctx, auth, "Task specific directive", "task-x")
+	require.NoError(t, err)
+
+	pendingAll, _, err := svc.ListRequests(ctx, auth, "", true)
+	require.NoError(t, err)
+	require.Len(t, pendingAll, 2)
+	require.Equal(t, firstDefault.ID, pendingAll[0].ID)
+	require.Equal(t, secondTask.ID, pendingAll[1].ID)
+
+	pendingTask, _, err := svc.ListRequests(ctx, auth, "task-x", false)
+	require.NoError(t, err)
+	require.Len(t, pendingTask, 1)
+	require.Equal(t, secondTask.ID, pendingTask[0].ID)
+}
+
+func TestServiceDeleteAllPendingAllTasks(t *testing.T) {
+	db := newTestDB(t)
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-delete-pending", "1111")
+	ctx := context.Background()
+
+	_, err = svc.CreateRequest(ctx, auth, "Default", "")
+	require.NoError(t, err)
+	otherReq, err := svc.CreateRequest(ctx, auth, "Other", "task-z")
+	require.NoError(t, err)
+
+	deletedDefault, err := svc.DeleteAllPending(ctx, auth, "", false)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), deletedDefault)
+
+	pending, _, err := svc.ListRequests(ctx, auth, "", true)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.Equal(t, otherReq.ID, pending[0].ID)
+
+	deletedAll, err := svc.DeleteAllPending(ctx, auth, "", true)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), deletedAll)
+
+	pending, _, err = svc.ListRequests(ctx, auth, "", true)
+	require.NoError(t, err)
+	require.Len(t, pending, 0)
+
+	// Verify deleting when nothing pending returns zero but no error
+	deletedEmpty, err := svc.DeleteAllPending(ctx, auth, "", true)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), deletedEmpty)
+
+}
+
+func TestServiceDeleteConsumedAllTasks(t *testing.T) {
+	db := newTestDB(t)
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-delete-consumed", "2222")
+	ctx := context.Background()
+
+	_, err = svc.CreateRequest(ctx, auth, "Default", "")
+	require.NoError(t, err)
+	_, err = svc.CreateRequest(ctx, auth, "Other", "task-z")
+	require.NoError(t, err)
+
+	// Consume both tasks
+	_, err = svc.ConsumeFirstPending(ctx, auth, "")
+	require.NoError(t, err)
+	_, err = svc.ConsumeFirstPending(ctx, auth, "task-z")
+	require.NoError(t, err)
+
+	deletedDefault, err := svc.DeleteConsumed(ctx, auth, 0, 0, "", false)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), deletedDefault)
+
+	deletedAll, err := svc.DeleteConsumed(ctx, auth, 0, 0, "", true)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), deletedAll)
+
+	deletedEmpty, err := svc.DeleteConsumed(ctx, auth, 0, 0, "", true)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), deletedEmpty)
 }
 
 // TestServiceUserPreferences verifies that user preferences can be stored and retrieved.

@@ -106,8 +106,10 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskID := r.URL.Query().Get("task_id")
-	pending, consumed, err := service.ListRequests(ctx, auth, taskID)
+	query := r.URL.Query()
+	taskID := query.Get("task_id")
+	includeAllTasks := parseBoolFlag(query.Get("all_tasks"))
+	pending, consumed, err := service.ListRequests(ctx, auth, taskID, includeAllTasks)
 	if err != nil {
 		logger.Error("list user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load user requests")
@@ -245,8 +247,10 @@ func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskID := r.URL.Query().Get("task_id")
-	deleted, err := service.DeleteAll(ctx, auth, taskID)
+	query := r.URL.Query()
+	taskID := query.Get("task_id")
+	includeAllTasks := parseBoolFlag(query.Get("all_tasks"))
+	deleted, err := service.DeleteAll(ctx, auth, taskID, includeAllTasks)
 	if err != nil {
 		logger.Error("delete all user requests", zap.Error(err))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete requests")
@@ -276,6 +280,7 @@ func (h *httpHandler) handleDeleteConsumed(w http.ResponseWriter, r *http.Reques
 	var keepCount, keepDays int
 	query := r.URL.Query()
 	taskID := query.Get("task_id")
+	includeAllTasks := parseBoolFlag(query.Get("all_tasks"))
 	if val := query.Get("keep_count"); val != "" {
 		if n, err := strconv.Atoi(val); err == nil {
 			keepCount = n
@@ -287,7 +292,7 @@ func (h *httpHandler) handleDeleteConsumed(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	deleted, err := service.DeleteConsumed(ctx, auth, keepCount, keepDays, taskID)
+	deleted, err := service.DeleteConsumed(ctx, auth, keepCount, keepDays, taskID, includeAllTasks)
 	if err != nil {
 		logger.Error("delete consumed requests", zap.Error(err))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete consumed requests")
@@ -314,8 +319,10 @@ func (h *httpHandler) handleDeleteAllPending(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	taskID := r.URL.Query().Get("task_id")
-	deleted, err := service.DeleteAllPending(ctx, auth, taskID)
+	query := r.URL.Query()
+	taskID := query.Get("task_id")
+	includeAllTasks := parseBoolFlag(query.Get("all_tasks"))
+	deleted, err := service.DeleteAllPending(ctx, auth, taskID, includeAllTasks)
 	if err != nil {
 		logger.Error("delete pending user requests", zap.Error(err))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to delete pending requests")
@@ -376,4 +383,14 @@ func serializeRequest(req Request) map[string]any {
 		"user_identity": req.UserIdentity,
 	}
 	return payload
+}
+
+func parseBoolFlag(raw string) bool {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
