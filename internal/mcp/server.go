@@ -52,6 +52,7 @@ type Server struct {
 	askUser        *tools.AskUserTool
 	getUserRequest *tools.GetUserRequestTool
 	extractKeyInfo *tools.ExtractKeyInfoTool
+	mcpPipe        *tools.MCPPipeTool
 	callLogger     callRecorder
 	holdManager    *userrequests.HoldManager
 }
@@ -66,7 +67,7 @@ type Server struct {
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
 func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, rdb *rlibs.DB, callLogger callRecorder, toolsSettings ToolsSettings, logger logSDK.Logger) (*Server, error) {
-	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && rdb == nil {
+	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
@@ -206,6 +207,42 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		mcpServer.AddTool(ragTool.Definition(), s.handleExtractKeyInfo)
 	} else if ragService != nil && !toolsSettings.ExtractKeyInfoEnabled {
 		serverLogger.Info("extract_key_info tool disabled by configuration")
+	}
+
+	if toolsSettings.MCPPipeEnabled {
+		pipeTool, err := tools.NewMCPPipeTool(
+			serverLogger.Named("mcp_pipe"),
+			func(ctx context.Context, toolName string, args any) (*mcp.CallToolResult, error) {
+				// Prevent direct recursion; nested pipelines should use the 'pipe' step type.
+				if toolName == "mcp_pipe" {
+					return mcp.NewToolResultError("mcp_pipe cannot invoke itself"), nil
+				}
+
+				req := mcp.CallToolRequest{Params: mcp.CallToolParams{Name: toolName, Arguments: args}}
+				switch toolName {
+				case "web_search":
+					return s.handleWebSearch(ctx, req)
+				case "web_fetch":
+					return s.handleWebFetch(ctx, req)
+				case "ask_user":
+					return s.handleAskUser(ctx, req)
+				case "get_user_request":
+					return s.handleGetUserRequest(ctx, req)
+				case "extract_key_info":
+					return s.handleExtractKeyInfo(ctx, req)
+				default:
+					return mcp.NewToolResultError(fmt.Sprintf("unknown tool: %s", toolName)), nil
+				}
+			},
+			tools.PipeLimits{},
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "init mcp_pipe tool")
+		}
+		s.mcpPipe = pipeTool
+		mcpServer.AddTool(pipeTool.Definition(), s.handleMCPPipe)
+	} else {
+		serverLogger.Info("mcp_pipe tool disabled by configuration")
 	}
 
 	return s, nil
@@ -434,6 +471,23 @@ func (s *Server) handleExtractKeyInfo(ctx context.Context, req mcp.CallToolReque
 	result, err := s.extractKeyInfo.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "extract_key_info", apiKey, args, start, duration, oneapi.PriceExtractKeyInfo.Int(), result, err)
+	return result, err
+}
+
+// handleMCPPipe executes the mcp_pipe MCP tool, auditing the invocation via the call logger.
+func (s *Server) handleMCPPipe(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.mcpPipe == nil {
+		result := mcp.NewToolResultError("mcp_pipe tool is not available")
+		s.recordToolInvocation(ctx, "mcp_pipe", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.mcpPipe.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "mcp_pipe", apiKey, args, start, duration, 0, result, err)
 	return result, err
 }
 

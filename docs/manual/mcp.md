@@ -2,6 +2,27 @@
 
 This guide explains how to connect to the remote Model Context Protocol (MCP) endpoint exposed by the GraphQL service, the tools that are available, the HTTP helper pages that accompany them, and the configuration that must be in place before use.
 
+## Menu
+
+- [Remote MCP Server Manual](#remote-mcp-server-manual)
+  - [Menu](#menu)
+  - [Overview](#overview)
+  - [Deployment Prerequisites](#deployment-prerequisites)
+  - [Authentication Model](#authentication-model)
+    - [Bearer Tokens](#bearer-tokens)
+  - [HTTP Endpoints](#http-endpoints)
+  - [Tool Reference](#tool-reference)
+    - [`web_search`](#web_search)
+    - [`ask_user`](#ask_user)
+      - [Human Console Workflow](#human-console-workflow)
+    - [`get_user_request`](#get_user_request)
+      - [User Requests Console Workflow](#user-requests-console-workflow)
+    - [`extract_key_info`](#extract_key_info)
+    - [`mcp_pipe`](#mcp_pipe)
+    - [Data Storage Notes](#data-storage-notes)
+  - [Client Integration Tips](#client-integration-tips)
+  - [Troubleshooting](#troubleshooting)
+
 ## Overview
 
 The service mounts an MCP-compatible JSON-RPC endpoint at `/mcp`. Clients may connect over HTTP(S) using any MCP client, such as the [MCP Inspector](https://modelcontextprotocol.io/), and interact with these tools:
@@ -11,6 +32,7 @@ The service mounts an MCP-compatible JSON-RPC endpoint at `/mcp`. Clients may co
 - `ask_user` — forwards a question to the authenticated human and waits for their reply.
 - `get_user_request` — delivers the most recent human directive queued for the calling API key.
 - `extract_key_info` — chunks caller-provided materials, stores them in PostgreSQL with pgvector, and returns the most relevant contexts for a query.
+- `mcp_pipe` — executes a pipeline that composes multiple MCP tools (sequential, parallel, nested) and passes outputs between steps.
 
 Every tool requires a valid `Authorization: Bearer <token>` header. Tokens are also used for billing and for routing questions to the correct user.
 
@@ -18,17 +40,18 @@ Every tool requires a valid `Authorization: Bearer <token>` header. Tokens are a
 
 Enable the MCP endpoint when starting the API service. The tools are advertised automatically when their dependencies are available.
 
-| Feature           | Requirement                                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `web_search`      | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`. |
-| `ask_user`        | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM. |
+| Feature            | Requirement                                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web_search`       | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`.                                                                                                |
+| `ask_user`         | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM.                                                                                                                                                                                                          |
 | `get_user_request` | Same `settings.db.mcp.*` configuration. Stores directives in the `mcp_user_requests` table keyed by the caller’s token hash **and** `task_id`. Retention is controlled by `settings.mcp.user_requests.retention_days` (default `30`) and pruned by a background worker every `settings.mcp.user_requests.retention_sweep_seconds` (default `21600` / 6h). |
 
 If no tool dependencies are met the server skips MCP initialisation.
 
-| Feature             | Requirement |
-| ------------------- | ----------- |
-| `extract_key_info`  | `settings.db.mcp.*` connection info, `settings.openai.embedding_model`, and `settings.mcp.extract_key_info.enabled=true`. Requires pgvector-enabled PostgreSQL. |
+| Feature            | Requirement                                                                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extract_key_info` | `settings.db.mcp.*` connection info, `settings.openai.embedding_model`, and `settings.mcp.extract_key_info.enabled=true`. Requires pgvector-enabled PostgreSQL.      |
+| `mcp_pipe`         | No additional infrastructure dependencies. It is enabled/disabled via `settings.mcp.tools.mcp_pipe.enabled` and can call only tools that are enabled and configured. |
 
 ## Authentication Model
 
@@ -48,16 +71,16 @@ The raw token is checked against the external billing service, hashed with SHA-2
 
 ## HTTP Endpoints
 
-| Path                                    | Methods           | Purpose                                                                                                       |
-| --------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------- |
-| `/mcp`                                  | `POST`, WebSocket | Primary MCP transport, handled by the streamable MCP server.                                                  |
-| `/mcp/debug`                            | `GET`, `HEAD`     | Serves a pre-configured MCP Inspector page. Optional `?endpoint=` and `?token=` query params allow overrides. |
-| `/mcp/tools/ask_user`                   | `GET`             | Web console for human operators. Prompts for the API key and then shows pending questions and history.        |
-| `/mcp/tools/ask_user/api/requests`      | `GET`             | JSON API used by the console. Requires the same `Authorization` header.                                       |
-| `/mcp/tools/ask_user/api/requests/{id}` | `POST`            | Submits the human response for a pending request.                                                             |
-| `/mcp/tools/get_user_requests`              | `GET`             | React console that lets humans queue, review, and delete directives for `get_user_request`.                    |
-| `/mcp/tools/get_user_requests/api/requests` | `GET`, `POST`, `DELETE` | Lists, creates, or bulk-deletes user directives scoped to the bearer token.                                    |
-| `/mcp/tools/get_user_requests/api/requests/{id}` | `DELETE`       | Removes a single directive.                                                                                   |
+| Path                                             | Methods                 | Purpose                                                                                                       |
+| ------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `/mcp`                                           | `POST`, WebSocket       | Primary MCP transport, handled by the streamable MCP server.                                                  |
+| `/mcp/debug`                                     | `GET`, `HEAD`           | Serves a pre-configured MCP Inspector page. Optional `?endpoint=` and `?token=` query params allow overrides. |
+| `/mcp/tools/ask_user`                            | `GET`                   | Web console for human operators. Prompts for the API key and then shows pending questions and history.        |
+| `/mcp/tools/ask_user/api/requests`               | `GET`                   | JSON API used by the console. Requires the same `Authorization` header.                                       |
+| `/mcp/tools/ask_user/api/requests/{id}`          | `POST`                  | Submits the human response for a pending request.                                                             |
+| `/mcp/tools/get_user_requests`                   | `GET`                   | React console that lets humans queue, review, and delete directives for `get_user_request`.                   |
+| `/mcp/tools/get_user_requests/api/requests`      | `GET`, `POST`, `DELETE` | Lists, creates, or bulk-deletes user directives scoped to the bearer token.                                   |
+| `/mcp/tools/get_user_requests/api/requests/{id}` | `DELETE`                | Removes a single directive.                                                                                   |
 
 > **Note:** The console endpoints are intended for browsers. They are protected only by the bearer token, so deploy behind HTTPS and avoid exposing them publicly without additional access controls.
 
@@ -72,7 +95,7 @@ The raw token is checked against the external billing service, hashed with SHA-2
   1. Validates the token and charges the user via `oneapi.CheckUserExternalBilling` (`PriceWebSearch`).
   2. Issues the request to the configured Google search engine.
   3. Returns a JSON payload compatible with `search.SearchResult`.
-  > **Cost:** Google currently charges roughly USD $5 per 1,000 queries on the Custom Search JSON API.
+     > **Cost:** Google currently charges roughly USD $5 per 1,000 queries on the Custom Search JSON API.
 - **Sample Result:**
 
 ```json
@@ -193,6 +216,165 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 
 - **Error Cases:** invalid/missing token, payload too large, `top_k` outside allowed range, billing refusal, or upstream embedding failures.
 
+### `mcp_pipe`
+
+- **Description:** Execute a processing pipeline that composes existing MCP tools in a single call.
+
+  Typical use is chaining the built-in tools:
+
+  1. `web_search` → get URLs
+  2. `web_fetch` → fetch page content
+  3. `extract_key_info` → extract the relevant contexts
+
+  `mcp_pipe` also supports parallel groups and nested pipelines.
+
+- **Input Parameters:**
+
+  `mcp_pipe` accepts either:
+
+  1. `spec` (string or object, optional) — a pipeline specification, or
+  2. the pipeline spec object passed directly as the tool arguments.
+
+  The pipeline spec schema is:
+
+  - `vars` (object, optional): user-defined variables.
+  - `steps` (array, required): ordered list of steps.
+  - `return` (any, optional): a selector for the final return value. Defaults to the last step result.
+  - `continue_on_error` (bool, optional, default `false`): whether to continue executing remaining steps after a failure.
+
+- **Step Types:** each step must have a non-empty `id` and specify exactly one of:
+
+  - Tool step:
+
+    ```json
+    { "id": "search", "tool": "web_search", "args": { "query": "${vars.q}" } }
+    ```
+
+  - Parallel group:
+
+    ```json
+    {
+      "id": "pages",
+      "parallel": [
+        { "id": "p1", "tool": "web_fetch", "args": { "url": "https://a" } },
+        { "id": "p2", "tool": "web_fetch", "args": { "url": "https://b" } }
+      ]
+    }
+    ```
+
+  - Nested pipeline:
+
+    ```json
+    {
+      "id": "child",
+      "pipe": {
+        "steps": [
+          { "id": "f", "tool": "web_fetch", "args": { "url": "https://x" } }
+        ],
+        "return": { "$ref": "steps.f.structured.content" }
+      }
+    }
+    ```
+
+- **Passing Outputs to Later Steps:**
+
+  `mcp_pipe` resolves inputs using:
+
+  1. String interpolation: replace `${...}` inside strings.
+  2. Typed references: `{ "$ref": "path.to.value" }` which preserves the referenced value's type.
+
+  Available roots:
+
+  - `vars` — from `spec.vars`
+  - `steps` — per-step results populated during execution
+  - `last` — last executed step result
+
+  Array indices are numeric path segments (e.g. `...results.0.url`). Parallel group child results are stored under `steps.<group_id>.children.<child_id>`.
+
+- **Sample: Search → Fetch → Extract**
+
+  ```json
+  {
+    "vars": { "q": "mcp protocol overview" },
+    "steps": [
+      {
+        "id": "search",
+        "tool": "web_search",
+        "args": { "query": "${vars.q}" }
+      },
+      {
+        "id": "fetch",
+        "tool": "web_fetch",
+        "args": { "url": { "$ref": "steps.search.structured.results.0.url" } }
+      },
+      {
+        "id": "extract",
+        "tool": "extract_key_info",
+        "args": {
+          "query": "${vars.q}",
+          "materials": "${steps.fetch.structured.content}"
+        }
+      }
+    ],
+    "return": { "$ref": "steps.extract.structured.contexts" }
+  }
+  ```
+
+- **Sample: Parallel Fetch then Extract**
+
+  ```json
+  {
+    "vars": { "q": "golang", "u1": "https://a", "u2": "https://b" },
+    "steps": [
+      {
+        "id": "pages",
+        "parallel": [
+          { "id": "p1", "tool": "web_fetch", "args": { "url": "${vars.u1}" } },
+          { "id": "p2", "tool": "web_fetch", "args": { "url": "${vars.u2}" } }
+        ]
+      },
+      {
+        "id": "extract",
+        "tool": "extract_key_info",
+        "args": {
+          "query": "${vars.q}",
+          "materials": "${steps.pages.children.p1.structured.content}\n${steps.pages.children.p2.structured.content}"
+        }
+      }
+    ],
+    "return": { "$ref": "steps.extract.structured.contexts" }
+  }
+  ```
+
+- **Output Shape:**
+
+  `mcp_pipe` returns a JSON object with:
+
+  - `ok` (bool): overall success.
+  - `error` (string): the first error encountered (empty on success).
+  - `result` (any): selected return value.
+  - `steps` (object): per-step results with timestamps, durations, and captured tool outputs.
+
+  Each tool step includes:
+
+  - `structured`: the sub-tool's structured output (`structuredContent`)
+  - `text`: the sub-tool's text output (the JSON string fallback)
+
+- **Error Cases:**
+
+  - Invalid spec (`steps cannot be empty`, invalid `$ref`, duplicate step IDs).
+  - Unsupported tool name.
+  - Safety limit violations (too many steps, too deep nesting).
+  - Sub-tool errors are surfaced as a failed step and propagated (unless `continue_on_error=true`).
+
+- **Billing Notes:**
+
+  `mcp_pipe` itself has no direct billing. Sub-tools still run their usual billing checks (e.g. `web_search`, `web_fetch`, `extract_key_info`) using the caller's bearer token. If the overall pipeline fails, any sub-tools that already completed successfully are still billed (there is no rollback).
+
+- **Configuration:**
+
+  Disable the tool with `settings.mcp.tools.mcp_pipe.enabled=false`.
+
 ### Data Storage Notes
 
 - Requests are stored in the `mcp` PostgreSQL database, table inferred from the GORM model `askuser.Request`.
@@ -211,11 +393,11 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 
 ## Troubleshooting
 
-| Symptom                                | Possible Cause                                                                                  | Remedy                                                                        |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `ask_user tool is not available`       | PostgreSQL connection could not be opened, or configuration missing.                            | Verify `settings.db.mcp.*` values and database connectivity.                  |
+| Symptom                                | Possible Cause                                                                                  | Remedy                                                                                                              |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `ask_user tool is not available`       | PostgreSQL connection could not be opened, or configuration missing.                            | Verify `settings.db.mcp.*` values and database connectivity.                                                        |
 | `web search is not configured`         | No web search engines enabled, or required credentials missing.                                 | Configure an engine under `settings.websearch.engines` (e.g. supply Google `api_key`/`cx` and set `enabled: true`). |
-| Repeated `billing check failed` errors | External OneAPI billing request rejected.                                                       | Confirm the bearer token has sufficient quota or check OneAPI service health. |
-| Console shows no pending questions     | The AI has not called `ask_user`, or the API key entered does not match the one used by the AI. | Ensure matching API key and review server logs for request creation.          |
+| Repeated `billing check failed` errors | External OneAPI billing request rejected.                                                       | Confirm the bearer token has sufficient quota or check OneAPI service health.                                       |
+| Console shows no pending questions     | The AI has not called `ask_user`, or the API key entered does not match the one used by the AI. | Ensure matching API key and review server logs for request creation.                                                |
 
 For additional diagnostics, enable debug logging or monitor the `/mcp` request logs emitted by the `mcp` logger namespace.
