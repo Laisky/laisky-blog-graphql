@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
+	gutils "github.com/Laisky/go-utils/v6"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	mcp "github.com/mark3labs/mcp-go/mcp"
@@ -70,10 +71,6 @@ func (t *ExtractKeyInfoTool) Definition() mcp.Tool {
 			mcp.Required(),
 			mcp.Description("Source text to scan for relevant information."),
 		),
-		mcp.WithString(
-			"task_id",
-			mcp.Description("Optional task identifier used to segregate materials; defaults to 'default'."),
-		),
 		mcp.WithNumber(
 			"top_k",
 			mcp.Description("Maximum number of contexts to return."),
@@ -104,12 +101,10 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError(fmt.Sprintf("materials exceed maximum size (%d bytes)", t.settings.MaxMaterialsSize)), nil
 	}
 
-	taskID := rag.SanitizeTaskID("default")
-	if rawTaskID, ok := findTaskID(req.Params.Arguments); ok {
-		taskID = rag.SanitizeTaskID(rawTaskID)
-	}
+	taskID := rag.SanitizeTaskID(gutils.UUID7())
 	if taskID == "" {
-		return mcp.NewToolResultError("task_id cannot be empty"), nil
+		t.logger.Error("extract_key_info generated empty task id")
+		return mcp.NewToolResultError("failed to initialize request"), nil
 	}
 
 	topK := t.settings.TopKDefault
@@ -176,22 +171,6 @@ func findTopK(arguments any) (int, bool) {
 	return 0, false
 }
 
-func findTaskID(arguments any) (string, bool) {
-	args, ok := arguments.(map[string]any)
-	if !ok {
-		return "", false
-	}
-	candidates := []string{"task_id", "taskId"}
-	for _, key := range candidates {
-		if value, ok := args[key]; ok {
-			if parsed, ok := toString(value); ok {
-				return parsed, true
-			}
-		}
-	}
-	return "", false
-}
-
 func toInt(value any) (int, bool) {
 	switch v := value.(type) {
 	case int:
@@ -215,12 +194,4 @@ func toInt(value any) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-func toString(value any) (string, bool) {
-	switch v := value.(type) {
-	case string:
-		return strings.TrimSpace(v), true
-	}
-	return "", false
 }
