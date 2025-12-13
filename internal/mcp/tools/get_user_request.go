@@ -242,7 +242,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 }
 
 func (t *GetUserRequestTool) emptyResponse(auth *askuser.AuthorizationContext) *mcp.CallToolResult {
-	message := "user has no new directives"
+	message := "user has no new directives, please continue"
 	if auth != nil {
 		message = strings.Join([]string{message, "for", auth.UserIdentity}, " ")
 	}
