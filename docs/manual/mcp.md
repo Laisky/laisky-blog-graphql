@@ -27,12 +27,14 @@ This guide explains how to connect to the remote Model Context Protocol (MCP) en
 
 The service mounts an MCP-compatible JSON-RPC endpoint at `/mcp`. Clients may connect over HTTP(S) using any MCP client, such as the [MCP Inspector](https://modelcontextprotocol.io/), and interact with these tools:
 
-- `web_search` — runs a Google Programmable Search query.
-- `web_fetch` — renders a dynamic web page through the Redis-backed fetcher.
-- `ask_user` — forwards a question to the authenticated human and waits for their reply.
-- `get_user_request` — delivers the most recent human directive queued for the calling API key.
-- `extract_key_info` — chunks caller-provided materials, stores them in PostgreSQL with pgvector, and returns the most relevant contexts for a query.
-- `mcp_pipe` — executes a pipeline that composes multiple MCP tools (sequential, parallel, nested) and passes outputs between steps.
+**`https://mcp.laisky.com` does not require the suffix `/mcp` when used as an MCP endpoint.**
+
+-   `web_search` — runs a Google Programmable Search query.
+-   `web_fetch` — renders a dynamic web page through the Redis-backed fetcher.
+-   `ask_user` — forwards a question to the authenticated human and waits for their reply.
+-   `get_user_request` — delivers the most recent human directive queued for the calling API key.
+-   `extract_key_info` — chunks caller-provided materials, stores them in PostgreSQL with pgvector, and returns the most relevant contexts for a query.
+-   `mcp_pipe` — executes a pipeline that composes multiple MCP tools (sequential, parallel, nested) and passes outputs between steps.
 
 Every tool requires a valid `Authorization: Bearer <token>` header. Tokens are also used for billing and for routing questions to the correct user.
 
@@ -64,8 +66,8 @@ Both tools rely on a Bearer token supplied via the `Authorization` header. The b
 
 Within the identity segment you can optionally separate user and AI identities with a colon (`user-id:ai-id`). When the colon is omitted the same value is used for both. Examples:
 
-- `Authorization: Bearer user:assistant@sk-example` → `user-id=user`, `ai-id=assistant`.
-- `Authorization: Bearer workspace@sk-example` → `user-id=workspace`, `ai-id=workspace`.
+-   `Authorization: Bearer user:assistant@sk-example` → `user-id=user`, `ai-id=assistant`.
+-   `Authorization: Bearer workspace@sk-example` → `user-id=workspace`, `ai-id=workspace`.
 
 The raw token is checked against the external billing service, hashed with SHA-256, and the last four characters are kept for display in the ask_user dashboard. Store tokens securely; the server does not persist them in plain text.
 
@@ -88,59 +90,57 @@ The raw token is checked against the external billing service, hashed with SHA-2
 
 ### `web_search`
 
-- **Description:** Search the public web using Google Programmable Search and return structured results.
-- **Input Parameters:**
-  - `query` (string, required) — plain text search phrase.
-- **Behaviour:**
-  1. Validates the token and charges the user via `oneapi.CheckUserExternalBilling` (`PriceWebSearch`).
-  2. Issues the request to the configured Google search engine.
-  3. Returns a JSON payload compatible with `search.SearchResult`.
-     > **Cost:** Google currently charges roughly USD $5 per 1,000 queries on the Custom Search JSON API.
-- **Sample Result:**
+-   **Description:** Search the public web using Google Programmable Search and return structured results.
+-   **Input Parameters:**
+    -   `query` (string, required) — plain text search phrase.
+-   **Behaviour:**
+    1. Validates the token and charges the user via `oneapi.CheckUserExternalBilling` (`PriceWebSearch`).
+    2. Issues the request to the configured Google search engine.
+    3. Returns a JSON payload compatible with `search.SearchResult`.
+        > **Cost:** Google currently charges roughly USD $5 per 1,000 queries on the Custom Search JSON API.
+-   **Sample Result:**
 
 ```json
 {
-  "query": "mcp protocol overview",
-  "created_at": "2025-10-23T18:24:26Z",
-  "results": [
-    { "url": "https://example.com", "name": "Example", "snippet": "..." }
-  ]
+    "query": "mcp protocol overview",
+    "created_at": "2025-10-23T18:24:26Z",
+    "results": [{ "url": "https://example.com", "name": "Example", "snippet": "..." }]
 }
 ```
 
-- **Error Conditions:**
-  - Missing/invalid token → `missing authorization bearer token`.
-  - Billing refusal → `billing check failed: ...`.
-  - Empty search phrase → `query cannot be empty`.
+-   **Error Conditions:**
+    -   Missing/invalid token → `missing authorization bearer token`.
+    -   Billing refusal → `billing check failed: ...`.
+    -   Empty search phrase → `query cannot be empty`.
 
 ### `ask_user`
 
-- **Description:** Ask the authenticated human for additional information and wait for their reply.
-- **Input Parameters:**
-  - `question` (string, required) — the message presented to the user.
-- **Behaviour:**
+-   **Description:** Ask the authenticated human for additional information and wait for their reply.
+-   **Input Parameters:**
+    -   `question` (string, required) — the message presented to the user.
+-   **Behaviour:**
 
-  1. Parses the token to determine user/AI identities and a hashed key.
-  2. Creates a `pending` request in PostgreSQL.
-  3. Polls until the request is answered, cancelled, or times out (five minutes).
-  4. Returns the human’s response when available.
+    1. Parses the token to determine user/AI identities and a hashed key.
+    2. Creates a `pending` request in PostgreSQL.
+    3. Polls until the request is answered, cancelled, or times out (five minutes).
+    4. Returns the human’s response when available.
 
-- **Response Shape:**
+-   **Response Shape:**
 
 ```json
 {
-  "request_id": "f5f7c1cd-8573-41c4-9c8e-43bcc21ede35",
-  "question": "Please approve deployment?",
-  "answer": "Approved. Deploy at 18:00 UTC.",
-  "asked_at": "2025-10-23T18:20:00Z",
-  "answered_at": "2025-10-23T18:21:42Z"
+    "request_id": "f5f7c1cd-8573-41c4-9c8e-43bcc21ede35",
+    "question": "Please approve deployment?",
+    "answer": "Approved. Deploy at 18:00 UTC.",
+    "asked_at": "2025-10-23T18:20:00Z",
+    "answered_at": "2025-10-23T18:21:42Z"
 }
 ```
 
-- **Timeouts & Errors:**
-  - If the human does not respond within five minutes the request is marked `expired` and the tool returns `timeout waiting for user response`.
-  - Invalid or missing tokens → `invalid authorization header`.
-  - Requests that are already closed return a descriptive error.
+-   **Timeouts & Errors:**
+    -   If the human does not respond within five minutes the request is marked `expired` and the tool returns `timeout waiting for user response`.
+    -   Invalid or missing tokens → `invalid authorization header`.
+    -   Requests that are already closed return a descriptive error.
 
 #### Human Console Workflow
 
@@ -154,31 +154,31 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 
 ### `get_user_request`
 
-- **Description:** Deliver the most recent human-authored directive waiting for the authenticated API key and immediately mark it as consumed so it is not replayed. Data is isolated by the combination of hashed API key and `task_id`.
-- **Input Parameters:**
-  - `task_id` (string, optional) — isolates queues for concurrent agent tasks. Defaults to `default` and is normalised to a safe identifier shared across MCP tools.
-- **Behaviour:**
-  1. Parses and validates the bearer token, deriving `user_identity` and the hashed key.
-  2. Normalises `task_id` (defaults to `default`) and looks up the newest `pending` entry in `mcp_user_requests` for that key **and task**.
-  3. Atomically flips the entry to `consumed`, stamps `consumed_at`, and returns the payload to the caller.
-  4. When the queue is empty the tool responds immediately with `{ "status": "empty" }` instead of raising an error.
-  5. A background worker prunes requests older than the configured retention window so stale directives do not leak across sessions.
-- **Response Shape:**
+-   **Description:** Deliver the most recent human-authored directive waiting for the authenticated API key and immediately mark it as consumed so it is not replayed. Data is isolated by the combination of hashed API key and `task_id`.
+-   **Input Parameters:**
+    -   `task_id` (string, optional) — isolates queues for concurrent agent tasks. Defaults to `default` and is normalised to a safe identifier shared across MCP tools.
+-   **Behaviour:**
+    1. Parses and validates the bearer token, deriving `user_identity` and the hashed key.
+    2. Normalises `task_id` (defaults to `default`) and looks up the newest `pending` entry in `mcp_user_requests` for that key **and task**.
+    3. Atomically flips the entry to `consumed`, stamps `consumed_at`, and returns the payload to the caller.
+    4. When the queue is empty the tool responds immediately with `{ "status": "empty" }` instead of raising an error.
+    5. A background worker prunes requests older than the configured retention window so stale directives do not leak across sessions.
+-   **Response Shape:**
 
 ```json
 {
-  "request_id": "22222222-2222-2222-2222-222222222222",
-  "content": "Ship release v2 after the smoke tests finish.",
-  "task_id": "default",
-  "status": "consumed",
-  "created_at": "2025-10-23T18:20:00Z",
-  "consumed_at": "2025-10-23T18:21:42Z",
-  "user_identity": "user:workspace",
-  "key_hint": "9f42"
+    "request_id": "22222222-2222-2222-2222-222222222222",
+    "content": "Ship release v2 after the smoke tests finish.",
+    "task_id": "default",
+    "status": "consumed",
+    "created_at": "2025-10-23T18:20:00Z",
+    "consumed_at": "2025-10-23T18:21:42Z",
+    "user_identity": "user:workspace",
+    "key_hint": "9f42"
 }
 ```
 
-- **Error Cases:** missing/invalid token (`invalid authorization header`), database outages (`failed to fetch user request`), or context cancellations/timeouts inherited from the MCP caller. Running with an empty queue is treated as a successful call and returns a descriptive JSON payload. Requests older than the retention window are silently pruned.
+-   **Error Cases:** missing/invalid token (`invalid authorization header`), database outages (`failed to fetch user request`), or context cancellations/timeouts inherited from the MCP caller. Running with an empty queue is treated as a successful call and returns a descriptive JSON payload. Requests older than the retention window are silently pruned.
 
 #### User Requests Console Workflow
 
@@ -189,207 +189,205 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 
 ### `extract_key_info`
 
-- **Description:** Chunk arbitrary materials, compute embeddings with the caller's OpenAI-compatible key, and return the top-matching context slices.
-- **Input Parameters:**
-  - `query` (string, required) — natural-language question.
-  - `materials` (string, required) — source text to analyse.
-  - `top_k` (int, optional) — number of contexts to return (default `5`, max `20`).
-- **Behaviour:**
-  1. Validates payload size (`settings.mcp.extract_key_info.max_materials_size`).
-  2. Bills the caller via `oneapi.CheckUserExternalBilling` using `PriceExtractKeyInfo`.
-  3. Derives `user_id` (hashed token) and `task_id` (prefix before `@`) from the Authorization header.
-  4. Splits `materials` into paragraphs (<1500 chars), cleans whitespace, and tokenises for BM25-style scoring.
-  5. Embeds each chunk plus the query with the configured model (default `text-embedding-3-small`) and persists to PostgreSQL tables `mcp_rag_tasks`, `mcp_rag_chunks`, `mcp_rag_embeddings`, and `mcp_rag_bm25`.
-  6. Executes a hybrid ranking (semantic cosine similarity + keyword overlap) and returns the top `top_k` chunks preserving order.
-- **Sample Response:**
+-   **Description:** Chunk arbitrary materials, compute embeddings with the caller's OpenAI-compatible key, and return the top-matching context slices.
+-   **Input Parameters:**
+    -   `query` (string, required) — natural-language question.
+    -   `materials` (string, required) — source text to analyse.
+    -   `top_k` (int, optional) — number of contexts to return (default `5`, max `20`).
+-   **Behaviour:**
+    1. Validates payload size (`settings.mcp.extract_key_info.max_materials_size`).
+    2. Bills the caller via `oneapi.CheckUserExternalBilling` using `PriceExtractKeyInfo`.
+    3. Derives `user_id` (hashed token) and `task_id` (prefix before `@`) from the Authorization header.
+    4. Splits `materials` into paragraphs (<1500 chars), cleans whitespace, and tokenises for BM25-style scoring.
+    5. Embeds each chunk plus the query with the configured model (default `text-embedding-3-small`) and persists to PostgreSQL tables `mcp_rag_tasks`, `mcp_rag_chunks`, `mcp_rag_embeddings`, and `mcp_rag_bm25`.
+    6. Executes a hybrid ranking (semantic cosine similarity + keyword overlap) and returns the top `top_k` chunks preserving order.
+-   **Sample Response:**
 
 ```json
 {
-  "contexts": [
-    "The billing service must receive tenant-specific quotas...",
-    "Each chunk stores user_id, task_id, and materials_hash metadata..."
-  ],
-  "count": 2,
-  "task_id": "workspace"
+    "contexts": [
+        "The billing service must receive tenant-specific quotas...",
+        "Each chunk stores user_id, task_id, and materials_hash metadata..."
+    ],
+    "count": 2,
+    "task_id": "workspace"
 }
 ```
 
-- **Error Cases:** invalid/missing token, payload too large, `top_k` outside allowed range, billing refusal, or upstream embedding failures.
+-   **Error Cases:** invalid/missing token, payload too large, `top_k` outside allowed range, billing refusal, or upstream embedding failures.
 
 ### `mcp_pipe`
 
-- **Description:** Execute a processing pipeline that composes existing MCP tools in a single call.
+-   **Description:** Execute a processing pipeline that composes existing MCP tools in a single call.
 
-  Typical use is chaining the built-in tools:
+    Typical use is chaining the built-in tools:
 
-  1. `web_search` → get URLs
-  2. `web_fetch` → fetch page content
-  3. `extract_key_info` → extract the relevant contexts
+    1. `web_search` → get URLs
+    2. `web_fetch` → fetch page content
+    3. `extract_key_info` → extract the relevant contexts
 
-  `mcp_pipe` also supports parallel groups and nested pipelines.
+    `mcp_pipe` also supports parallel groups and nested pipelines.
 
-- **Input Parameters:**
+-   **Input Parameters:**
 
-  `mcp_pipe` accepts either:
+    `mcp_pipe` accepts either:
 
-  1. `spec` (string or object, optional) — a pipeline specification, or
-  2. the pipeline spec object passed directly as the tool arguments.
+    1. `spec` (string or object, optional) — a pipeline specification, or
+    2. the pipeline spec object passed directly as the tool arguments.
 
-  The pipeline spec schema is:
+    The pipeline spec schema is:
 
-  - `vars` (object, optional): user-defined variables.
-  - `steps` (array, required): ordered list of steps.
-  - `return` (any, optional): a selector for the final return value. Defaults to the last step result.
-  - `continue_on_error` (bool, optional, default `false`): whether to continue executing remaining steps after a failure.
+    -   `vars` (object, optional): user-defined variables.
+    -   `steps` (array, required): ordered list of steps.
+    -   `return` (any, optional): a selector for the final return value. Defaults to the last step result.
+    -   `continue_on_error` (bool, optional, default `false`): whether to continue executing remaining steps after a failure.
 
-- **Step Types:** each step must have a non-empty `id` and specify exactly one of:
+-   **Step Types:** each step must have a non-empty `id` and specify exactly one of:
 
-  - Tool step:
+    -   Tool step:
 
-    ```json
-    { "id": "search", "tool": "web_search", "args": { "query": "${vars.q}" } }
-    ```
+        ```json
+        { "id": "search", "tool": "web_search", "args": { "query": "${vars.q}" } }
+        ```
 
-  - Parallel group:
+    -   Parallel group:
+
+        ```json
+        {
+            "id": "pages",
+            "parallel": [
+                { "id": "p1", "tool": "web_fetch", "args": { "url": "https://a" } },
+                { "id": "p2", "tool": "web_fetch", "args": { "url": "https://b" } }
+            ]
+        }
+        ```
+
+    -   Nested pipeline:
+
+        ```json
+        {
+            "id": "child",
+            "pipe": {
+                "steps": [{ "id": "f", "tool": "web_fetch", "args": { "url": "https://x" } }],
+                "return": { "$ref": "steps.f.structured.content" }
+            }
+        }
+        ```
+
+-   **Passing Outputs to Later Steps:**
+
+    `mcp_pipe` resolves inputs using:
+
+    1. String interpolation: replace `${...}` inside strings.
+    2. Typed references: `{ "$ref": "path.to.value" }` which preserves the referenced value's type.
+
+    Available roots:
+
+    -   `vars` — from `spec.vars`
+    -   `steps` — per-step results populated during execution
+    -   `last` — last executed step result
+
+    Array indices are numeric path segments (e.g. `...results.0.url`). Parallel group child results are stored under `steps.<group_id>.children.<child_id>`.
+
+-   **Sample: Search → Fetch → Extract**
 
     ```json
     {
-      "id": "pages",
-      "parallel": [
-        { "id": "p1", "tool": "web_fetch", "args": { "url": "https://a" } },
-        { "id": "p2", "tool": "web_fetch", "args": { "url": "https://b" } }
-      ]
-    }
-    ```
-
-  - Nested pipeline:
-
-    ```json
-    {
-      "id": "child",
-      "pipe": {
+        "vars": { "q": "mcp protocol overview" },
         "steps": [
-          { "id": "f", "tool": "web_fetch", "args": { "url": "https://x" } }
+            {
+                "id": "search",
+                "tool": "web_search",
+                "args": { "query": "${vars.q}" }
+            },
+            {
+                "id": "fetch",
+                "tool": "web_fetch",
+                "args": { "url": { "$ref": "steps.search.structured.results.0.url" } }
+            },
+            {
+                "id": "extract",
+                "tool": "extract_key_info",
+                "args": {
+                    "query": "${vars.q}",
+                    "materials": "${steps.fetch.structured.content}"
+                }
+            }
         ],
-        "return": { "$ref": "steps.f.structured.content" }
-      }
+        "return": { "$ref": "steps.extract.structured.contexts" }
     }
     ```
 
-- **Passing Outputs to Later Steps:**
+-   **Sample: Parallel Fetch then Extract**
 
-  `mcp_pipe` resolves inputs using:
+    ```json
+    {
+        "vars": { "q": "golang", "u1": "https://a", "u2": "https://b" },
+        "steps": [
+            {
+                "id": "pages",
+                "parallel": [
+                    { "id": "p1", "tool": "web_fetch", "args": { "url": "${vars.u1}" } },
+                    { "id": "p2", "tool": "web_fetch", "args": { "url": "${vars.u2}" } }
+                ]
+            },
+            {
+                "id": "extract",
+                "tool": "extract_key_info",
+                "args": {
+                    "query": "${vars.q}",
+                    "materials": "${steps.pages.children.p1.structured.content}\n${steps.pages.children.p2.structured.content}"
+                }
+            }
+        ],
+        "return": { "$ref": "steps.extract.structured.contexts" }
+    }
+    ```
 
-  1. String interpolation: replace `${...}` inside strings.
-  2. Typed references: `{ "$ref": "path.to.value" }` which preserves the referenced value's type.
+-   **Output Shape:**
 
-  Available roots:
+    `mcp_pipe` returns a JSON object with:
 
-  - `vars` — from `spec.vars`
-  - `steps` — per-step results populated during execution
-  - `last` — last executed step result
+    -   `ok` (bool): overall success.
+    -   `error` (string): the first error encountered (empty on success).
+    -   `result` (any): selected return value.
+    -   `steps` (object): per-step results with timestamps, durations, and captured tool outputs.
 
-  Array indices are numeric path segments (e.g. `...results.0.url`). Parallel group child results are stored under `steps.<group_id>.children.<child_id>`.
+    Each tool step includes:
 
-- **Sample: Search → Fetch → Extract**
+    -   `structured`: the sub-tool's structured output (`structuredContent`)
+    -   `text`: the sub-tool's text output (the JSON string fallback)
 
-  ```json
-  {
-    "vars": { "q": "mcp protocol overview" },
-    "steps": [
-      {
-        "id": "search",
-        "tool": "web_search",
-        "args": { "query": "${vars.q}" }
-      },
-      {
-        "id": "fetch",
-        "tool": "web_fetch",
-        "args": { "url": { "$ref": "steps.search.structured.results.0.url" } }
-      },
-      {
-        "id": "extract",
-        "tool": "extract_key_info",
-        "args": {
-          "query": "${vars.q}",
-          "materials": "${steps.fetch.structured.content}"
-        }
-      }
-    ],
-    "return": { "$ref": "steps.extract.structured.contexts" }
-  }
-  ```
+-   **Error Cases:**
 
-- **Sample: Parallel Fetch then Extract**
+    -   Invalid spec (`steps cannot be empty`, invalid `$ref`, duplicate step IDs).
+    -   Unsupported tool name.
+    -   Safety limit violations (too many steps, too deep nesting).
+    -   Sub-tool errors are surfaced as a failed step and propagated (unless `continue_on_error=true`).
 
-  ```json
-  {
-    "vars": { "q": "golang", "u1": "https://a", "u2": "https://b" },
-    "steps": [
-      {
-        "id": "pages",
-        "parallel": [
-          { "id": "p1", "tool": "web_fetch", "args": { "url": "${vars.u1}" } },
-          { "id": "p2", "tool": "web_fetch", "args": { "url": "${vars.u2}" } }
-        ]
-      },
-      {
-        "id": "extract",
-        "tool": "extract_key_info",
-        "args": {
-          "query": "${vars.q}",
-          "materials": "${steps.pages.children.p1.structured.content}\n${steps.pages.children.p2.structured.content}"
-        }
-      }
-    ],
-    "return": { "$ref": "steps.extract.structured.contexts" }
-  }
-  ```
+-   **Billing Notes:**
 
-- **Output Shape:**
+    `mcp_pipe` itself has no direct billing. Sub-tools still run their usual billing checks (e.g. `web_search`, `web_fetch`, `extract_key_info`) using the caller's bearer token. If the overall pipeline fails, any sub-tools that already completed successfully are still billed (there is no rollback).
 
-  `mcp_pipe` returns a JSON object with:
+-   **Configuration:**
 
-  - `ok` (bool): overall success.
-  - `error` (string): the first error encountered (empty on success).
-  - `result` (any): selected return value.
-  - `steps` (object): per-step results with timestamps, durations, and captured tool outputs.
-
-  Each tool step includes:
-
-  - `structured`: the sub-tool's structured output (`structuredContent`)
-  - `text`: the sub-tool's text output (the JSON string fallback)
-
-- **Error Cases:**
-
-  - Invalid spec (`steps cannot be empty`, invalid `$ref`, duplicate step IDs).
-  - Unsupported tool name.
-  - Safety limit violations (too many steps, too deep nesting).
-  - Sub-tool errors are surfaced as a failed step and propagated (unless `continue_on_error=true`).
-
-- **Billing Notes:**
-
-  `mcp_pipe` itself has no direct billing. Sub-tools still run their usual billing checks (e.g. `web_search`, `web_fetch`, `extract_key_info`) using the caller's bearer token. If the overall pipeline fails, any sub-tools that already completed successfully are still billed (there is no rollback).
-
-- **Configuration:**
-
-  Disable the tool with `settings.mcp.tools.mcp_pipe.enabled=false`.
+    Disable the tool with `settings.mcp.tools.mcp_pipe.enabled=false`.
 
 ### Data Storage Notes
 
-- Requests are stored in the `mcp` PostgreSQL database, table inferred from the GORM model `askuser.Request`.
-- User-authored directives powering `get_user_request` live in the `mcp_user_requests` table (model `userrequests.Request`) and are scoped by the hashed API key plus optional `task_id`. A periodic sweeper removes rows older than the configured retention window (default 30 days).
-- Primary key: UUID generated on insert.
-- Sensitive fields:
-  - `api_key_hash` holds the SHA-256 hash of the bearer token.
-  - `key_suffix` keeps the last four characters to aid operators in identifying tokens.
+-   Requests are stored in the `mcp` PostgreSQL database, table inferred from the GORM model `askuser.Request`.
+-   User-authored directives powering `get_user_request` live in the `mcp_user_requests` table (model `userrequests.Request`) and are scoped by the hashed API key plus optional `task_id`. A periodic sweeper removes rows older than the configured retention window (default 30 days).
+-   Primary key: UUID generated on insert.
+-   Sensitive fields:
+    -   `api_key_hash` holds the SHA-256 hash of the bearer token.
+    -   `key_suffix` keeps the last four characters to aid operators in identifying tokens.
 
 ## Client Integration Tips
 
-- Use the official MCP Inspector (`/mcp/debug`) during development. Override the endpoint and token via query parameters if needed (`?endpoint=https://YOUR_HOST/mcp&token=Bearer%20...`).
-- When embedding in AI agents, ensure tool calls include the `Authorization` header. For streaming MCP clients, set the header during transport initialisation.
-- Handle tool errors gracefully. The server returns JSON-RPC errors with descriptive messages; agents should surface them to operators where possible.
-- Consider providing AI/user identities explicitly (e.g. `user@example.com:assistant@example.com`) so that the ask_user dashboard can display meaningful attribution.
+-   Use the official MCP Inspector (`/mcp/debug`) during development. Override the endpoint and token via query parameters if needed (`?endpoint=https://YOUR_HOST/mcp&token=Bearer%20...`).
+-   When embedding in AI agents, ensure tool calls include the `Authorization` header. For streaming MCP clients, set the header during transport initialisation.
+-   Handle tool errors gracefully. The server returns JSON-RPC errors with descriptive messages; agents should surface them to operators where possible.
+-   Consider providing AI/user identities explicitly (e.g. `user@example.com:assistant@example.com`) so that the ask_user dashboard can display meaningful attribution.
 
 ## Troubleshooting
 

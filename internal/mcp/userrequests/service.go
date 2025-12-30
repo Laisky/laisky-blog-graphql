@@ -74,10 +74,20 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 
 	taskID = normalizeTaskID(taskID)
 
+	// Get the next sort order for pending requests
+	var maxOrder int
+	s.db.WithContext(ctx).
+		Model(&Request{}).
+		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
+		Select("COALESCE(MAX(sort_order), -1)").
+		Row().
+		Scan(&maxOrder)
+
 	req := &Request{
 		Content:      body,
 		Status:       StatusPending,
 		TaskID:       taskID,
+		SortOrder:    maxOrder + 1,
 		APIKeyHash:   auth.APIKeyHash,
 		KeySuffix:    auth.KeySuffix,
 		UserIdentity: auth.UserIdentity,
@@ -121,7 +131,7 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 
 	pending := make([]Request, 0)
 	if err := pendingQuery.
-		Order("created_at ASC").
+		Order("sort_order ASC, created_at ASC").
 		Limit(defaultListLimit).
 		Find(&pending).Error; err != nil {
 		return nil, nil, errors.Wrap(err, "list pending user requests")
@@ -166,7 +176,7 @@ func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.Authoriza
 	var candidates []Request
 	err := s.db.WithContext(ctx).
 		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
-		Order("created_at ASC").
+		Order("sort_order ASC, created_at ASC").
 		Find(&candidates).Error
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch pending user requests")
@@ -450,6 +460,45 @@ func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.Authorizatio
 		zap.Int64("deleted", result.RowsAffected),
 	)
 	return result.RowsAffected, nil
+}
+
+// ReorderRequests updates the sort order for multiple pending requests at once.
+func (s *Service) ReorderRequests(ctx context.Context, auth *askuser.AuthorizationContext, orderedIDs []uuid.UUID) error {
+	if auth == nil {
+		return ErrInvalidAuthorization
+	}
+
+	if len(orderedIDs) == 0 {
+		return nil
+	}
+
+	tx := s.db.WithContext(ctx).Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	for i, id := range orderedIDs {
+		result := tx.Model(&Request{}).
+			Where("id = ? AND api_key_hash = ? AND status = ?", id, auth.APIKeyHash, StatusPending).
+			Update("sort_order", i)
+		if result.Error != nil {
+			tx.Rollback()
+			return errors.Wrap(result.Error, "update sort order")
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return errors.Wrap(err, "commit reorder transaction")
+	}
+
+	s.log().Info("user requests reordered",
+		zap.Int("count", len(orderedIDs)),
+		zap.String("user", auth.UserIdentity),
+	)
+
+	return nil
 }
 
 // StartRetentionWorker launches a background pruner that periodically removes expired requests based on TTL settings.

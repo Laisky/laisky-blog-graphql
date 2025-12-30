@@ -81,6 +81,8 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleDeleteAllPending(w, r)
 	case r.URL.Path == "/api/requests/consumed" && r.Method == http.MethodDelete:
 		h.handleDeleteConsumed(w, r)
+	case r.URL.Path == "/api/requests/reorder" && r.Method == http.MethodPut:
+		h.handleReorder(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/requests/") && r.Method == http.MethodDelete:
 		h.handleDeleteOne(w, r)
 	default:
@@ -330,6 +332,50 @@ func (h *httpHandler) handleDeleteAllPending(w http.ResponseWriter, r *http.Requ
 	}
 
 	h.writeJSON(w, map[string]any{"deleted": deleted})
+}
+
+func (h *httpHandler) handleReorder(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
+	service := h.service
+	if service == nil {
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
+		return
+	}
+
+	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	if err != nil {
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	var body struct {
+		OrderedIDs []string `json:"ordered_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	ids := make([]uuid.UUID, 0, len(body.OrderedIDs))
+	for _, s := range body.OrderedIDs {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid request id: "+s)
+			return
+		}
+		ids = append(ids, id)
+	}
+
+	if err := service.ReorderRequests(ctx, auth, ids); err != nil {
+		logger.Error("reorder user requests", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to reorder requests")
+		return
+	}
+
+	h.writeJSON(w, map[string]any{"status": "ok"})
 }
 
 // writeErrorWithLogger writes an error response with the provided logger for context-aware logging.

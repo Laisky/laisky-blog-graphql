@@ -23,6 +23,7 @@ type Request struct {
 	Content      string    `gorm:"type:text;not null"`
 	Status       string    `gorm:"type:varchar(16);not null;index"`
 	TaskID       string    `gorm:"type:varchar(255);not null;default:'default';index"`
+	SortOrder    int       `gorm:"type:integer;not null;default:0"`
 	APIKeyHash   string    `gorm:"type:char(64);not null;index"`
 	KeySuffix    string    `gorm:"type:varchar(16);not null"`
 	UserIdentity string    `gorm:"type:varchar(255);not null"`

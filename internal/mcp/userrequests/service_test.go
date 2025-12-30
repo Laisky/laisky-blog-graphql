@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -507,4 +508,40 @@ func TestServiceReturnModePersistenceAcrossServiceInstances(t *testing.T) {
 	mode, err = svc2.GetReturnMode(ctx, auth)
 	require.NoError(t, err)
 	require.Equal(t, ReturnModeFirst, mode, "preference should persist across service instances")
+}
+
+func TestServiceReorderRequests(t *testing.T) {
+	db := newTestDB(t)
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-reorder", "1234")
+	ctx := context.Background()
+
+	req1, err := svc.CreateRequest(ctx, auth, "Directive 1", "")
+	require.NoError(t, err)
+	req2, err := svc.CreateRequest(ctx, auth, "Directive 2", "")
+	require.NoError(t, err)
+	req3, err := svc.CreateRequest(ctx, auth, "Directive 3", "")
+	require.NoError(t, err)
+
+	// Initial order should be 1, 2, 3
+	pending, _, err := svc.ListRequests(ctx, auth, "", false)
+	require.NoError(t, err)
+	require.Len(t, pending, 3)
+	require.Equal(t, req1.ID, pending[0].ID)
+	require.Equal(t, req2.ID, pending[1].ID)
+	require.Equal(t, req3.ID, pending[2].ID)
+
+	// Reorder to 3, 1, 2
+	err = svc.ReorderRequests(ctx, auth, []uuid.UUID{req3.ID, req1.ID, req2.ID})
+	require.NoError(t, err)
+
+	// Verify new order
+	pending, _, err = svc.ListRequests(ctx, auth, "", false)
+	require.NoError(t, err)
+	require.Len(t, pending, 3)
+	require.Equal(t, req3.ID, pending[0].ID)
+	require.Equal(t, req1.ID, pending[1].ID)
+	require.Equal(t, req2.ID, pending[2].ID)
 }
