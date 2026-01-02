@@ -10,43 +10,43 @@
 
 - **Name:** `extract_key_info`
 - **Signature:**
-  ```go
-  func extract_key_info(query string, materials string, topK int) (contexts []string)
-  ```
+    ```go
+    func extract_key_info(query string, materials string, topK int) (contexts []string)
+    ```
 - **Parameters:**
-  - `query` (string, required): Natural-language question.
-  - `materials` (string, required): Unstructured source text containing candidate answers.
-  - `topK` (int, optional, default `5`, max `20`): Number of snippets to return.
+    - `query` (string, required): Natural-language question.
+    - `materials` (string, required): Unstructured source text containing candidate answers.
+    - `topK` (int, optional, default `5`, max `20`): Number of snippets to return.
 - **Return Value:** Ordered slice of context strings suitable for downstream summarisation or answer generation.
 - **Error Surface:** Structured MCP errors surfaced for validation failures, billing denials, retrieval issues, or upstream transport problems.
 
 ## High-Level Architecture
 
 - **MCP Server (`internal/mcp/server.go`):**
-  - Register the tool when embeddings client, PostgreSQL connectivity, and BM25 dependencies are configured.
-  - Advertise capability via existing MCP metadata and reuse `recordToolInvocation` with `oneapi.PriceExtractKeyInfo`.
+    - Register the tool when embeddings client, PostgreSQL connectivity, and BM25 dependencies are configured.
+    - Advertise capability via existing MCP metadata and reuse `recordToolInvocation` with `oneapi.PriceExtractKeyInfo`.
 - **Tool Implementation (`internal/mcp/tools/extract_key_info.go`):**
-  - Follow existing tool pattern (dependency injection, logger usage, billing checker, API key provider).
-  - Encapsulate preprocessing, persistence, hybrid retrieval, and response shaping.
+    - Follow existing tool pattern (dependency injection, logger usage, billing checker, API key provider).
+    - Encapsulate preprocessing, persistence, hybrid retrieval, and response shaping.
 - **Supporting Services:**
-  - Embeddings service that calls the OpenAI-compatible endpoint defined in configuration.
-  - PostgreSQL 17 with pgvector 0.8.1, VCHORDBM25 0.2.2, and pg_tokenizer 0.1.1 for hybrid search.
-  - Optional background workers to maintain indexes when ingesting large materials payloads.
+    - Embeddings service that calls the OpenAI-compatible endpoint defined in configuration.
+    - PostgreSQL 17 with pgvector 0.8.1, VCHORDBM25 0.2.2, and pg_tokenizer 0.1.1 for hybrid search.
+    - Optional background workers to maintain indexes when ingesting large materials payloads.
 
 ## Configuration and Dependencies
 
 - **Settings:**
-  - `settings.openai.base_url`: Override for the embeddings API base.
-  - `settings.openai.embedding_model`: Embeddings model identifier (for example `text-embedding-3-small`).
-  - `settings.mcp.extract_key_info.enabled`: Feature flag for tool registration.
-  - `settings.mcp.extract_key_info.top_k_default`: Default `topK` when omitted by the caller.
-  - `settings.db.mcp.*`: PostgreSQL connection parameters shared with other MCP features.
+    - `settings.openai.base_url`: Override for the embeddings API base.
+    - `settings.openai.embedding_model`: Embeddings model identifier (for example `text-embedding-3-small`).
+    - `settings.mcp.extract_key_info.enabled`: Feature flag for tool registration.
+    - `settings.mcp.extract_key_info.top_k_default`: Default `topK` when omitted by the caller.
+    - `settings.db.mcp.*`: PostgreSQL connection parameters shared with other MCP features.
 - **Secrets:**
-  - Bearer token supplied via `Authorization: Bearer <identity>@<token>`; the raw token doubles as the OpenAI API key.
-  - No plaintext secret storage; rely on request-scoped context.
+    - Bearer token supplied via `Authorization: Bearer <identity>@<token>`; the raw token doubles as the OpenAI API key.
+    - No plaintext secret storage; rely on request-scoped context.
 - **Billing:**
-  - Introduce `oneapi.PriceExtractKeyInfo` for cost accounting.
-  - Invoke `billingChecker` before any embeddings or database work.
+    - Introduce `oneapi.PriceExtractKeyInfo` for cost accounting.
+    - Invoke `billingChecker` before any embeddings or database work.
 
 ## Database Design
 

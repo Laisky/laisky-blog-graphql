@@ -1,62 +1,62 @@
 ---
 settings:
-  secret: 12345
-  db:
-    blog:
-      db: blog
-      addr: 100.97.108.34:27018
-      user: laisky
-      pwd: 1234
-    twitter:
-      db: twitter
-      addr: 100.97.108.34:27018
-      user: laisky
-      pwd: 1234
-    monitor:
-      db: monitor
-      addr: 100.97.108.34:27018
-      user: laisky
-      pwd: 1234
+    secret: 12345
+    db:
+        blog:
+            db: blog
+            addr: 100.97.108.34:27018
+            user: laisky
+            pwd: 1234
+        twitter:
+            db: twitter
+            addr: 100.97.108.34:27018
+            user: laisky
+            pwd: 1234
+        monitor:
+            db: monitor
+            addr: 100.97.108.34:27018
+            user: laisky
+            pwd: 1234
+        mcp:
+            db: mcp
+            addr: 127.0.0.1
+            user: postgres
+            pwd: changeme
+    openai:
+        base_url: https://api.openai.com/v1
+        embedding_model: text-embedding-3-small
     mcp:
-      db: mcp
-      addr: 127.0.0.1
-      user: postgres
-      pwd: changeme
-  openai:
-    base_url: https://api.openai.com/v1
-    embedding_model: text-embedding-3-small
-  mcp:
-    tools:
-      web_search:
-        enabled: true       # Enable/disable web_search tool
-      web_fetch:
-        enabled: true       # Enable/disable web_fetch tool
-      ask_user:
-        enabled: true       # Enable/disable ask_user tool
-      get_user_request:
-        enabled: true       # Enable/disable get_user_request tool
-      extract_key_info:
-        enabled: true       # Enable/disable extract_key_info tool
-    extract_key_info:
-      enabled: true
-      top_k_default: 5
-      top_k_limit: 20
-      max_materials_size: 1000000
-      max_chunk_chars: 1500
-      semantic_weight: 0.65
-      lexical_weight: 0.35
-  web:
-    url_prefix: /mcp           # internal mount path on the Go server
-    public_url_prefix: /       # set to '/' to hide the prefix in generated links
-  websearch:
-    max_retry: 3          # default: 3
-    engines:
-      google:
-        enabled: true     # default: false
-        priority: 1       # lower numbers indicate higher priority; default is 1
-        api_key: YOUR_GOOGLE_API_KEY
-        cx: YOUR_PROGRAMMABLE_SEARCH_ENGINE_ID
-      serp_google:
-        enabled: true
-        priority: 2
-        api_key: YOUR_SERP_API_KEY
+        tools:
+            web_search:
+                enabled: true # Enable/disable web_search tool
+            web_fetch:
+                enabled: true # Enable/disable web_fetch tool
+            ask_user:
+                enabled: true # Enable/disable ask_user tool
+            get_user_request:
+                enabled: true # Enable/disable get_user_request tool
+            extract_key_info:
+                enabled: true # Enable/disable extract_key_info tool
+        extract_key_info:
+            enabled: true
+            top_k_default: 5
+            top_k_limit: 20
+            max_materials_size: 1000000
+            max_chunk_chars: 1500
+            semantic_weight: 0.65
+            lexical_weight: 0.35
+    web:
+        url_prefix: /mcp # internal mount path on the Go server
+        public_url_prefix: / # set to '/' to hide the prefix in generated links
+    websearch:
+        max_retry: 3 # default: 3
+        engines:
+            google:
+                enabled: true # default: false
+                priority: 1 # lower numbers indicate higher priority; default is 1
+                api_key: YOUR_GOOGLE_API_KEY
+                cx: YOUR_PROGRAMMABLE_SEARCH_ENGINE_ID
+            serp_google:
+                enabled: true
+                priority: 2
+                api_key: YOUR_SERP_API_KEY

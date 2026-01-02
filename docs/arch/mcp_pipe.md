@@ -3,29 +3,28 @@
 ## Menu
 
 - [MCP `mcp_pipe` Tool](#mcp-mcp_pipe-tool)
-  - [Menu](#menu)
-  - [User Story](#user-story)
-  - [Goals](#goals)
-  - [Non-goals](#non-goals)
-  - [Tool Contract](#tool-contract)
-    - [Pipeline Spec Schema (conceptual)](#pipeline-spec-schema-conceptual)
-    - [Step Types](#step-types)
-    - [Referencing Outputs](#referencing-outputs)
-  - [Execution Semantics](#execution-semantics)
-    - [Sequential Execution](#sequential-execution)
-    - [Parallel Execution](#parallel-execution)
-    - [Nested Pipelines](#nested-pipelines)
-  - [Output Format](#output-format)
-  - [Billing and Auditing](#billing-and-auditing)
-  - [Safety Limits](#safety-limits)
-  - [Configuration](#configuration)
-  - [Implementation Notes](#implementation-notes)
-    - [Code Locations](#code-locations)
-    - [Supported Tools](#supported-tools)
-  - [Examples](#examples)
-    - [Search → Fetch → Extract](#search--fetch--extract)
-    - [Parallel Fetch](#parallel-fetch)
-
+    - [Menu](#menu)
+    - [User Story](#user-story)
+    - [Goals](#goals)
+    - [Non-goals](#non-goals)
+    - [Tool Contract](#tool-contract)
+        - [Pipeline Spec Schema (conceptual)](#pipeline-spec-schema-conceptual)
+        - [Step Types](#step-types)
+        - [Referencing Outputs](#referencing-outputs)
+    - [Execution Semantics](#execution-semantics)
+        - [Sequential Execution](#sequential-execution)
+        - [Parallel Execution](#parallel-execution)
+        - [Nested Pipelines](#nested-pipelines)
+    - [Output Format](#output-format)
+    - [Billing and Auditing](#billing-and-auditing)
+    - [Safety Limits](#safety-limits)
+    - [Configuration](#configuration)
+    - [Implementation Notes](#implementation-notes)
+        - [Code Locations](#code-locations)
+        - [Supported Tools](#supported-tools)
+    - [Examples](#examples)
+        - [Search → Fetch → Extract](#search--fetch--extract)
+        - [Parallel Fetch](#parallel-fetch)
 
 ## User Story
 
@@ -36,9 +35,9 @@ Acceptance criteria:
 - A single call can run multiple existing MCP tools in a defined order.
 - Outputs from earlier steps can be used as inputs to later steps.
 - The pipeline supports:
-  - Sequential execution
-  - Parallel execution for independent steps
-  - Nested pipelines
+    - Sequential execution
+    - Parallel execution for independent steps
+    - Nested pipelines
 - The tool returns a structured, machine-readable result including per-step outputs and errors.
 
 ## Goals
@@ -68,25 +67,25 @@ Acceptance criteria:
 
 ```json
 {
-  "vars": { "q": "..." },
-  "steps": [
-    { "id": "search", "tool": "web_search", "args": { "query": "${vars.q}" } },
-    {
-      "id": "fetch",
-      "tool": "web_fetch",
-      "args": { "url": { "$ref": "steps.search.structured.results.0.url" } }
-    },
-    {
-      "id": "extract",
-      "tool": "extract_key_info",
-      "args": {
-        "query": "${vars.q}",
-        "materials": "${steps.fetch.structured.content}"
-      }
-    }
-  ],
-  "return": { "$ref": "steps.extract.structured.contexts" },
-  "continue_on_error": false
+    "vars": { "q": "..." },
+    "steps": [
+        { "id": "search", "tool": "web_search", "args": { "query": "${vars.q}" } },
+        {
+            "id": "fetch",
+            "tool": "web_fetch",
+            "args": { "url": { "$ref": "steps.search.structured.results.0.url" } }
+        },
+        {
+            "id": "extract",
+            "tool": "extract_key_info",
+            "args": {
+                "query": "${vars.q}",
+                "materials": "${steps.fetch.structured.content}"
+            }
+        }
+    ],
+    "return": { "$ref": "steps.extract.structured.contexts" },
+    "continue_on_error": false
 }
 ```
 
@@ -118,7 +117,7 @@ Notes on paths:
 - Paths are dot-delimited.
 - Numeric segments index arrays, e.g. `steps.search.structured.results.0.url`.
 - For parallel groups, child results are accessible under:
-  - `steps.<parallel_step_id>.children.<child_id>...`
+    - `steps.<parallel_step_id>.children.<child_id>...`
 
 ## Execution Semantics
 
@@ -150,22 +149,22 @@ The nested step result stores:
 
 ```json
 {
-  "ok": true,
-  "error": "",
-  "result": "<any>",
-  "steps": {
-    "<id>": {
-      "id": "...",
-      "kind": "tool|parallel|pipe",
-      "ok": true,
-      "error": "",
-      "structured": { "...": "..." },
-      "text": "...",
-      "children": { "...": "..." },
-      "result": "<any>",
-      "steps": { "...": "..." }
+    "ok": true,
+    "error": "",
+    "result": "<any>",
+    "steps": {
+        "<id>": {
+            "id": "...",
+            "kind": "tool|parallel|pipe",
+            "ok": true,
+            "error": "",
+            "structured": { "...": "..." },
+            "text": "...",
+            "children": { "...": "..." },
+            "result": "<any>",
+            "steps": { "...": "..." }
+        }
     }
-  }
 }
 ```
 
@@ -224,24 +223,24 @@ Direct recursion (`mcp_pipe` calling `mcp_pipe`) is rejected; nested pipelines s
 
 ```json
 {
-  "vars": { "q": "mcp protocol overview" },
-  "steps": [
-    { "id": "search", "tool": "web_search", "args": { "query": "${vars.q}" } },
-    {
-      "id": "fetch",
-      "tool": "web_fetch",
-      "args": { "url": { "$ref": "steps.search.structured.results.0.url" } }
-    },
-    {
-      "id": "extract",
-      "tool": "extract_key_info",
-      "args": {
-        "query": "${vars.q}",
-        "materials": "${steps.fetch.structured.content}"
-      }
-    }
-  ],
-  "return": { "$ref": "steps.extract.structured.contexts" }
+    "vars": { "q": "mcp protocol overview" },
+    "steps": [
+        { "id": "search", "tool": "web_search", "args": { "query": "${vars.q}" } },
+        {
+            "id": "fetch",
+            "tool": "web_fetch",
+            "args": { "url": { "$ref": "steps.search.structured.results.0.url" } }
+        },
+        {
+            "id": "extract",
+            "tool": "extract_key_info",
+            "args": {
+                "query": "${vars.q}",
+                "materials": "${steps.fetch.structured.content}"
+            }
+        }
+    ],
+    "return": { "$ref": "steps.extract.structured.contexts" }
 }
 ```
 
@@ -249,24 +248,24 @@ Direct recursion (`mcp_pipe` calling `mcp_pipe`) is rejected; nested pipelines s
 
 ```json
 {
-  "vars": { "q": "golang", "u1": "https://a", "u2": "https://b" },
-  "steps": [
-    {
-      "id": "pages",
-      "parallel": [
-        { "id": "p1", "tool": "web_fetch", "args": { "url": "${vars.u1}" } },
-        { "id": "p2", "tool": "web_fetch", "args": { "url": "${vars.u2}" } }
-      ]
-    },
-    {
-      "id": "extract",
-      "tool": "extract_key_info",
-      "args": {
-        "query": "${vars.q}",
-        "materials": "${steps.pages.children.p1.structured.content}\n${steps.pages.children.p2.structured.content}"
-      }
-    }
-  ],
-  "return": { "$ref": "steps.extract.structured.contexts" }
+    "vars": { "q": "golang", "u1": "https://a", "u2": "https://b" },
+    "steps": [
+        {
+            "id": "pages",
+            "parallel": [
+                { "id": "p1", "tool": "web_fetch", "args": { "url": "${vars.u1}" } },
+                { "id": "p2", "tool": "web_fetch", "args": { "url": "${vars.u2}" } }
+            ]
+        },
+        {
+            "id": "extract",
+            "tool": "extract_key_info",
+            "args": {
+                "query": "${vars.q}",
+                "materials": "${steps.pages.children.p1.structured.content}\n${steps.pages.children.p2.structured.content}"
+            }
+        }
+    ],
+    "return": { "$ref": "steps.extract.structured.contexts" }
 }
 ```

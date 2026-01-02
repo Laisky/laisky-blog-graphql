@@ -28,7 +28,7 @@ func TestServiceLifecycle(t *testing.T) {
 	require.Equal(t, StatusPending, created.Status)
 	require.Equal(t, DefaultTaskID, created.TaskID)
 
-	pending, consumed, err := svc.ListRequests(ctx, auth, "", false)
+	pending, consumed, err := svc.ListRequests(ctx, auth, "", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	require.Len(t, consumed, 0)
@@ -37,7 +37,7 @@ func TestServiceLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, DefaultTaskID, second.TaskID)
 
-	_, _, err = svc.ListRequests(ctx, auth, "", false)
+	_, _, err = svc.ListRequests(ctx, auth, "", false, "", 0)
 	require.NoError(t, err)
 
 	// ConsumeAllPending should return all pending in FIFO order (oldest first)
@@ -51,7 +51,7 @@ func TestServiceLifecycle(t *testing.T) {
 	require.NotNil(t, consumedReqs[0].ConsumedAt)
 	require.NotNil(t, consumedReqs[1].ConsumedAt)
 
-	pending, consumed, err = svc.ListRequests(ctx, auth, "", false)
+	pending, consumed, err = svc.ListRequests(ctx, auth, "", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 0)
 	require.Len(t, consumed, 2)
@@ -106,7 +106,7 @@ func TestServicePrunesExpiredRequests(t *testing.T) {
 	oldCreatedAt := clock.Now().AddDate(0, 0, -(settings.RetentionDays + 5))
 	require.NoError(t, db.Model(&Request{}).Where("id = ?", oldReq.ID).Update("created_at", oldCreatedAt).Error)
 
-	pending, _, err := svc.ListRequests(ctx, auth, "task-expired", false)
+	pending, _, err := svc.ListRequests(ctx, auth, "task-expired", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	require.Equal(t, recentReq.ID, pending[0].ID)
@@ -179,7 +179,7 @@ func TestServiceConsumeFirstPending(t *testing.T) {
 	require.NotNil(t, consumed.ConsumedAt)
 
 	// Verify second and third are still pending
-	pending, _, err := svc.ListRequests(ctx, auth, "", false)
+	pending, _, err := svc.ListRequests(ctx, auth, "", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 2)
 	require.Equal(t, second.ID, pending[0].ID, "second should be first in pending now")
@@ -266,7 +266,7 @@ func TestServiceTaskIsolation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, otherTaskReq.ID, consumed.ID)
 
-	pending, _, err := svc.ListRequests(ctx, auth, "", false)
+	pending, _, err := svc.ListRequests(ctx, auth, "", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	require.Equal(t, defaultReq.ID, pending[0].ID)
@@ -285,13 +285,13 @@ func TestServiceListRequestsAllTasks(t *testing.T) {
 	secondTask, err := svc.CreateRequest(ctx, auth, "Task specific directive", "task-x")
 	require.NoError(t, err)
 
-	pendingAll, _, err := svc.ListRequests(ctx, auth, "", true)
+	pendingAll, _, err := svc.ListRequests(ctx, auth, "", true, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pendingAll, 2)
 	require.Equal(t, firstDefault.ID, pendingAll[0].ID)
 	require.Equal(t, secondTask.ID, pendingAll[1].ID)
 
-	pendingTask, _, err := svc.ListRequests(ctx, auth, "task-x", false)
+	pendingTask, _, err := svc.ListRequests(ctx, auth, "task-x", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pendingTask, 1)
 	require.Equal(t, secondTask.ID, pendingTask[0].ID)
@@ -314,7 +314,7 @@ func TestServiceDeleteAllPendingAllTasks(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), deletedDefault)
 
-	pending, _, err := svc.ListRequests(ctx, auth, "", true)
+	pending, _, err := svc.ListRequests(ctx, auth, "", true, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	require.Equal(t, otherReq.ID, pending[0].ID)
@@ -323,7 +323,7 @@ func TestServiceDeleteAllPendingAllTasks(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), deletedAll)
 
-	pending, _, err = svc.ListRequests(ctx, auth, "", true)
+	pending, _, err = svc.ListRequests(ctx, auth, "", true, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 0)
 
@@ -526,7 +526,7 @@ func TestServiceReorderRequests(t *testing.T) {
 	require.NoError(t, err)
 
 	// Initial order should be 1, 2, 3
-	pending, _, err := svc.ListRequests(ctx, auth, "", false)
+	pending, _, err := svc.ListRequests(ctx, auth, "", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 3)
 	require.Equal(t, req1.ID, pending[0].ID)
@@ -538,7 +538,7 @@ func TestServiceReorderRequests(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify new order
-	pending, _, err = svc.ListRequests(ctx, auth, "", false)
+	pending, _, err = svc.ListRequests(ctx, auth, "", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 3)
 	require.Equal(t, req3.ID, pending[0].ID)

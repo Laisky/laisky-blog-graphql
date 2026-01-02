@@ -111,7 +111,10 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	taskID := query.Get("task_id")
 	includeAllTasks := parseBoolFlag(query.Get("all_tasks"))
-	pending, consumed, err := service.ListRequests(ctx, auth, taskID, includeAllTasks)
+	cursor := query.Get("cursor")
+	limit, _ := strconv.Atoi(query.Get("limit"))
+
+	pending, consumed, err := service.ListRequests(ctx, auth, taskID, includeAllTasks, cursor, limit)
 	if err != nil {
 		logger.Error("list user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load user requests")

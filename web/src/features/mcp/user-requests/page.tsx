@@ -110,6 +110,9 @@ export function UserRequestsPage() {
     });
     const [showDeleteConsumedConfirm, setShowDeleteConsumedConfirm] = useState(false);
     const [isDeletingConsumed, setIsDeletingConsumed] = useState(false);
+    const [visibleConsumedCount, setVisibleConsumedCount] = useState(10);
+    const [hasMoreConsumed, setHasMoreConsumed] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -127,6 +130,11 @@ export function UserRequestsPage() {
         refresh: () => void;
     } | null>(null);
 
+    const visibleCountRef = useRef(visibleConsumedCount);
+    useEffect(() => {
+        visibleCountRef.current = visibleConsumedCount;
+    }, [visibleConsumedCount]);
+
     useEffect(() => {
         if (!apiKey) {
             setPending([]);
@@ -135,6 +143,8 @@ export function UserRequestsPage() {
             setStatus({ message: 'Disconnected.', tone: 'info' });
             setIsAuthCollapsedState(false); // Expand when disconnected
             setAuthCollapsed(false);
+            setVisibleConsumedCount(10);
+            setHasMoreConsumed(true);
             return;
         }
 
@@ -158,7 +168,10 @@ export function UserRequestsPage() {
             try {
                 // Fetch both requests and preferences in parallel
                 const [data, prefs] = await Promise.all([
-                    listUserRequests(apiKey, controller.signal),
+                    listUserRequests(apiKey, {
+                        limit: visibleCountRef.current,
+                        signal: controller.signal,
+                    }),
                     initial
                         ? getPreferencesFromServer(apiKey, controller.signal).catch(() => null)
                         : Promise.resolve(null),
@@ -167,6 +180,7 @@ export function UserRequestsPage() {
 
                 setPending(data.pending ?? []);
                 setConsumed(data.consumed ?? []);
+                setHasMoreConsumed((data.consumed?.length ?? 0) >= visibleCountRef.current);
                 setIdentity({ userId: data.user_id, keyHint: data.key_hint });
                 setStatus({
                     message: identityMessage(data.user_id, data.key_hint),
@@ -273,8 +287,34 @@ export function UserRequestsPage() {
     }, [apiKey, holdState.active]);
 
     const handleRefresh = useCallback(() => {
+        setVisibleConsumedCount(10);
         pollControlsRef.current?.refresh();
     }, []);
+
+    const handleLoadMore = useCallback(async () => {
+        const key = normalizeApiKey(apiKey);
+        if (!key || consumed.length === 0) return;
+
+        const lastItem = consumed[consumed.length - 1];
+        setIsLoadingMore(true);
+        try {
+            const data = await listUserRequests(key, {
+                cursor: lastItem.id,
+                limit: 10,
+            });
+            const newItems = data.consumed ?? [];
+            setConsumed((prev) => [...prev, ...newItems]);
+            setVisibleConsumedCount((prev) => prev + newItems.length);
+            setHasMoreConsumed(newItems.length >= 10);
+        } catch (error) {
+            setStatus({
+                message: error instanceof Error ? error.message : 'Failed to load more history.',
+                tone: 'error',
+            });
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [apiKey, consumed]);
 
     const handleCreateRequest = useCallback(async () => {
         const key = normalizeApiKey(apiKey);
@@ -1017,18 +1057,30 @@ export function UserRequestsPage() {
                         {consumed.length === 0 ? (
                             <EmptyState message="Nothing consumed yet." subtle />
                         ) : (
-                            consumed.map((request) => (
-                                <ConsumedCard
-                                    key={request.id}
-                                    request={request}
-                                    onDelete={handleDeleteRequest}
-                                    deleting={Boolean(pendingDeletes[request.id])}
-                                    onEditInEditor={handleEditInEditor}
-                                    onAddToPending={handleAddToPending}
-                                    isPicked={pickedRequestId === request.id}
-                                    isEditorDisabled={isEditorDisabled}
-                                />
-                            ))
+                            <>
+                                {consumed.map((request) => (
+                                    <ConsumedCard
+                                        key={request.id}
+                                        request={request}
+                                        onDelete={handleDeleteRequest}
+                                        deleting={Boolean(pendingDeletes[request.id])}
+                                        onEditInEditor={handleEditInEditor}
+                                        onAddToPending={handleAddToPending}
+                                        isPicked={pickedRequestId === request.id}
+                                        isEditorDisabled={isEditorDisabled}
+                                    />
+                                ))}
+                                {hasMoreConsumed && (
+                                    <Button
+                                        variant="ghost"
+                                        className="w-full border-2 border-dashed hover:bg-accent/50"
+                                        onClick={handleLoadMore}
+                                        disabled={isLoadingMore}
+                                    >
+                                        {isLoadingMore ? 'Loading…' : 'Load more'}
+                                    </Button>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>

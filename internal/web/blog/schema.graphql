@@ -1,126 +1,125 @@
 enum BlogPostType {
-  markdown
-  slide
-  html # legacy posts
+    markdown
+    slide
+    html # legacy posts
 }
 
 enum Language {
-  zh_CN # Simplified Chinese
-  en_US # English
+    zh_CN # Simplified Chinese
+    en_US # English
 }
 
 type PostInfo {
-  total: Int!
+    total: Int!
 }
 
 type BlogPost {
-  id: String!
-  author: BlogUser!
-  created_at: Date!
-  modified_at: Date!
-  type: BlogPostType!
-  title: String!
-  menu: String!
-  content: String!
-  name: String!
-  markdown: String
-  tags: [String!]!
-  category: BlogCategory
-  language: Language! # current content language
-  all_languages: [Language!]! # all languages of this post
-  arweave_id: [ArweaveItem!] # arweave id
+    id: String!
+    author: BlogUser!
+    created_at: Date!
+    modified_at: Date!
+    type: BlogPostType!
+    title: String!
+    menu: String!
+    content: String!
+    name: String!
+    markdown: String
+    tags: [String!]!
+    category: BlogCategory
+    language: Language! # current content language
+    all_languages: [Language!]! # all languages of this post
+    arweave_id: [ArweaveItem!] # arweave id
 }
 
 type ArweaveItem {
-  id: String!
-  time: Date!
+    id: String!
+    time: Date!
 }
 
 type BlogUser {
-  id: String!
-  username: String!
+    id: String!
+    username: String!
 }
 
 type BlogCategory {
-  name: String!
-  url: String!
+    name: String!
+    url: String!
 }
 
 input NewBlogPost {
-  name: String!
-  title: String
-  markdown: String
-  type: BlogPostType
-  category: String
-  language: Language! = zh_CN
+    name: String!
+    title: String
+    markdown: String
+    type: BlogPostType
+    category: String
+    language: Language! = zh_CN
 }
 
 type BlogPostSeries {
-  key: String!
-  remark: String!
-  posts: [BlogPost!]!
-  children: [BlogPostSeries!]!
+    key: String!
+    remark: String!
+    posts: [BlogPost!]!
+    children: [BlogPostSeries!]!
 }
 
 type BlogLoginResponse {
-  user: BlogUser!
-  token: String!
+    user: BlogUser!
+    token: String!
 }
 
 type UserLoginResponse {
-  user: BlogUser!
-  token: String!
+    user: BlogUser!
+    token: String!
 }
 
 type UserRegisterResponse {
-  msg: String!
+    msg: String!
 }
 
 type UserActiveResponse {
-  user: BlogUser!
-  token: String!
+    user: BlogUser!
+    token: String!
 }
 
 type UserResendActiveEmailResponse {
-  msg: String!
+    msg: String!
 }
 
 # Comment represents a user-submitted comment on a blog post.
 # Comments can be nested in a hierarchical structure, with replies forming a tree.
 type Comment {
-  # Unique identifier for the comment
-  id: String!
+    # Unique identifier for the comment
+    id: String!
 
-  # The actual content/text of the comment
-  content: String!
+    # The actual content/text of the comment
+    content: String!
 
-  # Display name of the comment author
-  authorName: String!
+    # Display name of the comment author
+    authorName: String!
 
-  # Email address of the author, only visible to administrators
-  authorEmail: String! # Only visible to admins
+    # Email address of the author, only visible to administrators
+    authorEmail: String! # Only visible to admins
+    # Optional website/URL of the comment author
+    authorWebsite: String
 
-  # Optional website/URL of the comment author
-  authorWebsite: String
+    # ID of the blog post this comment belongs to
+    postId: String!
 
-  # ID of the blog post this comment belongs to
-  postId: String!
+    # ID of the parent comment if this is a reply, null for top-level comments
+    parentId: String
 
-  # ID of the parent comment if this is a reply, null for top-level comments
-  parentId: String
+    # Timestamp when the comment was first created
+    createdAt: Date!
 
-  # Timestamp when the comment was first created
-  createdAt: Date!
+    # Timestamp of the last update, null if never updated
+    updatedAt: Date
 
-  # Timestamp of the last update, null if never updated
-  updatedAt: Date
+    # Whether the comment has been approved by a moderator
+    isApproved: Boolean!
 
-  # Whether the comment has been approved by a moderator
-  isApproved: Boolean!
+    # Number of likes/upvotes the comment has received
+    likes: Int!
 
-  # Number of likes/upvotes the comment has received
-  likes: Int!
-
-  # List of child comments that are direct replies to this comment
-  replies: [Comment]
+    # List of child comments that are direct replies to this comment
+    replies: [Comment]
 }

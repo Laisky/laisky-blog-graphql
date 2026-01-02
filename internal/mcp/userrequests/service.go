@@ -109,13 +109,19 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 // ListRequests returns pending and consumed entries for the authenticated user.
 // Pending requests are returned in FIFO order (oldest first at top). When
 // includeAllTasks is true, results span every task owned by the caller.
-func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool) ([]Request, []Request, error) {
+// Consumed requests are returned in DESC order (newest first), supporting
+// cursor-based pagination using the Request.ID (UUID7).
+func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool, cursor string, limit int) ([]Request, []Request, error) {
 	if auth == nil {
 		return nil, nil, ErrInvalidAuthorization
 	}
 
 	if err := s.pruneExpired(ctx); err != nil {
 		return nil, nil, err
+	}
+
+	if limit <= 0 {
+		limit = defaultListLimit
 	}
 
 	filteredTaskID := normalizeTaskID(taskID)
@@ -129,6 +135,10 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 		consumedQuery = consumedQuery.Where("task_id = ?", filteredTaskID)
 	}
 
+	if cursor != "" {
+		consumedQuery = consumedQuery.Where("id < ?", cursor)
+	}
+
 	pending := make([]Request, 0)
 	if err := pendingQuery.
 		Order("sort_order ASC, created_at ASC").
@@ -139,8 +149,8 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 
 	consumed := make([]Request, 0)
 	if err := consumedQuery.
-		Order("consumed_at DESC, updated_at DESC").
-		Limit(defaultListLimit).
+		Order("id DESC").
+		Limit(limit).
 		Find(&consumed).Error; err != nil {
 		return nil, nil, errors.Wrap(err, "list consumed user requests")
 	}

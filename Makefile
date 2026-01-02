@@ -33,3 +33,7 @@ build:
 .PHONY: dev
 dev:
 	cd ./web && pnpm run dev
+
+.PHONY: format
+format:
+	npx prettier --write .

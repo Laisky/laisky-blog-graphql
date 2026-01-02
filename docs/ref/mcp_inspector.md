@@ -13,17 +13,15 @@ The analysis draws from the Inspector’s GitHub repository, official MCP docume
 The MCP Inspector source code is organized as a **monorepo** containing three primary packages, each corresponding to a key element of the debugging workflow:
 
 1. **CLI Package (`cli/`)**
-
-   - Provides a command-line interface for programmatically interacting with MCP servers.
-   - Useful for CI pipelines and automated testing.
+    - Provides a command-line interface for programmatically interacting with MCP servers.
+    - Useful for CI pipelines and automated testing.
 
 2. **Server Package (`server/`)**
-
-   - Implements the MCP Proxy (MCPP): a Node.js Express server acting as a bridge between the web UI and MCP servers via different transports (stdio, SSE, streamable-http).
-   - Handles protocol translation, authentication, session management, and security.
+    - Implements the MCP Proxy (MCPP): a Node.js Express server acting as a bridge between the web UI and MCP servers via different transports (stdio, SSE, streamable-http).
+    - Handles protocol translation, authentication, session management, and security.
 
 3. **Client Package (`client/`)**
-   - The interactive web debugger: a modern React SPA that serves as a visual inspector for MCP capabilities, tools, prompts, and resources.
+    - The interactive web debugger: a modern React SPA that serves as a visual inspector for MCP capabilities, tools, prompts, and resources.
 
 **Relevant files in the root include:**
 
@@ -52,20 +50,19 @@ The Inspector’s guiding design principle is the separation of **UI (MCPI)** an
 - **Role**: Web-based interactive UI for connecting to, inspecting, and debugging any compliant MCP server—local or remote.
 - **Technology**: React + TypeScript SPA, bundled via Vite.
 - **Key Features**:
-  - Resource, tool, and prompt inspection
-  - Real-time server notifications and logs
-  - Authentication and token management
-  - Dynamic form rendering based on MCP schemas
-  - Connection and transport management
+    - Resource, tool, and prompt inspection
+    - Real-time server notifications and logs
+    - Authentication and token management
+    - Dynamic form rendering based on MCP schemas
+    - Connection and transport management
 
 ### MCP Proxy (MCPP)
 
 - **Role**: Node.js server acting as protocol “broker” between MCPI (browser) and MCP server, supporting:
-
-  - Local process spawn and stdio bridge
-  - Remote HTTP/SSE bridging
-  - Session and token-based authentication
-  - Security features to prevent abuse
+    - Local process spawn and stdio bridge
+    - Remote HTTP/SSE bridging
+    - Session and token-based authentication
+    - Security features to prevent abuse
 
 - **Technology**: Node.js + Express with modular transport layers
 
@@ -85,19 +82,19 @@ This separation means that **UI and server do not need to be co-located**; remot
 The Inspector offers a superset of features expected in modern developer debuggers, mapped explicitly to MCP protocol primitives:
 
 - **Server Connection Pane**: Connect via stdio (local), SSE (Server-Sent Events), or HTTP transports.
-  - Supports entry of server command, args, environment variables.
+    - Supports entry of server command, args, environment variables.
 - **Resource Exploration**: Tree-view of server-exposed resources, MIME metadata, content preview, and subscription testing.
 - **Tool Testing**: Form-based schema-driven tool invocations, with dynamic input and structured result viewing.
 - **Prompts Tab**: Prompt template introspection, argument mapping, preview of generated output.
 - **Request History & Notifications**: Rich log of all agent-server exchanges, errors, and server-emitted notifications.
 - **Authentication Management**:
-  - Bearer token input (including custom header names)
-  - Real-time auth state diagnostics and token persistence
+    - Bearer token input (including custom header names)
+    - Real-time auth state diagnostics and token persistence
 - **Configuration Management**:
-  - UI for setting timeouts, proxy addresses, server connection options
-  - Config file support (`mcp.json`)
+    - UI for setting timeouts, proxy addresses, server connection options
+    - Config file support (`mcp.json`)
 - **Export/Import Configuration**:
-  - UI buttons to export server launch configs for reuse in other clients (Cursor, Claude, CLI)
+    - UI buttons to export server launch configs for reuse in other clients (Cursor, Claude, CLI)
 - **CLI Parity**: Nearly all UI capabilities are mirrored in the CLI for programmable/scripted use cases.
 
 ### Usability and Security Features
@@ -248,8 +245,8 @@ The Inspector and its components work when installed via **pnpm**. However, ther
 
 - **Issue**: The package `@modelcontextprotocol/inspector` may import modules (e.g., `commander`) that are not declared in its `package.json`, causing failures under pnpm’s strict dependency enforcement.
 - **Solution**:
-  - Ensure all required sub-dependencies are explicitly installed if embedding or forking Inspector components.
-  - Community and project maintainers recommend either contributing a PR to address dependency specification or using workspaces to ensure availability.
+    - Ensure all required sub-dependencies are explicitly installed if embedding or forking Inspector components.
+    - Community and project maintainers recommend either contributing a PR to address dependency specification or using workspaces to ensure availability.
 
 ### Practical Usage
 
@@ -300,15 +297,15 @@ The Inspector client package can be mounted as a top-level component or nested w
 
 ```tsx
 // src/App.tsx
-import { InspectorApp } from "@modelcontextprotocol/inspector-client";
+import { InspectorApp } from '@modelcontextprotocol/inspector-client';
 
 export default function App() {
-  return (
-    <InspectorApp
-      basePath="/inspector"
-      proxyUrl="http://localhost:6277" // Or wherever your MCPP is running
-    />
-  );
+    return (
+        <InspectorApp
+            basePath="/inspector"
+            proxyUrl="http://localhost:6277" // Or wherever your MCPP is running
+        />
+    );
 }
 ```
 
@@ -318,18 +315,18 @@ To avoid CORS issues between the Vite dev server and local MCPP:
 
 ```js
 // vite.config.ts
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react-swc';
 
 export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      "/mcp": "http://localhost:6277",
-      "/stdio": "http://localhost:6277",
-      "/sse": "http://localhost:6277",
+    plugins: [react()],
+    server: {
+        proxy: {
+            '/mcp': 'http://localhost:6277',
+            '/stdio': 'http://localhost:6277',
+            '/sse': 'http://localhost:6277',
+        },
     },
-  },
 });
 ```
 
@@ -349,19 +346,19 @@ You can use React-Router to embed the Inspector client at a specific route, e.g.
 
 ```tsx
 // src/App.tsx
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { InspectorApp } from "@modelcontextprotocol/inspector-client";
-import Home from "./components/Home";
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { InspectorApp } from '@modelcontextprotocol/inspector-client';
+import Home from './components/Home';
 
 function App() {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/inspector/*" element={<InspectorApp />} />
-        <Route path="/" element={<Home />} />
-      </Routes>
-    </Router>
-  );
+    return (
+        <Router>
+            <Routes>
+                <Route path="/inspector/*" element={<InspectorApp />} />
+                <Route path="/" element={<Home />} />
+            </Routes>
+        </Router>
+    );
 }
 ```
 
@@ -370,9 +367,9 @@ function App() {
 The Inspector Client is designed as a SPA and requires a base path, network configuration, and optionally, initial auth tokens or config overrides:
 
 - **Props:**
-  - `basePath` (optional): Base route (e.g., `/inspector`)
-  - `proxyUrl` (defaults to `/`): URL where proxy server is available
-  - `defaultConfig`, `defaultServerUrl`, `defaultTransport`: For pre-populated connections
+    - `basePath` (optional): Base route (e.g., `/inspector`)
+    - `proxyUrl` (defaults to `/`): URL where proxy server is available
+    - `defaultConfig`, `defaultServerUrl`, `defaultTransport`: For pre-populated connections
 
 **If mounting under a protected route (e.g., behind your own admin UI), guard access as desired.**
 
@@ -381,18 +378,18 @@ The Inspector Client is designed as a SPA and requires a base path, network conf
 Assuming your project uses **React Router v6+**, integration is straightforward:
 
 ```tsx
-import { Routes, Route, Navigate } from "react-router-dom";
-import { InspectorApp } from "@modelcontextprotocol/inspector-client";
-import MyDashboard from "./Dashboard";
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { InspectorApp } from '@modelcontextprotocol/inspector-client';
+import MyDashboard from './Dashboard';
 
 export default function AppRoutes() {
-  return (
-    <Routes>
-      <Route path="/inspector/*" element={<InspectorApp />} />
-      <Route path="/dashboard" element={<MyDashboard />} />
-      <Route path="*" element={<Navigate to="/dashboard" />} />
-    </Routes>
-  );
+    return (
+        <Routes>
+            <Route path="/inspector/*" element={<InspectorApp />} />
+            <Route path="/dashboard" element={<MyDashboard />} />
+            <Route path="*" element={<Navigate to="/dashboard" />} />
+        </Routes>
+    );
 }
 ```
 
@@ -405,12 +402,12 @@ Add scripts to your `package.json` to start both the proxy (MCPP) and your front
 
 ```json
 {
-  "scripts": {
-    "dev:proxy": "CLIENT_PORT=5173 SERVER_PORT=6277 pnpm dlx @modelcontextprotocol/inspector",
-    "dev": "pnpm run dev:proxy & pnpm run dev:client",
-    "dev:client": "vite",
-    "build": "vite build"
-  }
+    "scripts": {
+        "dev:proxy": "CLIENT_PORT=5173 SERVER_PORT=6277 pnpm dlx @modelcontextprotocol/inspector",
+        "dev": "pnpm run dev:proxy & pnpm run dev:client",
+        "dev:client": "vite",
+        "build": "vite build"
+    }
 }
 ```
 
@@ -428,20 +425,20 @@ Inspector supports loading server configs from JSON files to streamline connecti
 
 ```json
 {
-  "mcpServers": {
-    "local-server": {
-      "command": "node",
-      "args": ["build/index.js", "--debug"],
-      "env": {
-        "API_KEY": "your-api-key",
-        "DEBUG": "true"
-      }
-    },
-    "remote-server": {
-      "type": "sse",
-      "url": "http://localhost:3000/events"
+    "mcpServers": {
+        "local-server": {
+            "command": "node",
+            "args": ["build/index.js", "--debug"],
+            "env": {
+                "API_KEY": "your-api-key",
+                "DEBUG": "true"
+            }
+        },
+        "remote-server": {
+            "type": "sse",
+            "url": "http://localhost:3000/events"
+        }
     }
-  }
 }
 ```
 
@@ -526,18 +523,18 @@ pnpm add @modelcontextprotocol/inspector-client
 
 ```tsx
 // src/App.tsx
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { InspectorApp } from "@modelcontextprotocol/inspector-client";
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { InspectorApp } from '@modelcontextprotocol/inspector-client';
 
 function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/inspector/*" element={<InspectorApp />} />
-        {/* ...your other routes */}
-      </Routes>
-    </BrowserRouter>
-  );
+    return (
+        <BrowserRouter>
+            <Routes>
+                <Route path="/inspector/*" element={<InspectorApp />} />
+                {/* ...your other routes */}
+            </Routes>
+        </BrowserRouter>
+    );
 }
 
 export default App;
@@ -576,41 +573,41 @@ npx @modelcontextprotocol/inspector --cli --method tools/list --config mcp.json 
 **vite.config.ts**
 
 ```ts
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 5173,
-    proxy: {
-      "/mcp": "http://localhost:6277",
-      "/stdio": "http://localhost:6277",
-      "/sse": "http://localhost:6277",
+    plugins: [react()],
+    server: {
+        port: 5173,
+        proxy: {
+            '/mcp': 'http://localhost:6277',
+            '/stdio': 'http://localhost:6277',
+            '/sse': 'http://localhost:6277',
+        },
     },
-  },
 });
 ```
 
 **src/App.tsx**
 
 ```tsx
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { InspectorApp } from "@modelcontextprotocol/inspector-client";
-import Dashboard from "./Dashboard";
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { InspectorApp } from '@modelcontextprotocol/inspector-client';
+import Dashboard from './Dashboard';
 
 function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route
-          path="/inspector/*"
-          element={<InspectorApp proxyUrl="http://localhost:6277" />}
-        />
-        <Route path="/dashboard" element={<Dashboard />} />
-      </Routes>
-    </BrowserRouter>
-  );
+    return (
+        <BrowserRouter>
+            <Routes>
+                <Route
+                    path="/inspector/*"
+                    element={<InspectorApp proxyUrl="http://localhost:6277" />}
+                />
+                <Route path="/dashboard" element={<Dashboard />} />
+            </Routes>
+        </BrowserRouter>
+    );
 }
 
 export default App;

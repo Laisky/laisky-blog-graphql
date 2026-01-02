@@ -228,18 +228,30 @@ function appendTaskScope(params: URLSearchParams, scope?: TaskScopeOptions) {
 
 export async function listUserRequests(
     apiKey: string,
-    signal?: AbortSignal
+    options?: {
+        cursor?: string;
+        limit?: number;
+        signal?: AbortSignal;
+    }
 ): Promise<UserRequestListResponse> {
     const authorization = ensureAuthorization(apiKey);
     const apiBasePath = resolveCurrentApiBasePath();
-    const response = await fetch(`${apiBasePath}api/requests?all_tasks=true`, {
+    const params = new URLSearchParams({ all_tasks: 'true' });
+    if (options?.cursor) {
+        params.append('cursor', options.cursor);
+    }
+    if (options?.limit) {
+        params.append('limit', options.limit.toString());
+    }
+
+    const response = await fetch(`${apiBasePath}api/requests?${params.toString()}`, {
         cache: 'no-store',
         headers: {
             Authorization: authorization,
             'Cache-Control': 'no-store',
             Pragma: 'no-cache',
         },
-        signal,
+        signal: options?.signal,
     });
 
     if (!response.ok) {

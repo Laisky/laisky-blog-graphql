@@ -170,10 +170,10 @@ A clear, versioned API is essential for interoperability and maintainability. Th
 
 ```json
 {
-  "prompt": "What is the capital of France?",
-  "text_context": "Paris is the capital and most populous city of France...",
-  "file_context": "path/to/file.pdf",
-  "file_ext": ".pdf"
+    "prompt": "What is the capital of France?",
+    "text_context": "Paris is the capital and most populous city of France...",
+    "file_context": "path/to/file.pdf",
+    "file_ext": ".pdf"
 }
 ```
 
@@ -186,11 +186,11 @@ A clear, versioned API is essential for interoperability and maintainability. Th
 
 ```json
 {
-  "status": "success",
-  "chunks_ingested": 12,
-  "embedding_model": "openai/text-embedding-3-small",
-  "bm25_tokenizer": "bert",
-  "file_id": 1234
+    "status": "success",
+    "chunks_ingested": 12,
+    "embedding_model": "openai/text-embedding-3-small",
+    "bm25_tokenizer": "bert",
+    "file_id": 1234
 }
 ```
 
@@ -208,8 +208,8 @@ A clear, versioned API is essential for interoperability and maintainability. Th
 
 ```json
 {
-  "prompt": "What is the capital of France?",
-  "top_k": 5
+    "prompt": "What is the capital of France?",
+    "top_k": 5
 }
 ```
 
@@ -220,26 +220,26 @@ A clear, versioned API is essential for interoperability and maintainability. Th
 
 ```json
 {
-  "vector_results": [
-    {
-      "chunk_id": 101,
-      "text": "Paris is the capital and most populous city of France...",
-      "score": 0.92,
-      "file_id": 1234,
-      "metadata": { "page": 1 }
-    }
-    // ... up to top_k
-  ],
-  "bm25_results": [
-    {
-      "chunk_id": 101,
-      "text": "Paris is the capital and most populous city of France...",
-      "score": 12.5,
-      "file_id": 1234,
-      "metadata": { "page": 1 }
-    }
-    // ... up to top_k
-  ]
+    "vector_results": [
+        {
+            "chunk_id": 101,
+            "text": "Paris is the capital and most populous city of France...",
+            "score": 0.92,
+            "file_id": 1234,
+            "metadata": { "page": 1 }
+        }
+        // ... up to top_k
+    ],
+    "bm25_results": [
+        {
+            "chunk_id": 101,
+            "text": "Paris is the capital and most populous city of France...",
+            "score": 12.5,
+            "file_id": 1234,
+            "metadata": { "page": 1 }
+        }
+        // ... up to top_k
+    ]
 }
 ```
 
@@ -262,11 +262,11 @@ A clear, versioned API is essential for interoperability and maintainability. Th
 
 ```json
 {
-  "chunk_id": 101,
-  "text": "Paris is the capital and most populous city of France...",
-  "file_id": 1234,
-  "chunk_index": 0,
-  "metadata": { "page": 1 }
+    "chunk_id": 101,
+    "text": "Paris is the capital and most populous city of France...",
+    "file_id": 1234,
+    "chunk_index": 0,
+    "metadata": { "page": 1 }
 }
 ```
 
@@ -278,8 +278,8 @@ A clear, versioned API is essential for interoperability and maintainability. Th
 
 ```json
 {
-  "status": "ok",
-  "timestamp": "2025-11-15T16:21:00Z"
+    "status": "ok",
+    "timestamp": "2025-11-15T16:21:00Z"
 }
 ```
 
@@ -287,81 +287,81 @@ A clear, versioned API is essential for interoperability and maintainability. Th
 
 ```yaml
 paths:
-  /api/v1/ingest:
-    post:
-      summary: Ingests prompt and context for chunking and embedding
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                prompt: { type: string }
-                text_context: { type: string }
-                file_context: { type: string }
-                file_ext: { type: string }
-      responses:
-        "200":
-          description: Ingestion successful
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status: { type: string }
-                  chunks_ingested: { type: integer }
-                  embedding_model: { type: string }
-                  bm25_tokenizer: { type: string }
-                  file_id: { type: integer }
-        "400":
-          description: Invalid input
-        "500":
-          description: Server error
-  /api/v1/search:
-    post:
-      summary: Hybrid retrieval for a prompt
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                prompt: { type: string }
-                top_k: { type: integer }
-      responses:
-        "200":
-          description: Retrieval results
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  vector_results:
-                    {
-                      type: array,
-                      items: { $ref: "#/components/schemas/ChunkResult" },
-                    }
-                  bm25_results:
-                    {
-                      type: array,
-                      items: { $ref: "#/components/schemas/ChunkResult" },
-                    }
-        "400":
-          description: Invalid input
-        "500":
-          description: Server error
+    /api/v1/ingest:
+        post:
+            summary: Ingests prompt and context for chunking and embedding
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                prompt: { type: string }
+                                text_context: { type: string }
+                                file_context: { type: string }
+                                file_ext: { type: string }
+            responses:
+                '200':
+                    description: Ingestion successful
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    status: { type: string }
+                                    chunks_ingested: { type: integer }
+                                    embedding_model: { type: string }
+                                    bm25_tokenizer: { type: string }
+                                    file_id: { type: integer }
+                '400':
+                    description: Invalid input
+                '500':
+                    description: Server error
+    /api/v1/search:
+        post:
+            summary: Hybrid retrieval for a prompt
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                prompt: { type: string }
+                                top_k: { type: integer }
+            responses:
+                '200':
+                    description: Retrieval results
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    vector_results:
+                                        {
+                                            type: array,
+                                            items: { $ref: '#/components/schemas/ChunkResult' },
+                                        }
+                                    bm25_results:
+                                        {
+                                            type: array,
+                                            items: { $ref: '#/components/schemas/ChunkResult' },
+                                        }
+                '400':
+                    description: Invalid input
+                '500':
+                    description: Server error
 components:
-  schemas:
-    ChunkResult:
-      type: object
-      properties:
-        chunk_id: { type: integer }
-        text: { type: string }
-        score: { type: number }
-        file_id: { type: integer }
-        metadata: { type: object }
+    schemas:
+        ChunkResult:
+            type: object
+            properties:
+                chunk_id: { type: integer }
+                text: { type: string }
+                score: { type: number }
+                file_id: { type: integer }
+                metadata: { type: object }
 ```
 
 This API design supports robust, versioned, and discoverable endpoints, with clear error handling and extensibility for future features.
