@@ -90,8 +90,10 @@ func NewLLMStormTask(prompt, apikey string) *LLMStormTask {
 // HTMLCrawlerTask is a task for crawling HTML pages.
 type HTMLCrawlerTask struct {
 	baseTask
-	Url        string `json:"url"`
-	ResultHTML []byte `json:"result_html,omitempty"`
+	Url            string `json:"url"`
+	APIKey         string `json:"api_key,omitempty"`
+	OutputMarkdown bool   `json:"output_markdown,omitempty"`
+	ResultHTML     []byte `json:"result_html,omitempty"`
 }
 
 // ToString returns the JSON representation of a HTMLCrawlerTask.
@@ -115,9 +117,20 @@ func NewHTMLCrawlerTaskFromString(taskStr string) (*HTMLCrawlerTask, error) {
 }
 
 // NewHTMLCrawlerTask creates a new HTMLCrawlerTask instance.
+
+// NewHTMLCrawlerTask creates a new HTMLCrawlerTask instance.
 func NewHTMLCrawlerTask(url string) *HTMLCrawlerTask {
+	return NewHTMLCrawlerTaskWithOptions(url, "", false)
+}
+
+// NewHTMLCrawlerTaskWithOptions creates a new HTMLCrawlerTask instance with additional options.
+// apiKey may be empty. When outputMarkdown is true and apiKey is not empty, the task runner may
+// convert the fetched HTML body to markdown.
+func NewHTMLCrawlerTaskWithOptions(url, apiKey string, outputMarkdown bool) *HTMLCrawlerTask {
 	return &HTMLCrawlerTask{
-		baseTask: newBaseTask(),
-		Url:      url,
+		baseTask:        newBaseTask(),
+		Url:             url,
+		APIKey:          apiKey,
+		OutputMarkdown:  outputMarkdown,
 	}
 }

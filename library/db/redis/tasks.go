@@ -49,7 +49,12 @@ func (db *DB) GetLLMStormTaskResult(ctx context.Context, taskID string) (task *L
 
 // AddHTMLCrawlerTask adds a new HTMLCrawlerTask to the queue.
 func (db *DB) AddHTMLCrawlerTask(ctx context.Context, url string) (taskID string, err error) {
-	task := NewHTMLCrawlerTask(url)
+	return db.AddHTMLCrawlerTaskWithOptions(ctx, url, "", false)
+}
+
+// AddHTMLCrawlerTaskWithOptions adds a new HTMLCrawlerTask to the queue with extra fields.
+func (db *DB) AddHTMLCrawlerTaskWithOptions(ctx context.Context, url, apiKey string, outputMarkdown bool) (taskID string, err error) {
+	task := NewHTMLCrawlerTaskWithOptions(url, apiKey, outputMarkdown)
 	payload, err := task.ToString()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to serialize task using ToString")

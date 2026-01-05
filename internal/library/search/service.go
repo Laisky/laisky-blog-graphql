@@ -50,7 +50,7 @@ func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.We
 		return nil, errors.Wrap(err, "check user external billing")
 	}
 
-	result, err := searchlib.FetchDynamicURLContent(ctx, r.rdb, url)
+	result, err := searchlib.FetchDynamicURLContent(ctx, r.rdb, url, apikey, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch dynamic url content")
 	}

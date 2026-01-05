@@ -18,7 +18,7 @@ func TestWebFetchHandleMissingAPIKey(t *testing.T) {
 	tool := mustWebFetchTool(t,
 		func(context.Context) string { return "" },
 		func(context.Context, string, oneapi.Price, string) error { return nil },
-		func(context.Context, *rlibs.DB, string) ([]byte, error) { return []byte("ignored"), nil },
+		func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) { return []byte("ignored"), nil },
 	)
 
 	req := mcp.CallToolRequest{
@@ -53,7 +53,7 @@ func TestWebFetchHandleBillingError(t *testing.T) {
 			require.Equal(t, "web fetch", reason)
 			return expectedErr
 		},
-		func(context.Context, *rlibs.DB, string) ([]byte, error) { return []byte("ignored"), nil },
+		func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) { return []byte("ignored"), nil },
 	)
 
 	req := mcp.CallToolRequest{
@@ -85,9 +85,11 @@ func TestWebFetchHandleSuccess(t *testing.T) {
 			billingCalls++
 			return nil
 		},
-		func(ctx context.Context, store *rlibs.DB, url string) ([]byte, error) {
+		func(ctx context.Context, store *rlibs.DB, url string, apiKey string, outputMarkdown bool) ([]byte, error) {
 			fetchCalls++
 			require.Equal(t, "https://example.com", url)
+			require.Equal(t, "token", apiKey)
+			require.False(t, outputMarkdown)
 			return []byte("<html>ok</html>"), nil
 		},
 	)
@@ -115,6 +117,34 @@ func TestWebFetchHandleSuccess(t *testing.T) {
 	require.Equal(t, "<html>ok</html>", payload["content"])
 	require.NotContains(t, payload, "url")
 	require.NotContains(t, payload, "fetched_at")
+}
+
+func TestWebFetchHandleOutputMarkdown(t *testing.T) {
+	var gotOutputMarkdown bool
+
+	tool := mustWebFetchTool(t,
+		func(context.Context) string { return "token" },
+		func(ctx context.Context, apiKey string, price oneapi.Price, reason string) error { return nil },
+		func(ctx context.Context, store *rlibs.DB, url string, apiKey string, outputMarkdown bool) ([]byte, error) {
+			gotOutputMarkdown = outputMarkdown
+			return []byte("ok"), nil
+		},
+	)
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Arguments: map[string]any{
+				"url":             "https://example.com",
+				"output_markdown": true,
+			},
+		},
+	}
+
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+	require.True(t, gotOutputMarkdown)
 }
 
 func mustWebFetchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, fetcher DynamicFetcher) *WebFetchTool {

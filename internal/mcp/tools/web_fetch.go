@@ -15,7 +15,7 @@ import (
 )
 
 // DynamicFetcher retrieves rendered HTML content for a given URL.
-type DynamicFetcher func(context.Context, *rlibs.DB, string) ([]byte, error)
+type DynamicFetcher func(ctx context.Context, store *rlibs.DB, url string, apiKey string, outputMarkdown bool) ([]byte, error)
 
 // WebFetchTool implements the web_fetch MCP tool.
 type WebFetchTool struct {
@@ -87,12 +87,19 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultError("missing authorization bearer token"), nil
 	}
 
+	outputMarkdown := false
+	if args, ok := req.Params.Arguments.(map[string]any); ok {
+		if raw, ok := args["output_markdown"]; ok {
+			outputMarkdown = parseOptionalBool(raw)
+		}
+	}
+
 	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebFetch, "web fetch"); err != nil {
 		t.logger.Warn("web_fetch billing denied", zap.Error(err), zap.String("url", urlValue))
 		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
 	}
 
-	content, err := t.fetcher(ctx, t.store, urlValue)
+	content, err := t.fetcher(ctx, t.store, urlValue, apiKey, outputMarkdown)
 	if err != nil {
 		t.logger.Error("web_fetch failed", zap.Error(err), zap.String("url", urlValue))
 		return mcp.NewToolResultError(fmt.Sprintf("fetch failed: %v", err)), nil
@@ -109,4 +116,25 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 
 	return toolResult, nil
+}
+
+func parseOptionalBool(raw any) bool {
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		s := strings.TrimSpace(strings.ToLower(v))
+		return s == "true" || s == "1" || s == "yes" || s == "y" || s == "on"
+	case float64:
+		// MCP JSON numbers decode into float64
+		return v != 0
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case uint64:
+		return v != 0
+	default:
+		return false
+	}
 }

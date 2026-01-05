@@ -9,10 +9,16 @@ import (
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 )
 
-// FetchDynamicURLContent is a wrapper for submit & fetch dynamic url content
-func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url string) ([]byte, error) {
+type htmlToMarkdownConverter interface {
+	ConvertString(string) (string, error)
+}
+
+// FetchDynamicURLContent is a wrapper for submit & fetch dynamic url content.
+// When apiKey is not empty and outputMarkdown is true, it converts the fetched HTML body
+// to markdown. If conversion fails, it returns the raw HTML body unchanged.
+func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey string, outputMarkdown bool) ([]byte, error) {
 	// submit task
-	taskID, err := rdb.AddHTMLCrawlerTask(ctx, url)
+	taskID, err := rdb.AddHTMLCrawlerTaskWithOptions(ctx, url, apiKey, outputMarkdown)
 	if err != nil {
 		return nil, errors.Wrap(err, "submit task")
 	}
