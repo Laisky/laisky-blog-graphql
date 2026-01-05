@@ -87,7 +87,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultError("missing authorization bearer token"), nil
 	}
 
-	outputMarkdown := false
+	outputMarkdown := true // default to convert to markdown
 	if args, ok := req.Params.Arguments.(map[string]any); ok {
 		if raw, ok := args["output_markdown"]; ok {
 			outputMarkdown = parseOptionalBool(raw)
