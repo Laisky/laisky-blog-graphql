@@ -110,6 +110,7 @@ export function TaskIdSelector({
     const inputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const skipFocusRef = useRef(false);
 
     // Sorted entries: pinned first (by usedAt desc), then unpinned (by usedAt desc)
     const sortedEntries = useMemo(() => {
@@ -172,6 +173,7 @@ export function TaskIdSelector({
             setHistory((prev) => addOrUpdateTaskId(prev, entry.value));
             setIsOpen(false);
             setHighlightedIndex(-1);
+            skipFocusRef.current = true;
             inputRef.current?.focus();
         },
         [onChange]
@@ -239,6 +241,10 @@ export function TaskIdSelector({
 
     // Handle focus - open dropdown if there are entries
     const handleFocus = useCallback(() => {
+        if (skipFocusRef.current) {
+            skipFocusRef.current = false;
+            return;
+        }
         if (!disabled && sortedEntries.length > 0) {
             setIsOpen(true);
         }
