@@ -1,5 +1,5 @@
 import { Server } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,6 @@ export function CallLogPage() {
   const { apiKey } = useApiKey();
   const [entries, setEntries] = useState<CallLogEntry[]>([]);
   const [pagination, setPagination] = useState<CallLogListResponse['pagination'] | null>(null);
-  const [status, setStatus] = useState<string>('Configure your API key in settings to view call history.');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -41,13 +40,11 @@ export function CallLogPage() {
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!apiKey) {
       setEntries([]);
       setPagination(null);
-      setStatus('Please set your API key in settings to load call logs.');
       return;
     }
 
@@ -72,7 +69,6 @@ export function CallLogPage() {
         setEntries(data.data);
         setPagination(data.pagination);
         setPage(data.pagination.page);
-        setStatus(`Loaded ${data.data.length} entries.`);
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -87,11 +83,7 @@ export function CallLogPage() {
       });
 
     return () => controller.abort();
-  }, [apiKey, page, pageSize, sortBy, sortOrder, toolFilter, userFilter, fromDate, toDate, refreshKey]);
-
-  const handleRefresh = useCallback(() => {
-    setRefreshKey((prev) => prev + 1);
-  }, []);
+  }, [apiKey, page, pageSize, sortBy, sortOrder, toolFilter, userFilter, fromDate, toDate]);
 
   const dateFormatter = useMemo(
     () =>
@@ -118,15 +110,6 @@ export function CallLogPage() {
           and costs.
         </p>
       </section>
-
-      {apiKey && (
-        <div className="flex items-center justify-between rounded-lg border border-border/60 bg-card p-4 shadow-sm">
-          <div className="text-sm font-medium text-foreground">{status}</div>
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            Refresh
-          </Button>
-        </div>
-      )}
 
       <Card className="border border-border/60 bg-card">
         <CardHeader>

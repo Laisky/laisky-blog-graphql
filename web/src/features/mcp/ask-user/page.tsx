@@ -1,29 +1,20 @@
 import { MessageSquare } from 'lucide-react';
 import type { ChangeEvent } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 
 import { listRequests, submitAnswer, type AskUserRequest } from './api';
 
-interface IdentityState {
-  userId?: string;
-  aiId?: string;
-  keyHint?: string;
-}
-
 export function AskUserPage() {
   const { apiKey } = useApiKey();
   const [pendingRequests, setPendingRequests] = useState<AskUserRequest[]>([]);
   const [historyRequests, setHistoryRequests] = useState<AskUserRequest[]>([]);
-  const [identity, setIdentity] = useState<IdentityState | null>(null);
-  const [status, setStatus] = useState<StatusState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
   const [pendingSubmissions, setPendingSubmissions] = useState<Record<string, boolean>>({});
@@ -38,8 +29,6 @@ export function AskUserPage() {
     if (!apiKey) {
       setPendingRequests([]);
       setHistoryRequests([]);
-      setIdentity(null);
-      setStatus({ message: 'API key not set. Please configure it in settings.', tone: 'info' });
       return;
     }
 
@@ -51,7 +40,6 @@ export function AskUserPage() {
 
       if (initial) {
         setIsLoading(true);
-        setStatus({ message: 'Connected. Fetching requests…', tone: 'info' });
       }
 
       if (inFlight) {
@@ -66,22 +54,9 @@ export function AskUserPage() {
 
         setPendingRequests(data.pending ?? []);
         setHistoryRequests(data.history ?? []);
-        setIdentity({
-          userId: data.user_id,
-          aiId: data.ai_id,
-          keyHint: data.key_hint,
-        });
-        setStatus({
-          message: identityMessage(data.user_id, data.ai_id, data.key_hint),
-          tone: 'success',
-        });
         schedule(5000);
       } catch (error) {
         if (disposed || controller.signal.aborted) return;
-        setStatus({
-          message: error instanceof Error ? error.message : 'Failed to fetch requests.',
-          tone: 'error',
-        });
         schedule(8000);
       } finally {
         if (initial && !disposed) {
@@ -120,10 +95,6 @@ export function AskUserPage() {
     };
   }, [apiKey]);
 
-  const handleRefresh = useCallback(() => {
-    pollControlsRef.current?.refresh();
-  }, []);
-
   const handleAnswerChange = useCallback((id: string, value: string) => {
     setDraftAnswers((prev) => ({ ...prev, [id]: value }));
   }, []);
@@ -132,32 +103,20 @@ export function AskUserPage() {
     async (requestId: string) => {
       const key = normalizeApiKey(apiKey);
       if (!key) {
-        setStatus({
-          message: 'Connect with your API key before answering.',
-          tone: 'error',
-        });
         return;
       }
       const draft = (draftAnswers[requestId] ?? '').trim();
       if (!draft) {
-        setStatus({ message: 'Answer cannot be empty.', tone: 'error' });
         return;
       }
 
       setPendingSubmissions((prev) => ({ ...prev, [requestId]: true }));
       try {
         await submitAnswer(key, requestId, draft);
-        setStatus({
-          message: 'Answer submitted successfully.',
-          tone: 'success',
-        });
         setDraftAnswers((prev) => ({ ...prev, [requestId]: '' }));
         pollControlsRef.current?.schedule(0);
       } catch (error) {
-        setStatus({
-          message: error instanceof Error ? error.message : 'Failed to submit answer.',
-          tone: 'error',
-        });
+        console.error('Failed to submit answer:', error);
       } finally {
         setPendingSubmissions((prev) => {
           const next = { ...prev };
@@ -168,11 +127,6 @@ export function AskUserPage() {
     },
     [apiKey, draftAnswers]
   );
-
-  const maskedKeySuffix = useMemo(() => {
-    if (!identity?.keyHint) return '';
-    return `token •••${identity.keyHint}`;
-  }, [identity]);
 
   return (
     <div className="space-y-8">
@@ -187,19 +141,6 @@ export function AskUserPage() {
           available under <code>/tools/ask_user/api</code> and respects the configured public base path.
         </p>
       </section>
-
-      {status && (
-        <Card className="border border-border/60 bg-card shadow-sm">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <StatusBanner status={status} subtext={maskedKeySuffix} />
-              <Button variant="outline" size="sm" onClick={handleRefresh}>
-                Refresh
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
@@ -242,13 +183,6 @@ export function AskUserPage() {
       </section>
     </div>
   );
-}
-
-function identityMessage(userId?: string, aiId?: string, keyHint?: string) {
-  const user = userId || 'unknown user';
-  const ai = aiId || 'unknown agent';
-  const suffix = keyHint ? `token •••${keyHint}` : 'token hidden';
-  return `Linked identities: ${user} / ${ai} (${suffix})`;
 }
 
 function EmptyState({ message, subtle = false }: { message: string; subtle?: boolean }) {

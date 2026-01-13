@@ -7,12 +7,3 @@ export function formatDate(value?: string | null): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
-
-/**
- * identityMessage constructs a human-readable identity string from user info.
- */
-export function identityMessage(userId?: string, keyHint?: string): string {
-  const user = userId || 'unknown user';
-  const suffix = keyHint ? `token •••${keyHint}` : 'token hidden';
-  return `Linked identity: ${user} (${suffix})`;
-}

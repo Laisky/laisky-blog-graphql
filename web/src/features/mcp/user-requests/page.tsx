@@ -2,48 +2,41 @@ import { closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSe
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { ChevronDown, ChevronUp, ClipboardList, Send, Trash2 } from 'lucide-react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 
 import {
-  createUserRequest,
-  deleteAllPendingRequests,
-  deleteConsumedRequests,
-  deleteUserRequest,
-  getDescriptionCollapsed,
-  getHoldState,
-  getPreferencesFromServer,
-  getReturnMode,
-  type HoldState,
-  listUserRequests,
-  setReturnMode as persistReturnModeLocal,
-  releaseHold,
-  reorderUserRequests,
-  type ReturnMode,
-  setDescriptionCollapsed,
-  setHold,
-  setReturnModeOnServer,
-  type UserRequest,
+    createUserRequest,
+    deleteAllPendingRequests,
+    deleteConsumedRequests,
+    deleteUserRequest,
+    getDescriptionCollapsed,
+    getHoldState,
+    getPreferencesFromServer,
+    getReturnMode,
+    type HoldState,
+    listUserRequests,
+    setReturnMode as persistReturnModeLocal,
+    releaseHold,
+    reorderUserRequests,
+    type ReturnMode,
+    setDescriptionCollapsed,
+    setHold,
+    setReturnModeOnServer,
+    type UserRequest,
 } from './api';
 import { HoldButton } from './hold-button';
 import { ConsumedCard, EmptyState, PendingRequestCard } from './request-cards';
 import { SavedCommands } from './saved-commands';
 import { TaskIdSelector, useTaskIdHistory } from './task-id-selector';
-import { identityMessage } from './utils';
-
-interface IdentityState {
-  userId?: string;
-  keyHint?: string;
-}
 
 type DeleteOption = {
   label: string;
@@ -60,8 +53,6 @@ const DELETE_OPTIONS: DeleteOption[] = [
 
 export function UserRequestsPage() {
   const { apiKey } = useApiKey();
-  const [status, setStatus] = useState<StatusState | null>(null);
-  const [identity, setIdentity] = useState<IdentityState | null>(null);
   const [pending, setPending] = useState<UserRequest[]>([]);
   const [consumed, setConsumed] = useState<UserRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -115,8 +106,6 @@ export function UserRequestsPage() {
     if (!apiKey) {
       setPending([]);
       setConsumed([]);
-      setIdentity(null);
-      setStatus({ message: 'API key not set. Please configure it in settings.', tone: 'info' });
       setVisibleConsumedCount(10);
       setHasMoreConsumed(true);
       return;
@@ -130,7 +119,7 @@ export function UserRequestsPage() {
 
       if (initial) {
         setIsLoading(true);
-        setStatus({ message: 'Connected. Fetching requests…', tone: 'info' });
+
       }
 
       if (inFlight) {
@@ -153,11 +142,6 @@ export function UserRequestsPage() {
         setPending(data.pending ?? []);
         setConsumed(data.consumed ?? []);
         setHasMoreConsumed((data.consumed?.length ?? 0) >= visibleCountRef.current);
-        setIdentity({ userId: data.user_id, keyHint: data.key_hint });
-        setStatus({
-          message: identityMessage(data.user_id, data.key_hint),
-          tone: 'success',
-        });
 
         // Update return mode from server preference only if localStorage has no value
         // This prevents overwriting user's local choice with server default
@@ -176,10 +160,6 @@ export function UserRequestsPage() {
         schedule(5000);
       } catch (error) {
         if (disposed || controller.signal.aborted) return;
-        setStatus({
-          message: error instanceof Error ? error.message : 'Failed to fetch requests.',
-          tone: 'error',
-        });
         schedule(8000);
       } finally {
         if (initial && !disposed) {
@@ -253,10 +233,10 @@ export function UserRequestsPage() {
     };
   }, [apiKey, holdState.active]);
 
-  const handleRefresh = useCallback(() => {
-    setVisibleConsumedCount(10);
-    pollControlsRef.current?.refresh();
-  }, []);
+//   const handleRefresh = useCallback(() => {
+//     setVisibleConsumedCount(10);
+//     pollControlsRef.current?.refresh();
+//   }, []);
 
   const handleLoadMore = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
@@ -274,10 +254,6 @@ export function UserRequestsPage() {
       setVisibleConsumedCount((prev) => prev + newItems.length);
       setHasMoreConsumed(newItems.length >= 10);
     } catch (error) {
-      setStatus({
-        message: error instanceof Error ? error.message : 'Failed to load more history.',
-        tone: 'error',
-      });
     } finally {
       setIsLoadingMore(false);
     }
@@ -286,15 +262,10 @@ export function UserRequestsPage() {
   const handleCreateRequest = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
     if (!key) {
-      setStatus({
-        message: 'Connect with your API key before creating requests.',
-        tone: 'error',
-      });
       return;
     }
     const trimmed = newContent.trim();
     if (!trimmed) {
-      setStatus({ message: 'Content cannot be empty.', tone: 'error' });
       return;
     }
 
@@ -313,25 +284,12 @@ export function UserRequestsPage() {
       if (createdRequest.status === 'consumed') {
         // Command was delivered directly to the waiting agent
         setHoldState({ active: false, waiting: false, remaining_secs: 0 });
-        setStatus({
-          message: 'Request delivered to waiting agent.',
-          tone: 'success',
-        });
       } else if (holdState.active) {
         // Hold was active but no agent was waiting, command is queued
-        setStatus({
-          message: 'Request queued. Agent will receive it when ready.',
-          tone: 'success',
-        });
       } else {
-        setStatus({ message: 'Request queued successfully.', tone: 'success' });
       }
       pollControlsRef.current?.schedule(0);
     } catch (error) {
-      setStatus({
-        message: error instanceof Error ? error.message : 'Failed to create request.',
-        tone: 'error',
-      });
     } finally {
       setIsSubmitting(false);
     }
@@ -340,10 +298,6 @@ export function UserRequestsPage() {
   const handleActivateHold = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
     if (!key) {
-      setStatus({
-        message: 'Connect with your API key before activating hold.',
-        tone: 'error',
-      });
       return;
     }
     try {
@@ -351,20 +305,12 @@ export function UserRequestsPage() {
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
     } catch (error) {
-      setStatus({
-        message: error instanceof Error ? error.message : 'Failed to activate hold.',
-        tone: 'error',
-      });
     }
   }, [apiKey]);
 
   const handleReleaseHold = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
     if (!key) {
-      setStatus({
-        message: 'Connect with your API key before releasing hold.',
-        tone: 'error',
-      });
       return;
     }
     try {
@@ -372,10 +318,6 @@ export function UserRequestsPage() {
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
     } catch (error) {
-      setStatus({
-        message: error instanceof Error ? error.message : 'Failed to release hold.',
-        tone: 'error',
-      });
     }
   }, [apiKey]);
 
@@ -390,18 +332,10 @@ export function UserRequestsPage() {
       if (key) {
         try {
           await setReturnModeOnServer(key, mode);
-          setStatus({
-            message: `Return mode set to "${mode === 'first' ? 'first only' : 'all commands'}".`,
-            tone: 'success',
-          });
         } catch (error) {
           console.error('Failed to persist return mode to server:', error);
           // Show warning to user - the preference was saved locally but may not persist
           // across devices or if browser data is cleared
-          setStatus({
-            message: `Return mode saved locally, but server sync failed. The setting may not persist.`,
-            tone: 'error',
-          });
         }
       }
     },
@@ -412,26 +346,17 @@ export function UserRequestsPage() {
     async (request: UserRequest) => {
       const key = normalizeApiKey(apiKey);
       if (!key) {
-        setStatus({
-          message: 'Connect with your API key before deleting.',
-          tone: 'error',
-        });
         return;
       }
       setPendingDeletes((prev) => ({ ...prev, [request.id]: true }));
       try {
         await deleteUserRequest(key, request.id, { taskId: request.task_id });
-        setStatus({ message: 'Request deleted.', tone: 'success' });
         if (request.id === pickedRequestId) {
           setPickedRequestId(null);
           setEditorBackup(null);
         }
         pollControlsRef.current?.schedule(0);
       } catch (error) {
-        setStatus({
-          message: error instanceof Error ? error.message : 'Failed to delete request.',
-          tone: 'error',
-        });
       } finally {
         setPendingDeletes((prev) => {
           const next = { ...prev };
@@ -466,10 +391,6 @@ export function UserRequestsPage() {
         );
       } catch (error) {
         console.error('Failed to reorder requests:', error);
-        setStatus({
-          message: 'Failed to save new order to server.',
-          tone: 'error',
-        });
         // Optionally revert on failure, but usually better to keep local state
         // and let the next poll fix it if it's a transient error.
       }
@@ -477,21 +398,12 @@ export function UserRequestsPage() {
     [apiKey, pending]
   );
 
-  const maskedKeySuffix = useMemo(() => {
-    if (!identity?.keyHint) return '';
-    return `token •••${identity.keyHint}`;
-  }, [identity]);
-
   const isEditorDisabled = !apiKey || isSubmitting;
 
   // Opens the confirmation dialog for deleting all pending requests
   const handleDeleteAllPendingClick = useCallback(() => {
     const key = normalizeApiKey(apiKey);
     if (!key) {
-      setStatus({
-        message: 'Connect with your API key before deleting.',
-        tone: 'error',
-      });
       return;
     }
     setShowDeleteAllConfirm(true);
@@ -505,19 +417,11 @@ export function UserRequestsPage() {
     }
     setIsDeletingAllPending(true);
     try {
-      const deleted = await deleteAllPendingRequests(key, {
+      await deleteAllPendingRequests(key, {
         allTasks: true,
-      });
-      setStatus({
-        message: deleted ? `Deleted ${deleted} pending request${deleted === 1 ? '' : 's'}.` : 'No pending requests to delete.',
-        tone: 'success',
       });
       pollControlsRef.current?.schedule(0);
     } catch (error) {
-      setStatus({
-        message: error instanceof Error ? error.message : 'Failed to delete pending requests.',
-        tone: 'error',
-      });
     } finally {
       setIsDeletingAllPending(false);
     }
@@ -526,10 +430,6 @@ export function UserRequestsPage() {
   const handleDeleteConsumedClick = useCallback(() => {
     const key = normalizeApiKey(apiKey);
     if (!key) {
-      setStatus({
-        message: 'Connect with your API key before deleting.',
-        tone: 'error',
-      });
       return;
     }
     setShowDeleteConsumedConfirm(true);
@@ -542,21 +442,13 @@ export function UserRequestsPage() {
     setIsDeletingConsumed(true);
     try {
       const option = DELETE_OPTIONS[selectedDeleteOptionIdx];
-      const deleted = await deleteConsumedRequests(key, {
+      await deleteConsumedRequests(key, {
         keepCount: option.keepCount,
         keepDays: option.keepDays,
         allTasks: true,
       });
-      setStatus({
-        message: deleted ? `Deleted ${deleted} consumed request${deleted === 1 ? '' : 's'}.` : 'No matching requests to delete.',
-        tone: 'success',
-      });
       pollControlsRef.current?.schedule(0);
     } catch (error) {
-      setStatus({
-        message: error instanceof Error ? error.message : 'Failed to delete consumed requests.',
-        tone: 'error',
-      });
     } finally {
       setIsDeletingConsumed(false);
     }
@@ -571,14 +463,9 @@ export function UserRequestsPage() {
     setPickedRequestId(null);
     setEditorBackup(null);
     setNewContent(content);
-    setStatus({ message: 'Command loaded into editor.', tone: 'success' });
   }, []);
 
-  const handleSaveCurrentContent = useCallback((label: string) => {
-    setStatus({
-      message: `Saved "${label}" to your commands.`,
-      tone: 'success',
-    });
+  const handleSaveCurrentContent = useCallback((_label: string) => {
   }, []);
 
   const handleEditorChange = useCallback(
@@ -599,17 +486,9 @@ export function UserRequestsPage() {
   const handleEditInEditor = useCallback(
     (request: UserRequest) => {
       if (!apiKey) {
-        setStatus({
-          message: 'Connect with your API key before editing directives.',
-          tone: 'error',
-        });
         return;
       }
       if (isSubmitting) {
-        setStatus({
-          message: 'Please wait for the current submission to finish.',
-          tone: 'info',
-        });
         return;
       }
 
@@ -618,10 +497,6 @@ export function UserRequestsPage() {
         setPickedRequestId(null);
         setNewContent(editorBackup ?? '');
         setEditorBackup(null);
-        setStatus({
-          message: 'Cancelled editing.',
-          tone: 'info',
-        });
         return;
       }
 
@@ -629,10 +504,6 @@ export function UserRequestsPage() {
       setEditorBackup((prev) => (pickedRequestId ? prev : newContent));
       setPickedRequestId(request.id);
       setNewContent(request.content);
-      setStatus({
-        message: `Loaded ${request.status === 'pending' ? 'pending' : 'consumed'} directive into the editor.`,
-        tone: 'success',
-      });
     },
     [apiKey, editorBackup, isSubmitting, newContent, pickedRequestId]
   );
@@ -649,11 +520,6 @@ export function UserRequestsPage() {
 
       // Delete from pending
       await handleDeleteRequest(request);
-
-      setStatus({
-        message: 'Request picked up for editing.',
-        tone: 'success',
-      });
     },
     [apiKey, handleDeleteRequest]
   );
@@ -663,10 +529,6 @@ export function UserRequestsPage() {
     if (request.task_id) {
       setTaskId(request.task_id);
     }
-    setStatus({
-      message: 'Request copied to editor.',
-      tone: 'success',
-    });
   }, []);
 
   /**
@@ -677,26 +539,14 @@ export function UserRequestsPage() {
     async (request: UserRequest) => {
       const key = normalizeApiKey(apiKey);
       if (!key) {
-        setStatus({
-          message: 'Connect with your API key before re-queuing.',
-          tone: 'error',
-        });
         return;
       }
 
       setIsSubmitting(true);
       try {
         await createUserRequest(key, request.content, request.task_id || undefined);
-        setStatus({
-          message: 'Directive re-queued to pending.',
-          tone: 'success',
-        });
         pollControlsRef.current?.schedule(0);
       } catch (error) {
-        setStatus({
-          message: error instanceof Error ? error.message : 'Failed to re-queue directive.',
-          tone: 'error',
-        });
       } finally {
         setIsSubmitting(false);
       }
@@ -759,19 +609,6 @@ export function UserRequestsPage() {
           </>
         )}
       </section>
-
-      {status && (
-        <Card className="border border-border/60 bg-card shadow-sm">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <StatusBanner status={status} subtext={maskedKeySuffix} />
-              <Button variant="outline" size="sm" onClick={handleRefresh}>
-                Refresh
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <Card className="border-2 border-primary/40 bg-primary/5 shadow-md dark:bg-primary/10">
         <CardHeader>
