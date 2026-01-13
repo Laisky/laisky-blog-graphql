@@ -10,6 +10,7 @@ import (
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
@@ -18,20 +19,23 @@ import (
 
 // MutationResolver is the resolver for mutation.
 type MutationResolver struct {
-	provider searchlib.Provider
-	rdb      *rlibs.DB
+	provider   searchlib.Provider
+	rdb        *rlibs.DB
+	calllogger *calllog.Service
 }
 
 // NewMutationResolver is the constructor for MutationResolver.
-func NewMutationResolver(provider searchlib.Provider, rdb *rlibs.DB) *MutationResolver {
+func NewMutationResolver(provider searchlib.Provider, rdb *rlibs.DB, calllogger *calllog.Service) *MutationResolver {
 	return &MutationResolver{
-		provider: provider,
-		rdb:      rdb,
+		provider:   provider,
+		rdb:        rdb,
+		calllogger: calllogger,
 	}
 }
 
 // WebFetch is the resolver for webFetch field.
 func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.WebFetchResult, error) {
+	startAt := time.Now()
 	logger := gmw.GetLogger(ctx).
 		Named("web_fetch").
 		With(zap.String("url", url))
@@ -51,6 +55,28 @@ func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.We
 	}
 
 	result, err := searchlib.FetchDynamicURLContent(ctx, r.rdb, url, apikey, false)
+	status := calllog.StatusSuccess
+	var errMsg string
+	if err != nil {
+		status = calllog.StatusError
+		errMsg = err.Error()
+	}
+
+	if r.calllogger != nil {
+		if recordErr := r.calllogger.Record(ctx, calllog.RecordInput{
+			ToolName:     "web_fetch",
+			APIKey:       apikey,
+			Status:       status,
+			Cost:         oneapi.PriceWebFetch.Int(),
+			Duration:     time.Since(startAt),
+			Parameters:   map[string]any{"url": url},
+			ErrorMessage: errMsg,
+			OccurredAt:   startAt,
+		}); recordErr != nil {
+			logger.Warn("record call log", zap.Error(recordErr))
+		}
+	}
+
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch dynamic url content")
 	}
@@ -89,6 +115,28 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 	}
 
 	items, err := r.provider.Search(ctx, query)
+	status := calllog.StatusSuccess
+	var errMsg string
+	if err != nil {
+		status = calllog.StatusError
+		errMsg = err.Error()
+	}
+
+	if r.calllogger != nil {
+		if recordErr := r.calllogger.Record(ctx, calllog.RecordInput{
+			ToolName:     "web_search",
+			APIKey:       apikey,
+			Status:       status,
+			Cost:         oneapi.PriceWebSearch.Int(),
+			Duration:     time.Since(startAt),
+			Parameters:   map[string]any{"query": query},
+			ErrorMessage: errMsg,
+			OccurredAt:   startAt,
+		}); recordErr != nil {
+			logger.Warn("record call log", zap.Error(recordErr))
+		}
+	}
+
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to search for query `%s`", query)
 	}

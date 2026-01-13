@@ -79,6 +79,7 @@ func (r *Resolver) Mutation() MutationResolver {
 			MutationResolver: search.NewMutationResolver(
 				r.args.WebSearchProvider,
 				r.args.Rdb,
+				r.args.CallLogService,
 			),
 		},
 	}

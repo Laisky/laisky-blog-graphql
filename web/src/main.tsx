@@ -9,6 +9,8 @@ import { CallLogPage } from '@/features/mcp/call-log/page';
 import { InspectorPage } from '@/features/mcp/inspector/page';
 import { SettingsPage } from '@/features/mcp/settings/page';
 import { UserRequestsPage } from '@/features/mcp/user-requests/page';
+import { WebFetchPage } from '@/features/mcp/web-fetch/page';
+import { WebSearchPage } from '@/features/mcp/web-search/page';
 import { ApiKeyProvider } from '@/lib/api-key-context';
 import { defaultToolsConfig, loadRuntimeConfig, type ToolsConfig } from '@/lib/runtime-config';
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
@@ -25,6 +27,8 @@ const routes = [
       { index: true, element: <HomePage /> },
       { path: 'tools/ask_user', element: <AskUserPage /> },
       { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
+      { path: 'tools/web_search', element: <WebSearchPage /> },
+      { path: 'tools/web_fetch', element: <WebFetchPage /> },
       { path: 'tools/call_log', element: <CallLogPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'debug/*', element: <InspectorPage /> },

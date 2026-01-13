@@ -1,4 +1,4 @@
-import { Activity, ClipboardList, Cpu, Database, ExternalLink, Globe, Key, MessageSquare, Search, Server, Terminal } from 'lucide-react';
+import { Activity, ClipboardList, Cpu, Database, ExternalLink, Globe, Key, MessageSquare, Search, Server } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
@@ -9,65 +9,22 @@ import { useToolsConfig } from '@/lib/tools-config-context';
 export function HomePage() {
   const toolsConfig = useToolsConfig();
 
-  // Filter console cards based on enabled tools
-  const consoleCards = [
-    {
-      key: 'ask_user',
-      enabled: toolsConfig.ask_user,
-      element: (
-        <ConsoleCard
-          title="Ask User Console"
-          description="Interface for human-in-the-loop interactions. Respond to pending questions from AI agents."
-          icon={<MessageSquare className="h-6 w-6" />}
-          href="/tools/ask_user"
-          action="Open Console"
-        />
-      ),
-    },
-    {
-      key: 'get_user_request',
-      enabled: toolsConfig.get_user_request,
-      element: (
-        <ConsoleCard
-          title="User Requests Console"
-          description="Queue new directives for AI assistants and track consumed history. Manage get_user_request inputs."
-          icon={<ClipboardList className="h-6 w-6" />}
-          href="/tools/get_user_requests"
-          action="Open Console"
-        />
-      ),
-    },
+  // Tool cards - show all tools with enabled state for visual distinction
+  const toolCards = [
     {
       key: 'inspector',
-      enabled: true, // Inspector is always available
+      enabled: true,
       element: (
-        <ConsoleCard
-          title="MCP Inspector"
+        <ToolCard
+          title="Inspector"
           description="Debug and test MCP tools directly. Inspect JSON-RPC traffic and tool definitions."
-          icon={<Activity className="h-6 w-6" />}
+          icon={<Activity className="h-5 w-5" />}
+          tags={['Debug', 'Test']}
           href="/debug"
-          action="Launch Inspector"
           external
         />
       ),
     },
-    {
-      key: 'call_logs',
-      enabled: true, // Call logs are always available
-      element: (
-        <ConsoleCard
-          title="Call Logs"
-          description="Audit trail of all tool invocations, including costs, duration, and error rates."
-          icon={<Server className="h-6 w-6" />}
-          href="/tools/call_log"
-          action="View Logs"
-        />
-      ),
-    },
-  ];
-
-  // Tool cards - show all tools with enabled state for visual distinction
-  const toolCards = [
     {
       key: 'web_search',
       enabled: toolsConfig.web_search,
@@ -78,6 +35,7 @@ export function HomePage() {
           icon={<Search className="h-5 w-5" />}
           tags={['External API', 'Billing']}
           enabled={toolsConfig.web_search}
+          href="/tools/web_search"
         />
       ),
     },
@@ -91,6 +49,7 @@ export function HomePage() {
           icon={<Globe className="h-5 w-5" />}
           tags={['Headless Browser', 'Content Extraction']}
           enabled={toolsConfig.web_fetch}
+          href="/tools/web_fetch"
         />
       ),
     },
@@ -104,6 +63,7 @@ export function HomePage() {
           icon={<MessageSquare className="h-5 w-5" />}
           tags={['Human-in-the-loop', 'Async']}
           enabled={toolsConfig.ask_user}
+          href="/tools/ask_user"
         />
       ),
     },
@@ -117,6 +77,7 @@ export function HomePage() {
           icon={<ClipboardList className="h-5 w-5" />}
           tags={['Human-in-the-loop', 'Push-based']}
           enabled={toolsConfig.get_user_request}
+          href="/tools/get_user_requests"
         />
       ),
     },
@@ -133,9 +94,20 @@ export function HomePage() {
         />
       ),
     },
+    {
+      key: 'call_logs',
+      enabled: true,
+      element: (
+        <ToolCard
+          title="Call Logs"
+          description="Audit trail of all tool invocations, including costs, duration, and error rates."
+          icon={<Server className="h-5 w-5" />}
+          tags={['Audit', 'Cost Tracking']}
+          href="/tools/call_log"
+        />
+      ),
+    },
   ];
-
-  const enabledConsoles = consoleCards.filter((card) => card.enabled);
 
   return (
     <div className="space-y-12">
@@ -170,21 +142,6 @@ export function HomePage() {
         </Card>
       </section>
 
-      {/* Consoles Section */}
-      {enabledConsoles.length > 0 && (
-        <section className="space-y-6">
-          <div className="flex items-center gap-2 border-b border-border pb-2">
-            <Terminal className="h-5 w-5 text-foreground" />
-            <h2 className="text-2xl font-semibold tracking-tight">Management Consoles</h2>
-          </div>
-          <div className="grid gap-6 md:grid-cols-3">
-            {enabledConsoles.map((card) => (
-              <div key={card.key}>{card.element}</div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* Tools Section */}
       {toolCards.length > 0 && (
         <section className="space-y-6">
@@ -203,64 +160,30 @@ export function HomePage() {
   );
 }
 
-function ConsoleCard({
-  title,
-  description,
-  icon,
-  href,
-  action,
-  external,
-}: {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  href: string;
-  action: string;
-  external?: boolean;
-}) {
-  return (
-    <Card className="flex flex-col border-border/60 bg-card transition-all hover:border-border hover:shadow-md">
-      <CardHeader>
-        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</div>
-        <CardTitle className="text-xl">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col justify-between gap-4">
-        <CardDescription className="text-base">{description}</CardDescription>
-        <Button asChild variant="outline" className="group w-full justify-between">
-          <Link to={href} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>
-            {action}
-            {external ? (
-              <ExternalLink className="h-4 w-4 opacity-50" />
-            ) : (
-              <span className="opacity-0 transition-opacity group-hover:opacity-100">→</span>
-            )}
-          </Link>
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
 function ToolCard({
   title,
   description,
   icon,
   tags,
   enabled = true,
+  href,
+  external,
 }: {
   title: string;
   description: string;
   icon: React.ReactNode;
   tags: string[];
   enabled?: boolean;
+  href?: string;
+  external?: boolean;
 }) {
-  return (
+  const content = (
     <Card
-      className={`transition-all ${
+      className={`group h-full transition-all ${
         enabled
           ? 'border-sky-200/60 bg-sky-50/30 hover:border-sky-300/80 hover:shadow-sm dark:border-sky-800/40 dark:bg-sky-950/20 dark:hover:border-sky-700/60'
           : 'cursor-not-allowed border-gray-200/40 bg-gray-100/30 opacity-60 dark:border-gray-700/30 dark:bg-gray-800/20'
-      }`}
+      } ${href ? 'cursor-pointer' : ''}`}
     >
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
         <div className="flex items-center gap-2">
@@ -280,6 +203,11 @@ function ToolCard({
             </Badge>
           )}
         </div>
+        {href && enabled && (
+          <div className="text-muted-foreground/50 transition-colors group-hover:text-primary">
+            {external ? <ExternalLink className="h-4 w-4" /> : <span className="text-xl">→</span>}
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         <CardDescription className={`text-sm leading-relaxed ${enabled ? '' : 'text-muted-foreground/70'}`}>{description}</CardDescription>
@@ -297,4 +225,21 @@ function ToolCard({
       </CardContent>
     </Card>
   );
+
+  if (href && enabled) {
+    if (external) {
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="block h-full no-underline">
+          {content}
+        </a>
+      );
+    }
+    return (
+      <Link to={href} className="block h-full no-underline">
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
 }

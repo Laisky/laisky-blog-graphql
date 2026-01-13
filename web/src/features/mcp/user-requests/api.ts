@@ -1,4 +1,4 @@
-import { buildAuthorizationHeader, resolveCurrentApiBasePath } from '../shared/auth';
+import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
 
 // ============================================================================
 // Return Mode Configuration
@@ -52,7 +52,7 @@ export interface UserPreferencesResponse {
  */
 export async function getPreferencesFromServer(apiKey: string, signal?: AbortSignal): Promise<UserPreferencesResponse> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/preferences`, {
     cache: 'no-store',
     headers: {
@@ -77,7 +77,7 @@ export async function getPreferencesFromServer(apiKey: string, signal?: AbortSig
  */
 export async function setReturnModeOnServer(apiKey: string, mode: ReturnMode): Promise<UserPreferencesResponse> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/preferences`, {
     method: 'PUT',
     headers: {
@@ -211,7 +211,7 @@ export async function listUserRequests(
   }
 ): Promise<UserRequestListResponse> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const params = new URLSearchParams({ all_tasks: 'true' });
   if (options?.cursor) {
     params.append('cursor', options.cursor);
@@ -240,7 +240,7 @@ export async function listUserRequests(
 
 export async function createUserRequest(apiKey: string, content: string, taskId?: string): Promise<UserRequest> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/requests`, {
     method: 'POST',
     headers: {
@@ -263,7 +263,7 @@ export async function createUserRequest(apiKey: string, content: string, taskId?
 
 export async function deleteUserRequest(apiKey: string, requestId: string, scope?: TaskScopeOptions): Promise<void> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const params = new URLSearchParams();
   appendTaskScope(params, scope ? { taskId: scope.taskId } : undefined);
   const query = params.toString();
@@ -284,7 +284,7 @@ export async function deleteUserRequest(apiKey: string, requestId: string, scope
 
 export async function deleteAllUserRequests(apiKey: string, scope?: TaskScopeOptions): Promise<number> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const params = new URLSearchParams();
   appendTaskScope(params, scope);
   const url = params.toString() ? `${apiBasePath}api/requests?${params.toString()}` : `${apiBasePath}api/requests`;
@@ -313,7 +313,7 @@ type DeleteConsumedOptions = TaskScopeOptions & {
 
 export async function deleteConsumedRequests(apiKey: string, options?: DeleteConsumedOptions): Promise<number> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const params = new URLSearchParams();
   if (options?.keepCount !== undefined) {
     params.append('keep_count', options.keepCount.toString());
@@ -347,7 +347,7 @@ export async function deleteConsumedRequests(apiKey: string, options?: DeleteCon
  */
 export async function deleteAllPendingRequests(apiKey: string, scope?: TaskScopeOptions): Promise<number> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const params = new URLSearchParams();
   appendTaskScope(params, scope);
   const url = params.toString() ? `${apiBasePath}api/requests/pending?${params.toString()}` : `${apiBasePath}api/requests/pending`;
@@ -374,7 +374,7 @@ export async function deleteAllPendingRequests(apiKey: string, scope?: TaskScope
  */
 export async function reorderUserRequests(apiKey: string, orderedIds: string[]): Promise<void> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/requests/reorder`, {
     method: 'PUT',
     headers: {
@@ -401,7 +401,7 @@ export async function reorderUserRequests(apiKey: string, orderedIds: string[]):
  */
 export async function listSavedCommands(apiKey: string, signal?: AbortSignal): Promise<SavedCommandListResponse> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/saved-commands`, {
     cache: 'no-store',
     headers: {
@@ -425,7 +425,7 @@ export async function listSavedCommands(apiKey: string, signal?: AbortSignal): P
  */
 export async function createSavedCommand(apiKey: string, label: string, content: string): Promise<SavedCommand> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/saved-commands`, {
     method: 'POST',
     headers: {
@@ -455,7 +455,7 @@ export async function updateSavedCommand(
   updates: { label?: string; content?: string; sort_order?: number }
 ): Promise<SavedCommand> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/saved-commands/${commandId}`, {
     method: 'PUT',
     headers: {
@@ -481,7 +481,7 @@ export async function updateSavedCommand(
  */
 export async function deleteSavedCommand(apiKey: string, commandId: string): Promise<void> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/saved-commands/${commandId}`, {
     method: 'DELETE',
     headers: {
@@ -502,7 +502,7 @@ export async function deleteSavedCommand(apiKey: string, commandId: string): Pro
  */
 export async function reorderSavedCommands(apiKey: string, orderedIds: string[]): Promise<void> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/saved-commands/reorder`, {
     method: 'PUT',
     headers: {
@@ -538,7 +538,7 @@ export interface HoldState {
  */
 export async function getHoldState(apiKey: string, signal?: AbortSignal): Promise<HoldState> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/hold`, {
     cache: 'no-store',
     headers: {
@@ -564,7 +564,7 @@ export async function getHoldState(apiKey: string, signal?: AbortSignal): Promis
  */
 export async function setHold(apiKey: string): Promise<HoldState> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/hold`, {
     method: 'POST',
     headers: {
@@ -587,7 +587,7 @@ export async function setHold(apiKey: string): Promise<HoldState> {
  */
 export async function releaseHold(apiKey: string): Promise<HoldState> {
   const authorization = ensureAuthorization(apiKey);
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('get_user_requests');
   const response = await fetch(`${apiBasePath}api/hold`, {
     method: 'DELETE',
     headers: {

@@ -1,4 +1,4 @@
-import { buildAuthorizationHeader, resolveCurrentApiBasePath } from '../shared/auth';
+import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
 
 export interface CallLogEntry {
   id: string;
@@ -52,7 +52,7 @@ export async function fetchCallLogs(apiKey: string, query: CallLogQuery, signal?
     throw new Error('API key is required');
   }
 
-  const apiBasePath = resolveCurrentApiBasePath();
+  const apiBasePath = resolveToolApiBase('call_log');
 
   const params = new URLSearchParams();
   if (query.page && query.page > 0) params.set('page', String(query.page));
