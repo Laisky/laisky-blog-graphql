@@ -3,6 +3,8 @@ package web
 import (
 	"errors"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -27,6 +29,26 @@ type spaHandler struct {
 func newFrontendSPAHandler(logger logSDK.Logger, defaultBase string) http.Handler {
 	if logger == nil {
 		return nil
+	}
+
+	if devURL := os.Getenv("VITE_DEV_URL"); devURL != "" {
+		target, err := url.Parse(devURL)
+		if err != nil {
+			logger.Error("parse VITE_DEV_URL", zap.Error(err), zap.String("url", devURL))
+		} else {
+			logger.Info("frontend dev proxy enabled", zap.String("target", devURL))
+			proxy := httputil.NewSingleHostReverseProxy(target)
+			base := normalizeBasePath(defaultBase)
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if base != "" && strings.HasPrefix(r.URL.Path, base) {
+					r.URL.Path = strings.TrimPrefix(r.URL.Path, base)
+					if !strings.HasPrefix(r.URL.Path, "/") {
+						r.URL.Path = "/" + r.URL.Path
+					}
+				}
+				proxy.ServeHTTP(w, r)
+			})
+		}
 	}
 
 	distDir := locateFrontendDist(logger)

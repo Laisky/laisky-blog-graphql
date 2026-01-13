@@ -32,7 +32,11 @@ build:
 
 .PHONY: dev
 dev:
-	cd ./web && pnpm run dev
+	@echo "Starting frontend dev server..."
+	@echo "By default, the dev server proxies backend requests to http://localhost:17800"
+	@echo "You can override this by setting VITE_BACKEND_URL"
+	@echo "To have the backend proxy to this dev server, start the backend with VITE_DEV_URL=http://localhost:5173"
+	cd ./web && pnpm run dev  --host 0.0.0.0
 
 .PHONY: format
 format:
