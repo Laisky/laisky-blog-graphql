@@ -12,15 +12,6 @@ The core of the blog is the articles (Posts). The data structure for articles is
 
 The index field for Post is post_name, which corresponds to the path of the blog article, such as /p/{post.post_name}. You can use post_name to match articles, comments, and Disqus exported comment data in our database.
 
-FYI, the database is mongodb:
-
-```
-db: blog
-addr: 100.122.41.16 # b1
-user: laisky
-pwd: ewoifwejuqhwe82
-```
-
 ## Disqus Exported Comment Structure
 
 Disqus exported comments data is saved at: disqus_exported_data.xml
