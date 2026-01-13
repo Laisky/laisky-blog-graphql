@@ -224,6 +224,12 @@ func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.Authoriza
 		consumed = append(consumed, c)
 	}
 
+	s.log().Debug("consumed all pending user requests",
+		zap.String("user", auth.UserIdentity),
+		zap.String("task_id", taskID),
+		zap.Int("count", len(consumed)),
+	)
+
 	return consumed, nil
 }
 
@@ -243,7 +249,7 @@ func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.Authori
 	var candidate Request
 	err := s.db.WithContext(ctx).
 		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
-		Order("created_at ASC").
+		Order("sort_order ASC, created_at ASC").
 		First(&candidate).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -269,6 +275,13 @@ func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.Authori
 	candidate.Status = StatusConsumed
 	candidate.ConsumedAt = &now
 	candidate.UpdatedAt = now
+
+	s.log().Debug("consumed first pending user request",
+		zap.String("user", auth.UserIdentity),
+		zap.String("task_id", taskID),
+		zap.String("request_id", candidate.ID.String()),
+		zap.Int("sort_order", candidate.SortOrder),
+	)
 
 	return &candidate, nil
 }
@@ -497,6 +510,11 @@ func (s *Service) ReorderRequests(ctx context.Context, auth *askuser.Authorizati
 			tx.Rollback()
 			return errors.Wrap(result.Error, "update sort order")
 		}
+
+		s.log().Debug("updated request sort order",
+			zap.String("request_id", id.String()),
+			zap.Int("new_order", i),
+		)
 	}
 
 	if err := tx.Commit().Error; err != nil {

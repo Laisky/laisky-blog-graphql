@@ -537,11 +537,23 @@ func TestServiceReorderRequests(t *testing.T) {
 	err = svc.ReorderRequests(ctx, auth, []uuid.UUID{req3.ID, req1.ID, req2.ID})
 	require.NoError(t, err)
 
-	// Verify new order
+	// Verify new order via ListRequests
 	pending, _, err = svc.ListRequests(ctx, auth, "", false, "", 0)
 	require.NoError(t, err)
 	require.Len(t, pending, 3)
 	require.Equal(t, req3.ID, pending[0].ID)
 	require.Equal(t, req1.ID, pending[1].ID)
 	require.Equal(t, req2.ID, pending[2].ID)
+
+	// Verify ConsumeFirstPending follows the new order
+	first, err := svc.ConsumeFirstPending(ctx, auth, "")
+	require.NoError(t, err)
+	require.Equal(t, req3.ID, first.ID, "should consume req3 (the new first)")
+
+	// Verify ConsumeAllPending follows the remaining order
+	allRemaining, err := svc.ConsumeAllPending(ctx, auth, "")
+	require.NoError(t, err)
+	require.Len(t, allRemaining, 2)
+	require.Equal(t, req1.ID, allRemaining[0].ID)
+	require.Equal(t, req2.ID, allRemaining[1].ID)
 }

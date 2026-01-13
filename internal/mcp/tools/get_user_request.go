@@ -131,6 +131,13 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 				zap.String("return_mode", returnMode),
 				zap.String("task_id", taskID),
 			)
+			for i, r := range existingRequests {
+				t.log().Debug("returning pending command during hold",
+					zap.Int("index", i),
+					zap.String("request_id", r.ID.String()),
+					zap.Int("sort_order", r.SortOrder),
+				)
+			}
 			return t.buildCommandsResponse(existingRequests)
 		}
 
@@ -232,6 +239,13 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 			zap.String("user", authCtx.UserIdentity),
 			zap.String("task_id", taskID),
 		)
+		for i, r := range requests {
+			t.log().Debug("returning pending command",
+				zap.Int("index", i),
+				zap.String("request_id", r.ID.String()),
+				zap.Int("sort_order", r.SortOrder),
+			)
+		}
 	}
 
 	if len(requests) == 0 {
