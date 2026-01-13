@@ -1,9 +1,9 @@
-import { Search, Loader2, Play } from 'lucide-react';
+import { Loader2, Play, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useApiKey } from '@/lib/api-key-context';
 import { fetchGraphQL } from '@/lib/graphql';
@@ -245,9 +245,7 @@ export function WebSearchPage() {
                     entries.map((entry) => (
                       <tr key={entry.id} className="transition-colors hover:bg-muted/30">
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">
-                          <span title={new Date(entry.occurred_at).toISOString()}>
-                            {dateFormatter.format(new Date(entry.occurred_at))}
-                          </span>
+                          <span title={new Date(entry.occurred_at).toISOString()}>{dateFormatter.format(new Date(entry.occurred_at))}</span>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
@@ -283,7 +281,12 @@ export function WebSearchPage() {
                 <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
                   Previous
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
                   Next
                 </Button>
               </div>

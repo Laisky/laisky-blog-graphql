@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/query': backendUrl,
+        '/graphql': backendUrl,
         '/runtime-config.json': backendUrl,
         '/mcp': backendUrl,
         '/ui': backendUrl,

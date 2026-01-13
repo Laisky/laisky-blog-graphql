@@ -1,4 +1,4 @@
-import { AlertCircle, Cpu, ShieldCheck, User } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Cpu, Loader2, ShieldAlert, ShieldCheck, User } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 
@@ -31,7 +31,7 @@ const consoleItems: ConsoleMenuItem[] = [
 export function AppLayout() {
   const location = useLocation();
   const toolsConfig = useToolsConfig();
-  const { apiKey } = useApiKey();
+  const { status } = useApiKey();
 
   // Filter console items based on enabled tools
   const filteredConsoleItems = useMemo(() => {
@@ -50,13 +50,23 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      {!apiKey && !isSettingsPage && (
-        <div className="bg-primary/10 px-4 py-2 text-center text-sm font-medium text-primary shadow-inner">
+      {status !== 'valid' && !isSettingsPage && (
+        <div
+          className={cn(
+            'px-4 py-2 text-center text-sm font-medium shadow-inner',
+            status === 'insufficient' ? 'bg-amber-500/10 text-amber-600' : 'bg-primary/10 text-primary'
+          )}
+        >
           <div className="container mx-auto flex items-center justify-center gap-2">
-            <AlertCircle className="h-4 w-4" />
-            <span>API key is not set. MCP features are disabled.</span>
+            {status === 'insufficient' ? <AlertTriangle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+            <span>
+              {status === 'none' && 'API key is not set. MCP features are disabled.'}
+              {status === 'error' && 'API key is invalid. Please check your settings.'}
+              {status === 'insufficient' && 'Insufficient balance. Some features may be limited.'}
+              {status === 'validating' && 'Validating API key...'}
+            </span>
             <Link to="/settings" className="underline hover:opacity-80">
-              Set API Key
+              {status === 'none' ? 'Set API Key' : 'Check Settings'}
             </Link>
           </div>
         </div>
@@ -81,14 +91,30 @@ export function AppLayout() {
                 to="/settings"
                 className={cn(
                   'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
-                  apiKey
-                    ? 'bg-green-500/10 text-green-600 hover:bg-green-500/20 dark:text-green-400'
-                    : 'bg-muted text-muted-foreground hover:bg-muted/80',
+                  status === 'valid' && 'bg-green-500/10 text-green-600 hover:bg-green-500/20 dark:text-green-400',
+                  status === 'insufficient' && 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400',
+                  status === 'error' && 'bg-destructive/10 text-destructive hover:bg-destructive/20',
+                  status === 'validating' && 'bg-primary/10 text-primary hover:bg-primary/20',
+                  status === 'none' && 'bg-muted text-muted-foreground hover:bg-muted/80',
                   isSettingsPage && 'ring-2 ring-primary ring-offset-2 ring-offset-background'
                 )}
-                title={apiKey ? 'Authenticated' : 'Configure API Key'}
+                title={
+                  status === 'valid'
+                    ? 'Authenticated'
+                    : status === 'insufficient'
+                      ? 'Insufficient Balance'
+                      : status === 'error'
+                        ? 'Invalid API Key'
+                        : status === 'validating'
+                          ? 'Validating...'
+                          : 'Configure API Key'
+                }
               >
-                {apiKey ? <ShieldCheck className="h-5 w-5" /> : <User className="h-5 w-5" />}
+                {status === 'valid' && <ShieldCheck className="h-5 w-5" />}
+                {status === 'insufficient' && <AlertTriangle className="h-5 w-5" />}
+                {status === 'error' && <ShieldAlert className="h-5 w-5" />}
+                {status === 'validating' && <Loader2 className="h-5 w-5 animate-spin" />}
+                {status === 'none' && <User className="h-5 w-5" />}
               </Link>
             </div>
           </div>

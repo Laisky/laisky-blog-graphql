@@ -1,4 +1,4 @@
-import { ChevronDown, Trash2 } from 'lucide-react';
+import { ChevronDown, Loader2, Trash2 } from 'lucide-react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -33,11 +33,13 @@ export function ApiKeyInput({
   onRefresh,
   className,
 }: ApiKeyInputProps) {
-  const { apiKey, history, setApiKey, removeFromHistory, disconnect } = useApiKey();
+  const { apiKey, status, history, setApiKey, removeFromHistory, disconnect } = useApiKey();
   const [formValue, setFormValue] = useState(apiKey);
   const [isKeyVisible, setIsKeyVisible] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const isLoading = status === 'validating';
 
   // Sync form when context key changes externally
   useEffect(() => {
@@ -151,7 +153,10 @@ export function ApiKeyInput({
           </div>
         </div>
         <div className="flex gap-2">
-          <Button type="submit">Connect</Button>
+          <Button type="submit" disabled={isLoading}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {apiKey && apiKey === normalizeApiKey(formValue) ? 'Re-validate' : 'Connect'}
+          </Button>
           {showRefresh && apiKey && (
             <Button type="button" variant="secondary" onClick={onRefresh}>
               Refresh

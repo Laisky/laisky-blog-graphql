@@ -9,11 +9,7 @@ export interface CallToolResponse {
   isError?: boolean;
 }
 
-export async function callMcpTool(
-  apiKey: string,
-  toolName: string,
-  arguments_?: Record<string, unknown>
-): Promise<CallToolResponse> {
+export async function callMcpTool(apiKey: string, toolName: string, arguments_?: Record<string, unknown>): Promise<CallToolResponse> {
   const authorization = buildAuthorizationHeader(apiKey);
   if (!authorization) {
     throw new Error('API key is required');

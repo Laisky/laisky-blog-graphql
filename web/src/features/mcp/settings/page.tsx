@@ -2,10 +2,53 @@ import { ApiKeyInput } from '@/components/api-key-input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useApiKey } from '@/lib/api-key-context';
-import { ExternalLink, Key, LogOut, ShieldAlert, ShieldCheck, User } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { AlertTriangle, ExternalLink, Key, Loader2, LogOut, ShieldAlert, ShieldCheck, User } from 'lucide-react';
 
 export function SettingsPage() {
-  const { apiKey, disconnect } = useApiKey();
+  const { apiKey, status, remainQuota, disconnect } = useApiKey();
+
+  const getStatusDisplay = () => {
+    switch (status) {
+      case 'valid':
+        return {
+          title: 'Authenticated',
+          description: `Balance: ${remainQuota?.toLocaleString() ?? 'Unknown'}`,
+          color: 'text-green-500 border-green-500/20 bg-green-500/10',
+          icon: <ShieldCheck className="h-10 w-10" />,
+        };
+      case 'insufficient':
+        return {
+          title: 'Insufficient Balance',
+          description: `Remaining quota is ${remainQuota?.toLocaleString() ?? 0}. Please top up.`,
+          color: 'text-amber-500 border-amber-500/20 bg-amber-500/10',
+          icon: <AlertTriangle className="h-10 w-10" />,
+        };
+      case 'error':
+        return {
+          title: 'Invalid API Key',
+          description: 'The API key you entered is incorrect or expired.',
+          color: 'text-destructive border-destructive/20 bg-destructive/10',
+          icon: <ShieldAlert className="h-10 w-10" />,
+        };
+      case 'validating':
+        return {
+          title: 'Validating...',
+          description: 'Checking your API key balance...',
+          color: 'text-primary border-primary/20 bg-primary/10',
+          icon: <Loader2 className="h-10 w-10 animate-spin" />,
+        };
+      default:
+        return {
+          title: 'No Active Key',
+          description: 'Please set an API key to enable MCP features.',
+          color: 'text-muted-foreground border-muted bg-muted/50',
+          icon: <ShieldAlert className="h-10 w-10" />,
+        };
+    }
+  };
+
+  const statusDisplay = getStatusDisplay();
 
   return (
     <div className="space-y-8">
@@ -50,9 +93,28 @@ export function SettingsPage() {
 
               {apiKey && (
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
-                    <ShieldCheck className="h-4 w-4" />
-                    <span>Authenticated and ready to use.</span>
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 rounded-md px-3 py-2 text-sm',
+                      status === 'valid'
+                        ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                        : status === 'insufficient'
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                          : status === 'error'
+                            ? 'bg-destructive/10 text-destructive'
+                            : 'bg-muted text-muted-foreground'
+                    )}
+                  >
+                    {status === 'valid' && <ShieldCheck className="h-4 w-4" />}
+                    {status === 'insufficient' && <AlertTriangle className="h-4 w-4" />}
+                    {status === 'error' && <ShieldAlert className="h-4 w-4" />}
+                    {status === 'validating' && <Loader2 className="h-4 w-4 animate-spin" />}
+                    <span>
+                      {status === 'valid' && 'Authenticated and ready to use.'}
+                      {status === 'insufficient' && 'Insufficient balance. Please top up.'}
+                      {status === 'error' && 'API key validation failed.'}
+                      {status === 'validating' && 'Validating your API key...'}
+                    </span>
                   </div>
                   <Button
                     variant="ghost"
@@ -78,18 +140,12 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-col items-center justify-center space-y-4 py-8 text-center">
-              <div
-                className={`flex h-20 w-20 items-center justify-center rounded-full border-4 ${
-                  apiKey ? 'border-green-500/20 bg-green-500/10 text-green-500' : 'border-muted bg-muted/50 text-muted-foreground'
-                }`}
-              >
-                {apiKey ? <ShieldCheck className="h-10 w-10" /> : <ShieldAlert className="h-10 w-10" />}
+              <div className={cn('flex h-20 w-20 items-center justify-center rounded-full border-4', statusDisplay.color)}>
+                {statusDisplay.icon}
               </div>
               <div className="space-y-1">
-                <h3 className="text-xl font-semibold">{apiKey ? 'Active Session' : 'No Active Key'}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {apiKey ? 'Your API key is set and persisted in this browser.' : 'Please set an API key to enable MCP features.'}
-                </p>
+                <h3 className="text-xl font-semibold">{statusDisplay.title}</h3>
+                <p className="text-sm text-muted-foreground">{statusDisplay.description}</p>
               </div>
             </div>
           </CardContent>

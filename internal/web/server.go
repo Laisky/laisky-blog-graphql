@@ -174,6 +174,8 @@ func RunServer(addr string, resolver *Resolver) {
 		log.Logger.Panic("enable metric server", zap.Error(err))
 	}
 
+	registerOneapiProxyRoutes(server, prefix)
+
 	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil || resolver.args.UserRequestService != nil || resolver.args.RAGService != nil) {
 		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.UserRequestService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.Rdb, resolver.args.CallLogService, resolver.args.MCPToolsSettings, log.Logger)
 		if err != nil {

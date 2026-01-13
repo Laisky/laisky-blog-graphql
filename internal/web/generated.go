@@ -14,9 +14,6 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
-	gqlparser "github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
-
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
 	dto1 "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
@@ -26,6 +23,8 @@ import (
 	model1 "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
+	gqlparser "github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // region    ************************** generated!.gotpl **************************
@@ -204,6 +203,11 @@ type ComplexityRoot struct {
 		WebSearch                 func(childComplexity int, query string) int
 	}
 
+	OneapiQuota struct {
+		RemainQuota func(childComplexity int) int
+		UsedQuota   func(childComplexity int) int
+	}
+
 	PostInfo struct {
 		Total func(childComplexity int) int
 	}
@@ -227,6 +231,7 @@ type ComplexityRoot struct {
 		TelegramMonitorUsers         func(childComplexity int, page *models.Pagination, name string) int
 		TwitterStatues               func(childComplexity int, page *models.Pagination, tweetID string, username string, viewerID string, sort *models.Sort, topic string, regexp string) int
 		TwitterThreads               func(childComplexity int, tweetID string) int
+		ValidateOneapiAPIKey         func(childComplexity int, apiKey string) int
 		WhoAmI                       func(childComplexity int) int
 	}
 
@@ -383,6 +388,7 @@ type QueryResolver interface {
 	LockPermissions(ctx context.Context, username string) ([]*models.GeneralUser, error)
 	GeneralGetLLMStormTaskResult(ctx context.Context, taskID string) (*models.GeneralLLMStormTask, error)
 	GeneralGetHTMLCrawlerTask(ctx context.Context) (*models.GeneralHTMLCrawlerTask, error)
+	ValidateOneapiAPIKey(ctx context.Context, apiKey string) (*models.OneapiQuota, error)
 }
 type TelegramAlertTypeResolver interface {
 	ID(ctx context.Context, obj *model3.AlertTypes) (string, error)
@@ -1116,6 +1122,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.WebSearch(childComplexity, args["query"].(string)), true
 
+	case "OneapiQuota.remain_quota":
+		if e.complexity.OneapiQuota.RemainQuota == nil {
+			break
+		}
+
+		return e.complexity.OneapiQuota.RemainQuota(childComplexity), true
+	case "OneapiQuota.used_quota":
+		if e.complexity.OneapiQuota.UsedQuota == nil {
+			break
+		}
+
+		return e.complexity.OneapiQuota.UsedQuota(childComplexity), true
+
 	case "PostInfo.total":
 		if e.complexity.PostInfo.Total == nil {
 			break
@@ -1296,6 +1315,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.TwitterThreads(childComplexity, args["tweet_id"].(string)), true
+	case "Query.ValidateOneapiApiKey":
+		if e.complexity.Query.ValidateOneapiAPIKey == nil {
+			break
+		}
+
+		args, err := ec.field_Query_ValidateOneapiApiKey_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.ValidateOneapiAPIKey(childComplexity, args["api_key"].(string)), true
 	case "Query.WhoAmI":
 		if e.complexity.Query.WhoAmI == nil {
 			break
@@ -2249,6 +2279,17 @@ func (ec *executionContext) field_Query_TwitterThreads_args(ctx context.Context,
 		return nil, err
 	}
 	args["tweet_id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_ValidateOneapiApiKey_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "api_key", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["api_key"] = arg0
 	return args, nil
 }
 
@@ -5756,6 +5797,64 @@ func (ec *executionContext) fieldContext_Mutation_GeneralAddHTMLCrawlerTask(ctx 
 	return fc, nil
 }
 
+func (ec *executionContext) _OneapiQuota_remain_quota(ctx context.Context, field graphql.CollectedField, obj *models.OneapiQuota) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_OneapiQuota_remain_quota,
+		func(ctx context.Context) (any, error) {
+			return obj.RemainQuota, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_OneapiQuota_remain_quota(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "OneapiQuota",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _OneapiQuota_used_quota(ctx context.Context, field graphql.CollectedField, obj *models.OneapiQuota) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_OneapiQuota_used_quota,
+		func(ctx context.Context) (any, error) {
+			return obj.UsedQuota, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_OneapiQuota_used_quota(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "OneapiQuota",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *dto1.PostInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6742,6 +6841,53 @@ func (ec *executionContext) fieldContext_Query_GeneralGetHTMLCrawlerTask(_ conte
 			}
 			return nil, fmt.Errorf("no field named %q was found under type GeneralHTMLCrawlerTask", field.Name)
 		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_ValidateOneapiApiKey(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_ValidateOneapiApiKey,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().ValidateOneapiAPIKey(ctx, fc.Args["api_key"].(string))
+		},
+		nil,
+		ec.marshalNOneapiQuota2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐOneapiQuota,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_ValidateOneapiApiKey(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "remain_quota":
+				return ec.fieldContext_OneapiQuota_remain_quota(ctx, field)
+			case "used_quota":
+				return ec.fieldContext_OneapiQuota_used_quota(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type OneapiQuota", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_ValidateOneapiApiKey_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
 	}
 	return fc, nil
 }
@@ -11462,6 +11608,50 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 	return out
 }
 
+var oneapiQuotaImplementors = []string{"OneapiQuota"}
+
+func (ec *executionContext) _OneapiQuota(ctx context.Context, sel ast.SelectionSet, obj *models.OneapiQuota) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, oneapiQuotaImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("OneapiQuota")
+		case "remain_quota":
+			out.Values[i] = ec._OneapiQuota_remain_quota(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "used_quota":
+			out.Values[i] = ec._OneapiQuota_used_quota(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var postInfoImplementors = []string{"PostInfo"}
 
 func (ec *executionContext) _PostInfo(ctx context.Context, sel ast.SelectionSet, obj *dto1.PostInfo) graphql.Marshaler {
@@ -11923,6 +12113,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_GeneralGetHTMLCrawlerTask(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "ValidateOneapiApiKey":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_ValidateOneapiApiKey(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -13471,7 +13683,7 @@ func (ec *executionContext) marshalNArweaveUploadResponse2githubᚗcomᚋLaisky�
 func (ec *executionContext) marshalNArweaveUploadResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋarweaveᚋdtoᚐUploadResponse(ctx context.Context, sel ast.SelectionSet, v *dto.UploadResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13523,7 +13735,7 @@ func (ec *executionContext) marshalNBlogLoginResponse2githubᚗcomᚋLaiskyᚋla
 func (ec *executionContext) marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse(ctx context.Context, sel ast.SelectionSet, v *models.BlogLoginResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13619,7 +13831,7 @@ func (ec *executionContext) marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaisk
 func (ec *executionContext) marshalNBlogPost2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost(ctx context.Context, sel ast.SelectionSet, v *model.Post) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13673,7 +13885,7 @@ func (ec *executionContext) marshalNBlogPostSeries2ᚕᚖgithubᚗcomᚋLaisky�
 func (ec *executionContext) marshalNBlogPostSeries2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPostSeries(ctx context.Context, sel ast.SelectionSet, v *model.PostSeries) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13697,7 +13909,7 @@ func (ec *executionContext) marshalNBlogUser2githubᚗcomᚋLaiskyᚋlaiskyᚑbl
 func (ec *executionContext) marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx context.Context, sel ast.SelectionSet, v *model.User) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13714,7 +13926,7 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	res := graphql.MarshalBoolean(v)
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 	}
 	return res
@@ -13765,7 +13977,7 @@ func (ec *executionContext) marshalNComment2ᚕᚖgithubᚗcomᚋLaiskyᚋlaisky
 func (ec *executionContext) marshalNComment2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx context.Context, sel ast.SelectionSet, v *models.Comment) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13791,11 +14003,27 @@ func (ec *executionContext) unmarshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑb
 func (ec *executionContext) marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx context.Context, sel ast.SelectionSet, v *library.Datetime) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
 	return v
+}
+
+func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
+	res, err := graphql.UnmarshalFloatContext(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.SelectionSet, v float64) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalFloatContext(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return graphql.WrapContextMarshaler(ctx, res)
 }
 
 func (ec *executionContext) marshalNGeneralHTMLCrawlerTask2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, v models.GeneralHTMLCrawlerTask) graphql.Marshaler {
@@ -13805,7 +14033,7 @@ func (ec *executionContext) marshalNGeneralHTMLCrawlerTask2githubᚗcomᚋLaisky
 func (ec *executionContext) marshalNGeneralHTMLCrawlerTask2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, v *models.GeneralHTMLCrawlerTask) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13819,7 +14047,7 @@ func (ec *executionContext) marshalNGeneralLLMStormTask2githubᚗcomᚋLaiskyᚋ
 func (ec *executionContext) marshalNGeneralLLMStormTask2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralLLMStormTask(ctx context.Context, sel ast.SelectionSet, v *models.GeneralLLMStormTask) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13874,7 +14102,7 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 	res := graphql.MarshalInt(v)
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 	}
 	return res
@@ -13956,7 +14184,7 @@ func (ec *executionContext) marshalNLock2githubᚗcomᚋLaiskyᚋlaiskyᚑblog�
 func (ec *executionContext) marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚋmodelᚐLock(ctx context.Context, sel ast.SelectionSet, v *model2.Lock) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -13968,6 +14196,20 @@ func (ec *executionContext) unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaisky
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNOneapiQuota2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐOneapiQuota(ctx context.Context, sel ast.SelectionSet, v models.OneapiQuota) graphql.Marshaler {
+	return ec._OneapiQuota(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNOneapiQuota2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐOneapiQuota(ctx context.Context, sel ast.SelectionSet, v *models.OneapiQuota) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._OneapiQuota(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNPostInfo2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v dto1.PostInfo) graphql.Marshaler {
 	return ec._PostInfo(ctx, sel, &v)
 }
@@ -13975,7 +14217,7 @@ func (ec *executionContext) marshalNPostInfo2githubᚗcomᚋLaiskyᚋlaiskyᚑbl
 func (ec *executionContext) marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v *dto1.PostInfo) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14002,7 +14244,7 @@ func (ec *executionContext) marshalNString2string(ctx context.Context, sel ast.S
 	res := graphql.MarshalString(v)
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 	}
 	return res
@@ -14083,7 +14325,7 @@ func (ec *executionContext) marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaisk
 func (ec *executionContext) marshalNTelegramAlertType2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v *model3.AlertTypes) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14169,7 +14411,7 @@ func (ec *executionContext) marshalNTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaisky�
 func (ec *executionContext) marshalNTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweet(ctx context.Context, sel ast.SelectionSet, v *model1.Tweet) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14179,7 +14421,7 @@ func (ec *executionContext) marshalNTweet2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑbl
 func (ec *executionContext) marshalNTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐUser(ctx context.Context, sel ast.SelectionSet, v *model1.User) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14193,7 +14435,7 @@ func (ec *executionContext) marshalNUserActiveResponse2githubᚗcomᚋLaiskyᚋl
 func (ec *executionContext) marshalNUserActiveResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserActiveResponse(ctx context.Context, sel ast.SelectionSet, v *models.UserActiveResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14207,7 +14449,7 @@ func (ec *executionContext) marshalNUserRegisterResponse2githubᚗcomᚋLaisky�
 func (ec *executionContext) marshalNUserRegisterResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserRegisterResponse(ctx context.Context, sel ast.SelectionSet, v *models.UserRegisterResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14221,7 +14463,7 @@ func (ec *executionContext) marshalNUserResendActiveEmailResponse2githubᚗcom�
 func (ec *executionContext) marshalNUserResendActiveEmailResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserResendActiveEmailResponse(ctx context.Context, sel ast.SelectionSet, v *models.UserResendActiveEmailResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14235,7 +14477,7 @@ func (ec *executionContext) marshalNWebFetchResult2githubᚗcomᚋLaiskyᚋlaisk
 func (ec *executionContext) marshalNWebFetchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐWebFetchResult(ctx context.Context, sel ast.SelectionSet, v *models.WebFetchResult) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14249,7 +14491,7 @@ func (ec *executionContext) marshalNWebSearchResult2githubᚗcomᚋLaiskyᚋlais
 func (ec *executionContext) marshalNWebSearchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚋsearchᚐSearchResult(ctx context.Context, sel ast.SelectionSet, v *search.SearchResult) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14362,7 +14604,7 @@ func (ec *executionContext) marshalN__DirectiveLocation2string(ctx context.Conte
 	res := graphql.MarshalString(v)
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 	}
 	return res
@@ -14534,7 +14776,7 @@ func (ec *executionContext) marshalN__Type2ᚕgithubᚗcomᚋ99designsᚋgqlgen�
 func (ec *executionContext) marshalN__Type2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐType(ctx context.Context, sel ast.SelectionSet, v *introspection.Type) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
@@ -14551,7 +14793,7 @@ func (ec *executionContext) marshalN__TypeKind2string(ctx context.Context, sel a
 	res := graphql.MarshalString(v)
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 	}
 	return res

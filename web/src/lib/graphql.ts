@@ -10,11 +10,7 @@ export interface GraphQLResponse<T> {
 /**
  * Execute a GraphQL query or mutation.
  */
-export async function fetchGraphQL<T>(
-  apiKey: string,
-  query: string,
-  variables: Record<string, unknown> = {}
-): Promise<T> {
+export async function fetchGraphQL<T>(apiKey: string, query: string, variables: Record<string, unknown> = {}): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };

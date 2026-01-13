@@ -3,11 +3,15 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
+	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/general/service"
@@ -22,6 +26,19 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 )
+
+var (
+	httpcli *http.Client
+)
+
+func init() {
+	var err error
+	if httpcli, err = gutils.NewHTTPClient(
+		gutils.WithHTTPClientTimeout(20 * time.Second),
+	); err != nil {
+		log.Logger.Panic("init httpcli", zap.Error(err))
+	}
+}
 
 type LocksResolver struct{}
 
@@ -101,6 +118,97 @@ func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (u
 		})
 	}
 	return users, nil
+}
+
+const defaultOneapiBalanceURL = "https://oneapi.laisky.com/api/token/balance"
+
+// oneapiBalanceURL returns OneAPI balance endpoint.
+//
+// It allows overriding with `settings.oneapi.balance_url` for tests or self-hosted OneAPI.
+// If unset, it falls back to the public defaultOneapiBalanceURL.
+func oneapiBalanceURL() string {
+	urlStr := strings.TrimSpace(gconfig.Shared.GetString("settings.oneapi.balance_url"))
+	if urlStr == "" {
+		return defaultOneapiBalanceURL
+	}
+	return urlStr
+}
+
+// oneapiKeyFingerprint returns a short, non-reversible fingerprint of the api key.
+//
+// It is safe to log and helps correlating requests without leaking secrets.
+func oneapiKeyFingerprint(apiKey string) string {
+	if apiKey == "" {
+		return "empty"
+	}
+	sum := sha256.Sum256([]byte(apiKey))
+	return fmt.Sprintf("%x", sum[:])[:12]
+}
+
+// ValidateOneapiAPIKey validates a OneAPI API key by querying the balance endpoint.
+//
+// It returns the quota information if the key is valid.
+func (r *QueryResolver) ValidateOneapiAPIKey(ctx context.Context, apiKey string) (*models.OneapiQuota, error) {
+	logger := gmw.GetLogger(ctx).Named("validate_oneapi_api_key")
+	fingerprint := oneapiKeyFingerprint(apiKey)
+	logger.Debug("ValidateOneapiAPIKey request", zap.String("key_fingerprint", fingerprint))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, oneapiBalanceURL(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "new request")
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := httpcli.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, errors.Wrap(err, "http request")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.Debug("ValidateOneapiAPIKey non-200 response",
+			zap.String("key_fingerprint", fingerprint),
+			zap.Int("status", resp.StatusCode),
+		)
+		return nil, errors.Errorf("invalid response status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    struct {
+			RemainQuota float64 `json:"remain_quota"`
+			UsedQuota   float64 `json:"used_quota"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Wrap(err, "decode response")
+	}
+
+	if !result.Success {
+		logger.Debug("ValidateOneapiAPIKey response marked unsuccessful",
+			zap.String("key_fingerprint", fingerprint),
+		)
+		return nil, errors.Errorf("oneapi error: %s", result.Message)
+	}
+
+	logger.Debug("ValidateOneapiAPIKey success",
+		zap.String("key_fingerprint", fingerprint),
+		zap.Float64("remain_quota", result.Data.RemainQuota),
+		zap.Float64("used_quota", result.Data.UsedQuota),
+	)
+
+	return &models.OneapiQuota{
+		RemainQuota: result.Data.RemainQuota,
+		UsedQuota:   result.Data.UsedQuota,
+	}, nil
+}
+
+// ValidateOneapiApiKey is kept for backward compatibility.
+//
+// Deprecated: use ValidateOneapiAPIKey.
+func (r *QueryResolver) ValidateOneapiApiKey(ctx context.Context, apiKey string) (*models.OneapiQuota, error) {
+	return r.ValidateOneapiAPIKey(ctx, apiKey)
 }
 
 // GeneralGetLLMStormTaskResult resolves the LLM storm task result for authenticated workers.

@@ -53,11 +53,17 @@ func NewResolver(args ResolverArgs) *Resolver {
 // Query query resolver
 func (r *Resolver) Query() QueryResolver {
 	return &queryResolver{
+		twitterQuery: twitterQuery{
+			QueryResolver: twitter.QueryResolver{},
+		},
 		telegramQuery: telegramQuery{
 			QueryResolver: telegram.NewQueryResolver(r.args.TelegramSvc),
 		},
 		blogQuery: blogQuery{
 			QueryResolver: blog.NewQueryResolver(r.args.BlogSvc),
+		},
+		genaralQuery: genaralQuery{
+			QueryResolver: general.QueryResolver{},
 		},
 	}
 }
@@ -71,7 +77,9 @@ func (r *Resolver) Mutation() MutationResolver {
 		telegramMutation: telegramMutation{
 			MutationResolver: telegram.NewMutationResolver(r.args.TelegramSvc),
 		},
-		generalMutation: generalMutation{},
+		generalMutation: generalMutation{
+			MutationResolver: &general.MutationResolver{},
+		},
 		arweaveMutation: arweaveMutation{
 			MutationResolver: arweave.NewMutationResolver(r.args.TelegramSvc.UploadDao),
 		},

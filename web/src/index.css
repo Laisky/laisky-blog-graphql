@@ -86,8 +86,8 @@ body {
     'Segoe UI',
     sans-serif;
   font-feature-settings:
-    'rlig'1,
-    'calt'1;
+    'rlig' 1,
+    'calt' 1;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
 }

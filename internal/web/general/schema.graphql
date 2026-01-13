@@ -31,3 +31,12 @@ type GeneralHTMLCrawlerTask {
   url: String!
   result_html_b64: String
 }
+
+type OneapiQuota {
+  remain_quota: Float!
+  used_quota: Float!
+}
+
+extend type Query {
+  ValidateOneapiApiKey(api_key: String!): OneapiQuota!
+}

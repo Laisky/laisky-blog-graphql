@@ -72,6 +72,11 @@ type NewBlogPost struct {
 	Language Language      `json:"language"`
 }
 
+type OneapiQuota struct {
+	RemainQuota float64 `json:"remain_quota"`
+	UsedQuota   float64 `json:"used_quota"`
+}
+
 type Pagination struct {
 	Page int `json:"page"`
 	Size int `json:"size"`
