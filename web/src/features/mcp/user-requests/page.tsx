@@ -14,24 +14,24 @@ import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 
 import {
-    createUserRequest,
-    deleteAllPendingRequests,
-    deleteConsumedRequests,
-    deleteUserRequest,
-    getDescriptionCollapsed,
-    getHoldState,
-    getPreferencesFromServer,
-    getReturnMode,
-    type HoldState,
-    listUserRequests,
-    setReturnMode as persistReturnModeLocal,
-    releaseHold,
-    reorderUserRequests,
-    type ReturnMode,
-    setDescriptionCollapsed,
-    setHold,
-    setReturnModeOnServer,
-    type UserRequest,
+  createUserRequest,
+  deleteAllPendingRequests,
+  deleteConsumedRequests,
+  deleteUserRequest,
+  getDescriptionCollapsed,
+  getHoldState,
+  getPreferencesFromServer,
+  getReturnMode,
+  type HoldState,
+  listUserRequests,
+  setReturnMode as persistReturnModeLocal,
+  releaseHold,
+  reorderUserRequests,
+  type ReturnMode,
+  setDescriptionCollapsed,
+  setHold,
+  setReturnModeOnServer,
+  type UserRequest,
 } from './api';
 import { HoldButton } from './hold-button';
 import { ConsumedCard, EmptyState, PendingRequestCard } from './request-cards';
@@ -119,7 +119,6 @@ export function UserRequestsPage() {
 
       if (initial) {
         setIsLoading(true);
-
       }
 
       if (inFlight) {
@@ -233,10 +232,10 @@ export function UserRequestsPage() {
     };
   }, [apiKey, holdState.active]);
 
-//   const handleRefresh = useCallback(() => {
-//     setVisibleConsumedCount(10);
-//     pollControlsRef.current?.refresh();
-//   }, []);
+  //   const handleRefresh = useCallback(() => {
+  //     setVisibleConsumedCount(10);
+  //     pollControlsRef.current?.refresh();
+  //   }, []);
 
   const handleLoadMore = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
@@ -304,8 +303,7 @@ export function UserRequestsPage() {
       const state = await setHold(key);
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
-    } catch (error) {
-    }
+    } catch (error) {}
   }, [apiKey]);
 
   const handleReleaseHold = useCallback(async () => {
@@ -317,8 +315,7 @@ export function UserRequestsPage() {
       const state = await releaseHold(key);
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
-    } catch (error) {
-    }
+    } catch (error) {}
   }, [apiKey]);
 
   const handleReturnModeChange = useCallback(
@@ -465,8 +462,7 @@ export function UserRequestsPage() {
     setNewContent(content);
   }, []);
 
-  const handleSaveCurrentContent = useCallback((_label: string) => {
-  }, []);
+  const handleSaveCurrentContent = useCallback((_label: string) => {}, []);
 
   const handleEditorChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -591,14 +587,17 @@ export function UserRequestsPage() {
         {!isDescriptionCollapsed && (
           <>
             <p className="max-w-2xl text-lg text-muted-foreground">
-              Queue fresh directives for your AI assistants and inspect everything they have already consumed. This page manages the{' '}
-              <code className="text-sm">get_user_request</code> MCP tool inputs tied to your bearer token.
+              Queue new directives for your AI Agents. This page manages the <code className="text-sm">get_user_request</code> MCP tool
+              inputs tied to your API Key.
             </p>
             <div className="max-w-2xl space-y-2 text-sm text-muted-foreground">
+              <strong>Key benefit:</strong> Your agent can interact with you while running, not just after finishing a task. If your agent
+              charges per run, you can send multiple new directives in one session by calling{' '}
+              <code className="text-xs">get_user_request</code> repeatedly, only one charge applies.
               <p>
                 <strong>How it works:</strong> When your AI agent calls <code className="text-xs">get_user_request</code>, the server
-                returns the newest pending directive from this queue and marks it as consumed. This allows you to provide real-time feedback
-                or adjust the agent's behavior mid-task.
+                returns the newest pending directive from this queue and marks it as consumed. This lets your agent immediately start the
+                next task after finishing the current one.
               </p>
               <p>
                 <strong>Hold feature:</strong> Click <em>Hold</em> before your agent queries for requests. The hold remains active
