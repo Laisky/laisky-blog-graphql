@@ -102,7 +102,7 @@ export function AppLayout() {
         )}
       </main>
       <footer className="border-t border-border bg-card/80 py-4 text-center text-xs text-muted-foreground">
-        Built with Vite, React, and shadcn/ui.
+        Enpower your agents. &copy; 2026 Laisky.
       </footer>
     </div>
   );
