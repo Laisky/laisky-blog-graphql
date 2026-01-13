@@ -7,6 +7,7 @@ import { ThemeProvider } from '@/components/theme/theme-provider';
 import { AskUserPage } from '@/features/mcp/ask-user/page';
 import { CallLogPage } from '@/features/mcp/call-log/page';
 import { InspectorPage } from '@/features/mcp/inspector/page';
+import { SettingsPage } from '@/features/mcp/settings/page';
 import { UserRequestsPage } from '@/features/mcp/user-requests/page';
 import { ApiKeyProvider } from '@/lib/api-key-context';
 import { defaultToolsConfig, loadRuntimeConfig, type ToolsConfig } from '@/lib/runtime-config';
@@ -25,6 +26,7 @@ const routes = [
             { path: 'tools/ask_user', element: <AskUserPage /> },
             { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
             { path: 'tools/call_log', element: <CallLogPage /> },
+            { path: 'settings', element: <SettingsPage /> },
             { path: 'debug/*', element: <InspectorPage /> },
         ],
     },

@@ -1,7 +1,9 @@
 import { sha256 } from 'js-sha256';
-import { Activity } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Activity, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+
+import { useApiKey } from '@/lib/api-key-context';
 
 const inspectorScriptModules = import.meta.glob<InspectorModule>(
     '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.js'
@@ -31,22 +33,25 @@ type InspectorModule = {
 type SubtleDigest = (algorithm: AlgorithmIdentifier, data: BufferSource) => Promise<ArrayBuffer>;
 
 export function InspectorPage() {
+    const { apiKey: contextKey } = useApiKey();
     const containerRef = useRef<HTMLDivElement | null>(null);
     const location = useLocation();
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [endpointDisplay, setEndpointDisplay] = useState('');
 
+    const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const authorization =
+        params.get('token') || params.get('authorization') || contextKey || '';
+
     useEffect(() => {
         let cancelled = false;
         let inspector: InspectorInstance | undefined;
         const mount = containerRef.current;
-        const params = new URLSearchParams(location.search);
         const endpointParam = params.get('endpoint');
         const endpointUrl = endpointParam
             ? endpointParam
             : new URL(DEFAULT_ENDPOINT_PATH, window.location.origin).toString();
-        const authorization = params.get('token') || params.get('authorization') || '';
         setEndpointDisplay(endpointUrl);
 
         applyInspectorDefaults(params);
@@ -129,7 +134,7 @@ export function InspectorPage() {
                 mount.innerHTML = '';
             }
         };
-    }, [location.search]);
+    }, [params, authorization]);
 
     return (
         <div className="flex h-full min-h-[calc(100vh-8rem)] flex-col bg-background text-foreground">
@@ -138,13 +143,32 @@ export function InspectorPage() {
                     <Activity className="h-5 w-5 text-primary" />
                     <strong className="block text-base text-foreground">MCP Inspector</strong>
                 </div>
-                <div className="mt-1">
-                    Endpoint:&nbsp;
-                    <code className="break-all text-xs text-foreground/80">{endpointDisplay}</code>
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <div>
+                        Endpoint:&nbsp;
+                        <code className="break-all text-xs text-foreground/80">
+                            {endpointDisplay}
+                        </code>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        Status:&nbsp;
+                        {authorization === contextKey && contextKey ? (
+                            <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                                Using key from settings
+                            </span>
+                        ) : authorization ? (
+                            <span className="flex items-center gap-1 text-xs text-amber-600">
+                                <ShieldAlert className="h-3.5 w-3.5" />
+                                Using override token
+                            </span>
+                        ) : (
+                            <span className="text-xs text-destructive">No API key</span>
+                        )}
+                    </div>
                 </div>
-                <span className="mt-1 block">
-                    Use query parameters ?endpoint=&lt;url&gt; and ?token=&lt;value&gt; to override
-                    defaults.
+                <span className="mt-1 block text-[10px] opacity-70">
+                    Override with ?endpoint=&lt;url&gt; and ?token=&lt;value&gt;.
                 </span>
             </header>
             <div className="relative flex-1 overflow-hidden">

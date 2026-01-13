@@ -1,7 +1,6 @@
 import { Server } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ApiKeyInput } from '@/components/api-key-input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,7 +29,7 @@ export function CallLogPage() {
     const { apiKey } = useApiKey();
     const [entries, setEntries] = useState<CallLogEntry[]>([]);
     const [pagination, setPagination] = useState<CallLogListResponse['pagination'] | null>(null);
-    const [status, setStatus] = useState<string>('Connect with your API key to view call history.');
+    const [status, setStatus] = useState<string>('Configure your API key in settings to view call history.');
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -48,7 +47,7 @@ export function CallLogPage() {
         if (!apiKey) {
             setEntries([]);
             setPagination(null);
-            setStatus('Enter an API key to load call logs.');
+            setStatus('Please set your API key in settings to load call logs.');
             return;
         }
 
@@ -133,19 +132,14 @@ export function CallLogPage() {
                 </p>
             </section>
 
-            <Card className="border border-border/60 bg-card shadow-sm">
-                <CardHeader>
-                    <CardTitle className="text-lg text-foreground">Authenticate</CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                        Enter the bearer token assigned to your agent. The API key is stored locally
-                        only.
-                    </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <ApiKeyInput showRefresh onRefresh={handleRefresh} />
-                    <div className="text-sm text-muted-foreground">{status}</div>
-                </CardContent>
-            </Card>
+            {apiKey && (
+                <div className="flex items-center justify-between rounded-lg border border-border/60 bg-card p-4 shadow-sm">
+                    <div className="text-sm font-medium text-foreground">{status}</div>
+                    <Button variant="outline" size="sm" onClick={handleRefresh}>
+                        Refresh
+                    </Button>
+                </div>
+            )}
 
             <Card className="border border-border/60 bg-card">
                 <CardHeader>

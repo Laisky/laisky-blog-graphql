@@ -2,7 +2,6 @@ import { MessageSquare } from 'lucide-react';
 import type { ChangeEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { ApiKeyInput } from '@/components/api-key-input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,7 +39,7 @@ export function AskUserPage() {
             setPendingRequests([]);
             setHistoryRequests([]);
             setIdentity(null);
-            setStatus({ message: 'Disconnected.', tone: 'info' });
+            setStatus({ message: 'API key not set. Please configure it in settings.', tone: 'info' });
             return;
         }
 
@@ -192,19 +191,18 @@ export function AskUserPage() {
                 </p>
             </section>
 
-            <Card className="border border-border/60 bg-card shadow-sm">
-                <CardHeader>
-                    <CardTitle className="text-lg text-foreground">Authenticate</CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                        Enter the bearer token shared with your AI agent. The token is stored
-                        locally and never sent elsewhere.
-                    </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <ApiKeyInput showRefresh onRefresh={handleRefresh} />
-                    {status && <StatusBanner status={status} subtext={maskedKeySuffix} />}
-                </CardContent>
-            </Card>
+            {status && (
+                <Card className="border border-border/60 bg-card shadow-sm">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                            <StatusBanner status={status} subtext={maskedKeySuffix} />
+                            <Button variant="outline" size="sm" onClick={handleRefresh}>
+                                Refresh
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <section className="grid gap-6 lg:grid-cols-2">
                 <div className="space-y-4">

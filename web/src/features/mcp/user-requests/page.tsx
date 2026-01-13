@@ -17,7 +17,6 @@ import { ChevronDown, ChevronUp, ClipboardList, Send, Trash2 } from 'lucide-reac
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { ApiKeyInput } from '@/components/api-key-input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,7 +37,6 @@ import {
     deleteAllPendingRequests,
     deleteConsumedRequests,
     deleteUserRequest,
-    getAuthCollapsed,
     getDescriptionCollapsed,
     getHoldState,
     getPreferencesFromServer,
@@ -49,7 +47,6 @@ import {
     releaseHold,
     reorderUserRequests,
     type ReturnMode,
-    setAuthCollapsed,
     setDescriptionCollapsed,
     setHold,
     setReturnModeOnServer,
@@ -98,7 +95,6 @@ export function UserRequestsPage() {
         waiting: false,
         remaining_secs: 0,
     });
-    const [isAuthCollapsed, setIsAuthCollapsedState] = useState(() => getAuthCollapsed());
     const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
     const [returnMode, setReturnModeState] = useState<ReturnMode>(() => getReturnMode());
     const [isDescriptionCollapsed, setIsDescriptionCollapsed] = useState(() =>
@@ -140,9 +136,7 @@ export function UserRequestsPage() {
             setPending([]);
             setConsumed([]);
             setIdentity(null);
-            setStatus({ message: 'Disconnected.', tone: 'info' });
-            setIsAuthCollapsedState(false); // Expand when disconnected
-            setAuthCollapsed(false);
+            setStatus({ message: 'API key not set. Please configure it in settings.', tone: 'info' });
             setVisibleConsumedCount(10);
             setHasMoreConsumed(true);
             return;
@@ -201,9 +195,6 @@ export function UserRequestsPage() {
                     }
                 }
 
-                // Auto-collapse the Authenticate panel on successful authentication
-                setIsAuthCollapsedState(true);
-                setAuthCollapsed(true);
                 schedule(5000);
             } catch (error) {
                 if (disposed || controller.signal.aborted) return;
@@ -211,8 +202,6 @@ export function UserRequestsPage() {
                     message: error instanceof Error ? error.message : 'Failed to fetch requests.',
                     tone: 'error',
                 });
-                setIsAuthCollapsedState(false); // Expand on error
-                setAuthCollapsed(false);
                 schedule(8000);
             } finally {
                 if (initial && !disposed) {
@@ -816,39 +805,18 @@ export function UserRequestsPage() {
                 )}
             </section>
 
-            <Card className="border border-border/60 bg-card shadow-sm">
-                <CardHeader
-                    className={cn('cursor-pointer transition-all', isAuthCollapsed && 'pb-4')}
-                    onClick={() => {
-                        if (status?.tone === 'success') {
-                            const newValue = !isAuthCollapsed;
-                            setIsAuthCollapsedState(newValue);
-                            setAuthCollapsed(newValue);
-                        }
-                    }}
-                >
-                    <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg text-foreground">Authenticate</CardTitle>
-                        {isAuthCollapsed && identity?.keyHint && (
-                            <span className="text-xs text-muted-foreground">
-                                token •••{identity.keyHint}
-                            </span>
-                        )}
-                    </div>
-                    {!isAuthCollapsed && (
-                        <p className="text-sm text-muted-foreground">
-                            Enter the bearer token shared with your AI agent. The token stays in
-                            your browser storage only.
-                        </p>
-                    )}
-                </CardHeader>
-                {!isAuthCollapsed && (
-                    <CardContent className="space-y-4">
-                        <ApiKeyInput showRefresh onRefresh={handleRefresh} />
-                        {status && <StatusBanner status={status} subtext={maskedKeySuffix} />}
+            {status && (
+                <Card className="border border-border/60 bg-card shadow-sm">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                            <StatusBanner status={status} subtext={maskedKeySuffix} />
+                            <Button variant="outline" size="sm" onClick={handleRefresh}>
+                                Refresh
+                            </Button>
+                        </div>
                     </CardContent>
-                )}
-            </Card>
+                </Card>
+            )}
 
             <Card className="border-2 border-primary/40 bg-primary/5 shadow-md dark:bg-primary/10">
                 <CardHeader>

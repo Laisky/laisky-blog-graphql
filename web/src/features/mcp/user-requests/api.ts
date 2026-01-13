@@ -107,26 +107,8 @@ export async function setReturnModeOnServer(
 // Section Collapse State Configuration
 // ============================================================================
 
-const AUTH_COLLAPSED_STORAGE_KEY = 'mcp_auth_collapsed';
 const SAVED_COMMANDS_EXPANDED_STORAGE_KEY = 'mcp_saved_commands_expanded';
 const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'mcp_description_collapsed';
-
-/**
- * getAuthCollapsed retrieves the collapsed state of the Authenticate section.
- * Defaults to false (expanded) if not set.
- */
-export function getAuthCollapsed(): boolean {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem(AUTH_COLLAPSED_STORAGE_KEY) === 'true';
-}
-
-/**
- * setAuthCollapsed persists the collapsed state of the Authenticate section.
- */
-export function setAuthCollapsed(collapsed: boolean): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(AUTH_COLLAPSED_STORAGE_KEY, String(collapsed));
-}
 
 /**
  * getDescriptionCollapsed retrieves the collapsed state of the description section.
