@@ -13,8 +13,8 @@
 - Each tool implementation resides in `internal/mcp/tools`. Tools return structured JSON payloads using `mcp.NewToolResultJSON` and map recoverable errors to MCP tool errors.
 - When a `callRecorder` is provided, every tool invocation is persisted through `calllog.Service`, storing timing, status, parameters, and billing cost.
 - Auxiliary HTTP services:
-    - `internal/mcp/askuser/http.go` serves a lightweight dashboard for human responses.
-    - `internal/mcp/calllog/http.go` exposes paginated call logs filtered by the caller’s API key hash.
+  - `internal/mcp/askuser/http.go` serves a lightweight dashboard for human responses.
+  - `internal/mcp/calllog/http.go` exposes paginated call logs filtered by the caller’s API key hash.
 
 ## Tool Guide
 
@@ -26,9 +26,9 @@
 - **Output:** JSON-encoded `library/search.SearchResult` with `query`, `created_at`, and `results` array (URL, title, snippet).
 - **Billing & Logging:** Charges `oneapi.PriceWebSearch`; successes record cost, failures record zero.
 - **Usage Steps:**
-    1.  Call `mcp/initialize` to obtain tool manifest.
-    2.  Issue `call_tool` with `"tool_name": "web_search"` and the JSON arguments shown above.
-    3.  Ensure the Authorization header contains `Bearer <api key>`; missing tokens return `"missing authorization bearer token"`.
+  1.  Call `mcp/initialize` to obtain tool manifest.
+  2.  Issue `call_tool` with `"tool_name": "web_search"` and the JSON arguments shown above.
+  3.  Ensure the Authorization header contains `Bearer <api key>`; missing tokens return `"missing authorization bearer token"`.
 
 ### web_fetch
 
@@ -38,9 +38,9 @@
 - **Output:** JSON with `url`, `content` (HTML as a string), and `fetched_at` timestamp (UTC).
 - **Billing & Logging:** Deducts `oneapi.PriceWebFetch` on success; errors log without cost.
 - **Usage Steps:**
-    1.  Authenticate with a Bearer token.
-    2.  Send `call_tool` for `web_fetch` with the target URL.
-    3.  Handle tool errors such as billing denial (`billing check failed: ...`) or upstream fetch failures.
+  1.  Authenticate with a Bearer token.
+  2.  Send `call_tool` for `web_fetch` with the target URL.
+  3.  Handle tool errors such as billing denial (`billing check failed: ...`) or upstream fetch failures.
 
 ### ask_user
 
@@ -48,15 +48,15 @@
 - **Dependencies:** `askuser.Service`, Authorization header parser, optional dashboard assets.
 - **Input:** `{ "question": "What should I do next?" }`.
 - **Flow:**
-    1.  Tool validates and trims the question.
-    2.  Authorization header is parsed into `AuthorizationContext` (API key hash, user identity prefix).
-    3.  Stores the question via `Service.CreateRequest` and blocks until `WaitForAnswer` returns or timeout (`default 5 min`).
-    4.  On timeout, the request is marked `expired`; otherwise the supplied answer is returned.
+  1.  Tool validates and trims the question.
+  2.  Authorization header is parsed into `AuthorizationContext` (API key hash, user identity prefix).
+  3.  Stores the question via `Service.CreateRequest` and blocks until `WaitForAnswer` returns or timeout (`default 5 min`).
+  4.  On timeout, the request is marked `expired`; otherwise the supplied answer is returned.
 - **Output:** JSON containing `request_id`, `question`, `answer`, `asked_at`, and optionally `answered_at`.
 - **Usage Steps:**
-    1.  Provide a Bearer token tied to the human operator; malformed headers yield `"invalid authorization header"`.
-    2.  Invoke `call_tool` with `"tool_name": "ask_user"`.
-    3.  Ensure an operator responds through the Ask User console (see below) before the timeout elapses.
+  1.  Provide a Bearer token tied to the human operator; malformed headers yield `"invalid authorization header"`.
+  2.  Invoke `call_tool` with `"tool_name": "ask_user"`.
+  3.  Ensure an operator responds through the Ask User console (see below) before the timeout elapses.
 
 ## Supporting Services
 
@@ -67,35 +67,35 @@
 ## Running Locally
 
 - Ensure configuration (`settings.*`) supplies:
-    - Redis connection for `web_fetch` caching.
-    - Web search engine credentials (e.g., Google API key + CX).
-    - PostgreSQL DSN for Ask User and Call Log services if those tools are needed.
+  - Redis connection for `web_fetch` caching.
+  - Web search engine credentials (e.g., Google API key + CX).
+  - PostgreSQL DSN for Ask User and Call Log services if those tools are needed.
 - Launch the API service: `go run ./cmd api`. The MCP server auto-initializes when at least one tool dependency is satisfied.
 - Visit `http://localhost:<port>/mcp/status` to confirm the MCP handler is active.
 
 ## Example MCP Client Workflow
 
 - **1. Discover Tools**
-    - POST to `/mcp/` (or configured prefix) with the MCP `initialize` request; inspect the returned tool definitions and instructions string: “Use web_search for Google Programmable Search queries and web_fetch to retrieve dynamic web pages.”
+  - POST to `/mcp/` (or configured prefix) with the MCP `initialize` request; inspect the returned tool definitions and instructions string: “Use web_search for Google Programmable Search queries and web_fetch to retrieve dynamic web pages.”
 - **2. Invoke Tools**
-    - Always include `Authorization: Bearer <api key>`.
-    - Submit `call_tool` payloads such as:
-        ```json
-        {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "call_tool",
-            "params": {
-                "tool_name": "web_search",
-                "arguments": { "query": "golang async streams" }
-            }
-        }
-        ```
+  - Always include `Authorization: Bearer <api key>`.
+  - Submit `call_tool` payloads such as:
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "call_tool",
+      "params": {
+        "tool_name": "web_search",
+        "arguments": { "query": "golang async streams" }
+      }
+    }
+    ```
 - **3. Process Responses**
-    - On success, parse `result.content[0]` (text JSON) or `result.structured_content`.
-    - On failure, surface `result.is_error` messages to the operator; common causes are billing failures, missing authorization, or invalid arguments.
+  - On success, parse `result.content[0]` (text JSON) or `result.structured_content`.
+  - On failure, surface `result.is_error` messages to the operator; common causes are billing failures, missing authorization, or invalid arguments.
 - **4. Review Logs**
-    - (Optional) Query the Call Log API to audit usage or reconcile billing.
+  - (Optional) Query the Call Log API to audit usage or reconcile billing.
 
 ## Troubleshooting
 

@@ -1,42 +1,35 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <link
-            rel="icon"
-            type="image/svg+xml"
-            href="https://s3.laisky.com/uploads/2025/12/mcp_icon.png"
-        />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Laisky MCP</title>
-        <script>
-            (() => {
-                try {
-                    const storageKey = 'ui-theme-preference';
-                    const stored = localStorage.getItem(storageKey);
-                    const theme =
-                        stored === 'light' || stored === 'dark' || stored === 'system'
-                            ? stored
-                            : 'system';
-                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    const active = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
-                    const root = document.documentElement;
-                    root.dataset.theme = active;
-                    root.dataset.themePreference = theme;
-                    root.style.setProperty('color-scheme', active);
-                    if (active === 'dark') {
-                        root.classList.add('dark');
-                    } else {
-                        root.classList.remove('dark');
-                    }
-                } catch (error) {
-                    /* no-op */
-                }
-            })();
-        </script>
-    </head>
-    <body>
-        <div id="root"></div>
-        <script type="module" src="/src/main.tsx"></script>
-    </body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="https://s3.laisky.com/uploads/2025/12/mcp_icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Laisky MCP</title>
+    <script>
+      (() => {
+        try {
+          const storageKey = 'ui-theme-preference';
+          const stored = localStorage.getItem(storageKey);
+          const theme = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const active = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
+          const root = document.documentElement;
+          root.dataset.theme = active;
+          root.dataset.themePreference = theme;
+          root.style.setProperty('color-scheme', active);
+          if (active === 'dark') {
+            root.classList.add('dark');
+          } else {
+            root.classList.remove('dark');
+          }
+        } catch (error) {
+          /* no-op */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

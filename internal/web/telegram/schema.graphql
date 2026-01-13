@@ -1,16 +1,16 @@
 type TelegramMonitorUser {
-    id: String!
-    created_at: Date!
-    modified_at: Date!
-    telegram_id: String!
-    name: String!
-    sub_alerts: [TelegramAlertType]!
+  id: String!
+  created_at: Date!
+  modified_at: Date!
+  telegram_id: String!
+  name: String!
+  sub_alerts: [TelegramAlertType]!
 }
 
 type TelegramAlertType {
-    id: String!
-    created_at: Date!
-    modified_at: Date!
-    name: String!
-    sub_users: [TelegramMonitorUser]!
+  id: String!
+  created_at: Date!
+  modified_at: Date!
+  name: String!
+  sub_users: [TelegramMonitorUser]!
 }

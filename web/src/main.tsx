@@ -17,62 +17,62 @@ import { NotFoundPage } from '@/pages/not-found';
 import './index.css';
 
 const routes = [
-    {
-        path: '/',
-        element: <AppLayout />,
-        errorElement: <NotFoundPage />,
-        children: [
-            { index: true, element: <HomePage /> },
-            { path: 'tools/ask_user', element: <AskUserPage /> },
-            { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
-            { path: 'tools/call_log', element: <CallLogPage /> },
-            { path: 'settings', element: <SettingsPage /> },
-            { path: 'debug/*', element: <InspectorPage /> },
-        ],
-    },
-    { path: '*', element: <NotFoundPage /> },
+  {
+    path: '/',
+    element: <AppLayout />,
+    errorElement: <NotFoundPage />,
+    children: [
+      { index: true, element: <HomePage /> },
+      { path: 'tools/ask_user', element: <AskUserPage /> },
+      { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
+      { path: 'tools/call_log', element: <CallLogPage /> },
+      { path: 'settings', element: <SettingsPage /> },
+      { path: 'debug/*', element: <InspectorPage /> },
+    ],
+  },
+  { path: '*', element: <NotFoundPage /> },
 ];
 
 async function bootstrap() {
-    const runtimeConfig = await loadRuntimeConfig();
-    const basename = normalizeBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL);
-    const toolsConfig: ToolsConfig = runtimeConfig?.tools ?? defaultToolsConfig;
-    const router = createBrowserRouter(routes, { basename });
+  const runtimeConfig = await loadRuntimeConfig();
+  const basename = normalizeBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL);
+  const toolsConfig: ToolsConfig = runtimeConfig?.tools ?? defaultToolsConfig;
+  const router = createBrowserRouter(routes, { basename });
 
-    const container = document.getElementById('root');
-    if (!container) {
-        throw new Error('Failed to find root element');
-    }
+  const container = document.getElementById('root');
+  if (!container) {
+    throw new Error('Failed to find root element');
+  }
 
-    createRoot(container).render(
-        <StrictMode>
-            <ThemeProvider>
-                <ToolsConfigProvider config={toolsConfig}>
-                    <ApiKeyProvider>
-                        <RouterProvider router={router} />
-                    </ApiKeyProvider>
-                </ToolsConfigProvider>
-            </ThemeProvider>
-        </StrictMode>
-    );
+  createRoot(container).render(
+    <StrictMode>
+      <ThemeProvider>
+        <ToolsConfigProvider config={toolsConfig}>
+          <ApiKeyProvider>
+            <RouterProvider router={router} />
+          </ApiKeyProvider>
+        </ToolsConfigProvider>
+      </ThemeProvider>
+    </StrictMode>
+  );
 }
 
 bootstrap().catch((error) => {
-    if (import.meta.env.DEV) {
-        console.error('Failed to initialize application', error);
-    }
+  if (import.meta.env.DEV) {
+    console.error('Failed to initialize application', error);
+  }
 });
 
 function normalizeBasename(input: string | undefined): string {
-    if (!input) {
-        return '/';
-    }
+  if (!input) {
+    return '/';
+  }
 
-    const trimmed = input.trim();
-    if (trimmed === '' || trimmed === '/') {
-        return '/';
-    }
+  const trimmed = input.trim();
+  if (trimmed === '' || trimmed === '/') {
+    return '/';
+  }
 
-    const stripped = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
-    return stripped || '/';
+  const stripped = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+  return stripped || '/';
 }

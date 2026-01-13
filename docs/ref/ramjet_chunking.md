@@ -83,20 +83,20 @@ curl -X POST "${HOST}/gptchat/chunks" \
 
 ```json
 {
-    "chunks": [
-        {
-            "text": "...",
-            "metadata": {
-                "source": "project-notes?chunk=1"
-            }
-        }
-    ],
-    "total": 4,
-    "chunk_size": 800,
-    "chunk_overlap": 40,
-    "max_chunks": 600,
-    "source": "project-notes",
-    "origin": "text"
+  "chunks": [
+    {
+      "text": "...",
+      "metadata": {
+        "source": "project-notes?chunk=1"
+      }
+    }
+  ],
+  "total": 4,
+  "chunk_size": 800,
+  "chunk_overlap": 40,
+  "max_chunks": 600,
+  "source": "project-notes",
+  "origin": "text"
 }
 ```
 
@@ -112,13 +112,13 @@ Errors are returned as `400` responses with a descriptive message when inputs ar
 Once you are satisfied with the chunk preview, continue with the existing endpoints:
 
 1. **Upload & Index** – `POST /gptchat/files`
-    - Upload encrypted datasets for private indices. The worker encrypts the source document, builds embeddings, and stores everything in Minio.
+   - Upload encrypted datasets for private indices. The worker encrypts the source document, builds embeddings, and stores everything in Minio.
 2. **Manage datasets** – `GET /gptchat/files`
-    - List uploaded datasets and the subset currently active in the user cache.
+   - List uploaded datasets and the subset currently active in the user cache.
 3. **Build chatbot indices** – `POST /gptchat/ctx/build`
-    - Combine multiple datasets into an interactive chatbot index.
+   - Combine multiple datasets into an interactive chatbot index.
 4. **Query embeddings** – `GET /gptchat/ctx/chat` or `GET /gptchat/query/query`
-    - Retrieve answers from private or prebuilt indices.
+   - Retrieve answers from private or prebuilt indices.
 
 All of these endpoints continue to rely on the same metadata emitted by the chunk preview service, so no client-side adjustments are required.
 

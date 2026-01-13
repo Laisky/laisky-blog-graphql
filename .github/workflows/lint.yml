@@ -1,36 +1,36 @@
 name: Linter
 
 on:
-    push:
-        branches: [master, develop]
-        paths-ignore:
-            - '**/*.md'
-            - '.scripts/*.sh'
+  push:
+    branches: [master, develop]
+    paths-ignore:
+      - '**/*.md'
+      - '.scripts/*.sh'
 
 jobs:
-    check:
-        runs-on: ubuntu-latest
-        strategy:
-            matrix:
-                go: ['1.25']
-        steps:
-            - uses: actions/checkout@v4
-            - uses: actions/cache@v4
-              with:
-                  path: |
-                      vendor
-                      $HOME/.cache/go-build
-                      $GOPATH/pkg/mod
-                  key: ${{ runner.os }}-laisky-blog-graphql
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.25']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            vendor
+            $HOME/.cache/go-build
+            $GOPATH/pkg/mod
+          key: ${{ runner.os }}-laisky-blog-graphql
 
-            - uses: actions/setup-go@v5
-              with:
-                  go-version: ${{ matrix.go }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
 
-            - run: go version
-            - run: pwd
-            - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-            - run: go mod vendor
-            - run: go vet
-            - run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
-            - run: go test -bench ./...
+      - run: go version
+      - run: pwd
+      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
+      - run: go mod vendor
+      - run: go vet
+      - run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+      - run: go test -bench ./...

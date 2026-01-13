@@ -3,176 +3,155 @@ scalar QuotedString
 scalar JSONString
 
 input Pagination {
-    page: Int!
-    size: Int!
+  page: Int!
+  size: Int!
 }
 
 enum SortOrder {
-    ASC
-    DESC
+  ASC
+  DESC
 }
 
 input Sort {
-    sort_by: String!
-    order: SortOrder! = DESC
+  sort_by: String!
+  order: SortOrder! = DESC
 }
 
 type WebSearchResultItem {
-    name: String!
-    url: String!
-    snippet: String!
+  name: String!
+  url: String!
+  snippet: String!
 }
 
 type WebSearchResult {
-    query: String!
-    created_at: Date!
-    results: [WebSearchResultItem!]!
+  query: String!
+  created_at: Date!
+  results: [WebSearchResultItem!]!
 }
 
 type WebFetchResult {
-    url: String!
-    created_at: Date!
-    content: String!
+  url: String!
+  created_at: Date!
+  content: String!
 }
 
 type Query {
-    Hello: String!
-    WhoAmI: BlogUser!
+  Hello: String!
+  WhoAmI: BlogUser!
 
-    # -------------------------------------
-    # twitter
-    # -------------------------------------
-    TwitterStatues(
-        page: Pagination = { page: 0, size: 20 }
-        tweet_id: String! = ""
-        username: String! = ""
-        viewer_id: String! = ""
-        sort: Sort = { sort_by: "id", order: DESC }
-        topic: String! = ""
-        regexp: String! = ""
-    ): [Tweet]!
-    # TwitterThreads load tweets thread by tweet id
-    TwitterThreads(tweet_id: String!): [Tweet!]
+  # -------------------------------------
+  # twitter
+  # -------------------------------------
+  TwitterStatues(
+    page: Pagination = { page: 0, size: 20 }
+    tweet_id: String! = ""
+    username: String! = ""
+    viewer_id: String! = ""
+    sort: Sort = { sort_by: "id", order: DESC }
+    topic: String! = ""
+    regexp: String! = ""
+  ): [Tweet]!
+  # TwitterThreads load tweets thread by tweet id
+  TwitterThreads(tweet_id: String!): [Tweet!]
 
-    # -------------------------------------
-    # blog
-    # -------------------------------------
-    BlogPosts(
-        page: Pagination = { page: 0, size: 10 }
-        tag: String! = ""
-        category_url: String # "" means empty, nil means ignore
-        length: Int! = 0 # content length, 0 means total
-        name: String! = ""
-        regexp: String! = ""
-        language: Language! = zh_CN
-    ): [BlogPost]!
-    BlogPostHistory(file_id: String!, language: Language! = zh_CN): BlogPost!
-    BlogPostInfo: PostInfo!
-    BlogPostCategories: [BlogCategory]!
-    BlogTags: [String!]!
-    GetBlogPostSeries(
-        page: Pagination = { page: 0, size: 10 }
-        key: String! = ""
-    ): [BlogPostSeries!]!
-    BlogTwitterCard(name: String! = "", language: Language! = zh_CN): String!
-    BlogComments(
-        postName: String!
-        page: Pagination = { page: 0, size: 10 }
-        sort: Sort = { sort_by: "created_at", order: DESC }
-    ): [Comment]!
-    BlogCommentCount(postName: String!): Int!
+  # -------------------------------------
+  # blog
+  # -------------------------------------
+  BlogPosts(
+    page: Pagination = { page: 0, size: 10 }
+    tag: String! = ""
+    category_url: String # "" means empty, nil means ignore
+    length: Int! = 0 # content length, 0 means total
+    name: String! = ""
+    regexp: String! = ""
+    language: Language! = zh_CN
+  ): [BlogPost]!
+  BlogPostHistory(file_id: String!, language: Language! = zh_CN): BlogPost!
+  BlogPostInfo: PostInfo!
+  BlogPostCategories: [BlogCategory]!
+  BlogTags: [String!]!
+  GetBlogPostSeries(page: Pagination = { page: 0, size: 10 }, key: String! = ""): [BlogPostSeries!]!
+  BlogTwitterCard(name: String! = "", language: Language! = zh_CN): String!
+  BlogComments(postName: String!, page: Pagination = { page: 0, size: 10 }, sort: Sort = { sort_by: "created_at", order: DESC }): [Comment]!
+  BlogCommentCount(postName: String!): Int!
 
-    # -------------------------------------
-    # telegram monitor
-    # -------------------------------------
-    TelegramMonitorUsers(
-        page: Pagination = { page: 0, size: 10 }
-        name: String! = ""
-    ): [TelegramMonitorUser]!
-    TelegramAlertTypes(
-        page: Pagination = { page: 0, size: 10 }
-        name: String! = ""
-    ): [TelegramAlertType]!
+  # -------------------------------------
+  # telegram monitor
+  # -------------------------------------
+  TelegramMonitorUsers(page: Pagination = { page: 0, size: 10 }, name: String! = ""): [TelegramMonitorUser]!
+  TelegramAlertTypes(page: Pagination = { page: 0, size: 10 }, name: String! = ""): [TelegramAlertType]!
 
-    # GCP general
-    Lock(name: String!): Lock!
-    LockPermissions(username: String! = ""): [GeneralUser]!
-    GeneralGetLLMStormTaskResult(task_id: String!): GeneralLLMStormTask!
-    GeneralGetHTMLCrawlerTask: GeneralHTMLCrawlerTask!
+  # GCP general
+  Lock(name: String!): Lock!
+  LockPermissions(username: String! = ""): [GeneralUser]!
+  GeneralGetLLMStormTaskResult(task_id: String!): GeneralLLMStormTask!
+  GeneralGetHTMLCrawlerTask: GeneralHTMLCrawlerTask!
 }
 
 type Mutation {
-    # -------------------------------------
-    # Blog
-    # -------------------------------------
-    # publish new blog post
-    BlogCreatePost(
-        post: NewBlogPost!
-        # some graphql client doesn't support enum as parameter
-        language: Language! = zh_CN
-    ): BlogPost!
-    BlogCreateComment(
-        postName: String!
-        content: String!
-        authorName: String!
-        authorEmail: String!
-        authorWebsite: String
-        parentId: String
-    ): Comment!
-    BlogToggleCommentLike(commentId: String!): Comment!
-    BlogApproveComment(commentId: String!): Comment!
-    BlogDeleteComment(commentId: String!): Comment!
+  # -------------------------------------
+  # Blog
+  # -------------------------------------
+  # publish new blog post
+  BlogCreatePost(
+    post: NewBlogPost!
+    # some graphql client doesn't support enum as parameter
+    language: Language! = zh_CN
+  ): BlogPost!
+  BlogCreateComment(
+    postName: String!
+    content: String!
+    authorName: String!
+    authorEmail: String!
+    authorWebsite: String
+    parentId: String
+  ): Comment!
+  BlogToggleCommentLike(commentId: String!): Comment!
+  BlogApproveComment(commentId: String!): Comment!
+  BlogDeleteComment(commentId: String!): Comment!
 
-    # login
-    # Deprecated: use UserLogin instead
-    BlogLogin(account: String!, password: String!): BlogLoginResponse!
-    UserLogin(account: String!, password: String!): BlogLoginResponse!
-    UserRegister(
-        account: String!
-        password: String!
-        display_name: String!
-        captcha: String!
-    ): UserRegisterResponse!
-    UserActive(token: String!): UserActiveResponse!
-    UserResendActiveEmail(account: String!): UserResendActiveEmailResponse!
+  # login
+  # Deprecated: use UserLogin instead
+  BlogLogin(account: String!, password: String!): BlogLoginResponse!
+  UserLogin(account: String!, password: String!): BlogLoginResponse!
+  UserRegister(account: String!, password: String!, display_name: String!, captcha: String!): UserRegisterResponse!
+  UserActive(token: String!): UserActiveResponse!
+  UserResendActiveEmail(account: String!): UserResendActiveEmailResponse!
 
-    # update blog post
-    BlogAmendPost(
-        post: NewBlogPost!
-        # some graphql client doesn't support enum as parameter
-        language: Language! = zh_CN
-    ): BlogPost!
+  # update blog post
+  BlogAmendPost(
+    post: NewBlogPost!
+    # some graphql client doesn't support enum as parameter
+    language: Language! = zh_CN
+  ): BlogPost!
 
-    # -------------------------------------
-    # Arweave
-    # -------------------------------------
-    ArweaveUpload(
-        fileB64: String!
-        contentType: String = "application/json"
-    ): ArweaveUploadResponse!
+  # -------------------------------------
+  # Arweave
+  # -------------------------------------
+  ArweaveUpload(fileB64: String!, contentType: String = "application/json"): ArweaveUploadResponse!
 
-    # -------------------------------------
-    # WebSearch
-    # -------------------------------------
-    WebSearch(query: String!): WebSearchResult!
-    WebFetch(url: String!): WebFetchResult!
+  # -------------------------------------
+  # WebSearch
+  # -------------------------------------
+  WebSearch(query: String!): WebSearchResult!
+  WebFetch(url: String!): WebFetchResult!
 
-    # -------------------------------------
-    # telegram monitor
-    # -------------------------------------
-    TelegramMonitorAlert(type: String!, token: String!, msg: String!): TelegramAlertType!
+  # -------------------------------------
+  # telegram monitor
+  # -------------------------------------
+  TelegramMonitorAlert(type: String!, token: String!, msg: String!): TelegramAlertType!
 
-    # -------------------------------------
-    # GCP general
-    # -------------------------------------
-    # will validate cookie `general`
-    AcquireLock(lock_name: String!, duration_sec: Int! = 5, is_renewal: Boolean = false): Boolean!
-    # only blog user can create token,
-    # set token as cookie `general`
-    CreateGeneralToken(
-        username: String!
-        duration_sec: Int! = 604800 # 7d
-    ): String!
-    GeneralAddLLMStormTask(prompt: String!, api_key: String!): String!
-    GeneralAddHTMLCrawlerTask(url: String!): String!
+  # -------------------------------------
+  # GCP general
+  # -------------------------------------
+  # will validate cookie `general`
+  AcquireLock(lock_name: String!, duration_sec: Int! = 5, is_renewal: Boolean = false): Boolean!
+  # only blog user can create token,
+  # set token as cookie `general`
+  CreateGeneralToken(
+    username: String!
+    duration_sec: Int! = 604800 # 7d
+  ): String!
+  GeneralAddLLMStormTask(prompt: String!, api_key: String!): String!
+  GeneralAddHTMLCrawlerTask(url: String!): String!
 }

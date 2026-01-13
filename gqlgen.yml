@@ -4,80 +4,80 @@
 # for detailed .gqlgen.yml documentation.
 
 schema:
-    - ./internal/web/schema.graphql
-    - ./internal/web/twitter/schema.graphql
-    - ./internal/web/blog/schema.graphql
-    - ./internal/web/telegram/schema.graphql
-    - ./internal/web/general/schema.graphql
-    - ./internal/web/arweave/schema.graphql
+  - ./internal/web/schema.graphql
+  - ./internal/web/twitter/schema.graphql
+  - ./internal/web/blog/schema.graphql
+  - ./internal/web/telegram/schema.graphql
+  - ./internal/web/general/schema.graphql
+  - ./internal/web/arweave/schema.graphql
 exec:
-    filename: ./internal/web/generated.go
+  filename: ./internal/web/generated.go
 model:
-    filename: ./internal/library/models/models.go
+  filename: ./internal/library/models/models.go
 # resolver:
 #   filename: ./internal/web/resolver.go
 #   type: Resolver
 models:
-    # -------------------------------------
-    # general
-    # -------------------------------------
-    Date:
-        model: github.com/Laisky/laisky-blog-graphql/library.Datetime
-    QuotedString:
-        model: github.com/Laisky/laisky-blog-graphql/library.QuotedString
-    JSONString:
-        model: github.com/Laisky/laisky-blog-graphql/library.JSONString
-    # twitter
-    Tweet:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.Tweet
-    EmbededTweet:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.EmbededTweet
-    TwitterUser:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.User
-    # -------------------------------------
-    # blog
-    # -------------------------------------
-    BlogPost:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.Post
-    PostInfo:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto.PostInfo
-    BlogUser:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.User
-    BlogCategory:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.Category
-    BlogPostSeries:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.PostSeries
-    ArweaveItem:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.ArweaveHistoryItem
-    # -------------------------------------
-    # telegram
-    # -------------------------------------
-    TelegramMonitorUser:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.MonitorUsers
-    TelegramAlertType:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.AlertTypes
-    # -------------------------------------
-    # GCP General
-    # -------------------------------------
-    Lock:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/general/model.Lock
-    # GeneralUser:
-    #   model: laisky-blog-graphql/general.User
-    # -------------------------------------
-    # Arweave
-    # -------------------------------------
-    ArweaveUploadResponse:
-        model: github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto.UploadResponse
-    # -------------------------------------
-    # LLM
-    # -------------------------------------
-    # LLMStormTask:
-    #   model: github.com/Laisky/laisky-blog-graphql/library/db/redis.LLMStormTask
+  # -------------------------------------
+  # general
+  # -------------------------------------
+  Date:
+    model: github.com/Laisky/laisky-blog-graphql/library.Datetime
+  QuotedString:
+    model: github.com/Laisky/laisky-blog-graphql/library.QuotedString
+  JSONString:
+    model: github.com/Laisky/laisky-blog-graphql/library.JSONString
+  # twitter
+  Tweet:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.Tweet
+  EmbededTweet:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.EmbededTweet
+  TwitterUser:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.User
+  # -------------------------------------
+  # blog
+  # -------------------------------------
+  BlogPost:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.Post
+  PostInfo:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto.PostInfo
+  BlogUser:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.User
+  BlogCategory:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.Category
+  BlogPostSeries:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.PostSeries
+  ArweaveItem:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/blog/model.ArweaveHistoryItem
+  # -------------------------------------
+  # telegram
+  # -------------------------------------
+  TelegramMonitorUser:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.MonitorUsers
+  TelegramAlertType:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model.AlertTypes
+  # -------------------------------------
+  # GCP General
+  # -------------------------------------
+  Lock:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/general/model.Lock
+  # GeneralUser:
+  #   model: laisky-blog-graphql/general.User
+  # -------------------------------------
+  # Arweave
+  # -------------------------------------
+  ArweaveUploadResponse:
+    model: github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto.UploadResponse
+  # -------------------------------------
+  # LLM
+  # -------------------------------------
+  # LLMStormTask:
+  #   model: github.com/Laisky/laisky-blog-graphql/library/db/redis.LLMStormTask
 
-    # -------------------------------------
-    # WebSearch
-    # -------------------------------------
-    WebSearchResult:
-        model: github.com/Laisky/laisky-blog-graphql/library/search.SearchResult
-    WebSearchResultItem:
-        model: github.com/Laisky/laisky-blog-graphql/library/search.SearchResultItem
+  # -------------------------------------
+  # WebSearch
+  # -------------------------------------
+  WebSearchResult:
+    model: github.com/Laisky/laisky-blog-graphql/library/search.SearchResult
+  WebSearchResultItem:
+    model: github.com/Laisky/laisky-blog-graphql/library/search.SearchResultItem
