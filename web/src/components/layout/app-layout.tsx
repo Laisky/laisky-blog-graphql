@@ -21,9 +21,11 @@ interface ConsoleMenuItem extends NavItemConfig {
 const navItems: NavItemConfig[] = [{ to: '/', label: 'Overview' }];
 
 const consoleItems: ConsoleMenuItem[] = [
+  { to: '/debug', label: 'Inspector', newTab: true },
   { to: '/tools/ask_user', label: 'ask_user', toolKey: 'ask_user' },
   { to: '/tools/get_user_requests', label: 'get_user_requests', toolKey: 'get_user_request' },
-  { to: '/debug', label: 'Inspector', newTab: true },
+  { to: '/tools/web_search', label: 'web_search', toolKey: 'web_search' },
+  { to: '/tools/web_fetch', label: 'web_fetch', toolKey: 'web_fetch' },
 ];
 
 export function AppLayout() {
