@@ -51,5 +51,10 @@ RUN chmod +rx -R /app && \
     adduser --disabled-password --gecos '' laisky
 USER laisky
 
+# Available commands:
+#   api     - Start the GraphQL API server (default)
+#   import  - Import data from external sources (e.g., Disqus comments)
+#   migrate - Run database migrations
+#   tui     - Launch interactive TUI (for local development, not container use)
 ENTRYPOINT [ "/app/go-graphql-srv" ]
 CMD [ "api", "-c", "/etc/laisky-blog-graphql/settings.yml" ]

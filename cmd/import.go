@@ -26,7 +26,7 @@ import (
 
 // DisqusXML represents the root element of Disqus export XML
 type DisqusXML struct {
-	XMLName    xml.Name        `xml:"disqus"`
+	XMLName    xml.Name         `xml:"disqus"`
 	Categories []DisqusCategory `xml:"category"`
 	Threads    []DisqusThread   `xml:"thread"`
 	Posts      []DisqusPost     `xml:"post"`
@@ -58,14 +58,14 @@ type DisqusThread struct {
 // DisqusPost represents a Disqus post element (a comment)
 type DisqusPost struct {
 	// DsqID is the Disqus internal post ID
-	DsqID     string         `xml:"id,attr"`
-	ID        string         `xml:"id"`
-	Message   string         `xml:"message"`
-	CreatedAt string         `xml:"createdAt"`
-	IsDeleted bool           `xml:"isDeleted"`
-	IsSpam    bool           `xml:"isSpam"`
-	Author    DisqusAuthor   `xml:"author"`
-	Thread    DisqusThreadRef `xml:"thread"`
+	DsqID     string           `xml:"id,attr"`
+	ID        string           `xml:"id"`
+	Message   string           `xml:"message"`
+	CreatedAt string           `xml:"createdAt"`
+	IsDeleted bool             `xml:"isDeleted"`
+	IsSpam    bool             `xml:"isSpam"`
+	Author    DisqusAuthor     `xml:"author"`
+	Thread    DisqusThreadRef  `xml:"thread"`
 	Parent    *DisqusParentRef `xml:"parent"`
 }
 
@@ -211,6 +211,7 @@ func runImportComments(ctx context.Context, cfg importConfig) error {
 		zap.Int("skipped_deleted", stats.SkippedDeleted),
 		zap.Int("skipped_spam", stats.SkippedSpam),
 		zap.Int("skipped_no_post", stats.SkippedNoPost),
+		zap.Int("skipped_duplicate", stats.SkippedDuplicate),
 		zap.Int("users_created", stats.UsersCreated),
 	)
 
@@ -372,11 +373,12 @@ func lookupBlogPosts(ctx context.Context, db *mongo.Database, threadToPostName m
 
 // importStats tracks statistics for the import process
 type importStats struct {
-	Imported       int
-	SkippedDeleted int
-	SkippedSpam    int
-	SkippedNoPost  int
-	UsersCreated   int
+	Imported         int
+	SkippedDeleted   int
+	SkippedSpam      int
+	SkippedNoPost    int
+	SkippedDuplicate int
+	UsersCreated     int
 }
 
 // importComments imports Disqus posts as comments into MongoDB
@@ -400,6 +402,15 @@ func importComments(
 	// Track created users to avoid duplicates
 	usernameToUser := make(map[string]blogModel.CommentUser)
 
+	// Query existing Disqus IDs for idempotency check
+	existingDisqusIDs, err := getExistingDisqusIDs(ctx, commentsColl)
+	if err != nil {
+		return nil, errors.Wrap(err, "get existing disqus IDs")
+	}
+	logger.Info("found existing imported comments",
+		zap.Int("count", len(existingDisqusIDs)),
+	)
+
 	// First pass: create all comments without parent references
 	for _, post := range disqusData.Posts {
 		// Skip deleted comments
@@ -411,6 +422,18 @@ func importComments(
 		// Skip spam comments
 		if post.IsSpam {
 			stats.SkippedSpam++
+			continue
+		}
+
+		// Check for duplicate (idempotency)
+		if _, exists := existingDisqusIDs[post.DsqID]; exists {
+			stats.SkippedDuplicate++
+			// Still need to track the mapping for parent references
+			var existingComment blogModel.Comment
+			err := commentsColl.FindOne(ctx, bson.M{"disqus_id": post.DsqID}).Decode(&existingComment)
+			if err == nil {
+				disqusIDToCommentID[post.DsqID] = existingComment.ID
+			}
 			continue
 		}
 
@@ -462,7 +485,8 @@ func importComments(
 			Author:     user,
 			PostID:     postID,
 			Content:    cleanHTMLContent(post.Message),
-			IsApproved: true, // Disqus comments are already moderated
+			IsApproved: true,       // Disqus comments are already moderated
+			DisqusID:   post.DsqID, // Store Disqus ID for idempotency
 		}
 
 		// Store mapping for parent references
@@ -571,6 +595,38 @@ func getOrCreateUser(
 
 	cache[key] = user
 	return user, true, nil
+}
+
+// getExistingDisqusIDs retrieves all existing Disqus IDs from the comments collection for idempotency check
+func getExistingDisqusIDs(ctx context.Context, coll *mongo.Collection) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+
+	// Query all comments that have a disqus_id field
+	cursor, err := coll.Find(ctx, bson.M{
+		"disqus_id": bson.M{"$exists": true, "$ne": ""},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "find existing disqus comments")
+	}
+	defer cursor.Close(ctx)
+
+	for cursor.Next(ctx) {
+		var comment struct {
+			DisqusID string `bson:"disqus_id"`
+		}
+		if err := cursor.Decode(&comment); err != nil {
+			return nil, errors.Wrap(err, "decode comment")
+		}
+		if comment.DisqusID != "" {
+			result[comment.DisqusID] = struct{}{}
+		}
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, errors.Wrap(err, "cursor error")
+	}
+
+	return result, nil
 }
 
 // parseDisqusTime parses a Disqus timestamp in ISO 8601 format

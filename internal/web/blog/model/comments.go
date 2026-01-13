@@ -24,6 +24,8 @@ type Comment struct {
 	Content string `bson:"content" json:"content"`
 	// IsApproved indicates whether the comment has been approved by a moderator
 	IsApproved bool `bson:"is_approved" json:"is_approved"`
+	// DisqusID stores the original Disqus comment ID for imported comments (used for idempotency)
+	DisqusID string `bson:"disqus_id,omitempty" json:"disqus_id,omitempty"`
 	// Not stored in database, populated at runtime when retrieving comments
 	Replies []*Comment `bson:"-" json:"replies,omitempty"`
 	Likes   int        `json:"likes"`

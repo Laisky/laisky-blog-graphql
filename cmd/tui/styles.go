@@ -1,4 +1,3 @@
-package tui
 // Package tui provides a modern terminal user interface for laisky-blog-graphql.
 // It uses the Charm Bubble Tea framework to create an interactive menu-driven interface.
 package tui
@@ -7,163 +6,158 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}	return statusBarStylefunc GetStatusBarStyle() lipgloss.Style {// GetStatusBarStyle returns the status bar style}	return progressStylefunc GetProgressStyle() lipgloss.Style {// GetProgressStyle returns the progress style}	return inputLabelStylefunc GetInputLabelStyle() lipgloss.Style {// GetInputLabelStyle returns the input label style}	return headerStylefunc GetHeaderStyle() lipgloss.Style {// GetHeaderStyle returns the header style}	return errorStylefunc GetErrorStyle() lipgloss.Style {// GetErrorStyle returns the error style}	return successStylefunc GetSuccessStyle() lipgloss.Style {// GetSuccessStyle returns the success style}	return boxStylefunc GetBoxStyle() lipgloss.Style {// GetBoxStyle returns the box style}	return helpStylefunc GetHelpStyle() lipgloss.Style {// GetHelpStyle returns the help style}	return cursorStylefunc GetCursorStyle() lipgloss.Style {// GetCursorStyle returns the cursor style}	return selectedMenuItemStylefunc GetSelectedMenuItemStyle() lipgloss.Style {// GetSelectedMenuItemStyle returns the selected menu item style}	return menuItemStylefunc GetMenuItemStyle() lipgloss.Style {// GetMenuItemStyle returns the menu item style}	return subtitleStylefunc GetSubtitleStyle() lipgloss.Style {// GetSubtitleStyle returns the subtitle style}	return titleStylefunc GetTitleStyle() lipgloss.Style {// GetTitleStyle returns the title style	Padding(0, 1)	Background(highlightBg).	Foreground(mutedColor).var statusBarStyle = lipgloss.NewStyle().// statusBarStyle creates the style for the status bar	Foreground(accentColor)var progressStyle = lipgloss.NewStyle().// progressStyle creates the style for progress indicators	Foreground(fgColor)var inputValueStyle = lipgloss.NewStyle().// inputValueStyle creates the style for input values	Bold(true)	Foreground(secondaryColor).var inputLabelStyle = lipgloss.NewStyle().// inputLabelStyle creates the style for input labels	MarginBottom(1)	Padding(0, 2).	Background(primaryColor).	Foreground(fgColor).	Bold(true).var headerStyle = lipgloss.NewStyle().// headerStyle creates the header/banner style	Bold(true)	Foreground(errorColor).var errorStyle = lipgloss.NewStyle().// errorStyle creates style for error messages	Bold(true)	Foreground(successColor).var successStyle = lipgloss.NewStyle().// successStyle creates style for success messages	Padding(1, 2)	BorderForeground(borderColor).	Border(lipgloss.RoundedBorder()).var boxStyle = lipgloss.NewStyle().// boxStyle creates a bordered box style	MarginTop(1)	Foreground(mutedColor).var helpStyle = lipgloss.NewStyle().// helpStyle creates the style for help text at the bottom	Bold(true)	Foreground(accentColor).var cursorStyle = lipgloss.NewStyle().// cursorStyle creates the style for the selection cursor	PaddingLeft(1)	Background(selectedBg).	Bold(true).	Foreground(secondaryColor).var selectedMenuItemStyle = lipgloss.NewStyle().// selectedMenuItemStyle creates the style for selected menu items	PaddingLeft(2)	Foreground(fgColor).var menuItemStyle = lipgloss.NewStyle().// menuItemStyle creates the style for unselected menu items	Italic(true)	Foreground(mutedColor).var subtitleStyle = lipgloss.NewStyle().// subtitleStyle creates the subtitle/description style	Padding(0, 1)	MarginBottom(1).	Foreground(primaryColor).	Bold(true).var titleStyle = lipgloss.NewStyle().// titleStyle creates the main title style)	highlightBg   = lipgloss.Color("#45475A") // Highlight background	selectedBg    = lipgloss.Color("#313244") // Selected background	borderColor   = lipgloss.Color("#45475A") // Border	mutedColor    = lipgloss.Color("#6C7086") // Muted text	fgColor       = lipgloss.Color("#CDD6F4") // Light foreground	bgColor       = lipgloss.Color("#1E1E2E") // Dark background	// Neutral colors	successColor   = lipgloss.Color("#22C55E") // Green	errorColor     = lipgloss.Color("#EF4444") // Red	accentColor    = lipgloss.Color("#F59E0B") // Amber	secondaryColor = lipgloss.Color("#10B981") // Emerald	primaryColor   = lipgloss.Color("#7C3AED") // Violet	// Primary colorsvar (// Color palette for the TUI based on modern design principles
+// Color palette for the TUI based on modern design principles
+var (
+	// Primary colors
+	primaryColor   = lipgloss.Color("#7C3AED") // Violet
+	secondaryColor = lipgloss.Color("#10B981") // Emerald
+	accentColor    = lipgloss.Color("#F59E0B") // Amber
+	errorColor     = lipgloss.Color("#EF4444") // Red
+	successColor   = lipgloss.Color("#22C55E") // Green
+
+	// Neutral colors
+	bgColor      = lipgloss.Color("#1E1E2E") // Dark background
+	fgColor      = lipgloss.Color("#CDD6F4") // Light foreground
+	mutedColor   = lipgloss.Color("#6C7086") // Muted text
+	borderColor  = lipgloss.Color("#45475A") // Border
+	selectedBg   = lipgloss.Color("#313244") // Selected background
+	highlightBg  = lipgloss.Color("#45475A") // Highlight background
+)
+
+// titleStyle creates the main title style
+var titleStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(primaryColor).
+	MarginBottom(1).
+	Padding(0, 1)
+
+// subtitleStyle creates the subtitle/description style
+var subtitleStyle = lipgloss.NewStyle().
+	Foreground(mutedColor).
+	Italic(true)
+
+// menuItemStyle creates the style for unselected menu items
+var menuItemStyle = lipgloss.NewStyle().
+	Foreground(fgColor).
+	PaddingLeft(2)
+
+// selectedMenuItemStyle creates the style for selected menu items
+var selectedMenuItemStyle = lipgloss.NewStyle().
+	Foreground(secondaryColor).
+	Bold(true).
+	Background(selectedBg).
+	PaddingLeft(1)
+
+// cursorStyle creates the style for the selection cursor
+var cursorStyle = lipgloss.NewStyle().
+	Foreground(accentColor).
+	Bold(true)
+
+// helpStyle creates the style for help text at the bottom
+var helpStyle = lipgloss.NewStyle().
+	Foreground(mutedColor).
+	MarginTop(1)
+
+// boxStyle creates a bordered box style
+var boxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(borderColor).
+	Padding(1, 2)
+
+// successStyle creates style for success messages
+var successStyle = lipgloss.NewStyle().
+	Foreground(successColor).
+	Bold(true)
+
+// errorStyle creates style for error messages
+var errorStyle = lipgloss.NewStyle().
+	Foreground(errorColor).
+	Bold(true)
+
+// headerStyle creates the header/banner style
+var headerStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(fgColor).
+	Background(primaryColor).
+	Padding(0, 2).
+	MarginBottom(1)
+
+// inputLabelStyle creates the style for input labels
+var inputLabelStyle = lipgloss.NewStyle().
+	Foreground(secondaryColor).
+	Bold(true)
+
+// progressStyle creates the style for progress indicators
+var progressStyle = lipgloss.NewStyle().
+	Foreground(accentColor)
+
+// statusBarStyle creates the style for the status bar
+var statusBarStyle = lipgloss.NewStyle().
+	Foreground(mutedColor).
+	Background(highlightBg).
+	Padding(0, 1)
+
+// GetTitleStyle returns the title style
+func GetTitleStyle() lipgloss.Style {
+	return titleStyle
+}
+
+// GetSubtitleStyle returns the subtitle style
+func GetSubtitleStyle() lipgloss.Style {
+	return subtitleStyle
+}
+
+// GetMenuItemStyle returns the menu item style
+func GetMenuItemStyle() lipgloss.Style {
+	return menuItemStyle
+}
+
+// GetSelectedMenuItemStyle returns the selected menu item style
+func GetSelectedMenuItemStyle() lipgloss.Style {
+	return selectedMenuItemStyle
+}
+
+// GetCursorStyle returns the cursor style
+func GetCursorStyle() lipgloss.Style {
+	return cursorStyle
+}
+
+// GetHelpStyle returns the help style
+func GetHelpStyle() lipgloss.Style {
+	return helpStyle
+}
+
+// GetBoxStyle returns the box style
+func GetBoxStyle() lipgloss.Style {
+	return boxStyle
+}
+
+// GetSuccessStyle returns the success style
+func GetSuccessStyle() lipgloss.Style {
+	return successStyle
+}
+
+// GetErrorStyle returns the error style
+func GetErrorStyle() lipgloss.Style {
+	return errorStyle
+}
+
+// GetHeaderStyle returns the header style
+func GetHeaderStyle() lipgloss.Style {
+	return headerStyle
+}
+
+// GetInputLabelStyle returns the input label style
+func GetInputLabelStyle() lipgloss.Style {
+	return inputLabelStyle
+}
+
+// GetProgressStyle returns the progress style
+func GetProgressStyle() lipgloss.Style {
+	return progressStyle
+}
+
+// GetStatusBarStyle returns the status bar style
+func GetStatusBarStyle() lipgloss.Style {
+	return statusBarStyle
+}
