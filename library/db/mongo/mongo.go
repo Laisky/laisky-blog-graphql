@@ -3,6 +3,7 @@ package mongo
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"sync"
 	"time"
@@ -36,19 +37,22 @@ type DialInfo struct {
 	DBName,
 	User,
 	Pwd string
+	AuthDB string
 }
 
 // db implements DB and shares a long-lived client.
 type db struct {
-	shared *sharedClient
+	shared   *sharedClient
+	dialInfo DialInfo
 }
 
 // sharedClient is a shared mongo client with ref-count.
 type sharedClient struct {
 	mu        sync.RWMutex
 	cli       *mongo.Client
-	diaInfo   DialInfo
+	addr      string
 	uri       string
+	key       string
 	refCount  int
 	ready     chan struct{}
 	err       error
@@ -83,16 +87,32 @@ func buildMongoURI(dialInfo DialInfo) string {
 	if dialInfo.User != "" || dialInfo.Pwd != "" {
 		uri.User = url.UserPassword(dialInfo.User, dialInfo.Pwd)
 	}
+	if dialInfo.AuthDB != "" {
+		query := url.Values{}
+		query.Set("authSource", dialInfo.AuthDB)
+		uri.RawQuery = query.Encode()
+	}
 	return uri.String()
+}
+
+// sharedClientKey builds a stable key for shared client lookup.
+// It takes the dial info and returns a key string scoped to the host and auth settings.
+func sharedClientKey(dialInfo DialInfo) string {
+	if dialInfo.AuthDB == "" {
+		return fmt.Sprintf("%s|%s|%s", dialInfo.Addr, dialInfo.User, dialInfo.Pwd)
+	}
+
+	return fmt.Sprintf("%s|%s|%s|%s", dialInfo.Addr, dialInfo.User, dialInfo.Pwd, dialInfo.AuthDB)
 }
 
 // getOrCreateSharedClient returns a shared client for the given dial info.
 // It guarantees that only one mongo.Client is created per URI at a time.
 func getOrCreateSharedClient(ctx context.Context, dialInfo DialInfo) (*sharedClient, error) {
+	key := sharedClientKey(dialInfo)
 	uri := buildMongoURI(dialInfo)
 
 	sharedClientsMu.Lock()
-	if sc := sharedClients[uri]; sc != nil {
+	if sc := sharedClients[key]; sc != nil {
 		sc.refCount++
 		ready := sc.ready
 		sharedClientsMu.Unlock()
@@ -103,7 +123,7 @@ func getOrCreateSharedClient(ctx context.Context, dialInfo DialInfo) (*sharedCli
 			sharedClientsMu.Lock()
 			sc.refCount--
 			if sc.refCount == 0 && sc.cli == nil {
-				delete(sharedClients, uri)
+				delete(sharedClients, key)
 			}
 			sharedClientsMu.Unlock()
 			return nil, errors.Wrap(ctx.Err(), "wait for mongo connect")
@@ -112,7 +132,7 @@ func getOrCreateSharedClient(ctx context.Context, dialInfo DialInfo) (*sharedCli
 			sharedClientsMu.Lock()
 			sc.refCount--
 			if sc.refCount == 0 && sc.cli == nil {
-				delete(sharedClients, uri)
+				delete(sharedClients, key)
 			}
 			sharedClientsMu.Unlock()
 			return nil, errors.Wrap(sc.err, "connect")
@@ -122,12 +142,13 @@ func getOrCreateSharedClient(ctx context.Context, dialInfo DialInfo) (*sharedCli
 	}
 
 	sc := &sharedClient{
-		diaInfo:  dialInfo,
+		addr:     dialInfo.Addr,
 		uri:      uri,
+		key:      key,
 		refCount: 1,
 		ready:    make(chan struct{}),
 	}
-	sharedClients[uri] = sc
+	sharedClients[key] = sc
 	sharedClientsMu.Unlock()
 
 	if err := sc.dial(ctx); err != nil {
@@ -135,8 +156,8 @@ func getOrCreateSharedClient(ctx context.Context, dialInfo DialInfo) (*sharedCli
 		close(sc.ready)
 
 		sharedClientsMu.Lock()
-		if sharedClients[uri] == sc {
-			delete(sharedClients, uri)
+		if sharedClients[key] == sc {
+			delete(sharedClients, key)
 		}
 		sharedClientsMu.Unlock()
 
@@ -162,7 +183,7 @@ func NewDB(ctx context.Context, dialInfo DialInfo) (DB, error) {
 		return nil, errors.Wrap(err, "connect")
 	}
 
-	return &db{shared: shared}, nil
+	return &db{shared: shared, dialInfo: dialInfo}, nil
 }
 
 // dial creates the client ONCE.
@@ -228,7 +249,7 @@ func (d *db) S() (mongo.Session, error) {
 
 // CurrentDB returns the database based on the dial info.
 func (d *db) CurrentDB() *mongo.Database {
-	return d.DB(d.shared.diaInfo.DBName)
+	return d.DB(d.dialInfo.DBName)
 }
 
 // startHealthCheck starts a single background health checker.
@@ -268,7 +289,7 @@ func (s *sharedClient) runReconnectCheck(ctx context.Context) {
 		if err != nil {
 			log.Logger.Warn("mongodb ping failed (driver will auto-recover)",
 				zap.Error(err),
-				zap.String("db", s.diaInfo.Addr),
+				zap.String("db", s.addr),
 			)
 		}
 	}
@@ -284,7 +305,7 @@ func (d *db) Close(ctx context.Context) error {
 	d.shared.refCount--
 	refCount := d.shared.refCount
 	if refCount == 0 {
-		delete(sharedClients, d.shared.uri)
+		delete(sharedClients, d.shared.key)
 	}
 	sharedClientsMu.Unlock()
 
