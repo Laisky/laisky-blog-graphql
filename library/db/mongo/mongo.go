@@ -3,7 +3,7 @@ package mongo
 
 import (
 	"context"
-	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -19,6 +19,7 @@ import (
 const (
 	defaultTimeout         = 30 * time.Second
 	reconnectCheckInterval = 5 * time.Second
+	defaultHeartbeat       = 10 * time.Second
 )
 
 // DB is the same exportable interface. Do not change.
@@ -29,6 +30,7 @@ type DB interface {
 	CurrentDB() *mongo.Database
 }
 
+// DialInfo defines the MongoDB connection information.
 type DialInfo struct {
 	Addr,
 	DBName,
@@ -36,11 +38,115 @@ type DialInfo struct {
 	Pwd string
 }
 
+// db implements DB and shares a long-lived client.
 type db struct {
-	sync.RWMutex
-	cli     *mongo.Client
-	diaInfo DialInfo
-	uri     string
+	shared *sharedClient
+}
+
+// sharedClient is a shared mongo client with ref-count.
+type sharedClient struct {
+	mu        sync.RWMutex
+	cli       *mongo.Client
+	diaInfo   DialInfo
+	uri       string
+	refCount  int
+	ready     chan struct{}
+	err       error
+	checkOnce sync.Once
+	cancel    context.CancelFunc
+}
+
+var (
+	sharedClientsMu sync.Mutex
+	sharedClients   = map[string]*sharedClient{}
+)
+
+var (
+	connectMongo = func(ctx context.Context, clientOpts *options.ClientOptions) (*mongo.Client, error) {
+		return mongo.Connect(ctx, clientOpts)
+	}
+	pingMongo = func(ctx context.Context, cli *mongo.Client) error {
+		return cli.Ping(ctx, readpref.Primary())
+	}
+	disconnectMongo = func(ctx context.Context, cli *mongo.Client) error {
+		return cli.Disconnect(ctx)
+	}
+)
+
+// buildMongoURI builds a MongoDB connection URI from the given dial info.
+func buildMongoURI(dialInfo DialInfo) string {
+	uri := &url.URL{
+		Scheme: "mongodb",
+		Host:   dialInfo.Addr,
+		Path:   "/" + dialInfo.DBName,
+	}
+	if dialInfo.User != "" || dialInfo.Pwd != "" {
+		uri.User = url.UserPassword(dialInfo.User, dialInfo.Pwd)
+	}
+	return uri.String()
+}
+
+// getOrCreateSharedClient returns a shared client for the given dial info.
+// It guarantees that only one mongo.Client is created per URI at a time.
+func getOrCreateSharedClient(ctx context.Context, dialInfo DialInfo) (*sharedClient, error) {
+	uri := buildMongoURI(dialInfo)
+
+	sharedClientsMu.Lock()
+	if sc := sharedClients[uri]; sc != nil {
+		sc.refCount++
+		ready := sc.ready
+		sharedClientsMu.Unlock()
+
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			sharedClientsMu.Lock()
+			sc.refCount--
+			if sc.refCount == 0 && sc.cli == nil {
+				delete(sharedClients, uri)
+			}
+			sharedClientsMu.Unlock()
+			return nil, errors.Wrap(ctx.Err(), "wait for mongo connect")
+		}
+		if sc.err != nil {
+			sharedClientsMu.Lock()
+			sc.refCount--
+			if sc.refCount == 0 && sc.cli == nil {
+				delete(sharedClients, uri)
+			}
+			sharedClientsMu.Unlock()
+			return nil, errors.Wrap(sc.err, "connect")
+		}
+
+		return sc, nil
+	}
+
+	sc := &sharedClient{
+		diaInfo:  dialInfo,
+		uri:      uri,
+		refCount: 1,
+		ready:    make(chan struct{}),
+	}
+	sharedClients[uri] = sc
+	sharedClientsMu.Unlock()
+
+	if err := sc.dial(ctx); err != nil {
+		sc.err = err
+		close(sc.ready)
+
+		sharedClientsMu.Lock()
+		if sharedClients[uri] == sc {
+			delete(sharedClients, uri)
+		}
+		sharedClientsMu.Unlock()
+
+		return nil, errors.Wrap(err, "connect")
+	}
+
+	sc.err = nil
+	close(sc.ready)
+	sc.startHealthCheck()
+	return sc, nil
 }
 
 // NewDB keeps the same signature and behavior expectations.
@@ -51,92 +157,94 @@ func NewDB(ctx context.Context, dialInfo DialInfo) (DB, error) {
 		zap.String("db", dialInfo.DBName),
 	)
 
-	d := &db{
-		diaInfo: dialInfo,
-		uri:     fmt.Sprintf("mongodb://%s:%s@%s/%s", dialInfo.User, dialInfo.Pwd, dialInfo.Addr, dialInfo.DBName),
-	}
-
-	if err := d.dial(ctx); err != nil {
+	shared, err := getOrCreateSharedClient(ctx, dialInfo)
+	if err != nil {
 		return nil, errors.Wrap(err, "connect")
 	}
 
-	// Keep this goroutine to preserve the original side effect (a background checker),
-	// but make it SAFE: it never reconnects or creates new clients.
-	// It only logs health signals.
-	go d.runReconnectCheck(ctx)
-
-	return d, nil
+	return &db{shared: shared}, nil
 }
 
 // dial creates the client ONCE.
 // Best practice: use the driver’s pooling and monitoring, avoid manual reconnect loops.
-func (d *db) dial(ctx context.Context) error {
+func (s *sharedClient) dial(ctx context.Context) error {
 	// Use a bounded timeout for initial connect + ping.
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	clientOpts := options.Client().
-		ApplyURI(d.uri).
+		ApplyURI(s.uri).
 		// Timeouts and stability (good defaults for most services)
 		SetConnectTimeout(30 * time.Second).
 		SetServerSelectionTimeout(30 * time.Second).
 		SetSocketTimeout(30 * time.Second).
+		SetHeartbeatInterval(defaultHeartbeat).
+		SetRetryReads(true).
+		SetRetryWrites(true).
 		// Pooling (avoid runaway threads/FDs under load)
 		SetMaxPoolSize(100).
 		SetMinPoolSize(0).
 		SetMaxConnecting(2).
 		SetMaxConnIdleTime(300 * time.Second)
 
-	cli, err := mongo.Connect(ctx, clientOpts)
+	cli, err := connectMongo(ctx, clientOpts)
 	if err != nil {
 		return errors.Wrap(err, "connect db")
 	}
 
 	// Force a first server selection now so failures happen at startup, not later.
-	if err := cli.Ping(ctx, readpref.Primary()); err != nil {
-		_ = cli.Disconnect(context.Background())
+	if err := pingMongo(ctx, cli); err != nil {
+		_ = disconnectMongo(context.Background(), cli)
 		return errors.Wrap(err, "ping db")
 	}
 
-	d.Lock()
+	s.mu.Lock()
 	// Defensive: if somehow called twice, close the old client before replacing.
-	if d.cli != nil {
-		_ = d.cli.Disconnect(context.Background())
+	if s.cli != nil {
+		_ = disconnectMongo(context.Background(), s.cli)
 	}
-	d.cli = cli
-	d.Unlock()
+	s.cli = cli
+	s.mu.Unlock()
 
 	return nil
 }
 
+// DB returns a database handle for the specified name.
 func (d *db) DB(name string) *mongo.Database {
-	d.RLock()
-	cli := d.cli
-	d.RUnlock()
+	cli := d.shared.client()
 
 	// If cli is nil, this is a programmer error; keep behavior simple.
 	return cli.Database(name)
 }
 
-// S is intentionally NOT part of the exportable DB interface.
+// S returns a new client session for transactions.
+// It is intentionally NOT part of the exportable DB interface.
 // Keep it for compatibility with existing internal users.
 func (d *db) S() (mongo.Session, error) {
-	d.RLock()
-	cli := d.cli
-	d.RUnlock()
+	cli := d.shared.client()
 
 	return cli.StartSession()
 }
 
+// CurrentDB returns the database based on the dial info.
 func (d *db) CurrentDB() *mongo.Database {
-	return d.DB(d.diaInfo.DBName)
+	return d.DB(d.shared.diaInfo.DBName)
+}
+
+// startHealthCheck starts a single background health checker.
+func (s *sharedClient) startHealthCheck() {
+	s.checkOnce.Do(func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		s.cancel = cancel
+		go s.runReconnectCheck(ctx)
+	})
 }
 
 // runReconnectCheck keeps the same method name and is still started in NewDB,
 // but it no longer reconnects (that was the bug).
 // It only performs a lightweight health check and logs when the server is unreachable.
 // The driver will recover connections automatically when the server comes back.
-func (d *db) runReconnectCheck(ctx context.Context) {
+func (s *sharedClient) runReconnectCheck(ctx context.Context) {
 	ticker := time.NewTicker(reconnectCheckInterval)
 	defer ticker.Stop()
 
@@ -147,33 +255,48 @@ func (d *db) runReconnectCheck(ctx context.Context) {
 		case <-ticker.C:
 		}
 
-		d.RLock()
-		cli := d.cli
-		d.RUnlock()
+		cli := s.client()
 		if cli == nil {
 			continue
 		}
 
 		// Never use the long-lived ctx directly for ping; always bound it.
 		pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := cli.Ping(pingCtx, readpref.Primary())
+		err := pingMongo(pingCtx, cli)
 		cancel()
 
 		if err != nil {
 			log.Logger.Warn("mongodb ping failed (driver will auto-recover)",
 				zap.Error(err),
-				zap.String("db", d.diaInfo.Addr),
+				zap.String("db", s.diaInfo.Addr),
 			)
 		}
 	}
 }
 
+// Close decreases the ref-count and disconnects when the last user closes.
 func (d *db) Close(ctx context.Context) error {
-	d.Lock()
-	cli := d.cli
-	d.cli = nil
-	d.Unlock()
+	if d.shared == nil {
+		return nil
+	}
 
+	sharedClientsMu.Lock()
+	d.shared.refCount--
+	refCount := d.shared.refCount
+	if refCount == 0 {
+		delete(sharedClients, d.shared.uri)
+	}
+	sharedClientsMu.Unlock()
+
+	if refCount > 0 {
+		return nil
+	}
+
+	if d.shared.cancel != nil {
+		d.shared.cancel()
+	}
+
+	cli := d.shared.client()
 	if cli == nil {
 		return nil
 	}
@@ -185,9 +308,22 @@ func (d *db) Close(ctx context.Context) error {
 	closeCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	return cli.Disconnect(closeCtx)
+	err := disconnectMongo(closeCtx, cli)
+	d.shared.mu.Lock()
+	d.shared.cli = nil
+	d.shared.mu.Unlock()
+	return err
 }
 
+// GetCol returns a collection handle by name.
 func (d *db) GetCol(colName string) *mongo.Collection {
 	return d.CurrentDB().Collection(colName)
+}
+
+// client returns the underlying Mongo client.
+func (s *sharedClient) client() *mongo.Client {
+	s.mu.RLock()
+	cli := s.cli
+	s.mu.RUnlock()
+	return cli
 }
