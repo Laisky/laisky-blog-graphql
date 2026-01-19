@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
@@ -63,6 +64,11 @@ func (t *WebFetchTool) Definition() mcp.Tool {
 			mcp.Required(),
 			mcp.Description("The URL to retrieve."),
 		),
+		mcp.WithBoolean(
+			"output_markdown",
+			mcp.Description("Whether to return Markdown instead of raw HTML."),
+			mcp.DefaultBool(false),
+		),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(true),
@@ -94,6 +100,12 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		}
 	}
 
+	start := time.Now().UTC()
+	t.logger.Debug("web_fetch started",
+		zap.String("url", urlValue),
+		zap.Bool("output_markdown", outputMarkdown),
+	)
+
 	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebFetch, "web fetch"); err != nil {
 		t.logger.Warn("web_fetch billing denied", zap.Error(err), zap.String("url", urlValue))
 		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
@@ -101,9 +113,21 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 
 	content, err := t.fetcher(ctx, t.store, urlValue, apiKey, outputMarkdown)
 	if err != nil {
-		t.logger.Error("web_fetch failed", zap.Error(err), zap.String("url", urlValue))
+		t.logger.Error("web_fetch failed",
+			zap.Error(err),
+			zap.String("url", urlValue),
+			zap.Bool("output_markdown", outputMarkdown),
+			zap.Duration("duration", time.Since(start)),
+		)
 		return mcp.NewToolResultError(fmt.Sprintf("fetch failed: %v", err)), nil
 	}
+
+	t.logger.Debug("web_fetch completed",
+		zap.String("url", urlValue),
+		zap.Bool("output_markdown", outputMarkdown),
+		zap.Duration("duration", time.Since(start)),
+		zap.Int("content_len", len(content)),
+	)
 
 	payload := map[string]any{
 		"content": string(content),

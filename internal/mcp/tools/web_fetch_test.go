@@ -147,6 +147,34 @@ func TestWebFetchHandleOutputMarkdown(t *testing.T) {
 	require.True(t, gotOutputMarkdown)
 }
 
+func TestWebFetchHandleOutputMarkdownString(t *testing.T) {
+	var gotOutputMarkdown bool
+
+	tool := mustWebFetchTool(t,
+		func(context.Context) string { return "token" },
+		func(ctx context.Context, apiKey string, price oneapi.Price, reason string) error { return nil },
+		func(ctx context.Context, store *rlibs.DB, url string, apiKey string, outputMarkdown bool) ([]byte, error) {
+			gotOutputMarkdown = outputMarkdown
+			return []byte("ok"), nil
+		},
+	)
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Arguments: map[string]any{
+				"url":             "https://example.com",
+				"output_markdown": "true",
+			},
+		},
+	}
+
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+	require.True(t, gotOutputMarkdown)
+}
+
 func mustWebFetchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, fetcher DynamicFetcher) *WebFetchTool {
 	t.Helper()
 
