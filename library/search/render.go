@@ -9,9 +9,9 @@ import (
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 )
 
-type htmlToMarkdownConverter interface {
-	ConvertString(string) (string, error)
-}
+// type htmlToMarkdownConverter interface {
+// 	ConvertString(string) (string, error)
+// }
 
 // FetchDynamicURLContent is a wrapper for submit & fetch dynamic url content.
 // When apiKey is not empty and outputMarkdown is true, it converts the fetched HTML body
@@ -32,6 +32,10 @@ func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey stri
 
 		switch task.Status {
 		case rlibs.TaskStatusSuccess:
+			if task.OutputMarkdown && outputMarkdown {
+				return []byte(task.ResultMarkdown), nil
+			}
+
 			return task.ResultHTML, nil
 		case rlibs.TaskStatusPending,
 			rlibs.TaskStatusRunning:
