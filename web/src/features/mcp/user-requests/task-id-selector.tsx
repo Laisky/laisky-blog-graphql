@@ -197,7 +197,7 @@ export function TaskIdSelector({
       if (disabled) return;
 
       // Ignore if composing in IME
-      if (event.isComposing || event.nativeEvent.isComposing) {
+      if (event.nativeEvent.isComposing) {
         return;
       }
 

@@ -650,8 +650,7 @@ export function UserRequestsPage() {
             onChange={handleEditorChange}
             onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
               // Ignore if composing in IME (Input Method Editor)
-              // We check both synthetic event and nativeEvent for max compatibility
-              if (e.isComposing || e.nativeEvent.isComposing) {
+              if (e.nativeEvent.isComposing) {
                 return;
               }
 
