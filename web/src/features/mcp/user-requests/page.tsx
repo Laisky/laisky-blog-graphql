@@ -649,16 +649,23 @@ export function UserRequestsPage() {
             value={newContent}
             onChange={handleEditorChange}
             onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
-              // Enter without modifiers: submit the form
-              // Ctrl+Enter or Shift+Enter: insert newline (default behavior)
-              if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+              // Ignore if composing in IME (Input Method Editor)
+              // We check both synthetic event and nativeEvent for max compatibility
+              if (e.isComposing || e.nativeEvent.isComposing) {
+                return;
+              }
+
+              // Ctrl+Enter or Meta+Enter (Cmd+Enter on macOS) to submit
+              // Standard Enter now just inserts a newline (default textarea behavior)
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 if (!isEditorDisabled && newContent.trim()) {
+                  console.debug('[UserRequests] Keyboard shortcut triggered request creation');
                   handleCreateRequest();
                 }
               }
             }}
-            placeholder="Describe the feedback or task for your AI assistant…"
+            placeholder="Describe the feedback or task for your AI assistant… (Ctrl + Enter to queue)"
             disabled={isEditorDisabled}
             className="border-primary/20 bg-background focus-visible:ring-primary/30"
           />

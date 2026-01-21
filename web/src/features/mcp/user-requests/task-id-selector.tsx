@@ -196,6 +196,11 @@ export function TaskIdSelector({
     (event: KeyboardEvent<HTMLInputElement>) => {
       if (disabled) return;
 
+      // Ignore if composing in IME
+      if (event.isComposing || event.nativeEvent.isComposing) {
+        return;
+      }
+
       switch (event.key) {
         case 'ArrowDown':
           event.preventDefault();
