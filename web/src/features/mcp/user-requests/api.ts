@@ -158,8 +158,13 @@ export interface UserRequest {
 export interface UserRequestListResponse {
   pending?: UserRequest[];
   consumed?: UserRequest[];
+  total_consumed?: number;
   user_id?: string;
   key_hint?: string;
+}
+
+export interface UserRequestSearchResponse {
+  results?: UserRequest[];
 }
 
 export interface SavedCommand {
@@ -221,6 +226,42 @@ export async function listUserRequests(
   }
 
   const response = await fetch(`${apiBasePath}api/requests?${params.toString()}`, {
+    cache: 'no-store',
+    headers: {
+      Authorization: authorization,
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    },
+    signal: options?.signal,
+  });
+
+  if (!response.ok) {
+    const message = (await response.text()) || response.statusText;
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+/**
+ * searchUserRequests performs a fuzzy search on user requests.
+ */
+export async function searchUserRequests(
+  apiKey: string,
+  query: string,
+  options?: {
+    limit?: number;
+    signal?: AbortSignal;
+  }
+): Promise<UserRequestSearchResponse> {
+  const authorization = ensureAuthorization(apiKey);
+  const apiBasePath = resolveToolApiBase('get_user_requests');
+  const params = new URLSearchParams({ q: query });
+  if (options?.limit) {
+    params.append('limit', options.limit.toString());
+  }
+
+  const response = await fetch(`${apiBasePath}api/requests/search?${params.toString()}`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,

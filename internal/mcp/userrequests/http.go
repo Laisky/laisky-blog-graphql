@@ -83,6 +83,8 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleDeleteConsumed(w, r)
 	case r.URL.Path == "/api/requests/reorder" && r.Method == http.MethodPut:
 		h.handleReorder(w, r)
+	case r.URL.Path == "/api/requests/search" && r.Method == http.MethodGet:
+		h.handleSearch(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/requests/") && r.Method == http.MethodDelete:
 		h.handleDeleteOne(w, r)
 	default:
@@ -114,7 +116,7 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	cursor := query.Get("cursor")
 	limit, _ := strconv.Atoi(query.Get("limit"))
 
-	pending, consumed, err := service.ListRequests(ctx, auth, taskID, includeAllTasks, cursor, limit)
+	pending, consumed, totalConsumed, err := service.ListRequests(ctx, auth, taskID, includeAllTasks, cursor, limit)
 	if err != nil {
 		logger.Error("list user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load user requests")
@@ -122,10 +124,46 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]any{
-		"pending":  serializeRequests(pending),
-		"consumed": serializeRequests(consumed),
-		"user_id":  auth.UserIdentity,
-		"key_hint": auth.KeySuffix,
+		"pending":        serializeRequests(pending),
+		"consumed":       serializeRequests(consumed),
+		"total_consumed": totalConsumed,
+		"user_id":        auth.UserIdentity,
+		"key_hint":       auth.KeySuffix,
+	}
+
+	h.writeJSON(w, response)
+}
+
+func (h *httpHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
+	service := h.service
+	if service == nil {
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
+		return
+	}
+
+	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	if err != nil {
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	query := r.URL.Query()
+	q := query.Get("q")
+	limit, _ := strconv.Atoi(query.Get("limit"))
+
+	results, err := service.SearchRequests(ctx, auth, q, limit)
+	if err != nil {
+		logger.Error("search user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to search user requests")
+		return
+	}
+
+	response := map[string]any{
+		"results": serializeRequests(results),
 	}
 
 	h.writeJSON(w, response)

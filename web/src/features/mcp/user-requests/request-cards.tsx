@@ -56,7 +56,7 @@ export function PendingRequestCard({ request, onDelete, deleting, onPickup, onCo
       ref={setNodeRef}
       style={style}
       className={cn(
-        'border border-primary/30 bg-card shadow-sm min-h-32 max-h-56 flex flex-col relative group',
+        'border border-primary/30 bg-card shadow-sm min-h-32 max-h-56 flex flex-col relative group w-full min-w-0',
         isDragging && 'ring-2 ring-primary'
       )}
     >
@@ -69,13 +69,21 @@ export function PendingRequestCard({ request, onDelete, deleting, onPickup, onCo
         <GripVertical className="h-4 w-4" />
       </div>
       <CardHeader className="gap-2 flex-1 min-h-0 overflow-hidden flex flex-col pl-8">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground shrink-0">
-          <span>ID: {request.id}</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground shrink-0">
+          <span className="font-mono break-all line-clamp-1" title={request.id}>
+            ID: {request.id}
+          </span>
           <span>Queued: {formatDate(request.created_at)}</span>
-          {request.task_id && <span>Task: {request.task_id}</span>}
+          {request.task_id && (
+            <Badge variant="outline" className="h-4 text-[10px] px-1.5 font-normal">
+              {request.task_id}
+            </Badge>
+          )}
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap line-clamp-none">{request.content}</CardTitle>
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
+          <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap break-words line-clamp-none">
+            {request.content}
+          </CardTitle>
         </div>
       </CardHeader>
       <CardContent className="flex justify-end gap-2 shrink-0 pt-0">
@@ -129,19 +137,27 @@ export function ConsumedCard({
   isEditorDisabled,
 }: ConsumedCardProps) {
   return (
-    <Card className="border border-border/60 bg-card min-h-32 max-h-56 flex flex-col">
+    <Card className="border border-border/60 bg-card min-h-32 max-h-56 flex flex-col w-full min-w-0 transition-all hover:shadow-md hover:border-border">
       <CardHeader className="gap-2 flex-1 min-h-0 overflow-hidden flex flex-col">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground shrink-0">
-          <span>ID: {request.id}</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground shrink-0">
+          <span className="font-mono break-all line-clamp-1" title={request.id}>
+            ID: {request.id}
+          </span>
           <span>Queued: {formatDate(request.created_at)}</span>
-          {request.consumed_at && <span>Delivered: {formatDate(request.consumed_at)}</span>}
-          {request.task_id && <span>Task: {request.task_id}</span>}
+          {request.consumed_at && <span className="text-primary/70">Delivered: {formatDate(request.consumed_at)}</span>}
+          {request.task_id && (
+            <Badge variant="secondary" className="h-4 text-[10px] px-1.5 font-normal">
+              {request.task_id}
+            </Badge>
+          )}
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap line-clamp-none">{request.content}</CardTitle>
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
+          <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap break-words line-clamp-none">
+            {request.content}
+          </CardTitle>
         </div>
       </CardHeader>
-      <CardContent className="flex flex-wrap justify-end gap-2 shrink-0 pt-0">
+      <CardContent className="flex flex-wrap justify-end gap-2 shrink-0 pt-0 pb-3">
         {isPicked ? (
           <Button
             variant="secondary"

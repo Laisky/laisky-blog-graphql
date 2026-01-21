@@ -1,14 +1,15 @@
 import { closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { ChevronDown, ChevronUp, ClipboardList, Send, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Loader2, Search, Send, Trash2, X } from 'lucide-react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { ConfirmDialog, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/confirm-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ import {
   releaseHold,
   reorderUserRequests,
   type ReturnMode,
+  searchUserRequests,
   setDescriptionCollapsed,
   setHold,
   setReturnModeOnServer,
@@ -55,6 +57,7 @@ export function UserRequestsPage() {
   const { apiKey } = useApiKey();
   const [pending, setPending] = useState<UserRequest[]>([]);
   const [consumed, setConsumed] = useState<UserRequest[]>([]);
+  const [totalConsumed, setTotalConsumed] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [newContent, setNewContent] = useState('');
   const [taskId, setTaskId] = useState('');
@@ -80,6 +83,12 @@ export function UserRequestsPage() {
   const [visibleConsumedCount, setVisibleConsumedCount] = useState(10);
   const [hasMoreConsumed, setHasMoreConsumed] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // Search state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<UserRequest[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -140,6 +149,7 @@ export function UserRequestsPage() {
 
         setPending(data.pending ?? []);
         setConsumed(data.consumed ?? []);
+        setTotalConsumed(data.total_consumed ?? 0);
         setHasMoreConsumed((data.consumed?.length ?? 0) >= visibleCountRef.current);
 
         // Update return mode from server preference only if localStorage has no value
@@ -250,6 +260,7 @@ export function UserRequestsPage() {
       });
       const newItems = data.consumed ?? [];
       setConsumed((prev) => [...prev, ...newItems]);
+      setTotalConsumed(data.total_consumed ?? 0);
       setVisibleConsumedCount((prev) => prev + newItems.length);
       setHasMoreConsumed(newItems.length >= 10);
     } catch (error) {
@@ -455,6 +466,28 @@ export function UserRequestsPage() {
     setSelectedDeleteOptionIdx(idx);
     localStorage.setItem('mcp_delete_consumed_option', idx.toString());
   }, []);
+
+  const handleSearch = useCallback(
+    async (q: string) => {
+      setSearchQuery(q);
+      const key = normalizeApiKey(apiKey);
+      if (!key || !q.trim()) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        const data = await searchUserRequests(key, q.trim(), { limit: 50 });
+        setSearchResults(data.results ?? []);
+      } catch (error) {
+        console.error('Search failed:', error);
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [apiKey]
+  );
 
   const handleSelectSavedCommand = useCallback((content: string) => {
     setPickedRequestId(null);
@@ -745,7 +778,12 @@ export function UserRequestsPage() {
           <header className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-semibold text-foreground">Consumed history</h2>
-              <Badge variant="outline">{consumed.length}</Badge>
+              <Badge variant="outline">
+                {consumed.length}/{totalConsumed}
+              </Badge>
+              <Button type="button" variant="ghost" size="icon" onClick={() => setIsSearchOpen(true)} title="Search history">
+                <Search className="h-4 w-4" />
+              </Button>
             </div>
             {consumed.length > 0 && (
               <div className="flex items-center">
@@ -837,6 +875,98 @@ export function UserRequestsPage() {
         onConfirm={handleDeleteConsumedConfirm}
         isLoading={isDeletingConsumed}
       />
+
+      <Dialog open={isSearchOpen} onOpenChange={setIsSearchOpen}>
+        <DialogContent className="max-w-6xl w-full h-[100dvh] sm:h-[90vh] sm:w-[95vw] flex flex-col p-0 overflow-hidden sm:rounded-2xl border-none sm:border shadow-2xl transition-all duration-300 ring-0 focus:ring-0">
+          <DialogHeader className="p-6 border-b shrink-0 bg-background/80 backdrop-blur-md">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="space-y-1">
+                <DialogTitle className="text-2xl font-bold tracking-tight">Search Directive History</DialogTitle>
+                <p className="text-sm text-muted-foreground">Fuzzy search through all your previously consumed commands.</p>
+              </div>
+              <div className="relative flex-1 sm:max-w-md ml-auto">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground transition-colors group-focus-within:text-primary" />
+                <Input
+                  autoFocus
+                  placeholder="Type to search..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="pl-10 pr-10 h-12 text-base rounded-xl border-muted-foreground/20 focus-visible:ring-primary/20 transition-all bg-muted/50 focus:bg-background"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => handleSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-muted rounded-lg text-muted-foreground transition-all hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto min-h-0 bg-muted/20 custom-scrollbar overscroll-contain">
+            <div className="p-6">
+              {isSearching ? (
+                <div className="flex flex-col items-center justify-center h-[40vh] gap-4 text-muted-foreground">
+                  <div className="relative">
+                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <Search className="absolute inset-0 m-auto h-4 w-4 opacity-50" />
+                  </div>
+                  <p className="font-medium animate-pulse">Searching directives...</p>
+                </div>
+              ) : !searchQuery.trim() ? (
+                <div className="flex flex-col items-center justify-center h-[40vh] text-muted-foreground text-center space-y-4">
+                  <div className="p-4 bg-background rounded-full shadow-sm border">
+                    <Search className="h-10 w-10 opacity-20" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-lg font-medium text-foreground">Find what you need</p>
+                    <p className="max-w-xs mx-auto">Enter keywords or Task IDs to filter through your command history.</p>
+                  </div>
+                </div>
+              ) : searchResults.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[40vh] text-muted-foreground text-center space-y-2">
+                  <div className="text-4xl text-muted-foreground/20 italic font-serif">"?"</div>
+                  <p className="text-lg">
+                    No matches found for <span className="font-semibold text-foreground">"{searchQuery}"</span>
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => handleSearch('')} className="mt-4">
+                    Clear search
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+                  {searchResults.map((request) => (
+                    <ConsumedCard
+                      key={request.id}
+                      request={request}
+                      onDelete={handleDeleteRequest}
+                      deleting={Boolean(pendingDeletes[request.id])}
+                      onEditInEditor={handleEditInEditor}
+                      onAddToPending={handleAddToPending}
+                      isPicked={pickedRequestId === request.id}
+                      isEditorDisabled={isEditorDisabled}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="px-6 py-4 border-t bg-background/50 backdrop-blur-sm flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+              <Badge variant="outline" className="px-1.5 py-0 rounded-sm font-bold bg-muted/10">
+                {searchResults.length}
+              </Badge>
+              <span>results found</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground/60 hidden sm:block">
+              Tip: Use the interactive cards to quickly re-queue or edit commands.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -111,13 +111,13 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 // includeAllTasks is true, results span every task owned by the caller.
 // Consumed requests are returned in DESC order (newest first), supporting
 // cursor-based pagination using the Request.ID (UUID7).
-func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool, cursor string, limit int) ([]Request, []Request, error) {
+func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool, cursor string, limit int) ([]Request, []Request, int64, error) {
 	if auth == nil {
-		return nil, nil, ErrInvalidAuthorization
+		return nil, nil, 0, ErrInvalidAuthorization
 	}
 
 	if err := s.pruneExpired(ctx); err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
 	if limit <= 0 {
@@ -135,6 +135,11 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 		consumedQuery = consumedQuery.Where("task_id = ?", filteredTaskID)
 	}
 
+	var totalConsumed int64
+	if err := consumedQuery.Model(&Request{}).Count(&totalConsumed).Error; err != nil {
+		return nil, nil, 0, errors.Wrap(err, "count consumed user requests")
+	}
+
 	if cursor != "" {
 		consumedQuery = consumedQuery.Where("id < ?", cursor)
 	}
@@ -144,7 +149,7 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 		Order("sort_order ASC, created_at ASC").
 		Limit(defaultListLimit).
 		Find(&pending).Error; err != nil {
-		return nil, nil, errors.Wrap(err, "list pending user requests")
+		return nil, nil, 0, errors.Wrap(err, "list pending user requests")
 	}
 
 	consumed := make([]Request, 0)
@@ -152,7 +157,7 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 		Order("id DESC").
 		Limit(limit).
 		Find(&consumed).Error; err != nil {
-		return nil, nil, errors.Wrap(err, "list consumed user requests")
+		return nil, nil, 0, errors.Wrap(err, "list consumed user requests")
 	}
 
 	logTaskID := filteredTaskID
@@ -165,9 +170,33 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 		zap.String("task_id", logTaskID),
 		zap.Int("pending_count", len(pending)),
 		zap.Int("consumed_count", len(consumed)),
+		zap.Int64("total_consumed", totalConsumed),
 	)
 
-	return pending, consumed, nil
+	return pending, consumed, totalConsumed, nil
+}
+
+// SearchRequests performs a fuzzy search on user requests.
+func (s *Service) SearchRequests(ctx context.Context, auth *askuser.AuthorizationContext, query string, limit int) ([]Request, error) {
+	if auth == nil {
+		return nil, ErrInvalidAuthorization
+	}
+
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+
+	var results []Request
+	// Case-insensitive search
+	if err := s.db.WithContext(ctx).
+		Where("api_key_hash = ? AND content LIKE ?", auth.APIKeyHash, "%"+query+"%").
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&results).Error; err != nil {
+		return nil, errors.Wrap(err, "search user requests")
+	}
+
+	return results, nil
 }
 
 // ConsumeAllPending fetches all pending requests in FIFO order (oldest first) and atomically marks them as consumed.
