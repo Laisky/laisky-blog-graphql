@@ -4,6 +4,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 	"time"
@@ -193,12 +194,18 @@ func (r *QueryResolver) BlogTwitterCard(ctx context.Context,
 		}
 	}
 
+	return r.blogTwitterCardFormat(title, imgURL, name), nil
+}
+
+func (r *QueryResolver) blogTwitterCardFormat(title, imgURL, name string) string {
 	return fmt.Sprintf(gutils.Dedent(`
 		<meta name="twitter:card" content="summary_large_image">
 		<meta name="twitter:title" content="%s">
 		<meta name="twitter:image" content="%s">
 		<meta name="twitter:site" content="https://blog.laisky.com/p/%s/">`),
-		title, imgURL, name), nil
+		html.EscapeString(title),
+		html.EscapeString(imgURL),
+		html.EscapeString(name))
 }
 
 func (r *QueryResolver) BlogComments(ctx context.Context,
