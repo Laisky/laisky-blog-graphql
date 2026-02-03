@@ -16,9 +16,11 @@ import { defaultToolsConfig, loadRuntimeConfig, type ToolsConfig } from '@/lib/r
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
 import { HomePage } from '@/pages/home';
 import { NotFoundPage } from '@/pages/not-found';
+import { SsoLoginPage } from '@/pages/sso-login';
 import './index.css';
 
 const routes = [
+  { path: '/sso/login', element: <SsoLoginPage /> },
   {
     path: '/',
     element: <AppLayout />,

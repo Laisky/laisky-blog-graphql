@@ -382,7 +382,8 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 		newpost.Type.String())
 }
 
-// BlogLogin login in blog page
+// BlogLogin authenticates a user with the provided account and password.
+// It accepts a context, account, and password, returning the login response or an error.
 func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
@@ -390,7 +391,10 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	logger := ginMw.GetLogger(ctx).Named("blog_login")
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
-		return nil, errors.Wrapf(err, "user `%v` invalidate", account)
+		if !errors.Is(err, model.ErrInvalidCredentials) {
+			logger.Error("blog login failed", zap.Error(err))
+		}
+		return nil, maskLoginError(err)
 	}
 
 	uc := &jwt.UserClaims{
