@@ -13,36 +13,26 @@ import { WebFetchPage } from '@/features/mcp/web-fetch/page';
 import { WebSearchPage } from '@/features/mcp/web-search/page';
 import { ApiKeyProvider } from '@/lib/api-key-context';
 import { defaultToolsConfig, loadRuntimeConfig, type ToolsConfig } from '@/lib/runtime-config';
+import { applySiteBranding } from '@/lib/site-branding';
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
 import { HomePage } from '@/pages/home';
 import { NotFoundPage } from '@/pages/not-found';
 import { SsoLoginPage } from '@/pages/sso-login';
 import './index.css';
 
-const routes = [
-  { path: '/sso/login', element: <SsoLoginPage /> },
-  {
-    path: '/',
-    element: <AppLayout />,
-    errorElement: <NotFoundPage />,
-    children: [
-      { index: true, element: <HomePage /> },
-      { path: 'tools/ask_user', element: <AskUserPage /> },
-      { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
-      { path: 'tools/web_search', element: <WebSearchPage /> },
-      { path: 'tools/web_fetch', element: <WebFetchPage /> },
-      { path: 'tools/call_log', element: <CallLogPage /> },
-      { path: 'settings', element: <SettingsPage /> },
-      { path: 'debug/*', element: <InspectorPage /> },
-    ],
-  },
-  { path: '*', element: <NotFoundPage /> },
-];
+type RouterKind = 'mcp' | 'sso';
 
+/**
+ * bootstrap loads runtime configuration, builds the router, and renders the application.
+ * It returns a promise that resolves when initialization completes or rejects on failure.
+ */
 async function bootstrap() {
   const runtimeConfig = await loadRuntimeConfig();
   const basename = normalizeBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL);
   const toolsConfig: ToolsConfig = runtimeConfig?.tools ?? defaultToolsConfig;
+  applySiteBranding(runtimeConfig?.site);
+  const routerKind = resolveRouterKind(runtimeConfig?.site?.router);
+  const routes = routerKind === 'sso' ? buildSsoRoutes() : buildMcpRoutes();
   const router = createBrowserRouter(routes, { basename });
 
   const container = document.getElementById('root');
@@ -69,6 +59,60 @@ bootstrap().catch((error) => {
   }
 });
 
+/**
+ * buildMcpRoutes builds the router table for the MCP console experience.
+ * It returns the route configuration used by React Router.
+ */
+function buildMcpRoutes() {
+  return [
+    { path: '/sso/login', element: <SsoLoginPage /> },
+    {
+      path: '/',
+      element: <AppLayout />,
+      errorElement: <NotFoundPage />,
+      children: [
+        { index: true, element: <HomePage /> },
+        { path: 'tools/ask_user', element: <AskUserPage /> },
+        { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
+        { path: 'tools/web_search', element: <WebSearchPage /> },
+        { path: 'tools/web_fetch', element: <WebFetchPage /> },
+        { path: 'tools/call_log', element: <CallLogPage /> },
+        { path: 'settings', element: <SettingsPage /> },
+        { path: 'debug/*', element: <InspectorPage /> },
+      ],
+    },
+    { path: '*', element: <NotFoundPage /> },
+  ];
+}
+
+/**
+ * buildSsoRoutes builds the router table for the standalone SSO experience.
+ * It returns the route configuration used by React Router.
+ */
+function buildSsoRoutes() {
+  return [
+    { path: '/', element: <SsoLoginPage /> },
+    { path: '/sso/login', element: <SsoLoginPage /> },
+    { path: '*', element: <NotFoundPage /> },
+  ];
+}
+
+/**
+ * resolveRouterKind normalizes the router identifier into a supported kind.
+ * It accepts the raw router name and returns a known router kind.
+ */
+function resolveRouterKind(raw: string | undefined): RouterKind {
+  const normalized = raw?.trim().toLowerCase();
+  if (normalized === 'sso') {
+    return 'sso';
+  }
+  return 'mcp';
+}
+
+/**
+ * normalizeBasename normalizes the router basename to a non-empty string.
+ * It accepts a candidate basename and returns "/" when the input is empty.
+ */
 function normalizeBasename(input: string | undefined): string {
   if (!input) {
     return '/';

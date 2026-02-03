@@ -76,6 +76,25 @@
   }
 }
 
+:root[data-site-theme='mcp'] {
+  --primary: 199 89% 48%;
+  --accent: 199 89% 48%;
+  --ring: 199 89% 48%;
+}
+
+:root[data-site-theme='sso'] {
+  --primary: 258 90% 66%;
+  --accent: 258 90% 66%;
+  --ring: 258 90% 66%;
+}
+
+:root[data-site-theme='sso'][data-theme='dark'],
+.dark[data-site-theme='sso'] {
+  --primary: 258 84% 72%;
+  --accent: 258 84% 72%;
+  --ring: 258 84% 72%;
+}
+
 body {
   min-height: 100vh;
   font-family:

@@ -1,3 +1,6 @@
+/**
+ * ToolsConfig describes which MCP tools are available for the current site.
+ */
 export interface ToolsConfig {
   web_search: boolean;
   web_fetch: boolean;
@@ -6,10 +9,26 @@ export interface ToolsConfig {
   extract_key_info: boolean;
 }
 
+/**
+ * RuntimeSiteConfig describes site-specific branding and routing metadata.
+ */
+export interface RuntimeSiteConfig {
+  id?: string;
+  title?: string;
+  favicon?: string;
+  theme?: string;
+  router?: string;
+  publicBasePath?: string;
+}
+
+/**
+ * RuntimeConfig describes the runtime configuration fetched from the backend.
+ */
 export interface RuntimeConfig {
   urlPrefix?: string;
   publicBasePath?: string;
   tools?: ToolsConfig;
+  site?: RuntimeSiteConfig;
 }
 
 // Default tools config with all tools enabled
@@ -21,6 +40,9 @@ export const defaultToolsConfig: ToolsConfig = {
   extract_key_info: true,
 };
 
+/**
+ * loadRuntimeConfig fetches the runtime configuration from the backend.
+ */
 export async function loadRuntimeConfig(): Promise<RuntimeConfig | null> {
   try {
     const response = await fetch('/runtime-config.json', { cache: 'no-store' });

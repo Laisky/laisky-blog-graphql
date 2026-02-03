@@ -48,6 +48,21 @@ settings:
   web:
     url_prefix: /mcp # internal mount path on the Go server
     public_url_prefix: / # set to '/' to hide the prefix in generated links
+    sites:
+      mcp:
+        host: mcp.laisky.com
+        title: Laisky MCP
+        favicon: https://s3.laisky.com/uploads/2025/12/mcp_icon.png
+        theme: mcp
+        router: mcp
+        public_base_path: /
+      sso:
+        host: sso.laisky.com
+        title: Laisky SSO
+        favicon: https://s3.laisky.com/uploads/2025/12/sso_icon.png
+        theme: sso
+        router: sso
+        public_base_path: /
   websearch:
     max_retry: 3 # default: 3
     engines:

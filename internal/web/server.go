@@ -148,6 +148,7 @@ func RunServer(addr string, resolver *Resolver) {
 		zap.String("internal_prefix", prefix.display(prefix.internal)),
 		zap.String("public_prefix", prefix.display(prefix.public)),
 	)
+	siteConfigs := loadSiteConfigSet(log.Logger.Named("site_config"), prefix)
 
 	gin.SetMode(gin.ReleaseMode)
 	if gconfig.Shared.GetBool("debug") {
@@ -342,6 +343,7 @@ func RunServer(addr string, resolver *Resolver) {
 	}
 
 	runtimeConfigHandler := func(ctx *gin.Context) {
+		logger := ginMw.GetLogger(ctx).Named("runtime_config")
 		switch ctx.Request.Method {
 		case http.MethodGet, http.MethodHead:
 		default:
@@ -372,9 +374,19 @@ func RunServer(addr string, resolver *Resolver) {
 			toolsConfig["extract_key_info"] = resolver.args.MCPToolsSettings.ExtractKeyInfoEnabled
 		}
 
+		siteConfig := siteConfigs.resolveForRequest(ctx.Request)
+		if siteConfig.PublicBasePath == "" {
+			siteConfig.PublicBasePath = prefix.public
+		}
+		logger.Debug("runtime config resolved",
+			zap.String("host", requestHost(ctx.Request)),
+			zap.String("site_id", siteConfig.ID),
+		)
+
 		ctx.JSON(http.StatusOK, gin.H{
 			"urlPrefix":      prefix.internal,
-			"publicBasePath": prefix.public,
+			"publicBasePath": siteConfig.PublicBasePath,
+			"site":           siteConfig,
 			"tools":          toolsConfig,
 		})
 	}
