@@ -335,13 +335,25 @@ func (r *MutationResolver) UserLogin(ctx context.Context,
 func (r *MutationResolver) UserRegister(ctx context.Context,
 	account string, password string, displayName string, captcha string) (
 	*models.UserRegisterResponse, error) {
+	if err := validateInputLength(100, account, password, displayName); err != nil {
+		return nil, err
+	}
+	if err := validateInputLength(500, captcha); err != nil {
+		return nil, err
+	}
+	if err := validateInputLength(100, account, password, displayName); err != nil {
+		return nil, err
+	}
+	if err := validateInputLength(500, captcha); err != nil {
+		return nil, err
+	}
 	_, err := r.svc.UserRegister(ctx, account, password, displayName)
 	if err != nil {
 		return nil, errors.Wrap(err, "register user")
 	}
 
 	return &models.UserRegisterResponse{
-		Msg: fmt.Sprintf("check your email `%s` to active your account", account),
+		Msg: fmt.Sprintf("check your email `%s` to active your account", html.EscapeString(account)),
 	}, nil
 }
 
@@ -388,6 +400,12 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
 ) (resp *models.BlogLoginResponse, err error) {
+	if err := validateInputLength(100, account, password); err != nil {
+		return nil, err
+	}
+	if err := validateInputLength(100, account, password); err != nil {
+		return nil, err
+	}
 	logger := ginMw.GetLogger(ctx).Named("blog_login")
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {

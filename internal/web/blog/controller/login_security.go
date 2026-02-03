@@ -21,3 +21,13 @@ func maskLoginError(err error) error {
 
 	return errors.WithStack(errors.New(loginFailedMessage))
 }
+
+// validateInputLength checks if the provided inputs are within the length limit.
+func validateInputLength(limit int, inputs ...string) error {
+	for _, input := range inputs {
+		if len(input) > limit {
+			return errors.New("input too long")
+		}
+	}
+	return nil
+}
