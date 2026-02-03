@@ -204,7 +204,7 @@ export function isInternalIPv4Address(octets: [number, number, number, number]):
  */
 export function isInternalIPv6Address(hostname: string): boolean {
   let normalized = hostname.toLowerCase();
-  
+
   // Strip brackets if present (e.g., [fd00::1] -> fd00::1)
   if (normalized.startsWith('[') && normalized.endsWith(']')) {
     normalized = normalized.slice(1, -1);
