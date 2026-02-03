@@ -18,10 +18,11 @@ Disqus exported comments data is saved at: disqus_exported_data.xml
 
 Below is the Disqus official Disqus exported comment structure
 
->>>
+> > >
+
 # Comments Export
 
-*Written by Disqus — Updated over 7 years ago*
+_Written by Disqus — Updated over 7 years ago_
 
 Note: exports are designed for backup purposes only and do not follow the same format as our [custom XML import format](https://help.disqus.com/customer/portal/articles/472150). Exports cannot be re-imported to other Disqus forums.
 
@@ -127,4 +128,5 @@ Example output:
 
 </disqus>
 ```
+
 <<<

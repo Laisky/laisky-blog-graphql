@@ -154,9 +154,10 @@ export function SsoLoginPage() {
     }
   };
 
-  const redirectBanner = redirectTarget.url
-    ? { status: { tone: 'info', message: 'Redirect destination ready.' }, subtext: redirectTarget.display }
-    : { status: { tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' }, subtext: redirectTarget.display };
+  const redirectStatus: StatusState = redirectTarget.url
+    ? { tone: 'info', message: 'Redirect destination ready.' }
+    : { tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' };
+  const redirectBanner = { status: redirectStatus, subtext: redirectTarget.display };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
