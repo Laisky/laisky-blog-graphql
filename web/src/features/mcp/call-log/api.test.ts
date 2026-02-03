@@ -42,7 +42,7 @@ describe('fetchCallLogs', () => {
     await fetchCallLogs('test-key', {});
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/mcp/api/logs',
+      '/tools/call_log/api/logs',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
       })
@@ -50,10 +50,10 @@ describe('fetchCallLogs', () => {
 
     fetchMock.mockClear();
     fetchMock.mockResolvedValue(createCallLogResponse());
-    window.history.replaceState({}, '', '/mcp/tools/call_log');
+    window.history.replaceState({}, '', '/tools/call_log');
 
     await fetchCallLogs('test-key', { page: 2, pageSize: 50 });
 
-    expect(fetchMock).toHaveBeenCalledWith('/mcp/tools/call_log/api/logs?page=2&page_size=50', expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith('/tools/call_log/api/logs?page=2&page_size=50', expect.any(Object));
   });
 });

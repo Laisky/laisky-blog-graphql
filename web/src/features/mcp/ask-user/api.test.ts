@@ -35,19 +35,19 @@ describe('ask_user API helpers', () => {
 
   it('uses the updated pathname for listRequests and submitAnswer', async () => {
     await listRequests('test-key');
-    expect(fetchMock).toHaveBeenCalledWith('/mcp/api/requests', expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith('/tools/ask_user/api/requests', expect.any(Object));
 
     fetchMock.mockClear();
     fetchMock.mockResolvedValue(createListResponse());
-    window.history.replaceState({}, '', '/mcp/tools/ask_user');
+    window.history.replaceState({}, '', '/tools/ask_user');
 
     await listRequests('test-key');
-    expect(fetchMock).toHaveBeenCalledWith('/mcp/tools/ask_user/api/requests', expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith('/tools/ask_user/api/requests', expect.any(Object));
 
     fetchMock.mockClear();
     fetchMock.mockResolvedValue(createOkResponse());
 
     await submitAnswer('test-key', 'req-1', 'answer');
-    expect(fetchMock).toHaveBeenCalledWith('/mcp/tools/ask_user/api/requests/req-1', expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenCalledWith('/tools/ask_user/api/requests/req-1', expect.objectContaining({ method: 'POST' }));
   });
 });

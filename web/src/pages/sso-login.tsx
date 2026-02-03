@@ -18,6 +18,8 @@ const USER_LOGIN_MUTATION = `
 
 /**
  * SsoLoginResponse describes the GraphQL response for SSO login.
+ * Parameters: The interface fields map the UserLogin token payload returned by the API.
+ * Returns: The interface is used to type the GraphQL response shape.
  */
 interface SsoLoginResponse {
   UserLogin: {
@@ -27,6 +29,8 @@ interface SsoLoginResponse {
 
 /**
  * RedirectTarget describes the parsed redirect target for the SSO flow.
+ * Parameters: The interface fields describe the parsed URL, display string, and optional error message.
+ * Returns: The interface is used as a shape for parse results.
  */
 export interface RedirectTarget {
   url: URL | null;
@@ -36,6 +40,8 @@ export interface RedirectTarget {
 
 /**
  * parseRedirectTarget validates and normalizes the redirect_to parameter.
+ * Parameters: rawValue is the redirect_to query value, origin is the current page origin for resolving relative URLs.
+ * Returns: A RedirectTarget containing the resolved URL, display string, and optional error message.
  */
 export function parseRedirectTarget(rawValue: string | null, origin: string): RedirectTarget {
   const raw = (rawValue ?? '').trim();
@@ -68,6 +74,14 @@ export function parseRedirectTarget(rawValue: string | null, origin: string): Re
     };
   }
 
+  if (!isAllowedRedirectHost(parsed)) {
+    return {
+      url: null,
+      display: parsed.toString(),
+      error: 'Unsupported redirect host. Only *.laisky.com domains or internal IPs are allowed.',
+    };
+  }
+
   return {
     url: parsed,
     display: parsed.toString(),
@@ -76,6 +90,8 @@ export function parseRedirectTarget(rawValue: string | null, origin: string): Re
 
 /**
  * isAllowedRedirectProtocol checks whether a redirect URL uses an approved protocol.
+ * Parameters: target is the parsed redirect URL to inspect.
+ * Returns: True when the protocol is http or https.
  */
 export function isAllowedRedirectProtocol(target: URL): boolean {
   const protocol = target.protocol.toLowerCase();
@@ -83,7 +99,146 @@ export function isAllowedRedirectProtocol(target: URL): boolean {
 }
 
 /**
+ * isAllowedRedirectHost checks whether a redirect URL hostname is permitted.
+ * Parameters: target is the parsed redirect URL to inspect.
+ * Returns: True when the hostname is a laisky.com domain or an internal IP.
+ */
+export function isAllowedRedirectHost(target: URL): boolean {
+  const hostname = normalizeHostname(target.hostname);
+  return isAllowedLaiskyDomain(hostname) || isInternalIPAddress(hostname);
+}
+
+/**
+ * normalizeHostname lowercases and trims the hostname for comparison.
+ * Parameters: hostname is the raw hostname string from the URL.
+ * Returns: The normalized hostname without trailing dots.
+ */
+export function normalizeHostname(hostname: string): string {
+  const trimmed = hostname.trim().toLowerCase();
+  return trimmed.endsWith('.') ? trimmed.slice(0, -1) : trimmed;
+}
+
+/**
+ * isAllowedLaiskyDomain verifies that the hostname is laisky.com or a subdomain.
+ * Parameters: hostname is the normalized hostname string.
+ * Returns: True when hostname matches laisky.com or ends with .laisky.com.
+ */
+export function isAllowedLaiskyDomain(hostname: string): boolean {
+  return hostname === 'laisky.com' || hostname.endsWith('.laisky.com');
+}
+
+/**
+ * isInternalIPAddress verifies that the hostname is an internal IP address.
+ * Parameters: hostname is the normalized hostname string.
+ * Returns: True when hostname is an internal IPv4 or IPv6 address.
+ */
+export function isInternalIPAddress(hostname: string): boolean {
+  const ipv4 = parseIPv4Address(hostname);
+  if (ipv4) {
+    return isInternalIPv4Address(ipv4);
+  }
+
+  if (hostname.includes(':')) {
+    return isInternalIPv6Address(hostname);
+  }
+
+  return false;
+}
+
+/**
+ * parseIPv4Address parses a dotted IPv4 string into octets.
+ * Parameters: hostname is the candidate IPv4 string.
+ * Returns: A tuple of octets when valid, otherwise null.
+ */
+export function parseIPv4Address(hostname: string): [number, number, number, number] | null {
+  const parts = hostname.split('.');
+  if (parts.length !== 4) {
+    return null;
+  }
+
+  const octets: number[] = [];
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) {
+      return null;
+    }
+    const value = Number(part);
+    if (Number.isNaN(value) || value < 0 || value > 255) {
+      return null;
+    }
+    octets.push(value);
+  }
+
+  return [octets[0], octets[1], octets[2], octets[3]];
+}
+
+/**
+ * isInternalIPv4Address checks whether an IPv4 address is in a private range.
+ * Parameters: octets is the IPv4 address represented as four octets.
+ * Returns: True when the address is within RFC1918 or loopback ranges.
+ */
+export function isInternalIPv4Address(octets: [number, number, number, number]): boolean {
+  const [first, second] = octets;
+  if (first === 10) {
+    return true;
+  }
+  if (first === 172 && second >= 16 && second <= 31) {
+    return true;
+  }
+  if (first === 192 && second === 168) {
+    return true;
+  }
+  if (first === 127) {
+    return true;
+  }
+  // 100.64.0.0/10 (Carrier-Grade NAT)
+  if (first === 100 && second >= 64 && second <= 127) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * isInternalIPv6Address checks whether an IPv6 address is private or loopback.
+ * Parameters: hostname is the IPv6 hostname string.
+ * Returns: True when the address is within unique-local or loopback ranges.
+ */
+export function isInternalIPv6Address(hostname: string): boolean {
+  let normalized = hostname.toLowerCase();
+  
+  // Strip brackets if present (e.g., [fd00::1] -> fd00::1)
+  if (normalized.startsWith('[') && normalized.endsWith(']')) {
+    normalized = normalized.slice(1, -1);
+  }
+
+  if (normalized === '::1') {
+    return true;
+  }
+
+  if (normalized.includes('.')) {
+    const ipv4Part = normalized.slice(normalized.lastIndexOf(':') + 1);
+    const ipv4 = parseIPv4Address(ipv4Part);
+    if (ipv4) {
+      return isInternalIPv4Address(ipv4);
+    }
+  }
+
+  const firstHextet = normalized.split(':').find((part) => part.length > 0);
+  if (!firstHextet) {
+    return false;
+  }
+
+  const value = Number.parseInt(firstHextet, 16);
+  if (Number.isNaN(value)) {
+    return false;
+  }
+
+  return (value & 0xfe00) === 0xfc00;
+}
+
+/**
  * buildRedirectUrlWithToken appends the SSO token to the redirect URL.
+ * Parameters: target is the redirect URL to update, token is the SSO token to append.
+ * Returns: The redirect URL string containing the sso_token query parameter.
  */
 export function buildRedirectUrlWithToken(target: URL, token: string): string {
   const next = new URL(target.toString());
@@ -93,6 +248,8 @@ export function buildRedirectUrlWithToken(target: URL, token: string): string {
 
 /**
  * SsoLoginPage renders the SSO login form and redirects after successful login.
+ * Parameters: This component does not accept props.
+ * Returns: A JSX element containing the SSO login form.
  */
 export function SsoLoginPage() {
   const [searchParams] = useSearchParams();
@@ -112,6 +269,8 @@ export function SsoLoginPage() {
 
   /**
    * handleSubmit handles the SSO login submit and performs the redirect.
+   * Parameters: event is the form submit event to prevent default navigation.
+   * Returns: A Promise that resolves after handling the login attempt.
    */
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
