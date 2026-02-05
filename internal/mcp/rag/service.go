@@ -73,7 +73,7 @@ func NewService(db *gorm.DB, embedder Embedder, chunker Chunker, settings Settin
 	}
 
 	if err := runRAGMigrations(context.Background(), db, logger); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return svc, nil
@@ -159,16 +159,16 @@ func shouldFallbackToPgvector(err error) bool {
 // ExtractKeyInfo orchestrates ingestion (if needed) and hybrid retrieval for the request.
 func (s *Service) ExtractKeyInfo(ctx context.Context, input ExtractInput) ([]string, error) {
 	if err := s.validateInput(input); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	task, err := s.ensureTask(ctx, input.UserID, input.TaskID)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	if err := s.ensureChunks(ctx, task, input); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	queryTokens := tokenize(input.Query)
@@ -183,7 +183,7 @@ func (s *Service) ExtractKeyInfo(ctx context.Context, input ExtractInput) ([]str
 
 	candidates, err := s.fetchCandidates(ctx, task.ID, queryVec, max(16, input.TopK*4))
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	contexts := s.rankAndSelect(candidates, queryVec, queryTokens, input.TopK)

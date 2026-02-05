@@ -215,5 +215,8 @@ func (s *Telegram) SendMsgToUser(uid int, msg string) (err error) {
 			DisableWebPagePreview: true,
 		},
 	)
-	return err
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }

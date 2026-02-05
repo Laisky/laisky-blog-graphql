@@ -86,7 +86,7 @@ func (s *Telegram) registerAskUserHandler(ctx context.Context) {
 			DisableWebPagePreview: true,
 		}); err != nil {
 			logger.Error("send ask_user prompt", zap.Error(err), zap.Int("prompt_len", len(prompt)))
-			return err
+			return errors.WithStack(err)
 		}
 		return nil
 	})
@@ -174,14 +174,21 @@ func (s *Telegram) registerTelegramUID(ctx context.Context, uid int, tokenHash s
 	if s.askUserTokenDao == nil {
 		return errors.New("ask_user token dao not configured")
 	}
-	return s.askUserTokenDao.RegisterAskUserToken(ctx, uid, tokenHash)
+	if err := s.askUserTokenDao.RegisterAskUserToken(ctx, uid, tokenHash); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
 func (s *Telegram) lookupTelegramUID(ctx context.Context, tokenHash string) (int, error) {
 	if s.askUserTokenDao == nil {
 		return 0, errors.New("ask_user token dao not configured")
 	}
-	return s.askUserTokenDao.GetTelegramUIDByTokenHash(ctx, tokenHash)
+	uid, err := s.askUserTokenDao.GetTelegramUIDByTokenHash(ctx, tokenHash)
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+	return uid, nil
 }
 
 func (s *Telegram) handleAskUserAnswer(ctx context.Context, c tb.Context, reqID uuid.UUID, promptMsgID int) error {

@@ -21,6 +21,7 @@ import (
 const (
 	defaultEndpoint      = "https://serpapi.com/search.json"
 	httpRequestTimeout   = 10 * time.Second
+	// logBodyLimit caps the number of response bytes logged for debugging.
 	logBodyLimit         = 4096
 	serpGoogleEngineName = "serp_google"
 )

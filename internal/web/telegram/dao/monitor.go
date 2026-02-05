@@ -46,12 +46,17 @@ func (d *Monitor) GetUserAlertRelationsCol() *mongoLib.Collection {
 
 func (d *Monitor) CreateOrGetUser(ctx context.Context, user *tb.User) (u *model.MonitorUsers, err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_create_user")
+	var name string
+	name, err = sanitizeOptionalText(user.Username, maxMonitorNameLen, "user name")
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize user name")
+	}
 	info, err := d.GetUsersCol().UpdateOne(ctx,
 		bson.M{"uid": user.ID},
 		bson.M{"$setOnInsert": bson.M{
 			"created_at":  utils.Clock.GetUTCNow(),
 			"modified_at": utils.Clock.GetUTCNow(),
-			"name":        user.Username,
+			"name":        name,
 			"uid":         user.ID,
 		}},
 		options.Update().SetUpsert(true),
@@ -86,6 +91,9 @@ func generateJoinKey() string {
 
 func (d *Monitor) CreateAlertType(ctx context.Context, name string) (at *model.AlertTypes, err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_create_alert")
+	if name, err = sanitizeAlertName(name); err != nil {
+		return nil, errors.Wrap(err, "sanitize alert name")
+	}
 	// check if exists
 	info, err := d.GetAlertTypesCol().UpdateOne(ctx,
 		bson.M{"name": name},
@@ -162,20 +170,21 @@ func (d *Monitor) CreateOrGetUserAlertRelations(ctx context.Context, user *model
 
 func (d *Monitor) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.MonitorUsers, err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_load_users")
+	if cfg, err = sanitizeQueryCfg(cfg); err != nil {
+		return nil, errors.Wrap(err, "sanitize query config")
+	}
 	logger.Debug("LoadUsers",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
 		zap.Int("size", cfg.Size))
 
-	if cfg.Size > 200 || cfg.Size < 0 {
-		return nil, errors.Errorf("size shoule in [0~200]")
-	}
-
 	users = []*model.MonitorUsers{}
+	filter := bson.M{}
+	if cfg.Name != "" {
+		filter["name"] = cfg.Name
+	}
 	cur, err := d.GetUsersCol().Find(ctx,
-		bson.M{
-			"name": cfg.Name,
-		},
+		filter,
 		options.Find().SetSkip(int64(cfg.Page*cfg.Size)),
 		options.Find().SetLimit(int64(cfg.Size)),
 	)
@@ -192,20 +201,21 @@ func (d *Monitor) LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*mo
 
 func (d *Monitor) LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_load_alert_types")
+	if cfg, err = sanitizeQueryCfg(cfg); err != nil {
+		return nil, errors.Wrap(err, "sanitize query config")
+	}
 	logger.Debug("LoadAlertTypes",
 		zap.String("name", cfg.Name),
 		zap.Int("page", cfg.Page),
 		zap.Int("size", cfg.Size))
 
-	if cfg.Size > 200 || cfg.Size < 0 {
-		return nil, errors.Errorf("size shoule in [0~200]")
-	}
-
 	alerts = []*model.AlertTypes{}
+	filter := bson.M{}
+	if cfg.Name != "" {
+		filter["name"] = cfg.Name
+	}
 	cur, err := d.GetAlertTypesCol().Find(ctx,
-		bson.M{
-			"name": cfg.Name,
-		},
+		filter,
 		options.Find().SetSkip(int64(cfg.Page*cfg.Size)),
 		options.Find().SetLimit(int64(cfg.Size)),
 	)
@@ -295,6 +305,12 @@ func (d *Monitor) LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes)
 func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
 	token, alertType string) (alert *model.AlertTypes, err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_validate_token")
+	if alertType, err = sanitizeAlertName(alertType); err != nil {
+		return nil, errors.Wrap(err, "sanitize alert type")
+	}
+	if token, err = sanitizePushToken(token); err != nil {
+		return nil, errors.Wrap(err, "sanitize push token")
+	}
 	logger.Debug("ValidateTokenForAlertType", zap.String("alert_type", alertType))
 
 	alert = new(model.AlertTypes)
@@ -307,7 +323,7 @@ func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
 		return nil, errors.Wrapf(err, "load alert_type `%s` from db", alertType)
 	}
 
-	if token != alert.PushToken {
+	if !secureCompareString(token, alert.PushToken) {
 		return nil, errors.Errorf("token invalidate for `%s`", alertType)
 	}
 
@@ -320,6 +336,12 @@ func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,
 	joinKey string,
 ) (uar *model.UserAlertRelations, err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_register_uar")
+	if alertName, err = sanitizeAlertName(alertName); err != nil {
+		return nil, errors.Wrap(err, "sanitize alert name")
+	}
+	if joinKey, err = sanitizeJoinKey(joinKey); err != nil {
+		return nil, errors.Wrap(err, "sanitize join key")
+	}
 	logger.Info("RegisterUserAlertRelation", zap.Int("uid", u.UID), zap.String("alert", alertName))
 	alert := new(model.AlertTypes)
 	if err = d.GetAlertTypesCol().
@@ -330,7 +352,7 @@ func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,
 		return nil, errors.Wrap(err, "load alert_type by name: "+alertName)
 	}
 
-	if alert.JoinKey != joinKey {
+	if !secureCompareString(alert.JoinKey, joinKey) {
 		return nil, errors.Errorf("join_key invalidate")
 	}
 
@@ -356,6 +378,9 @@ func (d *Monitor) LoadUserByUID(ctx context.Context, telegramUID int) (u *model.
 
 func (d *Monitor) IsUserSubAlert(ctx context.Context, uid int, alertName string) (alert *model.AlertTypes, err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_is_user_sub_alert")
+	if alertName, err = sanitizeAlertName(alertName); err != nil {
+		return nil, errors.Wrap(err, "sanitize alert name")
+	}
 	logger.Debug("IsUserSubAlert", zap.Int("uid", uid), zap.String("alert", alertName))
 	alert = new(model.AlertTypes)
 	if err = d.GetAlertTypesCol().FindOne(ctx, bson.M{"name": alertName}).Decode(alert); err != nil {
@@ -399,6 +424,9 @@ func (d *Monitor) RefreshAlertTokenAndKey(ctx context.Context, alert *model.Aler
 
 func (d *Monitor) RemoveUAR(ctx context.Context, uid int, alertName string) (err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_remove_uar")
+	if alertName, err = sanitizeAlertName(alertName); err != nil {
+		return errors.Wrap(err, "sanitize alert name")
+	}
 	logger.Info("remove user_alert_relation", zap.Int("uid", uid), zap.String("alert", alertName))
 	alert := new(model.AlertTypes)
 	if err = d.GetAlertTypesCol().

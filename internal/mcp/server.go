@@ -272,7 +272,10 @@ func (s *Server) handleWebSearch(ctx context.Context, req mcp.CallToolRequest) (
 	result, err := s.webSearch.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "web_search", apiKey, args, start, duration, oneapi.PriceWebSearch.Int(), result, err)
-	return result, err
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
 }
 
 // handleWebFetch executes the web_fetch MCP tool. The context carries request metadata,
@@ -291,7 +294,10 @@ func (s *Server) handleWebFetch(ctx context.Context, req mcp.CallToolRequest) (*
 	result, err := s.webFetch.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "web_fetch", apiKey, args, start, duration, oneapi.PriceWebFetch.Int(), result, err)
-	return result, err
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
 }
 
 func extractAPIKey(authHeader string) string {
@@ -439,7 +445,10 @@ func (s *Server) handleAskUser(ctx context.Context, req mcp.CallToolRequest) (*m
 	result, err := s.askUser.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "ask_user", apiKey, args, start, duration, 0, result, err)
-	return result, err
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
 }
 
 func (s *Server) handleGetUserRequest(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -455,7 +464,10 @@ func (s *Server) handleGetUserRequest(ctx context.Context, req mcp.CallToolReque
 	result, err := s.getUserRequest.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "get_user_request", apiKey, args, start, duration, 0, result, err)
-	return result, err
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
 }
 
 func (s *Server) handleExtractKeyInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -471,7 +483,10 @@ func (s *Server) handleExtractKeyInfo(ctx context.Context, req mcp.CallToolReque
 	result, err := s.extractKeyInfo.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "extract_key_info", apiKey, args, start, duration, oneapi.PriceExtractKeyInfo.Int(), result, err)
-	return result, err
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
 }
 
 // handleMCPPipe executes the mcp_pipe MCP tool, auditing the invocation via the call logger.
@@ -488,7 +503,10 @@ func (s *Server) handleMCPPipe(ctx context.Context, req mcp.CallToolRequest) (*m
 	result, err := s.mcpPipe.Handle(ctx, req)
 	duration := time.Since(start)
 	s.recordToolInvocation(ctx, "mcp_pipe", apiKey, args, start, duration, 0, result, err)
-	return result, err
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
 }
 
 func newMCPHooks(logger logSDK.Logger) *srv.Hooks {

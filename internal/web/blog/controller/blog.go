@@ -108,7 +108,7 @@ func (r *QueryResolver) WhoAmI(ctx context.Context) (*model.User, error) {
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		logger.Debug("user invalidate", zap.Error(err))
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return user, nil
@@ -120,7 +120,7 @@ func (r *QueryResolver) GetBlogPostSeries(ctx context.Context,
 ) ([]*model.PostSeries, error) {
 	se, err := r.svc.LoadPostSeries(ctx, primitive.NilObjectID, key)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return se, nil
@@ -151,7 +151,7 @@ func (r *QueryResolver) BlogPosts(ctx context.Context,
 	}
 	results, err := r.svc.LoadPosts(ctx, cfg)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return results, nil
@@ -282,7 +282,7 @@ func (r *PostSeriesResolver) Posts(ctx context.Context,
 	logger := ginMw.GetLogger(ctx).Named("post_series_posts")
 	se, err := r.svc.LoadPostSeries(ctx, obj.ID, "")
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	if len(se) == 0 {
@@ -365,7 +365,7 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		logger.Debug("user invalidate", zap.Error(err))
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	newpost.Language = language
@@ -431,7 +431,7 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		logger.Debug("user invalidate", zap.Error(err))
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	post.Language = language

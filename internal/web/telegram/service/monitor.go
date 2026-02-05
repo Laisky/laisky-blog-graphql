@@ -166,7 +166,10 @@ func (s *Telegram) kickUser(ctx context.Context, us *userStat, au string) (err e
 		err = errors.New(errMsg)
 	}
 
-	return err
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
 func (s *Telegram) userQuitAlert(ctx context.Context,
@@ -208,7 +211,10 @@ func (s *Telegram) refreshAlertTokenAndKey(ctx context.Context, us *userStat, al
 		err = errors.New(errMsg)
 	}
 
-	return err
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
 func (s *Telegram) joinAlertGroup(ctx context.Context, us *userStat, kt string) (err error) {
@@ -221,12 +227,12 @@ func (s *Telegram) joinAlertGroup(ctx context.Context, us *userStat, kt string) 
 
 	user, err := s.monitorDao.CreateOrGetUser(ctx, us.user)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	uar, err := s.monitorDao.RegisterUserAlertRelation(ctx, user, alert, joinKey)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	return s.SendMsgToUser(int(us.user.ID),
@@ -261,11 +267,11 @@ func (s *Telegram) listAllMonitorAlerts(ctx context.Context,
 	us *userStat) (err error) {
 	u, err := s.monitorDao.LoadUserByUID(ctx, int(us.user.ID))
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	alerts, err := s.monitorDao.LoadAlertTypesByUser(ctx, u)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	var msg string

@@ -41,6 +41,9 @@ func New(tweet *dao.Tweets, search dao.Search) *Type {
 }
 
 func (s *Type) LoadTweetReplys(ctx context.Context, tweetID string) (replys []*model.Tweet, err error) {
+	if tweetID, err = sanitizeTweetID(tweetID); err != nil {
+		return nil, errors.Wrap(err, "sanitize tweet id")
+	}
 	cur, err := s.tweetDao.GetTweetCol().
 		Find(ctx, bson.M{"in_reply_to_status_id_str": tweetID})
 	if err != nil {
@@ -55,6 +58,9 @@ func (s *Type) LoadTweetReplys(ctx context.Context, tweetID string) (replys []*m
 }
 
 func (s *Type) LoadThreadByTweetID(ctx context.Context, id string) (tweets []*model.Tweet, err error) {
+	if id, err = sanitizeTweetID(id); err != nil {
+		return nil, errors.Wrap(err, "sanitize tweet id")
+	}
 	tweet := &model.Tweet{}
 	if err = s.tweetDao.GetTweetCol().
 		FindOne(ctx, bson.M{"id_str": id}).
@@ -151,6 +157,9 @@ func (s *Type) loadTweetsRecur(ctx context.Context,
 
 func (s *Type) LoadTweetByTwitterID(ctx context.Context, id string) (tweet *model.Tweet, err error) {
 	logger := gmw.GetLogger(ctx).Named("twitter_load_tweet_by_id")
+	if id, err = sanitizeTweetID(id); err != nil {
+		return nil, errors.Wrap(err, "sanitize tweet id")
+	}
 	tweet = &model.Tweet{}
 	if err = s.tweetDao.GetTweetCol().
 		FindOne(ctx, bson.M{"id_str": id}).
@@ -168,6 +177,9 @@ func (s *Type) LoadTweetByTwitterID(ctx context.Context, id string) (tweet *mode
 
 func (s *Type) LoadUserByID(ctx context.Context, id string) (user *model.User, err error) {
 	logger := gmw.GetLogger(ctx).Named("twitter_load_user_by_id")
+	if id, err = sanitizeTweetID(id); err != nil {
+		return nil, errors.Wrap(err, "sanitize user id")
+	}
 	user = new(model.User)
 	if err = s.tweetDao.GetUserCol().
 		FindOne(ctx, bson.M{"id_str": id}).
@@ -183,6 +195,9 @@ func (s *Type) LoadUserByID(ctx context.Context, id string) (user *model.User, e
 
 func (s *Type) LoadTweets(ctx context.Context, cfg *dto.LoadTweetArgs) (results []*model.Tweet, err error) {
 	logger := gmw.GetLogger(ctx).Named("twitter_load_tweets")
+	if cfg, err = sanitizeLoadTweetArgs(cfg); err != nil {
+		return nil, errors.Wrap(err, "sanitize tweet args")
+	}
 	logger.Debug("LoadTweets",
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("topic", cfg.Topic),
@@ -192,10 +207,6 @@ func (s *Type) LoadTweets(ctx context.Context, cfg *dto.LoadTweetArgs) (results 
 		zap.String("viewer", cfg.ViewerID),
 		zap.String("sort_order", cfg.SortOrder),
 	)
-	if cfg.Size > 100 || cfg.Size < 0 {
-		return nil, errors.Errorf("size shoule in [0~100]")
-	}
-
 	results = []*model.Tweet{}
 	var query = bson.D{}
 	if cfg.Topic != "" {
@@ -235,17 +246,11 @@ func (s *Type) LoadTweets(ctx context.Context, cfg *dto.LoadTweetArgs) (results 
 		query = append(query, bson.E{Key: "user.screen_name", Value: cfg.Username})
 	}
 
-	sort := bson.D{{Key: "-created_at", Value: 1}}
-	if cfg.SortBy != "" {
-		sort[0].Key = cfg.SortBy
-		switch cfg.SortOrder {
-		case "ASC":
-		case "DESC":
-			sort[0].Value = -1
-		default:
-			return nil, errors.Errorf("SortOrder must in `ASC/DESC`, but got %s", cfg.SortOrder)
-		}
+	sortDir := int32(-1)
+	if cfg.SortOrder == "ASC" {
+		sortDir = 1
 	}
+	sort := bson.D{{Key: cfg.SortBy, Value: sortDir}}
 
 	cur, err := s.tweetDao.GetTweetCol().
 		Find(ctx, query,

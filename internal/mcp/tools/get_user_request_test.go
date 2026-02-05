@@ -253,7 +253,7 @@ func (f *fakeUserRequestService) ConsumeFirstPending(ctx context.Context, auth *
 	if f.consumeAll != nil {
 		requests, err := f.consumeAll(ctx, auth, taskID)
 		if err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		if len(requests) > 0 {
 			return &requests[0], nil

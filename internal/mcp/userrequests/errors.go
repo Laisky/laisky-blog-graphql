@@ -15,4 +15,10 @@ var (
 	ErrSavedCommandNotFound = errors.New("saved command not found")
 	// ErrSavedCommandLimitReached indicates the user has reached the maximum number of saved commands.
 	ErrSavedCommandLimitReached = errors.New("saved command limit reached")
+	// ErrInvalidSearchQuery indicates the search query did not pass validation.
+	ErrInvalidSearchQuery = errors.New("invalid search query")
+	// ErrInvalidCursor indicates the cursor parameter did not pass validation.
+	ErrInvalidCursor = errors.New("invalid cursor")
+	// ErrInvalidRequestContent indicates the request content did not pass validation.
+	ErrInvalidRequestContent = errors.New("invalid request content")
 )

@@ -40,7 +40,7 @@ func (d *Datetime) UnmarshalGQL(vi interface{}) (err error) {
 		return errors.Errorf("unknown type of Datetime: `%+v`", vi)
 	}
 	if d.t, err = time.Parse(TimeLayout, v); err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	return nil
@@ -62,7 +62,7 @@ func (qs *QuotedString) UnmarshalGQL(vi interface{}) (err error) {
 	case string:
 		if v, err = url.QueryUnescape(v); err != nil {
 			log.Logger.Debug("unquote string", zap.String("quoted", v), zap.Error(err))
-			return err
+			return errors.WithStack(err)
 		}
 		*qs = QuotedString(v)
 		return nil
@@ -91,7 +91,7 @@ func (qs *JSONString) UnmarshalGQL(vi interface{}) (err error) {
 	// var v string
 	if err = json.UnmarshalFromString(v, &v); err != nil {
 		log.Logger.Debug("decode string", zap.String("quoted", v), zap.Error(err))
-		return err
+		return errors.WithStack(err)
 	}
 
 	*qs = JSONString(v)

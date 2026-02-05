@@ -73,6 +73,9 @@ func (s *Blog) LoadPostTags(ctx context.Context) (tags []string, err error) {
 // LoadPostSeries load post series
 func (s *Blog) LoadPostSeries(ctx context.Context,
 	id primitive.ObjectID, key string) (se []*model.PostSeries, err error) {
+	if key, err = sanitizePostSeriesKey(key); err != nil {
+		return nil, errors.Wrap(err, "sanitize post series key")
+	}
 	query := bson.D{}
 	if !id.IsZero() {
 		query = append(query, bson.E{Key: "_id", Value: id})
@@ -99,14 +102,14 @@ func (s *Blog) LoadPostSeries(ctx context.Context,
 // LoadPosts load posts
 func (s *Blog) LoadPosts(ctx context.Context,
 	cfg *dto.PostCfg) (results []*model.Post, err error) {
+	if cfg, err = sanitizePostCfg(cfg); err != nil {
+		return nil, errors.Wrap(err, "sanitize post config")
+	}
 	logger := s.logger.With(
 		zap.Int("page", cfg.Page), zap.Int("size", cfg.Size),
 		zap.String("tag", cfg.Tag),
 		zap.String("regexp", cfg.Regexp),
 	)
-	if cfg.Size > 200 || cfg.Size < 0 {
-		return nil, errors.Errorf("size shoule in [0~200]")
-	}
 
 	var query bson.D
 	if query, err = s.makeQuery(ctx, cfg); err != nil {
@@ -273,6 +276,8 @@ func (s *Blog) makeQuery(ctx context.Context,
 	return query, nil
 }
 
+// filterPosts reads posts from iter using ctx, applies filters from cfg,
+// and returns the matched posts or any decoding error.
 func (s *Blog) filterPosts(ctx context.Context,
 	cfg *dto.PostCfg, iter *mongo.Cursor) (results []*model.Post, err error) {
 	var (
@@ -280,7 +285,8 @@ func (s *Blog) filterPosts(ctx context.Context,
 		lengthFilter = getContentLengthFilter(cfg.Length)
 	)
 
-	results = make([]*model.Post, 0, cfg.Size)
+	const defaultPostFilterCapacity = 64
+	results = make([]*model.Post, 0, defaultPostFilterCapacity)
 	isValidate := true
 	for iter.Next(ctx) {
 		post := &model.Post{}
@@ -309,7 +315,10 @@ func (s *Blog) filterPosts(ctx context.Context,
 		isValidate = true
 	}
 
-	return results, err
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return results, nil
 }
 
 const defaultPostType = "html"
@@ -467,8 +476,8 @@ func (s *Blog) LoadAllCategories(ctx context.Context) (cates []*model.Category, 
 
 // LoadCategoryByName load category by name
 func (s *Blog) LoadCategoryByName(ctx context.Context, name string) (cate *model.Category, err error) {
-	if name == "" {
-		return nil, errors.Errorf("name is empty")
+	if name, err = sanitizeRequiredText(name, maxCategoryNameLength, "category name"); err != nil {
+		return nil, errors.Wrap(err, "sanitize category name")
 	}
 
 	cate = &model.Category{}
@@ -483,8 +492,11 @@ func (s *Blog) LoadCategoryByName(ctx context.Context, name string) (cate *model
 
 // LoadCategoryByURL load category by url
 func (s *Blog) LoadCategoryByURL(ctx context.Context, url string) (cate *model.Category, err error) {
+	if url, err = sanitizeOptionalText(url, maxCategoryURLLength, "category url"); err != nil {
+		return nil, errors.Wrap(err, "sanitize category url")
+	}
 	if url == "" {
-		return cate, nil
+		return nil, nil
 	}
 
 	cate = &model.Category{}
@@ -501,6 +513,10 @@ func (s *Blog) LoadCategoryByURL(ctx context.Context, url string) (cate *model.C
 
 // IsNameExists check if name exists
 func (s *Blog) IsNameExists(ctx context.Context, name string) (bool, error) {
+	if strings.TrimSpace(name) == "" {
+		return false, errors.New("post name is empty")
+	}
+
 	n, err := s.dao.GetPostsCol().CountDocuments(ctx, bson.D{{Key: "post_name", Value: name}})
 	if err != nil {
 		s.logger.Error("try to count post_name got error", zap.Error(err))
@@ -517,21 +533,34 @@ func (s *Blog) IsNameExists(ctx context.Context, name string) (bool, error) {
 //   - ptype: post type, markdown/slide
 func (s *Blog) NewPost(ctx context.Context,
 	authorID primitive.ObjectID, title, name, md, ptype string) (post *model.Post, err error) {
-	if isExists, err := s.IsNameExists(ctx, name); err != nil {
-		return nil, errors.Wrapf(err, "check post name `%s` exists", name)
+	normalizedName, err := normalizePostNameForQuery(name)
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize post name")
+	}
+	normalizedTitle, err := sanitizePostTitle(title)
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize post title")
+	}
+	normalizedType, err := sanitizePostType(ptype)
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize post type")
+	}
+
+	if isExists, err := s.IsNameExists(ctx, normalizedName); err != nil {
+		return nil, errors.Wrapf(err, "check post name `%s` exists", normalizedName)
 	} else if isExists {
-		return nil, errors.Errorf("post name `%v` already exists", name)
+		return nil, errors.Errorf("post name `%v` already exists", normalizedName)
 	}
 
 	ts := gutils.Clock.GetUTCNow()
 	p := &model.Post{
-		Type:       strings.ToLower(ptype),
+		Type:       normalizedType,
 		Markdown:   md,
 		Content:    ParseMarkdown2HTML([]byte(md)),
 		ModifiedAt: ts,
 		CreatedAt:  ts,
-		Title:      title,
-		Name:       strings.ToLower(url.QueryEscape(name)),
+		Title:      normalizedTitle,
+		Name:       normalizedName,
 		Status:     "publish",
 		Author:     authorID,
 	}
@@ -578,6 +607,12 @@ var supporttedTypes = map[string]struct{}{
 
 // UpdatePostCategory change blog post's category
 func (s *Blog) UpdatePostCategory(ctx context.Context, name, category string) (p *model.Post, err error) {
+	if name, err = normalizePostNameForQuery(name); err != nil {
+		return nil, errors.Wrap(err, "sanitize post name")
+	}
+	if category, err = sanitizeRequiredText(category, maxCategoryNameLength, "category name"); err != nil {
+		return nil, errors.Wrap(err, "sanitize category name")
+	}
 	c := new(model.Category)
 	if err = s.dao.GetCategoriesCol().FindOne(ctx, bson.M{"name": category}).Decode(c); err != nil {
 		return nil, errors.Wrapf(err, "load category `%s`", category)
@@ -613,6 +648,16 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	language models.Language,
 ) (p *model.Post, err error) {
 	p = &model.Post{}
+	if name, err = normalizePostNameForQuery(name); err != nil {
+		return nil, errors.Wrap(err, "sanitize post name")
+	}
+	if title, err = sanitizePostTitle(title); err != nil {
+		return nil, errors.Wrap(err, "sanitize post title")
+	}
+	typeArg, err = sanitizeRequiredText(typeArg, maxPostTagLength, "post type")
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize post type")
+	}
 	typeArg = strings.ToLower(typeArg)
 	if _, ok := supporttedTypes[typeArg]; !ok {
 		return nil, errors.Errorf("type `%v` not supportted", typeArg)

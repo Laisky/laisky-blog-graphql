@@ -39,7 +39,11 @@ var prefLogger = log.Logger.Named("user_preferences")
 
 // Value implements driver.Valuer for database serialization.
 func (p PreferenceData) Value() (driver.Value, error) {
-	return json.Marshal(p)
+	value, err := json.Marshal(p)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return value, nil
 }
 
 // Scan implements sql.Scanner for database deserialization.
@@ -51,7 +55,7 @@ func (p *PreferenceData) Scan(value any) error {
 
 	rawBytes, err := bytesFromDBValue(value)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	trimmed := bytes.TrimSpace(rawBytes)
@@ -332,6 +336,7 @@ func isPreferenceJSONObject(data []byte) bool {
 	return json.Valid(data) && len(data) > 0 && data[0] == '{'
 }
 
+// preferencePreviewLimit caps the length of preference previews logged.
 const preferencePreviewLimit = 64
 
 // preferencePreview returns a short preview string for logging.

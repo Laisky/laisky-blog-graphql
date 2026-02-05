@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
+	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -15,7 +15,9 @@ import (
 
 const (
 	defaultPollInterval = time.Second
-	defaultListLimit    = 50
+	// defaultListLimit caps the number of pending requests returned in a list.
+	defaultListLimit = 50
+	// defaultHistoryLimit caps the number of history records returned.
 	defaultHistoryLimit = 100
 )
 
@@ -91,7 +93,7 @@ func (s *Service) WaitForAnswer(ctx context.Context, id uuid.UUID) (*Request, er
 	for {
 		req, err := s.getByID(ctx, id)
 		if err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		switch req.Status {
 		case StatusAnswered:
@@ -102,7 +104,7 @@ func (s *Service) WaitForAnswer(ctx context.Context, id uuid.UUID) (*Request, er
 
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, errors.WithStack(ctx.Err())
 		case <-ticker.C:
 		}
 	}
@@ -131,7 +133,7 @@ func (s *Service) CancelRequest(ctx context.Context, id uuid.UUID, status string
 			"status":     status,
 			"updated_at": time.Now().UTC(),
 		}).Error; err != nil {
-		return err
+		return errors.Wrap(err, "cancel ask_user request")
 	}
 
 	// Update local object for notification

@@ -4,6 +4,7 @@ package auth
 import (
 	"net/http"
 
+	errors "github.com/Laisky/errors/v2"
 	ginMw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/gin-gonic/gin"
 
@@ -21,7 +22,10 @@ const (
 // Initialize initialize auth
 func Initialize(secret []byte) (err error) {
 	Instance, err = ginMw.NewAuth(secret)
-	return err
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
 // AuthMw gin middleware for auth

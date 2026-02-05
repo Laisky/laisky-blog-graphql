@@ -118,8 +118,13 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 
 	pending, consumed, totalConsumed, err := service.ListRequests(ctx, auth, taskID, includeAllTasks, cursor, limit)
 	if err != nil {
-		logger.Error("list user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
-		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load user requests")
+		switch {
+		case errors.Is(err, ErrInvalidCursor):
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
+		default:
+			logger.Error("list user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load user requests")
+		}
 		return
 	}
 
@@ -157,8 +162,13 @@ func (h *httpHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	results, err := service.SearchRequests(ctx, auth, q, limit)
 	if err != nil {
-		logger.Error("search user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
-		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to search user requests")
+		switch {
+		case errors.Is(err, ErrInvalidSearchQuery):
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
+		default:
+			logger.Error("search user requests", zap.Error(err), zap.String("api_key_hash", auth.APIKeyHash))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to search user requests")
+		}
 		return
 	}
 
@@ -200,6 +210,8 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrEmptyContent):
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
+		case errors.Is(err, ErrInvalidRequestContent):
 			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		case errors.Is(err, ErrInvalidAuthorization):
 			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())

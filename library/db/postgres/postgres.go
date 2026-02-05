@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/pkg/errors"
+	errors "github.com/Laisky/errors/v2"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -31,7 +31,7 @@ func NewDB(ctx context.Context, dialInfo DialInfo) (*DB, error) {
 		PreferSimpleProtocol: true,
 	}))
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	// config db
