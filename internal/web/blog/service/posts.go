@@ -134,7 +134,7 @@ func (s *Blog) LoadPosts(ctx context.Context,
 
 // LoadPostInfo load post info
 func (s *Blog) LoadPostInfo(ctx context.Context) (*dto.PostInfo, error) {
-	cnt, err := s.dao.GetPostsCol().CountDocuments(ctx, bson.D{})
+	cnt, err := s.dao.GetPostsCol().EstimatedDocumentCount(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "try to count posts got error")
 	}
@@ -275,6 +275,12 @@ func (s *Blog) makeQuery(ctx context.Context,
 
 func (s *Blog) filterPosts(ctx context.Context,
 	cfg *dto.PostCfg, iter *mongo.Cursor) (results []*model.Post, err error) {
+	var (
+		i18nFilter   = s.getI18NFilter(ctx, cfg.Language)
+		lengthFilter = getContentLengthFilter(cfg.Length)
+	)
+
+	results = make([]*model.Post, 0, cfg.Size)
 	isValidate := true
 	for iter.Next(ctx) {
 		post := &model.Post{}
@@ -287,8 +293,8 @@ func (s *Blog) filterPosts(ctx context.Context,
 			// filters pipeline
 			passwordFilter,
 			hiddenFilter,
-			s.getI18NFilter(ctx, cfg.Language),
-			getContentLengthFilter(cfg.Length),
+			i18nFilter,
+			lengthFilter,
 			defaultTypeFilter,
 		} {
 			if !f(post) {
@@ -404,12 +410,8 @@ func passwordFilter(docu *model.Post) bool {
 func getContentLengthFilter(length int) func(*model.Post) bool {
 	return func(docu *model.Post) bool {
 		if length > 0 { // 0 means full
-			if len([]rune(docu.Content)) > length {
-				docu.Content = string([]rune(docu.Content)[:length])
-			}
-			if len([]rune(docu.Markdown)) > length {
-				docu.Markdown = string([]rune(docu.Markdown)[:length])
-			}
+			docu.Content = Truncate(docu.Content, length)
+			docu.Markdown = Truncate(docu.Markdown, length)
 		}
 		return true
 	}
