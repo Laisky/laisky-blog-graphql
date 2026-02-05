@@ -7,6 +7,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/cmd/tui"
 
+	errors "github.com/Laisky/errors/v2"
 	gcmd "github.com/Laisky/go-utils/v6/cmd"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -48,7 +49,7 @@ func init() {
 	rootCMD.AddCommand(tuiCMD)
 }
 
-// runTUI starts the interactive Terminal User Interface
+// runTUI starts the interactive Terminal User Interface and returns any start/run error.
 func runTUI() error {
 	model := tui.NewModel()
 
@@ -59,5 +60,5 @@ func runTUI() error {
 	)
 
 	_, err := p.Run()
-	return err
+	return errors.WithStack(err)
 }

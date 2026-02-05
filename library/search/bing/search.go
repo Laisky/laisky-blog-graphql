@@ -29,6 +29,7 @@ type SearchEngine struct {
 
 const (
 	httpRequestTimeout = 10 * time.Second
+	// logBodyLimit caps the number of response bytes logged for debugging.
 	logBodyLimit       = 4096
 )
 

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"strings"
 
 	"github.com/Laisky/errors/v2"
 	gutils "github.com/Laisky/go-utils/v6"
@@ -16,6 +15,13 @@ import (
 )
 
 func (s *Blog) ValidateLogin(ctx context.Context, account, password string) (u *model.User, err error) {
+	if account, err = sanitizeUserAccount(account); err != nil {
+		return nil, errors.Wrap(err, "sanitize account")
+	}
+	if password, err = sanitizeUserPassword(password); err != nil {
+		return nil, errors.Wrap(err, "sanitize password")
+	}
+
 	return s.dao.ValidateLogin(ctx, account, password)
 }
 
@@ -40,10 +46,14 @@ func (s *Blog) setupUserCols(ctx context.Context) error {
 // UserRegister user register
 func (s *Blog) UserRegister(ctx context.Context,
 	account, password, displayName string) (u *model.User, err error) {
-	account = strings.ToLower(strings.TrimSpace(account))
-	password = strings.TrimSpace(password)
-	if account == "" || password == "" {
-		return nil, errors.New("empty account or password")
+	if account, err = sanitizeUserAccount(account); err != nil {
+		return nil, errors.Wrap(err, "sanitize account")
+	}
+	if password, err = sanitizeUserPassword(password); err != nil {
+		return nil, errors.Wrap(err, "sanitize password")
+	}
+	if displayName, err = sanitizeUserDisplayName(displayName); err != nil {
+		return nil, errors.Wrap(err, "sanitize display name")
 	}
 
 	col := s.dao.GetUsersCol()
@@ -81,12 +91,19 @@ func (s *Blog) UserRegister(ctx context.Context,
 func (s *Blog) UserActive(ctx context.Context, account, activeToken string) (u *model.User, err error) {
 	col := s.dao.GetUsersCol()
 
+	if account, err = sanitizeUserAccount(account); err != nil {
+		return nil, errors.Wrap(err, "sanitize account")
+	}
+	if activeToken, err = sanitizeActiveToken(activeToken); err != nil {
+		return nil, errors.Wrap(err, "sanitize active token")
+	}
+
 	user := new(model.User)
 	if err = col.FindOne(ctx, bson.M{"account": account}).Decode(user); err != nil {
 		return nil, errors.Wrapf(err, "find user %q", account)
 	}
 
-	if user.ActiveToken != activeToken {
+	if !secureCompareString(user.ActiveToken, activeToken) {
 		return nil, errors.New("invalid active token")
 	}
 

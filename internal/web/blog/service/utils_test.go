@@ -25,3 +25,25 @@ func TestExtractMenu(t *testing.T) {
 	expect := `<nav id="post-menu" class="h-100 flex-column align-items-stretch"><nav class="nav nav-pills flex-column"><a class="nav-link" href="#abc">abc def</a><nav class="nav nav-pills flex-column"><a class="nav-link ms-3 my-1" href="#lev 3">333</a></nav></nav></nav>`
 	require.Equal(t, expect, cnt, "ExtractMenu output mismatch")
 }
+
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		s      string
+		n      int
+		expect string
+	}{
+		{"abc", 2, "ab"},
+		{"abc", 3, "abc"},
+		{"abc", 5, "abc"},
+		{"abc", 0, "abc"},
+		{"abc", -1, "abc"},
+		{"你好啊", 2, "你好"},
+		{"你好啊", 3, "你好啊"},
+		{"你好啊", 5, "你好啊"},
+		{"a你好", 2, "a你"},
+	}
+
+	for _, tt := range tests {
+		require.Equal(t, tt.expect, Truncate(tt.s, tt.n))
+	}
+}

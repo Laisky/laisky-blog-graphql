@@ -34,6 +34,9 @@ func (d *Telegram) GetNotesCol() *mongoLib.Collection {
 
 // Search search notes by keyword
 func (d *Telegram) Search(ctx context.Context, keyword string) (notes []*telemodel.TelegramNote, err error) {
+	if keyword, err = sanitizeNotesKeyword(keyword); err != nil {
+		return nil, errors.Wrap(err, "sanitize keyword")
+	}
 	cur, err := d.GetNotesCol().Find(ctx,
 		bson.M{"content": bson.M{"$regex": primitive.Regex{
 			Pattern: keyword,

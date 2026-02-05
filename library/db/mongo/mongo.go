@@ -333,7 +333,10 @@ func (d *db) Close(ctx context.Context) error {
 	d.shared.mu.Lock()
 	d.shared.cli = nil
 	d.shared.mu.Unlock()
-	return err
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
 // GetCol returns a collection handle by name.

@@ -181,12 +181,12 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	users, err := r.svc.LoadUsersByAlertType(ctx, alert)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	errMsg := ""
@@ -205,7 +205,10 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		err = errors.New(errMsg)
 	}
 
-	return alert, err
+	if err != nil {
+		return alert, errors.WithStack(err)
+	}
+	return alert, nil
 }
 
 // escapeMsg escapes special characters in a message to prevent Telegram from interpreting them as formatting

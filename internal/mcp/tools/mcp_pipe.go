@@ -218,7 +218,7 @@ func (t *MCPPipeTool) executeSpec(ctx context.Context, logger logSDK.Logger, spe
 	for i := range spec.Steps {
 		step := spec.Steps[i]
 		if err := validateStep(step); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		if _, ok := seen[step.ID]; ok {
 			return nil, errors.New("duplicate step id: " + step.ID)
@@ -226,7 +226,7 @@ func (t *MCPPipeTool) executeSpec(ctx context.Context, logger logSDK.Logger, spe
 		seen[step.ID] = struct{}{}
 
 		if err := counter.increment(t.limits.MaxSteps); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 
 		stepResult, err := t.executeStep(ctx, logger, step, env, depth, counter)
@@ -272,7 +272,8 @@ func (t *MCPPipeTool) executeStep(ctx context.Context, logger logSDK.Logger, ste
 				zap.Strings("arg_keys", mapKeys(step.Args)),
 				zap.Error(err),
 			)
-			return stepResultMap(step, startedAt, time.Since(startedAt), nil, err), err
+			wrapped := errors.WithStack(err)
+			return stepResultMap(step, startedAt, time.Since(startedAt), nil, wrapped), wrapped
 		}
 
 		result, invokeErr := t.invoker(ctx, step.Tool, resolvedArgs)
@@ -283,7 +284,8 @@ func (t *MCPPipeTool) executeStep(ctx context.Context, logger logSDK.Logger, ste
 				zap.String("tool", step.Tool),
 				zap.Error(invokeErr),
 			)
-			return stepResultMap(step, startedAt, dur, result, invokeErr), invokeErr
+			wrapped := errors.WithStack(invokeErr)
+			return stepResultMap(step, startedAt, dur, result, wrapped), wrapped
 		}
 		if result != nil && result.IsError {
 			err := errors.New(toolResultText(result))
@@ -292,7 +294,8 @@ func (t *MCPPipeTool) executeStep(ctx context.Context, logger logSDK.Logger, ste
 				zap.String("tool", step.Tool),
 				zap.String("tool_error", err.Error()),
 			)
-			return stepResultMap(step, startedAt, dur, result, err), err
+			wrapped := errors.WithStack(err)
+			return stepResultMap(step, startedAt, dur, result, wrapped), wrapped
 		}
 		return stepResultMap(step, startedAt, dur, result, nil), nil
 	}
@@ -314,7 +317,10 @@ func (t *MCPPipeTool) executeStep(ctx context.Context, logger logSDK.Logger, ste
 			"result":      childResult,
 			"steps":       childEnv["steps"],
 		}
-		return result, err
+		if err != nil {
+			return result, errors.WithStack(err)
+		}
+		return result, nil
 	}
 
 	// parallel group
@@ -330,16 +336,19 @@ func (t *MCPPipeTool) executeStep(ctx context.Context, logger logSDK.Logger, ste
 	for i := range children {
 		child := children[i]
 		if err := validateStep(child); err != nil {
-			return stepResultMap(step, startedAt, time.Since(startedAt), nil, err), err
+			wrapped := errors.WithStack(err)
+			return stepResultMap(step, startedAt, time.Since(startedAt), nil, wrapped), wrapped
 		}
 		if _, ok := seen[child.ID]; ok {
 			err := errors.New("duplicate parallel step id: " + child.ID)
-			return stepResultMap(step, startedAt, time.Since(startedAt), nil, err), err
+			wrapped := errors.WithStack(err)
+			return stepResultMap(step, startedAt, time.Since(startedAt), nil, wrapped), wrapped
 		}
 		seen[child.ID] = struct{}{}
 
 		if err := counter.increment(t.limits.MaxSteps); err != nil {
-			return stepResultMap(step, startedAt, time.Since(startedAt), nil, err), err
+			wrapped := errors.WithStack(err)
+			return stepResultMap(step, startedAt, time.Since(startedAt), nil, wrapped), wrapped
 		}
 
 		childCopy := child
@@ -450,7 +459,7 @@ func resolveAny(value any, env map[string]any) (any, error) {
 		for key, val := range v {
 			resolved, err := resolveAny(val, env)
 			if err != nil {
-				return nil, err
+				return nil, errors.WithStack(err)
 			}
 			out[key] = resolved
 		}
@@ -460,7 +469,7 @@ func resolveAny(value any, env map[string]any) (any, error) {
 		for _, item := range v {
 			resolved, err := resolveAny(item, env)
 			if err != nil {
-				return nil, err
+				return nil, errors.WithStack(err)
 			}
 			out = append(out, resolved)
 		}

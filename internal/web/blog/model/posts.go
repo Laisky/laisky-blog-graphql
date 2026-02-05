@@ -4,6 +4,7 @@ package model
 import (
 	"time"
 
+	errors "github.com/Laisky/errors/v2"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -129,30 +130,30 @@ type LegacyPost struct {
 func (lp LegacyPost) Post() (p *Post, err error) {
 	p = new(Post)
 	if p.I18N, err = lp.I18N.I18N(); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	if p.CreatedAt, err = lp.CreatedAt.Time(); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	if p.ModifiedAt, err = lp.ModifiedAt.Time(); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	p.ID, err = lp.ID.ObjectId()
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	p.Author, err = lp.Author.ObjectId()
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	p.Category, err = lp.Category.ObjectId()
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	p.Title = lp.Title

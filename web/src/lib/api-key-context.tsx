@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 const CURRENT_KEY_STORAGE = 'mcp_api_key';
 const HISTORY_STORAGE = 'mcp_api_key_history';
+// MAX_HISTORY caps the number of API keys preserved in local storage history.
 const MAX_HISTORY = 10;
 
 const BEARER_PREFIX = /^Bearer\s+/i;

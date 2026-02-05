@@ -15,7 +15,8 @@ import (
 	tb "gopkg.in/telebot.v3"
 )
 
-const MaxUploadFileSize = 10 * 1024 * 1024 // 10MB
+// MaxUploadFileSize caps Telegram uploads to 10 MiB.
+const MaxUploadFileSize = 10 * 1024 * 1024
 
 func (s *Telegram) registerUploadHandler(ctx context.Context) {
 	s.bot.Handle("/upload", func(c tb.Context) (err error) {

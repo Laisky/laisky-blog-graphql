@@ -6,7 +6,7 @@ package service
 
 import (
 	"context"
-	"time"
+	"strings"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -98,10 +98,14 @@ func (s *Blog) BlogComments(ctx context.Context,
 	postName string,
 	page *models.Pagination,
 	sort *models.Sort) ([]*models.Comment, error) {
+	var err error
+	if postName, err = normalizePostNameForQuery(postName); err != nil {
+		return nil, errors.Wrap(err, "sanitize post name")
+	}
 
 	// find post
 	post := new(model.Post)
-	err := s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check post existence")
 	}
@@ -119,13 +123,16 @@ func (s *Blog) BlogComments(ctx context.Context,
 		if sort.Order == models.SortOrderAsc {
 			sortDir = 1
 		}
-		sortOpts = bson.D{{Key: sort.SortBy, Value: sortDir}}
+		sortOpts = bson.D{{Key: sanitizeCommentSortField(sort.SortBy), Value: sortDir}}
 	}
 
 	// Configure pagination - Page starts at 0, not 1
 	findOpts := options.Find().SetSort(sortOpts)
 
 	if page != nil {
+		if page.Page, page.Size, err = sanitizePagination(page.Page, page.Size, maxCommentPageSize); err != nil {
+			return nil, errors.Wrap(err, "sanitize pagination")
+		}
 		// Fixed: use page * size instead of (page - 1) * size
 		findOpts.SetSkip(int64(page.Page * page.Size))
 		findOpts.SetLimit(int64(page.Size))
@@ -158,9 +165,14 @@ func (s *Blog) BlogComments(ctx context.Context,
 
 // BlogCommentCount counts comments for a specific post
 func (s *Blog) BlogCommentCount(ctx context.Context, postName string) (int, error) {
+	var err error
+	if postName, err = normalizePostNameForQuery(postName); err != nil {
+		return 0, errors.Wrap(err, "sanitize post name")
+	}
+
 	// get post
 	post := new(model.Post)
-	err := s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to check post existence")
 	}
@@ -185,23 +197,26 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 	authorEmail string,
 	authorWebsite *string,
 	parentID *string) (*models.Comment, error) {
-
-	// Input validation
-	if content == "" {
-		return nil, errors.New("comment content cannot be empty")
+	var err error
+	if postName, err = normalizePostNameForQuery(postName); err != nil {
+		return nil, errors.Wrap(err, "sanitize post name")
 	}
-
-	if authorName == "" {
-		return nil, errors.New("author name cannot be empty")
+	if content, err = sanitizeCommentBody(content); err != nil {
+		return nil, errors.Wrap(err, "sanitize comment content")
 	}
-
-	if authorEmail == "" {
-		return nil, errors.New("author email cannot be empty")
+	if authorName, err = sanitizeAuthorName(authorName); err != nil {
+		return nil, errors.Wrap(err, "sanitize author name")
+	}
+	if authorEmail, err = sanitizeEmail(authorEmail); err != nil {
+		return nil, errors.Wrap(err, "sanitize author email")
+	}
+	if authorWebsite, err = sanitizeWebsite(authorWebsite); err != nil {
+		return nil, errors.Wrap(err, "sanitize author website")
 	}
 
 	// Verify that post exists
 	post := new(model.Post)
-	err := s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check post existence")
 	}
@@ -216,7 +231,7 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 	}
 
 	// Create new comment
-	now := time.Now()
+	now := gutils.Clock.GetUTCNow()
 	comment := &model.Comment{
 		ID:        primitive.NewObjectID(),
 		CreatedAt: now,
@@ -237,26 +252,31 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 
 	// Handle parent comment if provided
 	if parentID != nil {
-		parentObjID, err := primitive.ObjectIDFromHex(*parentID)
-		if err != nil {
-			return nil, errors.Wrapf(err, "invalid parent comment ID: %s", *parentID)
-		}
-
-		// Verify that parent comment exists and belongs to the same post
-		var parentComment model.Comment
-		err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{
-			"_id":     parentObjID,
-			"post_id": post.ID,
-		}).Decode(&parentComment)
-
-		if err != nil {
-			if errors.Is(err, mongo.ErrNoDocuments) {
-				return nil, errors.New("parent comment not found or doesn't belong to the specified post")
+		trimmedParentID := strings.TrimSpace(*parentID)
+		if trimmedParentID == "" {
+			parentID = nil
+		} else {
+			parentObjID, err := primitive.ObjectIDFromHex(trimmedParentID)
+			if err != nil {
+				return nil, errors.Wrapf(err, "invalid parent comment ID: %s", trimmedParentID)
 			}
-			return nil, errors.Wrap(err, "failed to fetch parent comment")
-		}
 
-		comment.ParentID = &parentObjID
+			// Verify that parent comment exists and belongs to the same post
+			var parentComment model.Comment
+			err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{
+				"_id":     parentObjID,
+				"post_id": post.ID,
+			}).Decode(&parentComment)
+
+			if err != nil {
+				if errors.Is(err, mongo.ErrNoDocuments) {
+					return nil, errors.New("parent comment not found or doesn't belong to the specified post")
+				}
+				return nil, errors.Wrap(err, "failed to fetch parent comment")
+			}
+
+			comment.ParentID = &parentObjID
+		}
 	}
 
 	// Insert the comment into the database
@@ -279,6 +299,10 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 // BlogToggleCommentLike toggles a like for a comment
 func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*models.Comment, error) {
 	// Convert string ID to ObjectID
+	commentID = strings.TrimSpace(commentID)
+	if commentID == "" {
+		return nil, errors.New("comment id is required")
+	}
 	commentObjID, err := primitive.ObjectIDFromHex(commentID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid comment ID: %s", commentID)
@@ -302,7 +326,7 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 		// User has not liked this comment yet - add a like
 		like = model.CommentLike{
 			ID:        primitive.NewObjectID(),
-			CreatedAt: time.Now(),
+			CreatedAt: gutils.Clock.GetUTCNow(),
 			CommentID: commentObjID,
 		}
 
@@ -366,6 +390,10 @@ func (s *Blog) BlogApproveComment(ctx context.Context, commentID string) (*model
 	}
 
 	// Convert string ID to ObjectID
+	commentID = strings.TrimSpace(commentID)
+	if commentID == "" {
+		return nil, errors.New("comment id is required")
+	}
 	commentObjID, err := primitive.ObjectIDFromHex(commentID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid comment ID: %s", commentID)
@@ -408,6 +436,10 @@ func (s *Blog) BlogDeleteComment(ctx context.Context, commentID string) (*models
 	}
 
 	// Convert string ID to ObjectID
+	commentID = strings.TrimSpace(commentID)
+	if commentID == "" {
+		return nil, errors.New("comment id is required")
+	}
 	commentObjID, err := primitive.ObjectIDFromHex(commentID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid comment ID: %s", commentID)

@@ -3,6 +3,8 @@ package arweave
 import (
 	"bytes"
 	"compress/gzip"
+
+	errors "github.com/Laisky/errors/v2"
 )
 
 type uploadOption struct {
@@ -35,7 +37,7 @@ func (o *uploadOption) apply(opts ...UploadOption) (*uploadOption, error) {
 	// apply opts
 	for _, opt := range opts {
 		if err := opt(o); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 	}
 
@@ -49,10 +51,10 @@ func CompressData(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	if _, err := gz.Write(data); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	if err := gz.Close(); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return append(DataPrefixEnabledGz, buf.Bytes()...), nil
@@ -66,13 +68,13 @@ func DecompressData(data []byte) ([]byte, error) {
 
 	r, err := gzip.NewReader(bytes.NewReader(data[len(DataPrefixEnabledGz):]))
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	defer r.Close()
 
 	var buf bytes.Buffer
 	if _, err = buf.ReadFrom(r); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return buf.Bytes(), nil

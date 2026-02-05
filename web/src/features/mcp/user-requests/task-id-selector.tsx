@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'mcp-task-id-history';
+// MAX_HISTORY_ITEMS caps the number of unpinned task IDs kept in history.
 const MAX_HISTORY_ITEMS = 10;
 const HISTORY_UPDATE_EVENT = 'mcp-task-id-history-update';
 

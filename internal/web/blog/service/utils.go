@@ -74,6 +74,23 @@ func convertTitleID(title string) string {
 	return "header-" + validHtmlId.ReplaceAllString(url.QueryEscape(title), "")
 }
 
+// Truncate truncate string to n runes
+func Truncate(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+
+	var count int
+	for i := range s {
+		if count == n {
+			return s[:i]
+		}
+		count++
+	}
+
+	return s
+}
+
 func ExtractMenu(html string) string {
 	var (
 		menu                 = `<nav id="post-menu" class="h-100 flex-column align-items-stretch"><nav class="nav nav-pills flex-column">`

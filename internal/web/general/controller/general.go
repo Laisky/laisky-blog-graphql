@@ -79,7 +79,8 @@ func ConfigureTaskStore(db *rlibs.DB) {
 }
 
 const (
-	generalTokenName       = "general"
+	generalTokenName = "general"
+	// maxTokenExpireDuration caps how long general tokens stay valid.
 	maxTokenExpireDuration = 3600 * 24 * 7 * time.Second // 7d
 )
 
@@ -403,7 +404,7 @@ func (r *MutationResolver) AcquireLock(ctx context.Context,
 
 	var username string
 	if username, err = validateAndGetGCPUser(ctx); err != nil {
-		return ok, err
+		return ok, errors.WithStack(err)
 	}
 
 	if !validateLockName(username, lockName) {
@@ -411,11 +412,15 @@ func (r *MutationResolver) AcquireLock(ctx context.Context,
 			username, lockName)
 	}
 
-	return service.Instance.AcquireLock(ctx,
+	ok, err = service.Instance.AcquireLock(ctx,
 		lockName,
 		username,
 		time.Duration(durationSec)*time.Second,
 		false)
+	if err != nil {
+		return ok, errors.WithStack(err)
+	}
+	return ok, nil
 }
 
 // GeneralAddLLMStormTask enqueues an LLM storm task for the authenticated worker.

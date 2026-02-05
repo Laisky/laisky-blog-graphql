@@ -2,7 +2,6 @@ package userrequests
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -28,8 +27,10 @@ type Service struct {
 }
 
 const (
+	// defaultListLimit caps the number of requests returned in list calls.
 	defaultListLimit = 200
-	maxTaskIDLength  = 255
+	// maxTaskIDLength caps the length of task IDs stored with requests.
+	maxTaskIDLength = 255
 )
 
 // NewService constructs a Service backed by the provided gorm database.
@@ -67,9 +68,9 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 	if auth == nil {
 		return nil, ErrInvalidAuthorization
 	}
-	body := strings.TrimSpace(content)
-	if body == "" {
-		return nil, ErrEmptyContent
+	body, err := sanitizeRequestContent(content)
+	if err != nil {
+		return nil, errors.WithStack(err)
 	}
 
 	taskID = normalizeTaskID(taskID)
@@ -117,14 +118,16 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 	}
 
 	if err := s.pruneExpired(ctx); err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, errors.WithStack(err)
 	}
 
-	if limit <= 0 {
-		limit = defaultListLimit
-	}
+	limit = sanitizeListLimit(limit)
 
 	filteredTaskID := normalizeTaskID(taskID)
+	cursor, err := sanitizeCursor(cursor)
+	if err != nil {
+		return nil, nil, 0, errors.WithStack(err)
+	}
 	pendingQuery := s.db.WithContext(ctx).
 		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending)
 	consumedQuery := s.db.WithContext(ctx).
@@ -182,14 +185,17 @@ func (s *Service) SearchRequests(ctx context.Context, auth *askuser.Authorizatio
 		return nil, ErrInvalidAuthorization
 	}
 
-	if limit <= 0 {
-		limit = defaultListLimit
+	limit = sanitizeListLimit(limit)
+	sanitizedQuery, err := sanitizeSearchQuery(query)
+	if err != nil {
+		return nil, errors.WithStack(err)
 	}
+	escaped := escapeLike(sanitizedQuery)
 
 	var results []Request
 	// Case-insensitive search
 	if err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND content LIKE ?", auth.APIKeyHash, "%"+query+"%").
+		Where("api_key_hash = ? AND content LIKE ? ESCAPE '\\'", auth.APIKeyHash, "%"+escaped+"%").
 		Order("created_at DESC").
 		Limit(limit).
 		Find(&results).Error; err != nil {
@@ -208,7 +214,7 @@ func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.Authoriza
 
 	taskID = normalizeTaskID(taskID)
 	if err := s.pruneExpired(ctx); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	// Fetch all pending requests in FIFO order (oldest first)
@@ -271,7 +277,7 @@ func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.Authori
 
 	taskID = normalizeTaskID(taskID)
 	if err := s.pruneExpired(ctx); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	// Fetch the oldest pending request (FIFO)

@@ -86,7 +86,9 @@ type ListResult struct {
 const (
 	defaultCostUnit    = "quota"
 	defaultPage        = 1
+	// defaultPageSize sets the fallback page size for list queries.
 	defaultPageSize    = 20
+	// maxPageSize caps the page size for list queries.
 	maxPageSize        = 100
 	sortFieldCreatedAt = "created_at"
 	sortFieldCost      = "cost"
@@ -172,6 +174,15 @@ func (s *Service) List(ctx context.Context, opts ListOptions) (*ListResult, erro
 		return nil, errors.New("call log service is nil")
 	}
 
+	toolName, err := sanitizeOptionalText(opts.ToolName, maxToolNameLength, "tool name")
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize tool name")
+	}
+	userPrefix, err := sanitizeOptionalText(opts.UserPrefix, maxUserPrefixLength, "user prefix")
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize user prefix")
+	}
+
 	page := opts.Page
 	if page < 1 {
 		page = defaultPage
@@ -188,11 +199,11 @@ func (s *Service) List(ctx context.Context, opts ListOptions) (*ListResult, erro
 	if opts.APIKeyHash != "" {
 		query = query.Where("api_key_hash = ?", opts.APIKeyHash)
 	}
-	if trimmed := strings.TrimSpace(opts.ToolName); trimmed != "" {
-		query = query.Where("tool_name = ?", trimmed)
+	if toolName != "" {
+		query = query.Where("tool_name = ?", toolName)
 	}
-	if trimmed := strings.TrimSpace(opts.UserPrefix); trimmed != "" {
-		like := trimmed + "%"
+	if userPrefix != "" {
+		like := userPrefix + "%"
 		query = query.Where("key_prefix LIKE ?", like)
 	}
 	if !opts.From.IsZero() {
