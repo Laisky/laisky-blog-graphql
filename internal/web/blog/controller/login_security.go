@@ -26,7 +26,7 @@ func maskLoginError(err error) error {
 func validateInputLength(limit int, inputs ...string) error {
 	for _, input := range inputs {
 		if len(input) > limit {
-			return errors.New("input too long")
+			return errors.Errorf("input too long: max %d characters allowed", limit)
 		}
 	}
 	return nil
