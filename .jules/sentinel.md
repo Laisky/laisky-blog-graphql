@@ -6,7 +6,7 @@
 
 ## 2026-02-03 - [Reflected XSS and DoS in Registration]
 
-**Vulnerability:** Reflected XSS in  success message and lack of input length limits for registration/login.
+**Vulnerability:** Reflected XSS in success message and lack of input length limits for registration/login.
 **Learning:** Returning user-supplied data (like ) directly in an informative success message can lead to XSS if not escaped. Also, missing length limits on sensitive inputs like passwords and usernames can be exploited for DoS (CPU exhaustion during hashing) or database bloat.
 **Prevention:** Always escape user-supplied strings in API responses that might be displayed in the frontend. Implement early input validation for length and format in controllers.
 

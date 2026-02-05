@@ -22,10 +22,40 @@ describe('parseRedirectTarget', () => {
     expect(result.url?.toString()).toBe('https://console.laisky.com/sso/callback?state=abc');
   });
 
+  it('accepts internal IPv4 addresses', () => {
+    const result = parseRedirectTarget('http://10.20.30.40/sso/callback', origin);
+    expect(result.url?.toString()).toBe('http://10.20.30.40/sso/callback');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('accepts carrier-grade NAT IPv4 addresses', () => {
+    const result = parseRedirectTarget('http://100.75.198.70/sso/callback', origin);
+    expect(result.url?.toString()).toBe('http://100.75.198.70/sso/callback');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('accepts internal IPv6 addresses', () => {
+    const result = parseRedirectTarget('http://[fd00::1]/sso/callback', origin);
+    expect(result.url?.toString()).toBe('http://[fd00::1]/sso/callback');
+    expect(result.error).toBeUndefined();
+  });
+
   it('rejects unsupported protocols', () => {
     const result = parseRedirectTarget('javascript:alert(1)', origin);
     expect(result.url).toBeNull();
     expect(result.error).toMatch(/unsupported redirect protocol/i);
+  });
+
+  it('rejects non-laisky domains', () => {
+    const result = parseRedirectTarget('https://evil.com/callback', origin);
+    expect(result.url).toBeNull();
+    expect(result.error).toMatch(/unsupported redirect host/i);
+  });
+
+  it('rejects lookalike laisky domains', () => {
+    const result = parseRedirectTarget('https://laisky.com.evil.com/callback', origin);
+    expect(result.url).toBeNull();
+    expect(result.error).toMatch(/unsupported redirect host/i);
   });
 });
 

@@ -74,7 +74,7 @@ describe('ApiKeyContext', () => {
       json: async () => ({
         data: {
           ValidateOneapiApiKey: {
-            remain_quota: 1000,
+            remain_quota: 300000,
             used_quota: 100,
           },
         },
@@ -95,7 +95,7 @@ describe('ApiKeyContext', () => {
     });
 
     expect(screen.getByTestId('status').textContent).toBe('valid');
-    expect(screen.getByTestId('quota').textContent).toBe('1000');
+    expect(screen.getByTestId('quota').textContent).toBe('300000');
     // Key should be saved in LS (storage key is mcp_api_key)
     expect(localStorage.getItem('mcp_api_key')).toBe('new-key');
   });
@@ -172,7 +172,7 @@ describe('ApiKeyContext', () => {
       json: async () => ({
         data: {
           ValidateOneapiApiKey: {
-            remain_quota: 500,
+            remain_quota: 300000,
             used_quota: 100,
           },
         },
@@ -184,7 +184,7 @@ describe('ApiKeyContext', () => {
       json: async () => ({
         data: {
           ValidateOneapiApiKey: {
-            remain_quota: 500,
+            remain_quota: 300000,
             used_quota: 100,
           },
         },
@@ -209,7 +209,7 @@ describe('ApiKeyContext', () => {
     });
 
     expect(screen.getByTestId('status').textContent).toBe('valid');
-    expect(screen.getByTestId('quota').textContent).toBe('500');
+    expect(screen.getByTestId('quota').textContent).toBe('300000');
   });
 
   it('should reset values on disconnect', async () => {
