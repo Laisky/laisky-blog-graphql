@@ -4,11 +4,10 @@ import { useSearchParams } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
-import { cn } from '@/lib/utils';
 
 const USER_LOGIN_MUTATION = `
   mutation SsoLogin($account: String!, $password: String!, $turnstileToken: String) {
@@ -490,7 +489,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <label htmlFor="sso-account" className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1">
+                <label
+                  htmlFor="sso-account"
+                  className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1"
+                >
                   Account ID
                 </label>
                 <Input
@@ -505,7 +507,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="sso-password" className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1">
+                <label
+                  htmlFor="sso-password"
+                  className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1"
+                >
                   Passphrase
                 </label>
                 <Input
@@ -522,7 +527,9 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
               {turnstileEnabled && (
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1">Security Check</label>
+                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1">
+                    Security Check
+                  </label>
                   <div
                     ref={turnstileContainerRef}
                     className="flex min-h-20 items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-800 bg-gray-50 dark:bg-black/20 px-2 py-3 transition-colors"
