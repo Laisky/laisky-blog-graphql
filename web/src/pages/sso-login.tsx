@@ -2,6 +2,7 @@ import { ArrowRight, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -577,7 +578,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
   const redirectBanner = { status: redirectStatus, subtext: redirectTarget.display };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
+      <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
+        <ThemeToggle />
+      </div>
       <div className="flex w-full max-w-lg flex-col gap-6">
         <div className="space-y-3 text-center">
           <div className="flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
