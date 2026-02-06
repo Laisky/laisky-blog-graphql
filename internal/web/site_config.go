@@ -19,14 +19,15 @@ const (
 
 // SiteConfig describes the branding and routing settings for a single site.
 type SiteConfig struct {
-	ID             string   `json:"id"`
-	Hosts          []string `json:"hosts,omitempty"`
-	Title          string   `json:"title,omitempty"`
-	Favicon        string   `json:"favicon,omitempty"`
-	Theme          string   `json:"theme,omitempty"`
-	Router         string   `json:"router,omitempty"`
-	PublicBasePath string   `json:"publicBasePath,omitempty"`
-	Default        bool     `json:"default,omitempty"`
+	ID               string   `json:"id"`
+	Hosts            []string `json:"hosts,omitempty"`
+	Title            string   `json:"title,omitempty"`
+	Favicon          string   `json:"favicon,omitempty"`
+	Theme            string   `json:"theme,omitempty"`
+	Router           string   `json:"router,omitempty"`
+	PublicBasePath   string   `json:"publicBasePath,omitempty"`
+	TurnstileSiteKey string   `json:"turnstileSiteKey,omitempty"`
+	Default          bool     `json:"default,omitempty"`
 }
 
 // siteConfigSet stores resolved site configurations and host lookups.
@@ -98,14 +99,15 @@ func loadSiteConfig(logger logSDK.Logger, key string, prefix urlPrefixConfig) Si
 	}
 
 	site := SiteConfig{
-		ID:             strings.TrimSpace(key),
-		Hosts:          hosts,
-		Title:          strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".title")),
-		Favicon:        strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".favicon")),
-		Theme:          strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".theme")),
-		Router:         strings.ToLower(strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".router"))),
-		PublicBasePath: normalizeBasePath(gconfig.Shared.GetString(baseKey + ".public_base_path")),
-		Default:        gconfig.Shared.GetBool(baseKey + ".default"),
+		ID:               strings.TrimSpace(key),
+		Hosts:            hosts,
+		Title:            strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".title")),
+		Favicon:          strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".favicon")),
+		Theme:            strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".theme")),
+		Router:           strings.ToLower(strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".router"))),
+		PublicBasePath:   normalizeBasePath(gconfig.Shared.GetString(baseKey + ".public_base_path")),
+		TurnstileSiteKey: strings.TrimSpace(gconfig.Shared.GetString(baseKey + ".turnstile_site_key")),
+		Default:          gconfig.Shared.GetBool(baseKey + ".default"),
 	}
 
 	if site.PublicBasePath == "" {

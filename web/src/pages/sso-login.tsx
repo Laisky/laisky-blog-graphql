@@ -1,5 +1,5 @@
 import { ArrowRight, Lock } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -9,12 +9,15 @@ import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 
 const USER_LOGIN_MUTATION = `
-  mutation SsoLogin($account: String!, $password: String!) {
-    UserLogin(account: $account, password: $password) {
+  mutation SsoLogin($account: String!, $password: String!, $turnstileToken: String) {
+    UserLogin(account: $account, password: $password, turnstile_token: $turnstileToken) {
       token
     }
   }
 `;
+
+const TURNSTILE_SCRIPT_ID = 'cloudflare-turnstile-script';
+const TURNSTILE_SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
 /**
  * SsoLoginResponse describes the GraphQL response for SSO login.
@@ -25,6 +28,166 @@ interface SsoLoginResponse {
   UserLogin: {
     token: string;
   };
+}
+
+/**
+ * SsoLoginPageProps describes props accepted by SsoLoginPage.
+ * Parameters: turnstileSiteKey is an optional Cloudflare Turnstile site key loaded from runtime configuration.
+ * Returns: The interface is used for SSO login page props typing.
+ */
+export interface SsoLoginPageProps {
+  turnstileSiteKey?: string;
+}
+
+/**
+ * TurnstileRenderOptions describes options passed to Cloudflare Turnstile render API.
+ * Parameters: The fields map directly to Turnstile's explicit render options.
+ * Returns: The interface is used for safe typing of browser Turnstile API calls.
+ */
+interface TurnstileRenderOptions {
+  sitekey: string;
+  callback: (token: string) => void;
+  'expired-callback'?: () => void;
+  'error-callback'?: () => void;
+  'timeout-callback'?: () => void;
+}
+
+/**
+ * TurnstileAPI describes the minimal Cloudflare Turnstile browser API used by this page.
+ * Parameters: The interface methods map to widget render/reset/remove operations.
+ * Returns: The interface is used to type the global window.turnstile object.
+ */
+interface TurnstileAPI {
+  render: (container: HTMLElement, options: TurnstileRenderOptions) => string;
+  reset: (widgetId?: string) => void;
+  remove: (widgetId: string) => void;
+}
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileAPI;
+  }
+}
+
+/**
+ * SsoSubmitState describes all fields required to evaluate whether submit should be enabled.
+ * Parameters: The interface fields mirror current form and Turnstile state.
+ * Returns: The interface is used as input for canSubmitSsoLogin.
+ */
+export interface SsoSubmitState {
+  hasRedirectTarget: boolean;
+  account: string;
+  password: string;
+  isSubmitting: boolean;
+  isTurnstileEnabled: boolean;
+  turnstileToken: string;
+}
+
+/**
+ * isTurnstileEnabled checks whether Turnstile should be enabled for the current page.
+ * Parameters: siteKey is the optional runtime site key.
+ * Returns: True when a non-empty site key is configured.
+ */
+export function isTurnstileEnabled(siteKey: string | undefined): boolean {
+  return (siteKey ?? '').trim().length > 0;
+}
+
+/**
+ * canSubmitSsoLogin checks whether the SSO login form has enough information to submit.
+ * Parameters: state contains form values, loading state, and Turnstile status.
+ * Returns: True when all required fields are present and the form is not submitting.
+ */
+export function canSubmitSsoLogin(state: SsoSubmitState): boolean {
+  if (!state.hasRedirectTarget || state.isSubmitting) {
+    return false;
+  }
+
+  if (state.account.trim().length === 0 || state.password.trim().length === 0) {
+    return false;
+  }
+
+  if (state.isTurnstileEnabled && state.turnstileToken.trim().length === 0) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * getTurnstileAPI returns the global Turnstile API when available.
+ * Parameters: This function does not accept input parameters.
+ * Returns: The Turnstile API object when present on window, otherwise undefined.
+ */
+function getTurnstileAPI(): TurnstileAPI | undefined {
+  return window.turnstile;
+}
+
+/**
+ * loadTurnstileScript loads the Cloudflare Turnstile script if it has not been loaded.
+ * Parameters: documentRef is the active browser document used to append or read script tags.
+ * Returns: A promise resolving to the Turnstile API once the script is available.
+ */
+export function loadTurnstileScript(documentRef: Document): Promise<TurnstileAPI> {
+  const existing = getTurnstileAPI();
+  if (existing) {
+    return Promise.resolve(existing);
+  }
+
+  return new Promise<TurnstileAPI>((resolve, reject) => {
+    let timeoutID: number | undefined;
+    let script: HTMLScriptElement | null = null;
+
+    const cleanup = () => {
+      if (timeoutID !== undefined) {
+        window.clearTimeout(timeoutID);
+      }
+      if (script) {
+        script.removeEventListener('load', resolveIfReady);
+        script.removeEventListener('error', rejectWithError);
+      }
+    };
+
+    const resolveIfReady = () => {
+      const api = getTurnstileAPI();
+      if (!api) {
+        cleanup();
+        reject(new Error('Turnstile script loaded but API is unavailable.'));
+        return;
+      }
+      cleanup();
+      resolve(api);
+    };
+
+    const rejectWithError = () => {
+      cleanup();
+      reject(new Error('Failed to load Cloudflare Turnstile script.'));
+    };
+
+    timeoutID = window.setTimeout(() => {
+      rejectWithError();
+    }, 10_000);
+
+    const existingScript = documentRef.getElementById(TURNSTILE_SCRIPT_ID);
+    if (existingScript instanceof HTMLScriptElement) {
+      script = existingScript;
+      script.addEventListener('load', resolveIfReady);
+      script.addEventListener('error', rejectWithError);
+      const api = getTurnstileAPI();
+      if (api) {
+        resolveIfReady();
+      }
+      return;
+    }
+
+    script = documentRef.createElement('script');
+    script.id = TURNSTILE_SCRIPT_ID;
+    script.src = TURNSTILE_SCRIPT_SRC;
+    script.async = true;
+    script.defer = true;
+    script.addEventListener('load', resolveIfReady);
+    script.addEventListener('error', rejectWithError);
+    documentRef.head.appendChild(script);
+  });
 }
 
 /**
@@ -248,10 +411,12 @@ export function buildRedirectUrlWithToken(target: URL, token: string): string {
 
 /**
  * SsoLoginPage renders the SSO login form and redirects after successful login.
- * Parameters: This component does not accept props.
+ * Parameters: props carries the optional Turnstile site key from runtime configuration.
  * Returns: A JSX element containing the SSO login form.
  */
-export function SsoLoginPage() {
+export function SsoLoginPage(props: SsoLoginPageProps) {
+  const resolvedTurnstileSiteKey = (props.turnstileSiteKey ?? '').trim();
+  const turnstileEnabled = isTurnstileEnabled(resolvedTurnstileSiteKey);
   const [searchParams] = useSearchParams();
   const redirectParam = searchParams.get('redirect_to');
   const origin = window.location.origin;
@@ -264,8 +429,91 @@ export function SsoLoginPage() {
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<StatusState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileMessage, setTurnstileMessage] = useState<string | null>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIDRef = useRef<string | null>(null);
 
-  const canSubmit = Boolean(redirectTarget.url) && account.length > 0 && password.length > 0 && !isSubmitting;
+  const canSubmit = canSubmitSsoLogin({
+    hasRedirectTarget: Boolean(redirectTarget.url),
+    account,
+    password,
+    isSubmitting,
+    isTurnstileEnabled: turnstileEnabled,
+    turnstileToken,
+  });
+
+  /**
+   * resetTurnstile resets the rendered Turnstile widget and clears local token state.
+   * Parameters: This function does not accept input parameters.
+   * Returns: This function does not return a value.
+   */
+  const resetTurnstile = () => {
+    const widgetID = turnstileWidgetIDRef.current;
+    const api = getTurnstileAPI();
+    if (widgetID && api) {
+      api.reset(widgetID);
+    }
+    setTurnstileToken('');
+  };
+
+  useEffect(() => {
+    if (!turnstileEnabled) {
+      setTurnstileToken('');
+      setTurnstileMessage(null);
+      return;
+    }
+
+    let isCancelled = false;
+    setTurnstileMessage('Loading security challenge...');
+    setTurnstileToken('');
+
+    loadTurnstileScript(window.document)
+      .then((turnstile) => {
+        if (isCancelled || !turnstileContainerRef.current) {
+          return;
+        }
+
+        const widgetID = turnstile.render(turnstileContainerRef.current, {
+          sitekey: resolvedTurnstileSiteKey,
+          callback: (token: string) => {
+            setTurnstileToken(token);
+            setTurnstileMessage(null);
+          },
+          'expired-callback': () => {
+            setTurnstileToken('');
+            setTurnstileMessage('Security verification expired. Please complete it again.');
+          },
+          'error-callback': () => {
+            setTurnstileToken('');
+            setTurnstileMessage('Security verification failed. Please retry.');
+          },
+          'timeout-callback': () => {
+            setTurnstileToken('');
+            setTurnstileMessage('Security verification timed out. Please retry.');
+          },
+        });
+
+        turnstileWidgetIDRef.current = widgetID;
+        setTurnstileMessage('Please complete the security verification.');
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setTurnstileToken('');
+          setTurnstileMessage('Unable to load security verification. Refresh and try again.');
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+      const widgetID = turnstileWidgetIDRef.current;
+      const api = getTurnstileAPI();
+      if (widgetID && api) {
+        api.remove(widgetID);
+      }
+      turnstileWidgetIDRef.current = null;
+    };
+  }, [resolvedTurnstileSiteKey, turnstileEnabled]);
 
   /**
    * handleSubmit handles the SSO login submit and performs the redirect.
@@ -288,6 +536,11 @@ export function SsoLoginPage() {
       return;
     }
 
+    if (turnstileEnabled && !turnstileToken) {
+      setStatus({ tone: 'error', message: 'Please complete the security verification challenge.' });
+      return;
+    }
+
     setIsSubmitting(true);
     setStatus({ tone: 'info', message: 'Signing in...' });
 
@@ -295,6 +548,7 @@ export function SsoLoginPage() {
       const data = await fetchGraphQL<SsoLoginResponse>('', USER_LOGIN_MUTATION, {
         account,
         password,
+        turnstileToken: turnstileEnabled ? turnstileToken : null,
       });
 
       const token = data.UserLogin?.token;
@@ -308,6 +562,10 @@ export function SsoLoginPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed. Please try again.';
       setStatus({ tone: 'error', message });
+      if (turnstileEnabled) {
+        resetTurnstile();
+        setTurnstileMessage('Please complete the security verification again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -370,6 +628,17 @@ export function SsoLoginPage() {
                   onChange={(event) => setPassword(event.target.value)}
                 />
               </div>
+
+              {turnstileEnabled && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Security verification</label>
+                  <div
+                    ref={turnstileContainerRef}
+                    className="flex min-h-20 items-center justify-center rounded-md border border-border/60 bg-background px-2 py-3"
+                  />
+                  {turnstileMessage && <p className="text-xs text-muted-foreground">{turnstileMessage}</p>}
+                </div>
+              )}
 
               <Button type="submit" className="w-full" disabled={!canSubmit}>
                 {isSubmitting ? 'Signing in...' : 'Sign in and continue'}

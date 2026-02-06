@@ -29,11 +29,13 @@ func TestSiteConfigSetResolveHost(t *testing.T) {
 			"public_base_path": "/",
 		},
 		"sso": map[string]any{
-			"host":             "sso.laisky.com",
-			"title":            "Laisky SSO",
-			"router":           "sso",
-			"default":          true,
-			"public_base_path": "/",
+			"host":                 "sso.laisky.com",
+			"title":                "Laisky SSO",
+			"router":               "sso",
+			"default":              true,
+			"public_base_path":     "/",
+			"turnstile_site_key":   "test-turnstile-site-key",
+			"turnstile_secret_key": "test-turnstile-secret-key",
 		},
 	}
 	gconfig.Shared.Set("settings.web.sites", siteSettings)
@@ -49,6 +51,7 @@ func TestSiteConfigSetResolveHost(t *testing.T) {
 	site := set.resolveForRequest(req)
 	require.Equal(t, "sso", site.ID)
 	require.Equal(t, "sso", site.Router)
+	require.Equal(t, "test-turnstile-site-key", site.TurnstileSiteKey)
 
 	req = httptest.NewRequest(http.MethodGet, "https://mcp.laisky.com/", nil)
 	req.Host = "mcp.laisky.com:443"

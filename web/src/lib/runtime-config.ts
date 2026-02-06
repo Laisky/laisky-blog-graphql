@@ -19,6 +19,7 @@ export interface RuntimeSiteConfig {
   theme?: string;
   router?: string;
   publicBasePath?: string;
+  turnstileSiteKey?: string;
 }
 
 /**

@@ -196,7 +196,7 @@ type ComplexityRoot struct {
 		GeneralAddLLMStormTask    func(childComplexity int, prompt string, apiKey string) int
 		TelegramMonitorAlert      func(childComplexity int, typeArg string, token string, msg string) int
 		UserActive                func(childComplexity int, token string) int
-		UserLogin                 func(childComplexity int, account string, password string) int
+		UserLogin                 func(childComplexity int, account string, password string, turnstileToken *string) int
 		UserRegister              func(childComplexity int, account string, password string, displayName string, captcha string) int
 		UserResendActiveEmail     func(childComplexity int, account string) int
 		WebFetch                  func(childComplexity int, url string) int
@@ -354,7 +354,7 @@ type MutationResolver interface {
 	BlogApproveComment(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogDeleteComment(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error)
-	UserLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error)
+	UserLogin(ctx context.Context, account string, password string, turnstileToken *string) (*models.BlogLoginResponse, error)
 	UserRegister(ctx context.Context, account string, password string, displayName string, captcha string) (*models.UserRegisterResponse, error)
 	UserActive(ctx context.Context, token string) (*models.UserActiveResponse, error)
 	UserResendActiveEmail(ctx context.Context, account string) (*models.UserResendActiveEmailResponse, error)
@@ -1076,7 +1076,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.UserLogin(childComplexity, args["account"].(string), args["password"].(string)), true
+		return e.complexity.Mutation.UserLogin(childComplexity, args["account"].(string), args["password"].(string), args["turnstile_token"].(*string)), true
 	case "Mutation.UserRegister":
 		if e.complexity.Mutation.UserRegister == nil {
 			break
@@ -1982,6 +1982,11 @@ func (ec *executionContext) field_Mutation_UserLogin_args(ctx context.Context, r
 		return nil, err
 	}
 	args["password"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "turnstile_token", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["turnstile_token"] = arg2
 	return args, nil
 }
 
@@ -5188,7 +5193,7 @@ func (ec *executionContext) _Mutation_UserLogin(ctx context.Context, field graph
 		ec.fieldContext_Mutation_UserLogin,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.Mutation().UserLogin(ctx, fc.Args["account"].(string), fc.Args["password"].(string))
+			return ec.resolvers.Mutation().UserLogin(ctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["turnstile_token"].(*string))
 		},
 		nil,
 		ec.marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse,

@@ -4,6 +4,8 @@ The purpose of this project is to implement a GraphQL API server and a remote MC
 
 This project including server side code written in Go and web front-end code (located in the `web` directory) written in TypeScript/React.
 
+Local tools and debugging related sensitive information is saved in `.github/instructions/laisky.instructions.md`.
+
 ### Package Management
 
 Use `pnpm` for managing JavaScript/TypeScript packages in the `web` directory.

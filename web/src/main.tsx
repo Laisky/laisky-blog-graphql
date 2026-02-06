@@ -30,9 +30,10 @@ async function bootstrap() {
   const runtimeConfig = await loadRuntimeConfig();
   const basename = normalizeBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL);
   const toolsConfig: ToolsConfig = runtimeConfig?.tools ?? defaultToolsConfig;
+  const turnstileSiteKey = runtimeConfig?.site?.turnstileSiteKey;
   applySiteBranding(runtimeConfig?.site);
   const routerKind = resolveRouterKind(runtimeConfig?.site?.router);
-  const routes = routerKind === 'sso' ? buildSsoRoutes() : buildMcpRoutes();
+  const routes = routerKind === 'sso' ? buildSsoRoutes(turnstileSiteKey) : buildMcpRoutes(turnstileSiteKey);
   const router = createBrowserRouter(routes, { basename });
 
   const container = document.getElementById('root');
@@ -61,11 +62,11 @@ bootstrap().catch((error) => {
 
 /**
  * buildMcpRoutes builds the router table for the MCP console experience.
- * It returns the route configuration used by React Router.
+ * It accepts the optional Turnstile site key and returns the route configuration used by React Router.
  */
-function buildMcpRoutes() {
+function buildMcpRoutes(turnstileSiteKey: string | undefined) {
   return [
-    { path: '/sso/login', element: <SsoLoginPage /> },
+    { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
     {
       path: '/',
       element: <AppLayout />,
@@ -87,12 +88,12 @@ function buildMcpRoutes() {
 
 /**
  * buildSsoRoutes builds the router table for the standalone SSO experience.
- * It returns the route configuration used by React Router.
+ * It accepts the optional Turnstile site key and returns the route configuration used by React Router.
  */
-function buildSsoRoutes() {
+function buildSsoRoutes(turnstileSiteKey: string | undefined) {
   return [
-    { path: '/', element: <SsoLoginPage /> },
-    { path: '/sso/login', element: <SsoLoginPage /> },
+    { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
+    { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
     { path: '*', element: <NotFoundPage /> },
   ];
 }

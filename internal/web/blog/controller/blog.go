@@ -327,7 +327,13 @@ func (r *UserResolver) ID(ctx context.Context,
 
 // UserLogin login user
 func (r *MutationResolver) UserLogin(ctx context.Context,
-	account string, password string) (*models.BlogLoginResponse, error) {
+	account string, password string, turnstileToken *string) (*models.BlogLoginResponse, error) {
+	logger := ginMw.GetLogger(ctx).Named("user_login")
+	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+		logger.Warn("turnstile verification failed", zap.Error(err))
+		return nil, maskLoginError(model.ErrInvalidCredentials)
+	}
+
 	return r.BlogLogin(ctx, account, password)
 }
 

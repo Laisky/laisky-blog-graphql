@@ -63,6 +63,8 @@ settings:
         theme: sso
         router: sso
         public_base_path: /
+        turnstile_site_key: YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY
+        turnstile_secret_key: YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY
   websearch:
     max_retry: 3 # default: 3
     engines:
