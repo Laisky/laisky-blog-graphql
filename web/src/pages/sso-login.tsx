@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
+import { cn } from '@/lib/utils';
 
 const USER_LOGIN_MUTATION = `
   mutation SsoLogin($account: String!, $password: String!, $turnstileToken: String) {
@@ -20,31 +21,16 @@ const USER_LOGIN_MUTATION = `
 const TURNSTILE_SCRIPT_ID = 'cloudflare-turnstile-script';
 const TURNSTILE_SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
-/**
- * SsoLoginResponse describes the GraphQL response for SSO login.
- * Parameters: The interface fields map the UserLogin token payload returned by the API.
- * Returns: The interface is used to type the GraphQL response shape.
- */
 interface SsoLoginResponse {
   UserLogin: {
     token: string;
   };
 }
 
-/**
- * SsoLoginPageProps describes props accepted by SsoLoginPage.
- * Parameters: turnstileSiteKey is an optional Cloudflare Turnstile site key loaded from runtime configuration.
- * Returns: The interface is used for SSO login page props typing.
- */
 export interface SsoLoginPageProps {
   turnstileSiteKey?: string;
 }
 
-/**
- * TurnstileRenderOptions describes options passed to Cloudflare Turnstile render API.
- * Parameters: The fields map directly to Turnstile's explicit render options.
- * Returns: The interface is used for safe typing of browser Turnstile API calls.
- */
 interface TurnstileRenderOptions {
   sitekey: string;
   callback: (token: string) => void;
@@ -53,11 +39,6 @@ interface TurnstileRenderOptions {
   'timeout-callback'?: () => void;
 }
 
-/**
- * TurnstileAPI describes the minimal Cloudflare Turnstile browser API used by this page.
- * Parameters: The interface methods map to widget render/reset/remove operations.
- * Returns: The interface is used to type the global window.turnstile object.
- */
 interface TurnstileAPI {
   render: (container: HTMLElement, options: TurnstileRenderOptions) => string;
   reset: (widgetId?: string) => void;
@@ -70,11 +51,6 @@ declare global {
   }
 }
 
-/**
- * SsoSubmitState describes all fields required to evaluate whether submit should be enabled.
- * Parameters: The interface fields mirror current form and Turnstile state.
- * Returns: The interface is used as input for canSubmitSsoLogin.
- */
 export interface SsoSubmitState {
   hasRedirectTarget: boolean;
   account: string;
@@ -84,20 +60,10 @@ export interface SsoSubmitState {
   turnstileToken: string;
 }
 
-/**
- * isTurnstileEnabled checks whether Turnstile should be enabled for the current page.
- * Parameters: siteKey is the optional runtime site key.
- * Returns: True when a non-empty site key is configured.
- */
 export function isTurnstileEnabled(siteKey: string | undefined): boolean {
   return (siteKey ?? '').trim().length > 0;
 }
 
-/**
- * canSubmitSsoLogin checks whether the SSO login form has enough information to submit.
- * Parameters: state contains form values, loading state, and Turnstile status.
- * Returns: True when all required fields are present and the form is not submitting.
- */
 export function canSubmitSsoLogin(state: SsoSubmitState): boolean {
   if (!state.hasRedirectTarget || state.isSubmitting) {
     return false;
@@ -114,20 +80,10 @@ export function canSubmitSsoLogin(state: SsoSubmitState): boolean {
   return true;
 }
 
-/**
- * getTurnstileAPI returns the global Turnstile API when available.
- * Parameters: This function does not accept input parameters.
- * Returns: The Turnstile API object when present on window, otherwise undefined.
- */
 function getTurnstileAPI(): TurnstileAPI | undefined {
   return window.turnstile;
 }
 
-/**
- * loadTurnstileScript loads the Cloudflare Turnstile script if it has not been loaded.
- * Parameters: documentRef is the active browser document used to append or read script tags.
- * Returns: A promise resolving to the Turnstile API once the script is available.
- */
 export function loadTurnstileScript(documentRef: Document): Promise<TurnstileAPI> {
   const existing = getTurnstileAPI();
   if (existing) {
@@ -191,22 +147,12 @@ export function loadTurnstileScript(documentRef: Document): Promise<TurnstileAPI
   });
 }
 
-/**
- * RedirectTarget describes the parsed redirect target for the SSO flow.
- * Parameters: The interface fields describe the parsed URL, display string, and optional error message.
- * Returns: The interface is used as a shape for parse results.
- */
 export interface RedirectTarget {
   url: URL | null;
   display: string;
   error?: string;
 }
 
-/**
- * parseRedirectTarget validates and normalizes the redirect_to parameter.
- * Parameters: rawValue is the redirect_to query value, origin is the current page origin for resolving relative URLs.
- * Returns: A RedirectTarget containing the resolved URL, display string, and optional error message.
- */
 export function parseRedirectTarget(rawValue: string | null, origin: string): RedirectTarget {
   const raw = (rawValue ?? '').trim();
   if (!raw) {
@@ -252,50 +198,25 @@ export function parseRedirectTarget(rawValue: string | null, origin: string): Re
   };
 }
 
-/**
- * isAllowedRedirectProtocol checks whether a redirect URL uses an approved protocol.
- * Parameters: target is the parsed redirect URL to inspect.
- * Returns: True when the protocol is http or https.
- */
 export function isAllowedRedirectProtocol(target: URL): boolean {
   const protocol = target.protocol.toLowerCase();
   return protocol === 'http:' || protocol === 'https:';
 }
 
-/**
- * isAllowedRedirectHost checks whether a redirect URL hostname is permitted.
- * Parameters: target is the parsed redirect URL to inspect.
- * Returns: True when the hostname is a laisky.com domain or an internal IP.
- */
 export function isAllowedRedirectHost(target: URL): boolean {
   const hostname = normalizeHostname(target.hostname);
   return isAllowedLaiskyDomain(hostname) || isInternalIPAddress(hostname);
 }
 
-/**
- * normalizeHostname lowercases and trims the hostname for comparison.
- * Parameters: hostname is the raw hostname string from the URL.
- * Returns: The normalized hostname without trailing dots.
- */
 export function normalizeHostname(hostname: string): string {
   const trimmed = hostname.trim().toLowerCase();
   return trimmed.endsWith('.') ? trimmed.slice(0, -1) : trimmed;
 }
 
-/**
- * isAllowedLaiskyDomain verifies that the hostname is laisky.com or a subdomain.
- * Parameters: hostname is the normalized hostname string.
- * Returns: True when hostname matches laisky.com or ends with .laisky.com.
- */
 export function isAllowedLaiskyDomain(hostname: string): boolean {
   return hostname === 'laisky.com' || hostname.endsWith('.laisky.com');
 }
 
-/**
- * isInternalIPAddress verifies that the hostname is an internal IP address.
- * Parameters: hostname is the normalized hostname string.
- * Returns: True when hostname is an internal IPv4 or IPv6 address.
- */
 export function isInternalIPAddress(hostname: string): boolean {
   const ipv4 = parseIPv4Address(hostname);
   if (ipv4) {
@@ -309,11 +230,6 @@ export function isInternalIPAddress(hostname: string): boolean {
   return false;
 }
 
-/**
- * parseIPv4Address parses a dotted IPv4 string into octets.
- * Parameters: hostname is the candidate IPv4 string.
- * Returns: A tuple of octets when valid, otherwise null.
- */
 export function parseIPv4Address(hostname: string): [number, number, number, number] | null {
   const parts = hostname.split('.');
   if (parts.length !== 4) {
@@ -335,11 +251,6 @@ export function parseIPv4Address(hostname: string): [number, number, number, num
   return [octets[0], octets[1], octets[2], octets[3]];
 }
 
-/**
- * isInternalIPv4Address checks whether an IPv4 address is in a private range.
- * Parameters: octets is the IPv4 address represented as four octets.
- * Returns: True when the address is within RFC1918 or loopback ranges.
- */
 export function isInternalIPv4Address(octets: [number, number, number, number]): boolean {
   const [first, second] = octets;
   if (first === 10) {
@@ -361,11 +272,6 @@ export function isInternalIPv4Address(octets: [number, number, number, number]):
   return false;
 }
 
-/**
- * isInternalIPv6Address checks whether an IPv6 address is private or loopback.
- * Parameters: hostname is the IPv6 hostname string.
- * Returns: True when the address is within unique-local or loopback ranges.
- */
 export function isInternalIPv6Address(hostname: string): boolean {
   let normalized = hostname.toLowerCase();
 
@@ -399,22 +305,12 @@ export function isInternalIPv6Address(hostname: string): boolean {
   return (value & 0xfe00) === 0xfc00;
 }
 
-/**
- * buildRedirectUrlWithToken appends the SSO token to the redirect URL.
- * Parameters: target is the redirect URL to update, token is the SSO token to append.
- * Returns: The redirect URL string containing the sso_token query parameter.
- */
 export function buildRedirectUrlWithToken(target: URL, token: string): string {
   const next = new URL(target.toString());
   next.searchParams.set('sso_token', token);
   return next.toString();
 }
 
-/**
- * SsoLoginPage renders the SSO login form and redirects after successful login.
- * Parameters: props carries the optional Turnstile site key from runtime configuration.
- * Returns: A JSX element containing the SSO login form.
- */
 export function SsoLoginPage(props: SsoLoginPageProps) {
   const resolvedTurnstileSiteKey = (props.turnstileSiteKey ?? '').trim();
   const turnstileEnabled = isTurnstileEnabled(resolvedTurnstileSiteKey);
@@ -444,11 +340,6 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     turnstileToken,
   });
 
-  /**
-   * resetTurnstile resets the rendered Turnstile widget and clears local token state.
-   * Parameters: This function does not accept input parameters.
-   * Returns: This function does not return a value.
-   */
   const resetTurnstile = () => {
     const widgetID = turnstileWidgetIDRef.current;
     const api = getTurnstileAPI();
@@ -516,11 +407,6 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     };
   }, [resolvedTurnstileSiteKey, turnstileEnabled]);
 
-  /**
-   * handleSubmit handles the SSO login submit and performs the redirect.
-   * Parameters: event is the form submit event to prevent default navigation.
-   * Returns: A Promise that resolves after handling the login attempt.
-   */
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSubmitting) {
@@ -543,7 +429,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     }
 
     setIsSubmitting(true);
-    setStatus({ tone: 'info', message: 'Signing in...' });
+    setStatus({ tone: 'info', message: 'Authenticating...' });
 
     try {
       const data = await fetchGraphQL<SsoLoginResponse>('', USER_LOGIN_MUTATION, {
@@ -577,80 +463,90 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     : { tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' };
   const redirectBanner = { status: redirectStatus, subtext: redirectTarget.display };
 
+  // Hut 8-inspired Color Scheme applied to Original Layout
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
+    <div className="relative flex min-h-screen items-center justify-center bg-gray-50 dark:bg-[#0d0d0d] px-4 py-12 text-zinc-900 dark:text-slate-200 selection:bg-yellow-500 selection:text-black transition-colors duration-300">
+      {/* Background patterns/grid for "Hut 8" vibe without changing layout structure */}
+      <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,#0000000a_1px,transparent_1px),linear-gradient(to_bottom,#0000000a_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+
       <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
         <ThemeToggle />
       </div>
-      <div className="flex w-full max-w-lg flex-col gap-6">
+
+      <div className="z-10 flex w-full max-w-lg flex-col gap-6">
         <div className="space-y-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
+          <div className="flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-widest text-blue-600 dark:text-[#d8ff00] font-mono">
             <Lock className="h-4 w-4" />
-            <span>SSO Login</span>
+            <span>Laisky SSO</span>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Sign in to continue</h1>
-          <p className="text-sm text-muted-foreground">
-            Authenticate with your Laisky account to issue a short-lived SSO token for the requested destination.
-          </p>
         </div>
 
-        <Card className="border border-border/60 bg-card shadow-sm">
-          <CardHeader className="space-y-2">
-            <CardTitle>Account Login</CardTitle>
-            <CardDescription>Enter your credentials and we will redirect you with an SSO token.</CardDescription>
+        <Card className="border-0 bg-white/80 dark:bg-zinc-900/40 text-zinc-900 dark:text-slate-200 shadow-2xl backdrop-blur-sm ring-1 ring-black/5 dark:ring-white/10 transition-colors duration-300">
+          <CardHeader className="space-y-2 border-b border-black/5 dark:border-white/5 pb-6">
             <StatusBanner status={redirectBanner.status} subtext={redirectBanner.subtext} />
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6 pt-6">
             {status && <StatusBanner status={status} />}
 
-            <form className="space-y-4" onSubmit={handleSubmit}>
+            <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <label htmlFor="sso-account" className="text-sm font-medium text-foreground">
-                  Account
+                <label htmlFor="sso-account" className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1">
+                  Account ID
                 </label>
                 <Input
                   id="sso-account"
                   name="account"
                   autoComplete="username"
-                  placeholder="Email or username"
+                  placeholder="USER_IDENTIFIER"
                   value={account}
                   onChange={(event) => setAccount(event.target.value)}
+                  className="bg-gray-50 dark:bg-black/40 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-700 h-12 font-mono focus-visible:ring-blue-600/30 dark:focus-visible:ring-[#d8ff00]/30 focus-visible:border-blue-600/50 dark:focus-visible:border-[#d8ff00]/50 transition-colors"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="sso-password" className="text-sm font-medium text-foreground">
-                  Password
+                <label htmlFor="sso-password" className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1">
+                  Passphrase
                 </label>
                 <Input
                   id="sso-password"
                   name="password"
                   type="password"
                   autoComplete="current-password"
-                  placeholder="Enter your password"
+                  placeholder="••••••••••••"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
+                  className="bg-gray-50 dark:bg-black/40 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-700 h-12 font-mono focus-visible:ring-blue-600/30 dark:focus-visible:ring-[#d8ff00]/30 focus-visible:border-blue-600/50 dark:focus-visible:border-[#d8ff00]/50 transition-colors"
                 />
               </div>
 
               {turnstileEnabled && (
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Security verification</label>
+                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1">Security Check</label>
                   <div
                     ref={turnstileContainerRef}
-                    className="flex min-h-20 items-center justify-center rounded-md border border-border/60 bg-background px-2 py-3"
+                    className="flex min-h-20 items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-800 bg-gray-50 dark:bg-black/20 px-2 py-3 transition-colors"
                   />
-                  {turnstileMessage && <p className="text-xs text-muted-foreground">{turnstileMessage}</p>}
+                  {turnstileMessage && <p className="text-xs text-zinc-500 font-mono">{turnstileMessage}</p>}
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={!canSubmit}>
-                {isSubmitting ? 'Signing in...' : 'Sign in and continue'}
+              <Button
+                type="submit"
+                className="w-full h-12 bg-zinc-900 dark:bg-[#d8ff00] hover:bg-zinc-800 dark:hover:bg-[#c5e600] text-white dark:text-black font-bold uppercase tracking-widest font-mono transition-all duration-300 transform active:scale-95"
+                disabled={!canSubmit}
+              >
+                {isSubmitting ? 'Authenticating...' : 'Login'}
                 {!isSubmitting && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>
             </form>
           </CardContent>
         </Card>
+
+        <div className="flex justify-between text-[10px] text-zinc-400 dark:text-zinc-600 font-mono uppercase">
+          <span>Sys.Status: Online</span>
+          <span>Encrypted: TLS 1.3</span>
+        </div>
       </div>
     </div>
   );
