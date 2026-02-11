@@ -24,6 +24,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
@@ -369,6 +370,29 @@ func runAPI() error {
 				logger.Warn("rag service unavailable despite being enabled")
 			}
 		}
+
+		filesSettings := files.LoadSettingsFromConfig()
+		if mcpDB != nil {
+			var credStore files.CredentialStore
+			if args.Rdb != nil {
+				credStore = files.NewRedisCredentialStore(args.Rdb.GetDB())
+			}
+			credential, credErr := files.NewCredentialProtector(filesSettings.Security)
+			if credErr != nil {
+				logger.Warn("file credential protector unavailable", zap.Error(credErr))
+			}
+			embedder := rag.NewOpenAIEmbedder(filesSettings.EmbeddingBaseURL, filesSettings.EmbeddingModel, nil)
+			rerankClient := files.NewCohereRerankClient(filesSettings.Search.RerankEndpoint, filesSettings.Search.RerankModel, filesSettings.Search.RerankTimeout)
+			fileSvc, err := files.NewService(mcpDB.DB, filesSettings, embedder, rerankClient, credential, credStore, logger.Named("mcp_files"), nil, nil)
+			if err != nil {
+				logger.Warn("file service unavailable", zap.Error(err))
+			} else {
+				args.FilesService = fileSvc
+				if startErr := fileSvc.StartIndexWorkers(ctx); startErr != nil {
+					logger.Warn("start file index workers", zap.Error(startErr))
+				}
+			}
+		}
 	} else {
 		logger.Warn("MCP services skipped due to missing database connection")
 	}
@@ -386,6 +410,7 @@ func runAPI() error {
 		zap.Bool("ask_user_enabled", args.MCPToolsSettings.AskUserEnabled),
 		zap.Bool("get_user_request_enabled", args.MCPToolsSettings.GetUserRequestEnabled),
 		zap.Bool("extract_key_info_enabled", args.MCPToolsSettings.ExtractKeyInfoEnabled),
+		zap.Bool("file_io_enabled", args.MCPToolsSettings.FileIOEnabled),
 	)
 
 	logger.Info("total startup initialization completed",

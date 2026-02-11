@@ -21,6 +21,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
@@ -52,6 +53,12 @@ type Server struct {
 	askUser        *tools.AskUserTool
 	getUserRequest *tools.GetUserRequestTool
 	extractKeyInfo *tools.ExtractKeyInfoTool
+	fileStat       *tools.FileStatTool
+	fileRead       *tools.FileReadTool
+	fileWrite      *tools.FileWriteTool
+	fileDelete     *tools.FileDeleteTool
+	fileList       *tools.FileListTool
+	fileSearch     *tools.FileSearchTool
 	mcpPipe        *tools.MCPPipeTool
 	callLogger     callRecorder
 	holdManager    *userrequests.HoldManager
@@ -66,8 +73,8 @@ type Server struct {
 // callLogger records tool invocations for auditing when provided.
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
-func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, rdb *rlibs.DB, callLogger callRecorder, toolsSettings ToolsSettings, logger logSDK.Logger) (*Server, error) {
-	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled {
+func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, fileService *files.Service, rdb *rlibs.DB, callLogger callRecorder, toolsSettings ToolsSettings, logger logSDK.Logger) (*Server, error) {
+	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && fileService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
@@ -91,7 +98,15 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		mcpServer,
 		srv.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
 			// Inject authorization header
-			ctx = context.WithValue(ctx, keyAuthorization, r.Header.Get("Authorization"))
+			authHeader := r.Header.Get("Authorization")
+			ctx = context.WithValue(ctx, keyAuthorization, authHeader)
+			if authCtx, err := askuser.ParseAuthorizationContext(authHeader); err == nil {
+				ctx = context.WithValue(ctx, ctxkeys.AuthContext, &files.AuthContext{
+					APIKey:       authCtx.APIKey,
+					APIKeyHash:   authCtx.APIKeyHash,
+					UserIdentity: authCtx.UserIdentity,
+				})
+			}
 
 			// Create a per-request logger with request-specific context
 			reqLogger := serverLogger.With(
@@ -209,6 +224,52 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		serverLogger.Info("extract_key_info tool disabled by configuration")
 	}
 
+	if fileService != nil && toolsSettings.FileIOEnabled {
+		fileStatTool, err := tools.NewFileStatTool(fileService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init file_stat tool")
+		}
+		s.fileStat = fileStatTool
+		mcpServer.AddTool(fileStatTool.Definition(), s.handleFileStat)
+
+		fileReadTool, err := tools.NewFileReadTool(fileService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init file_read tool")
+		}
+		s.fileRead = fileReadTool
+		mcpServer.AddTool(fileReadTool.Definition(), s.handleFileRead)
+
+		fileWriteTool, err := tools.NewFileWriteTool(fileService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init file_write tool")
+		}
+		s.fileWrite = fileWriteTool
+		mcpServer.AddTool(fileWriteTool.Definition(), s.handleFileWrite)
+
+		fileDeleteTool, err := tools.NewFileDeleteTool(fileService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init file_delete tool")
+		}
+		s.fileDelete = fileDeleteTool
+		mcpServer.AddTool(fileDeleteTool.Definition(), s.handleFileDelete)
+
+		fileListTool, err := tools.NewFileListTool(fileService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init file_list tool")
+		}
+		s.fileList = fileListTool
+		mcpServer.AddTool(fileListTool.Definition(), s.handleFileList)
+
+		fileSearchTool, err := tools.NewFileSearchTool(fileService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init file_search tool")
+		}
+		s.fileSearch = fileSearchTool
+		mcpServer.AddTool(fileSearchTool.Definition(), s.handleFileSearch)
+	} else if fileService != nil && !toolsSettings.FileIOEnabled {
+		serverLogger.Info("file tools disabled by configuration")
+	}
+
 	if toolsSettings.MCPPipeEnabled {
 		pipeTool, err := tools.NewMCPPipeTool(
 			serverLogger.Named("mcp_pipe"),
@@ -230,6 +291,18 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 					return s.handleGetUserRequest(ctx, req)
 				case "extract_key_info":
 					return s.handleExtractKeyInfo(ctx, req)
+				case "file_stat":
+					return s.handleFileStat(ctx, req)
+				case "file_read":
+					return s.handleFileRead(ctx, req)
+				case "file_write":
+					return s.handleFileWrite(ctx, req)
+				case "file_delete":
+					return s.handleFileDelete(ctx, req)
+				case "file_list":
+					return s.handleFileList(ctx, req)
+				case "file_search":
+					return s.handleFileSearch(ctx, req)
 				default:
 					return mcp.NewToolResultError(fmt.Sprintf("unknown tool: %s", toolName)), nil
 				}
@@ -330,6 +403,7 @@ func (s *Server) recordToolInvocation(ctx context.Context, toolName string, apiK
 	}
 
 	params := cloneArguments(args)
+	params = files.RedactToolArguments(toolName, params)
 	status := calllog.StatusSuccess
 	errorMessage := ""
 
@@ -489,6 +563,120 @@ func (s *Server) handleExtractKeyInfo(ctx context.Context, req mcp.CallToolReque
 	return result, nil
 }
 
+func (s *Server) handleFileStat(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.fileStat == nil {
+		result := mcp.NewToolResultError("file_stat tool is not available")
+		s.recordToolInvocation(ctx, "file_stat", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.fileStat.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "file_stat", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+func (s *Server) handleFileRead(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.fileRead == nil {
+		result := mcp.NewToolResultError("file_read tool is not available")
+		s.recordToolInvocation(ctx, "file_read", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.fileRead.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "file_read", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+func (s *Server) handleFileWrite(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.fileWrite == nil {
+		result := mcp.NewToolResultError("file_write tool is not available")
+		s.recordToolInvocation(ctx, "file_write", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.fileWrite.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "file_write", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+func (s *Server) handleFileDelete(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.fileDelete == nil {
+		result := mcp.NewToolResultError("file_delete tool is not available")
+		s.recordToolInvocation(ctx, "file_delete", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.fileDelete.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "file_delete", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+func (s *Server) handleFileList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.fileList == nil {
+		result := mcp.NewToolResultError("file_list tool is not available")
+		s.recordToolInvocation(ctx, "file_list", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.fileList.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "file_list", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+func (s *Server) handleFileSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.fileSearch == nil {
+		result := mcp.NewToolResultError("file_search tool is not available")
+		s.recordToolInvocation(ctx, "file_search", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.fileSearch.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "file_search", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
 // handleMCPPipe executes the mcp_pipe MCP tool, auditing the invocation via the call logger.
 func (s *Server) handleMCPPipe(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	apiKey := apiKeyFromContext(ctx)
@@ -519,7 +707,7 @@ func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
 	hooks.AddBeforeAny(func(ctx context.Context, id any, method mcp.MCPMethod, message any) {
 		fields := hookLogFields(ctx, id, method)
 		if message != nil {
-			fields = append(fields, zap.Any("request", message))
+			fields = append(fields, zap.String("request", redactHookPayload(message)))
 		}
 		logger.Debug("mcp request received", fields...)
 	})
@@ -527,7 +715,7 @@ func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
 	hooks.AddOnSuccess(func(ctx context.Context, id any, method mcp.MCPMethod, message any, result any) {
 		fields := hookLogFields(ctx, id, method)
 		if result != nil {
-			fields = append(fields, zap.Any("response", result))
+			fields = append(fields, zap.String("response", redactHookPayload(result)))
 		}
 		logger.Info("mcp request succeeded", fields...)
 	})
@@ -535,7 +723,7 @@ func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
 	hooks.AddOnError(func(ctx context.Context, id any, method mcp.MCPMethod, message any, err error) {
 		fields := hookLogFields(ctx, id, method)
 		if message != nil {
-			fields = append(fields, zap.Any("request", message))
+			fields = append(fields, zap.String("request", redactHookPayload(message)))
 		}
 		fields = append(fields, zap.Error(err))
 		logger.Error("mcp request failed", fields...)
@@ -580,10 +768,11 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 			logger.Error("read request body", zap.Error(err))
 		}
 
+		redactedBody := redactMCPBody(body)
 		logger.Debug("incoming http request",
 			zap.String("method", r.Method),
 			zap.String("url", r.URL.String()),
-			zap.String("body", body),
+			zap.String("body", redactedBody),
 			zap.Bool("body_truncated", truncated),
 			zap.String("remote_addr", r.RemoteAddr),
 		)
@@ -593,11 +782,12 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 
 		status := lrw.Status()
 		respBody, respTruncated := lrw.Body()
+		redactedResp := redactMCPBody(respBody)
 		logger.Debug("outgoing http response",
 			zap.String("method", r.Method),
 			zap.String("url", r.URL.String()),
 			zap.Int("status", status),
-			zap.String("body", respBody),
+			zap.String("body", redactedResp),
 			zap.Bool("body_truncated", respTruncated),
 			zap.String("remote_addr", r.RemoteAddr),
 			zap.Duration("cost", time.Since(startAt)),

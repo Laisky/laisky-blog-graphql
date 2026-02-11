@@ -1,4 +1,4 @@
-import { Activity, ClipboardList, Cpu, Database, ExternalLink, Globe, Key, MessageSquare, Search, Server } from 'lucide-react';
+import { Activity, ClipboardList, Cpu, Database, ExternalLink, FolderOpen, Globe, Key, MessageSquare, Search, Server } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
@@ -91,6 +91,20 @@ export function HomePage() {
           icon={<Database className="h-5 w-5" />}
           tags={['RAG', 'Vector DB', 'Embeddings']}
           enabled={toolsConfig.extract_key_info}
+        />
+      ),
+    },
+    {
+      key: 'file_io',
+      enabled: toolsConfig.file_io,
+      element: (
+        <ToolCard
+          title="file_io"
+          description="Project-scoped file workspace for reading, writing, listing, and searching content."
+          icon={<FolderOpen className="h-5 w-5" />}
+          tags={['Storage', 'Workspace', 'Search']}
+          enabled={toolsConfig.file_io}
+          href="/tools/file_io"
         />
       ),
     },

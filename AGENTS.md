@@ -10,17 +10,13 @@ Local tools and debugging related sensitive information is saved in `.github/ins
 
 Use `pnpm` for managing JavaScript/TypeScript packages in the `web` directory.
 
-### Codes
+## General
 
-All code must be written in English. Avoid using any other languages in code, comments, or documentation.
+No matter what language you receive, keep using English for all code, comments, thinking/reasoning, planning and documentation.
 
 Every single code file should not exceed 800 lines. If a file exceeds this limit, please split it into smaller files based on functionality. Automatically generated files are exempt from this rule.
 
-### Debug & Logging
-
 When debugging, add targeted DEBUG logs that include essential details to help developers pinpoint hard‑to‑diagnose issues. After debugging, retain any logs that could be useful for future troubleshooting, but **never** include sensitive data like API keys or passwords in those logs.
-
-## General
 
 ### Agents
 

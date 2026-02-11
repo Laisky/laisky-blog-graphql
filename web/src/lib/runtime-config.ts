@@ -7,6 +7,7 @@ export interface ToolsConfig {
   ask_user: boolean;
   get_user_request: boolean;
   extract_key_info: boolean;
+  file_io: boolean;
 }
 
 /**
@@ -39,6 +40,7 @@ export const defaultToolsConfig: ToolsConfig = {
   ask_user: true,
   get_user_request: true,
   extract_key_info: true,
+  file_io: true,
 };
 
 /**

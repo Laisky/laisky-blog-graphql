@@ -4,7 +4,14 @@ import { Check, Laptop, Moon, Sun, type LucideIcon } from 'lucide-react';
 import { useMemo } from 'react';
 
 import { Button, type ButtonProps } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useTheme, type ThemeSetting } from '@/components/theme/theme-provider';
 import { cn } from '@/lib/utils';
 
