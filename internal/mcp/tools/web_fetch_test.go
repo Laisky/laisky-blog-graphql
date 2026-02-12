@@ -89,7 +89,7 @@ func TestWebFetchHandleSuccess(t *testing.T) {
 			fetchCalls++
 			require.Equal(t, "https://example.com", url)
 			require.Equal(t, "token", apiKey)
-			require.False(t, outputMarkdown)
+			require.True(t, outputMarkdown)
 			return []byte("<html>ok</html>"), nil
 		},
 	)

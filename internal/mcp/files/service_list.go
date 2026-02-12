@@ -49,6 +49,9 @@ func (s *Service) List(ctx context.Context, auth AuthContext, project, path stri
 	}
 
 	if len(entries) == 0 {
+		if path == "" {
+			return ListResult{Entries: []FileEntry{}, HasMore: false}, nil
+		}
 		return ListResult{}, errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
 	}
 
@@ -67,6 +70,25 @@ func (s *Service) List(ctx context.Context, auth AuthContext, project, path stri
 
 // listSelfEntry returns the entry for the target path itself.
 func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path string) (FileEntry, bool, error) {
+	if path == "" {
+		updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, apiKeyHash, project, path)
+		if err != nil {
+			return FileEntry{}, false, errors.WithStack(err)
+		}
+		if !exists {
+			updatedAt = time.Time{}
+		}
+
+		return FileEntry{
+			Name:      "",
+			Path:      "",
+			Type:      FileTypeDirectory,
+			Size:      0,
+			CreatedAt: time.Time{},
+			UpdatedAt: updatedAt,
+		}, true, nil
+	}
+
 	file, err := s.findActiveFile(ctx, apiKeyHash, project, path)
 	if err == nil {
 		return fileToEntry(*file), true, nil

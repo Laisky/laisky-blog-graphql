@@ -196,3 +196,30 @@ func TestSearchTenantIsolation(t *testing.T) {
 		require.Equal(t, "/b.txt", chunk.FilePath)
 	}
 }
+
+// TestSearchFallsBackWhenSemanticBackendFails verifies semantic backend failures degrade to lexical-only retrieval.
+func TestSearchFallsBackWhenSemanticBackendFails(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "alpha beta gamma", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	worker := svc.NewIndexWorker()
+	require.NoError(t, worker.RunOnce(context.Background()))
+
+	err = svc.db.WithContext(context.Background()).Exec("UPDATE mcp_file_chunk_embeddings SET embedding = ?", "not-a-valid-embedding").Error
+	require.NoError(t, err)
+
+	searchRes, err := svc.Search(context.Background(), auth, "proj", "alpha", "", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, searchRes.Chunks)
+	require.Equal(t, "/a.txt", searchRes.Chunks[0].FilePath)
+}

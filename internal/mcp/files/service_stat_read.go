@@ -19,6 +19,22 @@ func (s *Service) Stat(ctx context.Context, auth AuthContext, project, path stri
 	if err := ValidatePath(path); err != nil {
 		return StatResult{}, errors.WithStack(err)
 	}
+	if path == "" {
+		updatedAt, exists, err := s.findDirectoryUpdatedAt(ctx, auth.APIKeyHash, project, path)
+		if err != nil {
+			return StatResult{}, errors.WithStack(err)
+		}
+		if !exists {
+			updatedAt = time.Time{}
+		}
+		return StatResult{
+			Exists:    true,
+			Type:      FileTypeDirectory,
+			Size:      0,
+			CreatedAt: time.Time{},
+			UpdatedAt: updatedAt,
+		}, nil
+	}
 
 	file, err := s.findActiveFile(ctx, auth.APIKeyHash, project, path)
 	if err == nil {

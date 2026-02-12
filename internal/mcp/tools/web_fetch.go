@@ -67,7 +67,7 @@ func (t *WebFetchTool) Definition() mcp.Tool {
 		mcp.WithBoolean(
 			"output_markdown",
 			mcp.Description("Whether to return Markdown instead of raw HTML."),
-			mcp.DefaultBool(false),
+			mcp.DefaultBool(true),
 		),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
@@ -93,7 +93,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultError("missing authorization bearer token"), nil
 	}
 
-	outputMarkdown := true // default to convert to markdown
+	outputMarkdown := true
 	if args, ok := req.Params.Arguments.(map[string]any); ok {
 		if raw, ok := args["output_markdown"]; ok {
 			outputMarkdown = parseOptionalBool(raw)
@@ -142,6 +142,8 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	return toolResult, nil
 }
 
+// parseOptionalBool parses optional boolean-like values from MCP JSON arguments.
+// It takes a raw value and returns true only when the value explicitly represents true.
 func parseOptionalBool(raw any) bool {
 	switch v := raw.(type) {
 	case bool:

@@ -726,6 +726,10 @@ func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
 			fields = append(fields, zap.String("request", redactHookPayload(message)))
 		}
 		fields = append(fields, zap.Error(err))
+		if shouldDowngradeMCPErrorLog(method, err) {
+			logger.Debug("mcp request failed (non-critical)", fields...)
+			return
+		}
 		logger.Error("mcp request failed", fields...)
 	})
 
@@ -738,6 +742,23 @@ func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
 	})
 
 	return hooks
+}
+
+// shouldDowngradeMCPErrorLog reports whether a request failure is an expected, non-critical MCP probe.
+func shouldDowngradeMCPErrorLog(method mcp.MCPMethod, err error) bool {
+	if err == nil {
+		return false
+	}
+	errText := strings.ToLower(err.Error())
+	if !strings.Contains(errText, "resources not supported") {
+		return false
+	}
+	switch method {
+	case mcp.MethodResourcesList, mcp.MethodResourcesTemplatesList:
+		return true
+	default:
+		return false
+	}
 }
 
 func hookLogFields(ctx context.Context, id any, method mcp.MCPMethod) []zap.Field {

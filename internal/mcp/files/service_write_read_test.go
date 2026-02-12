@@ -71,8 +71,8 @@ func TestDeleteAndListFlow(t *testing.T) {
 	require.False(t, statRes.Exists)
 }
 
-// TestRootWipePermission verifies root wipe permissions.
-func TestRootWipePermission(t *testing.T) {
+// TestRootDeleteForbidden verifies root delete is forbidden regardless configuration.
+func TestRootDeleteForbidden(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
 	settings.Security.EncryptionKey = testEncryptionKey()
@@ -94,9 +94,9 @@ func TestRootWipePermission(t *testing.T) {
 	_, err = svc.Write(context.Background(), auth, "proj", "/a.txt", "data", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
 
-	deleteRes, err := svc.Delete(context.Background(), auth, "proj", "", true)
-	require.NoError(t, err)
-	require.Equal(t, 1, deleteRes.DeletedCount)
+	_, err = svc.Delete(context.Background(), auth, "proj", "", true)
+	require.Error(t, err)
+	require.True(t, IsCode(err, ErrCodePermissionDenied))
 }
 
 // TestFileStatDirectoryUpdatedAt verifies directory stat updated_at behavior.
@@ -271,9 +271,9 @@ func TestTenantIsolation(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, IsCode(err, ErrCodeNotFound))
 
-	_, err = svc.List(context.Background(), authB, "proj", "", 1, 10)
-	require.Error(t, err)
-	require.True(t, IsCode(err, ErrCodeNotFound))
+	listB, err := svc.List(context.Background(), authB, "proj", "", 1, 10)
+	require.NoError(t, err)
+	require.Len(t, listB.Entries, 0)
 
 	_, err = svc.Write(context.Background(), authB, "proj", "/a.txt", "bravo", "utf-8", 0, WriteModeAppend)
 	require.NoError(t, err)
@@ -286,8 +286,8 @@ func TestTenantIsolation(t *testing.T) {
 	require.Equal(t, "bravo", readB.Content)
 }
 
-// TestDeleteRootRequiresRecursive verifies root delete requires recursive mode.
-func TestDeleteRootRequiresRecursive(t *testing.T) {
+// TestDeleteRootAlwaysForbidden verifies root delete is always denied.
+func TestDeleteRootAlwaysForbidden(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
 	settings.Security.EncryptionKey = testEncryptionKey()
@@ -298,7 +298,28 @@ func TestDeleteRootRequiresRecursive(t *testing.T) {
 
 	_, err := svc.Delete(context.Background(), auth, "proj", "", false)
 	require.Error(t, err)
-	require.True(t, IsCode(err, ErrCodeInvalidPath))
+	require.True(t, IsCode(err, ErrCodePermissionDenied))
+
+	_, err = svc.Delete(context.Background(), auth, "proj", "", true)
+	require.Error(t, err)
+	require.True(t, IsCode(err, ErrCodePermissionDenied))
+}
+
+// TestStatRootExistsWhenEmpty verifies root stat exists even with no files.
+func TestStatRootExistsWhenEmpty(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = false
+	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	statRes, err := svc.Stat(context.Background(), auth, "proj", "")
+	require.NoError(t, err)
+	require.True(t, statRes.Exists)
+	require.Equal(t, FileTypeDirectory, statRes.Type)
+	require.True(t, statRes.UpdatedAt.IsZero())
 }
 
 // TestStatRootDirectory verifies root stat returns directory metadata when files exist.

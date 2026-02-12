@@ -47,6 +47,14 @@ func (t *FileListTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.List(ctx, auth, project, path, depth, limit)
 		if svcErr != nil {
+			if path == "" && isFileErrorCode(svcErr, files.ErrCodeNotFound) {
+				emptyPayload := map[string]any{"entries": []files.FileEntry{}, "has_more": false}
+				emptyResult, encodeErr := mcp.NewToolResultJSON(emptyPayload)
+				if encodeErr != nil {
+					return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
+				}
+				return emptyResult, nil
+			}
 			return fileToolErrorFromErr(svcErr), nil
 		}
 		payload := map[string]any{"entries": result.Entries, "has_more": result.HasMore}

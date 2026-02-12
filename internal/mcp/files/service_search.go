@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
+	"github.com/Laisky/zap"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -39,26 +40,56 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 	if !s.settings.Search.Enabled {
 		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "search disabled", false))
 	}
+
+	lexical, lexicalErr := s.fetchLexicalCandidates(ctx, auth.APIKeyHash, project, pathPrefix, query, s.settings.Search.LexicalCandidates)
+	if lexicalErr != nil {
+		s.LoggerFromContext(ctx).Debug("file search lexical retrieval failed",
+			zap.String("project", project),
+			zap.String("path_prefix", pathPrefix),
+			zap.Int("candidate_limit", s.settings.Search.LexicalCandidates),
+			zap.Error(lexicalErr),
+		)
+	}
+
+	semantic := []searchCandidate{}
+	var semanticErr error
 	if s.embedder == nil {
-		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "embedder not configured", false))
+		semanticErr = NewError(ErrCodeSearchBackend, "embedder not configured", false)
+		s.LoggerFromContext(ctx).Debug("file search semantic retrieval skipped: embedder not configured",
+			zap.String("project", project),
+			zap.String("path_prefix", pathPrefix),
+		)
+	} else {
+		vectors, embedErr := s.embedder.EmbedTexts(ctx, auth.APIKey, []string{query})
+		if embedErr != nil {
+			semanticErr = errors.Wrap(embedErr, "embed query")
+			s.LoggerFromContext(ctx).Debug("file search semantic embedding failed",
+				zap.String("project", project),
+				zap.String("path_prefix", pathPrefix),
+				zap.Error(embedErr),
+			)
+		} else if len(vectors) == 0 {
+			semanticErr = NewError(ErrCodeSearchBackend, "embed query returned no vectors", true)
+			s.LoggerFromContext(ctx).Debug("file search semantic embedding returned no vectors",
+				zap.String("project", project),
+				zap.String("path_prefix", pathPrefix),
+			)
+		} else {
+			queryVec := vectors[0]
+			semantic, semanticErr = s.fetchSemanticCandidates(ctx, auth.APIKeyHash, project, pathPrefix, queryVec, s.settings.Search.VectorCandidates)
+			if semanticErr != nil {
+				s.LoggerFromContext(ctx).Debug("file search semantic retrieval failed",
+					zap.String("project", project),
+					zap.String("path_prefix", pathPrefix),
+					zap.Int("candidate_limit", s.settings.Search.VectorCandidates),
+					zap.Error(semanticErr),
+				)
+			}
+		}
 	}
 
-	vectors, err := s.embedder.EmbedTexts(ctx, auth.APIKey, []string{query})
-	if err != nil {
-		return SearchResult{}, errors.Wrap(err, "embed query")
-	}
-	if len(vectors) == 0 {
-		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "embed query returned no vectors", true))
-	}
-	queryVec := vectors[0]
-
-	semantic, err := s.fetchSemanticCandidates(ctx, auth.APIKeyHash, project, pathPrefix, queryVec, s.settings.Search.VectorCandidates)
-	if err != nil {
-		return SearchResult{}, errors.WithStack(err)
-	}
-	lexical, err := s.fetchLexicalCandidates(ctx, auth.APIKeyHash, project, pathPrefix, query, s.settings.Search.LexicalCandidates)
-	if err != nil {
-		return SearchResult{}, errors.WithStack(err)
+	if lexicalErr != nil && semanticErr != nil {
+		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "search backends unavailable", true))
 	}
 
 	merged := mergeCandidates(semantic, lexical)

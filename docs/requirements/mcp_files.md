@@ -20,6 +20,7 @@ The design intentionally excludes kernel-level complexity (file descriptors, per
 ## 2. Core Model
 
 - Each `project` is an isolated filesystem root under one tenant.
+- The project root (`path=""`) always exists as an implicit directory.
 - Directories are implicit and derived from file paths.
 - There is no physical directory table.
 - `path` is the full file identity.
@@ -201,10 +202,9 @@ file_delete(
 
 Root delete behavior:
 
-- `file_delete(project, "", recursive=false)` returns `INVALID_PATH`.
-- `file_delete(project, "", recursive=true)` means "wipe this project".
-- Root wipe must be controlled by server config and default to disabled.
-- If disabled, return `PERMISSION_DENIED`.
+- `file_delete(project, "", recursive=false)` returns `PERMISSION_DENIED`.
+- `file_delete(project, "", recursive=true)` also returns `PERMISSION_DENIED`.
+- Root directory is immutable and must never be deleted.
 
 ### 6.6 `file_list`
 

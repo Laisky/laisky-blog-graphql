@@ -3,6 +3,7 @@ package mongo
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"net/url"
 	"sync"
@@ -334,6 +335,9 @@ func (d *db) Close(ctx context.Context) error {
 	d.shared.cli = nil
 	d.shared.mu.Unlock()
 	if err != nil {
+		if stderrors.Is(err, mongo.ErrClientDisconnected) {
+			return nil
+		}
 		return errors.WithStack(err)
 	}
 	return nil

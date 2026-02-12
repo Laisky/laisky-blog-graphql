@@ -44,6 +44,18 @@ func fileToolErrorFromErr(err error) *mcp.CallToolResult {
 	return fileToolErrorResult(files.ErrCodeSearchBackend, "internal error", true)
 }
 
+// isFileErrorCode reports whether an error chain contains the specified file error code.
+func isFileErrorCode(err error, code files.ErrorCode) bool {
+	if err == nil {
+		return false
+	}
+	typed, ok := files.AsError(err)
+	if !ok {
+		return false
+	}
+	return typed.Code == code
+}
+
 // readStringArg extracts an optional string argument from the request.
 func readStringArg(req mcp.CallToolRequest, key string) string {
 	if req.Params.Arguments == nil {

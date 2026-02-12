@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	errors "github.com/Laisky/errors/v2"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
@@ -14,6 +15,7 @@ import (
 type readListStubService struct {
 	lastReadLength int64
 	lastListDepth  int
+	listErr        error
 }
 
 // Stat returns a stubbed stat response.
@@ -40,6 +42,9 @@ func (s *readListStubService) Delete(context.Context, files.AuthContext, string,
 // List records the requested depth for assertions.
 func (s *readListStubService) List(_ context.Context, _ files.AuthContext, _ string, _ string, depth, _ int) (files.ListResult, error) {
 	s.lastListDepth = depth
+	if s.listErr != nil {
+		return files.ListResult{}, errors.WithStack(s.listErr)
+	}
 	return files.ListResult{}, nil
 }
 
@@ -100,4 +105,45 @@ func TestFileListDefaultDepth(t *testing.T) {
 	require.NoError(t, handleErr)
 	require.False(t, result.IsError)
 	require.Equal(t, 1, svc.lastListDepth)
+}
+
+// TestFileListRootNotFoundReturnsEmpty verifies empty-root listings are normalized to empty responses.
+func TestFileListRootNotFoundReturnsEmpty(t *testing.T) {
+	svc := &readListStubService{listErr: files.NewError(files.ErrCodeNotFound, "path not found", false)}
+	tool, err := NewFileListTool(svc)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project": "proj",
+		"path":    "",
+	}}}
+
+	result, handleErr := tool.Handle(ctx, req)
+	require.NoError(t, handleErr)
+	require.False(t, result.IsError)
+	payload := decodeToolPayload(t, result)
+	require.Equal(t, false, payload["has_more"])
+	entries, ok := payload["entries"].([]any)
+	require.True(t, ok)
+	require.Len(t, entries, 0)
+}
+
+// TestFileListNonRootNotFoundReturnsError verifies non-root NOT_FOUND behavior remains unchanged.
+func TestFileListNonRootNotFoundReturnsError(t *testing.T) {
+	svc := &readListStubService{listErr: files.NewError(files.ErrCodeNotFound, "path not found", false)}
+	tool, err := NewFileListTool(svc)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project": "proj",
+		"path":    "/missing",
+	}}}
+
+	result, handleErr := tool.Handle(ctx, req)
+	require.NoError(t, handleErr)
+	require.True(t, result.IsError)
+	payload := decodeToolPayload(t, result)
+	require.Equal(t, string(files.ErrCodeNotFound), payload["code"])
 }

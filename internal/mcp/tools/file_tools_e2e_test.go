@@ -156,7 +156,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 	require.Equal(t, false, statAfterDeletePayload["exists"])
 }
 
-// TestFileDeleteToolRootWipe verifies root wipe uses empty path with recursive=true.
+// TestFileDeleteToolRootWipe verifies root delete is denied even when wipe is enabled.
 func TestFileDeleteToolRootWipe(t *testing.T) {
 	svc := newE2EFileService(t, true)
 	authCtx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
@@ -190,21 +190,24 @@ func TestFileDeleteToolRootWipe(t *testing.T) {
 		"recursive": true,
 	}))
 	require.NoError(t, err)
-	require.False(t, deleteResp.IsError)
+	require.True(t, deleteResp.IsError)
 	deletePayload := decodeToolPayload(t, deleteResp)
-	require.Equal(t, 2, asInt(t, deletePayload["deleted_count"]))
+	require.Equal(t, string(files.ErrCodePermissionDenied), deletePayload["code"])
 
 	listResp, err := listTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
 		"path":    "",
 	}))
 	require.NoError(t, err)
-	require.True(t, listResp.IsError)
-	errPayload := decodeToolPayload(t, listResp)
-	require.Equal(t, string(files.ErrCodeNotFound), errPayload["code"])
+	require.False(t, listResp.IsError)
+	listPayload := decodeToolPayload(t, listResp)
+	require.Equal(t, false, listPayload["has_more"])
+	entries, ok := listPayload["entries"].([]any)
+	require.True(t, ok)
+	require.Len(t, entries, 2)
 }
 
-// TestFileDeleteToolRootWipeDisabled verifies root wipe is blocked by configuration.
+// TestFileDeleteToolRootWipeDisabled verifies root delete remains blocked when wipe is disabled.
 func TestFileDeleteToolRootWipeDisabled(t *testing.T) {
 	svc := newE2EFileService(t, false)
 	authCtx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{

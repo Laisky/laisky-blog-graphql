@@ -153,11 +153,8 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	if err := ValidatePath(path); err != nil {
 		return DeleteResult{}, errors.WithStack(err)
 	}
-	if path == "" && !recursive {
-		return DeleteResult{}, errors.WithStack(NewError(ErrCodeInvalidPath, "root delete requires recursive=true", false))
-	}
-	if path == "" && recursive && !s.settings.AllowRootWipe {
-		return DeleteResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "root wipe disabled", false))
+	if path == "" {
+		return DeleteResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "root directory cannot be deleted", false))
 	}
 
 	var deletedCount int
