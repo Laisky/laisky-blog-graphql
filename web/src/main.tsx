@@ -95,7 +95,7 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined) {
 function buildSsoRoutes(turnstileSiteKey: string | undefined) {
   return [
     { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
-    { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
+    { path: '/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
     { path: '*', element: <NotFoundPage /> },
   ];
 }

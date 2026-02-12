@@ -418,6 +418,7 @@ func RunServer(addr string, resolver *Resolver) {
 			}
 
 			if strings.Contains(requestPath, ".") {
+				ctx.Status(http.StatusOK)
 				frontendSPA.ServeHTTP(ctx.Writer, ctx.Request)
 				return
 			}
@@ -428,6 +429,7 @@ func RunServer(addr string, resolver *Resolver) {
 				return
 			}
 
+			ctx.Status(http.StatusOK)
 			frontendSPA.ServeHTTP(ctx.Writer, ctx.Request)
 		})
 	}

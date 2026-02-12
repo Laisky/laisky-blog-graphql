@@ -9,8 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 
-import { useFileIOInputDefaults, usePersistFileIOInputs } from './use-file-io-input-storage';
 import { callMcpTool, type CallToolResponse } from '../shared/mcp-api';
+import { useFileIOInputDefaults, usePersistFileIOInputs } from './use-file-io-input-storage';
 
 type FileEntry = {
   name: string;
@@ -327,6 +327,7 @@ export function FileIOPage() {
   }
 
   const selectedIsDirectory = selectedStat?.type === 'DIRECTORY';
+  const isProjectMissing = project.trim().length === 0;
 
   return (
     <div className="space-y-8">
@@ -350,15 +351,19 @@ export function FileIOPage() {
           <CardContent className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1">
-                <label htmlFor="file-io-project" className={inputLabelClass}>
-                  Project
+                <label htmlFor="file-io-project" className={cn(inputLabelClass, isProjectMissing && 'text-destructive')}>
+                  Project <span className={cn('font-semibold', isProjectMissing ? 'text-destructive' : 'text-muted-foreground')}>*</span>
                 </label>
                 <Input
                   id="file-io-project"
                   placeholder="Required"
+                  required
+                  aria-required="true"
+                  className={cn(isProjectMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
                   value={project}
                   onChange={(event) => setProject(event.target.value)}
                 />
+                {isProjectMissing && <p className="text-xs font-medium text-destructive">Required field</p>}
               </div>
               <div className="space-y-1">
                 <label htmlFor="file-io-current-path" className={inputLabelClass}>

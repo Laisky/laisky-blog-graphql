@@ -767,6 +767,7 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 		if err != nil {
 			logger.Error("read request body", zap.Error(err))
 		}
+		sessionID := strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID))
 
 		redactedBody := redactMCPBody(body)
 		logger.Debug("incoming http request",
@@ -775,6 +776,8 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 			zap.String("body", redactedBody),
 			zap.Bool("body_truncated", truncated),
 			zap.String("remote_addr", r.RemoteAddr),
+			zap.Bool("mcp_session_header_present", sessionID != ""),
+			zap.String("mcp_session_id", sessionID),
 		)
 
 		lrw := newLoggingResponseWriter(w, httpLogBodyLimit)
