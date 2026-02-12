@@ -72,6 +72,9 @@ func runAPI() error {
 	ctx := context.Background()
 	logger := log.Logger.Named("api")
 	startTime := time.Now()
+	if err := validateStartupConfig(); err != nil {
+		return errors.Wrap(err, "validate startup configuration")
+	}
 
 	arweaveClient := arweave.NewArdrive(
 		gconfig.S.GetString("settings.arweave.wallet_file"),
@@ -377,9 +380,9 @@ func runAPI() error {
 			if args.Rdb != nil {
 				credStore = files.NewRedisCredentialStore(args.Rdb.GetDB())
 			}
-			credential, credErr := files.NewCredentialProtector(filesSettings.Security)
+			credential, credErr := buildFileCredentialProtector(filesSettings)
 			if credErr != nil {
-				logger.Warn("file credential protector unavailable", zap.Error(credErr))
+				return errors.Wrap(credErr, "invalid mcp files credential configuration")
 			}
 			embedder := rag.NewOpenAIEmbedder(filesSettings.EmbeddingBaseURL, filesSettings.EmbeddingModel, nil)
 			rerankClient := files.NewCohereRerankClient(filesSettings.Search.RerankEndpoint, filesSettings.Search.RerankModel, filesSettings.Search.RerankTimeout)
@@ -419,6 +422,21 @@ func runAPI() error {
 	resolver := web.NewResolver(args)
 	web.RunServer(gconfig.Shared.GetString("listen"), resolver)
 	return nil
+}
+
+// buildFileCredentialProtector validates and constructs the FileIO credential protector.
+// It accepts FileIO settings and returns nil when encryption is not configured, or a protector/error when configured.
+func buildFileCredentialProtector(settings files.Settings) (*files.CredentialProtector, error) {
+	if strings.TrimSpace(settings.Security.EncryptionKey) == "" {
+		return nil, nil
+	}
+
+	credential, err := files.NewCredentialProtector(settings.Security)
+	if err != nil {
+		return nil, errors.Wrap(err, "new file credential protector")
+	}
+
+	return credential, nil
 }
 
 // configInt retrieves an integer configuration value using gconfig, falling back to def when missing or invalid.
