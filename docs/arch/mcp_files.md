@@ -490,6 +490,8 @@ Execution outline:
 
 ### 9.5 `file_list(project, path="", depth=1, limit=256)`
 
+- root path is `path=""`.
+- MCP compatibility: `path="/"` is accepted by the `file_list` tool adapter and normalized to `""` before service validation.
 - `depth=0`: metadata for path only
 - `depth=1`: immediate children
 - `depth>1`: recursive to given depth

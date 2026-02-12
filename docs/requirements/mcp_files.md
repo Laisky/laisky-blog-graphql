@@ -229,6 +229,8 @@ Depth semantics:
 
 List semantics:
 
+- `path=""` is the canonical root path.
+- MCP compatibility: `file_list` also accepts `path="/"` and normalizes it to `""` in the tool layer.
 - Results must be sorted by `path ASC`.
 - Pagination is not required in v1.
 - `limit` is mandatory for response-size control.

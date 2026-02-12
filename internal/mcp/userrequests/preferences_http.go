@@ -16,8 +16,9 @@ import (
 
 // preferencesHTTPHandler handles HTTP requests for user preferences.
 type preferencesHTTPHandler struct {
-	service *Service
-	logger  logSDK.Logger
+	service                *Service
+	logger                 logSDK.Logger
+	availableToolsProvider func() []string
 }
 
 // ServeHTTP routes preferences requests based on method.
@@ -60,20 +61,30 @@ func (h *preferencesHTTPHandler) handleGet(w http.ResponseWriter, r *http.Reques
 
 	// Return defaults if no preference exists
 	returnMode := DefaultReturnMode
+	disabledTools := []string{}
 	if pref != nil && pref.Preferences.ReturnMode != "" {
 		returnMode = pref.Preferences.ReturnMode
 	}
+	if pref != nil {
+		disabledTools = NormalizeDisabledTools(pref.Preferences.DisabledTools)
+	}
+
+	availableTools := h.availableTools()
 
 	logger.Debug("preferences GET response",
 		zap.String("user", auth.UserIdentity),
 		zap.Bool("pref_exists", pref != nil),
 		zap.String("return_mode", returnMode),
+		zap.Int("disabled_tools_count", len(disabledTools)),
+		zap.Int("available_tools_count", len(availableTools)),
 	)
 
 	h.writeJSON(w, map[string]any{
-		"return_mode": returnMode,
-		"user_id":     auth.UserIdentity,
-		"key_hint":    auth.KeySuffix,
+		"return_mode":     returnMode,
+		"disabled_tools":  disabledTools,
+		"available_tools": availableTools,
+		"user_id":         auth.UserIdentity,
+		"key_hint":        auth.KeySuffix,
 	})
 }
 
@@ -96,7 +107,8 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 	}
 
 	payload := struct {
-		ReturnMode string `json:"return_mode"`
+		ReturnMode    *string  `json:"return_mode"`
+		DisabledTools []string `json:"disabled_tools"`
 	}{}
 
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&payload); err != nil {
@@ -106,32 +118,82 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 
 	logger.Debug("preferences SET request received",
 		zap.String("user", auth.UserIdentity),
-		zap.String("requested_mode", payload.ReturnMode),
+		zap.String("requested_mode", stringValue(payload.ReturnMode)),
+		zap.Int("requested_disabled_tools", len(payload.DisabledTools)),
 	)
 
-	// Validate return_mode
-	if payload.ReturnMode != ReturnModeAll && payload.ReturnMode != ReturnModeFirst {
-		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid return_mode: must be 'all' or 'first'")
+	if payload.ReturnMode == nil && payload.DisabledTools == nil {
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "payload must include return_mode and/or disabled_tools")
 		return
 	}
 
-	pref, err := service.SetReturnMode(ctx, auth, payload.ReturnMode)
+	if payload.ReturnMode != nil {
+		if *payload.ReturnMode != ReturnModeAll && *payload.ReturnMode != ReturnModeFirst {
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid return_mode: must be 'all' or 'first'")
+			return
+		}
+
+		if _, err := service.SetReturnMode(ctx, auth, *payload.ReturnMode); err != nil {
+			logger.Error("set return mode preference", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to save preferences")
+			return
+		}
+	}
+
+	if payload.DisabledTools != nil {
+		if _, err := service.SetDisabledTools(ctx, auth, payload.DisabledTools); err != nil {
+			logger.Error("set disabled tools preference", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to save preferences")
+			return
+		}
+	}
+
+	pref, err := service.GetUserPreference(ctx, auth)
 	if err != nil {
-		logger.Error("set user preferences", zap.Error(err))
-		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to save preferences")
+		logger.Error("reload user preferences", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load preferences")
 		return
 	}
+
+	returnMode := DefaultReturnMode
+	disabledTools := []string{}
+	if pref != nil && pref.Preferences.ReturnMode != "" {
+		returnMode = pref.Preferences.ReturnMode
+	}
+	if pref != nil {
+		disabledTools = NormalizeDisabledTools(pref.Preferences.DisabledTools)
+	}
+	availableTools := h.availableTools()
 
 	logger.Debug("preferences SET succeeded",
 		zap.String("user", auth.UserIdentity),
-		zap.String("saved_mode", pref.Preferences.ReturnMode),
+		zap.String("saved_mode", returnMode),
+		zap.Int("saved_disabled_tools", len(disabledTools)),
 	)
 
 	h.writeJSON(w, map[string]any{
-		"return_mode": pref.Preferences.ReturnMode,
-		"user_id":     auth.UserIdentity,
-		"key_hint":    auth.KeySuffix,
+		"return_mode":     returnMode,
+		"disabled_tools":  disabledTools,
+		"available_tools": availableTools,
+		"user_id":         auth.UserIdentity,
+		"key_hint":        auth.KeySuffix,
 	})
+}
+
+// availableTools returns the server-exposed MCP tool catalog in a stable format.
+func (h *preferencesHTTPHandler) availableTools() []string {
+	if h == nil || h.availableToolsProvider == nil {
+		return []string{}
+	}
+	return NormalizeDisabledTools(h.availableToolsProvider())
+}
+
+// stringValue returns a pointer-backed string or an empty value when nil.
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // writeErrorWithLogger writes an error response with the provided logger for context-aware logging.

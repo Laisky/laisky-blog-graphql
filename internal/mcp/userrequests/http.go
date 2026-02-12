@@ -21,11 +21,11 @@ import (
 // NewCombinedHTTPHandler creates a handler that routes both user requests and saved commands APIs.
 // This avoids route conflicts in Gin by handling all paths under /api/* in a single handler.
 // holdManager may be nil if the hold feature is not enabled.
-func NewCombinedHTTPHandler(service *Service, holdManager *HoldManager, logger logSDK.Logger) http.Handler {
+func NewCombinedHTTPHandler(service *Service, holdManager *HoldManager, logger logSDK.Logger, availableToolsProvider func() []string) http.Handler {
 	handler := &combinedHTTPHandler{
 		requestsHandler:     &httpHandler{service: service, holdManager: holdManager, logger: logger},
 		savedCommandHandler: &savedCommandsHTTPHandler{service: service, logger: logger},
-		preferencesHandler:  &preferencesHTTPHandler{service: service, logger: logger},
+		preferencesHandler:  &preferencesHTTPHandler{service: service, logger: logger, availableToolsProvider: availableToolsProvider},
 	}
 	if holdManager != nil {
 		handler.holdHandler = &holdHTTPHandler{holdManager: holdManager, logger: logger}

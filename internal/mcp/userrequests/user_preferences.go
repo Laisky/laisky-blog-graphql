@@ -33,7 +33,12 @@ type PreferenceData struct {
 	// ReturnMode determines how the get_user_request tool returns pending commands.
 	// Valid values: "all" (default), "first"
 	ReturnMode string `json:"return_mode,omitempty"`
+	// DisabledTools stores MCP tool names explicitly disabled by the user.
+	DisabledTools []string `json:"disabled_tools,omitempty"`
 }
+
+// DefaultDisabledTools provides the default disabled tool list when no preference exists.
+var DefaultDisabledTools = []string{}
 
 var prefLogger = log.Logger.Named("user_preferences")
 
@@ -91,6 +96,7 @@ func (p *PreferenceData) Scan(value any) error {
 	}
 
 	p.ReturnMode = ValidateReturnMode(p.ReturnMode)
+	p.DisabledTools = NormalizeDisabledTools(p.DisabledTools)
 	return nil
 }
 
@@ -155,6 +161,32 @@ func (s *Service) GetReturnMode(ctx context.Context, auth *askuser.Authorization
 	return pref.Preferences.ReturnMode, nil
 }
 
+// GetDisabledTools retrieves the disabled MCP tools for the authenticated user.
+// Returns DefaultDisabledTools when no preference is stored.
+func (s *Service) GetDisabledTools(ctx context.Context, auth *askuser.AuthorizationContext) ([]string, error) {
+	pref, err := s.GetUserPreference(ctx, auth)
+	if err != nil {
+		s.log().Debug("GetDisabledTools failed to get preference",
+			zap.String("user", auth.UserIdentity),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	if pref == nil {
+		s.log().Debug("GetDisabledTools returning default (no preference stored)",
+			zap.String("user", auth.UserIdentity),
+		)
+		return append([]string(nil), DefaultDisabledTools...), nil
+	}
+
+	disabled := NormalizeDisabledTools(pref.Preferences.DisabledTools)
+	s.log().Debug("GetDisabledTools returning stored preference",
+		zap.String("user", auth.UserIdentity),
+		zap.Int("disabled_count", len(disabled)),
+	)
+	return disabled, nil
+}
+
 // SetReturnMode updates the return_mode preference for the authenticated user.
 // Creates a new preference record if one doesn't exist.
 func (s *Service) SetReturnMode(ctx context.Context, auth *askuser.AuthorizationContext, mode string) (*UserPreference, error) {
@@ -174,19 +206,29 @@ func (s *Service) SetReturnMode(ctx context.Context, auth *askuser.Authorization
 	)
 
 	now := s.clock()
+	disabledTools, getErr := s.GetDisabledTools(ctx, auth)
+	if getErr != nil {
+		return nil, errors.Wrap(getErr, "load disabled tools")
+	}
 	pref := &UserPreference{
 		APIKeyHash:   auth.APIKeyHash,
 		KeySuffix:    auth.KeySuffix,
 		UserIdentity: auth.UserIdentity,
-		Preferences:  PreferenceData{ReturnMode: mode},
-		UpdatedAt:    now,
+		Preferences: PreferenceData{
+			ReturnMode:    mode,
+			DisabledTools: disabledTools,
+		},
+		UpdatedAt: now,
 	}
 
 	// Use upsert to handle both create and update
 	err := s.db.WithContext(ctx).
 		Where("api_key_hash = ?", auth.APIKeyHash).
 		Assign(map[string]any{
-			"preferences":   PreferenceData{ReturnMode: mode},
+			"preferences": PreferenceData{
+				ReturnMode:    mode,
+				DisabledTools: disabledTools,
+			},
 			"key_suffix":    auth.KeySuffix,
 			"user_identity": auth.UserIdentity,
 			"updated_at":    now,
@@ -208,6 +250,50 @@ func (s *Service) SetReturnMode(ctx context.Context, auth *askuser.Authorization
 	return pref, nil
 }
 
+// SetDisabledTools updates the disabled MCP tool preference for the authenticated user.
+// Creates a new preference record if one does not exist.
+func (s *Service) SetDisabledTools(ctx context.Context, auth *askuser.AuthorizationContext, disabledTools []string) (*UserPreference, error) {
+	if auth == nil {
+		return nil, ErrInvalidAuthorization
+	}
+
+	normalized := NormalizeDisabledTools(disabledTools)
+	mode, err := s.GetReturnMode(ctx, auth)
+	if err != nil {
+		return nil, errors.Wrap(err, "load return mode")
+	}
+
+	now := s.clock()
+	pref := &UserPreference{
+		APIKeyHash:   auth.APIKeyHash,
+		KeySuffix:    auth.KeySuffix,
+		UserIdentity: auth.UserIdentity,
+		Preferences: PreferenceData{
+			ReturnMode:    mode,
+			DisabledTools: normalized,
+		},
+		UpdatedAt: now,
+	}
+
+	err = s.db.WithContext(ctx).
+		Where("api_key_hash = ?", auth.APIKeyHash).
+		Assign(map[string]any{
+			"preferences": PreferenceData{
+				ReturnMode:    mode,
+				DisabledTools: normalized,
+			},
+			"key_suffix":    auth.KeySuffix,
+			"user_identity": auth.UserIdentity,
+			"updated_at":    now,
+		}).
+		FirstOrCreate(pref).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "set disabled tools preference")
+	}
+
+	return pref, nil
+}
+
 // ValidateReturnMode checks if the provided mode is valid.
 // Returns the mode if valid, or DefaultReturnMode if empty.
 func ValidateReturnMode(mode string) string {
@@ -219,6 +305,33 @@ func ValidateReturnMode(mode string) string {
 	default:
 		return DefaultReturnMode
 	}
+}
+
+// NormalizeDisabledTools sanitizes tool names, removes duplicates, and keeps deterministic order.
+func NormalizeDisabledTools(toolNames []string) []string {
+	if len(toolNames) == 0 {
+		return []string{}
+	}
+
+	unique := make(map[string]struct{}, len(toolNames))
+	normalized := make([]string, 0, len(toolNames))
+	for _, raw := range toolNames {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		if _, exists := unique[name]; exists {
+			continue
+		}
+		unique[name] = struct{}{}
+		normalized = append(normalized, name)
+	}
+
+	if len(normalized) == 0 {
+		return []string{}
+	}
+
+	return normalized
 }
 
 // bytesFromDBValue converts supported driver values into raw byte slices.

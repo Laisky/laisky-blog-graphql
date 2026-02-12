@@ -42,6 +42,8 @@ export function setReturnMode(mode: ReturnMode): void {
 
 export interface UserPreferencesResponse {
   return_mode: ReturnMode;
+  disabled_tools?: string[];
+  available_tools?: string[];
   user_id?: string;
   key_hint?: string;
 }
@@ -87,6 +89,31 @@ export async function setReturnModeOnServer(apiKey: string, mode: ReturnMode): P
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ return_mode: mode }),
+  });
+
+  if (!response.ok) {
+    const message = (await response.text()) || response.statusText;
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+/**
+ * setDisabledToolsOnServer persists the user's disabled MCP tools to the server.
+ */
+export async function setDisabledToolsOnServer(apiKey: string, disabledTools: string[]): Promise<UserPreferencesResponse> {
+  const authorization = ensureAuthorization(apiKey);
+  const apiBasePath = resolveToolApiBase('get_user_requests');
+  const response = await fetch(`${apiBasePath}api/preferences`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: authorization,
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    },
+    body: JSON.stringify({ disabled_tools: disabledTools }),
   });
 
   if (!response.ok) {

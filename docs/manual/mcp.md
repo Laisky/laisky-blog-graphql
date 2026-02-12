@@ -83,6 +83,7 @@ The raw token is checked against the external billing service, hashed with SHA-2
 | `/mcp/tools/get_user_requests`                   | `GET`                   | React console that lets humans queue, review, and delete directives for `get_user_request`.                   |
 | `/mcp/tools/get_user_requests/api/requests`      | `GET`, `POST`, `DELETE` | Lists, creates, or bulk-deletes user directives scoped to the bearer token.                                   |
 | `/mcp/tools/get_user_requests/api/requests/{id}` | `DELETE`                | Removes a single directive.                                                                                   |
+| `/mcp/tools/get_user_requests/api/preferences`   | `GET`, `PUT`, `POST`    | Reads/updates per-user MCP preferences (`return_mode`, `disabled_tools`) and returns `available_tools`.       |
 
 > **Note:** The console endpoints are intended for browsers. They are protected only by the bearer token, so deploy behind HTTPS and avoid exposing them publicly without additional access controls.
 
@@ -178,6 +179,20 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 ```
 
 - **Error Cases:** missing/invalid token (`invalid authorization header`), database outages (`failed to fetch user request`), or context cancellations/timeouts inherited from the MCP caller. Running with an empty queue is treated as a successful call and returns a descriptive JSON payload. Requests older than the retention window are silently pruned.
+
+- **Preferences API (`/api/preferences`):**
+  - `GET` returns:
+    - `return_mode` (`all` or `first`)
+    - `disabled_tools` (string array)
+    - `available_tools` (all MCP tools enabled on this server instance)
+  - `PUT`/`POST` accepts either field independently:
+    - `{ "return_mode": "all" | "first" }`
+    - `{ "disabled_tools": ["web_fetch", "file_write"] }`
+  - Preferences are isolated by bearer token hash.
+
+- **Tool Activation Behaviour:**
+  - Any tool name in `disabled_tools` is treated as user-disabled.
+  - MCP `tools/list` responses are filtered per user, so disabled tools do not appear in the advertised tool list for that token.
 
 #### User Requests Console Workflow
 

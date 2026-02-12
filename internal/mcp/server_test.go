@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
@@ -105,4 +106,46 @@ func TestHandleWebFetchRecordsCallLog(t *testing.T) {
 	require.Equal(t, calllog.StatusError, record.Status)
 	require.Equal(t, 0, record.Cost)
 	require.Contains(t, record.Parameters, "url")
+}
+
+func TestFilterToolsListBody(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"file_read"},{"name":"file_write"},{"name":"web_search"}]}}`)
+	disabled := map[string]struct{}{"file_write": {}}
+
+	filteredBody, changed, err := filterToolsListBody(body, disabled)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(filteredBody, &payload))
+	result, ok := payload["result"].(map[string]any)
+	require.True(t, ok)
+	toolsAny, ok := result["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, toolsAny, 2)
+
+	names := make([]string, 0, len(toolsAny))
+	for _, item := range toolsAny {
+		tool, ok := item.(map[string]any)
+		require.True(t, ok)
+		name, ok := tool["name"].(string)
+		require.True(t, ok)
+		names = append(names, name)
+	}
+	require.ElementsMatch(t, []string{"file_read", "web_search"}, names)
+}
+
+func TestFilterToolsListBodyNoChange(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"file_read"}]}}`)
+	disabled := map[string]struct{}{"web_search": {}}
+
+	filteredBody, changed, err := filterToolsListBody(body, disabled)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, body, filteredBody)
+}
+
+func TestServerAvailableToolNames(t *testing.T) {
+	srv := &Server{}
+	require.Empty(t, srv.AvailableToolNames())
 }

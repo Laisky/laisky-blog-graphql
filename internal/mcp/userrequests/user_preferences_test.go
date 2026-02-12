@@ -11,7 +11,7 @@ import (
 
 // TestPreferenceDataValueSerializesCorrectly verifies that PreferenceData serializes to valid JSON.
 func TestPreferenceDataValueSerializesCorrectly(t *testing.T) {
-	pref := PreferenceData{ReturnMode: ReturnModeFirst}
+	pref := PreferenceData{ReturnMode: ReturnModeFirst, DisabledTools: []string{"web_fetch"}}
 	val, err := pref.Value()
 	require.NoError(t, err)
 
@@ -23,14 +23,40 @@ func TestPreferenceDataValueSerializesCorrectly(t *testing.T) {
 	var parsed map[string]any
 	require.NoError(t, json.Unmarshal(bytes, &parsed))
 	require.Equal(t, "first", parsed["return_mode"])
+	require.Equal(t, []any{"web_fetch"}, parsed["disabled_tools"])
 }
 
 // TestPreferenceDataScanValidJSON ensures valid JSON is parsed correctly.
 func TestPreferenceDataScanValidJSON(t *testing.T) {
 	var pref PreferenceData
-	err := pref.Scan(`{"return_mode":"first"}`)
+	err := pref.Scan(`{"return_mode":"first","disabled_tools":["file_write","file_read"]}`)
 	require.NoError(t, err)
 	require.Equal(t, ReturnModeFirst, pref.ReturnMode)
+	require.Equal(t, []string{"file_write", "file_read"}, pref.DisabledTools)
+}
+
+// TestNormalizeDisabledTools verifies normalization trims blanks and removes duplicates.
+func TestNormalizeDisabledTools(t *testing.T) {
+	normalized := NormalizeDisabledTools([]string{" file_read ", "", "file_read", "file_write"})
+	require.Equal(t, []string{"file_read", "file_write"}, normalized)
+}
+
+// TestServiceSetAndGetDisabledTools verifies disabled tool preferences are persisted per user.
+func TestServiceSetAndGetDisabledTools(t *testing.T) {
+	db := newTestDB(t)
+	clock := fixedClock(time.Date(2024, 12, 4, 0, 0, 0, 0, time.UTC))
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-disabled-tools", "abcd")
+	ctx := context.Background()
+
+	_, err = svc.SetDisabledTools(ctx, auth, []string{"file_write", "file_search", "file_write"})
+	require.NoError(t, err)
+
+	disabledTools, err := svc.GetDisabledTools(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"file_write", "file_search"}, disabledTools)
 }
 
 // TestPreferenceDataScanLegacyEscapedString ensures legacy escaped preference payloads are recovered.

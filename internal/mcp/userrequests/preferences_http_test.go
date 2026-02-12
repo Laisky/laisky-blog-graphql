@@ -20,7 +20,9 @@ func TestPreferencesHTTPSetAndGet(t *testing.T) {
 	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
-	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"))
+	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"), func() []string {
+		return []string{"file_read", "file_write"}
+	})
 
 	// Test API key for authorization
 	apiKey := "sk-test1234567890abcdef"
@@ -37,6 +39,7 @@ func TestPreferencesHTTPSetAndGet(t *testing.T) {
 	var getResp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &getResp))
 	require.Equal(t, "all", getResp["return_mode"], "default should be 'all'")
+	require.Equal(t, []any{"file_read", "file_write"}, getResp["available_tools"])
 
 	// Step 2: PUT to set mode to "first"
 	body := bytes.NewBufferString(`{"return_mode": "first"}`)
@@ -51,6 +54,7 @@ func TestPreferencesHTTPSetAndGet(t *testing.T) {
 	var setResp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &setResp))
 	require.Equal(t, "first", setResp["return_mode"], "response should confirm 'first'")
+	require.Equal(t, []any{}, setResp["disabled_tools"])
 
 	// Step 3: GET again to verify persistence
 	req = httptest.NewRequest(http.MethodGet, "/api/preferences", nil)
@@ -63,6 +67,7 @@ func TestPreferencesHTTPSetAndGet(t *testing.T) {
 	var getResp2 map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &getResp2))
 	require.Equal(t, "first", getResp2["return_mode"], "GET should return persisted 'first'")
+	require.Equal(t, []any{"file_read", "file_write"}, getResp2["available_tools"])
 
 	// Step 4: PUT to change back to "all"
 	body = bytes.NewBufferString(`{"return_mode": "all"}`)
@@ -85,6 +90,43 @@ func TestPreferencesHTTPSetAndGet(t *testing.T) {
 	var getResp3 map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &getResp3))
 	require.Equal(t, "all", getResp3["return_mode"], "GET should return updated 'all'")
+	require.Equal(t, []any{}, getResp3["disabled_tools"])
+}
+
+// TestPreferencesHTTPSetDisabledTools verifies disabled tools can be updated independently.
+func TestPreferencesHTTPSetDisabledTools(t *testing.T) {
+	db := newTestDB(t)
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"), func() []string {
+		return []string{"file_read", "file_write", "file_list"}
+	})
+
+	authHeader := "Bearer sk-test1234567890abcdef"
+	body := bytes.NewBufferString(`{"disabled_tools": ["file_write", "file_list"]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/preferences", body)
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var setResp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &setResp))
+	require.Equal(t, []any{"file_write", "file_list"}, setResp["disabled_tools"])
+	require.Equal(t, "all", setResp["return_mode"])
+
+	req = httptest.NewRequest(http.MethodGet, "/api/preferences", nil)
+	req.Header.Set("Authorization", authHeader)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var getResp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &getResp))
+	require.Equal(t, []any{"file_write", "file_list"}, getResp["disabled_tools"])
 }
 
 // TestPreferencesHTTPInvalidMode verifies invalid mode values are rejected.
@@ -93,7 +135,7 @@ func TestPreferencesHTTPInvalidMode(t *testing.T) {
 	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
-	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"))
+	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"), nil)
 
 	apiKey := "sk-test1234567890abcdef"
 	authHeader := "Bearer " + apiKey
@@ -115,7 +157,7 @@ func TestPreferencesHTTPMissingAuth(t *testing.T) {
 	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
-	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"))
+	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"), nil)
 
 	// GET without auth
 	req := httptest.NewRequest(http.MethodGet, "/api/preferences", nil)
@@ -131,7 +173,7 @@ func TestPreferencesHTTPUserIsolation(t *testing.T) {
 	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
 	require.NoError(t, err)
 
-	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"))
+	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"), nil)
 
 	// Two different users
 	userA := "Bearer sk-userA1234567890abc"
