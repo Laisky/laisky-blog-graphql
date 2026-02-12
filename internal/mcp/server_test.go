@@ -3,15 +3,24 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	srv "github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 
 	glog "github.com/Laisky/go-utils/v6/log"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 )
 
 func TestNewServerRequiresCapability(t *testing.T) {
@@ -148,4 +157,89 @@ func TestFilterToolsListBodyNoChange(t *testing.T) {
 func TestServerAvailableToolNames(t *testing.T) {
 	srv := &Server{}
 	require.Empty(t, srv.AvailableToolNames())
+}
+
+func TestLoadDisabledToolsForListRequestWithAuthorizationHeader(t *testing.T) {
+	prefSvc := newUserPreferenceServiceForToolsListTest(t, "file:toolslist_header?mode=memory&cache=shared")
+	auth := mustAuthorizationContext(t, "Bearer sk-tools-list-header")
+	_, err := prefSvc.SetDisabledTools(context.Background(), auth, []string{"mcp_pipe"})
+	require.NoError(t, err)
+
+	request := newToolsListRequest("", "Bearer sk-tools-list-header")
+	shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil, nil)
+
+	require.True(t, shouldFilter)
+	_, ok := disabled["mcp_pipe"]
+	require.True(t, ok)
+}
+
+func TestLoadDisabledToolsForListRequestWithSessionAuthorizationFallback(t *testing.T) {
+	prefSvc := newUserPreferenceServiceForToolsListTest(t, "file:toolslist_session?mode=memory&cache=shared")
+	auth := mustAuthorizationContext(t, "Bearer sk-tools-list-session")
+	_, err := prefSvc.SetDisabledTools(context.Background(), auth, []string{"mcp_pipe"})
+	require.NoError(t, err)
+
+	sessionID := "mcp-session-tools-list"
+	store := newSessionAuthorizationStore()
+	cacheSessionAuthorizationForRequest(newGenericMCPRequest(sessionID, "Bearer sk-tools-list-session"), nil, store)
+
+	request := newToolsListRequest(sessionID, "")
+	shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil, store)
+
+	require.True(t, shouldFilter)
+	_, ok := disabled["mcp_pipe"]
+	require.True(t, ok)
+}
+
+func TestResolveAuthorizationForListRequestWithoutAuthorization(t *testing.T) {
+	request := newToolsListRequest("", "")
+	auth, source := resolveAuthorizationForListRequest(request, nil)
+	require.Nil(t, auth)
+	require.Equal(t, "none", source)
+}
+
+// newUserPreferenceServiceForToolsListTest builds a user preference service backed by sqlite for tools/list tests.
+func newUserPreferenceServiceForToolsListTest(t *testing.T, dsn string) *userrequests.Service {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	require.NoError(t, err)
+
+	service, err := userrequests.NewService(db, logSDK.Shared, nil, userrequests.Settings{})
+	require.NoError(t, err)
+
+	return service
+}
+
+// mustAuthorizationContext parses an Authorization header and returns a valid authorization context.
+func mustAuthorizationContext(t *testing.T, authHeader string) *askuser.AuthorizationContext {
+	t.Helper()
+
+	auth, err := askuser.ParseAuthorizationContext(authHeader)
+	require.NoError(t, err)
+	return auth
+}
+
+// newGenericMCPRequest builds a generic MCP POST request with optional session and authorization headers.
+func newGenericMCPRequest(sessionID string, authorization string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/mcp/", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	if strings.TrimSpace(sessionID) != "" {
+		req.Header.Set(srv.HeaderKeySessionID, sessionID)
+	}
+	if strings.TrimSpace(authorization) != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+	return req
+}
+
+// newToolsListRequest builds a tools/list MCP request with optional session and authorization headers.
+func newToolsListRequest(sessionID string, authorization string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/mcp/", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{"progressToken":2}}}`))
+	if strings.TrimSpace(sessionID) != "" {
+		req.Header.Set(srv.HeaderKeySessionID, sessionID)
+	}
+	if strings.TrimSpace(authorization) != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+	return req
 }
