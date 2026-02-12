@@ -14,15 +14,15 @@ import (
 
 const (
 	// maxAlertNameLength caps the length of alert type names.
-	maxAlertNameLength  = 100
+	maxAlertNameLength = 100
 	// maxJoinKeyLength caps the length of join keys.
-	maxJoinKeyLength    = 32
+	maxJoinKeyLength = 32
 	// maxPushTokenLength caps the length of push tokens.
-	maxPushTokenLength  = 64
+	maxPushTokenLength = 64
 	// maxMonitorNameLen caps the length of monitor user names.
-	maxMonitorNameLen   = 100
+	maxMonitorNameLen = 100
 	// maxNotesKeywordLen caps the length of notes search keywords.
-	maxNotesKeywordLen  = 200
+	maxNotesKeywordLen = 200
 	// maxTelegramPageSize caps the number of rows returned per page.
 	maxTelegramPageSize = 200
 )

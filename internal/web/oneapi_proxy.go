@@ -19,8 +19,8 @@ const (
 )
 
 var (
-	oneapiHTTPClient  = &http.Client{Timeout: 20 * time.Second}
-	oneapiBalanceURL  = oneapiBalanceDefaultURL
+	oneapiHTTPClient = &http.Client{Timeout: 20 * time.Second}
+	oneapiBalanceURL = oneapiBalanceDefaultURL
 )
 
 type oneapiBalanceRequest struct {

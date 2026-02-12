@@ -84,10 +84,10 @@ type ListResult struct {
 }
 
 const (
-	defaultCostUnit    = "quota"
-	defaultPage        = 1
+	defaultCostUnit = "quota"
+	defaultPage     = 1
 	// defaultPageSize sets the fallback page size for list queries.
-	defaultPageSize    = 20
+	defaultPageSize = 20
 	// maxPageSize caps the page size for list queries.
 	maxPageSize        = 100
 	sortFieldCreatedAt = "created_at"

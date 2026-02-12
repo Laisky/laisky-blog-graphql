@@ -9,7 +9,7 @@ import (
 
 const (
 	// maxToolNameLength caps tool name filter length.
-	maxToolNameLength   = 128
+	maxToolNameLength = 128
 	// maxUserPrefixLength caps user key prefix filter length.
 	maxUserPrefixLength = 128
 )

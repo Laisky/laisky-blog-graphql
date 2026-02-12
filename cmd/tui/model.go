@@ -89,13 +89,13 @@ type Model struct {
 
 // keyMap defines the key bindings for the TUI
 type keyMap struct {
-	Up     key.Binding
-	Down   key.Binding
-	Enter  key.Binding
-	Back   key.Binding
-	Tab    key.Binding
-	Quit   key.Binding
-	Help   key.Binding
+	Up    key.Binding
+	Down  key.Binding
+	Enter key.Binding
+	Back  key.Binding
+	Tab   key.Binding
+	Quit  key.Binding
+	Help  key.Binding
 }
 
 var keys = keyMap{
@@ -171,9 +171,9 @@ func NewModel() Model {
 	sp.Style = GetProgressStyle()
 
 	return Model{
-		state:     ViewMain,
-		menuList:  menuList,
-		spinner:   sp,
+		state:      ViewMain,
+		menuList:   menuList,
+		spinner:    sp,
 		focusIndex: 0,
 	}
 }

@@ -16,12 +16,12 @@ var (
 	successColor   = lipgloss.Color("#22C55E") // Green
 
 	// Neutral colors
-	bgColor      = lipgloss.Color("#1E1E2E") // Dark background
-	fgColor      = lipgloss.Color("#CDD6F4") // Light foreground
-	mutedColor   = lipgloss.Color("#6C7086") // Muted text
-	borderColor  = lipgloss.Color("#45475A") // Border
-	selectedBg   = lipgloss.Color("#313244") // Selected background
-	highlightBg  = lipgloss.Color("#45475A") // Highlight background
+	bgColor     = lipgloss.Color("#1E1E2E") // Dark background
+	fgColor     = lipgloss.Color("#CDD6F4") // Light foreground
+	mutedColor  = lipgloss.Color("#6C7086") // Muted text
+	borderColor = lipgloss.Color("#45475A") // Border
+	selectedBg  = lipgloss.Color("#313244") // Selected background
+	highlightBg = lipgloss.Color("#45475A") // Highlight background
 )
 
 // titleStyle creates the main title style

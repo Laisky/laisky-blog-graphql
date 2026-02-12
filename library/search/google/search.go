@@ -26,8 +26,8 @@ type SearchEngine struct {
 const (
 	httpRequestTimeout = 10 * time.Second
 	// logBodyLimit caps the number of response bytes logged for debugging.
-	logBodyLimit       = 4096
-	searchEndpoint     = "https://www.googleapis.com/customsearch/v1"
+	logBodyLimit   = 4096
+	searchEndpoint = "https://www.googleapis.com/customsearch/v1"
 )
 
 // NewSearchEngine instantiates a Programmable Search client with the given credentials.

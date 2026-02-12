@@ -195,9 +195,9 @@ type AdvancedModel struct {
 	state ViewState
 
 	// Built-in components from bubbles package
-	menuList list.Model         // List selection component
-	inputs   []textinput.Model  // Text input fields
-	spinner  spinner.Model      // Loading spinner
+	menuList list.Model        // List selection component
+	inputs   []textinput.Model // Text input fields
+	spinner  spinner.Model     // Loading spinner
 
 	// Focus management for multiple inputs
 	focusIndex int
@@ -295,12 +295,12 @@ func createInputs() []textinput.Model {
 
 // keyMap defines application key bindings
 type keyMap struct {
-	Up     key.Binding
-	Down   key.Binding
-	Enter  key.Binding
-	Back   key.Binding
-	Tab    key.Binding
-	Quit   key.Binding
+	Up    key.Binding
+	Down  key.Binding
+	Enter key.Binding
+	Back  key.Binding
+	Tab   key.Binding
+	Quit  key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings

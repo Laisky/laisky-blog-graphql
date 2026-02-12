@@ -10,7 +10,7 @@ import (
 
 const (
 	// maxSearchQueryLength caps the length of user request search queries.
-	maxSearchQueryLength    = 2048
+	maxSearchQueryLength = 2048
 	// maxRequestContentLength caps the length of request content payloads.
 	maxRequestContentLength = 1024 * 50
 )
