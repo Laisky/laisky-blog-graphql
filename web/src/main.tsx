@@ -6,6 +6,7 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { ThemeProvider } from '@/components/theme/theme-provider';
 import { AskUserPage } from '@/features/mcp/ask-user/page';
 import { CallLogPage } from '@/features/mcp/call-log/page';
+import { FileIOPage } from '@/features/mcp/file-io/page';
 import { InspectorPage } from '@/features/mcp/inspector/page';
 import { SettingsPage } from '@/features/mcp/settings/page';
 import { UserRequestsPage } from '@/features/mcp/user-requests/page';
@@ -77,6 +78,7 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined) {
         { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
         { path: 'tools/web_search', element: <WebSearchPage /> },
         { path: 'tools/web_fetch', element: <WebFetchPage /> },
+        { path: 'tools/file_io', element: <FileIOPage /> },
         { path: 'tools/call_log', element: <CallLogPage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: 'debug/*', element: <InspectorPage /> },

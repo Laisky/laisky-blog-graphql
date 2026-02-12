@@ -7,6 +7,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	arweave "github.com/Laisky/laisky-blog-graphql/internal/web/arweave/controller"
@@ -35,6 +36,7 @@ type ResolverArgs struct {
 	AskUserService     *askuser.Service
 	CallLogService     *calllog.Service
 	UserRequestService *userrequests.Service
+	FilesService       *files.Service
 	RAGService         *rag.Service
 	RAGSettings        rag.Settings
 	MCPToolsSettings   mcp.ToolsSettings

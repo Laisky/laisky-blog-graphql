@@ -45,6 +45,39 @@ settings:
       max_chunk_chars: 1500
       semantic_weight: 0.65
       lexical_weight: 0.35
+    files:
+      allow_root_wipe: false
+      max_payload_bytes: 1048576
+      max_file_bytes: 1048576
+      max_project_bytes: 104857600
+      list_limit_default: 256
+      list_limit_max: 2048
+      lock_timeout_ms: 2000
+      delete_retention_days: 7
+      search:
+        enabled: true
+        limit_default: 5
+        limit_max: 20
+        vector_candidates: 30
+        bm25_candidates: 30
+        fallback:
+          semantic_weight: 0.65
+          lexical_weight: 0.35
+        rerank:
+          model: rerank-v3.5
+          endpoint: https://oneapi.laisky.com/v1/rerank
+          timeout_ms: 10000
+      index:
+        workers: 2
+        batch_size: 32
+        retry_max: 5
+        retry_backoff_ms: 1000
+        slo_p95_seconds: 30
+      security:
+        encryption_key: REPLACE_WITH_BASE64_32BYTE_SECRET
+        encryption_kek_id: 1
+        credential_cache_prefix: mcp:files:cred
+        credential_cache_ttl_seconds: 300
   web:
     url_prefix: /mcp # internal mount path on the Go server
     public_url_prefix: / # set to '/' to hide the prefix in generated links

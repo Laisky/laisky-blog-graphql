@@ -14,7 +14,7 @@ import (
 )
 
 func TestNewServerRequiresCapability(t *testing.T) {
-	srv, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, ToolsSettings{}, glog.Shared)
+	srv, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, nil, ToolsSettings{}, glog.Shared)
 	require.Nil(t, srv)
 	require.Error(t, err)
 }

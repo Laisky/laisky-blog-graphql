@@ -3,6 +3,7 @@ package web
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -34,7 +35,14 @@ type SiteConfig struct {
 type siteConfigSet struct {
 	sites       []SiteConfig
 	hostIndex   map[string]SiteConfig
+	pathIndex   []sitePathMatch
 	defaultSite SiteConfig
+}
+
+// sitePathMatch stores a base path and the site it maps to.
+type sitePathMatch struct {
+	base string
+	site SiteConfig
 }
 
 // loadSiteConfigSet loads site configurations from settings and returns a resolved set.
@@ -80,11 +88,40 @@ func buildSiteConfigSet(sites []SiteConfig, defaultSite SiteConfig) siteConfigSe
 		}
 	}
 
+	pathIndex := buildPathIndex(sites)
+
 	return siteConfigSet{
 		sites:       sites,
 		hostIndex:   hostIndex,
+		pathIndex:   pathIndex,
 		defaultSite: defaultSite,
 	}
+}
+
+// buildPathIndex builds the ordered list of base-path matches for sites.
+func buildPathIndex(sites []SiteConfig) []sitePathMatch {
+	matches := make([]sitePathMatch, 0, len(sites))
+	seen := make(map[string]struct{})
+	for _, site := range sites {
+		base := normalizeBasePath(site.PublicBasePath)
+		if base == "" {
+			continue
+		}
+		if _, ok := seen[base]; ok {
+			continue
+		}
+		seen[base] = struct{}{}
+		matches = append(matches, sitePathMatch{base: base, site: site})
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		if len(matches[i].base) == len(matches[j].base) {
+			return matches[i].base < matches[j].base
+		}
+		return len(matches[i].base) > len(matches[j].base)
+	})
+
+	return matches
 }
 
 // loadSiteConfig loads a single site configuration from settings.
@@ -165,7 +202,30 @@ func (s siteConfigSet) resolveForRequest(r *http.Request) SiteConfig {
 		return site
 	}
 
+	if site, ok := s.matchByPath(r.URL.Path); ok {
+		return site
+	}
+
+	if site, ok := s.matchByPath(requestPathFromReferer(r)); ok {
+		return site
+	}
+
 	return s.defaultSite
+}
+
+// matchByPath tries to resolve a site by matching path prefixes.
+func (s siteConfigSet) matchByPath(path string) (SiteConfig, bool) {
+	if path == "" || !strings.HasPrefix(path, "/") {
+		return SiteConfig{}, false
+	}
+
+	for _, match := range s.pathIndex {
+		if path == match.base || strings.HasPrefix(path, match.base+"/") {
+			return match.site, true
+		}
+	}
+
+	return SiteConfig{}, false
 }
 
 // requestHost extracts and normalizes the host for the incoming request.
@@ -183,6 +243,25 @@ func requestHost(r *http.Request) string {
 	}
 
 	return normalizeHost(r.Host)
+}
+
+// requestPathFromReferer extracts the path from the Referer header when available.
+func requestPathFromReferer(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+
+	ref := strings.TrimSpace(r.Referer())
+	if ref == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(ref)
+	if err != nil {
+		return ""
+	}
+
+	return parsed.Path
 }
 
 // normalizeHostList normalizes hostnames and drops empty values.

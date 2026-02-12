@@ -17,6 +17,12 @@ const TOOL_OPTIONS: Array<{ label: string; value: string }> = [
   { label: 'web_fetch', value: 'web_fetch' },
   { label: 'ask_user', value: 'ask_user' },
   { label: 'get_user_request', value: 'get_user_request' },
+  { label: 'file_stat', value: 'file_stat' },
+  { label: 'file_read', value: 'file_read' },
+  { label: 'file_write', value: 'file_write' },
+  { label: 'file_delete', value: 'file_delete' },
+  { label: 'file_list', value: 'file_list' },
+  { label: 'file_search', value: 'file_search' },
 ];
 const SORT_FIELDS: Array<{ label: string; value: string }> = [
   { label: 'Newest first', value: 'occurred_at' },

@@ -69,3 +69,46 @@ func TestSiteConfigSetResolveHost(t *testing.T) {
 	site = set.resolveForRequest(req)
 	require.Equal(t, "mcp", site.ID)
 }
+
+// TestSiteConfigSetResolvePath verifies path-based site resolution for IP access.
+func TestSiteConfigSetResolvePath(t *testing.T) {
+	oldSites := gconfig.Shared.GetStringMap("settings.web.sites")
+	siteSettings := map[string]any{
+		"mcp": map[string]any{
+			"hosts":            []string{"mcp.laisky.com"},
+			"title":            "Laisky MCP",
+			"router":           "mcp",
+			"public_base_path": "/mcp",
+		},
+		"sso": map[string]any{
+			"host":             "sso.laisky.com",
+			"title":            "Laisky SSO",
+			"router":           "sso",
+			"default":          true,
+			"public_base_path": "/sso",
+		},
+	}
+	gconfig.Shared.Set("settings.web.sites", siteSettings)
+	t.Cleanup(func() {
+		gconfig.Shared.Set("settings.web.sites", oldSites)
+	})
+
+	prefix := urlPrefixConfig{internal: "/mcp", public: "/"}
+	set := loadSiteConfigSet(log.Logger.Named("site_config_test"), prefix)
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/mcp/", nil)
+	req.Host = "127.0.0.1:5173"
+	site := set.resolveForRequest(req)
+	require.Equal(t, "mcp", site.ID)
+
+	req = httptest.NewRequest(http.MethodGet, "http://127.0.0.1/sso/login", nil)
+	req.Host = "127.0.0.1:5173"
+	site = set.resolveForRequest(req)
+	require.Equal(t, "sso", site.ID)
+
+	req = httptest.NewRequest(http.MethodGet, "http://127.0.0.1/runtime-config.json", nil)
+	req.Host = "127.0.0.1:5173"
+	req.Header.Set("Referer", "http://127.0.0.1/sso/")
+	site = set.resolveForRequest(req)
+	require.Equal(t, "sso", site.ID)
+}

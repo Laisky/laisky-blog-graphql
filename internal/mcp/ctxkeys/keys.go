@@ -6,4 +6,6 @@ type Key string
 const (
 	// Logger stores the per-request logger within tool contexts.
 	Logger Key = "mcp_logger"
+	// AuthContext stores the normalized authorization context.
+	AuthContext Key = "mcp_auth_context"
 )
