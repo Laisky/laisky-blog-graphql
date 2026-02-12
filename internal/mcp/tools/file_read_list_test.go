@@ -15,6 +15,7 @@ import (
 type readListStubService struct {
 	lastReadLength int64
 	lastListDepth  int
+	lastListPath   string
 	listErr        error
 }
 
@@ -40,8 +41,9 @@ func (s *readListStubService) Delete(context.Context, files.AuthContext, string,
 }
 
 // List records the requested depth for assertions.
-func (s *readListStubService) List(_ context.Context, _ files.AuthContext, _ string, _ string, depth, _ int) (files.ListResult, error) {
+func (s *readListStubService) List(_ context.Context, _ files.AuthContext, _ string, path string, depth, _ int) (files.ListResult, error) {
 	s.lastListDepth = depth
+	s.lastListPath = path
 	if s.listErr != nil {
 		return files.ListResult{}, errors.WithStack(s.listErr)
 	}
@@ -107,6 +109,24 @@ func TestFileListDefaultDepth(t *testing.T) {
 	require.Equal(t, 1, svc.lastListDepth)
 }
 
+// TestFileListSlashPathNormalizedToRoot verifies "/" is normalized to root path.
+func TestFileListSlashPathNormalizedToRoot(t *testing.T) {
+	svc := &readListStubService{}
+	tool, err := NewFileListTool(svc)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project": "proj",
+		"path":    "/",
+	}}}
+
+	result, handleErr := tool.Handle(ctx, req)
+	require.NoError(t, handleErr)
+	require.False(t, result.IsError)
+	require.Equal(t, "", svc.lastListPath)
+}
+
 // TestFileListRootNotFoundReturnsEmpty verifies empty-root listings are normalized to empty responses.
 func TestFileListRootNotFoundReturnsEmpty(t *testing.T) {
 	svc := &readListStubService{listErr: files.NewError(files.ErrCodeNotFound, "path not found", false)}
@@ -117,6 +137,28 @@ func TestFileListRootNotFoundReturnsEmpty(t *testing.T) {
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
 		"project": "proj",
 		"path":    "",
+	}}}
+
+	result, handleErr := tool.Handle(ctx, req)
+	require.NoError(t, handleErr)
+	require.False(t, result.IsError)
+	payload := decodeToolPayload(t, result)
+	require.Equal(t, false, payload["has_more"])
+	entries, ok := payload["entries"].([]any)
+	require.True(t, ok)
+	require.Len(t, entries, 0)
+}
+
+// TestFileListSlashRootNotFoundReturnsEmpty verifies slash-root NOT_FOUND is normalized to empty responses.
+func TestFileListSlashRootNotFoundReturnsEmpty(t *testing.T) {
+	svc := &readListStubService{listErr: files.NewError(files.ErrCodeNotFound, "path not found", false)}
+	tool, err := NewFileListTool(svc)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{APIKey: "key", APIKeyHash: "hash"})
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project": "proj",
+		"path":    "/",
 	}}}
 
 	result, handleErr := tool.Handle(ctx, req)

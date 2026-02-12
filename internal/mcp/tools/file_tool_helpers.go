@@ -3,10 +3,13 @@ package tools
 import (
 	"context"
 
+	gmw "github.com/Laisky/gin-middlewares/v7"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // fileAuthFromContext extracts the trusted auth context for file tools.
@@ -16,6 +19,19 @@ func fileAuthFromContext(ctx context.Context) (files.AuthContext, bool) {
 		return files.AuthContext{}, false
 	}
 	return *value, true
+}
+
+// fileToolLoggerFromContext returns a request-scoped logger when available.
+// It accepts a context and returns the logger to use for tool diagnostics.
+func fileToolLoggerFromContext(ctx context.Context) logSDK.Logger {
+	if ctxLogger := gmw.GetLogger(ctx); ctxLogger != nil {
+		return ctxLogger
+	}
+	if ctxLogger, ok := ctx.Value(ctxkeys.Logger).(logSDK.Logger); ok && ctxLogger != nil {
+		return ctxLogger
+	}
+
+	return log.Logger.Named("mcp_file_tools")
 }
 
 // fileToolErrorResult builds a structured MCP error response for file tools.

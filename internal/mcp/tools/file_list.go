@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 
+	"github.com/Laisky/zap"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
@@ -37,16 +38,43 @@ func (t *FileListTool) Definition() mcp.Tool {
 
 // Handle executes the file_list tool logic.
 func (t *FileListTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	logger := fileToolLoggerFromContext(ctx).Named("file_list")
+
 	project, err := req.RequireString("project")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	path := readStringArg(req, "path")
+	rawPath := readStringArg(req, "path")
+	path := normalizeFileListPath(rawPath)
 	depth := readIntArgWithDefault(req, "depth", 1)
 	limit := readIntArg(req, "limit")
+	logger.Debug("file_list request parsed",
+		zap.String("path_raw", rawPath),
+		zap.String("path_normalized", path),
+		zap.Int("depth", depth),
+		zap.Int("limit", limit),
+	)
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.List(ctx, auth, project, path, depth, limit)
 		if svcErr != nil {
+			if typed, typeOK := files.AsError(svcErr); typeOK {
+				logger.Debug("file_list service error",
+					zap.String("path_raw", rawPath),
+					zap.String("path_normalized", path),
+					zap.Int("depth", depth),
+					zap.Int("limit", limit),
+					zap.String("code", string(typed.Code)),
+					zap.Bool("retryable", typed.Retryable),
+				)
+			} else {
+				logger.Debug("file_list service error",
+					zap.String("path_raw", rawPath),
+					zap.String("path_normalized", path),
+					zap.Int("depth", depth),
+					zap.Int("limit", limit),
+					zap.Error(svcErr),
+				)
+			}
 			if path == "" && isFileErrorCode(svcErr, files.ErrCodeNotFound) {
 				emptyPayload := map[string]any{"entries": []files.FileEntry{}, "has_more": false}
 				emptyResult, encodeErr := mcp.NewToolResultJSON(emptyPayload)
@@ -65,4 +93,14 @@ func (t *FileListTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return toolResult, nil
 	}
 	return fileToolErrorResult(files.ErrCodePermissionDenied, "missing authorization", false), nil
+}
+
+// normalizeFileListPath canonicalizes file_list directory paths.
+// It accepts a raw path argument and returns the normalized service path.
+func normalizeFileListPath(path string) string {
+	if path == "/" {
+		return ""
+	}
+
+	return path
 }
