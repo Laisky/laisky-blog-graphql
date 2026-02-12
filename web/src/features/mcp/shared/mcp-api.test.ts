@@ -46,22 +46,22 @@ describe('callMcpTool', () => {
             id: 1,
             result: { protocolVersion: '2025-06-18' },
           },
-          { 'Mcp-Session-Id': 'mcp-session-first' },
-        ),
+          { 'Mcp-Session-Id': 'mcp-session-first' }
+        )
       )
       .mockResolvedValueOnce(
         createJSONResponse({
           jsonrpc: '2.0',
           id: 2,
           result: { content: [], isError: false },
-        }),
+        })
       )
       .mockResolvedValueOnce(
         createJSONResponse({
           jsonrpc: '2.0',
           id: 3,
           result: { content: [], isError: false },
-        }),
+        })
       );
 
     await callMcpTool('test-key', 'file_write', { project: 'demo' });
@@ -91,8 +91,8 @@ describe('callMcpTool', () => {
             id: 1,
             result: { protocolVersion: '2025-06-18' },
           },
-          { 'Mcp-Session-Id': 'mcp-session-stale' },
-        ),
+          { 'Mcp-Session-Id': 'mcp-session-stale' }
+        )
       )
       .mockResolvedValueOnce(createTextErrorResponse(400, 'Invalid session ID\n'))
       .mockResolvedValueOnce(
@@ -102,15 +102,15 @@ describe('callMcpTool', () => {
             id: 2,
             result: { protocolVersion: '2025-06-18' },
           },
-          { 'Mcp-Session-Id': 'mcp-session-fresh' },
-        ),
+          { 'Mcp-Session-Id': 'mcp-session-fresh' }
+        )
       )
       .mockResolvedValueOnce(
         createJSONResponse({
           jsonrpc: '2.0',
           id: 3,
           result: { content: [], isError: false },
-        }),
+        })
       );
 
     await callMcpTool('test-key', 'file_write', { project: 'demo' });

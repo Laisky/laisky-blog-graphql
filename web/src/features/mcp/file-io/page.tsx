@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useApiKey } from '@/lib/api-key-context';
@@ -147,10 +148,11 @@ export function FileIOPage() {
   const [readLength, setReadLength] = useState(persistedInputs.readLength ?? -1);
   const [readError, setReadError] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
+  const [isFilePreviewOpen, setIsFilePreviewOpen] = useState(false);
 
   const [writePath, setWritePath] = useState(persistedInputs.writePath ?? '');
   const [writeMode, setWriteMode] = useState<'APPEND' | 'OVERWRITE' | 'TRUNCATE'>(
-    persistedInputs.writeMode === 'OVERWRITE' || persistedInputs.writeMode === 'TRUNCATE' ? persistedInputs.writeMode : 'APPEND',
+    persistedInputs.writeMode === 'OVERWRITE' || persistedInputs.writeMode === 'TRUNCATE' ? persistedInputs.writeMode : 'APPEND'
   );
   const [writeOffset, setWriteOffset] = useState(persistedInputs.writeOffset ?? 0);
   const [writeContent, setWriteContent] = useState(persistedInputs.writeContent ?? '');
@@ -326,6 +328,11 @@ export function FileIOPage() {
     }
   }
 
+  function openFilePreview(targetPath: string) {
+    setIsFilePreviewOpen(true);
+    void loadFile(targetPath);
+  }
+
   const selectedIsDirectory = selectedStat?.type === 'DIRECTORY';
   const isProjectMissing = project.trim().length === 0;
 
@@ -430,7 +437,7 @@ export function FileIOPage() {
                             if (entry.type === 'DIRECTORY') {
                               loadList(entry.path);
                             } else {
-                              loadFile(entry.path);
+                              openFilePreview(entry.path);
                               setWritePath(entry.path);
                               setDeletePath(entry.path);
                             }
@@ -736,6 +743,53 @@ export function FileIOPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isFilePreviewOpen} onOpenChange={setIsFilePreviewOpen}>
+        <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col overflow-hidden p-0">
+          <DialogHeader className="border-b border-border/60 px-6 py-4">
+            <DialogTitle className="truncate text-left">File Preview</DialogTitle>
+            <DialogDescription className="break-all text-left">{selectedPath || 'No file selected'}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
+            {readError && <div className="text-sm text-destructive">{readError}</div>}
+            {isReading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Loading file content...
+              </div>
+            )}
+            {!isReading && !readError && selectedStat && (
+              <div className="grid gap-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span>Type</span>
+                  <span className="font-medium text-foreground">{selectedStat.type}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>Size</span>
+                  <span className="font-medium text-foreground">{selectedStat.size} bytes</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>Created</span>
+                  <span className="font-medium text-foreground">{formatTimestamp(selectedStat.created_at)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>Updated</span>
+                  <span className="font-medium text-foreground">{formatTimestamp(selectedStat.updated_at)}</span>
+                </div>
+              </div>
+            )}
+            {!isReading && (
+              <Textarea
+                value={selectedContent}
+                readOnly
+                rows={18}
+                placeholder={selectedIsDirectory ? 'Directory selected.' : 'File content will appear here.'}
+                className="min-h-[420px] font-mono text-sm"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

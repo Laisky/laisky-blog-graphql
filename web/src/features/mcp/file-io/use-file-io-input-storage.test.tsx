@@ -1,11 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import {
-  useFileIOInputDefaults,
-  usePersistFileIOInputs,
-  type FileIOPersistedInputs,
-} from './use-file-io-input-storage';
+import { useFileIOInputDefaults, usePersistFileIOInputs, type FileIOPersistedInputs } from './use-file-io-input-storage';
 
 const storageKey = 'mcp.file_io.inputs.v1';
 
