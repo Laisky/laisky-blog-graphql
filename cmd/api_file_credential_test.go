@@ -19,21 +19,21 @@ func TestBuildFileCredentialProtectorEmptyKey(t *testing.T) {
 func TestBuildFileCredentialProtectorInvalidKey(t *testing.T) {
 	settings := files.Settings{
 		Security: files.SecuritySettings{
-			EncryptionKey: "too-short",
+			EncryptionKEKs: map[uint16]string{1: "too-short"},
 		},
 	}
 
 	protector, err := buildFileCredentialProtector(settings)
 	require.Error(t, err)
 	require.Nil(t, protector)
-	require.Contains(t, err.Error(), "encryption key must be longer than 16 characters")
+	require.Contains(t, err.Error(), "must be longer than 16 characters")
 }
 
 // TestBuildFileCredentialProtectorValidKey verifies a compliant encryption key initializes credential protection.
 func TestBuildFileCredentialProtectorValidKey(t *testing.T) {
 	settings := files.Settings{
 		Security: files.SecuritySettings{
-			EncryptionKey: "this-key-is-longer-than-16",
+			EncryptionKEKs: map[uint16]string{1: "this-key-is-longer-than-16"},
 		},
 	}
 

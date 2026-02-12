@@ -12,7 +12,7 @@ import (
 func TestIndexWorkerDeletesCredentialAfterSuccess(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
@@ -34,7 +34,7 @@ func TestIndexWorkerDeletesCredentialAfterSuccess(t *testing.T) {
 func TestIndexWorkerRetriesWhenCredentialMissing(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.RetryMax = 2
 	settings.Index.RetryBackoff = 0

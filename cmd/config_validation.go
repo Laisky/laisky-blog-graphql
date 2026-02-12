@@ -119,11 +119,10 @@ func validateFileIOConfig(get configGetter, errs *[]string) {
 	validateOptionalIntMin(get, "settings.mcp.files.index.slo_p95_seconds", 1, errs)
 	validateOptionalIntMin(get, "settings.mcp.files.index.retry_max", 0, errs)
 
-	validateOptionalIntMin(get, "settings.mcp.files.security.encryption_kek_id", 1, errs)
 	validateOptionalIntMin(get, "settings.mcp.files.security.credential_cache_ttl_seconds", 1, errs)
 	validateOptionalStringNonEmpty(get, "settings.mcp.files.security.credential_cache_prefix", errs)
 
-	validateFileIOSecurityKey(get, errs)
+	validateFileIOSecurityKEKs(get, errs)
 	validateFileIOLimitRelations(get, errs)
 }
 
@@ -240,23 +239,35 @@ func validateOpenAIConfig(get configGetter, errs *[]string) {
 	validateOptionalURL(get, "settings.openai.base_url", errs)
 }
 
-// validateFileIOSecurityKey validates encryption_key constraints for FileIO security settings.
+// validateFileIOSecurityKEKs validates encryption_keks constraints for FileIO security settings.
 // It accepts a getter and an error collector pointer and appends validation errors.
-func validateFileIOSecurityKey(get configGetter, errs *[]string) {
-	raw := get("settings.mcp.files.security.encryption_key")
+func validateFileIOSecurityKEKs(get configGetter, errs *[]string) {
+	raw := get("settings.mcp.files.security.encryption_keks")
 	if raw == nil {
 		return
 	}
 
-	key, parseErr := parseStrictString(raw)
-	if parseErr != nil {
-		appendValidationError(errs, "settings.mcp.files.security.encryption_key must be a string")
+	keks := toStringMap(raw)
+	if keks == nil {
+		appendValidationError(errs, "settings.mcp.files.security.encryption_keks must be an object")
 		return
 	}
 
-	trimmed := strings.TrimSpace(key)
-	if trimmed != "" && len(trimmed) <= 16 {
-		appendValidationError(errs, "settings.mcp.files.security.encryption_key must be longer than 16 characters")
+	for rawID, rawSecret := range keks {
+		if _, parseErr := strconv.ParseUint(strings.TrimSpace(rawID), 10, 16); parseErr != nil {
+			appendValidationError(errs, "settings.mcp.files.security.encryption_keks.%s must use a uint16 key id", rawID)
+			continue
+		}
+
+		secret, parseErr := parseStrictString(rawSecret)
+		if parseErr != nil {
+			appendValidationError(errs, "settings.mcp.files.security.encryption_keks.%s must be a string", rawID)
+			continue
+		}
+
+		if len(strings.TrimSpace(secret)) <= 16 {
+			appendValidationError(errs, "settings.mcp.files.security.encryption_keks.%s must be longer than 16 characters", rawID)
+		}
 	}
 }
 

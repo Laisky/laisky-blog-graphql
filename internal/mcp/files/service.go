@@ -64,7 +64,7 @@ func NewService(db *gorm.DB, settings Settings, embedder Embedder, rerank Rerank
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
-	if credential == nil && settings.Security.EncryptionKey != "" {
+	if credential == nil && len(settings.Security.KEKs()) > 0 {
 		var err error
 		credential, err = NewCredentialProtector(settings.Security)
 		if err != nil {

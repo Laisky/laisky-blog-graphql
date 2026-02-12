@@ -13,7 +13,7 @@ import (
 func TestWriteReadFlow(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -44,7 +44,7 @@ func TestWriteReadFlow(t *testing.T) {
 func TestDeleteAndListFlow(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -75,7 +75,7 @@ func TestDeleteAndListFlow(t *testing.T) {
 func TestRootDeleteForbidden(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.AllowRootWipe = false
 	settings.MaxProjectBytes = 10_000
 
@@ -103,7 +103,7 @@ func TestRootDeleteForbidden(t *testing.T) {
 func TestFileStatDirectoryUpdatedAt(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	clock := func() time.Time { return time.Date(2026, 2, 11, 1, 2, 3, 0, time.UTC) }
@@ -127,7 +127,7 @@ func TestFileStatDirectoryUpdatedAt(t *testing.T) {
 func TestWriteInvalidOffset(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -145,7 +145,7 @@ func TestWriteInvalidOffset(t *testing.T) {
 func TestProjectQuotaEnforced(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 4
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -160,7 +160,7 @@ func TestProjectQuotaEnforced(t *testing.T) {
 func TestReadOffsetBeyondEOF(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -178,7 +178,7 @@ func TestReadOffsetBeyondEOF(t *testing.T) {
 func TestWritePathConflictWithDirectory(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -196,7 +196,7 @@ func TestWritePathConflictWithDirectory(t *testing.T) {
 func TestWritePathConflictWithParentFile(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -214,7 +214,7 @@ func TestWritePathConflictWithParentFile(t *testing.T) {
 func TestReadDirectoryReturnsError(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -232,7 +232,7 @@ func TestReadDirectoryReturnsError(t *testing.T) {
 func TestListSortedAndLimited(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -257,7 +257,7 @@ func TestListSortedAndLimited(t *testing.T) {
 func TestTenantIsolation(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -290,7 +290,7 @@ func TestTenantIsolation(t *testing.T) {
 func TestDeleteRootAlwaysForbidden(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -309,7 +309,7 @@ func TestDeleteRootAlwaysForbidden(t *testing.T) {
 func TestStatRootExistsWhenEmpty(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
@@ -326,7 +326,7 @@ func TestStatRootExistsWhenEmpty(t *testing.T) {
 func TestStatRootDirectory(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = false
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.MaxProjectBytes = 10_000
 
 	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})

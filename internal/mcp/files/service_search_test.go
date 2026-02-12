@@ -27,7 +27,7 @@ func (s stubRerankClient) Rerank(context.Context, string, string, []string) ([]f
 func TestSearchEndToEnd(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.ChunkBytes = 8
 	settings.MaxProjectBytes = 10_000
@@ -51,7 +51,7 @@ func TestSearchEndToEnd(t *testing.T) {
 func TestSearchHonorsDeletes(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.ChunkBytes = 8
 	settings.MaxProjectBytes = 10_000
@@ -78,7 +78,7 @@ func TestSearchHonorsDeletes(t *testing.T) {
 func TestSearchFallbackWhenRerankFails(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
@@ -105,7 +105,7 @@ func TestSearchFallbackWhenRerankFails(t *testing.T) {
 func TestSearchPathPrefixFilter(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
@@ -133,7 +133,7 @@ func TestSearchPathPrefixFilter(t *testing.T) {
 func TestSearchUpdatesLastServedOnlyForReturned(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.ChunkBytes = 4
 	settings.MaxProjectBytes = 10_000
@@ -165,7 +165,7 @@ func TestSearchUpdatesLastServedOnlyForReturned(t *testing.T) {
 func TestSearchTenantIsolation(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000
@@ -201,7 +201,7 @@ func TestSearchTenantIsolation(t *testing.T) {
 func TestSearchFallsBackWhenSemanticBackendFails(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
-	settings.Security.EncryptionKey = testEncryptionKey()
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
 	settings.Index.BatchSize = 10
 	settings.Index.ChunkBytes = 64
 	settings.MaxProjectBytes = 10_000

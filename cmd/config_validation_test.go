@@ -32,14 +32,17 @@ func TestValidateStartupConfigWithGetterInvalidBoolean(t *testing.T) {
 	require.Contains(t, err.Error(), "settings.mcp.tools.file_io.enabled")
 }
 
-// TestValidateStartupConfigWithGetterInvalidEncryptionKey verifies configured short encryption key fails validation.
-func TestValidateStartupConfigWithGetterInvalidEncryptionKey(t *testing.T) {
+// TestValidateStartupConfigWithGetterInvalidEncryptionKEKs verifies malformed multi-KEK configuration fails validation.
+func TestValidateStartupConfigWithGetterInvalidEncryptionKEKs(t *testing.T) {
 	cfg := map[string]any{
 		"settings": map[string]any{
 			"mcp": map[string]any{
 				"files": map[string]any{
 					"security": map[string]any{
-						"encryption_key": "short-key",
+						"encryption_keks": map[string]any{
+							"invalid-id": "this-key-is-longer-than-16",
+							"2":          "short-key",
+						},
 					},
 				},
 			},
@@ -48,7 +51,7 @@ func TestValidateStartupConfigWithGetterInvalidEncryptionKey(t *testing.T) {
 
 	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "settings.mcp.files.security.encryption_key")
+	require.Contains(t, err.Error(), "settings.mcp.files.security.encryption_keks")
 }
 
 // TestValidateStartupConfigWithGetterInvalidWebsearchEngine verifies enabled engine missing required fields fails validation.
@@ -132,8 +135,10 @@ func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 						"slo_p95_seconds":  30,
 					},
 					"security": map[string]any{
-						"encryption_key":               "this-key-is-longer-than-16",
-						"encryption_kek_id":            1,
+						"encryption_keks": map[string]any{
+							"1": "this-key-is-longer-than-16",
+							"3": "this-is-also-a-long-encryption-key",
+						},
 						"credential_cache_prefix":      "mcp:files:cred",
 						"credential_cache_ttl_seconds": 300,
 					},

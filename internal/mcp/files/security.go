@@ -2,14 +2,12 @@ package files
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
-	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
 	gkms "github.com/Laisky/go-utils/v6/crypto/kms"
-	"github.com/Laisky/go-utils/v6/crypto/kms/mem"
+	kmstool "github.com/Laisky/laisky-blog-graphql/internal/library/kms"
 )
 
 // CredentialProtector encrypts and decrypts credential envelopes.
@@ -19,17 +17,7 @@ type CredentialProtector struct {
 
 // NewCredentialProtector constructs a protector from security settings.
 func NewCredentialProtector(settings SecuritySettings) (*CredentialProtector, error) {
-	key := strings.TrimSpace(settings.EncryptionKey)
-	if len(key) <= 16 {
-		return nil, errors.New("encryption key must be longer than 16 characters")
-	}
-	kekID := settings.EncryptionKEKID
-	if kekID == 0 {
-		kekID = 1
-	}
-
-	kek := sha256.Sum256([]byte(key))
-	kmsClient, err := mem.New(map[uint16][]byte{kekID: kek[:]})
+	kmsClient, err := kmstool.NewMemoryKMS(kmstool.Settings{KEKs: settings.KEKs()})
 	if err != nil {
 		return nil, errors.Wrap(err, "init kms")
 	}
@@ -78,12 +66,10 @@ type CredentialReference struct {
 }
 
 // CacheKey builds the redis key for the credential envelope.
-// CacheKey builds the redis key for the credential envelope.
 func (c CredentialReference) CacheKey(prefix string) string {
 	return fmt.Sprintf("%s:%s:%s:%s:%d", prefix, c.APIKeyHash, c.Project, c.Path, c.UpdatedAt.UnixNano())
 }
 
-// AAD builds the additional authenticated data for credential encryption.
 // AAD returns additional authenticated data for credential encryption.
 func (c CredentialReference) AAD() []byte {
 	return []byte(fmt.Sprintf("%s|%s|%s|%d", c.APIKeyHash, c.Project, c.Path, c.UpdatedAt.UnixNano()))

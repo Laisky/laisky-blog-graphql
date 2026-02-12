@@ -498,15 +498,14 @@ Credential handling requirements:
 
 Required config keys:
 
-- `settings.mcp.files.security.encryption_key` (required; KEK material, 32-byte secret)
-- `settings.mcp.files.security.encryption_kek_id` (default: `1`)
+- `settings.mcp.files.security.encryption_keks` (required; map of `kek_id -> secret`)
 - `settings.mcp.files.security.credential_cache_prefix` (default: `mcp:files:cred`)
 - `settings.mcp.files.security.credential_cache_ttl_seconds` (default: `300`)
 
 Implementation requirements:
 
 - Initialize in-memory KMS using `github.com/Laisky/go-utils/v6/crypto/kms/mem`.
-- Build KMS with `mem.New(map[uint16][]byte{encryption_kek_id: encryption_key_bytes})`.
+- Build KMS by hashing each `encryption_keks` secret and passing all KEKs to `mem.New(map[uint16][]byte{...})`.
 - For each credential envelope, call `kmsClient.Encrypt(ctx, plaintextAPIKey, aad)`:
   - encryption output includes `kek_id`, unique `dek_id`, and `ciphertext`
   - serialize with `EncryptedData.MarshalToString()` before Redis write

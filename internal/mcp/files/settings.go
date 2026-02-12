@@ -3,6 +3,7 @@ package files
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,10 +53,22 @@ type IndexSettings struct {
 
 // SecuritySettings configures credential handoff encryption and cache usage.
 type SecuritySettings struct {
-	EncryptionKey         string
-	EncryptionKEKID       uint16
+	EncryptionKEKs        map[uint16]string
 	CredentialCachePrefix string
 	CredentialCacheTTL    time.Duration
+}
+
+// KEKs returns all configured non-empty KEKs.
+func (s SecuritySettings) KEKs() map[uint16]string {
+	keks := make(map[uint16]string, len(s.EncryptionKEKs))
+	for id, key := range s.EncryptionKEKs {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			continue
+		}
+		keks[id] = trimmed
+	}
+	return keks
 }
 
 // LoadSettingsFromConfig reads configuration and applies safe defaults.
@@ -92,8 +105,7 @@ func LoadSettingsFromConfig() Settings {
 			FreshnessSLO: time.Duration(intFromConfig("settings.mcp.files.index.slo_p95_seconds", 30)) * time.Second,
 		},
 		Security: SecuritySettings{
-			EncryptionKey:         strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.security.encryption_key")),
-			EncryptionKEKID:       uint16(intFromConfig("settings.mcp.files.security.encryption_kek_id", 1)),
+			EncryptionKEKs:        uint16StringMapFromConfig("settings.mcp.files.security.encryption_keks"),
 			CredentialCachePrefix: strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.security.credential_cache_prefix")),
 			CredentialCacheTTL:    time.Duration(intFromConfig("settings.mcp.files.security.credential_cache_ttl_seconds", 300)) * time.Second,
 		},
@@ -175,8 +187,92 @@ func LoadSettingsFromConfig() Settings {
 	if settings.Security.CredentialCacheTTL <= 0 {
 		settings.Security.CredentialCacheTTL = 300 * time.Second
 	}
+	if settings.Security.EncryptionKEKs == nil {
+		settings.Security.EncryptionKEKs = make(map[uint16]string)
+	}
 
 	return settings
+}
+
+// uint16StringMapFromConfig reads map-like configuration into a uint16-string map.
+func uint16StringMapFromConfig(key string) map[uint16]string {
+	value := gconfig.S.Get(key)
+	if value == nil {
+		return make(map[uint16]string)
+	}
+
+	result := make(map[uint16]string)
+	appendEntry := func(rawKey, rawValue any) {
+		kekID, parseErr := parseUint16(rawKey)
+		if parseErr != nil {
+			return
+		}
+
+		secret, ok := rawValue.(string)
+		if !ok {
+			return
+		}
+
+		trimmed := strings.TrimSpace(secret)
+		if trimmed == "" {
+			return
+		}
+
+		result[kekID] = trimmed
+	}
+
+	switch v := value.(type) {
+	case map[string]any:
+		for rawKey, rawValue := range v {
+			appendEntry(rawKey, rawValue)
+		}
+	case map[any]any:
+		for rawKey, rawValue := range v {
+			appendEntry(rawKey, rawValue)
+		}
+	case map[string]string:
+		for rawKey, rawValue := range v {
+			appendEntry(rawKey, rawValue)
+		}
+	}
+
+	return result
+}
+
+// parseUint16 converts a map key into uint16.
+func parseUint16(raw any) (uint16, error) {
+	switch v := raw.(type) {
+	case uint16:
+		return v, nil
+	case int:
+		if v < 0 || v > int(^uint16(0)) {
+			return 0, fmt.Errorf("out of range")
+		}
+		return uint16(v), nil
+	case int64:
+		if v < 0 || v > int64(^uint16(0)) {
+			return 0, fmt.Errorf("out of range")
+		}
+		return uint16(v), nil
+	case float64:
+		iv := int64(v)
+		if float64(iv) != v || iv < 0 || iv > int64(^uint16(0)) {
+			return 0, fmt.Errorf("out of range")
+		}
+		return uint16(iv), nil
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return 0, fmt.Errorf("empty")
+		}
+		parsed, err := strconv.ParseUint(trimmed, 10, 16)
+		if err != nil {
+			return 0, err
+		}
+		return uint16(parsed), nil
+	default:
+		return 0, fmt.Errorf("unsupported type")
+	}
 }
 
 // intFromConfig reads an int configuration value with a default fallback.

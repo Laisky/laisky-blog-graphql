@@ -239,7 +239,7 @@ func newE2EFileService(t *testing.T, allowRootWipe bool) *files.Service {
 	settings.MaxProjectBytes = 1_000_000
 	settings.Index.BatchSize = 20
 	settings.Index.ChunkBytes = 64
-	settings.Security.EncryptionKey = base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	settings.Security.EncryptionKEKs = map[uint16]string{1: base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))}
 
 	dsn := fmt.Sprintf("file:%s-%d?mode=memory&cache=shared", t.Name(), time.Now().UTC().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})

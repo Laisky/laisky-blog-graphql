@@ -728,8 +728,7 @@ Search/index:
 
 Async credential handoff:
 
-- `settings.mcp.files.security.encryption_key` (required; KEK material)
-- `settings.mcp.files.security.encryption_kek_id` (default `1`)
+- `settings.mcp.files.security.encryption_keks` (required; map of `kek_id -> secret`, longest ID used for new encryption)
 - `settings.mcp.files.security.credential_cache_prefix` (default `mcp:files:cred`)
 - `settings.mcp.files.security.credential_cache_ttl_seconds` (default `300`)
 
@@ -857,8 +856,8 @@ For async index workers:
 - never persist user raw API keys in plaintext storage.
 - store a credential envelope in Redis with short TTL (for example 300s), keyed by job-scoped reference.
 - envelope must contain encrypted data only (`kek_id`, `dek_id`, `ciphertext`, `aad`, `expires_at`).
-- initialize KMS with `github.com/Laisky/go-utils/v6/crypto/kms/mem` using `settings.mcp.files.security.encryption_key` as KEK material.
-- construct KMS by `mem.New(map[uint16][]byte{encryption_kek_id: encryption_key_bytes})`.
+- initialize KMS with `github.com/Laisky/go-utils/v6/crypto/kms/mem` using all entries in `settings.mcp.files.security.encryption_keks`.
+- construct KMS by hashing each configured KEK secret and passing `map[uint16][]byte` into `mem.New(...)`.
 - producer encryption call sequence:
   - `encryptedData, err := kmsClient.Encrypt(ctx, []byte(apiKey), aad)`
   - `payload, err := encryptedData.MarshalToString()`

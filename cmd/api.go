@@ -427,7 +427,7 @@ func runAPI() error {
 // buildFileCredentialProtector validates and constructs the FileIO credential protector.
 // It accepts FileIO settings and returns nil when encryption is not configured, or a protector/error when configured.
 func buildFileCredentialProtector(settings files.Settings) (*files.CredentialProtector, error) {
-	if strings.TrimSpace(settings.Security.EncryptionKey) == "" {
+	if len(settings.Security.KEKs()) == 0 {
 		return nil, nil
 	}
 
