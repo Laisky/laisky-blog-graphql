@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 
+import { useFileIOInputDefaults, usePersistFileIOInputs } from './use-file-io-input-storage';
 import { callMcpTool, type CallToolResponse } from '../shared/mcp-api';
 
 type FileEntry = {
@@ -58,15 +59,23 @@ type FileSearchPayload = {
   chunks: FileSearchChunk[];
 };
 
+type StructuredToolResponse<T> = CallToolResponse & {
+  structured?: T;
+  structuredContent?: T;
+  structured_content?: T;
+};
+
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'medium',
 });
 
 const indentClasses = ['pl-0', 'pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-16'];
+const inputLabelClass = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
 
 function extractStructuredPayload<T>(result: CallToolResponse): T {
-  const structured = (result as any).structured ?? (result as any).structuredContent ?? (result as any).structured_content;
+  const structuredResult = result as StructuredToolResponse<T>;
+  const structured = structuredResult.structured ?? structuredResult.structuredContent ?? structuredResult.structured_content;
   if (structured) {
     return structured as T;
   }
@@ -121,43 +130,66 @@ function entryIndentClass(depth: number): string {
 
 export function FileIOPage() {
   const { apiKey } = useApiKey();
-  const [project, setProject] = useState('');
-  const [currentPath, setCurrentPath] = useState('');
-  const [depth, setDepth] = useState(2);
-  const [limit, setLimit] = useState(200);
+  const persistedInputs = useFileIOInputDefaults();
+  const [project, setProject] = useState(persistedInputs.project ?? '');
+  const [currentPath, setCurrentPath] = useState(persistedInputs.currentPath ?? '');
+  const [depth, setDepth] = useState(persistedInputs.depth ?? 2);
+  const [limit, setLimit] = useState(persistedInputs.limit ?? 200);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [isListing, setIsListing] = useState(false);
 
-  const [selectedPath, setSelectedPath] = useState('');
+  const [selectedPath, setSelectedPath] = useState(persistedInputs.selectedPath ?? '');
   const [selectedStat, setSelectedStat] = useState<FileStatPayload | null>(null);
-  const [selectedContent, setSelectedContent] = useState('');
-  const [readOffset, setReadOffset] = useState(0);
-  const [readLength, setReadLength] = useState(-1);
+  const [selectedContent, setSelectedContent] = useState(persistedInputs.selectedContent ?? '');
+  const [readOffset, setReadOffset] = useState(persistedInputs.readOffset ?? 0);
+  const [readLength, setReadLength] = useState(persistedInputs.readLength ?? -1);
   const [readError, setReadError] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
 
-  const [writePath, setWritePath] = useState('');
-  const [writeMode, setWriteMode] = useState<'APPEND' | 'OVERWRITE' | 'TRUNCATE'>('APPEND');
-  const [writeOffset, setWriteOffset] = useState(0);
-  const [writeContent, setWriteContent] = useState('');
+  const [writePath, setWritePath] = useState(persistedInputs.writePath ?? '');
+  const [writeMode, setWriteMode] = useState<'APPEND' | 'OVERWRITE' | 'TRUNCATE'>(
+    persistedInputs.writeMode === 'OVERWRITE' || persistedInputs.writeMode === 'TRUNCATE' ? persistedInputs.writeMode : 'APPEND',
+  );
+  const [writeOffset, setWriteOffset] = useState(persistedInputs.writeOffset ?? 0);
+  const [writeContent, setWriteContent] = useState(persistedInputs.writeContent ?? '');
   const [writeError, setWriteError] = useState<string | null>(null);
   const [writeInfo, setWriteInfo] = useState<string | null>(null);
   const [isWriting, setIsWriting] = useState(false);
 
-  const [deletePath, setDeletePath] = useState('');
-  const [deleteRecursive, setDeleteRecursive] = useState(false);
+  const [deletePath, setDeletePath] = useState(persistedInputs.deletePath ?? '');
+  const [deleteRecursive, setDeleteRecursive] = useState(persistedInputs.deleteRecursive ?? false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteInfo, setDeleteInfo] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchPrefix, setSearchPrefix] = useState('');
-  const [searchLimit, setSearchLimit] = useState(5);
+  const [searchQuery, setSearchQuery] = useState(persistedInputs.searchQuery ?? '');
+  const [searchPrefix, setSearchPrefix] = useState(persistedInputs.searchPrefix ?? '');
+  const [searchLimit, setSearchLimit] = useState(persistedInputs.searchLimit ?? 5);
   const [searchResults, setSearchResults] = useState<FileSearchChunk[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+
+  usePersistFileIOInputs({
+    project,
+    currentPath,
+    depth,
+    limit,
+    selectedPath,
+    selectedContent,
+    readOffset,
+    readLength,
+    writePath,
+    writeMode,
+    writeOffset,
+    writeContent,
+    deletePath,
+    deleteRecursive,
+    searchQuery,
+    searchPrefix,
+    searchLimit,
+  });
 
   const entryRows = useMemo(() => {
     return entries.map((entry) => ({
@@ -317,14 +349,54 @@ export function FileIOPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <Input placeholder="Project (required)" value={project} onChange={(event) => setProject(event.target.value)} />
-              <Input
-                placeholder="Path prefix (empty = root)"
-                value={currentPath}
-                onChange={(event) => setCurrentPath(event.target.value)}
-              />
-              <Input placeholder="Depth" type="number" value={depth} onChange={(event) => setDepth(Number(event.target.value))} min={0} />
-              <Input placeholder="Limit" type="number" value={limit} onChange={(event) => setLimit(Number(event.target.value))} min={1} />
+              <div className="space-y-1">
+                <label htmlFor="file-io-project" className={inputLabelClass}>
+                  Project
+                </label>
+                <Input
+                  id="file-io-project"
+                  placeholder="Required"
+                  value={project}
+                  onChange={(event) => setProject(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-current-path" className={inputLabelClass}>
+                  Path Prefix
+                </label>
+                <Input
+                  id="file-io-current-path"
+                  placeholder="Empty means root (/)"
+                  value={currentPath}
+                  onChange={(event) => setCurrentPath(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-depth" className={inputLabelClass}>
+                  Browse Depth
+                </label>
+                <Input
+                  id="file-io-depth"
+                  placeholder="0 or greater"
+                  type="number"
+                  value={depth}
+                  onChange={(event) => setDepth(Number(event.target.value))}
+                  min={0}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-list-limit" className={inputLabelClass}>
+                  List Limit
+                </label>
+                <Input
+                  id="file-io-list-limit"
+                  placeholder="1 or greater"
+                  type="number"
+                  value={limit}
+                  onChange={(event) => setLimit(Number(event.target.value))}
+                  min={1}
+                />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button type="button" onClick={() => loadList()} disabled={!project || isListing}>
@@ -378,21 +450,43 @@ export function FileIOPage() {
             <CardDescription>Read, inspect, and copy file content.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input placeholder="Selected path" value={selectedPath} onChange={(event) => setSelectedPath(event.target.value)} />
+            <div className="space-y-1">
+              <label htmlFor="file-io-selected-path" className={inputLabelClass}>
+                Selected Path
+              </label>
+              <Input
+                id="file-io-selected-path"
+                placeholder="/path/to/file"
+                value={selectedPath}
+                onChange={(event) => setSelectedPath(event.target.value)}
+              />
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <Input
-                type="number"
-                placeholder="Offset"
-                value={readOffset}
-                onChange={(event) => setReadOffset(Number(event.target.value))}
-                min={0}
-              />
-              <Input
-                type="number"
-                placeholder="Length (-1 for EOF)"
-                value={readLength}
-                onChange={(event) => setReadLength(Number(event.target.value))}
-              />
+              <div className="space-y-1">
+                <label htmlFor="file-io-read-offset" className={inputLabelClass}>
+                  Read Offset (bytes)
+                </label>
+                <Input
+                  id="file-io-read-offset"
+                  type="number"
+                  placeholder="0"
+                  value={readOffset}
+                  onChange={(event) => setReadOffset(Number(event.target.value))}
+                  min={0}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-read-length" className={inputLabelClass}>
+                  Read Length (bytes)
+                </label>
+                <Input
+                  id="file-io-read-length"
+                  type="number"
+                  placeholder="-1 reads to EOF"
+                  value={readLength}
+                  onChange={(event) => setReadLength(Number(event.target.value))}
+                />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button
@@ -426,12 +520,18 @@ export function FileIOPage() {
                 </div>
               </div>
             )}
-            <Textarea
-              rows={10}
-              value={selectedContent}
-              onChange={(event) => setSelectedContent(event.target.value)}
-              placeholder={selectedIsDirectory ? 'Directory selected.' : 'File content will appear here.'}
-            />
+            <div className="space-y-1">
+              <label htmlFor="file-io-selected-content" className={inputLabelClass}>
+                File Content
+              </label>
+              <Textarea
+                id="file-io-selected-content"
+                rows={10}
+                value={selectedContent}
+                onChange={(event) => setSelectedContent(event.target.value)}
+                placeholder={selectedIsDirectory ? 'Directory selected.' : 'File content will appear here.'}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -443,31 +543,59 @@ export function FileIOPage() {
             <CardDescription>Append or overwrite file content.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input placeholder="Path to write" value={writePath} onChange={(event) => setWritePath(event.target.value)} />
-            <div className="grid gap-3 md:grid-cols-2">
-              <select
-                value={writeMode}
-                onChange={(event) => setWriteMode(event.target.value as 'APPEND' | 'OVERWRITE' | 'TRUNCATE')}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
-              >
-                <option value="APPEND">APPEND</option>
-                <option value="OVERWRITE">OVERWRITE</option>
-                <option value="TRUNCATE">TRUNCATE</option>
-              </select>
+            <div className="space-y-1">
+              <label htmlFor="file-io-write-path" className={inputLabelClass}>
+                Target Path
+              </label>
               <Input
-                type="number"
-                placeholder="Offset"
-                value={writeOffset}
-                onChange={(event) => setWriteOffset(Number(event.target.value))}
-                min={0}
+                id="file-io-write-path"
+                placeholder="/path/to/file"
+                value={writePath}
+                onChange={(event) => setWritePath(event.target.value)}
               />
             </div>
-            <Textarea
-              rows={8}
-              value={writeContent}
-              onChange={(event) => setWriteContent(event.target.value)}
-              placeholder="Enter UTF-8 content to write."
-            />
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <label htmlFor="file-io-write-mode" className={inputLabelClass}>
+                  Write Mode
+                </label>
+                <select
+                  id="file-io-write-mode"
+                  value={writeMode}
+                  onChange={(event) => setWriteMode(event.target.value as 'APPEND' | 'OVERWRITE' | 'TRUNCATE')}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
+                >
+                  <option value="APPEND">APPEND</option>
+                  <option value="OVERWRITE">OVERWRITE</option>
+                  <option value="TRUNCATE">TRUNCATE</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-write-offset" className={inputLabelClass}>
+                  Write Offset (bytes)
+                </label>
+                <Input
+                  id="file-io-write-offset"
+                  type="number"
+                  placeholder="0"
+                  value={writeOffset}
+                  onChange={(event) => setWriteOffset(Number(event.target.value))}
+                  min={0}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="file-io-write-content" className={inputLabelClass}>
+                Write Content (UTF-8)
+              </label>
+              <Textarea
+                id="file-io-write-content"
+                rows={8}
+                value={writeContent}
+                onChange={(event) => setWriteContent(event.target.value)}
+                placeholder="Enter UTF-8 content to write."
+              />
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button type="button" onClick={submitWrite} disabled={!project || !writePath || isWriting}>
                 <UploadCloud className={cn('mr-2 h-4 w-4', isWriting && 'animate-bounce')} />
@@ -485,16 +613,30 @@ export function FileIOPage() {
             <CardDescription>Remove files or directories.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input placeholder="Path to delete" value={deletePath} onChange={(event) => setDeletePath(event.target.value)} />
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={deleteRecursive}
-                onChange={(event) => setDeleteRecursive(event.target.checked)}
-                className="h-4 w-4 rounded border-border"
+            <div className="space-y-1">
+              <label htmlFor="file-io-delete-path" className={inputLabelClass}>
+                Path To Delete
+              </label>
+              <Input
+                id="file-io-delete-path"
+                placeholder="/path/to/file-or-directory"
+                value={deletePath}
+                onChange={(event) => setDeletePath(event.target.value)}
               />
-              Recursive delete
-            </label>
+            </div>
+            <div className="space-y-2">
+              <span className={inputLabelClass}>Delete Options</span>
+              <label htmlFor="file-io-delete-recursive" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  id="file-io-delete-recursive"
+                  type="checkbox"
+                  checked={deleteRecursive}
+                  onChange={(event) => setDeleteRecursive(event.target.checked)}
+                  className="h-4 w-4 rounded border-border"
+                />
+                Recursive delete
+              </label>
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button type="button" variant="destructive" onClick={submitDelete} disabled={!project || !deletePath || isDeleting}>
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -514,16 +656,42 @@ export function FileIOPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
-            <Input placeholder="Search query" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
-            <Input placeholder="Path prefix" value={searchPrefix} onChange={(event) => setSearchPrefix(event.target.value)} />
-            <Input
-              type="number"
-              placeholder="Limit"
-              min={1}
-              max={20}
-              value={searchLimit}
-              onChange={(event) => setSearchLimit(Number(event.target.value))}
-            />
+            <div className="space-y-1">
+              <label htmlFor="file-io-search-query" className={inputLabelClass}>
+                Search Query
+              </label>
+              <Input
+                id="file-io-search-query"
+                placeholder="Keywords or question"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="file-io-search-prefix" className={inputLabelClass}>
+                Path Prefix
+              </label>
+              <Input
+                id="file-io-search-prefix"
+                placeholder="Optional directory filter"
+                value={searchPrefix}
+                onChange={(event) => setSearchPrefix(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="file-io-search-limit" className={inputLabelClass}>
+                Result Limit
+              </label>
+              <Input
+                id="file-io-search-limit"
+                type="number"
+                placeholder="1 - 20"
+                min={1}
+                max={20}
+                value={searchLimit}
+                onChange={(event) => setSearchLimit(Number(event.target.value))}
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Button type="button" onClick={submitSearch} disabled={!project || !searchQuery || isSearching}>
