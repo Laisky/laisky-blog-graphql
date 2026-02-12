@@ -1,9 +1,25 @@
 import { ApiKeyInput } from '@/components/api-key-input';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, ExternalLink, Key, Loader2, LogOut, ShieldAlert, ShieldCheck, User, Wrench } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  Cpu,
+  ExternalLink,
+  Files,
+  Globe,
+  Key,
+  Loader2,
+  LogOut,
+  MessageSquare,
+  ShieldAlert,
+  ShieldCheck,
+  User,
+  Wrench,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getPreferencesFromServer, setDisabledToolsOnServer } from '../user-requests/api';
@@ -59,6 +75,31 @@ export function SettingsPage() {
   const statusDisplay = getStatusDisplay();
 
   const disabledSet = useMemo(() => new Set(disabledTools), [disabledTools]);
+
+  const groupedTools = useMemo(() => {
+    const categories: Record<string, { name: string; icon: React.ReactNode }> = {
+      file: { name: 'Files System', icon: <Files className="h-3.5 w-3.5" /> },
+      web: { name: 'Web & Search', icon: <Globe className="h-3.5 w-3.5" /> },
+      mcp: { name: 'Protocol', icon: <Cpu className="h-3.5 w-3.5" /> },
+      get: { name: 'Interaction', icon: <MessageSquare className="h-3.5 w-3.5" /> },
+      ask: { name: 'Interaction', icon: <MessageSquare className="h-3.5 w-3.5" /> },
+      extract: { name: 'Analysis', icon: <Activity className="h-3.5 w-3.5" /> },
+    };
+
+    const groups: Record<string, { name: string; icon: React.ReactNode; tools: string[] }> = {};
+
+    availableTools.forEach((tool) => {
+      const prefix = tool.split('_')[0];
+      const category = categories[prefix] || { name: 'General', icon: <Wrench className="h-3.5 w-3.5" /> };
+
+      if (!groups[category.name]) {
+        groups[category.name] = { ...category, tools: [] };
+      }
+      groups[category.name].tools.push(tool);
+    });
+
+    return Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
+  }, [availableTools]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -225,14 +266,12 @@ export function SettingsPage() {
       </div>
 
       <Card className="border border-border/60 bg-card shadow-sm">
-        <CardHeader>
+        <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Wrench className="h-5 w-5 text-primary" />
             MCP Tools
           </CardTitle>
-          <CardDescription>
-            Enable or disable your available MCP tools. Disabled tools will not appear in <code>mcp list tools</code> results.
-          </CardDescription>
+          <CardDescription>Toggle available MCP tools. Grouped by system category.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {!apiKey && <p className="text-sm text-muted-foreground">Please configure an API key first.</p>}
@@ -253,27 +292,58 @@ export function SettingsPage() {
           )}
 
           {apiKey && !isToolsLoading && availableTools.length > 0 && (
-            <div className="space-y-2">
-              {availableTools.map((toolName) => {
-                const isDisabled = disabledSet.has(toolName);
-                const isSaving = isSavingTool === toolName;
-
-                return (
-                  <div key={toolName} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                    <span className="font-mono text-sm text-foreground">{toolName}</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={isDisabled ? 'outline' : 'default'}
-                      onClick={() => toggleTool(toolName)}
-                      disabled={isSavingTool !== null}
-                    >
-                      {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      {isDisabled ? 'Disabled' : 'Enabled'}
-                    </Button>
+            <div className="space-y-6">
+              {groupedTools.map((group) => (
+                <div key={group.name} className="space-y-3">
+                  <div className="flex items-center gap-2 border-b border-border/40 pb-1.5">
+                    <div className="text-primary">{group.icon}</div>
+                    <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-muted-foreground">{group.name}</h3>
+                    <Badge variant="outline" className="ml-auto flex h-5 items-center border-none bg-muted/50 px-2 font-mono text-[11px]">
+                      {group.tools.length} TOOLS
+                    </Badge>
                   </div>
-                );
-              })}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {group.tools.map((toolName) => {
+                      const isDisabled = disabledSet.has(toolName);
+                      const isSaving = isSavingTool === toolName;
+
+                      return (
+                        <div
+                          key={toolName}
+                          className={cn(
+                            'group flex items-center justify-between rounded border px-2 py-1.5 transition-all duration-200',
+                            isDisabled ? 'border-border/30 bg-muted/5 opacity-60' : 'border-border/60 bg-card hover:border-primary/30'
+                          )}
+                        >
+                          <span className="truncate font-mono text-sm font-medium text-foreground" title={toolName}>
+                            {toolName}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className={cn(
+                              'h-6 px-2 font-mono text-xs font-bold uppercase tracking-tighter',
+                              isDisabled ? 'text-muted-foreground hover:text-foreground' : 'text-primary hover:bg-primary/10'
+                            )}
+                            onClick={() => toggleTool(toolName)}
+                            disabled={isSavingTool !== null}
+                          >
+                            {isSaving ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <span className={cn('h-1.5 w-1.5 rounded-full', isDisabled ? 'bg-muted-foreground/30' : 'bg-green-500')} />
+                                {isDisabled ? 'OFF' : 'ON'}
+                              </div>
+                            )}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>

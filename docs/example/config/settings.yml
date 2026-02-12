@@ -75,8 +75,8 @@ settings:
         slo_p95_seconds: 30
       security:
         encryption_keks:
-          "1": REPLACE_WITH_BASE64_32BYTE_SECRET
-          "2": REPLACE_WITH_NEXT_ROTATED_SECRET # largest KEK ID is used for new encryptions
+          '1': REPLACE_WITH_BASE64_32BYTE_SECRET
+          '2': REPLACE_WITH_NEXT_ROTATED_SECRET # largest KEK ID is used for new encryptions
         credential_cache_prefix: mcp:files:cred
         credential_cache_ttl_seconds: 300
   web:
