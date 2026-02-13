@@ -16,6 +16,12 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
+// embeddingPlan describes semantic vectors availability for one indexing attempt.
+type embeddingPlan struct {
+	vectors []pgvector.Vector
+	err     error
+}
+
 // IndexWorker processes file indexing jobs.
 type IndexWorker struct {
 	svc    *Service
@@ -198,9 +204,6 @@ func (w *IndexWorker) markJobDone(ctx context.Context, job FileIndexJob) error {
 
 // processUpsertJob rebuilds search index rows for a file path.
 func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error {
-	if s.embedder == nil {
-		return errors.New("embedder not configured")
-	}
 	file, err := s.findActiveFile(ctx, job.APIKeyHash, job.Project, job.FilePath)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -212,20 +215,74 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 		return nil
 	}
 
+	chunks := s.chunker.Split(string(file.Content))
+	plan := s.buildEmbeddingPlan(ctx, job, chunks)
+	if err := s.replaceIndexRows(ctx, job, chunks, plan.vectors); err != nil {
+		return err
+	}
+	if plan.err != nil {
+		s.LoggerFromContext(ctx).Debug("file index upsert degraded to lexical-only",
+			zap.String("project", job.Project),
+			zap.String("file_path", job.FilePath),
+			zap.Int("chunk_count", len(chunks)),
+			zap.Error(plan.err),
+		)
+		return plan.err
+	}
+
+	if s.embedder != nil {
+		ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
+		if job.FileUpdatedAt != nil {
+			ref.UpdatedAt = *job.FileUpdatedAt
+		}
+		if err := s.deleteCredential(ctx, ref); err != nil {
+			return err
+		}
+	}
+
+	s.LoggerFromContext(ctx).Debug("file index upsert completed",
+		zap.String("project", job.Project),
+		zap.String("file_path", job.FilePath),
+		zap.Int("chunk_count", len(chunks)),
+		zap.Int("embedding_count", len(plan.vectors)),
+	)
+
+	return nil
+}
+
+// buildEmbeddingPlan prepares vectors when semantic indexing is available.
+func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, chunks []Chunk) embeddingPlan {
+	if len(chunks) == 0 {
+		return embeddingPlan{}
+	}
+	if s.embedder == nil {
+		return embeddingPlan{}
+	}
+
 	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
 	if job.FileUpdatedAt != nil {
 		ref.UpdatedAt = *job.FileUpdatedAt
 	}
+
 	apiKey, err := s.loadCredential(ctx, ref)
 	if err != nil {
-		return err
+		return embeddingPlan{err: err}
 	}
 
-	chunks := s.chunker.Split(string(file.Content))
-	if err := s.replaceIndexRows(ctx, job, chunks, apiKey); err != nil {
-		return err
+	contents := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		contents = append(contents, chunk.Content)
 	}
-	return s.deleteCredential(ctx, ref)
+
+	vectors, err := s.embedder.EmbedTexts(ctx, apiKey, contents)
+	if err != nil {
+		return embeddingPlan{err: errors.Wrap(err, "embed chunk contents")}
+	}
+	if len(vectors) != len(chunks) {
+		return embeddingPlan{err: errors.New("embedding count mismatch")}
+	}
+
+	return embeddingPlan{vectors: vectors}
 }
 
 // processDeleteJob removes index rows for a file path.
@@ -242,8 +299,9 @@ func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error 
 	return s.deleteIndexRows(ctx, job.APIKeyHash, job.Project, job.FilePath)
 }
 
-// replaceIndexRows rebuilds all chunk, embedding, and bm25 rows for a file.
-func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, apiKey string) error {
+// replaceIndexRows rebuilds all chunk rows and lexical metadata for a file,
+// and writes embeddings when vectors are provided.
+func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, vectors []pgvector.Vector) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath); err != nil {
 			return err
@@ -253,17 +311,7 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 		if len(chunks) == 0 {
 			return nil
 		}
-		contents := make([]string, 0, len(chunks))
-		for _, ch := range chunks {
-			contents = append(contents, ch.Content)
-		}
-		vectors, err := s.embedder.EmbedTexts(ctx, apiKey, contents)
-		if err != nil {
-			return errors.Wrap(err, "embed chunk contents")
-		}
-		if len(vectors) != len(chunks) {
-			return errors.New("embedding count mismatch")
-		}
+		shouldWriteEmbeddings := len(vectors) == len(chunks)
 
 		for i, ch := range chunks {
 			hash := sha256.Sum256([]byte(ch.Content))
@@ -282,11 +330,13 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 			if err := tx.WithContext(ctx).Create(&chunk).Error; err != nil {
 				return errors.Wrap(err, "insert chunk")
 			}
-			if err := s.insertEmbedding(ctx, tx, chunk.ID, vectors[i], now); err != nil {
-				return err
-			}
 			if err := s.insertBM25(ctx, tx, chunk.ID, ch.Content, now); err != nil {
 				return err
+			}
+			if shouldWriteEmbeddings {
+				if err := s.insertEmbedding(ctx, tx, chunk.ID, vectors[i], now); err != nil {
+					return err
+				}
 			}
 		}
 		return nil

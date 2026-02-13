@@ -94,6 +94,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 
 	merged := mergeCandidates(semantic, lexical)
 	if len(merged) == 0 {
+		s.logEmptySearchDiagnostics(ctx, auth.APIKeyHash, project, pathPrefix, lexicalErr, semanticErr)
 		return SearchResult{Chunks: nil}, nil
 	}
 
@@ -134,6 +135,59 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 	}
 
 	return SearchResult{Chunks: chunks}, nil
+}
+
+// logEmptySearchDiagnostics emits DEBUG diagnostics for empty search results.
+func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash, project, pathPrefix string, lexicalErr, semanticErr error) {
+	chunkCount := s.countRowsForSearch(ctx, "mcp_file_chunks c", apiKeyHash, project, pathPrefix)
+	embeddingCount := s.countRowsForSearch(ctx, "mcp_file_chunk_embeddings e JOIN mcp_file_chunks c ON c.id = e.chunk_id", apiKeyHash, project, pathPrefix)
+	pendingJobs := s.countPendingIndexJobs(ctx, apiKeyHash, project)
+
+	logger := s.LoggerFromContext(ctx)
+	logger.Debug("file search returned no candidates",
+		zap.String("project", project),
+		zap.String("path_prefix", pathPrefix),
+		zap.Int("lexical_candidates", 0),
+		zap.Int("semantic_candidates", 0),
+		zap.Int64("indexed_chunk_count", chunkCount),
+		zap.Int64("indexed_embedding_count", embeddingCount),
+		zap.Int64("pending_index_jobs", pendingJobs),
+		zap.Bool("lexical_error", lexicalErr != nil),
+		zap.Bool("semantic_error", semanticErr != nil),
+	)
+}
+
+// countRowsForSearch counts indexed rows by tenant/project with optional path prefix filtering.
+func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, project, pathPrefix string) int64 {
+	where := "c.apikey_hash = ? AND c.project = ?"
+	args := []any{apiKeyHash, project}
+	if strings.TrimSpace(pathPrefix) != "" {
+		where += " AND c.file_path LIKE ?"
+		args = append(args, pathPrefix+"%")
+	}
+
+	query := "SELECT COUNT(1) FROM " + source + " WHERE " + where
+	var count int64
+	if err := s.db.WithContext(ctx).Raw(query, args...).Scan(&count).Error; err != nil {
+		return 0
+	}
+	return count
+}
+
+// countPendingIndexJobs returns pending or processing index jobs for diagnostics.
+func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash, project string) int64 {
+	var count int64
+	err := s.db.WithContext(ctx).Raw(
+		"SELECT COUNT(1) FROM mcp_file_index_jobs WHERE apikey_hash = ? AND project = ? AND status IN (?, ?)",
+		apiKeyHash,
+		project,
+		"pending",
+		"processing",
+	).Scan(&count).Error
+	if err != nil {
+		return 0
+	}
+	return count
 }
 
 // fetchSemanticCandidates retrieves semantic candidates from the best backend.

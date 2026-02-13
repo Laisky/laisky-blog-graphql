@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	errors "github.com/Laisky/errors/v2"
 	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -25,6 +26,14 @@ func (t testEmbedder) EmbedTexts(_ context.Context, _ string, inputs []string) (
 		vectors = append(vectors, t.vector)
 	}
 	return vectors, nil
+}
+
+// errTestEmbedder is a stub embedder that always fails.
+type errTestEmbedder struct{}
+
+// EmbedTexts always returns an embedding error for testing degraded indexing.
+func (errTestEmbedder) EmbedTexts(context.Context, string, []string) ([]pgvector.Vector, error) {
+	return nil, errors.New("embedder unavailable")
 }
 
 // memoryCredentialStore keeps credential envelopes in memory.
