@@ -1,3 +1,7 @@
+# Agents Guidelines
+
+**No matter what language you receive, Only using English as output for codes, comments, chat, documents and everything else.**
+
 ## Project
 
 The purpose of this project is to implement a GraphQL API server and a remote MCP server that provides AI-assisted features.
@@ -11,8 +15,6 @@ Local tools and debugging related sensitive information is saved in `.github/ins
 Use `pnpm` for managing JavaScript/TypeScript packages in the `web` directory.
 
 ## General
-
-No matter what language you receive, keep using English for all code, comments, thinking/reasoning, planning and documentation.
 
 Every single code file should not exceed 800 lines. If a file exceeds this limit, please split it into smaller files based on functionality. Automatically generated files are exempt from this rule.
 
