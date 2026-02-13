@@ -1,4 +1,16 @@
-import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, RefreshCw, Search, ShieldAlert, Trash2, UploadCloud } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  FileText,
+  Folder,
+  FolderOpen,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Trash2,
+  UploadCloud,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -274,6 +286,11 @@ export function FileIOPage() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
+  const [isDescriptionCollapsed, setIsDescriptionCollapsed] = useState(() => {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem('mcp_file_io_description_collapsed') === 'true';
+  });
+
   usePersistFileIOInputs({
     project,
     currentPath,
@@ -544,14 +561,105 @@ export function FileIOPage() {
   return (
     <div className="space-y-8">
       <section className="space-y-3">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <FolderOpen className="h-4 w-4" />
-          <span>FileIO Console</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
+            <FolderOpen className="h-4 w-4" />
+            <span>FileIO Console</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const next = !isDescriptionCollapsed;
+              setIsDescriptionCollapsed(next);
+              localStorage.setItem('mcp_file_io_description_collapsed', String(next));
+            }}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {isDescriptionCollapsed ? (
+              <>
+                Show Introduction <ChevronDown className="ml-2 h-4 w-4" />
+              </>
+            ) : (
+              <>
+                Hide Introduction <ChevronUp className="ml-2 h-4 w-4" />
+              </>
+            )}
+          </Button>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">file_io</h1>
-        <p className="max-w-3xl text-lg text-muted-foreground">
-          Manage project-scoped files, inspect metadata, and search content with the unified FileIO toolset.
-        </p>
+
+        {!isDescriptionCollapsed && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="space-y-2">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">file_io</h1>
+              <p className="max-w-4xl text-lg leading-relaxed text-muted-foreground">
+                The <strong>FileIO</strong> system provides a centralized, remote filesystem via Remote MCP, designed to function as shared
+                context and persistent memory for distributed AI agents. By offering project-scoped file access, it enables different agents
+                to collaborate, read, and maintain a consistent state across tasks.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
+                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+                  <span className="font-mono text-sm text-primary">file_write</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Create or update files with support for append, overwrite, and truncate modes.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
+                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+                  <span className="font-mono text-sm text-primary">file_read</span>
+                </div>
+                <p className="text-sm text-muted-foreground">Read file contents with optional byte-range support for partial reads.</p>
+              </div>
+
+              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
+                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+                  <span className="font-mono text-sm text-primary">file_list</span>
+                </div>
+                <p className="text-sm text-muted-foreground">Browse directory structures and discover files within the project scope.</p>
+              </div>
+
+              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
+                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+                  <span className="font-mono text-sm text-primary">file_stat</span>
+                </div>
+                <p className="text-sm text-muted-foreground">Inspect metadata such as file size, type, and modification timestamps.</p>
+              </div>
+
+              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
+                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+                  <span className="font-mono text-sm text-primary">file_search</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Perform semantic or hybrid searches across file contents to retrieve relevant context.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
+                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+                  <span className="font-mono text-sm text-primary">file_delete</span>
+                </div>
+                <p className="text-sm text-muted-foreground">Remove specific files or recursively delete directory subtrees.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              Detailed user manual:
+              <a
+                href="https://github.com/Laisky/laisky-blog-graphql/blob/master/docs/manual/mcp_files.md"
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-primary underline decoration-primary/30 underline-offset-4 transition-colors hover:decoration-primary"
+              >
+                docs/manual/mcp_files.md
+              </a>
+            </div>
+          </div>
+        )}
       </section>
 
       <Card className="border border-border/60 bg-card">
