@@ -1,5 +1,5 @@
-import { FileText, FolderOpen, RefreshCw, Search, ShieldAlert, Trash2, UploadCloud } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, RefreshCw, Search, ShieldAlert, Trash2, UploadCloud } from 'lucide-react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -71,7 +71,6 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'medium',
 });
 
-const indentClasses = ['pl-0', 'pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-16'];
 const inputLabelClass = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
 
 function extractStructuredPayload<T>(result: CallToolResponse): T {
@@ -115,18 +114,116 @@ function formatTimestamp(value: string): string {
   return dateFormatter.format(parsed);
 }
 
-function entryDepth(basePath: string, entryPath: string): number {
-  const prefix = basePath ? `${basePath.replace(/\/$/, '')}/` : '/';
-  const relative = entryPath.startsWith(prefix) ? entryPath.slice(prefix.length) : entryPath.replace(/^\//, '');
-  if (!relative) {
-    return 0;
-  }
-  return Math.max(0, relative.split('/').length - 1);
-}
+function FileTreeNode({
+  entry,
+  level,
+  expandedPaths,
+  dirCache,
+  loadingPaths,
+  onToggle,
+  onSelect,
+  selectedPath,
+}: {
+  entry: FileEntry;
+  level: number;
+  expandedPaths: Set<string>;
+  dirCache: Record<string, { entries: FileEntry[]; hasMore: boolean }>;
+  loadingPaths: Set<string>;
+  onToggle: (entry: FileEntry) => void;
+  onSelect: (entry: FileEntry) => void;
+  selectedPath: string;
+}) {
+  const isExpanded = expandedPaths.has(entry.path);
+  const isDirectory = entry.type === 'DIRECTORY';
+  const childrenData = dirCache[entry.path];
+  const isLoading = loadingPaths.has(entry.path);
+  const isSelected = selectedPath === entry.path;
+  const displayName = entry.name || entry.path.split('/').pop() || entry.path;
 
-function entryIndentClass(depth: number): string {
-  const index = Math.min(depth, indentClasses.length - 1);
-  return indentClasses[index];
+  return (
+    <div className="select-none">
+      <div
+        className={cn(
+          'flex cursor-pointer items-center gap-2 rounded-sm py-1 pr-2 text-sm transition-colors hover:bg-accent/50',
+          isSelected && 'bg-accent font-medium text-accent-foreground'
+        )}
+        style={{ paddingLeft: `${Math.max(4, level * 16)}px` }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (isDirectory) {
+            onToggle(entry);
+          } else {
+            onSelect(entry);
+          }
+        }}
+      >
+        <div
+          className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+          onClick={(e) => {
+            if (isDirectory) {
+              e.stopPropagation();
+              onToggle(entry);
+            }
+          }}
+        >
+          {isDirectory ? (
+            isLoading ? (
+              <RefreshCw className="h-3 w-3 animate-spin" />
+            ) : isExpanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )
+          ) : (
+            <span className="w-4" />
+          )}
+        </div>
+
+        <div className={cn('flex shrink-0 items-center', isDirectory ? 'text-primary' : 'text-muted-foreground')}>
+          {isDirectory ? (
+            isExpanded ? (
+              <FolderOpen className="h-4 w-4" />
+            ) : (
+              <Folder className="h-4 w-4" />
+            )
+          ) : (
+            <FileText className="h-4 w-4" />
+          )}
+        </div>
+
+        <span className="truncate">{displayName}</span>
+        {/* <span className="ml-auto text-xs text-muted-foreground">{isDirectory ? '' : `${entry.size} B`}</span> */}
+      </div>
+
+      {isExpanded && isDirectory && childrenData && (
+        <div>
+          {childrenData.entries.map((child) => (
+            <FileTreeNode
+              key={child.path}
+              entry={child}
+              level={level + 1}
+              expandedPaths={expandedPaths}
+              dirCache={dirCache}
+              loadingPaths={loadingPaths}
+              onToggle={onToggle}
+              onSelect={onSelect}
+              selectedPath={selectedPath}
+            />
+          ))}
+          {childrenData.hasMore && (
+            <div className="py-1 text-xs italic text-muted-foreground" style={{ paddingLeft: `${(level + 1) * 16 + 32}px` }}>
+              ... truncated ...
+            </div>
+          )}
+        </div>
+      )}
+      {isExpanded && isDirectory && !childrenData && !isLoading && (
+        <div className="py-1 text-xs italic text-muted-foreground" style={{ paddingLeft: `${(level + 1) * 16 + 32}px` }}>
+          (Empty)
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function FileIOPage() {
@@ -134,9 +231,15 @@ export function FileIOPage() {
   const persistedInputs = useFileIOInputDefaults();
   const [project, setProject] = useState(persistedInputs.project ?? '');
   const [currentPath, setCurrentPath] = useState(persistedInputs.currentPath ?? '');
-  const [depth, setDepth] = useState(persistedInputs.depth ?? 2);
+  const [depth, setDepth] = useState(persistedInputs.depth ?? 1);
   const [limit, setLimit] = useState(persistedInputs.limit ?? 200);
-  const [entries, setEntries] = useState<FileEntry[]>([]);
+
+  // Tree State
+  const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
+  const [dirCache, setDirCache] = useState<Record<string, { entries: FileEntry[]; hasMore: boolean }>>({});
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
+
   const [hasMore, setHasMore] = useState(false);
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [isListing, setIsListing] = useState(false);
@@ -144,8 +247,6 @@ export function FileIOPage() {
   const [selectedPath, setSelectedPath] = useState(persistedInputs.selectedPath ?? '');
   const [selectedStat, setSelectedStat] = useState<FileStatPayload | null>(null);
   const [selectedContent, setSelectedContent] = useState(persistedInputs.selectedContent ?? '');
-  const [readOffset, setReadOffset] = useState(persistedInputs.readOffset ?? 0);
-  const [readLength, setReadLength] = useState(persistedInputs.readLength ?? -1);
   const [readError, setReadError] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [isFilePreviewOpen, setIsFilePreviewOpen] = useState(false);
@@ -180,8 +281,6 @@ export function FileIOPage() {
     limit,
     selectedPath,
     selectedContent,
-    readOffset,
-    readLength,
     writePath,
     writeMode,
     writeOffset,
@@ -193,12 +292,47 @@ export function FileIOPage() {
     searchLimit,
   });
 
-  const entryRows = useMemo(() => {
-    return entries.map((entry) => ({
-      ...entry,
-      depth: entryDepth(currentPath, entry.path),
-    }));
-  }, [entries, currentPath]);
+  // Helper to process flat list into tree structure
+  function processEntries(basePath: string, rawEntries: FileEntry[]) {
+    const normBase = basePath === '/' ? '' : basePath.replace(/\/$/, '');
+    const roots: FileEntry[] = [];
+    const newCache: Record<string, { entries: FileEntry[]; hasMore: boolean }> = {};
+    const newExpanded = new Set<string>();
+
+    const sorter = (a: FileEntry, b: FileEntry) => {
+      if (a.type !== b.type) return a.type === 'DIRECTORY' ? -1 : 1;
+      return (a.name || a.path).localeCompare(b.name || b.path);
+    };
+
+    rawEntries.forEach((entry) => {
+      // Determine parent
+      // Assuming Unix paths
+      const parts = entry.path.split('/');
+      const parent = parts.length > 1 ? parts.slice(0, parts.length - 1).join('/') : '/';
+      // Fix for root entries usually having parent '' or '/' depending directly on path str
+
+      // Heuristic: If entry.path starts with normBase + '/', it is inside.
+      // The parent is the directory containing it.
+
+      if (parent === normBase || (normBase === '' && parent === '') || (normBase === '' && parent === '/')) {
+        roots.push(entry);
+      } else {
+        if (!newCache[parent]) {
+          newCache[parent] = { entries: [], hasMore: false };
+        }
+        newCache[parent].entries.push(entry);
+        // Auto-expand if we receive explicit children
+        newExpanded.add(parent);
+      }
+    });
+
+    roots.sort(sorter);
+    Object.values(newCache).forEach((val) => {
+      val.entries.sort(sorter);
+    });
+
+    return { roots, newCache, newExpanded };
+  }
 
   async function callTool<T>(toolName: string, args: Record<string, unknown>) {
     if (!apiKey) {
@@ -216,21 +350,92 @@ export function FileIOPage() {
     setBrowserError(null);
     setIsListing(true);
     try {
+      // Force depth 1 if loading root for tree view?
+      // User might want deep load. Let's respect state.depth for ROOT refresh,
+      // but toggle relies on fetchChildren (depth 1).
+
       const payload = await callTool<FileListPayload>('file_list', {
         project,
         path: listPath,
         depth,
         limit,
       });
+
+      const { roots, newCache, newExpanded } = processEntries(listPath, payload.entries ?? []);
+
       setCurrentPath(listPath);
-      setEntries(payload.entries ?? []);
+      setRootEntries(roots);
+      // Merge cache instead of replace? No, root load implies reset of view usually?
+      // Actually, if we refresh root, we might want to keep existing known subdirs if valid?
+      // For safety, let's reset cache for consistency with "Refresh".
+      setDirCache((prev) => ({ ...prev, ...newCache }));
+      setExpandedPaths((prev) => {
+        const next = new Set(prev);
+        newExpanded.forEach((p) => next.add(p));
+        return next;
+      });
       setHasMore(Boolean(payload.has_more));
     } catch (error) {
       setBrowserError(error instanceof Error ? error.message : 'Failed to list files.');
-      setEntries([]);
+      setRootEntries([]);
       setHasMore(false);
     } finally {
       setIsListing(false);
+    }
+  }
+
+  async function toggleFolder(entry: FileEntry) {
+    if (expandedPaths.has(entry.path)) {
+      const next = new Set(expandedPaths);
+      next.delete(entry.path);
+      setExpandedPaths(next);
+      return;
+    }
+
+    // Expand
+    setExpandedPaths((prev) => new Set(prev).add(entry.path));
+
+    // Check if loaded
+    if (dirCache[entry.path]) {
+      return;
+    }
+
+    // Fetch
+    setLoadingPaths((prev) => new Set(prev).add(entry.path));
+    try {
+      const payload = await callTool<FileListPayload>('file_list', {
+        project,
+        path: entry.path,
+        depth: 1, // Always shallow fetch for expand
+        limit: 200, // Reasonable limit
+      });
+
+      // Process just this folder
+      // The entries returned are children of entry.path
+      const sorted = (payload.entries ?? []).sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'DIRECTORY' ? -1 : 1;
+        return (a.name || a.path).localeCompare(b.name || b.path);
+      });
+
+      setDirCache((prev) => ({
+        ...prev,
+        [entry.path]: { entries: sorted, hasMore: payload.has_more },
+      }));
+    } catch (error) {
+      // Show error? For now just console or toggle back?
+      console.error('Failed to load folder', error);
+      setExpandedPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.path);
+        return next;
+      });
+      setBrowserError(`Failed to load ${entry.name}`);
+    } finally {
+      setLoadingPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.path);
+        return next;
+      });
     }
   }
 
@@ -245,8 +450,8 @@ export function FileIOPage() {
         const readPayload = await callTool<FileReadPayload>('file_read', {
           project,
           path: targetPath,
-          offset: readOffset,
-          length: readLength,
+          offset: 0,
+          length: -1,
         });
         setSelectedContent(readPayload.content ?? '');
       } else {
@@ -349,204 +554,107 @@ export function FileIOPage() {
         </p>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card className="border border-border/60 bg-card">
-          <CardHeader>
-            <CardTitle className="text-xl">Workspace Browser</CardTitle>
-            <CardDescription>Browse project paths and load file content.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <label htmlFor="file-io-project" className={cn(inputLabelClass, isProjectMissing && 'text-destructive')}>
-                  Project <span className={cn('font-semibold', isProjectMissing ? 'text-destructive' : 'text-muted-foreground')}>*</span>
-                </label>
-                <Input
-                  id="file-io-project"
-                  placeholder="Required"
-                  required
-                  aria-required="true"
-                  className={cn(isProjectMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
-                  value={project}
-                  onChange={(event) => setProject(event.target.value)}
-                />
-                {isProjectMissing && <p className="text-xs font-medium text-destructive">Required field</p>}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-current-path" className={inputLabelClass}>
-                  Path Prefix
-                </label>
-                <Input
-                  id="file-io-current-path"
-                  placeholder="Empty means root (/)"
-                  value={currentPath}
-                  onChange={(event) => setCurrentPath(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-depth" className={inputLabelClass}>
-                  Browse Depth
-                </label>
-                <Input
-                  id="file-io-depth"
-                  placeholder="0 or greater"
-                  type="number"
-                  value={depth}
-                  onChange={(event) => setDepth(Number(event.target.value))}
-                  min={0}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-list-limit" className={inputLabelClass}>
-                  List Limit
-                </label>
-                <Input
-                  id="file-io-list-limit"
-                  placeholder="1 or greater"
-                  type="number"
-                  value={limit}
-                  onChange={(event) => setLimit(Number(event.target.value))}
-                  min={1}
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" onClick={() => loadList()} disabled={!project || isListing}>
-                <RefreshCw className={cn('mr-2 h-4 w-4', isListing && 'animate-spin')} />
-                Refresh list
-              </Button>
-              {hasMore && <Badge variant="secondary">List truncated</Badge>}
-              {browserError && <span className="text-sm text-destructive">{browserError}</span>}
-            </div>
-            <div className="rounded-lg border border-border/60 bg-muted/30">
-              <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                <span>Entries</span>
-                <span>{entries.length} item(s)</span>
-              </div>
-              <div className="max-h-[320px] overflow-y-auto px-4 py-3">
-                {entryRows.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No entries yet.</div>
-                ) : (
-                  <ul className="space-y-2 text-sm">
-                    {entryRows.map((entry) => (
-                      <li key={entry.path} className="flex items-center justify-between gap-3">
-                        <button
-                          type="button"
-                          className={cn('flex flex-1 items-center gap-2 text-left hover:text-primary', entryIndentClass(entry.depth))}
-                          onClick={() => {
-                            if (entry.type === 'DIRECTORY') {
-                              loadList(entry.path);
-                            } else {
-                              openFilePreview(entry.path);
-                              setWritePath(entry.path);
-                              setDeletePath(entry.path);
-                            }
-                          }}
-                        >
-                          {entry.type === 'DIRECTORY' ? <FolderOpen className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
-                          <span className="font-medium">{entry.name || entry.path}</span>
-                        </button>
-                        <span className="text-xs text-muted-foreground">{entry.type === 'FILE' ? `${entry.size} bytes` : 'DIR'}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/60 bg-card">
-          <CardHeader>
-            <CardTitle className="text-xl">Selection</CardTitle>
-            <CardDescription>Read, inspect, and copy file content.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <Card className="border border-border/60 bg-card">
+        <CardHeader>
+          <CardTitle className="text-xl">Workspace Browser</CardTitle>
+          <CardDescription>Browse project paths and load file content.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
-              <label htmlFor="file-io-selected-path" className={inputLabelClass}>
-                Selected Path
+              <label htmlFor="file-io-project" className={cn(inputLabelClass, isProjectMissing && 'text-destructive')}>
+                Project <span className={cn('font-semibold', isProjectMissing ? 'text-destructive' : 'text-muted-foreground')}>*</span>
               </label>
               <Input
-                id="file-io-selected-path"
-                placeholder="/path/to/file"
-                value={selectedPath}
-                onChange={(event) => setSelectedPath(event.target.value)}
+                id="file-io-project"
+                placeholder="Required"
+                required
+                aria-required="true"
+                className={cn(isProjectMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
+                value={project}
+                onChange={(event) => setProject(event.target.value)}
               />
+              {isProjectMissing && <p className="text-xs font-medium text-destructive">Required field</p>}
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <label htmlFor="file-io-read-offset" className={inputLabelClass}>
-                  Read Offset (bytes)
-                </label>
-                <Input
-                  id="file-io-read-offset"
-                  type="number"
-                  placeholder="0"
-                  value={readOffset}
-                  onChange={(event) => setReadOffset(Number(event.target.value))}
-                  min={0}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-read-length" className={inputLabelClass}>
-                  Read Length (bytes)
-                </label>
-                <Input
-                  id="file-io-read-length"
-                  type="number"
-                  placeholder="-1 reads to EOF"
-                  value={readLength}
-                  onChange={(event) => setReadLength(Number(event.target.value))}
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => selectedPath && loadFile(selectedPath)}
-                disabled={!project || !selectedPath || isReading}
-              >
-                <RefreshCw className={cn('mr-2 h-4 w-4', isReading && 'animate-spin')} />
-                Read
-              </Button>
-              {readError && <span className="text-sm text-destructive">{readError}</span>}
-            </div>
-            {selectedStat && (
-              <div className="rounded-lg border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between">
-                  <span>Type</span>
-                  <span className="font-medium text-foreground">{selectedStat.type}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Size</span>
-                  <span className="font-medium text-foreground">{selectedStat.size} bytes</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Created</span>
-                  <span className="font-medium text-foreground">{formatTimestamp(selectedStat.created_at)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Updated</span>
-                  <span className="font-medium text-foreground">{formatTimestamp(selectedStat.updated_at)}</span>
-                </div>
-              </div>
-            )}
             <div className="space-y-1">
-              <label htmlFor="file-io-selected-content" className={inputLabelClass}>
-                File Content
+              <label htmlFor="file-io-current-path" className={inputLabelClass}>
+                Path Prefix
               </label>
-              <Textarea
-                id="file-io-selected-content"
-                rows={10}
-                value={selectedContent}
-                onChange={(event) => setSelectedContent(event.target.value)}
-                placeholder={selectedIsDirectory ? 'Directory selected.' : 'File content will appear here.'}
+              <Input
+                id="file-io-current-path"
+                placeholder="Empty means root (/)"
+                value={currentPath}
+                onChange={(event) => setCurrentPath(event.target.value)}
               />
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <div className="space-y-1">
+              <label htmlFor="file-io-depth" className={inputLabelClass}>
+                Browse Depth
+              </label>
+              <Input
+                id="file-io-depth"
+                placeholder="0 or greater"
+                type="number"
+                value={depth}
+                onChange={(event) => setDepth(Number(event.target.value))}
+                min={0}
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="file-io-list-limit" className={inputLabelClass}>
+                List Limit
+              </label>
+              <Input
+                id="file-io-list-limit"
+                placeholder="1 or greater"
+                type="number"
+                value={limit}
+                onChange={(event) => setLimit(Number(event.target.value))}
+                min={1}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" onClick={() => loadList()} disabled={!project || isListing}>
+              <RefreshCw className={cn('mr-2 h-4 w-4', isListing && 'animate-spin')} />
+              Refresh list
+            </Button>
+            {hasMore && <Badge variant="secondary">List truncated</Badge>}
+            {browserError && <span className="text-sm text-destructive">{browserError}</span>}
+          </div>
+          <div className="rounded-lg border border-border/60 bg-muted/30">
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              <span>Entries</span>
+              <span>{rootEntries.length} root item(s)</span>
+            </div>
+            <div className="max-h-[480px] overflow-y-auto px-1 py-1">
+              {rootEntries.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-muted-foreground">No entries yet. Load a project to see files.</div>
+              ) : (
+                <div className="space-y-[1px]">
+                  {rootEntries.map((entry) => (
+                    <FileTreeNode
+                      key={entry.path}
+                      entry={entry}
+                      level={0}
+                      expandedPaths={expandedPaths}
+                      dirCache={dirCache}
+                      loadingPaths={loadingPaths}
+                      onToggle={toggleFolder}
+                      onSelect={(e) => {
+                        openFilePreview(e.path);
+                        setWritePath(e.path);
+                        setDeletePath(e.path);
+                      }}
+                      selectedPath={selectedPath}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="border border-border/60 bg-card">

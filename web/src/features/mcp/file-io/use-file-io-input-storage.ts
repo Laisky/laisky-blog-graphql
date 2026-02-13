@@ -12,8 +12,6 @@ export type FileIOPersistedInputs = {
   limit: number;
   selectedPath: string;
   selectedContent: string;
-  readOffset: number;
-  readLength: number;
   writePath: string;
   writeMode: 'APPEND' | 'OVERWRITE' | 'TRUNCATE';
   writeOffset: number;
@@ -55,8 +53,6 @@ export function usePersistFileIOInputs(inputs: FileIOPersistedInputs): void {
     limit,
     selectedPath,
     selectedContent,
-    readOffset,
-    readLength,
     writePath,
     writeMode,
     writeOffset,
@@ -80,8 +76,6 @@ export function usePersistFileIOInputs(inputs: FileIOPersistedInputs): void {
       limit,
       selectedPath,
       selectedContent,
-      readOffset,
-      readLength,
       writePath,
       writeMode,
       writeOffset,
@@ -101,8 +95,6 @@ export function usePersistFileIOInputs(inputs: FileIOPersistedInputs): void {
     limit,
     selectedPath,
     selectedContent,
-    readOffset,
-    readLength,
     writePath,
     writeMode,
     writeOffset,
