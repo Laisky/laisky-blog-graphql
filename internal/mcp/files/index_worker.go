@@ -212,6 +212,12 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 		return errors.Wrap(err, "load file for indexing")
 	}
 	if job.FileUpdatedAt != nil && file.UpdatedAt.After(*job.FileUpdatedAt) {
+		s.LoggerFromContext(ctx).Debug("file index upsert skipped: stale job file_updated_at",
+			zap.String("project", job.Project),
+			zap.String("file_path", job.FilePath),
+			zap.Time("file_updated_at", file.UpdatedAt),
+			zap.Time("job_file_updated_at", *job.FileUpdatedAt),
+		)
 		return nil
 	}
 

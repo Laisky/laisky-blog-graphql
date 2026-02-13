@@ -94,6 +94,23 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 
 	merged := mergeCandidates(semantic, lexical)
 	if len(merged) == 0 {
+		fallbackChunks, fallbackErr := s.searchFallbackFromRawFiles(ctx, auth.APIKeyHash, project, pathPrefix, query, limit)
+		if fallbackErr != nil {
+			s.LoggerFromContext(ctx).Debug("file search raw fallback failed",
+				zap.String("project", project),
+				zap.String("path_prefix", pathPrefix),
+				zap.Int("limit", limit),
+				zap.Error(fallbackErr),
+			)
+		}
+		if len(fallbackChunks) > 0 {
+			s.LoggerFromContext(ctx).Debug("file search returned raw-file fallback results",
+				zap.String("project", project),
+				zap.String("path_prefix", pathPrefix),
+				zap.Int("result_count", len(fallbackChunks)),
+			)
+			return SearchResult{Chunks: fallbackChunks}, nil
+		}
 		s.logEmptySearchDiagnostics(ctx, auth.APIKeyHash, project, pathPrefix, lexicalErr, semanticErr)
 		return SearchResult{Chunks: nil}, nil
 	}
@@ -135,6 +152,114 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 	}
 
 	return SearchResult{Chunks: chunks}, nil
+}
+
+// searchFallbackFromRawFiles performs a best-effort lexical scan over active files when index rows are unavailable.
+func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, project, pathPrefix, query string, limit int) ([]ChunkEntry, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	args := []any{apiKeyHash, project}
+	statement := "SELECT path, content FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE"
+	if strings.TrimSpace(pathPrefix) != "" {
+		statement += " AND path LIKE ?"
+		args = append(args, pathPrefix+"%")
+	}
+
+	rows, err := s.db.WithContext(ctx).Raw(statement, args...).Rows()
+	if err != nil {
+		return nil, errors.Wrap(err, "query raw files fallback")
+	}
+	defer rows.Close()
+
+	queryTokens := tokenize(query)
+	type fallbackCandidate struct {
+		Path    string
+		Score   float64
+		Content string
+	}
+	candidates := make([]fallbackCandidate, 0, limit)
+	for rows.Next() {
+		var path string
+		var content []byte
+		if scanErr := rows.Scan(&path, &content); scanErr != nil {
+			return nil, errors.Wrap(scanErr, "scan raw file fallback")
+		}
+		text := string(content)
+		score := lexicalScore(queryTokens, tokenize(text))
+		if score <= 0 {
+			continue
+		}
+		candidates = append(candidates, fallbackCandidate{Path: path, Score: score, Content: text})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Score == candidates[j].Score {
+			return candidates[i].Path < candidates[j].Path
+		}
+		return candidates[i].Score > candidates[j].Score
+	})
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	result := make([]ChunkEntry, 0, len(candidates))
+	for _, candidate := range candidates {
+		startByte, endByte, snippet := searchFallbackSnippet(candidate.Content, query, s.settings.Index.ChunkBytes)
+		result = append(result, ChunkEntry{
+			FilePath:           candidate.Path,
+			FileSeekStartBytes: startByte,
+			FileSeekEndBytes:   endByte,
+			ChunkContent:       snippet,
+			Score:              candidate.Score,
+		})
+	}
+
+	return result, nil
+}
+
+// searchFallbackSnippet extracts a stable byte-range snippet around the first query hit.
+func searchFallbackSnippet(content, query string, maxBytes int) (int64, int64, string) {
+	if content == "" {
+		return 0, 0, ""
+	}
+	if maxBytes <= 0 {
+		maxBytes = 1500
+	}
+	contentLen := len(content)
+	if contentLen <= maxBytes {
+		return 0, int64(contentLen), content
+	}
+
+	lowerContent := strings.ToLower(content)
+	lowerQuery := strings.ToLower(strings.TrimSpace(query))
+	start := 0
+	if lowerQuery != "" {
+		if idx := strings.Index(lowerContent, lowerQuery); idx >= 0 {
+			center := idx + len(lowerQuery)/2
+			start = center - maxBytes/2
+			if start < 0 {
+				start = 0
+			}
+		}
+	}
+	if start+maxBytes > contentLen {
+		start = contentLen - maxBytes
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxBytes
+	if end > contentLen {
+		end = contentLen
+	}
+
+	return int64(start), int64(end), content[start:end]
 }
 
 // logEmptySearchDiagnostics emits DEBUG diagnostics for empty search results.

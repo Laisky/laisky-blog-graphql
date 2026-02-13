@@ -295,3 +295,50 @@ func TestSearchKeepsLexicalResultsWhenCredentialMissing(t *testing.T) {
 	require.Equal(t, "pending", job.Status)
 	require.Equal(t, 1, job.RetryCount)
 }
+
+// TestSearchFallbackReturnsResultsBeforeIndexReady verifies write-then-search works even before index workers process jobs.
+func TestSearchFallbackReturnsResultsBeforeIndexReady(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj", "/notes.txt", "MCP fallback should find this text", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	searchRes, err := svc.Search(context.Background(), auth, "proj", "MCP", "", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, searchRes.Chunks)
+	require.Equal(t, "/notes.txt", searchRes.Chunks[0].FilePath)
+	require.Contains(t, strings.ToLower(searchRes.Chunks[0].ChunkContent), "mcp")
+}
+
+// TestSearchFallbackHonorsPathPrefix verifies raw-file fallback respects path prefix filtering.
+func TestSearchFallbackHonorsPathPrefix(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj", "/dir/a.txt", "contains MCP marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), auth, "proj", "/other/b.txt", "contains MCP marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	searchRes, err := svc.Search(context.Background(), auth, "proj", "MCP", "/dir", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, searchRes.Chunks)
+	for _, chunk := range searchRes.Chunks {
+		require.True(t, strings.HasPrefix(chunk.FilePath, "/dir"))
+	}
+}
