@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"unicode/utf8"
+
 	"github.com/Laisky/errors/v2"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
@@ -25,7 +27,7 @@ func maskLoginError(err error) error {
 // validateInputLength checks if the provided inputs are within the length limit.
 func validateInputLength(limit int, inputs ...string) error {
 	for _, input := range inputs {
-		if len(input) > limit {
+		if utf8.RuneCountInString(input) > limit {
 			return errors.Errorf("input too long: max %d characters allowed", limit)
 		}
 	}

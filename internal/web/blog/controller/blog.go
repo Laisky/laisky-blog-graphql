@@ -347,12 +347,6 @@ func (r *MutationResolver) UserRegister(ctx context.Context,
 	if err := validateInputLength(500, captcha); err != nil {
 		return nil, err
 	}
-	if err := validateInputLength(100, account, password, displayName); err != nil {
-		return nil, err
-	}
-	if err := validateInputLength(500, captcha); err != nil {
-		return nil, err
-	}
 	_, err := r.svc.UserRegister(ctx, account, password, displayName)
 	if err != nil {
 		return nil, errors.Wrap(err, "register user")
