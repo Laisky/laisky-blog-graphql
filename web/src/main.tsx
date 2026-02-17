@@ -13,6 +13,7 @@ import { UserRequestsPage } from '@/features/mcp/user-requests/page';
 import { WebFetchPage } from '@/features/mcp/web-fetch/page';
 import { WebSearchPage } from '@/features/mcp/web-search/page';
 import { ApiKeyProvider } from '@/lib/api-key-context';
+import { resolveRouterBasename } from '@/lib/router-basename';
 import { defaultToolsConfig, loadRuntimeConfig, type ToolsConfig } from '@/lib/runtime-config';
 import { applySiteBranding } from '@/lib/site-branding';
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
@@ -29,7 +30,7 @@ type RouterKind = 'mcp' | 'sso';
  */
 async function bootstrap() {
   const runtimeConfig = await loadRuntimeConfig();
-  const basename = normalizeBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL);
+  const basename = resolveRouterBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL, window.location.pathname);
   const toolsConfig: ToolsConfig = runtimeConfig?.tools ?? defaultToolsConfig;
   const turnstileSiteKey = runtimeConfig?.site?.turnstileSiteKey;
   applySiteBranding(runtimeConfig?.site);
@@ -110,22 +111,4 @@ function resolveRouterKind(raw: string | undefined): RouterKind {
     return 'sso';
   }
   return 'mcp';
-}
-
-/**
- * normalizeBasename normalizes the router basename to a non-empty string.
- * It accepts a candidate basename and returns "/" when the input is empty.
- */
-function normalizeBasename(input: string | undefined): string {
-  if (!input) {
-    return '/';
-  }
-
-  const trimmed = input.trim();
-  if (trimmed === '' || trimmed === '/') {
-    return '/';
-  }
-
-  const stripped = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
-  return stripped || '/';
 }
