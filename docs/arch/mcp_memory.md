@@ -339,9 +339,9 @@ For most environments, only this is needed:
 ```yaml
 settings:
   mcp:
-   tools:
-    memory:
-      enabled: true # Enable MCP-native memory tools.
+    tools:
+      memory:
+        enabled: true # Enable MCP-native memory tools.
 ```
 
 ### 9.3 Optional configuration keys with default values
@@ -349,82 +349,105 @@ settings:
 The following keys are optional. If omitted, server uses safe defaults.
 
 1. `settings.mcp.memory.recent_context_items` (default: `30`)
-  - Number of recent context items retained in runtime prompt assembly.
-  - Larger value improves continuity but increases token cost.
+
+- Number of recent context items retained in runtime prompt assembly.
+- Larger value improves continuity but increases token cost.
 
 2. `settings.mcp.memory.recall_facts_limit` (default: `20`)
-  - Max number of memory facts recalled into each turn.
-  - Prevents prompt bloat while keeping useful long-term memory.
+
+- Max number of memory facts recalled into each turn.
+- Prevents prompt bloat while keeping useful long-term memory.
 
 3. `settings.mcp.memory.search_limit` (default: `5`)
-  - Max number of storage search chunks used for memory recall.
-  - Keeps latency and prompt size stable.
+
+- Max number of storage search chunks used for memory recall.
+- Keeps latency and prompt size stable.
 
 4. `settings.mcp.memory.compact_threshold` (default: `0.8`)
-  - Triggers context compaction when estimated tokens exceed this fraction of `max_input_tok`.
-  - `0.8` is conservative and avoids hard context-window failures.
+
+- Triggers context compaction when estimated tokens exceed this fraction of `max_input_tok`.
+- `0.8` is conservative and avoids hard context-window failures.
 
 5. `settings.mcp.memory.l1_retention_days` (default: `1`)
-  - Retention for short-lived daily facts.
-  - Auto-expired in UTC.
+
+- Retention for short-lived daily facts.
+- Auto-expired in UTC.
 
 6. `settings.mcp.memory.l2_retention_days` (default: `7`)
-  - Retention for medium-lived weekly facts.
-  - Auto-expired in UTC.
+
+- Retention for medium-lived weekly facts.
+- Auto-expired in UTC.
 
 7. `settings.mcp.memory.compaction_min_age_hours` (default: `24`)
-  - Minimum shard age before raw-event archive compaction.
-  - Reduces churn and avoids over-frequent archive writes.
+
+- Minimum shard age before raw-event archive compaction.
+- Reduces churn and avoids over-frequent archive writes.
 
 8. `settings.mcp.memory.summary_refresh_interval_minutes` (default: `60`)
-  - Minimum interval for summary refresh operations.
-  - Balances freshness and write pressure.
+
+- Minimum interval for summary refresh operations.
+- Balances freshness and write pressure.
 
 9. `settings.mcp.memory.max_processed_turns` (default: `1024`)
-  - Max in-meta processed turn IDs retained for idempotency history.
-  - Bounded to avoid metadata growth.
+
+- Max in-meta processed turn IDs retained for idempotency history.
+- Bounded to avoid metadata growth.
 
 10. `settings.mcp.memory.heuristic.enabled` (default: `false`)
-   - Enables LLM-assisted fact extraction and merge.
-   - Default disabled to reduce external dependency, cost, and operational complexity.
+
+- Enables LLM-assisted fact extraction and merge.
+- Default disabled to reduce external dependency, cost, and operational complexity.
 
 11. `settings.mcp.memory.heuristic.model` (default: `openai/gpt-oss-120b`)
 12. `settings.mcp.memory.heuristic.base_url` (default: empty)
+
+- Must be an **absolute URL** with scheme and host (for example, `https://api.openai.com` or `https://api.openai.com/v1`).
+- Do **not** use domain-only values (for example, `api.openai.com`), because requests require a URL with protocol.
+- Path handling:
+  - If value already ends with `/v1/responses`, it is used as-is.
+  - Otherwise server appends `/v1/responses` automatically.
+- Recommended values:
+  - Provider root: `https://api.openai.com` (auto-expanded to `/v1/responses`)
+  - OpenAI-compatible gateway root: `https://oneapi.example.com` (auto-expanded)
+  - Explicit endpoint: `https://oneapi.example.com/v1/responses`
+- Avoid query-string or fragment in this field; keep it as clean base endpoint.
+
 13. `settings.mcp.memory.heuristic.timeout_ms` (default: `12000`)
 14. `settings.mcp.memory.heuristic.max_output_tokens` (default: `800`)
-   - Applied only when heuristic is enabled and credentials are configured.
+
+- Applied only when heuristic is enabled and credentials are configured.
 
 ### 9.4 Recommended full example (copy-ready)
 
 ```yaml
 settings:
   mcp:
-   tools:
+    tools:
+      memory:
+        enabled: true # Single required switch for standard rollout.
+
     memory:
-      enabled: true # Single required switch for standard rollout.
+      # Prompt/context controls
+      recent_context_items: 30 # Keep the latest 30 items in active context.
+      recall_facts_limit: 20 # Inject up to 20 facts per turn.
+      search_limit: 5 # Read up to 5 related chunks from storage search.
+      compact_threshold: 0.8 # Compact context at 80% of max_input_tok.
 
-   memory:
-    # Prompt/context controls
-    recent_context_items: 30 # Keep the latest 30 items in active context.
-    recall_facts_limit: 20 # Inject up to 20 facts per turn.
-    search_limit: 5 # Read up to 5 related chunks from storage search.
-    compact_threshold: 0.8 # Compact context at 80% of max_input_tok.
+      # Retention controls (UTC)
+      l1_retention_days: 1 # Daily facts expire after 1 day.
+      l2_retention_days: 7 # Weekly facts expire after 7 days.
 
-    # Retention controls (UTC)
-    l1_retention_days: 1 # Daily facts expire after 1 day.
-    l2_retention_days: 7 # Weekly facts expire after 7 days.
+      # Maintenance controls
+      compaction_min_age_hours: 24 # Archive compaction only for shards older than 24h.
+      summary_refresh_interval_minutes: 60 # Refresh .abstract/.overview at most hourly.
+      max_processed_turns: 1024 # Bound idempotency history size.
 
-    # Maintenance controls
-    compaction_min_age_hours: 24 # Archive compaction only for shards older than 24h.
-    summary_refresh_interval_minutes: 60 # Refresh .abstract/.overview at most hourly.
-    max_processed_turns: 1024 # Bound idempotency history size.
-
-    heuristic:
-      enabled: false # Keep off by default; enable only if needed.
-      model: openai/gpt-oss-120b
-      base_url: "" # Required only when heuristic enabled.
-      timeout_ms: 12000
-      max_output_tokens: 800
+      heuristic:
+        enabled: false # Keep off by default; enable only if needed.
+        model: openai/gpt-oss-120b
+        base_url: '' # Required when heuristic is enabled. Must be absolute URL, e.g. https://api.openai.com or https://oneapi.example.com/v1.
+        timeout_ms: 12000
+        max_output_tokens: 800
 ```
 
 ### 9.5 Operational recommendations
@@ -570,20 +593,29 @@ Implemented in this repository:
 1. Memory service package: `internal/mcp/memory`
 2. Memory MCP tools: `internal/mcp/tools/memory_*`
 3. MCP server registration and dispatch wiring:
-  - `internal/mcp/server.go`
-  - `internal/mcp/server_tool_handlers.go`
-  - `internal/mcp/settings.go`
+
+- `internal/mcp/server.go`
+- `internal/mcp/server_tool_handlers.go`
+- `internal/mcp/settings.go`
+
 4. Startup initialization and settings validation:
-  - `cmd/api.go`
-  - `cmd/config_validation.go`
+
+- `cmd/api.go`
+- `cmd/config_validation.go`
+
 5. Runtime frontend tool availability:
-  - `internal/web/server.go`
-  - `web/src/lib/runtime-config.ts`
-  - `web/src/pages/home.tsx`
+
+- `internal/web/server.go`
+- `web/src/lib/runtime-config.ts`
+- `web/src/pages/home.tsx`
+
 6. Redaction coverage for memory payload fields:
-  - `internal/mcp/memory/logging_redaction.go`
-  - `internal/mcp/log_redaction.go`
+
+- `internal/mcp/memory/logging_redaction.go`
+- `internal/mcp/log_redaction.go`
+
 7. Tests:
-  - `internal/mcp/memory/service_test.go`
-  - `internal/mcp/log_redaction_test.go`
-  - `internal/mcp/server_test.go`
+
+- `internal/mcp/memory/service_test.go`
+- `internal/mcp/log_redaction_test.go`
+- `internal/mcp/server_test.go`

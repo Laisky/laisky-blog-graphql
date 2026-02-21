@@ -27,6 +27,7 @@ const consoleItems: ConsoleMenuItem[] = [
   { to: '/tools/web_search', label: 'web_search', toolKey: 'web_search' },
   { to: '/tools/web_fetch', label: 'web_fetch', toolKey: 'web_fetch' },
   { to: '/tools/file_io', label: 'file_io', toolKey: 'file_io' },
+  { to: '/tools/memory', label: 'memory', toolKey: 'memory' },
 ];
 
 export function AppLayout() {

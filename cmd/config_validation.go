@@ -88,6 +88,7 @@ func validateMCPMemoryConfig(get configGetter, errs *[]string) {
 
 	validateOptionalBool(get, "settings.mcp.memory.heuristic.enabled", errs)
 	validateOptionalStringNonEmpty(get, "settings.mcp.memory.heuristic.model", errs)
+	validateOptionalURL(get, "settings.mcp.memory.heuristic.base_url", errs)
 	validateOptionalIntMin(get, "settings.mcp.memory.heuristic.timeout_ms", 1, errs)
 	validateOptionalIntMin(get, "settings.mcp.memory.heuristic.max_output_tokens", 1, errs)
 }

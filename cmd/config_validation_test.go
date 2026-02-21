@@ -173,6 +173,43 @@ func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL verifies domain-only heuristic base URL fails validation.
+func TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL(t *testing.T) {
+	cfg := map[string]any{
+		"settings": map[string]any{
+			"mcp": map[string]any{
+				"memory": map[string]any{
+					"heuristic": map[string]any{
+						"base_url": "oneapi.laisky.com",
+					},
+				},
+			},
+		},
+	}
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "settings.mcp.memory.heuristic.base_url")
+}
+
+// TestValidateStartupConfigWithGetterValidMemoryHeuristicBaseURL verifies absolute heuristic base URL passes validation.
+func TestValidateStartupConfigWithGetterValidMemoryHeuristicBaseURL(t *testing.T) {
+	cfg := map[string]any{
+		"settings": map[string]any{
+			"mcp": map[string]any{
+				"memory": map[string]any{
+					"heuristic": map[string]any{
+						"base_url": "https://oneapi.laisky.com/v1",
+					},
+				},
+			},
+		},
+	}
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.NoError(t, err)
+}
+
 // newMapConfigGetter builds a dotted-path getter for nested map-based test configuration.
 // It accepts a nested map and returns a getter function compatible with validateStartupConfigWithGetter.
 func newMapConfigGetter(root map[string]any) configGetter {

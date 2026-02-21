@@ -18,7 +18,7 @@
 
 ## Tool Guide
 
-### memory_* lifecycle tools
+### memory\_\* lifecycle tools
 
 - **Purpose:** Move memory orchestration from agent clients into MCP server-side tools.
 - **Dependencies:** `settings.mcp.tools.memory.enabled=true`, `internal/mcp/files.Service`, and MCP database access for idempotency guards.

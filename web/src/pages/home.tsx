@@ -118,6 +118,7 @@ export function HomePage() {
           icon={<Database className="h-5 w-5" />}
           tags={['Context', 'Recall', 'Lifecycle']}
           enabled={toolsConfig.memory}
+          href="/tools/memory"
         />
       ),
     },

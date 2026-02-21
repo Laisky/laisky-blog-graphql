@@ -51,23 +51,23 @@ Request:
 
 ```json
 {
-	"project": "demo",
-	"session_id": "session-001",
-	"user_id": "user-001",
-	"turn_id": "turn-20260221-0001",
-	"current_input": [
-		{
-			"type": "message",
-			"role": "user",
-			"content": [
-				{
-					"type": "input_text",
-					"text": "Please summarize today plan in 3 bullets"
-				}
-			]
-		}
-	],
-	"max_input_tok": 120000
+  "project": "demo",
+  "session_id": "session-001",
+  "user_id": "user-001",
+  "turn_id": "turn-20260221-0001",
+  "current_input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Please summarize today plan in 3 bullets"
+        }
+      ]
+    }
+  ],
+  "max_input_tok": 120000
 }
 ```
 
@@ -75,30 +75,30 @@ Response:
 
 ```json
 {
-	"input_items": [
-		{
-			"type": "message",
-			"role": "developer",
-			"content": [
-				{
-					"type": "input_text",
-					"text": "Memory recall: ..."
-				}
-			]
-		},
-		{
-			"type": "message",
-			"role": "user",
-			"content": [
-				{
-					"type": "input_text",
-					"text": "Please summarize today plan in 3 bullets"
-				}
-			]
-		}
-	],
-	"recall_fact_ids": ["fact_xxx"],
-	"context_token_count": 1830
+  "input_items": [
+    {
+      "type": "message",
+      "role": "developer",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Memory recall: ..."
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Please summarize today plan in 3 bullets"
+        }
+      ]
+    }
+  ],
+  "recall_fact_ids": ["fact_xxx"],
+  "context_token_count": 1830
 }
 ```
 
@@ -108,23 +108,23 @@ Request:
 
 ```json
 {
-	"project": "demo",
-	"session_id": "session-001",
-	"user_id": "user-001",
-	"turn_id": "turn-20260221-0001",
-	"input_items": ["...same items used for model input..."],
-	"output_items": [
-		{
-			"type": "message",
-			"role": "assistant",
-			"content": [
-				{
-					"type": "output_text",
-					"text": "- Item A\n- Item B\n- Item C"
-				}
-			]
-		}
-	]
+  "project": "demo",
+  "session_id": "session-001",
+  "user_id": "user-001",
+  "turn_id": "turn-20260221-0001",
+  "input_items": ["...same items used for model input..."],
+  "output_items": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "- Item A\n- Item B\n- Item C"
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -132,7 +132,7 @@ Response:
 
 ```json
 {
-	"ok": true
+  "ok": true
 }
 ```
 
@@ -142,8 +142,8 @@ Request:
 
 ```json
 {
-	"project": "demo",
-	"session_id": "session-001"
+  "project": "demo",
+  "session_id": "session-001"
 }
 ```
 
@@ -151,7 +151,7 @@ Response:
 
 ```json
 {
-	"ok": true
+  "ok": true
 }
 ```
 
@@ -161,11 +161,11 @@ Request:
 
 ```json
 {
-	"project": "demo",
-	"session_id": "session-001",
-	"path": "",
-	"depth": 8,
-	"limit": 200
+  "project": "demo",
+  "session_id": "session-001",
+  "path": "",
+  "depth": 8,
+  "limit": 200
 }
 ```
 
@@ -173,14 +173,14 @@ Response:
 
 ```json
 {
-	"summaries": [
-		{
-			"path": "/memory/session-001/meta",
-			"abstract": "...",
-			"updated_at": "2026-02-21T16:00:00Z",
-			"has_overview": true
-		}
-	]
+  "summaries": [
+    {
+      "path": "/memory/session-001/meta",
+      "abstract": "...",
+      "updated_at": "2026-02-21T16:00:00Z",
+      "has_overview": true
+    }
+  ]
 }
 ```
 
