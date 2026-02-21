@@ -2,12 +2,25 @@ package tools
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
+)
+
+const (
+	defaultMemoryProject   = "default"
+	defaultMemorySessionID = "default"
+	defaultMaxInputTok     = 120000
+	defaultListDepth       = 8
+	defaultListLimit       = 200
 )
 
 // MemoryService exposes memory lifecycle operations for MCP tools.
@@ -69,4 +82,75 @@ func memoryToolErrorFromErr(err error) *mcp.CallToolResult {
 		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "internal error", true)
 	}
 	return memoryToolErrorResult(typed.Code, typed.Message, typed.Retryable)
+}
+
+// applyMemoryDefaultsBeforeTurn fills optional memory_before_turn fields with defaults.
+func applyMemoryDefaultsBeforeTurn(request *mcpmemory.BeforeTurnRequest) {
+	request.Project = normalizeMemoryStringDefault(request.Project, defaultMemoryProject)
+	request.SessionID = normalizeMemoryStringDefault(request.SessionID, defaultMemorySessionID)
+	request.TurnID = normalizeMemoryTurnID(request.TurnID)
+	if request.MaxInputTok <= 0 {
+		request.MaxInputTok = defaultMaxInputTok
+	}
+}
+
+// applyMemoryDefaultsAfterTurn fills optional memory_after_turn fields with defaults.
+func applyMemoryDefaultsAfterTurn(request *mcpmemory.AfterTurnRequest) {
+	request.Project = normalizeMemoryStringDefault(request.Project, defaultMemoryProject)
+	request.SessionID = normalizeMemoryStringDefault(request.SessionID, defaultMemorySessionID)
+	request.TurnID = normalizeMemoryTurnID(request.TurnID)
+}
+
+// applyMemoryDefaultsSession fills optional session-scoped request fields with defaults.
+func applyMemoryDefaultsSession(request *mcpmemory.SessionRequest) {
+	request.Project = normalizeMemoryStringDefault(request.Project, defaultMemoryProject)
+	request.SessionID = normalizeMemoryStringDefault(request.SessionID, defaultMemorySessionID)
+}
+
+// applyMemoryDefaultsListDir fills optional list_dir_with_abstract fields with defaults.
+func applyMemoryDefaultsListDir(request *mcpmemory.ListDirWithAbstractRequest) {
+	request.Project = normalizeMemoryStringDefault(request.Project, defaultMemoryProject)
+	request.SessionID = normalizeMemoryStringDefault(request.SessionID, defaultMemorySessionID)
+	if request.Depth <= 0 {
+		request.Depth = defaultListDepth
+	}
+	if request.Limit <= 0 {
+		request.Limit = defaultListLimit
+	}
+}
+
+// normalizeMemoryStringDefault trims value and returns fallback when empty.
+func normalizeMemoryStringDefault(value string, fallback string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fallback
+	}
+
+	return trimmed
+}
+
+// normalizeMemoryTurnID trims turnID and generates a default one when empty.
+func normalizeMemoryTurnID(turnID string) string {
+	trimmed := strings.TrimSpace(turnID)
+	if trimmed != "" {
+		return trimmed
+	}
+
+	return generateMemoryTurnID(time.Now().UTC())
+}
+
+// generateMemoryTurnID builds a monotonic turn identifier with short random suffix.
+func generateMemoryTurnID(now time.Time) string {
+	return "turn-" + strconv.FormatInt(now.UTC().UnixMilli(), 10) + "-" + generateMemoryTurnIDSuffix()
+}
+
+// generateMemoryTurnIDSuffix creates a short random lowercase hex suffix.
+func generateMemoryTurnIDSuffix() string {
+	randomBytes := make([]byte, 3)
+	if _, err := rand.Read(randomBytes); err == nil {
+		return hex.EncodeToString(randomBytes)
+	}
+
+	fallback := time.Now().UTC().UnixNano()
+	return hex.EncodeToString([]byte{byte(fallback), byte(fallback >> 8), byte(fallback >> 16)})
 }

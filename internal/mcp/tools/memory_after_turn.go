@@ -26,9 +26,9 @@ func (tool *MemoryAfterTurnTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"memory_after_turn",
 		mcp.WithDescription("Persist turn artifacts and update memory tiers after model response."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
-		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session identifier.")),
-		mcp.WithString("turn_id", mcp.Required(), mcp.Description("Turn identifier.")),
+		mcp.WithString("project", mcp.Description("Target project namespace. Defaults to `default` when omitted.")),
+		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
+		mcp.WithString("turn_id", mcp.Description("Turn identifier. Auto-generated when omitted.")),
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
 		mcp.WithArray("input_items", mcp.Description("Prepared turn input items.")),
 		mcp.WithArray("output_items", mcp.Description("Model output items.")),
@@ -48,6 +48,7 @@ func (tool *MemoryAfterTurnTool) Handle(ctx context.Context, req mcp.CallToolReq
 	if err := decodeMemoryRequest(req, &request); err != nil {
 		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil
 	}
+	applyMemoryDefaultsAfterTurn(&request)
 
 	err := tool.service.AfterTurn(ctx, auth, request)
 	if err != nil {

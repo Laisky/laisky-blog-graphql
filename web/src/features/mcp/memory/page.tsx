@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useApiKey } from '@/lib/api-key-context';
-import { cn } from '@/lib/utils';
 
 import { callMcpTool, type CallToolResponse } from '../shared/mcp-api';
 import { useMemoryInputDefaults, usePersistMemoryInputs } from './use-memory-input-storage';
@@ -47,6 +46,27 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 const inputLabelClass = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
+const defaultMemoryProject = 'default';
+const defaultMemorySessionID = 'default';
+
+function generateClientTurnID(): string {
+  const now = Date.now();
+  const randomBytes = new Uint8Array(3);
+
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(randomBytes);
+  } else {
+    randomBytes[0] = Math.floor(Math.random() * 256);
+    randomBytes[1] = Math.floor(Math.random() * 256);
+    randomBytes[2] = Math.floor(Math.random() * 256);
+  }
+
+  const suffix = Array.from(randomBytes)
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+
+  return `turn-${now}-${suffix}`;
+}
 
 function extractStructuredPayload<T>(result: CallToolResponse): T {
   const structuredResult = result as StructuredToolResponse<T>;
@@ -119,10 +139,10 @@ export function MemoryPage() {
   const { apiKey } = useApiKey();
   const persistedInputs = useMemoryInputDefaults();
 
-  const [project, setProject] = useState(persistedInputs.project ?? '');
-  const [sessionId, setSessionId] = useState(persistedInputs.sessionId ?? '');
+  const [project, setProject] = useState((persistedInputs.project ?? '').trim() || defaultMemoryProject);
+  const [sessionId, setSessionId] = useState((persistedInputs.sessionId ?? '').trim() || defaultMemorySessionID);
   const [userId, setUserId] = useState(persistedInputs.userId ?? '');
-  const [turnId, setTurnId] = useState(persistedInputs.turnId ?? '');
+  const [turnId, setTurnId] = useState((persistedInputs.turnId ?? '').trim() || generateClientTurnID());
 
   const [maxInputTok, setMaxInputTok] = useState(persistedInputs.maxInputTok ?? 120000);
   const [baseInstructions, setBaseInstructions] = useState(persistedInputs.baseInstructions ?? '');
@@ -192,10 +212,10 @@ export function MemoryPage() {
 
     try {
       const payload = await callTool<BeforeTurnPayload>('memory_before_turn', {
-        project,
-        session_id: sessionId,
+        project: project.trim() || undefined,
+        session_id: sessionId.trim() || undefined,
         user_id: userId || undefined,
-        turn_id: turnId,
+        turn_id: turnId.trim() || undefined,
         current_input: parseJSONArray(currentInputText, 'current_input'),
         base_instructions: baseInstructions || undefined,
         max_input_tok: Number.isFinite(maxInputTok) && maxInputTok > 0 ? maxInputTok : undefined,
@@ -217,10 +237,10 @@ export function MemoryPage() {
 
     try {
       const payload = await callTool<MaintenancePayload>('memory_after_turn', {
-        project,
-        session_id: sessionId,
+        project: project.trim() || undefined,
+        session_id: sessionId.trim() || undefined,
         user_id: userId || undefined,
-        turn_id: turnId,
+        turn_id: turnId.trim() || undefined,
         input_items: parseJSONArray(inputItemsText, 'input_items'),
         output_items: parseJSONArray(outputItemsText, 'output_items'),
       });
@@ -244,8 +264,8 @@ export function MemoryPage() {
 
     try {
       const payload = await callTool<MaintenancePayload>('memory_run_maintenance', {
-        project,
-        session_id: sessionId,
+        project: project.trim() || undefined,
+        session_id: sessionId.trim() || undefined,
       });
 
       setMaintenanceInfo(payload.ok ? 'maintenance completed successfully.' : 'maintenance finished without explicit ok=true.');
@@ -263,11 +283,11 @@ export function MemoryPage() {
 
     try {
       const payload = await callTool<ListDirPayload>('memory_list_dir_with_abstract', {
-        project,
-        session_id: sessionId,
+        project: project.trim() || undefined,
+        session_id: sessionId.trim() || undefined,
         path: listPath || undefined,
-        depth: Number.isFinite(listDepth) && listDepth > 0 ? listDepth : 8,
-        limit: Number.isFinite(listLimit) && listLimit > 0 ? listLimit : 200,
+        depth: Number.isFinite(listDepth) && listDepth > 0 ? listDepth : undefined,
+        limit: Number.isFinite(listLimit) && listLimit > 0 ? listLimit : undefined,
       });
 
       setListPayload(payload);
@@ -277,10 +297,6 @@ export function MemoryPage() {
       setIsListing(false);
     }
   }
-
-  const isProjectMissing = project.trim().length === 0;
-  const isSessionMissing = sessionId.trim().length === 0;
-  const isTurnMissing = turnId.trim().length === 0;
 
   return (
     <div className="space-y-8">
@@ -309,29 +325,27 @@ export function MemoryPage() {
       <Card className="border border-border/60 bg-card">
         <CardHeader>
           <CardTitle className="text-xl">Session Context</CardTitle>
-          <CardDescription>Required identifiers for memory operations.</CardDescription>
+          <CardDescription>Optional identifiers with client/server defaults.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
-            <label htmlFor="memory-project" className={cn(inputLabelClass, isProjectMissing && 'text-destructive')}>
+            <label htmlFor="memory-project" className={inputLabelClass}>
               Project
             </label>
             <Input
               id="memory-project"
-              placeholder="Required"
-              className={cn(isProjectMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
+              placeholder="Default: default"
               value={project}
               onChange={(event) => setProject(event.target.value)}
             />
           </div>
           <div className="space-y-1">
-            <label htmlFor="memory-session-id" className={cn(inputLabelClass, isSessionMissing && 'text-destructive')}>
+            <label htmlFor="memory-session-id" className={inputLabelClass}>
               Session ID
             </label>
             <Input
               id="memory-session-id"
-              placeholder="Required"
-              className={cn(isSessionMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
+              placeholder="Default: default"
               value={sessionId}
               onChange={(event) => setSessionId(event.target.value)}
             />
@@ -343,13 +357,12 @@ export function MemoryPage() {
             <Input id="memory-user-id" placeholder="Optional" value={userId} onChange={(event) => setUserId(event.target.value)} />
           </div>
           <div className="space-y-1">
-            <label htmlFor="memory-turn-id" className={cn(inputLabelClass, isTurnMissing && 'text-destructive')}>
+            <label htmlFor="memory-turn-id" className={inputLabelClass}>
               Turn ID
             </label>
             <Input
               id="memory-turn-id"
-              placeholder="Required for before/after"
-              className={cn(isTurnMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
+              placeholder="Auto-generated if empty"
               value={turnId}
               onChange={(event) => setTurnId(event.target.value)}
             />
@@ -403,10 +416,7 @@ export function MemoryPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button
-                onClick={() => void runBeforeTurn()}
-                disabled={isBeforeRunning || isProjectMissing || isSessionMissing || isTurnMissing}
-              >
+              <Button onClick={() => void runBeforeTurn()} disabled={isBeforeRunning}>
                 {isBeforeRunning ? 'Running…' : 'Run memory_before_turn'}
               </Button>
               {beforePayload && <Badge variant="secondary">context_token_count: {beforePayload.context_token_count ?? 0}</Badge>}
@@ -479,10 +489,7 @@ export function MemoryPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button
-                onClick={() => void runAfterTurn()}
-                disabled={isAfterRunning || isProjectMissing || isSessionMissing || isTurnMissing}
-              >
+              <Button onClick={() => void runAfterTurn()} disabled={isAfterRunning}>
                 {isAfterRunning ? 'Running…' : 'Run memory_after_turn'}
               </Button>
               {afterInfo && <Badge variant="secondary">{afterInfo}</Badge>}
@@ -499,7 +506,7 @@ export function MemoryPage() {
             <CardDescription>Run compaction, retention sweep, and summary refresh.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button onClick={() => void runMaintenance()} disabled={isMaintenanceRunning || isProjectMissing || isSessionMissing}>
+            <Button onClick={() => void runMaintenance()} disabled={isMaintenanceRunning}>
               {isMaintenanceRunning ? (
                 <span className="inline-flex items-center gap-2">
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -562,7 +569,7 @@ export function MemoryPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={() => void runListDir()} disabled={isListing || isProjectMissing || isSessionMissing}>
+              <Button onClick={() => void runListDir()} disabled={isListing}>
                 {isListing ? 'Querying…' : 'Run memory_list_dir_with_abstract'}
               </Button>
               <Badge variant="outline">{listPayload?.summaries?.length ?? 0} summaries</Badge>

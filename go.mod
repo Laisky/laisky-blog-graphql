@@ -10,7 +10,7 @@ require (
 	github.com/Laisky/gin-middlewares/v7 v7.0.1
 	github.com/Laisky/go-config/v2 v2.0.0
 	github.com/Laisky/go-redis/v2 v2.0.1
-	github.com/Laisky/go-utils/v6 v6.1.4-0.20260221163220-834c4686045c
+	github.com/Laisky/go-utils/v6 v6.1.4-0.20260221175728-9aa223f4b833
 	github.com/Laisky/zap v1.27.1-0.20241010063010-3154c45f2a1f
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10

@@ -26,8 +26,8 @@ func (tool *MemoryRunMaintenanceTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"memory_run_maintenance",
 		mcp.WithDescription("Run compaction, retention sweep, and summary refresh for one memory session."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
-		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session identifier.")),
+		mcp.WithString("project", mcp.Description("Target project namespace. Defaults to `default` when omitted.")),
+		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
 		mcp.WithReadOnlyHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
@@ -44,6 +44,7 @@ func (tool *MemoryRunMaintenanceTool) Handle(ctx context.Context, req mcp.CallTo
 	if err := decodeMemoryRequest(req, &request); err != nil {
 		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil
 	}
+	applyMemoryDefaultsSession(&request)
 
 	err := tool.service.RunMaintenance(ctx, auth, request)
 	if err != nil {

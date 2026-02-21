@@ -23,14 +23,20 @@ Use these tools:
 
 ## Core identifiers
 
-Your client must keep these values stable:
+Your client should keep these values stable:
 
 1. project: tenant or workspace scope
 2. session_id: one conversation/session
 3. turn_id: one model turn (must be unique per turn)
 4. user_id: optional user identity label
 
-Recommended turn_id format: a monotonic UUID-like value.
+Default behavior when omitted:
+
+1. project defaults to `default`
+2. session_id defaults to `default`
+3. turn_id defaults to `turn-{unix_milliseconds}-{6_hex_chars}`
+
+Recommended: set `turn_id` explicitly in clients and reuse the same value for retries of the same logical turn.
 
 ## Standard turn lifecycle
 

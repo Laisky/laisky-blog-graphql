@@ -26,13 +26,13 @@ func (tool *MemoryBeforeTurnTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"memory_before_turn",
 		mcp.WithDescription("Prepare model input with recalled memory context for the current turn."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
-		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session identifier.")),
-		mcp.WithString("turn_id", mcp.Required(), mcp.Description("Turn identifier.")),
+		mcp.WithString("project", mcp.Description("Target project namespace. Defaults to `default` when omitted.")),
+		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
+		mcp.WithString("turn_id", mcp.Description("Turn identifier. Auto-generated when omitted.")),
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
 		mcp.WithArray("current_input", mcp.Description("Current turn input items in Responses API format.")),
 		mcp.WithString("base_instructions", mcp.Description("Optional base system instructions.")),
-		mcp.WithNumber("max_input_tok", mcp.Description("Optional max context token budget.")),
+		mcp.WithNumber("max_input_tok", mcp.Description("Optional max context token budget. Defaults to 120000 when omitted.")),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
@@ -49,6 +49,7 @@ func (tool *MemoryBeforeTurnTool) Handle(ctx context.Context, req mcp.CallToolRe
 	if err := decodeMemoryRequest(req, &request); err != nil {
 		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil
 	}
+	applyMemoryDefaultsBeforeTurn(&request)
 
 	response, err := tool.service.BeforeTurn(ctx, auth, request)
 	if err != nil {
