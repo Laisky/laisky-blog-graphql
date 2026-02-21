@@ -36,6 +36,7 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	validateRAGConfig(get, &validationErrs)
 	validateUserRequestsConfig(get, &validationErrs)
 	validateFileIOConfig(get, &validationErrs)
+	validateMCPMemoryConfig(get, &validationErrs)
 	validateWebsearchConfig(get, &validationErrs)
 	validateWebSiteConfig(get, &validationErrs)
 	validateOpenAIConfig(get, &validationErrs)
@@ -63,12 +64,32 @@ func validateMCPToolsConfig(get configGetter, errs *[]string) {
 		"settings.mcp.tools.get_user_request.enabled",
 		"settings.mcp.tools.extract_key_info.enabled",
 		"settings.mcp.tools.file_io.enabled",
+		"settings.mcp.tools.memory.enabled",
 		"settings.mcp.tools.mcp_pipe.enabled",
 	}
 
 	for _, key := range keys {
 		validateOptionalBool(get, key, errs)
 	}
+}
+
+// validateMCPMemoryConfig validates MCP-native memory settings.
+// It accepts a getter and an error collector pointer and appends validation errors.
+func validateMCPMemoryConfig(get configGetter, errs *[]string) {
+	validateOptionalIntMin(get, "settings.mcp.memory.recent_context_items", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.recall_facts_limit", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.search_limit", 1, errs)
+	validateOptionalFloatRange(get, "settings.mcp.memory.compact_threshold", 0, 1, false, false, errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.l1_retention_days", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.l2_retention_days", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.compaction_min_age_hours", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.summary_refresh_interval_minutes", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.max_processed_turns", 1, errs)
+
+	validateOptionalBool(get, "settings.mcp.memory.heuristic.enabled", errs)
+	validateOptionalStringNonEmpty(get, "settings.mcp.memory.heuristic.model", errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.heuristic.timeout_ms", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.memory.heuristic.max_output_tokens", 1, errs)
 }
 
 // validateRAGConfig validates extract_key_info configuration.
@@ -362,6 +383,34 @@ func validateOptionalFloatPositive(get configGetter, key string, errs *[]string)
 
 	if value <= 0 {
 		appendValidationError(errs, "%s must be > 0", key)
+	}
+}
+
+// validateOptionalFloatRange validates an optionally configured float key against a numeric range.
+// It accepts a getter, range bounds, inclusivity toggles, and an error collector pointer.
+func validateOptionalFloatRange(get configGetter, key string, min float64, max float64, includeMin bool, includeMax bool, errs *[]string) {
+	raw := get(key)
+	if raw == nil {
+		return
+	}
+
+	value, parseErr := parseStrictFloat(raw)
+	if parseErr != nil {
+		appendValidationError(errs, "%s must be a float", key)
+		return
+	}
+
+	validMin := value > min
+	if includeMin {
+		validMin = value >= min
+	}
+	validMax := value < max
+	if includeMax {
+		validMax = value <= max
+	}
+
+	if !validMin || !validMax {
+		appendValidationError(errs, "%s must be within range", key)
 	}
 }
 

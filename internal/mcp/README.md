@@ -3,7 +3,7 @@
 ## Overview
 
 - Implements an HTTP transport for the Model Context Protocol (MCP) at <https://mcp.laisky.com>.
-- Exposes optional tools: `web_search`, `web_fetch`, and `ask_user`; each tool is added only when its dependencies are configured.
+- Exposes optional tools including `web_search`, `web_fetch`, `ask_user`, `file_*`, and MCP-native memory lifecycle tools (`memory_before_turn`, `memory_after_turn`, `memory_run_maintenance`, `memory_list_dir_with_abstract`); each tool is added only when its dependencies are configured.
 - Purchase API_KEY at <https://wiki.laisky.com/projects/gpt/pay/#page_gpt_pay>.
 
 ## Architecture
@@ -17,6 +17,18 @@
   - `internal/mcp/calllog/http.go` exposes paginated call logs filtered by the caller’s API key hash.
 
 ## Tool Guide
+
+### memory_* lifecycle tools
+
+- **Purpose:** Move memory orchestration from agent clients into MCP server-side tools.
+- **Dependencies:** `settings.mcp.tools.memory.enabled=true`, `internal/mcp/files.Service`, and MCP database access for idempotency guards.
+- **Tools:**
+  - `memory_before_turn`: recalls facts + context and returns prepared `input_items`.
+  - `memory_after_turn`: persists one turn with idempotency and session serialization.
+  - `memory_run_maintenance`: runs compaction/retention/summary refresh.
+  - `memory_list_dir_with_abstract`: lists memory directories with abstract metadata.
+- **Storage:** Uses FileIO service as in-process storage adapter (no tool-to-tool loopback).
+- **Safety:** Request payload fields (`current_input`, `input_items`, `output_items`) are redacted in MCP logs and call logs.
 
 ### web_search
 

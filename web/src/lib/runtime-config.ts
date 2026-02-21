@@ -8,6 +8,7 @@ export interface ToolsConfig {
   get_user_request: boolean;
   extract_key_info: boolean;
   file_io: boolean;
+  memory: boolean;
 }
 
 /**
@@ -41,6 +42,7 @@ export const defaultToolsConfig: ToolsConfig = {
   get_user_request: true,
   extract_key_info: true,
   file_io: true,
+  memory: false,
 };
 
 /**

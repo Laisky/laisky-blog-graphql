@@ -15,7 +15,7 @@ interface NavItemConfig {
 interface ConsoleMenuItem extends NavItemConfig {
   newTab?: boolean;
   /** Tool key to check if enabled. If undefined, item is always shown. */
-  toolKey?: 'ask_user' | 'get_user_request' | 'web_search' | 'web_fetch' | 'extract_key_info' | 'file_io';
+  toolKey?: 'ask_user' | 'get_user_request' | 'web_search' | 'web_fetch' | 'extract_key_info' | 'file_io' | 'memory';
 }
 
 const navItems: NavItemConfig[] = [{ to: '/', label: 'Overview' }];

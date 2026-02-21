@@ -17,6 +17,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
@@ -40,23 +41,27 @@ type callRecorder interface {
 
 // Server wraps the MCP server state for the HTTP transport.
 type Server struct {
-	handler        http.Handler
-	logger         logSDK.Logger
-	webSearch      *tools.WebSearchTool
-	webFetch       *tools.WebFetchTool
-	askUser        *tools.AskUserTool
-	getUserRequest *tools.GetUserRequestTool
-	extractKeyInfo *tools.ExtractKeyInfoTool
-	fileStat       *tools.FileStatTool
-	fileRead       *tools.FileReadTool
-	fileWrite      *tools.FileWriteTool
-	fileDelete     *tools.FileDeleteTool
-	fileRename     *tools.FileRenameTool
-	fileList       *tools.FileListTool
-	fileSearch     *tools.FileSearchTool
-	mcpPipe        *tools.MCPPipeTool
-	callLogger     callRecorder
-	holdManager    *userrequests.HoldManager
+	handler                   http.Handler
+	logger                    logSDK.Logger
+	webSearch                 *tools.WebSearchTool
+	webFetch                  *tools.WebFetchTool
+	askUser                   *tools.AskUserTool
+	getUserRequest            *tools.GetUserRequestTool
+	extractKeyInfo            *tools.ExtractKeyInfoTool
+	fileStat                  *tools.FileStatTool
+	fileRead                  *tools.FileReadTool
+	fileWrite                 *tools.FileWriteTool
+	fileDelete                *tools.FileDeleteTool
+	fileRename                *tools.FileRenameTool
+	fileList                  *tools.FileListTool
+	fileSearch                *tools.FileSearchTool
+	memoryBeforeTurn          *tools.MemoryBeforeTurnTool
+	memoryAfterTurn           *tools.MemoryAfterTurnTool
+	memoryRunMaintenance      *tools.MemoryRunMaintenanceTool
+	memoryListDirWithAbstract *tools.MemoryListDirWithAbstractTool
+	mcpPipe                   *tools.MCPPipeTool
+	callLogger                callRecorder
+	holdManager               *userrequests.HoldManager
 }
 
 // NewServer constructs an MCP HTTP server.
@@ -68,8 +73,8 @@ type Server struct {
 // callLogger records tool invocations for auditing when provided.
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
-func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, fileService *files.Service, rdb *rlibs.DB, callLogger callRecorder, toolsSettings ToolsSettings, logger logSDK.Logger) (*Server, error) {
-	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && fileService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled {
+func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, fileService *files.Service, memoryService *mcpmemory.Service, rdb *rlibs.DB, callLogger callRecorder, toolsSettings ToolsSettings, logger logSDK.Logger) (*Server, error) {
+	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && fileService == nil && memoryService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
@@ -272,6 +277,38 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		serverLogger.Info("file tools disabled by configuration")
 	}
 
+	if memoryService != nil && toolsSettings.MemoryEnabled {
+		memoryBeforeTurnTool, err := tools.NewMemoryBeforeTurnTool(memoryService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init memory_before_turn tool")
+		}
+		s.memoryBeforeTurn = memoryBeforeTurnTool
+		mcpServer.AddTool(memoryBeforeTurnTool.Definition(), s.handleMemoryBeforeTurn)
+
+		memoryAfterTurnTool, err := tools.NewMemoryAfterTurnTool(memoryService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init memory_after_turn tool")
+		}
+		s.memoryAfterTurn = memoryAfterTurnTool
+		mcpServer.AddTool(memoryAfterTurnTool.Definition(), s.handleMemoryAfterTurn)
+
+		memoryMaintenanceTool, err := tools.NewMemoryRunMaintenanceTool(memoryService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init memory_run_maintenance tool")
+		}
+		s.memoryRunMaintenance = memoryMaintenanceTool
+		mcpServer.AddTool(memoryMaintenanceTool.Definition(), s.handleMemoryRunMaintenance)
+
+		memoryListTool, err := tools.NewMemoryListDirWithAbstractTool(memoryService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init memory_list_dir_with_abstract tool")
+		}
+		s.memoryListDirWithAbstract = memoryListTool
+		mcpServer.AddTool(memoryListTool.Definition(), s.handleMemoryListDirWithAbstract)
+	} else if memoryService != nil && !toolsSettings.MemoryEnabled {
+		serverLogger.Info("memory tools disabled by configuration")
+	}
+
 	if toolsSettings.MCPPipeEnabled {
 		pipeTool, err := tools.NewMCPPipeTool(
 			serverLogger.Named("mcp_pipe"),
@@ -307,6 +344,14 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 					return s.handleFileList(ctx, req)
 				case "file_search":
 					return s.handleFileSearch(ctx, req)
+				case "memory_before_turn":
+					return s.handleMemoryBeforeTurn(ctx, req)
+				case "memory_after_turn":
+					return s.handleMemoryAfterTurn(ctx, req)
+				case "memory_run_maintenance":
+					return s.handleMemoryRunMaintenance(ctx, req)
+				case "memory_list_dir_with_abstract":
+					return s.handleMemoryListDirWithAbstract(ctx, req)
 				default:
 					return mcp.NewToolResultError(fmt.Sprintf("unknown tool: %s", toolName)), nil
 				}
@@ -342,7 +387,7 @@ func (s *Server) AvailableToolNames() []string {
 		return []string{}
 	}
 
-	toolNames := make([]string, 0, 12)
+	toolNames := make([]string, 0, 16)
 	if s.webSearch != nil {
 		toolNames = append(toolNames, "web_search")
 	}
@@ -378,6 +423,18 @@ func (s *Server) AvailableToolNames() []string {
 	}
 	if s.fileSearch != nil {
 		toolNames = append(toolNames, "file_search")
+	}
+	if s.memoryBeforeTurn != nil {
+		toolNames = append(toolNames, "memory_before_turn")
+	}
+	if s.memoryAfterTurn != nil {
+		toolNames = append(toolNames, "memory_after_turn")
+	}
+	if s.memoryRunMaintenance != nil {
+		toolNames = append(toolNames, "memory_run_maintenance")
+	}
+	if s.memoryListDirWithAbstract != nil {
+		toolNames = append(toolNames, "memory_list_dir_with_abstract")
 	}
 	if s.mcpPipe != nil {
 		toolNames = append(toolNames, "mcp_pipe")

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 )
 
 // redactMCPBody redacts sensitive file content fields from MCP payloads.
@@ -53,6 +54,11 @@ func redactMCPMap(input map[string]any) map[string]any {
 		if _, ok := files.FileToolNames[toolName]; ok {
 			if args, ok := params["arguments"].(map[string]any); ok {
 				params["arguments"] = files.RedactToolArguments(toolName, args)
+			}
+		}
+		if _, ok := mcpmemory.ToolNames[toolName]; ok {
+			if args, ok := params["arguments"].(map[string]any); ok {
+				params["arguments"] = mcpmemory.RedactToolArguments(toolName, args)
 			}
 		}
 	}

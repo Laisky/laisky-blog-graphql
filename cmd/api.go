@@ -25,6 +25,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
@@ -376,6 +377,7 @@ func runAPI() error {
 
 		filesSettings := files.LoadSettingsFromConfig()
 		if mcpDB != nil {
+			memorySettings := mcpmemory.LoadSettingsFromConfig()
 			var credStore files.CredentialStore
 			if args.Rdb != nil {
 				credStore = files.NewRedisCredentialStore(args.Rdb.GetDB())
@@ -393,6 +395,13 @@ func runAPI() error {
 				args.FilesService = fileSvc
 				if startErr := fileSvc.StartIndexWorkers(ctx); startErr != nil {
 					logger.Warn("start file index workers", zap.Error(startErr))
+				}
+
+				memorySvc, memoryErr := mcpmemory.NewService(mcpDB.DB, fileSvc, memorySettings, logger.Named("mcp_memory"), nil)
+				if memoryErr != nil {
+					logger.Warn("memory service unavailable", zap.Error(memoryErr))
+				} else {
+					args.MemoryService = memorySvc
 				}
 			}
 		}
@@ -414,6 +423,7 @@ func runAPI() error {
 		zap.Bool("get_user_request_enabled", args.MCPToolsSettings.GetUserRequestEnabled),
 		zap.Bool("extract_key_info_enabled", args.MCPToolsSettings.ExtractKeyInfoEnabled),
 		zap.Bool("file_io_enabled", args.MCPToolsSettings.FileIOEnabled),
+		zap.Bool("memory_enabled", args.MCPToolsSettings.MemoryEnabled),
 	)
 
 	logger.Info("total startup initialization completed",

@@ -109,6 +109,19 @@ export function HomePage() {
       ),
     },
     {
+      key: 'memory',
+      enabled: toolsConfig.memory,
+      element: (
+        <ToolCard
+          title="memory"
+          description="Server-side turn memory lifecycle tools: before_turn, after_turn, maintenance, and directory abstracts."
+          icon={<Database className="h-5 w-5" />}
+          tags={['Context', 'Recall', 'Lifecycle']}
+          enabled={toolsConfig.memory}
+        />
+      ),
+    },
+    {
       key: 'call_logs',
       enabled: true,
       element: (

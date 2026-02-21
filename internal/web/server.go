@@ -178,7 +178,7 @@ func RunServer(addr string, resolver *Resolver) {
 	registerOneapiProxyRoutes(server, prefix)
 
 	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil || resolver.args.UserRequestService != nil || resolver.args.RAGService != nil || resolver.args.FilesService != nil) {
-		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.UserRequestService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.FilesService, resolver.args.Rdb, resolver.args.CallLogService, resolver.args.MCPToolsSettings, log.Logger)
+		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.UserRequestService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.FilesService, resolver.args.MemoryService, resolver.args.Rdb, resolver.args.CallLogService, resolver.args.MCPToolsSettings, log.Logger)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
@@ -366,6 +366,7 @@ func RunServer(addr string, resolver *Resolver) {
 			"get_user_request": true,
 			"extract_key_info": true,
 			"file_io":          true,
+			"memory":           false,
 		}
 		if resolver != nil {
 			toolsConfig["web_search"] = resolver.args.MCPToolsSettings.WebSearchEnabled
@@ -374,6 +375,7 @@ func RunServer(addr string, resolver *Resolver) {
 			toolsConfig["get_user_request"] = resolver.args.MCPToolsSettings.GetUserRequestEnabled
 			toolsConfig["extract_key_info"] = resolver.args.MCPToolsSettings.ExtractKeyInfoEnabled
 			toolsConfig["file_io"] = resolver.args.MCPToolsSettings.FileIOEnabled
+			toolsConfig["memory"] = resolver.args.MCPToolsSettings.MemoryEnabled
 		}
 
 		siteConfig := siteConfigs.resolveForRequest(ctx.Request)

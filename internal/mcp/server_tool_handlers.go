@@ -14,6 +14,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -91,6 +92,7 @@ func (s *Server) recordToolInvocation(ctx context.Context, toolName string, apiK
 
 	params := cloneArguments(args)
 	params = files.RedactToolArguments(toolName, params)
+	params = mcpmemory.RedactToolArguments(toolName, params)
 	status := calllog.StatusSuccess
 	errorMessage := ""
 
@@ -401,4 +403,95 @@ func (s *Server) handleMCPPipe(ctx context.Context, req mcp.CallToolRequest) (*m
 		return result, errors.WithStack(err)
 	}
 	return result, nil
+}
+
+// handleMemoryBeforeTurn executes the memory_before_turn MCP tool and records call logs.
+func (s *Server) handleMemoryBeforeTurn(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.memoryBeforeTurn == nil {
+		result := mcp.NewToolResultError("memory_before_turn tool is not available")
+		s.recordToolInvocation(ctx, "memory_before_turn", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.memoryBeforeTurn.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "memory_before_turn", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+// handleMemoryAfterTurn executes the memory_after_turn MCP tool and records call logs.
+func (s *Server) handleMemoryAfterTurn(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.memoryAfterTurn == nil {
+		result := mcp.NewToolResultError("memory_after_turn tool is not available")
+		s.recordToolInvocation(ctx, "memory_after_turn", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.memoryAfterTurn.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "memory_after_turn", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+// handleMemoryRunMaintenance executes memory maintenance and records call logs.
+func (s *Server) handleMemoryRunMaintenance(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.memoryRunMaintenance == nil {
+		result := mcp.NewToolResultError("memory_run_maintenance tool is not available")
+		s.recordToolInvocation(ctx, "memory_run_maintenance", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.memoryRunMaintenance.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "memory_run_maintenance", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+// handleMemoryListDirWithAbstract executes memory directory introspection and records call logs.
+func (s *Server) handleMemoryListDirWithAbstract(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.memoryListDirWithAbstract == nil {
+		result := mcp.NewToolResultError("memory_list_dir_with_abstract tool is not available")
+		s.recordToolInvocation(ctx, "memory_list_dir_with_abstract", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.memoryListDirWithAbstract.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "memory_list_dir_with_abstract", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+// wrapMemoryError maps memory service errors into typed calllog-safe errors.
+func wrapMemoryError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if typed, ok := mcpmemory.AsError(err); ok {
+		return errors.Errorf("memory error: %s", typed.Code)
+	}
+	return errors.WithStack(err)
 }

@@ -13,6 +13,7 @@ type ToolsSettings struct {
 	GetUserRequestEnabled bool
 	ExtractKeyInfoEnabled bool
 	FileIOEnabled         bool
+	MemoryEnabled         bool
 	MCPPipeEnabled        bool
 }
 
@@ -26,6 +27,7 @@ func LoadToolsSettingsFromConfig() ToolsSettings {
 		GetUserRequestEnabled: boolFromConfig("settings.mcp.tools.get_user_request.enabled", true),
 		ExtractKeyInfoEnabled: boolFromConfig("settings.mcp.tools.extract_key_info.enabled", true),
 		FileIOEnabled:         boolFromConfig("settings.mcp.tools.file_io.enabled", true),
+		MemoryEnabled:         boolFromConfig("settings.mcp.tools.memory.enabled", false),
 		MCPPipeEnabled:        boolFromConfig("settings.mcp.tools.mcp_pipe.enabled", true),
 	}
 }

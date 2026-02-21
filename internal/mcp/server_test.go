@@ -24,7 +24,7 @@ import (
 )
 
 func TestNewServerRequiresCapability(t *testing.T) {
-	srv, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, nil, ToolsSettings{}, glog.Shared)
+	srv, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, nil, nil, ToolsSettings{}, glog.Shared)
 	require.Nil(t, srv)
 	require.Error(t, err)
 }
@@ -88,6 +88,34 @@ func TestHandleGetUserRequestReturnsConfigurationError(t *testing.T) {
 	textContent, ok := result.Content[0].(mcpgo.TextContent)
 	require.True(t, ok)
 	require.Equal(t, "get_user_request tool is not available", textContent.Text)
+}
+
+func TestHandleMemoryBeforeTurnReturnsConfigurationError(t *testing.T) {
+	srv := &Server{}
+
+	result, err := srv.handleMemoryBeforeTurn(context.Background(), mcpgo.CallToolRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+
+	textContent, ok := result.Content[0].(mcpgo.TextContent)
+	require.True(t, ok)
+	require.Equal(t, "memory_before_turn tool is not available", textContent.Text)
+}
+
+func TestHandleMemoryAfterTurnReturnsConfigurationError(t *testing.T) {
+	srv := &Server{}
+
+	result, err := srv.handleMemoryAfterTurn(context.Background(), mcpgo.CallToolRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+
+	textContent, ok := result.Content[0].(mcpgo.TextContent)
+	require.True(t, ok)
+	require.Equal(t, "memory_after_turn tool is not available", textContent.Text)
 }
 
 type mockRecorder struct {
