@@ -5,7 +5,7 @@
 This PRD defines a POSIX-aligned, agent-safe FileIO MCP tool that provides:
 
 - shared, durable, project-scoped file storage across agents/clients
-- deterministic file operations (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_list`)
+- deterministic file operations (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`)
 - RAG-based project search (`file_search`) over indexed file chunks
 
 v1 delivery decisions:
@@ -268,7 +268,7 @@ Search behavior:
 
 ### 7.1 Indexing Trigger and Worker Model
 
-- `file_write` and `file_delete` enqueue index jobs (outbox pattern).
+- `file_write`, `file_delete`, and `file_rename` enqueue index jobs (outbox pattern).
 - Index build/update/delete is performed asynchronously by workers.
 - Jobs must be idempotent and deduplicated by latest file state.
 - Workers read active file content from `mcp_files`, split into chunks, and maintain embeddings + BM25 index rows.
@@ -315,7 +315,7 @@ Default candidate counts are `30 + 30`, configurable in the service configuratio
 
 - Sequential consistency is required within `(apikey_hash, project)` for file mutation operations.
 - Cross-instance consistency is required.
-- All mutating file operations (`file_write`, `file_delete`) must obtain:
+- All mutating file operations (`file_write`, `file_delete`, `file_rename`) must obtain:
   - `pg_advisory_xact_lock(hash(apikey_hash, project))`
 - Lock is transaction-scoped.
 - Lock acquisition timeout is configurable.

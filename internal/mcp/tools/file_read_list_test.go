@@ -40,6 +40,11 @@ func (s *readListStubService) Delete(context.Context, files.AuthContext, string,
 	return files.DeleteResult{}, nil
 }
 
+// Rename returns a stubbed rename response.
+func (s *readListStubService) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+	return files.RenameResult{}, nil
+}
+
 // List records the requested depth for assertions.
 func (s *readListStubService) List(_ context.Context, _ files.AuthContext, _ string, path string, depth, _ int) (files.ListResult, error) {
 	s.lastListDepth = depth

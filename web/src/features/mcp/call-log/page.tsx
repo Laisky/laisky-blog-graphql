@@ -21,6 +21,7 @@ const TOOL_OPTIONS: Array<{ label: string; value: string }> = [
   { label: 'file_read', value: 'file_read' },
   { label: 'file_write', value: 'file_write' },
   { label: 'file_delete', value: 'file_delete' },
+  { label: 'file_rename', value: 'file_rename' },
   { label: 'file_list', value: 'file_list' },
   { label: 'file_search', value: 'file_search' },
 ];

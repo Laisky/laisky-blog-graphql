@@ -78,6 +78,8 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 	require.NoError(t, err)
 	deleteTool, err := NewFileDeleteTool(svc)
 	require.NoError(t, err)
+	renameTool, err := NewFileRenameTool(svc)
+	require.NoError(t, err)
 
 	writeResp, err := writeTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
@@ -90,9 +92,19 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 	writePayload := decodeToolPayload(t, writeResp)
 	require.Equal(t, 11, asInt(t, writePayload["bytes_written"]))
 
+	renameResp, err := renameTool.Handle(authCtx, newToolReq(map[string]any{
+		"project":   "proj",
+		"from_path": "/docs/a.txt",
+		"to_path":   "/docs/b.txt",
+	}))
+	require.NoError(t, err)
+	require.False(t, renameResp.IsError)
+	renamePayload := decodeToolPayload(t, renameResp)
+	require.Equal(t, 1, asInt(t, renamePayload["moved_count"]))
+
 	statResp, err := statTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
-		"path":    "/docs/a.txt",
+		"path":    "/docs/b.txt",
 	}))
 	require.NoError(t, err)
 	require.False(t, statResp.IsError)
@@ -102,7 +114,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	readResp, err := readTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
-		"path":    "/docs/a.txt",
+		"path":    "/docs/b.txt",
 	}))
 	require.NoError(t, err)
 	require.False(t, readResp.IsError)
@@ -138,7 +150,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	deleteResp, err := deleteTool.Handle(authCtx, newToolReq(map[string]any{
 		"project":   "proj",
-		"path":      "/docs/a.txt",
+		"path":      "/docs/b.txt",
 		"recursive": false,
 	}))
 	require.NoError(t, err)
@@ -148,7 +160,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	statAfterDeleteResp, err := statTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
-		"path":    "/docs/a.txt",
+		"path":    "/docs/b.txt",
 	}))
 	require.NoError(t, err)
 	require.False(t, statAfterDeleteResp.IsError)

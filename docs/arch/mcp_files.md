@@ -1,6 +1,6 @@
 # MCP FileIO and `file_search` Technical Architecture Manual
 
-Last updated: 2026-02-11 (UTC)
+Last updated: 2026-02-21 (UTC)
 
 ## 1. Objective and Feasibility
 
@@ -60,6 +60,7 @@ The implementation must deliver all v1 capabilities below:
    - `file_read`
    - `file_write`
    - `file_delete`
+   - `file_rename`
    - `file_list`
 3. RAG retrieval over files:
    - `file_search`
@@ -115,6 +116,7 @@ Recommended tool-layer response payloads:
 - `file_read`: `{ content, content_encoding }`
 - `file_write`: `{ bytes_written }`
 - `file_delete`: `{ deleted_count }`
+- `file_rename`: `{ moved_count }`
 - `file_list`: `{ entries: FileEntry[], has_more }`
 - `file_search`: `{ chunks: ChunkEntry[] }`
 
@@ -130,6 +132,7 @@ Error payload:
 | no directory table                | directory synthesized from file path prefixes                 |
 | deterministic file ops            | explicit per-tool validators + mode/offset rules              |
 | advisory lock serialization       | mutation transaction wrapper in `lock.go`                     |
+| atomic rename/move semantics      | transactional path remap + dual outbox jobs per moved file    |
 | outbox async indexing             | `mcp_file_index_jobs` + worker loop                           |
 | eventual search consistency       | worker-based index visibility + freshness metrics             |
 | deleted files never searchable    | search SQL joins active `mcp_files` only                      |
@@ -152,10 +155,11 @@ Error payload:
 1. Client calls FileIO MCP tool with Authorization header.
 2. MCP transport normalizes authorization into trusted `AuthContext`.
 3. Tool validates input and calls `files.Service`.
-4. For writes/deletes:
+4. For writes/deletes/renames:
    - acquire advisory transaction lock for `(apikey_hash, project)`
    - mutate `mcp_files`
    - enqueue outbox job in same transaction
+   - for rename/move, enqueue `DELETE(old_path)` and `UPSERT(new_path)` per moved file
 5. Background worker consumes outbox jobs and refreshes chunk/vector/BM25 rows.
 6. `file_search` performs hybrid retrieval and optional rerank, then updates `last_served_at` only for returned chunks.
 
@@ -178,6 +182,7 @@ To keep files maintainable (<600 lines preferred), split by concern.
 - `migration.go`
 - `service_stat_read.go`
 - `service_write_delete.go`
+- `service_rename.go`
 - `service_list.go`
 - `service_search.go`
 - `index_jobs.go`
@@ -195,6 +200,7 @@ To keep files maintainable (<600 lines preferred), split by concern.
 - `file_read.go`
 - `file_write.go`
 - `file_delete.go`
+- `file_rename.go`
 - `file_list.go`
 - `file_search.go`
 
@@ -220,7 +226,7 @@ Implement one FileIO console entry:
   - browse by `project`
   - render directory tree per selected project
   - click file to view content
-  - provide action controls for core operations (stat/read/write/delete/list/search) within this unified page
+  - provide action controls for core operations (stat/read/write/delete/rename/list/search) within this unified page
 
 ## 6. Authorization and Tenant Isolation
 
@@ -488,7 +494,47 @@ Execution outline:
 6. enqueue `DELETE` outbox jobs for affected paths.
 7. commit and return deleted count.
 
-### 9.5 `file_list(project, path="", depth=1, limit=256)`
+### 9.5 `file_rename(project, from_path, to_path, overwrite=false)`
+
+Rename/move semantics:
+
+- supports file rename and directory subtree move.
+- source path must be non-root and can resolve to:
+  - exact active file
+  - synthesized directory (has active descendants)
+- destination path must be non-root and valid.
+- `from_path == to_path` is a successful no-op with `moved_count=0`.
+- destination parent segments must not resolve to active files (`NOT_DIRECTORY`).
+- directory move must not target its own subtree (`INVALID_PATH`), for example:
+  - `from_path=/docs`, `to_path=/docs/sub/new`
+- destination conflicts:
+  - `overwrite=false`: any active destination collision => `ALREADY_EXISTS`
+  - `overwrite=true`: only single-file source may replace an existing file at exact destination path
+  - directory move with destination collisions is rejected (`ALREADY_EXISTS`)
+
+Path remap rule:
+
+- for each source file path `src`, destination is:
+  - `dst = to_path + strings.TrimPrefix(src, from_path)`
+
+Execution outline:
+
+1. validate `project`, `from_path`, `to_path`, and `overwrite`.
+2. reject root source or root destination.
+3. if `from_path == to_path`, return `moved_count=0`.
+4. start transaction and acquire project advisory lock.
+5. resolve source file set:
+   - exact file match at `from_path`, or
+   - descendant files under `from_path + "/%"`, else `NOT_FOUND`.
+6. validate destination constraints and collision policy.
+7. apply transactional path remap update on `mcp_files` with `updated_at=now`.
+8. if overwrite-replace applies, soft-delete the replaced destination file first.
+9. enqueue outbox jobs per moved file:
+   - `DELETE` for `old_path`
+   - `UPSERT` for `new_path`
+10. commit and return `moved_count`.
+
+### 9.6 `file_list(project, path="", depth=1, limit=256)`
 
 - root path is `path=""`.
 - MCP compatibility: `path="/"` is accepted by the `file_list` tool adapter and normalized to `""` before service validation.
@@ -509,7 +555,7 @@ Execution outline:
 5. deduplicate entries by path.
 6. sort by `path ASC`, apply `limit`, compute `has_more`.
 
-### 9.6 `file_search(project, query, path_prefix="", limit=5)`
+### 9.7 `file_search(project, query, path_prefix="", limit=5)`
 
 - `query` must be non-empty after trim, else `INVALID_QUERY`.
 - `path_prefix` is raw string-prefix filter (not directory-boundary filter).
@@ -538,7 +584,7 @@ Sequential consistency for mutations within `(apikey_hash, project)`, across all
 
 ### 10.2 Advisory Lock
 
-Each mutating transaction (`file_write`, `file_delete`) must:
+Each mutating transaction (`file_write`, `file_delete`, `file_rename`) must:
 
 1. compute lock key from `apikey_hash + ":" + project`
 2. acquire transaction-scoped advisory lock (`pg_advisory_xact_lock` equivalent behavior)
@@ -556,12 +602,13 @@ Implementation detail:
 
 ## 11. Indexing Pipeline (Outbox + Worker)
 
-### 11.1 Producer Side (Write/Delete Transaction)
+### 11.1 Producer Side (Write/Delete/Rename Transaction)
 
 In the same DB transaction as file mutation:
 
 1. apply file mutation
 2. insert outbox row (`UPSERT` or `DELETE`)
+   - rename/move emits `DELETE(old_path)` + `UPSERT(new_path)` per moved file
 3. commit
 
 Outbox insertion must be idempotent-safe for repeated calls and retries.
@@ -750,12 +797,12 @@ Credential-source rule (v1 confirmed):
 
 1. Implement validators for project/path/content/offset.
 2. Implement advisory lock helper and mutation transaction wrapper.
-3. Implement `file_stat`, `file_read`, `file_write`, `file_delete`, `file_list`.
+3. Implement `file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`.
 4. Implement PRD-compliant error mapping and JSON tool errors.
 
 ### Phase 3: Search and Worker
 
-1. Implement outbox producer in write/delete code paths.
+1. Implement outbox producer in write/delete/rename code paths.
 2. Implement credential-envelope service (Redis TTL cache + KMS encrypt/decrypt).
 3. Implement index workers, retry/backoff, dedupe, and retention purge.
 4. Implement chunker with stable byte offsets.
@@ -790,7 +837,8 @@ Use `github.com/stretchr/testify/require` throughout.
 
 ### 17.2 Service-Level Tests
 
-- write/read/list/delete scenarios across nested paths
+- write/read/list/delete/rename scenarios across nested paths
+- file rename and directory move conflict cases (`ALREADY_EXISTS`, `NOT_DIRECTORY`, subtree loops)
 - root wipe permission switch
 - quota enforcement cases
 - tenant isolation (`apikey_hash` separation)
@@ -798,7 +846,7 @@ Use `github.com/stretchr/testify/require` throughout.
 
 ### 17.3 Worker/Search Tests
 
-- outbox enqueue on write/delete
+- outbox enqueue on write/delete/rename
 - worker dedupe and retry/backoff
 - credential envelope encrypt/decrypt round-trip and immediate delete after use
 - missing/expired envelope triggers retry and never platform-key fallback
@@ -875,7 +923,7 @@ For async index workers:
 
 The implementation is done only when all are true:
 
-1. All six tools are available and PRD behavior matches exactly.
+1. All seven tools are available and PRD behavior matches exactly.
 2. Tenant isolation is enforced by `apikey_hash` in every read/write/search/index path.
 3. Mutation paths use project-level advisory transaction locks with timeout -> `RESOURCE_BUSY`.
 4. Outbox worker indexing is operational with retries and dedupe.

@@ -1,4 +1,5 @@
 import {
+  ArrowRightLeft,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -58,6 +59,10 @@ type FileWritePayload = {
 
 type FileDeletePayload = {
   deleted_count: number;
+};
+
+type FileRenamePayload = {
+  moved_count: number;
 };
 
 type FileSearchChunk = {
@@ -279,6 +284,13 @@ export function FileIOPage() {
   const [deleteInfo, setDeleteInfo] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [renameFromPath, setRenameFromPath] = useState(persistedInputs.renameFromPath ?? '');
+  const [renameToPath, setRenameToPath] = useState(persistedInputs.renameToPath ?? '');
+  const [renameOverwrite, setRenameOverwrite] = useState(persistedInputs.renameOverwrite ?? false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renameInfo, setRenameInfo] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState(persistedInputs.searchQuery ?? '');
   const [searchPrefix, setSearchPrefix] = useState(persistedInputs.searchPrefix ?? '');
   const [searchLimit, setSearchLimit] = useState(persistedInputs.searchLimit ?? 5);
@@ -304,6 +316,9 @@ export function FileIOPage() {
     writeContent,
     deletePath,
     deleteRecursive,
+    renameFromPath,
+    renameToPath,
+    renameOverwrite,
     searchQuery,
     searchPrefix,
     searchLimit,
@@ -550,6 +565,38 @@ export function FileIOPage() {
     }
   }
 
+  async function submitRename() {
+    setRenameError(null);
+    setRenameInfo(null);
+    setIsRenaming(true);
+    try {
+      const payload = await callTool<FileRenamePayload>('file_rename', {
+        project,
+        from_path: renameFromPath,
+        to_path: renameToPath,
+        overwrite: renameOverwrite,
+      });
+      setRenameInfo(`Moved ${payload.moved_count} item(s).`);
+      if (selectedPath && selectedPath === renameFromPath) {
+        setSelectedPath(renameToPath);
+      }
+      if (writePath === renameFromPath) {
+        setWritePath(renameToPath);
+      }
+      if (deletePath === renameFromPath) {
+        setDeletePath(renameToPath);
+      }
+      if (renameToPath) {
+        await loadFile(renameToPath);
+      }
+      await loadList();
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : 'Failed to rename path.');
+    } finally {
+      setIsRenaming(false);
+    }
+  }
+
   function openFilePreview(targetPath: string) {
     setIsFilePreviewOpen(true);
     void loadFile(targetPath);
@@ -644,6 +691,13 @@ export function FileIOPage() {
                   <span className="font-mono text-sm text-primary">file_delete</span>
                 </div>
                 <p className="text-sm text-muted-foreground">Remove specific files or recursively delete directory subtrees.</p>
+              </div>
+
+              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
+                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+                  <span className="font-mono text-sm text-primary">file_rename</span>
+                </div>
+                <p className="text-sm text-muted-foreground">Rename or move files and directory trees with explicit overwrite control.</p>
               </div>
             </div>
 
@@ -753,6 +807,7 @@ export function FileIOPage() {
                         openFilePreview(e.path);
                         setWritePath(e.path);
                         setDeletePath(e.path);
+                        setRenameFromPath(e.path);
                       }}
                       selectedPath={selectedPath}
                     />
@@ -764,7 +819,7 @@ export function FileIOPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
         <Card className="border border-border/60 bg-card">
           <CardHeader>
             <CardTitle className="text-xl">Write</CardTitle>
@@ -831,6 +886,58 @@ export function FileIOPage() {
               </Button>
               {writeInfo && <span className="text-sm text-emerald-600">{writeInfo}</span>}
               {writeError && <span className="text-sm text-destructive">{writeError}</span>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border/60 bg-card">
+          <CardHeader>
+            <CardTitle className="text-xl">Rename</CardTitle>
+            <CardDescription>Rename or move a file or directory path.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <label htmlFor="file-io-rename-from" className={inputLabelClass}>
+                Source Path
+              </label>
+              <Input
+                id="file-io-rename-from"
+                placeholder="/path/to/source"
+                value={renameFromPath}
+                onChange={(event) => setRenameFromPath(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="file-io-rename-to" className={inputLabelClass}>
+                Destination Path
+              </label>
+              <Input
+                id="file-io-rename-to"
+                placeholder="/path/to/destination"
+                value={renameToPath}
+                onChange={(event) => setRenameToPath(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <span className={inputLabelClass}>Rename Options</span>
+              <label htmlFor="file-io-rename-overwrite" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  id="file-io-rename-overwrite"
+                  type="checkbox"
+                  checked={renameOverwrite}
+                  onChange={(event) => setRenameOverwrite(event.target.checked)}
+                  className="h-4 w-4 rounded border-border"
+                />
+                Overwrite destination file when supported
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="button" onClick={submitRename} disabled={!project || !renameFromPath || !renameToPath || isRenaming}>
+                <ArrowRightLeft className={cn('mr-2 h-4 w-4', isRenaming && 'animate-pulse')} />
+                Rename
+              </Button>
+              {renameInfo && <span className="text-sm text-emerald-600">{renameInfo}</span>}
+              {renameError && <span className="text-sm text-destructive">{renameError}</span>}
             </div>
           </CardContent>
         </Card>

@@ -1,6 +1,6 @@
 # MCP FileIO User Manual
 
-This manual is for end users and integrators who want to call `file_stat`, `file_read`, `file_write`, `file_delete`, `file_list`, and `file_search` through MCP.
+This manual is for end users and integrators who want to call `file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`, and `file_search` through MCP.
 
 ## Menu
 
@@ -27,6 +27,9 @@ This manual is for end users and integrators who want to call `file_stat`, `file
     - [5.6 `file_delete`](#56-file_delete)
       - [Example A: delete one file](#example-a-delete-one-file)
       - [Example B: recursively delete a directory](#example-b-recursively-delete-a-directory)
+    - [5.7 `file_rename`](#57-file_rename)
+      - [Example A: rename one file](#example-a-rename-one-file)
+      - [Example B: move a directory subtree](#example-b-move-a-directory-subtree)
   - [6. Common error codes](#6-common-error-codes)
   - [7. Minimal end-to-end flow](#7-minimal-end-to-end-flow)
   - [8. Integration best practices](#8-integration-best-practices)
@@ -40,6 +43,7 @@ You can:
 - Read and write files under a specific `project` (text content, `utf-8`).
 - Browse directories (directories are logical/implicit).
 - Delete a file or a directory subtree.
+- Rename or move files and directory trees.
 - Search indexed file content with `file_search`.
 
 ## 2. Quick start (5 minutes)
@@ -416,11 +420,64 @@ Success response example:
 
 > Root deletion is not allowed (`path=""` returns `PERMISSION_DENIED`).
 
+### 5.7 `file_rename`
+
+Rename or move a file/directory path.
+
+- Required: `project`, `from_path`, `to_path`
+- Optional:
+  - `overwrite`: default `false`; only applies to file rename target replacement
+
+#### Example A: rename one file
+
+```bash
+mcp_call '{
+	"jsonrpc":"2.0",
+	"id":109,
+	"method":"tools/call",
+	"params":{
+		"name":"file_rename",
+		"arguments":{
+			"project":"demo",
+			"from_path":"/docs/readme.txt",
+			"to_path":"/docs/guide.txt",
+			"overwrite":false
+		}
+	}
+}'
+```
+
+#### Example B: move a directory subtree
+
+```bash
+mcp_call '{
+	"jsonrpc":"2.0",
+	"id":110,
+	"method":"tools/call",
+	"params":{
+		"name":"file_rename",
+		"arguments":{
+			"project":"demo",
+			"from_path":"/docs",
+			"to_path":"/archive/docs",
+			"overwrite":false
+		}
+	}
+}'
+```
+
+Success response example:
+
+```json
+{ "moved_count": 3 }
+```
+
 ## 6. Common error codes
 
 - `INVALID_PATH`: invalid `project` or `path`
 - `INVALID_OFFSET`: invalid offset/length/depth/mode position
 - `NOT_FOUND`: target path does not exist
+- `ALREADY_EXISTS`: destination path already exists in rename/move/write-conflict scenarios
 - `IS_DIRECTORY`: file operation used on directory path
 - `NOT_DIRECTORY`: a parent segment is an existing file
 - `NOT_EMPTY`: directory is not empty and `recursive=false`
@@ -443,10 +500,13 @@ mcp_call '{"jsonrpc":"2.0","id":202,"method":"tools/call","params":{"name":"file
 mcp_call '{"jsonrpc":"2.0","id":203,"method":"tools/call","params":{"name":"file_list","arguments":{"project":"demo","path":"/quick","depth":1,"limit":20}}}'
 
 # 4) Search
-mcp_call '{"jsonrpc":"2.0","id":204,"method":"tools/call","params":{"name":"file_search","arguments":{"project":"demo","query":"hello","limit":5}}}'
+mcp_call '{"jsonrpc":"2.0","id":204,"method":"tools/call","params":{"name":"file_rename","arguments":{"project":"demo","from_path":"/quick/start.txt","to_path":"/quick/start-renamed.txt","overwrite":false}}}'
 
 # 5) Delete
-mcp_call '{"jsonrpc":"2.0","id":205,"method":"tools/call","params":{"name":"file_delete","arguments":{"project":"demo","path":"/quick/start.txt","recursive":false}}}'
+mcp_call '{"jsonrpc":"2.0","id":205,"method":"tools/call","params":{"name":"file_search","arguments":{"project":"demo","query":"hello","limit":5}}}'
+
+# 6) Delete
+mcp_call '{"jsonrpc":"2.0","id":206,"method":"tools/call","params":{"name":"file_delete","arguments":{"project":"demo","path":"/quick/start-renamed.txt","recursive":false}}}'
 ```
 
 ## 8. Integration best practices

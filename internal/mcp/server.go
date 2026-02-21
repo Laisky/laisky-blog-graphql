@@ -51,6 +51,7 @@ type Server struct {
 	fileRead       *tools.FileReadTool
 	fileWrite      *tools.FileWriteTool
 	fileDelete     *tools.FileDeleteTool
+	fileRename     *tools.FileRenameTool
 	fileList       *tools.FileListTool
 	fileSearch     *tools.FileSearchTool
 	mcpPipe        *tools.MCPPipeTool
@@ -247,6 +248,13 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		s.fileDelete = fileDeleteTool
 		mcpServer.AddTool(fileDeleteTool.Definition(), s.handleFileDelete)
 
+		fileRenameTool, err := tools.NewFileRenameTool(fileService)
+		if err != nil {
+			return nil, errors.Wrap(err, "init file_rename tool")
+		}
+		s.fileRename = fileRenameTool
+		mcpServer.AddTool(fileRenameTool.Definition(), s.handleFileRename)
+
 		fileListTool, err := tools.NewFileListTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_list tool")
@@ -293,6 +301,8 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 					return s.handleFileWrite(ctx, req)
 				case "file_delete":
 					return s.handleFileDelete(ctx, req)
+				case "file_rename":
+					return s.handleFileRename(ctx, req)
 				case "file_list":
 					return s.handleFileList(ctx, req)
 				case "file_search":
@@ -359,6 +369,9 @@ func (s *Server) AvailableToolNames() []string {
 	}
 	if s.fileDelete != nil {
 		toolNames = append(toolNames, "file_delete")
+	}
+	if s.fileRename != nil {
+		toolNames = append(toolNames, "file_rename")
 	}
 	if s.fileList != nil {
 		toolNames = append(toolNames, "file_list")

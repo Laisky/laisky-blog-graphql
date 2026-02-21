@@ -12,6 +12,7 @@ type FileService interface {
 	Read(context.Context, files.AuthContext, string, string, int64, int64) (files.ReadResult, error)
 	Write(context.Context, files.AuthContext, string, string, string, string, int64, files.WriteMode) (files.WriteResult, error)
 	Delete(context.Context, files.AuthContext, string, string, bool) (files.DeleteResult, error)
+	Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error)
 	List(context.Context, files.AuthContext, string, string, int, int) (files.ListResult, error)
 	Search(context.Context, files.AuthContext, string, string, string, int) (files.SearchResult, error)
 }

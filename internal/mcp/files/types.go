@@ -75,6 +75,11 @@ type DeleteResult struct {
 	DeletedCount int
 }
 
+// RenameResult returns the file_rename outcome.
+type RenameResult struct {
+	MovedCount int
+}
+
 // ListResult returns the file_list outcome.
 type ListResult struct {
 	Entries []FileEntry

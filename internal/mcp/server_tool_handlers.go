@@ -326,6 +326,25 @@ func (s *Server) handleFileDelete(ctx context.Context, req mcp.CallToolRequest) 
 	return result, nil
 }
 
+func (s *Server) handleFileRename(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.fileRename == nil {
+		result := mcp.NewToolResultError("file_rename tool is not available")
+		s.recordToolInvocation(ctx, "file_rename", apiKey, args, time.Now().UTC(), 0, 0, result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.fileRename.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "file_rename", apiKey, args, start, duration, 0, result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
 func (s *Server) handleFileList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	apiKey := apiKeyFromContext(ctx)
 	args := argumentsMap(req.Params.Arguments)

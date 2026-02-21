@@ -13,7 +13,8 @@ import (
 )
 
 type stubFileService struct {
-	writeErr error
+	writeErr  error
+	renameErr error
 }
 
 // Stat returns a stubbed stat result for tests.
@@ -34,6 +35,11 @@ func (s stubFileService) Write(context.Context, files.AuthContext, string, strin
 // Delete returns a stubbed delete result for tests.
 func (s stubFileService) Delete(context.Context, files.AuthContext, string, string, bool) (files.DeleteResult, error) {
 	return files.DeleteResult{}, nil
+}
+
+// Rename returns the configured error for tests.
+func (s stubFileService) Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error) {
+	return files.RenameResult{}, s.renameErr
 }
 
 // List returns a stubbed list result for tests.

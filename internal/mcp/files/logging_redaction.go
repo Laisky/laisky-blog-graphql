@@ -8,6 +8,7 @@ var FileToolNames = map[string]struct{}{
 	"file_read":   {},
 	"file_write":  {},
 	"file_delete": {},
+	"file_rename": {},
 	"file_list":   {},
 	"file_search": {},
 }

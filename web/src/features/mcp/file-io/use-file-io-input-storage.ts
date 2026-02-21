@@ -18,6 +18,9 @@ export type FileIOPersistedInputs = {
   writeContent: string;
   deletePath: string;
   deleteRecursive: boolean;
+  renameFromPath: string;
+  renameToPath: string;
+  renameOverwrite: boolean;
   searchQuery: string;
   searchPrefix: string;
   searchLimit: number;
@@ -59,6 +62,9 @@ export function usePersistFileIOInputs(inputs: FileIOPersistedInputs): void {
     writeContent,
     deletePath,
     deleteRecursive,
+    renameFromPath,
+    renameToPath,
+    renameOverwrite,
     searchQuery,
     searchPrefix,
     searchLimit,
@@ -82,6 +88,9 @@ export function usePersistFileIOInputs(inputs: FileIOPersistedInputs): void {
       writeContent,
       deletePath,
       deleteRecursive,
+      renameFromPath,
+      renameToPath,
+      renameOverwrite,
       searchQuery,
       searchPrefix,
       searchLimit,
@@ -101,6 +110,9 @@ export function usePersistFileIOInputs(inputs: FileIOPersistedInputs): void {
     writeContent,
     deletePath,
     deleteRecursive,
+    renameFromPath,
+    renameToPath,
+    renameOverwrite,
     searchQuery,
     searchPrefix,
     searchLimit,
