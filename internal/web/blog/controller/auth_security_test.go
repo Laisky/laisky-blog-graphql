@@ -47,3 +47,24 @@ func TestBlogLoginInputLength(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input too long")
 }
+
+func TestValidateInputLengthRuneAware(t *testing.T) {
+	require.NoError(t, validateInputLength(2, "😀😀"))
+
+	err := validateInputLength(1, "😀😀")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "max 1 characters allowed")
+
+	err = validateInputLength(100, strings.Repeat("😀", 101))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "max 100 characters allowed")
+}
+
+func TestUserRegisterInputLengthWithMultiByteCharacters(t *testing.T) {
+	r := &MutationResolver{}
+	ctx := context.Background()
+
+	_, err := r.UserRegister(ctx, strings.Repeat("😀", 101), "pass", "name", "captcha")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "input too long")
+}

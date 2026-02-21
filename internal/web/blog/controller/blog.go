@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Laisky/errors/v2"
 	ginMw "github.com/Laisky/gin-middlewares/v7"
@@ -341,16 +342,22 @@ func (r *MutationResolver) UserLogin(ctx context.Context,
 func (r *MutationResolver) UserRegister(ctx context.Context,
 	account string, password string, displayName string, captcha string) (
 	*models.UserRegisterResponse, error) {
+	logger := ginMw.GetLogger(ctx).Named("user_register")
 	if err := validateInputLength(100, account, password, displayName); err != nil {
+		logger.Debug("user register validation failed",
+			zap.Int("account_len", utf8.RuneCountInString(account)),
+			zap.Int("password_len", utf8.RuneCountInString(password)),
+			zap.Int("display_name_len", utf8.RuneCountInString(displayName)),
+			zap.Int("captcha_len", utf8.RuneCountInString(captcha)),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	if err := validateInputLength(500, captcha); err != nil {
-		return nil, err
-	}
-	if err := validateInputLength(100, account, password, displayName); err != nil {
-		return nil, err
-	}
-	if err := validateInputLength(500, captcha); err != nil {
+		logger.Debug("user register captcha validation failed",
+			zap.Int("captcha_len", utf8.RuneCountInString(captcha)),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	_, err := r.svc.UserRegister(ctx, account, password, displayName)
@@ -406,11 +413,16 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
 ) (resp *models.BlogLoginResponse, err error) {
+	logger := ginMw.GetLogger(ctx).Named("blog_login")
 	if err := validateInputLength(100, account, password); err != nil {
+		logger.Debug("blog login validation failed",
+			zap.Int("account_len", utf8.RuneCountInString(account)),
+			zap.Int("password_len", utf8.RuneCountInString(password)),
+			zap.Error(err),
+		)
 		return nil, errors.Wrap(err, "validate input length")
 	}
 
-	logger := ginMw.GetLogger(ctx).Named("blog_login")
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
 		if !errors.Is(err, model.ErrInvalidCredentials) {
