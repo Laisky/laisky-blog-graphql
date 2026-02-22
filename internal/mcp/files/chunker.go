@@ -24,7 +24,7 @@ type DefaultChunker struct {
 func (c DefaultChunker) Split(content string) []Chunk {
 	maxBytes := c.MaxBytes
 	if maxBytes <= 0 {
-		maxBytes = 1500
+		maxBytes = 500
 	}
 	if content == "" {
 		return nil

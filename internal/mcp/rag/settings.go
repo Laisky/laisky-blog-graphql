@@ -28,7 +28,7 @@ func LoadSettingsFromConfig() Settings {
 		TopKDefault:      intFromConfig("settings.mcp.extract_key_info.top_k_default", 5),
 		TopKLimit:        intFromConfig("settings.mcp.extract_key_info.top_k_limit", 20),
 		MaxMaterialsSize: intFromConfig("settings.mcp.extract_key_info.max_materials_size", 10_000_000),
-		MaxChunkChars:    intFromConfig("settings.mcp.extract_key_info.max_chunk_chars", 1500),
+		MaxChunkChars:    intFromConfig("settings.mcp.extract_key_info.max_chunk_chars", 500),
 		SemanticWeight:   floatFromConfig("settings.mcp.extract_key_info.semantic_weight", 0.65),
 		LexicalWeight:    floatFromConfig("settings.mcp.extract_key_info.lexical_weight", 0.35),
 		EmbeddingModel:   strings.TrimSpace(gconfig.S.GetString("settings.openai.embedding_model")),
@@ -48,7 +48,7 @@ func LoadSettingsFromConfig() Settings {
 		cfg.MaxMaterialsSize = 10_000_000
 	}
 	if cfg.MaxChunkChars <= 200 {
-		cfg.MaxChunkChars = 1500
+		cfg.MaxChunkChars = 500
 	}
 	if cfg.SemanticWeight <= 0 {
 		cfg.SemanticWeight = 0.65
@@ -66,6 +66,9 @@ func LoadSettingsFromConfig() Settings {
 	}
 	if cfg.EmbeddingModel == "" {
 		cfg.EmbeddingModel = "text-embedding-3-small"
+	}
+	if cfg.OpenAIBaseURL == "" {
+		cfg.OpenAIBaseURL = "https://oneapi.laisky.com"
 	}
 	return cfg
 }

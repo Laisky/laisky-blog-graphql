@@ -43,12 +43,15 @@ type SearchSettings struct {
 
 // IndexSettings configures index worker behavior.
 type IndexSettings struct {
-	Workers      int
-	BatchSize    int
-	RetryMax     int
-	RetryBackoff time.Duration
-	ChunkBytes   int
-	FreshnessSLO time.Duration
+	Workers        int
+	BatchSize      int
+	RetryMax       int
+	RetryBackoff   time.Duration
+	ChunkBytes     int
+	SummaryModel   string
+	SummaryBaseURL string
+	SummaryTimeout time.Duration
+	FreshnessSLO   time.Duration
 }
 
 // SecuritySettings configures credential handoff encryption and cache usage.
@@ -86,10 +89,10 @@ func LoadSettingsFromConfig() Settings {
 		EmbeddingBaseURL: strings.TrimSpace(gconfig.S.GetString("settings.openai.base_url")),
 		Search: SearchSettings{
 			Enabled:           boolFromConfig("settings.mcp.files.search.enabled", true),
-			LimitDefault:      intFromConfig("settings.mcp.files.search.limit_default", 5),
+			LimitDefault:      intFromConfig("settings.mcp.files.search.limit_default", 20),
 			LimitMax:          intFromConfig("settings.mcp.files.search.limit_max", 20),
-			VectorCandidates:  intFromConfig("settings.mcp.files.search.vector_candidates", 30),
-			LexicalCandidates: intFromConfig("settings.mcp.files.search.bm25_candidates", 30),
+			VectorCandidates:  intFromConfig("settings.mcp.files.search.vector_candidates", 100),
+			LexicalCandidates: intFromConfig("settings.mcp.files.search.bm25_candidates", 100),
 			RerankModel:       strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.search.rerank.model")),
 			RerankEndpoint:    strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.search.rerank.endpoint")),
 			RerankTimeout:     time.Duration(intFromConfig("settings.mcp.files.search.rerank.timeout_ms", 6000)) * time.Millisecond,
@@ -97,12 +100,15 @@ func LoadSettingsFromConfig() Settings {
 			LexicalWeight:     floatFromConfig("settings.mcp.files.search.fallback.lexical_weight", 0.35),
 		},
 		Index: IndexSettings{
-			Workers:      intFromConfig("settings.mcp.files.index.workers", 2),
-			BatchSize:    intFromConfig("settings.mcp.files.index.batch_size", 20),
-			RetryMax:     intFromConfig("settings.mcp.files.index.retry_max", 5),
-			RetryBackoff: time.Duration(intFromConfig("settings.mcp.files.index.retry_backoff_ms", 1000)) * time.Millisecond,
-			ChunkBytes:   intFromConfig("settings.mcp.files.index.chunk_bytes", 1500),
-			FreshnessSLO: time.Duration(intFromConfig("settings.mcp.files.index.slo_p95_seconds", 30)) * time.Second,
+			Workers:        intFromConfig("settings.mcp.files.index.workers", 2),
+			BatchSize:      intFromConfig("settings.mcp.files.index.batch_size", 20),
+			RetryMax:       intFromConfig("settings.mcp.files.index.retry_max", 5),
+			RetryBackoff:   time.Duration(intFromConfig("settings.mcp.files.index.retry_backoff_ms", 1000)) * time.Millisecond,
+			ChunkBytes:     intFromConfig("settings.mcp.files.index.chunk_bytes", 500),
+			SummaryModel:   strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.index.summary.model")),
+			SummaryBaseURL: strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.index.summary.base_url")),
+			SummaryTimeout: time.Duration(intFromConfig("settings.mcp.files.index.summary.timeout_ms", 8000)) * time.Millisecond,
+			FreshnessSLO:   time.Duration(intFromConfig("settings.mcp.files.index.slo_p95_seconds", 30)) * time.Second,
 		},
 		Security: SecuritySettings{
 			EncryptionKEKs:        uint16StringMapFromConfig("settings.mcp.files.security.encryption_keks"),
@@ -138,8 +144,11 @@ func LoadSettingsFromConfig() Settings {
 	if settings.EmbeddingModel == "" {
 		settings.EmbeddingModel = "text-embedding-3-small"
 	}
+	if settings.EmbeddingBaseURL == "" {
+		settings.EmbeddingBaseURL = "https://oneapi.laisky.com"
+	}
 	if settings.Search.LimitDefault <= 0 {
-		settings.Search.LimitDefault = 5
+		settings.Search.LimitDefault = 20
 	}
 	if settings.Search.LimitMax <= 0 {
 		settings.Search.LimitMax = 20
@@ -148,10 +157,10 @@ func LoadSettingsFromConfig() Settings {
 		settings.Search.LimitDefault = settings.Search.LimitMax
 	}
 	if settings.Search.VectorCandidates <= 0 {
-		settings.Search.VectorCandidates = 30
+		settings.Search.VectorCandidates = 100
 	}
 	if settings.Search.LexicalCandidates <= 0 {
-		settings.Search.LexicalCandidates = 30
+		settings.Search.LexicalCandidates = 100
 	}
 	if settings.Search.RerankModel == "" {
 		settings.Search.RerankModel = "rerank-v3.5"
@@ -176,7 +185,16 @@ func LoadSettingsFromConfig() Settings {
 		settings.Index.RetryBackoff = time.Second
 	}
 	if settings.Index.ChunkBytes <= 0 {
-		settings.Index.ChunkBytes = 1500
+		settings.Index.ChunkBytes = 500
+	}
+	if settings.Index.SummaryModel == "" {
+		settings.Index.SummaryModel = "openai/gpt-oss-120b"
+	}
+	if settings.Index.SummaryBaseURL == "" {
+		settings.Index.SummaryBaseURL = "https://oneapi.laisky.com"
+	}
+	if settings.Index.SummaryTimeout <= 0 {
+		settings.Index.SummaryTimeout = 8 * time.Second
 	}
 	if settings.Index.FreshnessSLO <= 0 {
 		settings.Index.FreshnessSLO = 30 * time.Second

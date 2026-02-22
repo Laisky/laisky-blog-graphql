@@ -2,6 +2,7 @@ package files
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/pgvector/pgvector-go"
@@ -59,4 +60,33 @@ func TestIndexWorkerRetriesWhenCredentialMissing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "pending", job.Status)
 	require.Equal(t, 1, job.RetryCount)
+}
+
+// TestIndexWorkerUsesContextualizedInputs verifies indexing prepends generated context before embedding.
+func TestIndexWorkerUsesContextualizedInputs(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	capturedInputs := []string{}
+	embedder := testEmbedder{
+		vector:       pgvector.NewVector([]float32{1, 0}),
+		inputCapture: &capturedInputs,
+	}
+	store := &memoryCredentialStore{}
+	svc := newTestService(t, settings, embedder, store)
+	svc.contextualizer = testContextualizer{contexts: []string{"context-for-chunk"}}
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "alpha beta gamma delta", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	worker := svc.NewIndexWorker()
+	require.NoError(t, worker.RunOnce(context.Background()))
+	require.NotEmpty(t, capturedInputs)
+	require.True(t, strings.Contains(capturedInputs[0], "context-for-chunk"))
+	require.True(t, strings.Contains(capturedInputs[0], "alpha beta gamma delta"))
 }

@@ -271,7 +271,7 @@ func searchFallbackSnippet(content, query string, maxBytes int) (int64, int64, s
 		return 0, 0, ""
 	}
 	if maxBytes <= 0 {
-		maxBytes = 1500
+		maxBytes = 500
 	}
 	contentLen := len(content)
 	if contentLen <= maxBytes {

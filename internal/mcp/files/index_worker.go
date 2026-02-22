@@ -222,8 +222,27 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 	}
 
 	chunks := s.chunker.Split(string(file.Content))
-	plan := s.buildEmbeddingPlan(ctx, job, chunks)
-	if err := s.replaceIndexRows(ctx, job, chunks, plan.vectors); err != nil {
+	apiKey := ""
+	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
+	if job.FileUpdatedAt != nil {
+		ref.UpdatedAt = *job.FileUpdatedAt
+	}
+	if s.contextualizer != nil || s.embedder != nil {
+		loadedAPIKey, loadErr := s.loadCredential(ctx, ref)
+		if loadErr != nil {
+			s.LoggerFromContext(ctx).Debug("load credential failed before indexing",
+				zap.String("project", job.Project),
+				zap.String("file_path", job.FilePath),
+				zap.Error(loadErr),
+			)
+		} else {
+			apiKey = loadedAPIKey
+		}
+	}
+
+	indexContents := s.buildContextualizedChunkInputs(ctx, apiKey, string(file.Content), job.FilePath, chunks)
+	plan := s.buildEmbeddingPlan(ctx, job, indexContents)
+	if err := s.replaceIndexRows(ctx, job, chunks, indexContents, plan.vectors); err != nil {
 		return err
 	}
 	if plan.err != nil {
@@ -236,11 +255,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 		return plan.err
 	}
 
-	if s.embedder != nil {
-		ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
-		if job.FileUpdatedAt != nil {
-			ref.UpdatedAt = *job.FileUpdatedAt
-		}
+	if s.embedder != nil || s.contextualizer != nil {
 		if err := s.deleteCredential(ctx, ref); err != nil {
 			return err
 		}
@@ -257,8 +272,8 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 }
 
 // buildEmbeddingPlan prepares vectors when semantic indexing is available.
-func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, chunks []Chunk) embeddingPlan {
-	if len(chunks) == 0 {
+func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, indexContents []string) embeddingPlan {
+	if len(indexContents) == 0 {
 		return embeddingPlan{}
 	}
 	if s.embedder == nil {
@@ -275,16 +290,11 @@ func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, chun
 		return embeddingPlan{err: err}
 	}
 
-	contents := make([]string, 0, len(chunks))
-	for _, chunk := range chunks {
-		contents = append(contents, chunk.Content)
-	}
-
-	vectors, err := s.embedder.EmbedTexts(ctx, apiKey, contents)
+	vectors, err := s.embedder.EmbedTexts(ctx, apiKey, indexContents)
 	if err != nil {
 		return embeddingPlan{err: errors.Wrap(err, "embed chunk contents")}
 	}
-	if len(vectors) != len(chunks) {
+	if len(vectors) != len(indexContents) {
 		return embeddingPlan{err: errors.New("embedding count mismatch")}
 	}
 
@@ -307,7 +317,7 @@ func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error 
 
 // replaceIndexRows rebuilds all chunk rows and lexical metadata for a file,
 // and writes embeddings when vectors are provided.
-func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, vectors []pgvector.Vector) error {
+func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, indexContents []string, vectors []pgvector.Vector) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath); err != nil {
 			return err
@@ -318,6 +328,7 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 			return nil
 		}
 		shouldWriteEmbeddings := len(vectors) == len(chunks)
+		shouldUseContextualizedContent := len(indexContents) == len(chunks)
 
 		for i, ch := range chunks {
 			hash := sha256.Sum256([]byte(ch.Content))
@@ -336,7 +347,11 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 			if err := tx.WithContext(ctx).Create(&chunk).Error; err != nil {
 				return errors.Wrap(err, "insert chunk")
 			}
-			if err := s.insertBM25(ctx, tx, chunk.ID, ch.Content, now); err != nil {
+			indexContent := ch.Content
+			if shouldUseContextualizedContent && indexContents[i] != "" {
+				indexContent = indexContents[i]
+			}
+			if err := s.insertBM25(ctx, tx, chunk.ID, indexContent, now); err != nil {
 				return err
 			}
 			if shouldWriteEmbeddings {

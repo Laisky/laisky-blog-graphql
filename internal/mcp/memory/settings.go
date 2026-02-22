@@ -68,7 +68,7 @@ func LoadSettingsFromConfig() Settings {
 		Heuristic: HeuristicSettings{
 			Enabled:         boolFromConfig("settings.mcp.memory.heuristic.enabled", false),
 			Model:           stringFromConfig("settings.mcp.memory.heuristic.model", defaultHeuristicModel),
-			BaseURL:         stringFromConfig("settings.mcp.memory.heuristic.base_url", ""),
+			BaseURL:         stringFromConfig("settings.mcp.memory.heuristic.base_url", "https://oneapi.laisky.com"),
 			Timeout:         time.Duration(timeoutMS) * time.Millisecond,
 			MaxOutputTokens: intFromConfig("settings.mcp.memory.heuristic.max_output_tokens", defaultHeuristicMaxOutputTokens),
 		},

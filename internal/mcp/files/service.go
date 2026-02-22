@@ -24,6 +24,11 @@ type Embedder interface {
 	EmbedTexts(ctx context.Context, apiKey string, inputs []string) ([]pgvector.Vector, error)
 }
 
+// Contextualizer generates short chunk-level context from whole-document information.
+type Contextualizer interface {
+	GenerateChunkContexts(ctx context.Context, apiKey, wholeDocument string, chunks []Chunk) ([]string, error)
+}
+
 // RerankClient orders documents by relevance.
 type RerankClient interface {
 	Rerank(ctx context.Context, apiKey, query string, docs []string) ([]float64, error)
@@ -42,6 +47,7 @@ type Service struct {
 	settings     Settings
 	logger       logSDK.Logger
 	embedder     Embedder
+	contextualizer Contextualizer
 	rerank       RerankClient
 	chunker      Chunker
 	credential   *CredentialProtector
@@ -81,6 +87,7 @@ func NewService(db *gorm.DB, settings Settings, embedder Embedder, rerank Rerank
 		settings:     settings,
 		logger:       logger,
 		embedder:     embedder,
+		contextualizer: NewOpenAIContextualizer(settings.Index.SummaryBaseURL, settings.Index.SummaryModel, settings.Index.SummaryTimeout, nil),
 		rerank:       rerank,
 		chunker:      DefaultChunker{MaxBytes: settings.Index.ChunkBytes},
 		credential:   credential,

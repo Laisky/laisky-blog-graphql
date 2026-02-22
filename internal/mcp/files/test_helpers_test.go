@@ -16,11 +16,15 @@ import (
 
 // testEmbedder is a stub embedder that returns deterministic vectors.
 type testEmbedder struct {
-	vector pgvector.Vector
+	vector       pgvector.Vector
+	inputCapture *[]string
 }
 
 // EmbedTexts returns the configured vector for each input.
 func (t testEmbedder) EmbedTexts(_ context.Context, _ string, inputs []string) ([]pgvector.Vector, error) {
+	if t.inputCapture != nil {
+		*t.inputCapture = append(*t.inputCapture, inputs...)
+	}
 	vectors := make([]pgvector.Vector, 0, len(inputs))
 	for range inputs {
 		vectors = append(vectors, t.vector)
@@ -34,6 +38,27 @@ type errTestEmbedder struct{}
 // EmbedTexts always returns an embedding error for testing degraded indexing.
 func (errTestEmbedder) EmbedTexts(context.Context, string, []string) ([]pgvector.Vector, error) {
 	return nil, errors.New("embedder unavailable")
+}
+
+// testContextualizer is a stub contextualizer that returns predefined contexts.
+type testContextualizer struct {
+	contexts []string
+	err      error
+}
+
+// GenerateChunkContexts returns configured contexts or an error.
+func (t testContextualizer) GenerateChunkContexts(_ context.Context, _ string, _ string, chunks []Chunk) ([]string, error) {
+	if t.err != nil {
+		return nil, t.err
+	}
+	if len(t.contexts) == 0 {
+		result := make([]string, 0, len(chunks))
+		for i := range chunks {
+			result = append(result, fmt.Sprintf("ctx-%d", i+1))
+		}
+		return result, nil
+	}
+	return t.contexts, nil
 }
 
 // memoryCredentialStore keeps credential envelopes in memory.
@@ -91,5 +116,6 @@ func newTestService(t *testing.T, settings Settings, embedder Embedder, store Cr
 		return time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)
 	})
 	require.NoError(t, err)
+	svc.contextualizer = nil
 	return svc
 }
