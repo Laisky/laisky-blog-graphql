@@ -604,10 +604,15 @@ export interface HoldState {
 /**
  * getHoldState retrieves the current hold state for the authenticated user.
  */
-export async function getHoldState(apiKey: string, signal?: AbortSignal): Promise<HoldState> {
+export async function getHoldState(apiKey: string, taskId?: string, signal?: AbortSignal): Promise<HoldState> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/hold`, {
+  const params = new URLSearchParams();
+  if (taskId) {
+    params.append('task_id', taskId);
+  }
+  const query = params.toString();
+  const response = await fetch(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -630,10 +635,15 @@ export async function getHoldState(apiKey: string, signal?: AbortSignal): Promis
  * When hold is active, the get_user_request tool will wait for a new command
  * before responding instead of returning immediately.
  */
-export async function setHold(apiKey: string): Promise<HoldState> {
+export async function setHold(apiKey: string, taskId?: string): Promise<HoldState> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/hold`, {
+  const params = new URLSearchParams();
+  if (taskId) {
+    params.append('task_id', taskId);
+  }
+  const query = params.toString();
+  const response = await fetch(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
     method: 'POST',
     headers: {
       Authorization: authorization,
@@ -653,10 +663,15 @@ export async function setHold(apiKey: string): Promise<HoldState> {
 /**
  * releaseHold deactivates the hold for the authenticated user.
  */
-export async function releaseHold(apiKey: string): Promise<HoldState> {
+export async function releaseHold(apiKey: string, taskId?: string): Promise<HoldState> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/hold`, {
+  const params = new URLSearchParams();
+  if (taskId) {
+    params.append('task_id', taskId);
+  }
+  const query = params.toString();
+  const response = await fetch(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
     method: 'DELETE',
     headers: {
       Authorization: authorization,

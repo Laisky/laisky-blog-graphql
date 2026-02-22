@@ -90,6 +90,8 @@ export function UserRequestsPage() {
   const [searchResults, setSearchResults] = useState<UserRequest[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  const normalizedTaskId = taskId.trim() || undefined;
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -219,7 +221,7 @@ export function UserRequestsPage() {
       try {
         const key = normalizeApiKey(apiKey);
         if (!key) return;
-        const state = await getHoldState(key);
+        const state = await getHoldState(key, normalizedTaskId);
         setHoldState(state);
         // If hold is no longer active, stop polling
         if (!state.active && holdPollRef.current) {
@@ -240,7 +242,7 @@ export function UserRequestsPage() {
         holdPollRef.current = null;
       }
     };
-  }, [apiKey, holdState.active]);
+  }, [apiKey, holdState.active, normalizedTaskId]);
 
   //   const handleRefresh = useCallback(() => {
   //     setVisibleConsumedCount(10);
@@ -311,11 +313,11 @@ export function UserRequestsPage() {
       return;
     }
     try {
-      const state = await setHold(key);
+      const state = await setHold(key, normalizedTaskId);
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
     } catch (error) {}
-  }, [apiKey]);
+  }, [apiKey, normalizedTaskId]);
 
   const handleReleaseHold = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
@@ -323,11 +325,11 @@ export function UserRequestsPage() {
       return;
     }
     try {
-      const state = await releaseHold(key);
+      const state = await releaseHold(key, normalizedTaskId);
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
     } catch (error) {}
-  }, [apiKey]);
+  }, [apiKey, normalizedTaskId]);
 
   const handleReturnModeChange = useCallback(
     async (mode: ReturnMode) => {
