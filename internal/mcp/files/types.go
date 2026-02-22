@@ -48,6 +48,7 @@ type ChunkEntry struct {
 type AuthContext struct {
 	APIKey       string
 	APIKeyHash   string
+	UserID       string
 	UserIdentity string
 }
 

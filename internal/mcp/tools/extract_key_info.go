@@ -11,6 +11,7 @@ import (
 	"github.com/Laisky/zap"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 )
@@ -116,21 +117,21 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	header := t.headerProvider(ctx)
-	identity, err := rag.ParseIdentity(header)
+	authCtx, err := mcpauth.FromContextOrHeader(ctx, header)
 	if err != nil {
 		t.logger.Warn("extract_key_info authorization failed", zap.Error(err))
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	if err := t.billingChecker(ctx, identity.APIKey, oneapi.PriceExtractKeyInfo, "extract_key_info"); err != nil {
+	if err := t.billingChecker(ctx, authCtx.APIKey, oneapi.PriceExtractKeyInfo, "extract_key_info"); err != nil {
 		t.logger.Warn("extract_key_info billing denied", zap.Error(err))
 		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
 	}
 
 	input := rag.ExtractInput{
-		UserID:    identity.UserID,
+		UserID:    authCtx.UserID,
 		TaskID:    taskID,
-		APIKey:    identity.APIKey,
+		APIKey:    authCtx.APIKey,
 		Query:     query,
 		Materials: materials,
 		TopK:      topK,
@@ -138,7 +139,7 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 
 	contexts, err := t.service.ExtractKeyInfo(ctx, input)
 	if err != nil {
-		t.logger.Error("extract_key_info failed", zap.Error(err), zap.String("user_id", identity.UserID), zap.String("task_id", taskID))
+		t.logger.Error("extract_key_info failed", zap.Error(err), zap.String("user_id", authCtx.UserID), zap.String("task_id", taskID))
 		return mcp.NewToolResultError("failed to extract key information"), nil
 	}
 

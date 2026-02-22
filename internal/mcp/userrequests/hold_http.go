@@ -10,6 +10,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 )
 
@@ -21,7 +22,7 @@ type holdHTTPHandler struct {
 
 // NewHoldHTTPHandler constructs a handler for hold-related HTTP endpoints.
 func NewHoldHTTPHandler(holdManager *HoldManager, logger logSDK.Logger) http.Handler {
-	return &holdHTTPHandler{holdManager: holdManager, logger: logger}
+	return mcpauth.HTTPMiddleware(&holdHTTPHandler{holdManager: holdManager, logger: logger})
 }
 
 // ServeHTTP routes hold requests based on path and method.
@@ -50,7 +51,7 @@ func (h *holdHTTPHandler) handleGetHold(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -76,7 +77,7 @@ func (h *holdHTTPHandler) handleSetHold(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -107,7 +108,7 @@ func (h *holdHTTPHandler) handleReleaseHold(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return

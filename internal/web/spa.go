@@ -1,7 +1,6 @@
 package web
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -10,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 )

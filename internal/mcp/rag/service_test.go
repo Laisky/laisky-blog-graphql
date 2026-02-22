@@ -14,6 +14,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -151,4 +152,29 @@ func TestExtractKeyInfoUsesRequestAPIKeyForEmbedding(t *testing.T) {
 	for _, key := range embedder.keys {
 		require.Equal(t, "tenant-request-key", key)
 	}
+}
+
+func TestEnsureTaskFallsBackToLegacyUserID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:rag_legacy_fallback?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	if err := db.AutoMigrate(&Task{}); err != nil {
+		require.NoError(t, err)
+	}
+
+	apiKey := "sk-legacy-compat-key"
+	legacyUserID := legacyUserIDFromAPIKey(apiKey)
+	require.NotEmpty(t, legacyUserID)
+
+	task := Task{UserID: legacyUserID, TaskID: "workspace"}
+	require.NoError(t, db.Create(&task).Error)
+
+	svc := &Service{db: db, logger: log.Logger.Named("rag_legacy_fallback_test")}
+	canonicalAuth, err := mcpauth.DeriveFromAPIKey(apiKey)
+	require.NoError(t, err)
+
+	resolved, err := svc.ensureTask(context.Background(), canonicalAuth.UserID, "workspace", apiKey)
+	require.NoError(t, err)
+	require.Equal(t, task.ID, resolved.ID)
+	require.Equal(t, legacyUserID, resolved.UserID)
 }

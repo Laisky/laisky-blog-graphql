@@ -15,6 +15,7 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 )
 
@@ -30,7 +31,7 @@ func NewCombinedHTTPHandler(service *Service, holdManager *HoldManager, logger l
 	if holdManager != nil {
 		handler.holdHandler = &holdHTTPHandler{holdManager: holdManager, logger: logger}
 	}
-	return handler
+	return mcpauth.HTTPMiddleware(handler)
 }
 
 type combinedHTTPHandler struct {
@@ -60,7 +61,7 @@ func (h *combinedHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 // NewHTTPHandler constructs an HTTP mux exposing the user request APIs under /api/requests.
 func NewHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
-	return &httpHandler{service: service, logger: logger}
+	return mcpauth.HTTPMiddleware(&httpHandler{service: service, logger: logger})
 }
 
 type httpHandler struct {
@@ -104,7 +105,7 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -150,7 +151,7 @@ func (h *httpHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -190,7 +191,7 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -262,7 +263,7 @@ func (h *httpHandler) handleDeleteOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -296,7 +297,7 @@ func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -326,7 +327,7 @@ func (h *httpHandler) handleDeleteConsumed(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -368,7 +369,7 @@ func (h *httpHandler) handleDeleteAllPending(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -398,7 +399,7 @@ func (h *httpHandler) handleReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return

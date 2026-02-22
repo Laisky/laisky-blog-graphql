@@ -1,6 +1,6 @@
 package askuser
 
-import "errors"
+import "github.com/Laisky/errors/v2"
 
 var (
 	// ErrMissingAuthorization indicates that the caller did not provide an Authorization header.

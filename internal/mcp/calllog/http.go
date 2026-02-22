@@ -14,13 +14,14 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 )
 
 // NewHTTPHandler builds an HTTP handler exposing the call log APIs.
 func NewHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
-	return &httpHandler{service: service, logger: logger}
+	return mcpauth.HTTPMiddleware(&httpHandler{service: service, logger: logger})
 }
 
 type httpHandler struct {
@@ -47,7 +48,7 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authCtx, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	authCtx, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return

@@ -43,6 +43,7 @@ func TestExtractKeyInfoTool_HandleSuccess(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 	require.NotEmpty(t, svc.input.TaskID)
+	require.Equal(t, "sk-test", svc.input.APIKey)
 	require.Equal(t, 1, len(svc.contexts))
 }
 

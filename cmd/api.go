@@ -19,6 +19,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
@@ -112,6 +113,7 @@ func runAPI() error {
 		telegramDB mongodb.DB
 		blogDB     mongodb.DB
 		mcpDB      *postgres.DB
+		mcpPGXPool *pgxpool.Pool
 		dbMutex    sync.Mutex
 	)
 
@@ -177,8 +179,13 @@ func runAPI() error {
 			logger.Error("new mcp postgres", zap.Error(err))
 			return nil // Log but don't fail startup
 		}
+		pgxPool, pgxErr := pgxpool.New(egCtx, postgres.BuildDSN(dial))
+		if pgxErr != nil {
+			logger.Warn("new mcp pgx pool", zap.Error(pgxErr))
+		}
 		dbMutex.Lock()
 		mcpDB = db
+		mcpPGXPool = pgxPool
 		dbMutex.Unlock()
 		return nil
 	})
@@ -294,7 +301,11 @@ func runAPI() error {
 
 		egServices.Go(func() error {
 			start := time.Now()
-			svc, err := calllog.NewService(mcpDB.DB, logger.Named("call_log"), nil)
+			if mcpPGXPool == nil {
+				logger.Warn("skip call_log service initialization because pgx pool is unavailable")
+				return nil
+			}
+			svc, err := calllog.NewService(mcpPGXPool, logger.Named("call_log"), nil)
 			if err != nil {
 				logger.Error("init call_log service", zap.Error(err))
 				return nil

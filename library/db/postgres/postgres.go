@@ -23,9 +23,14 @@ type DialInfo struct {
 	Pwd string
 }
 
+// BuildDSN builds a PostgreSQL DSN for shared database clients.
+func BuildDSN(dialInfo DialInfo) string {
+	return "host=" + dialInfo.Addr + " user=" + dialInfo.User + " password=" + dialInfo.Pwd + " dbname=" + dialInfo.DBName + " port=5432 sslmode=disable TimeZone=UTC"
+}
+
 // NewDB create a new postgres db
 func NewDB(ctx context.Context, dialInfo DialInfo) (*DB, error) {
-	dsn := "host=" + dialInfo.Addr + " user=" + dialInfo.User + " password=" + dialInfo.Pwd + " dbname=" + dialInfo.DBName + " port=5432 sslmode=disable TimeZone=UTC"
+	dsn := BuildDSN(dialInfo)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  dsn,

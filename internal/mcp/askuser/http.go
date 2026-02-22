@@ -3,7 +3,6 @@ package askuser
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"html/template"
 	"io"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	gmw "github.com/Laisky/gin-middlewares/v7"
+	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
@@ -148,7 +148,7 @@ func (h *httpHandler) listRequests(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	logger := h.logFromCtx(ctx)
 
-	auth, err := ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -183,7 +183,7 @@ func (h *httpHandler) answerRequest(w http.ResponseWriter, r *http.Request, id u
 		http.Error(w, "ask_user service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	auth, err := ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return

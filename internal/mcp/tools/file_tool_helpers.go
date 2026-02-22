@@ -7,6 +7,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/mark3labs/mcp-go/mcp"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -14,6 +15,15 @@ import (
 
 // fileAuthFromContext extracts the trusted auth context for file tools.
 func fileAuthFromContext(ctx context.Context) (files.AuthContext, bool) {
+	if authCtx, ok := mcpauth.FromContext(ctx); ok {
+		return files.AuthContext{
+			APIKey:       authCtx.APIKey,
+			APIKeyHash:   authCtx.APIKeyHash,
+			UserID:       authCtx.UserID,
+			UserIdentity: authCtx.UserIdentity,
+		}, true
+	}
+
 	value, ok := ctx.Value(ctxkeys.AuthContext).(*files.AuthContext)
 	if !ok || value == nil {
 		return files.AuthContext{}, false

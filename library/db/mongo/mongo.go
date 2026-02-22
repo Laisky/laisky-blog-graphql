@@ -3,15 +3,13 @@ package mongo
 
 import (
 	"context"
-	stderrors "errors"
 	"fmt"
 	"net/url"
 	"sync"
 	"time"
 
-	"github.com/Laisky/laisky-blog-graphql/library/log"
-
 	"github.com/Laisky/errors/v2"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -335,7 +333,7 @@ func (d *db) Close(ctx context.Context) error {
 	d.shared.cli = nil
 	d.shared.mu.Unlock()
 	if err != nil {
-		if stderrors.Is(err, mongo.ErrClientDisconnected) {
+		if errors.Is(err, mongo.ErrClientDisconnected) {
 			return nil
 		}
 		return errors.WithStack(err)

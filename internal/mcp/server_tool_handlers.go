@@ -11,11 +11,11 @@ import (
 	"github.com/Laisky/zap"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
-	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -62,10 +62,19 @@ func (s *Server) handleWebFetch(ctx context.Context, req mcp.CallToolRequest) (*
 }
 
 func extractAPIKey(authHeader string) string {
-	return library.StripBearerPrefix(authHeader)
+	parsed, err := mcpauth.ParseAuthorizationContext(authHeader)
+	if err != nil {
+		return ""
+	}
+
+	return parsed.APIKey
 }
 
 func apiKeyFromContext(ctx context.Context) string {
+	if authCtx, ok := mcpauth.FromContext(ctx); ok {
+		return authCtx.APIKey
+	}
+
 	authHeader, _ := ctx.Value(keyAuthorization).(string)
 	return extractAPIKey(authHeader)
 }

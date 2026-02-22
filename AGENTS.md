@@ -10,6 +10,10 @@ This project including server side code written in Go and web front-end code (lo
 
 Local tools and debugging related sensitive information is saved in `.github/instructions/laisky.instructions.md`.
 
+### MCP Server
+
+Every mcp project runs as a multi tenant SaaS. Make sure you separate users using the user_id derived from their api_key, keep each user’s data totally separate, and only let a user view or edit their own data.
+
 ### Package Management
 
 Use `pnpm` for managing JavaScript/TypeScript packages in the `web` directory.
@@ -74,8 +78,6 @@ Every error must be processed a single time—either returned or logged—but ne
 Avoid returning raw errors; wrap them with errors.Wrap, errors.Wrapf, or errors.WithStack to preserve essential stack traces and contextual information.
 
 ### Golang ORM
-
-Use `gorm.io/gorm`, never use `gorm.io/gorm/clause`/`Preload`.
 
 The performance of ORMs is often quite inefficient. Therefore, adopt the data reading method that puts the least pressure on the database whenever possible. my philosophy is to use SQL for reading and reserve ORM for writing or modifying data.
 

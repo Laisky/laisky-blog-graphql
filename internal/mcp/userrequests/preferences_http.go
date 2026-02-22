@@ -46,7 +46,7 @@ func (h *preferencesHTTPHandler) handleGet(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -100,7 +100,7 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return

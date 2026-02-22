@@ -1,14 +1,12 @@
 package rag
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
 	"regexp"
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
@@ -46,12 +44,12 @@ func SanitizeTaskID(raw string) string {
 func ParseIdentity(header string) (*Identity, error) {
 	trimmed := strings.TrimSpace(header)
 	if trimmed == "" {
-		return nil, errors.New("missing authorization bearer token")
+		return nil, errors.WithStack(mcpauth.ErrMissingAuthorization)
 	}
 
 	raw := library.StripBearerPrefix(trimmed)
 	if raw == "" {
-		return nil, errors.New("missing authorization bearer token")
+		return nil, errors.WithStack(mcpauth.ErrMissingAuthorization)
 	}
 
 	identityPart := ""
@@ -62,36 +60,25 @@ func ParseIdentity(header string) (*Identity, error) {
 	}
 
 	if token == "" {
-		return nil, errors.New("invalid authorization header")
+		return nil, errors.WithStack(mcpauth.ErrInvalidAuthorization)
 	}
 
-	hash := sha256.Sum256([]byte(token))
-	hashPrefix := hex.EncodeToString(hash[:])
-	keyPrefix := token
-	if len(keyPrefix) > 7 {
-		keyPrefix = keyPrefix[:7]
+	authCtx, err := mcpauth.DeriveFromAPIKey(token)
+	if err != nil {
+		return nil, errors.WithStack(err)
 	}
 
-	userID := fmt.Sprintf("%s_%s", keyPrefix, hashPrefix[:7])
+	userID := authCtx.UserID
 	taskID := SanitizeTaskID(identityPart)
 	if taskID == "" {
 		taskID = userID
 	}
 
-	masked := maskKey(token)
-
 	return &Identity{
 		APIKey:   token,
 		UserID:   userID,
 		TaskID:   taskID,
-		KeyHash:  hashPrefix,
-		MaskedID: masked,
+		KeyHash:  authCtx.APIKeyHash,
+		MaskedID: authCtx.MaskedKey(),
 	}, nil
-}
-
-func maskKey(token string) string {
-	if len(token) <= 4 {
-		return "***" + token
-	}
-	return "***" + token[len(token)-4:]
 }

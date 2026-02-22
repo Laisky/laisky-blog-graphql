@@ -1,12 +1,11 @@
 package askuser
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"fmt"
-	"strings"
 
-	"github.com/Laisky/laisky-blog-graphql/library"
+	"github.com/Laisky/errors/v2"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
 // AuthorizationContext captures caller identity derived from the Authorization header.
@@ -15,6 +14,7 @@ type AuthorizationContext struct {
 	APIKey       string
 	APIKeyHash   string
 	KeySuffix    string
+	UserID       string
 	UserIdentity string
 	AIIdentity   string
 }
@@ -23,47 +23,27 @@ type AuthorizationContext struct {
 // header that may or may not include the Bearer prefix. The token itself is the
 // sole source of truth for the caller's identity.
 func ParseAuthorizationContext(header string) (*AuthorizationContext, error) {
-	trimmedHeader := strings.TrimSpace(header)
-	if trimmedHeader == "" {
-		return nil, ErrMissingAuthorization
-	}
-
-	raw := library.StripBearerPrefix(trimmedHeader)
-	if raw == "" {
-		return nil, ErrInvalidAuthorization
-	}
-
-	trimmedToken := strings.TrimSpace(raw)
-	if trimmedToken == "" {
-		return nil, ErrInvalidAuthorization
-	}
-	tokenFields := strings.Fields(trimmedToken)
-	if len(tokenFields) == 0 {
-		return nil, ErrInvalidAuthorization
-	}
-	token := tokenFields[0]
-
-	userID := deriveUserIdentity(token)
-	aiID := userID
-
-	hashed := sha256.Sum256([]byte(token))
-	suffix := ""
-	if l := len(token); l > 0 {
-		if l <= 4 {
-			suffix = token
-		} else {
-			suffix = token[l-4:]
+	parsed, err := mcpauth.ParseAuthorizationContext(header)
+	if err != nil {
+		if errors.Is(err, mcpauth.ErrMissingAuthorization) {
+			return nil, ErrMissingAuthorization
 		}
+		if errors.Is(err, mcpauth.ErrInvalidAuthorization) {
+			return nil, ErrInvalidAuthorization
+		}
+		return nil, err
 	}
 
-	return &AuthorizationContext{
-		RawHeader:    trimmedHeader,
-		APIKey:       token,
-		APIKeyHash:   hex.EncodeToString(hashed[:]),
-		KeySuffix:    suffix,
-		UserIdentity: userID,
-		AIIdentity:   aiID,
-	}, nil
+	return fromSharedContext(parsed), nil
+}
+
+// ParseAuthorizationFromContext retrieves authorization from context and falls back to the provided header.
+func ParseAuthorizationFromContext(ctx context.Context, header string) (*AuthorizationContext, error) {
+	if shared, ok := mcpauth.FromContext(ctx); ok {
+		return fromSharedContext(shared), nil
+	}
+
+	return ParseAuthorizationContext(header)
 }
 
 // MaskedKey returns a short identifier for logging purposes.
@@ -77,14 +57,19 @@ func (a *AuthorizationContext) MaskedKey() string {
 	return fmt.Sprintf("***%s", a.APIKey[len(a.APIKey)-4:])
 }
 
-func deriveUserIdentity(token string) string {
-	const prefixLength = 8
-	identity := token
-	if len(identity) > prefixLength {
-		identity = identity[:prefixLength]
+// fromSharedContext converts the shared MCP auth context into ask_user auth context.
+func fromSharedContext(shared *mcpauth.Context) *AuthorizationContext {
+	if shared == nil {
+		return nil
 	}
-	if identity == "" {
-		return "user:anonymous"
+
+	return &AuthorizationContext{
+		RawHeader:    shared.RawHeader,
+		APIKey:       shared.APIKey,
+		APIKeyHash:   shared.APIKeyHash,
+		KeySuffix:    shared.KeySuffix,
+		UserID:       shared.UserID,
+		UserIdentity: shared.UserIdentity,
+		AIIdentity:   shared.AIIdentity,
 	}
-	return fmt.Sprintf("user:%s", identity)
 }

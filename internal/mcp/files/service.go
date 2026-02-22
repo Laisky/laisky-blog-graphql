@@ -2,10 +2,9 @@ package files
 
 import (
 	"context"
-	"errors"
 	"time"
 
-	errorsx "github.com/Laisky/errors/v2"
+	errors "github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
@@ -59,7 +58,7 @@ type Service struct {
 // NewService constructs a FileIO service and runs migrations.
 func NewService(db *gorm.DB, settings Settings, embedder Embedder, rerank RerankClient, credential *CredentialProtector, store CredentialStore, logger logSDK.Logger, lockProvider LockProvider, clock Clock) (*Service, error) {
 	if db == nil {
-		return nil, errorsx.New("gorm db is required")
+		return nil, errors.New("gorm db is required")
 	}
 	if logger == nil {
 		logger = log.Logger.Named("mcp_files_service")
@@ -74,12 +73,12 @@ func NewService(db *gorm.DB, settings Settings, embedder Embedder, rerank Rerank
 		var err error
 		credential, err = NewCredentialProtector(settings.Security)
 		if err != nil {
-			return nil, errorsx.Wrap(err, "init credential protector")
+			return nil, errors.Wrap(err, "init credential protector")
 		}
 	}
 
 	if err := RunMigrations(context.Background(), db, logger); err != nil {
-		return nil, errorsx.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 
 	svc := &Service{
@@ -128,7 +127,7 @@ func wrapServiceError(err error, message string) error {
 	if err == nil {
 		return nil
 	}
-	return errorsx.Wrap(err, message)
+	return errors.Wrap(err, message)
 }
 
 // warnOnError logs an error when needed for diagnostics.

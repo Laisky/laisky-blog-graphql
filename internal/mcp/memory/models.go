@@ -2,10 +2,11 @@ package memory
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/mattn/go-sqlite3"
 	"gorm.io/gorm"
 )
 
@@ -42,15 +43,16 @@ func isUniqueConstraintError(err error) bool {
 	if err == nil {
 		return false
 	}
-	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "duplicate key") {
-		return true
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
 	}
-	if strings.Contains(message, "unique constraint") {
-		return true
+
+	var sqliteErr sqlite3.Error
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.Code == sqlite3.ErrConstraint || sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique
 	}
-	if strings.Contains(message, "unique failed") {
-		return true
-	}
+
 	return false
 }

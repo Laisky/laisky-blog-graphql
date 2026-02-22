@@ -5,15 +5,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	gutils "github.com/Laisky/go-utils/v6"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
-	"gorm.io/datatypes"
-	"gorm.io/gorm"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -29,9 +32,16 @@ type Clock func() time.Time
 
 // Service persists and queries tool invocation call logs.
 type Service struct {
-	db     *gorm.DB
+	db     DB
 	logger logSDK.Logger
 	clock  Clock
+}
+
+// DB defines the database capabilities required by the call log service.
+type DB interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 // RecordInput captures the information required to persist a tool invocation.
@@ -95,10 +105,10 @@ const (
 	sortFieldDuration  = "duration"
 )
 
-// NewService constructs a Service backed by the supplied gorm database.
-func NewService(db *gorm.DB, logger logSDK.Logger, clock Clock) (*Service, error) {
+// NewService constructs a Service backed by the supplied PostgreSQL connection.
+func NewService(db DB, logger logSDK.Logger, clock Clock) (*Service, error) {
 	if db == nil {
-		return nil, errors.New("gorm db is required")
+		return nil, errors.New("database is required")
 	}
 	if logger == nil {
 		logger = log.Logger.Named("call_log_service")
@@ -109,8 +119,8 @@ func NewService(db *gorm.DB, logger logSDK.Logger, clock Clock) (*Service, error
 		}
 	}
 
-	if err := db.AutoMigrate(&Record{}); err != nil {
-		return nil, errors.Wrap(err, "auto migrate call_log records")
+	if err := runMigrations(context.Background(), db); err != nil {
+		return nil, errors.Wrap(err, "migrate call_log records")
 	}
 
 	return &Service{db: db, logger: logger, clock: clock}, nil
@@ -145,7 +155,9 @@ func (s *Service) Record(ctx context.Context, input RecordInput) error {
 		occurred = s.clock()
 	}
 
+	recordID := gutils.UUID7Bytes()
 	record := &Record{
+		ID:             recordID,
 		ToolName:       trimmedTool,
 		APIKeyHash:     keyHash,
 		KeyPrefix:      keyPrefix,
@@ -153,14 +165,39 @@ func (s *Service) Record(ctx context.Context, input RecordInput) error {
 		Cost:           input.Cost,
 		CostUnit:       costUnit,
 		DurationMillis: input.Duration.Milliseconds(),
-		Parameters:     datatypes.JSON(payload),
+		Parameters:     payload,
 		ErrorMessage:   strings.TrimSpace(input.ErrorMessage),
 		OccurredAt:     occurred,
+		CreatedAt:      s.clock(),
+		UpdatedAt:      s.clock(),
 	}
 
 	// Use a detached context to ensure logging completes even if the request is cancelled.
 	ctx = context.WithoutCancel(ctx)
-	if err := s.db.WithContext(ctx).Create(record).Error; err != nil {
+	_, err = s.db.Exec(ctx, `
+		INSERT INTO mcp_call_logs (
+			id, tool_name, api_key_hash, key_prefix, status, cost, cost_unit,
+			duration_millis, parameters, error_message, occurred_at, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9::jsonb, $10, $11, $12, $13
+		)
+	`,
+		record.ID,
+		record.ToolName,
+		record.APIKeyHash,
+		record.KeyPrefix,
+		record.Status,
+		record.Cost,
+		record.CostUnit,
+		record.DurationMillis,
+		string(record.Parameters),
+		record.ErrorMessage,
+		record.OccurredAt,
+		record.CreatedAt,
+		record.UpdatedAt,
+	)
+	if err != nil {
 		return errors.Wrap(err, "create call log record")
 	}
 
@@ -194,27 +231,43 @@ func (s *Service) List(ctx context.Context, opts ListOptions) (*ListResult, erro
 		size = maxPageSize
 	}
 
-	query := s.db.WithContext(ctx).Model(&Record{})
-
+	clauses := make([]string, 0, 6)
+	args := make([]any, 0, 8)
+	argID := 1
 	if opts.APIKeyHash != "" {
-		query = query.Where("api_key_hash = ?", opts.APIKeyHash)
+		clauses = append(clauses, fmt.Sprintf("api_key_hash = $%d", argID))
+		args = append(args, opts.APIKeyHash)
+		argID++
 	}
 	if toolName != "" {
-		query = query.Where("tool_name = ?", toolName)
+		clauses = append(clauses, fmt.Sprintf("tool_name = $%d", argID))
+		args = append(args, toolName)
+		argID++
 	}
 	if userPrefix != "" {
 		like := userPrefix + "%"
-		query = query.Where("key_prefix LIKE ?", like)
+		clauses = append(clauses, fmt.Sprintf("key_prefix LIKE $%d", argID))
+		args = append(args, like)
+		argID++
 	}
 	if !opts.From.IsZero() {
-		query = query.Where("occurred_at >= ?", opts.From)
+		clauses = append(clauses, fmt.Sprintf("occurred_at >= $%d", argID))
+		args = append(args, opts.From)
+		argID++
 	}
 	if !opts.To.IsZero() {
-		query = query.Where("occurred_at < ?", opts.To)
+		clauses = append(clauses, fmt.Sprintf("occurred_at < $%d", argID))
+		args = append(args, opts.To)
+		argID++
+	}
+	whereSQL := ""
+	if len(clauses) > 0 {
+		whereSQL = " WHERE " + strings.Join(clauses, " AND ")
 	}
 
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	countSQL := "SELECT COUNT(*) FROM mcp_call_logs" + whereSQL
+	if err := s.db.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
 		return nil, errors.Wrap(err, "count call log records")
 	}
 
@@ -223,14 +276,46 @@ func (s *Service) List(ctx context.Context, opts ListOptions) (*ListResult, erro
 	if orderDirection != "ASC" {
 		orderDirection = "DESC"
 	}
-	query = query.Order(orderField + " " + orderDirection)
-
 	offset := (page - 1) * size
-	query = query.Offset(offset).Limit(size)
+	listSQL := fmt.Sprintf(`
+		SELECT id, tool_name, api_key_hash, key_prefix, status, cost, cost_unit,
+			duration_millis, parameters, error_message, occurred_at, created_at, updated_at
+		FROM mcp_call_logs
+		%s
+		ORDER BY %s %s
+		OFFSET $%d LIMIT $%d
+	`, whereSQL, orderField, orderDirection, argID, argID+1)
+	listArgs := append(args, offset, size)
+	rows, err := s.db.Query(ctx, listSQL, listArgs...)
+	if err != nil {
+		return nil, errors.Wrap(err, "query call log records")
+	}
+	defer rows.Close()
 
 	records := make([]Record, 0, size)
-	if err := query.Find(&records).Error; err != nil {
-		return nil, errors.Wrap(err, "query call log records")
+	for rows.Next() {
+		var record Record
+		if scanErr := rows.Scan(
+			&record.ID,
+			&record.ToolName,
+			&record.APIKeyHash,
+			&record.KeyPrefix,
+			&record.Status,
+			&record.Cost,
+			&record.CostUnit,
+			&record.DurationMillis,
+			&record.Parameters,
+			&record.ErrorMessage,
+			&record.OccurredAt,
+			&record.CreatedAt,
+			&record.UpdatedAt,
+		); scanErr != nil {
+			return nil, errors.Wrap(scanErr, "scan call log record")
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate call log rows")
 	}
 
 	entries := make([]Entry, 0, len(records))
@@ -262,6 +347,42 @@ func (s *Service) List(ctx context.Context, opts ListOptions) (*ListResult, erro
 
 	return &ListResult{Entries: entries, Total: total}, nil
 }
+
+// runMigrations creates call log table and indexes when absent.
+func runMigrations(ctx context.Context, db DB) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS mcp_call_logs (
+			id UUID PRIMARY KEY,
+			tool_name VARCHAR(64) NOT NULL,
+			api_key_hash CHAR(64),
+			key_prefix VARCHAR(16),
+			status VARCHAR(16) NOT NULL,
+			cost BIGINT NOT NULL,
+			cost_unit VARCHAR(16) NOT NULL DEFAULT 'quota',
+			duration_millis BIGINT,
+			parameters JSONB,
+			error_message TEXT,
+			occurred_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_call_logs_tool_name ON mcp_call_logs (tool_name)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_call_logs_api_key_hash ON mcp_call_logs (api_key_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_call_logs_key_prefix ON mcp_call_logs (key_prefix)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_call_logs_status ON mcp_call_logs (status)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_call_logs_occurred_at ON mcp_call_logs (occurred_at DESC)`,
+	}
+
+	for _, stmt := range statements {
+		if _, err := db.Exec(ctx, stmt); err != nil {
+			return errors.Wrap(err, "execute call log migration")
+		}
+	}
+
+	return nil
+}
+
+var _ DB = (*pgxpool.Pool)(nil)
 
 func mapSortField(field string) string {
 	switch strings.ToLower(strings.TrimSpace(field)) {

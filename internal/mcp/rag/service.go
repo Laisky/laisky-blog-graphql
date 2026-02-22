@@ -162,7 +162,7 @@ func (s *Service) ExtractKeyInfo(ctx context.Context, input ExtractInput) ([]str
 		return nil, errors.WithStack(err)
 	}
 
-	task, err := s.ensureTask(ctx, input.UserID, input.TaskID)
+	task, err := s.ensureTask(ctx, input.UserID, input.TaskID, input.APIKey)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -215,7 +215,8 @@ func (s *Service) validateInput(input ExtractInput) error {
 	return nil
 }
 
-func (s *Service) ensureTask(ctx context.Context, userID, taskID string) (*Task, error) {
+// ensureTask resolves the canonical task row and falls back to legacy user IDs when needed.
+func (s *Service) ensureTask(ctx context.Context, userID, taskID, apiKey string) (*Task, error) {
 	var task Task
 	err := s.db.WithContext(ctx).
 		Where("user_id = ? AND task_id = ?", userID, taskID).
@@ -227,6 +228,24 @@ func (s *Service) ensureTask(ctx context.Context, userID, taskID string) (*Task,
 		return nil, errors.Wrap(err, "query rag task")
 	}
 
+	for _, candidate := range legacyUserIDCandidates(apiKey, userID) {
+		err = s.db.WithContext(ctx).
+			Where("user_id = ? AND task_id = ?", candidate, taskID).
+			First(&task).Error
+		if err == nil {
+			logger := s.loggerFromContext(ctx)
+			logger.Info("rag task matched legacy user id",
+				zap.String("user_id", userID),
+				zap.String("legacy_user_id", candidate),
+				zap.String("task_id", taskID),
+			)
+			return &task, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.Wrap(err, "query rag task by legacy user id")
+		}
+	}
+
 	task = Task{UserID: userID, TaskID: taskID}
 	if err := s.db.WithContext(ctx).Create(&task).Error; err != nil {
 		return nil, errors.Wrap(err, "create rag task")
@@ -234,6 +253,37 @@ func (s *Service) ensureTask(ctx context.Context, userID, taskID string) (*Task,
 	logger := s.loggerFromContext(ctx)
 	logger.Info("rag task created", zap.String("user_id", userID), zap.String("task_id", taskID))
 	return &task, nil
+}
+
+// legacyUserIDCandidates returns possible pre-migration user IDs for compatibility lookups.
+func legacyUserIDCandidates(apiKey string, canonicalUserID string) []string {
+	legacy := legacyUserIDFromAPIKey(apiKey)
+	if legacy == "" || legacy == canonicalUserID {
+		return nil
+	}
+
+	return []string{legacy}
+}
+
+// legacyUserIDFromAPIKey reproduces the historical RAG user ID algorithm.
+func legacyUserIDFromAPIKey(apiKey string) string {
+	token := strings.TrimSpace(apiKey)
+	if token == "" {
+		return ""
+	}
+
+	hash := sha256.Sum256([]byte(token))
+	hashPrefix := hex.EncodeToString(hash[:])
+	keyPrefix := token
+	if len(keyPrefix) > 7 {
+		keyPrefix = keyPrefix[:7]
+	}
+
+	if len(hashPrefix) < 7 {
+		return ""
+	}
+
+	return keyPrefix + "_" + hashPrefix[:7]
 }
 
 func (s *Service) ensureChunks(ctx context.Context, task *Task, input ExtractInput) error {

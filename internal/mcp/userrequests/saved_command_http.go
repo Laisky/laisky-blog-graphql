@@ -14,12 +14,13 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
 
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 )
 
 // NewSavedCommandsHTTPHandler constructs an HTTP mux exposing the saved commands APIs under /api/saved-commands.
 func NewSavedCommandsHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
-	return &savedCommandsHTTPHandler{service: service, logger: logger}
+	return mcpauth.HTTPMiddleware(&savedCommandsHTTPHandler{service: service, logger: logger})
 }
 
 type savedCommandsHTTPHandler struct {
@@ -57,7 +58,7 @@ func (h *savedCommandsHTTPHandler) handleList(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -93,7 +94,7 @@ func (h *savedCommandsHTTPHandler) handleCreate(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -148,7 +149,7 @@ func (h *savedCommandsHTTPHandler) handleUpdate(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -204,7 +205,7 @@ func (h *savedCommandsHTTPHandler) handleDelete(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
@@ -237,7 +238,7 @@ func (h *savedCommandsHTTPHandler) handleReorder(w http.ResponseWriter, r *http.
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return

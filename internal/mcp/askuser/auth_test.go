@@ -11,27 +11,22 @@ func TestParseAuthorizationContext(t *testing.T) {
 		header      string
 		expectError bool
 		expectKey   string
-		expectUser  string
 	}{
 		"bearer prefix": {
 			header:     "Bearer abcdefghijklmnop",
 			expectKey:  "abcdefghijklmnop",
-			expectUser: "user:abcdefgh",
 		},
 		"no prefix": {
 			header:     "token-123",
 			expectKey:  "token-123",
-			expectUser: "user:token-12",
 		},
 		"mixed case prefix": {
 			header:     "bEaReR   spacedtoken ",
 			expectKey:  "spacedtoken",
-			expectUser: "user:spacedto",
 		},
 		"with at symbol": {
 			header:     "Bearer user@example.com",
 			expectKey:  "user@example.com",
-			expectUser: "user:user@exa",
 		},
 		"missing token": {
 			header:      "Bearer   \t",
@@ -48,8 +43,10 @@ func TestParseAuthorizationContext(t *testing.T) {
 			}
 			require.NoError(t, err, "unexpected error")
 			require.Equal(t, tc.expectKey, ctx.APIKey, "unexpected key")
-			require.Equal(t, tc.expectUser, ctx.UserIdentity, "unexpected user identity")
-			require.Equal(t, tc.expectUser, ctx.AIIdentity, "unexpected ai identity")
+			require.NotEmpty(t, ctx.APIKeyHash, "api key hash should be derived")
+			require.Equal(t, ctx.UserID, ctx.UserIdentity, "user identity should equal canonical user id")
+			require.Equal(t, ctx.UserID, ctx.AIIdentity, "ai identity should equal canonical user id")
+			require.Contains(t, ctx.UserID, "user:", "user id should be tenant-prefixed")
 		})
 	}
 }
