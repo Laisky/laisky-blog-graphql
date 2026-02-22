@@ -15,6 +15,7 @@ type FileChunk struct {
 	ChunkIndex  int        `gorm:"not null"`
 	StartByte   int64      `gorm:"column:start_byte;not null"`
 	EndByte     int64      `gorm:"column:end_byte;not null"`
+	FileSize    int64      `gorm:"-:all"`
 	Content     string     `gorm:"column:chunk_content;type:text;not null"`
 	ContentHash string     `gorm:"column:content_hash;size:64;not null"`
 	CreatedAt   time.Time  `gorm:"not null"`

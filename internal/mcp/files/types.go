@@ -39,6 +39,7 @@ type ChunkEntry struct {
 	FilePath           string  `json:"file_path"`
 	FileSeekStartBytes int64   `json:"file_seek_start_bytes"`
 	FileSeekEndBytes   int64   `json:"file_seek_end_bytes"`
+	IsFullFile         bool    `json:"is_full_file"`
 	ChunkContent       string  `json:"chunk_content"`
 	Score              float64 `json:"score"`
 }

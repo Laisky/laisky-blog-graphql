@@ -43,17 +43,17 @@ type CredentialStore interface {
 
 // Service coordinates FileIO operations and indexing.
 type Service struct {
-	db           *gorm.DB
-	settings     Settings
-	logger       logSDK.Logger
-	embedder     Embedder
+	db             *gorm.DB
+	settings       Settings
+	logger         logSDK.Logger
+	embedder       Embedder
 	contextualizer Contextualizer
-	rerank       RerankClient
-	chunker      Chunker
-	credential   *CredentialProtector
-	credStore    CredentialStore
-	lockProvider LockProvider
-	clock        Clock
+	rerank         RerankClient
+	chunker        Chunker
+	credential     *CredentialProtector
+	credStore      CredentialStore
+	lockProvider   LockProvider
+	clock          Clock
 }
 
 // NewService constructs a FileIO service and runs migrations.
@@ -83,17 +83,17 @@ func NewService(db *gorm.DB, settings Settings, embedder Embedder, rerank Rerank
 	}
 
 	svc := &Service{
-		db:           db,
-		settings:     settings,
-		logger:       logger,
-		embedder:     embedder,
+		db:             db,
+		settings:       settings,
+		logger:         logger,
+		embedder:       embedder,
 		contextualizer: NewOpenAIContextualizer(settings.Index.SummaryBaseURL, settings.Index.SummaryModel, settings.Index.SummaryTimeout, nil),
-		rerank:       rerank,
-		chunker:      DefaultChunker{MaxBytes: settings.Index.ChunkBytes},
-		credential:   credential,
-		credStore:    store,
-		lockProvider: lockProvider,
-		clock:        clock,
+		rerank:         rerank,
+		chunker:        DefaultChunker{MaxBytes: settings.Index.ChunkBytes},
+		credential:     credential,
+		credStore:      store,
+		lockProvider:   lockProvider,
+		clock:          clock,
 	}
 
 	return svc, nil

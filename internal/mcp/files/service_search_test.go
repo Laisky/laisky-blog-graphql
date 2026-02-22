@@ -45,6 +45,7 @@ func TestSearchEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, searchRes.Chunks)
 	require.Contains(t, searchRes.Chunks[0].ChunkContent, "hello")
+	require.False(t, searchRes.Chunks[0].IsFullFile)
 }
 
 // TestSearchHonorsDeletes ensures deleted files are not returned in search.
@@ -316,6 +317,7 @@ func TestSearchFallbackReturnsResultsBeforeIndexReady(t *testing.T) {
 	require.NotEmpty(t, searchRes.Chunks)
 	require.Equal(t, "/notes.txt", searchRes.Chunks[0].FilePath)
 	require.Contains(t, strings.ToLower(searchRes.Chunks[0].ChunkContent), "mcp")
+	require.True(t, searchRes.Chunks[0].IsFullFile)
 }
 
 // TestSearchFallbackHonorsPathPrefix verifies raw-file fallback respects path prefix filtering.
