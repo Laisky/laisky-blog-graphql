@@ -2,6 +2,7 @@ import { ApiKeyInput } from '@/components/api-key-input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 import {
@@ -15,6 +16,7 @@ import {
   Loader2,
   LogOut,
   MessageSquare,
+  Save,
   ShieldAlert,
   ShieldCheck,
   User,
@@ -25,12 +27,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { getPreferencesFromServer, setDisabledToolsOnServer } from '../user-requests/api';
 
 export function SettingsPage() {
-  const { apiKey, status, remainQuota, disconnect } = useApiKey();
+  const { apiKey, status, remainQuota, keyEntries, setAliasForKey, disconnect } = useApiKey();
   const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [disabledTools, setDisabledTools] = useState<string[]>([]);
   const [isToolsLoading, setIsToolsLoading] = useState(false);
   const [isSavingTool, setIsSavingTool] = useState<string | null>(null);
   const [toolsError, setToolsError] = useState<string | null>(null);
+  const [aliasDrafts, setAliasDrafts] = useState<Record<string, string>>({});
 
   const getStatusDisplay = () => {
     switch (status) {
@@ -100,6 +103,16 @@ export function SettingsPage() {
 
     return Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
   }, [availableTools]);
+
+  useEffect(() => {
+    setAliasDrafts((previous) => {
+      const next: Record<string, string> = {};
+      for (const entry of keyEntries) {
+        next[entry.key] = previous[entry.key] ?? entry.alias;
+      }
+      return next;
+    });
+  }, [keyEntries]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -238,6 +251,91 @@ export function SettingsPage() {
                     <LogOut className="mr-2 h-4 w-4" />
                     Disconnect & Clear key
                   </Button>
+                </div>
+              )}
+
+              {keyEntries.length > 0 && (
+                <div className="space-y-4 rounded-xl border border-border/40 bg-muted/10 p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-medium text-foreground">API Key Aliases</h4>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Set a readable alias for each stored API key for quick switching.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-2.5">
+                    {keyEntries.map((entry) => {
+                      const isActive = entry.key === apiKey;
+                      const value = aliasDrafts[entry.key] ?? entry.alias;
+                      const isDirty = value !== entry.alias;
+
+                      return (
+                        <div
+                          key={entry.key}
+                          className={cn(
+                            'group relative flex flex-col gap-3 rounded-lg border p-3 transition-all duration-200 sm:flex-row sm:items-center sm:justify-between',
+                            isActive
+                              ? 'border-primary/30 bg-primary/5 shadow-sm'
+                              : 'border-border/50 bg-card hover:border-border hover:shadow-sm'
+                          )}
+                        >
+                          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                            <div className="flex items-center gap-2.5">
+                              <div className="relative flex w-full max-w-[240px] items-center">
+                                <Input
+                                  value={value}
+                                  onChange={(event) =>
+                                    setAliasDrafts((previous) => ({
+                                      ...previous,
+                                      [entry.key]: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Alias"
+                                  maxLength={60}
+                                  className={cn(
+                                    'h-8 w-full text-sm font-medium transition-colors border-transparent hover:border-border focus:border-primary',
+                                    isActive
+                                      ? 'bg-background/50 focus:bg-background'
+                                      : 'bg-transparent hover:bg-muted/50 focus:bg-background'
+                                  )}
+                                />
+                              </div>
+                              {isActive && (
+                                <Badge
+                                  variant="default"
+                                  className="border-none bg-primary/10 px-2 text-[10px] font-semibold tracking-wider text-primary hover:bg-primary/20"
+                                >
+                                  ACTIVE
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="truncate pl-1 font-mono text-[11px] text-muted-foreground/70" title={entry.key}>
+                              {entry.key}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center justify-end">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isDirty ? 'default' : 'ghost'}
+                              className={cn(
+                                'h-8 gap-1.5 transition-all duration-200',
+                                isDirty
+                                  ? 'translate-x-0 opacity-100'
+                                  : 'translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'
+                              )}
+                              onClick={() => setAliasForKey(entry.key, value)}
+                              disabled={!isDirty}
+                            >
+                              <Save className="h-3.5 w-3.5" />
+                              {isDirty ? 'Save' : 'Saved'}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

@@ -33,7 +33,7 @@ export function ApiKeyInput({
   onRefresh,
   className,
 }: ApiKeyInputProps) {
-  const { apiKey, status, history, setApiKey, removeFromHistory, disconnect } = useApiKey();
+  const { apiKey, status, history, keyEntries, setApiKey, removeFromHistory, disconnect } = useApiKey();
   const [formValue, setFormValue] = useState(apiKey);
   const [isKeyVisible, setIsKeyVisible] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -112,6 +112,14 @@ export function ApiKeyInput({
     return `${key.slice(0, 4)}••••${key.slice(-4)}`;
   };
 
+  const dropdownEntries =
+    keyEntries && keyEntries.length > 0
+      ? keyEntries
+      : history.map((key) => ({
+          key,
+          alias: maskedKey(key),
+        }));
+
   return (
     <div ref={containerRef} className={cn('relative w-full', className)}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 md:flex-row md:items-center">
@@ -137,7 +145,7 @@ export function ApiKeyInput({
             >
               {isKeyVisible ? 'Hide' : 'Show'}
             </Button>
-            {history.length > 0 && (
+            {dropdownEntries.length > 0 && (
               <Button
                 type="button"
                 variant="outline"
@@ -170,22 +178,25 @@ export function ApiKeyInput({
         </div>
       </form>
 
-      {showDropdown && history.length > 0 && (
+      {showDropdown && dropdownEntries.length > 0 && (
         <div className="absolute left-0 mt-2 w-full md:max-w-md rounded-md border border-border/60 bg-card shadow-lg z-50">
           <ul className="py-1 text-sm">
-            {history.map((key) => (
+            {dropdownEntries.map((entry) => (
               <li
-                key={key}
+                key={entry.key}
                 className="flex items-center justify-between px-3 py-2 hover:bg-muted cursor-pointer"
-                onClick={() => handleSelectHistory(key)}
+                onClick={() => handleSelectHistory(entry.key)}
               >
-                <span className="font-mono truncate">{maskedKey(key)}</span>
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm font-medium text-foreground">{entry.alias}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{maskedKey(entry.key)}</span>
+                </div>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                  onClick={(event) => handleDeleteHistory(event, key)}
+                  onClick={(event) => handleDeleteHistory(event, entry.key)}
                   aria-label="Remove from history"
                 >
                   <Trash2 className="h-3 w-3" />

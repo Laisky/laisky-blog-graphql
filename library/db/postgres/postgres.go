@@ -7,6 +7,7 @@ import (
 	errors "github.com/Laisky/errors/v2"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	gormLogger "gorm.io/gorm/logger"
 )
 
 // DB postgres db
@@ -29,7 +30,9 @@ func NewDB(ctx context.Context, dialInfo DialInfo) (*DB, error) {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  dsn,
 		PreferSimpleProtocol: true,
-	}))
+	}), &gorm.Config{
+		Logger: newTruncatingParamsLogger(gormLogger.Default.LogMode(gormLogger.Warn)),
+	})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/Laisky/zap"
@@ -41,7 +42,16 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "search disabled", false))
 	}
 
+	lexicalEngine := s.lexicalSearchEngineName()
+	lexicalStartedAt := time.Now()
 	lexical, lexicalErr := s.fetchLexicalCandidates(ctx, auth.APIKeyHash, project, pathPrefix, query, s.settings.Search.LexicalCandidates)
+	s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
+		Stage:       "lexical_retrieve",
+		Engine:      lexicalEngine,
+		DurationMS:  time.Since(lexicalStartedAt).Milliseconds(),
+		ResultCount: len(lexical),
+		Err:         lexicalErr,
+	})
 	if lexicalErr != nil {
 		s.LoggerFromContext(ctx).Debug("file search lexical retrieval failed",
 			zap.String("project", project),
@@ -53,14 +63,30 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 
 	semantic := []searchCandidate{}
 	var semanticErr error
+	semanticEngine := s.semanticSearchEngineName()
 	if s.embedder == nil {
 		semanticErr = NewError(ErrCodeSearchBackend, "embedder not configured", false)
+		s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
+			Stage:       "semantic_retrieve",
+			Engine:      semanticEngine,
+			DurationMS:  0,
+			ResultCount: 0,
+			Err:         semanticErr,
+		})
 		s.LoggerFromContext(ctx).Debug("file search semantic retrieval skipped: embedder not configured",
 			zap.String("project", project),
 			zap.String("path_prefix", pathPrefix),
 		)
 	} else {
+		embedStartedAt := time.Now()
 		vectors, embedErr := s.embedder.EmbedTexts(ctx, auth.APIKey, []string{query})
+		s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
+			Stage:       "semantic_embed",
+			Engine:      "embedder",
+			DurationMS:  time.Since(embedStartedAt).Milliseconds(),
+			ResultCount: len(vectors),
+			Err:         embedErr,
+		})
 		if embedErr != nil {
 			semanticErr = errors.Wrap(embedErr, "embed query")
 			s.LoggerFromContext(ctx).Debug("file search semantic embedding failed",
@@ -76,7 +102,15 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 			)
 		} else {
 			queryVec := vectors[0]
+			semanticStartedAt := time.Now()
 			semantic, semanticErr = s.fetchSemanticCandidates(ctx, auth.APIKeyHash, project, pathPrefix, queryVec, s.settings.Search.VectorCandidates)
+			s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
+				Stage:       "semantic_retrieve",
+				Engine:      semanticEngine,
+				DurationMS:  time.Since(semanticStartedAt).Milliseconds(),
+				ResultCount: len(semantic),
+				Err:         semanticErr,
+			})
 			if semanticErr != nil {
 				s.LoggerFromContext(ctx).Debug("file search semantic retrieval failed",
 					zap.String("project", project),
@@ -94,7 +128,15 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 
 	merged := mergeCandidates(semantic, lexical)
 	if len(merged) == 0 {
+		fallbackStartedAt := time.Now()
 		fallbackChunks, fallbackErr := s.searchFallbackFromRawFiles(ctx, auth.APIKeyHash, project, pathPrefix, query, limit)
+		s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
+			Stage:       "raw_file_fallback",
+			Engine:      "sql_raw_file_scan",
+			DurationMS:  time.Since(fallbackStartedAt).Milliseconds(),
+			ResultCount: len(fallbackChunks),
+			Err:         fallbackErr,
+		})
 		if fallbackErr != nil {
 			s.LoggerFromContext(ctx).Debug("file search raw fallback failed",
 				zap.String("project", project),

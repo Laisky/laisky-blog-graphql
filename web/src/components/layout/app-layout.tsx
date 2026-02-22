@@ -1,8 +1,16 @@
-import { AlertCircle, AlertTriangle, Cpu, Loader2, ShieldAlert, ShieldCheck, User } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, Cpu, Key, Loader2, ShieldAlert, ShieldCheck, User } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useApiKey } from '@/lib/api-key-context';
 import { useToolsConfig } from '@/lib/tools-config-context';
 import { cn } from '@/lib/utils';
@@ -33,7 +41,7 @@ const consoleItems: ConsoleMenuItem[] = [
 export function AppLayout() {
   const location = useLocation();
   const toolsConfig = useToolsConfig();
-  const { status } = useApiKey();
+  const { apiKey, status, sessionId } = useApiKey();
 
   // Filter console items based on enabled tools
   const filteredConsoleItems = useMemo(() => {
@@ -88,6 +96,7 @@ export function AppLayout() {
               <NavItem to="/tools/call_log" label="Logs" />
             </nav>
             <div className="flex items-center gap-2 border-l border-border pl-4">
+              <ApiKeyAliasSwitcher />
               <ThemeToggle />
               <Link
                 to="/settings"
@@ -124,10 +133,14 @@ export function AppLayout() {
       </header>
       <main className="flex-1 bg-background">
         {isInspectorRoute ? (
-          <Outlet />
+          <div key={`${apiKey}:${sessionId}`}>
+            <Outlet />
+          </div>
         ) : (
           <div className="container mx-auto max-w-6xl px-4 py-10">
-            <Outlet />
+            <div key={`${apiKey}:${sessionId}`}>
+              <Outlet />
+            </div>
           </div>
         )}
       </main>
@@ -135,6 +148,63 @@ export function AppLayout() {
         Enpower your agents. &copy; 2026 Laisky.
       </footer>
     </div>
+  );
+}
+
+/** maskKey returns a safe key preview for menu display. */
+function maskKey(key: string): string {
+  if (key.length <= 8) {
+    return key;
+  }
+  return `${key.slice(0, 4)}••••${key.slice(-4)}`;
+}
+
+/** ApiKeyAliasSwitcher renders a quick-switch menu for stored API key aliases. */
+function ApiKeyAliasSwitcher() {
+  const { apiKey, keyEntries, status, switchApiKey } = useApiKey();
+
+  if (keyEntries.length === 0) {
+    return null;
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+          aria-label="Switch API key"
+          title="Switch API key alias"
+        >
+          <Key className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">API Key Aliases</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {keyEntries.map((entry) => {
+          const isActive = entry.key === apiKey;
+          const isDisabled = status === 'validating' || isActive;
+
+          return (
+            <DropdownMenuItem
+              key={entry.key}
+              disabled={isDisabled}
+              onClick={() => {
+                switchApiKey(entry.key);
+              }}
+              className="flex items-center gap-2"
+            >
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-medium text-foreground">{entry.alias}</span>
+                <span className="font-mono text-xs text-muted-foreground">{maskKey(entry.key)}</span>
+              </div>
+              {isActive && <Check className="h-4 w-4 text-primary" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

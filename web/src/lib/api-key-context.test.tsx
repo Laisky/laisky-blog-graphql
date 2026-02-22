@@ -4,15 +4,19 @@ import { ApiKeyProvider, useApiKey } from './api-key-context';
 
 // Mock component to access context
 function TestComponent() {
-  const { apiKey, status, remainQuota, setApiKey, disconnect, validateApiKey, history } = useApiKey();
+  const { apiKey, status, remainQuota, setApiKey, disconnect, validateApiKey, history, keyEntries, setAliasForKey } = useApiKey();
   return (
     <div>
       <div data-testid="apiKey">{apiKey}</div>
       <div data-testid="status">{status}</div>
       <div data-testid="quota">{remainQuota}</div>
       <div data-testid="history">{JSON.stringify(history)}</div>
+      <div data-testid="entries">{JSON.stringify(keyEntries)}</div>
       <button onClick={() => setApiKey('new-key')} data-testid="setKey">
         Set Key
+      </button>
+      <button onClick={() => setAliasForKey('new-key', 'Primary')} data-testid="setAlias">
+        Set Alias
       </button>
       <button onClick={() => disconnect()} data-testid="disconnect">
         Disconnect
@@ -231,5 +235,36 @@ describe('ApiKeyContext', () => {
     expect(screen.getByTestId('status').textContent).toBe('none');
     expect(screen.getByTestId('quota').textContent).toBe('');
     expect(localStorage.getItem('mcp_api_key')).toBeNull();
+  });
+
+  it('should update alias for a stored key', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          ValidateOneapiApiKey: {
+            remain_quota: 300000,
+            used_quota: 100,
+          },
+        },
+      }),
+    } as Response);
+
+    render(
+      <ApiKeyProvider>
+        <TestComponent />
+      </ApiKeyProvider>
+    );
+
+    await act(async () => {
+      screen.getByTestId('setKey').click();
+    });
+
+    await act(async () => {
+      screen.getByTestId('setAlias').click();
+    });
+
+    expect(screen.getByTestId('entries').textContent).toContain('"alias":"Primary"');
   });
 });

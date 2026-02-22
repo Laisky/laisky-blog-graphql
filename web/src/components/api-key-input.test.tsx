@@ -1,7 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { useApiKey } from '@/lib/api-key-context';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiKeyInput } from './api-key-input';
-import { useApiKey } from '@/lib/api-key-context';
 
 // Mock the hook
 vi.mock('@/lib/api-key-context', () => ({
@@ -86,7 +86,7 @@ describe('ApiKeyInput', () => {
     const historyButton = screen.getByLabelText(/select from history/i);
     fireEvent.click(historyButton);
 
-    expect(screen.getByText(/key1/i)).toBeDefined();
-    expect(screen.getByText(/key2/i)).toBeDefined();
+    expect(screen.getAllByText(/key1/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/key2/i).length).toBeGreaterThan(0);
   });
 });
