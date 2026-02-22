@@ -1,12 +1,14 @@
 package rag
 
 import (
+	"bytes"
 	"context"
-	"fmt"
+	"encoding/json"
 	"net/http"
+	"strings"
 
+	errors "github.com/Laisky/errors/v2"
 	pgvector "github.com/pgvector/pgvector-go"
-	openai "github.com/sashabaranov/go-openai"
 )
 
 // Embedder converts text into vector representations.
@@ -26,9 +28,10 @@ func NewOpenAIEmbedder(baseURL, model string, httpClient *http.Client) *OpenAIEm
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+	trimmedBaseURL := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	return &OpenAIEmbedder{
-		baseURL:    baseURL,
-		model:      model,
+		baseURL:    trimmedBaseURL,
+		model:      strings.TrimSpace(model),
 		httpClient: httpClient,
 	}
 }
@@ -36,18 +39,23 @@ func NewOpenAIEmbedder(baseURL, model string, httpClient *http.Client) *OpenAIEm
 // EmbedTexts batches the input strings and returns their vector representations.
 func (e *OpenAIEmbedder) EmbedTexts(ctx context.Context, apiKey string, inputs []string) ([]pgvector.Vector, error) {
 	if len(inputs) == 0 {
-		return nil, fmt.Errorf("no inputs provided for embedding")
+		return nil, errors.New("no inputs provided for embedding")
 	}
-	if apiKey == "" {
-		return nil, fmt.Errorf("missing api key for embeddings")
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, errors.New("missing api key for embeddings")
 	}
-
-	cfg := openai.DefaultConfig(apiKey)
-	if e.baseURL != "" {
-		cfg.BaseURL = e.baseURL
+	if e == nil {
+		return nil, errors.New("embedder is nil")
 	}
-	cfg.HTTPClient = e.httpClient
-	client := openai.NewClientWithConfig(cfg)
+	if e.httpClient == nil {
+		return nil, errors.New("http client is nil")
+	}
+	if e.baseURL == "" {
+		return nil, errors.New("missing embeddings base url")
+	}
+	if e.model == "" {
+		return nil, errors.New("missing embeddings model")
+	}
 
 	vectors := make([]pgvector.Vector, 0, len(inputs))
 	batchSize := 32
@@ -57,12 +65,9 @@ func (e *OpenAIEmbedder) EmbedTexts(ctx context.Context, apiKey string, inputs [
 			end = len(inputs)
 		}
 		batch := inputs[start:end]
-		resp, err := client.CreateEmbeddings(ctx, openai.EmbeddingRequest{
-			Model: openai.EmbeddingModel(e.model),
-			Input: batch,
-		})
+		resp, err := e.createEmbeddings(ctx, apiKey, batch)
 		if err != nil {
-			return nil, fmt.Errorf("create embeddings: %w", err)
+			return nil, errors.Wrap(err, "create embeddings")
 		}
 		for _, data := range resp.Data {
 			values := make([]float32, len(data.Embedding))
@@ -74,4 +79,49 @@ func (e *OpenAIEmbedder) EmbedTexts(ctx context.Context, apiKey string, inputs [
 	}
 
 	return vectors, nil
+}
+
+type embeddingsRequest struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
+}
+
+type embeddingsResponse struct {
+	Data []embeddingsDataItem `json:"data"`
+}
+
+type embeddingsDataItem struct {
+	Embedding []float64 `json:"embedding"`
+}
+
+// createEmbeddings sends one embeddings batch request and parses vectors from response.
+func (e *OpenAIEmbedder) createEmbeddings(ctx context.Context, apiKey string, batch []string) (*embeddingsResponse, error) {
+	body, err := json.Marshal(embeddingsRequest{Model: e.model, Input: batch})
+	if err != nil {
+		return nil, errors.Wrap(err, "marshal embeddings request")
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.baseURL+"/v1/embeddings", bytes.NewReader(body))
+	if err != nil {
+		return nil, errors.Wrap(err, "build embeddings request")
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := e.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, errors.Wrap(err, "call embeddings endpoint")
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
+		return nil, errors.Errorf("embeddings endpoint status %d", httpResp.StatusCode)
+	}
+
+	var decoded embeddingsResponse
+	if err := json.NewDecoder(httpResp.Body).Decode(&decoded); err != nil {
+		return nil, errors.Wrap(err, "decode embeddings response")
+	}
+
+	return &decoded, nil
 }

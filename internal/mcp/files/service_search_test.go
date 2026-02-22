@@ -15,12 +15,75 @@ type stubRerankClient struct {
 	err    error
 }
 
+type captureRerankClient struct {
+	keys []string
+}
+
+// Rerank captures the API key used for rerank requests.
+func (c *captureRerankClient) Rerank(_ context.Context, apiKey, _ string, docs []string) ([]float64, error) {
+	c.keys = append(c.keys, apiKey)
+	scores := make([]float64, len(docs))
+	for i := range docs {
+		scores[i] = float64(len(docs) - i)
+	}
+	return scores, nil
+}
+
+type captureEmbedder struct {
+	keys   []string
+	vector pgvector.Vector
+}
+
+// EmbedTexts captures the API key used for embedding requests.
+func (c *captureEmbedder) EmbedTexts(_ context.Context, apiKey string, inputs []string) ([]pgvector.Vector, error) {
+	c.keys = append(c.keys, apiKey)
+	result := make([]pgvector.Vector, 0, len(inputs))
+	for range inputs {
+		result = append(result, c.vector)
+	}
+	return result, nil
+}
+
 // Rerank returns configured rerank scores or an error.
 func (s stubRerankClient) Rerank(context.Context, string, string, []string) ([]float64, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.scores, nil
+}
+
+// TestSearchUsesRequestAPIKeyForExternalCalls verifies file_search forwards the request API key to external embedding/rerank calls.
+func TestSearchUsesRequestAPIKeyForExternalCalls(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	embedder := &captureEmbedder{vector: pgvector.NewVector([]float32{1, 0})}
+	reranker := &captureRerankClient{}
+	svc := newTestService(t, settings, embedder, &memoryCredentialStore{})
+	svc.rerank = reranker
+	auth := AuthContext{APIKeyHash: "hash-tenant", APIKey: "tenant-user-key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj", "/a.txt", "alpha beta gamma", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	worker := svc.NewIndexWorker()
+	require.NoError(t, worker.RunOnce(context.Background()))
+
+	_, err = svc.Search(context.Background(), auth, "proj", "alpha", "", 5)
+	require.NoError(t, err)
+
+	require.NotEmpty(t, embedder.keys)
+	for _, key := range embedder.keys {
+		require.Equal(t, auth.APIKey, key)
+	}
+	require.NotEmpty(t, reranker.keys)
+	for _, key := range reranker.keys {
+		require.Equal(t, auth.APIKey, key)
+	}
 }
 
 // TestSearchEndToEnd verifies indexing and search retrieval.

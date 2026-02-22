@@ -17,6 +17,20 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
+type captureRAGEmbedder struct {
+	keys []string
+}
+
+// EmbedTexts captures API keys used for embedding requests and returns deterministic vectors.
+func (e *captureRAGEmbedder) EmbedTexts(_ context.Context, apiKey string, inputs []string) ([]pgvector.Vector, error) {
+	e.keys = append(e.keys, apiKey)
+	result := make([]pgvector.Vector, 0, len(inputs))
+	for range inputs {
+		result = append(result, pgvector.NewVector([]float32{1, 0, 0}))
+	}
+	return result, nil
+}
+
 func TestEnsureVectorExtensionPostgresSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -103,4 +117,38 @@ func TestFetchCandidatesUsesVectorColumn(t *testing.T) {
 	require.Equal(t, queryVec, candidates[0].Embedding)
 	require.Equal(t, []string{"jwt"}, candidates[0].tokens())
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestExtractKeyInfoUsesRequestAPIKeyForEmbedding(t *testing.T) {
+	t.Parallel()
+
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	embedder := &captureRAGEmbedder{}
+	settings := LoadSettingsFromConfig()
+	settings.Enabled = true
+	settings.TopKDefault = 2
+	settings.TopKLimit = 10
+	settings.MaxMaterialsSize = 1024 * 1024
+	settings.MaxChunkChars = 80
+
+	svc, err := NewService(db, embedder, ParagraphChunker{}, settings, log.Logger.Named("rag_key_propagation_test"))
+	require.NoError(t, err)
+
+	_, err = svc.ExtractKeyInfo(context.Background(), ExtractInput{
+		UserID:    "user:tenant",
+		TaskID:    "task-1",
+		APIKey:    "tenant-request-key",
+		Query:     "where is alpha",
+		Materials: "alpha content in first paragraph\n\nsecond paragraph",
+		TopK:      2,
+	})
+	if err != nil {
+		require.Contains(t, err.Error(), "query rag candidates")
+	}
+	require.GreaterOrEqual(t, len(embedder.keys), 2)
+	for _, key := range embedder.keys {
+		require.Equal(t, "tenant-request-key", key)
+	}
 }

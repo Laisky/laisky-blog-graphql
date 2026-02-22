@@ -123,8 +123,8 @@ func (h *ResponsesHelper) CreateText(ctx context.Context, apiKey string, req Res
 }
 
 type responsesCreateResponse struct {
-	OutputText string                 `json:"output_text"`
-	Output     []responsesOutputItem  `json:"output"`
+	OutputText string                `json:"output_text"`
+	Output     []responsesOutputItem `json:"output"`
 }
 
 func (r responsesCreateResponse) AggregatedText() string {
