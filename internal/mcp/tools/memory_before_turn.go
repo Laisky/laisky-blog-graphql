@@ -30,7 +30,11 @@ func (tool *MemoryBeforeTurnTool) Definition() mcp.Tool {
 		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
 		mcp.WithString("turn_id", mcp.Description("Turn identifier. Auto-generated when omitted.")),
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
-		mcp.WithArray("current_input", mcp.Description("Current turn input items in Responses API format.")),
+		mcp.WithArray(
+			"current_input",
+			mcp.Description("Current turn input items in Responses API format."),
+			mcp.Items(memoryResponseItemSchema()),
+		),
 		mcp.WithString("base_instructions", mcp.Description("Optional base system instructions.")),
 		mcp.WithNumber("max_input_tok", mcp.Description("Optional max context token budget. Defaults to 120000 when omitted.")),
 		mcp.WithReadOnlyHintAnnotation(true),

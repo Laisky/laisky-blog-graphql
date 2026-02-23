@@ -23,6 +23,11 @@ const (
 	defaultListLimit       = 200
 )
 
+// memoryResponseItemSchema returns a permissive JSON schema for one Responses-style item.
+func memoryResponseItemSchema() map[string]any {
+	return map[string]any{}
+}
+
 // MemoryService exposes memory lifecycle operations for MCP tools.
 type MemoryService interface {
 	BeforeTurn(context.Context, files.AuthContext, mcpmemory.BeforeTurnRequest) (mcpmemory.BeforeTurnResponse, error)

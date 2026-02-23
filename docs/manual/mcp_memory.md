@@ -118,7 +118,28 @@ Request:
   "session_id": "session-001",
   "user_id": "user-001",
   "turn_id": "turn-20260221-0001",
-  "input_items": ["...same items used for model input..."],
+  "input_items": [
+    {
+      "type": "message",
+      "role": "developer",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Memory recall: ..."
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Please summarize today plan in 3 bullets"
+        }
+      ]
+    }
+  ],
   "output_items": [
     {
       "type": "message",
@@ -133,6 +154,8 @@ Request:
   ]
 }
 ```
+
+Note: `current_input`, `input_items`, and `output_items` must be JSON arrays of Responses-style item objects.
 
 Response:
 

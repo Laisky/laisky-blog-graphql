@@ -30,8 +30,16 @@ func (tool *MemoryAfterTurnTool) Definition() mcp.Tool {
 		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
 		mcp.WithString("turn_id", mcp.Description("Turn identifier. Auto-generated when omitted.")),
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
-		mcp.WithArray("input_items", mcp.Description("Prepared turn input items.")),
-		mcp.WithArray("output_items", mcp.Description("Model output items.")),
+		mcp.WithArray(
+			"input_items",
+			mcp.Description("Prepared turn input items."),
+			mcp.Items(memoryResponseItemSchema()),
+		),
+		mcp.WithArray(
+			"output_items",
+			mcp.Description("Model output items."),
+			mcp.Items(memoryResponseItemSchema()),
+		),
 		mcp.WithReadOnlyHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
