@@ -2,52 +2,70 @@ package memory
 
 import (
 	"context"
+	"database/sql"
 	"hash/fnv"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
-	"gorm.io/gorm"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 // withSessionLock executes fn under a session-scoped lock.
-func withSessionLock(ctx context.Context, db *gorm.DB, apiKeyHash, project, sessionID string, timeout time.Duration, fn func(tx *gorm.DB) error) error {
+func withSessionLock(ctx context.Context, db *sql.DB, apiKeyHash, project, sessionID string, timeout time.Duration, fn func(tx *sql.Tx) error) error {
 	if db == nil {
 		return errors.New("db is required")
 	}
-	if !isPostgresDialect(db) {
-		return fn(db.WithContext(ctx))
+	if !isPostgresDB(db) {
+		return fn(nil)
 	}
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := acquireSessionLock(ctx, tx, apiKeyHash, project, sessionID, timeout); err != nil {
-			return err
-		}
-		return fn(tx)
-	})
+
+	tx, beginErr := db.BeginTx(ctx, &sql.TxOptions{})
+	if beginErr != nil {
+		return errors.Wrap(beginErr, "begin transaction")
+	}
+
+	if err := acquireSessionLock(ctx, tx, apiKeyHash, project, sessionID, timeout); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if runErr := fn(tx); runErr != nil {
+		_ = tx.Rollback()
+		return runErr
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		return errors.Wrap(commitErr, "commit transaction")
+	}
+
+	return nil
 }
 
 // acquireSessionLock attempts to acquire a session advisory lock in the current transaction.
-func acquireSessionLock(ctx context.Context, tx *gorm.DB, apiKeyHash, project, sessionID string, timeout time.Duration) error {
+func acquireSessionLock(ctx context.Context, tx *sql.Tx, apiKeyHash, project, sessionID string, timeout time.Duration) error {
 	if tx == nil {
 		return errors.New("transaction is required")
 	}
-	if !isPostgresDialect(tx) {
-		return nil
-	}
 
 	key := hashSessionLockKey(apiKeyHash, project, sessionID)
-	deadline := time.Now().Add(timeout)
+	deadline := time.Now().UTC().Add(timeout)
 	for {
 		var locked bool
-		if err := tx.WithContext(ctx).Raw("SELECT pg_try_advisory_xact_lock(?)", key).Scan(&locked).Error; err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT pg_try_advisory_xact_lock($1)", key).Scan(&locked); err != nil {
 			return errors.Wrap(err, "acquire session advisory lock")
 		}
 		if locked {
 			return nil
 		}
-		if time.Now().After(deadline) {
+		if time.Now().UTC().After(deadline) {
 			return errors.WithStack(NewError(ErrCodeResourceBusy, "resource busy", true))
 		}
-		time.Sleep(50 * time.Millisecond)
+
+		select {
+		case <-ctx.Done():
+			return errors.Wrap(ctx.Err(), "wait for session advisory lock")
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 }
 
@@ -62,13 +80,16 @@ func hashSessionLockKey(apiKeyHash, project, sessionID string) int64 {
 	return int64(h.Sum64())
 }
 
-// isPostgresDialect reports whether the active gorm dialector is postgres.
-func isPostgresDialect(db *gorm.DB) bool {
+// isPostgresDB reports whether the active SQL driver is postgres/pgx.
+func isPostgresDB(db *sql.DB) bool {
 	if db == nil {
 		return false
 	}
-	if db.Dialector == nil {
+
+	switch db.Driver().(type) {
+	case *stdlib.Driver:
+		return true
+	default:
 		return false
 	}
-	return db.Dialector.Name() == "postgres"
 }

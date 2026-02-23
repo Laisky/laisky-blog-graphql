@@ -1,12 +1,10 @@
 package postgres
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"github.com/pgvector/pgvector-go"
-	gormLogger "gorm.io/gorm/logger"
 )
 
 const (
@@ -14,34 +12,18 @@ const (
 	defaultVectorPreviewDims    = 8
 )
 
-// truncatingParamsLogger filters oversized SQL parameters before GORM prints SQL logs.
-type truncatingParamsLogger struct {
-	gormLogger.Interface
-	maxLoggedParamLength int
-	vectorPreviewDims    int
-}
-
-// ParamsFilter truncates vector-like and oversized parameter values to keep SQL logs concise.
-func (l *truncatingParamsLogger) ParamsFilter(_ context.Context, sql string, params ...any) (string, []any) {
+// sanitizeLoggedSQLParams truncates vector-like and oversized parameter values for concise SQL logs.
+func sanitizeLoggedSQLParams(params ...any) []any {
 	if len(params) == 0 {
-		return sql, params
+		return params
 	}
 
 	filtered := make([]any, len(params))
 	for idx, param := range params {
-		filtered[idx] = sanitizeLoggedSQLParam(param, l.maxLoggedParamLength, l.vectorPreviewDims)
+		filtered[idx] = sanitizeLoggedSQLParam(param, defaultMaxLoggedParamLength, defaultVectorPreviewDims)
 	}
 
-	return sql, filtered
-}
-
-// newTruncatingParamsLogger wraps a GORM logger with parameter truncation.
-func newTruncatingParamsLogger(base gormLogger.Interface) gormLogger.Interface {
-	return &truncatingParamsLogger{
-		Interface:            base,
-		maxLoggedParamLength: defaultMaxLoggedParamLength,
-		vectorPreviewDims:    defaultVectorPreviewDims,
-	}
+	return filtered
 }
 
 // sanitizeLoggedSQLParam converts oversized parameter values into compact log-safe summaries.

@@ -2,10 +2,10 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
-	"gorm.io/gorm"
 )
 
 // Stat returns metadata for the target path.
@@ -46,7 +46,7 @@ func (s *Service) Stat(ctx context.Context, auth AuthContext, project, path stri
 			UpdatedAt: file.UpdatedAt,
 		}, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return StatResult{}, errors.Wrap(err, "query file")
 	}
 
@@ -90,7 +90,7 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 
 	file, err := s.findActiveFile(ctx, auth.APIKeyHash, project, path)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			if exists, dirErr := s.directoryExists(ctx, auth.APIKeyHash, project, path); dirErr == nil && exists {
 				return ReadResult{}, errors.WithStack(NewError(ErrCodeIsDirectory, "path is a directory", false))
 			}
@@ -115,9 +115,26 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 // findActiveFile loads a non-deleted file row by path.
 func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path string) (*File, error) {
 	var file File
-	err := s.db.WithContext(ctx).
-		Where("apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE", apiKeyHash, project, path).
-		First(&file).Error
+	err := s.db.QueryRowContext(ctx,
+		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at
+			FROM mcp_files
+			WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE
+			LIMIT 1`, s.isPostgres),
+		apiKeyHash,
+		project,
+		path,
+	).Scan(
+		&file.ID,
+		&file.APIKeyHash,
+		&file.Project,
+		&file.Path,
+		&file.Content,
+		&file.Size,
+		&file.CreatedAt,
+		&file.UpdatedAt,
+		&file.Deleted,
+		&file.DeletedAt,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -134,11 +151,12 @@ func (s *Service) directoryExists(ctx context.Context, apiKeyHash, project, path
 func (s *Service) findDirectoryUpdatedAt(ctx context.Context, apiKeyHash, project, path string) (time.Time, bool, error) {
 	prefix := buildPathPrefix(path)
 	var rawValue any
-	err := s.db.WithContext(ctx).
-		Model(&File{}).
-		Select("MAX(updated_at)").
-		Where("apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE", apiKeyHash, project, prefix).
-		Row().Scan(&rawValue)
+	err := s.db.QueryRowContext(ctx,
+		rebindSQL(`SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+		apiKeyHash,
+		project,
+		prefix,
+	).Scan(&rawValue)
 	if err != nil {
 		return time.Time{}, false, errors.Wrap(err, "query directory updated_at")
 	}

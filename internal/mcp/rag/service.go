@@ -3,8 +3,10 @@ package rag
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -16,8 +18,6 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/jackc/pgx/v5/pgconn"
 	pgvector "github.com/pgvector/pgvector-go"
-	"gorm.io/datatypes"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -38,7 +38,8 @@ type ExtractInput struct {
 
 // Service coordinates chunking, storage, and retrieval for the extract_key_info tool.
 type Service struct {
-	db       *gorm.DB
+	db       *sql.DB
+	dialect  sqlDialect
 	embedder Embedder
 	chunker  Chunker
 	settings Settings
@@ -47,9 +48,9 @@ type Service struct {
 }
 
 // NewService wires the dependencies and runs the required schema migrations.
-func NewService(db *gorm.DB, embedder Embedder, chunker Chunker, settings Settings, logger logSDK.Logger) (*Service, error) {
+func NewService(db *sql.DB, embedder Embedder, chunker Chunker, settings Settings, logger logSDK.Logger) (*Service, error) {
 	if db == nil {
-		return nil, errors.New("gorm db is required")
+		return nil, errors.New("sql db is required")
 	}
 	if embedder == nil {
 		return nil, errors.New("embedding client is required")
@@ -63,6 +64,7 @@ func NewService(db *gorm.DB, embedder Embedder, chunker Chunker, settings Settin
 
 	svc := &Service{
 		db:       db,
+		dialect:  detectSQLDialect(db),
 		embedder: embedder,
 		chunker:  chunker,
 		settings: settings,
@@ -79,7 +81,8 @@ func NewService(db *gorm.DB, embedder Embedder, chunker Chunker, settings Settin
 	return svc, nil
 }
 
-func runRAGMigrations(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error {
+// runRAGMigrations ensures table/index schemas needed by RAG retrieval are present.
+func runRAGMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) error {
 	if logger == nil {
 		logger = log.Logger.Named("mcp_rag_service")
 	}
@@ -90,11 +93,13 @@ func runRAGMigrations(ctx context.Context, db *gorm.DB, logger logSDK.Logger) er
 	}
 	logger.Debug("pgvector extension ensured for rag service")
 
-	logger.Debug("running rag auto migrations")
-	if err := db.WithContext(ctx).AutoMigrate(&Task{}, &Chunk{}, &Embedding{}, &BM25Row{}); err != nil {
-		return errors.Wrap(err, "auto migrate rag tables")
+	logger.Debug("running rag sql migrations")
+	for _, statement := range ragMigrationStatements(detectSQLDialect(db)) {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return errors.Wrap(err, "run rag migration statement")
+		}
 	}
-	logger.Debug("rag auto migrations finished")
+	logger.Debug("rag sql migrations finished")
 
 	return nil
 }
@@ -114,20 +119,21 @@ func (s *Service) loggerFromContext(ctx context.Context) logSDK.Logger {
 	return log.Logger.Named("mcp_rag_service")
 }
 
-func ensureVectorExtension(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error {
+// ensureVectorExtension enables the pgvector extension on PostgreSQL connections.
+func ensureVectorExtension(ctx context.Context, db *sql.DB, logger logSDK.Logger) error {
 	if db == nil {
-		return errors.New("gorm db is nil")
+		return errors.New("sql db is nil")
 	}
 	if !isPostgresDialect(db) {
 		return nil
 	}
 
-	if err := db.WithContext(ctx).Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+	if _, err := db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
 		if shouldFallbackToPgvector(err) {
 			if logger != nil {
 				logger.Debug("pgvector extension unavailable under name 'vector', retrying with legacy name")
 			}
-			if execErr := db.WithContext(ctx).Exec("CREATE EXTENSION IF NOT EXISTS pgvector").Error; execErr != nil {
+			if _, execErr := db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS pgvector"); execErr != nil {
 				return errors.Wrap(execErr, "create pgvector extension")
 			}
 			return nil
@@ -137,11 +143,21 @@ func ensureVectorExtension(ctx context.Context, db *gorm.DB, logger logSDK.Logge
 	return nil
 }
 
-func isPostgresDialect(db *gorm.DB) bool {
-	if db == nil || db.Dialector == nil {
+// isPostgresDialect reports whether the database is PostgreSQL-compatible.
+func isPostgresDialect(db *sql.DB) bool {
+	if db == nil {
 		return false
 	}
-	return strings.EqualFold(db.Dialector.Name(), "postgres")
+
+	t := strings.ToLower(fmt.Sprintf("%T", db.Driver()))
+	if strings.Contains(t, "sqlite") {
+		return false
+	}
+	if strings.Contains(t, "postgres") || strings.Contains(t, "pgx") || strings.Contains(t, "pq") || strings.Contains(t, "sqlmock") {
+		return true
+	}
+
+	return false
 }
 
 func shouldFallbackToPgvector(err error) bool {
@@ -154,6 +170,89 @@ func shouldFallbackToPgvector(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "extension \"vector\"") && strings.Contains(msg, "not") && strings.Contains(msg, "available")
+}
+
+// ragMigrationStatements returns idempotent DDL statements for RAG tables and indexes.
+func ragMigrationStatements(dialect sqlDialect) []string {
+	if dialect == sqlDialectPostgres {
+		return []string{
+			`CREATE TABLE IF NOT EXISTS mcp_rag_tasks (
+				id BIGSERIAL PRIMARY KEY,
+				user_id VARCHAR(128) NOT NULL,
+				task_id VARCHAR(128) NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_rag_tasks_user_task ON mcp_rag_tasks(user_id, task_id)`,
+			`CREATE TABLE IF NOT EXISTS mcp_rag_chunks (
+				id BIGSERIAL PRIMARY KEY,
+				task_id BIGINT NOT NULL,
+				materials_hash VARCHAR(96) NOT NULL,
+				chunk_index INTEGER NOT NULL,
+				text TEXT NOT NULL,
+				cleaned_text TEXT NOT NULL,
+				metadata JSONB,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_rag_chunks_task_hash ON mcp_rag_chunks(task_id, materials_hash)`,
+			`CREATE INDEX IF NOT EXISTS idx_rag_chunks_unique ON mcp_rag_chunks(chunk_index)`,
+			`CREATE TABLE IF NOT EXISTS mcp_rag_embeddings (
+				chunk_id BIGINT PRIMARY KEY,
+				vector VECTOR(1536) NOT NULL,
+				model VARCHAR(128) NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS mcp_rag_bm25 (
+				chunk_id BIGINT PRIMARY KEY,
+				tokens JSONB NOT NULL,
+				token_count INTEGER NOT NULL,
+				tokenizer VARCHAR(64) NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+		}
+	}
+
+	return []string{
+		`CREATE TABLE IF NOT EXISTS mcp_rag_tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id TEXT NOT NULL,
+			task_id TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rag_tasks_user_task ON mcp_rag_tasks(user_id, task_id)`,
+		`CREATE TABLE IF NOT EXISTS mcp_rag_chunks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id INTEGER NOT NULL,
+			materials_hash TEXT NOT NULL,
+			chunk_index INTEGER NOT NULL,
+			text TEXT NOT NULL,
+			cleaned_text TEXT NOT NULL,
+			metadata TEXT,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rag_chunks_task_hash ON mcp_rag_chunks(task_id, materials_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_rag_chunks_unique ON mcp_rag_chunks(chunk_index)`,
+		`CREATE TABLE IF NOT EXISTS mcp_rag_embeddings (
+			chunk_id INTEGER PRIMARY KEY,
+			vector TEXT NOT NULL,
+			model TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS mcp_rag_bm25 (
+			chunk_id INTEGER PRIMARY KEY,
+			tokens TEXT NOT NULL,
+			token_count INTEGER NOT NULL,
+			tokenizer TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
+		)`,
+	}
 }
 
 // ExtractKeyInfo orchestrates ingestion (if needed) and hybrid retrieval for the request.
@@ -218,20 +317,16 @@ func (s *Service) validateInput(input ExtractInput) error {
 // ensureTask resolves the canonical task row and falls back to legacy user IDs when needed.
 func (s *Service) ensureTask(ctx context.Context, userID, taskID, apiKey string) (*Task, error) {
 	var task Task
-	err := s.db.WithContext(ctx).
-		Where("user_id = ? AND task_id = ?", userID, taskID).
-		First(&task).Error
+	err := s.getTaskByUserAndTaskID(ctx, userID, taskID, &task)
 	if err == nil {
 		return &task, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.Wrap(err, "query rag task")
 	}
 
 	for _, candidate := range legacyUserIDCandidates(apiKey, userID) {
-		err = s.db.WithContext(ctx).
-			Where("user_id = ? AND task_id = ?", candidate, taskID).
-			First(&task).Error
+		err = s.getTaskByUserAndTaskID(ctx, candidate, taskID, &task)
 		if err == nil {
 			logger := s.loggerFromContext(ctx)
 			logger.Info("rag task matched legacy user id",
@@ -241,13 +336,13 @@ func (s *Service) ensureTask(ctx context.Context, userID, taskID, apiKey string)
 			)
 			return &task, nil
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.Wrap(err, "query rag task by legacy user id")
 		}
 	}
 
-	task = Task{UserID: userID, TaskID: taskID}
-	if err := s.db.WithContext(ctx).Create(&task).Error; err != nil {
+	task = Task{UserID: userID, TaskID: taskID, CreatedAt: s.clock(), UpdatedAt: s.clock()}
+	if err := s.insertTask(ctx, &task); err != nil {
 		return nil, errors.Wrap(err, "create rag task")
 	}
 	logger := s.loggerFromContext(ctx)
@@ -295,94 +390,108 @@ func (s *Service) ensureChunks(ctx context.Context, task *Task, input ExtractInp
 	hash := sha256.Sum256([]byte(strings.Join(cleanedFragments(fragments), "\n")))
 	materialsHash := hex.EncodeToString(hash[:])
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var count int64
-		if err := tx.Model(&Chunk{}).
-			Where("task_id = ? AND materials_hash = ?", task.ID, materialsHash).
-			Count(&count).Error; err != nil {
-			return errors.Wrap(err, "check existing chunks")
-		}
-		if count > 0 {
-			return nil
-		}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "begin rag ingestion tx")
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
-		texts := make([]string, 0, len(fragments))
-		for _, fragment := range fragments {
-			texts = append(texts, fragment.Cleaned)
+	countQuery := rebindPlaceholders(s.dialect, `SELECT COUNT(1) FROM mcp_rag_chunks WHERE task_id = ? AND materials_hash = ?`)
+	var count int64
+	if err := tx.QueryRowContext(ctx, countQuery, task.ID, materialsHash).Scan(&count); err != nil {
+		return errors.Wrap(err, "check existing chunks")
+	}
+	if count > 0 {
+		if commitErr := tx.Commit(); commitErr != nil {
+			return errors.Wrap(commitErr, "commit rag ingestion tx")
 		}
-		embeddings, err := s.embedder.EmbedTexts(ctx, input.APIKey, texts)
-		if err != nil {
-			return errors.Wrap(err, "embed materials")
-		}
-		if len(embeddings) != len(fragments) {
-			return errors.New("embedding count mismatch")
-		}
-
-		now := s.clock()
-		for idx, fragment := range fragments {
-			chunk := Chunk{
-				TaskID:        task.ID,
-				MaterialsHash: materialsHash,
-				ChunkIndex:    fragment.Index,
-				Text:          fragment.Text,
-				CleanedText:   fragment.Cleaned,
-				Metadata: datatypes.JSONMap{
-					"user_id": task.UserID,
-					"task_id": task.TaskID,
-					"hash":    materialsHash,
-				},
-				CreatedAt: now,
-				UpdatedAt: now,
-			}
-			if err := tx.Create(&chunk).Error; err != nil {
-				return errors.Wrap(err, "insert chunk")
-			}
-
-			embed := Embedding{
-				ChunkID:   chunk.ID,
-				Vector:    embeddings[idx],
-				Model:     s.settings.EmbeddingModel,
-				CreatedAt: now,
-				UpdatedAt: now,
-			}
-			if err := tx.Create(&embed).Error; err != nil {
-				return errors.Wrap(err, "insert embedding")
-			}
-
-			tokensJSON, err := json.Marshal(fragment.Tokens)
-			if err != nil {
-				return errors.Wrap(err, "encode tokens")
-			}
-			bm25 := BM25Row{
-				ChunkID:    chunk.ID,
-				Tokens:     datatypes.JSON(tokensJSON),
-				TokenCount: len(fragment.Tokens),
-				Tokenizer:  "builtin",
-				CreatedAt:  now,
-				UpdatedAt:  now,
-			}
-			if err := tx.Create(&bm25).Error; err != nil {
-				return errors.Wrap(err, "insert bm25 row")
-			}
-		}
-
-		logger := s.loggerFromContext(ctx)
-		logger.Info("rag materials ingested",
-			zap.String("user_id", task.UserID),
-			zap.String("task_id", task.TaskID),
-			zap.Int("chunks", len(fragments)),
-		)
-
 		return nil
-	})
+	}
+
+	texts := make([]string, 0, len(fragments))
+	for _, fragment := range fragments {
+		texts = append(texts, fragment.Cleaned)
+	}
+	embeddings, err := s.embedder.EmbedTexts(ctx, input.APIKey, texts)
+	if err != nil {
+		return errors.Wrap(err, "embed materials")
+	}
+	if len(embeddings) != len(fragments) {
+		return errors.New("embedding count mismatch")
+	}
+
+	now := s.clock()
+	for idx, fragment := range fragments {
+		metadataBytes, marshalErr := json.Marshal(map[string]string{
+			"user_id": task.UserID,
+			"task_id": task.TaskID,
+			"hash":    materialsHash,
+		})
+		if marshalErr != nil {
+			return errors.Wrap(marshalErr, "encode chunk metadata")
+		}
+
+		chunk := Chunk{
+			TaskID:        task.ID,
+			MaterialsHash: materialsHash,
+			ChunkIndex:    fragment.Index,
+			Text:          fragment.Text,
+			CleanedText:   fragment.Cleaned,
+			Metadata:      metadataBytes,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
+		if err := s.insertChunkTx(ctx, tx, &chunk); err != nil {
+			return errors.Wrap(err, "insert chunk")
+		}
+
+		if err := s.insertEmbeddingTx(ctx, tx, Embedding{
+			ChunkID:   chunk.ID,
+			Vector:    embeddings[idx],
+			Model:     s.settings.EmbeddingModel,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}); err != nil {
+			return errors.Wrap(err, "insert embedding")
+		}
+
+		tokensJSON, marshalErr := json.Marshal(fragment.Tokens)
+		if marshalErr != nil {
+			return errors.Wrap(marshalErr, "encode tokens")
+		}
+		if err := s.insertBM25Tx(ctx, tx, BM25Row{
+			ChunkID:    chunk.ID,
+			Tokens:     tokensJSON,
+			TokenCount: len(fragment.Tokens),
+			Tokenizer:  "builtin",
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}); err != nil {
+			return errors.Wrap(err, "insert bm25 row")
+		}
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		return errors.Wrap(commitErr, "commit rag ingestion tx")
+	}
+
+	logger := s.loggerFromContext(ctx)
+	logger.Info("rag materials ingested",
+		zap.String("user_id", task.UserID),
+		zap.String("task_id", task.TaskID),
+		zap.Int("chunks", len(fragments)),
+	)
+
+	return nil
 }
 
 func (s *Service) fetchCandidates(ctx context.Context, taskID int64, queryVec pgvector.Vector, limit int) ([]candidateChunk, error) {
 	logger := s.loggerFromContext(ctx)
 	logger.Debug("fetching rag candidates", zap.Int64("task_id", taskID), zap.Int("limit", limit))
 	rows := make([]candidateChunk, 0, limit)
-	err := s.db.WithContext(ctx).
-		Raw(`
+	query := rebindPlaceholders(s.dialect, `
 		    SELECT c.id, c.text, c.cleaned_text, e.vector AS embedding, b.tokens
             FROM mcp_rag_chunks c
             JOIN mcp_rag_embeddings e ON e.chunk_id = c.id
@@ -390,11 +499,36 @@ func (s *Service) fetchCandidates(ctx context.Context, taskID int64, queryVec pg
             WHERE c.task_id = ?
 		    ORDER BY e.vector <=> ? ASC
             LIMIT ?
-        `, taskID, queryVec, limit).
-		Scan(&rows).Error
+	        `)
+
+	queryVectorArg, err := vectorToDBValue(queryVec)
+	if err != nil {
+		return nil, errors.Wrap(err, "encode query vector")
+	}
+
+	dbRows, err := s.db.QueryContext(ctx, query, taskID, queryVectorArg, limit)
 	if err != nil {
 		return nil, errors.Wrap(err, "query rag candidates")
 	}
+	defer dbRows.Close()
+
+	for dbRows.Next() {
+		var row candidateChunk
+		var embeddingRaw any
+		var tokensRaw any
+		if scanErr := dbRows.Scan(&row.ChunkID, &row.Text, &row.Cleaned, &embeddingRaw, &tokensRaw); scanErr != nil {
+			return nil, errors.Wrap(scanErr, "scan rag candidate")
+		}
+		if convErr := scanVectorValue(embeddingRaw, &row.Embedding); convErr != nil {
+			return nil, errors.Wrap(convErr, "decode candidate embedding")
+		}
+		row.TokenBytes = toJSONBytes(tokensRaw)
+		rows = append(rows, row)
+	}
+	if rowsErr := dbRows.Err(); rowsErr != nil {
+		return nil, errors.Wrap(rowsErr, "iterate rag candidates")
+	}
+
 	logger.Debug("rag candidates fetched", zap.Int64("task_id", taskID), zap.Int("count", len(rows)))
 	return rows, nil
 }
@@ -448,11 +582,11 @@ func cleanedFragments(fragments []ChunkFragment) []string {
 }
 
 type candidateChunk struct {
-	ChunkID    int64           `gorm:"column:id"`
-	Text       string          `gorm:"column:text"`
-	Cleaned    string          `gorm:"column:cleaned_text"`
-	Embedding  pgvector.Vector `gorm:"column:embedding"`
-	TokenBytes datatypes.JSON  `gorm:"column:tokens"`
+	ChunkID    int64
+	Text       string
+	Cleaned    string
+	Embedding  pgvector.Vector
+	TokenBytes []byte
 }
 
 func (c candidateChunk) tokens() []string {
@@ -508,4 +642,235 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// sqlDialect represents the SQL placeholder style and DDL variant in use.
+type sqlDialect int
+
+const (
+	sqlDialectUnknown sqlDialect = iota
+	sqlDialectPostgres
+	sqlDialectSQLite
+)
+
+// detectSQLDialect infers the SQL dialect from the active driver implementation.
+func detectSQLDialect(db *sql.DB) sqlDialect {
+	if db == nil {
+		return sqlDialectUnknown
+	}
+
+	t := strings.ToLower(fmt.Sprintf("%T", db.Driver()))
+	if strings.Contains(t, "sqlite") {
+		return sqlDialectSQLite
+	}
+	if strings.Contains(t, "postgres") || strings.Contains(t, "pgx") || strings.Contains(t, "pq") || strings.Contains(t, "sqlmock") {
+		return sqlDialectPostgres
+	}
+
+	return sqlDialectUnknown
+}
+
+// rebindPlaceholders rewrites '?' placeholders to PostgreSQL-style positional parameters.
+func rebindPlaceholders(dialect sqlDialect, query string) string {
+	if dialect != sqlDialectPostgres {
+		return query
+	}
+
+	index := 1
+	var builder strings.Builder
+	builder.Grow(len(query) + 16)
+	for _, ch := range query {
+		if ch == '?' {
+			builder.WriteString(fmt.Sprintf("$%d", index))
+			index++
+			continue
+		}
+		builder.WriteRune(ch)
+	}
+
+	return builder.String()
+}
+
+// getTaskByUserAndTaskID retrieves one task row by user/task tuple.
+func (s *Service) getTaskByUserAndTaskID(ctx context.Context, userID, taskID string, out *Task) error {
+	query := rebindPlaceholders(s.dialect, `
+		SELECT id, user_id, task_id, created_at, updated_at
+		FROM mcp_rag_tasks
+		WHERE user_id = ? AND task_id = ?
+		LIMIT 1
+	`)
+
+	return s.db.QueryRowContext(ctx, query, userID, taskID).Scan(
+		&out.ID,
+		&out.UserID,
+		&out.TaskID,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	)
+}
+
+// insertTask inserts a task and sets its generated identifier.
+func (s *Service) insertTask(ctx context.Context, task *Task) error {
+	if s.dialect == sqlDialectPostgres {
+		query := rebindPlaceholders(s.dialect, `
+			INSERT INTO mcp_rag_tasks(user_id, task_id, created_at, updated_at)
+			VALUES(?, ?, ?, ?)
+			RETURNING id
+		`)
+		return s.db.QueryRowContext(ctx, query, task.UserID, task.TaskID, task.CreatedAt, task.UpdatedAt).Scan(&task.ID)
+	}
+
+	query := rebindPlaceholders(s.dialect, `
+		INSERT INTO mcp_rag_tasks(user_id, task_id, created_at, updated_at)
+		VALUES(?, ?, ?, ?)
+	`)
+	result, err := s.db.ExecContext(ctx, query, task.UserID, task.TaskID, task.CreatedAt, task.UpdatedAt)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	task.ID = id
+	return nil
+}
+
+// insertChunkTx inserts one chunk row in the active transaction and sets its ID.
+func (s *Service) insertChunkTx(ctx context.Context, tx *sql.Tx, chunk *Chunk) error {
+	if s.dialect == sqlDialectPostgres {
+		query := rebindPlaceholders(s.dialect, `
+			INSERT INTO mcp_rag_chunks(task_id, materials_hash, chunk_index, text, cleaned_text, metadata, created_at, updated_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+			RETURNING id
+		`)
+		return tx.QueryRowContext(
+			ctx,
+			query,
+			chunk.TaskID,
+			chunk.MaterialsHash,
+			chunk.ChunkIndex,
+			chunk.Text,
+			chunk.CleanedText,
+			chunk.Metadata,
+			chunk.CreatedAt,
+			chunk.UpdatedAt,
+		).Scan(&chunk.ID)
+	}
+
+	query := rebindPlaceholders(s.dialect, `
+		INSERT INTO mcp_rag_chunks(task_id, materials_hash, chunk_index, text, cleaned_text, metadata, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+	result, err := tx.ExecContext(
+		ctx,
+		query,
+		chunk.TaskID,
+		chunk.MaterialsHash,
+		chunk.ChunkIndex,
+		chunk.Text,
+		chunk.CleanedText,
+		chunk.Metadata,
+		chunk.CreatedAt,
+		chunk.UpdatedAt,
+	)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	chunk.ID = id
+	return nil
+}
+
+// insertEmbeddingTx inserts one embedding row for a chunk.
+func (s *Service) insertEmbeddingTx(ctx context.Context, tx *sql.Tx, embedding Embedding) error {
+	vectorValue, err := vectorToDBValue(embedding.Vector)
+	if err != nil {
+		return errors.Wrap(err, "encode embedding vector")
+	}
+
+	query := rebindPlaceholders(s.dialect, `
+		INSERT INTO mcp_rag_embeddings(chunk_id, vector, model, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?)
+	`)
+	if _, err := tx.ExecContext(
+		ctx,
+		query,
+		embedding.ChunkID,
+		vectorValue,
+		embedding.Model,
+		embedding.CreatedAt,
+		embedding.UpdatedAt,
+	); err != nil {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+// insertBM25Tx inserts one lexical token row for a chunk.
+func (s *Service) insertBM25Tx(ctx context.Context, tx *sql.Tx, row BM25Row) error {
+	query := rebindPlaceholders(s.dialect, `
+		INSERT INTO mcp_rag_bm25(chunk_id, tokens, token_count, tokenizer, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?)
+	`)
+	if _, err := tx.ExecContext(
+		ctx,
+		query,
+		row.ChunkID,
+		row.Tokens,
+		row.TokenCount,
+		row.Tokenizer,
+		row.CreatedAt,
+		row.UpdatedAt,
+	); err != nil {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+// vectorToDBValue converts a vector into the driver value used in SQL parameters.
+func vectorToDBValue(vector pgvector.Vector) (any, error) {
+	value, err := vector.Value()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return value, nil
+}
+
+// scanVectorValue decodes a scanned SQL value into a vector.
+func scanVectorValue(raw any, vector *pgvector.Vector) error {
+	if raw == nil {
+		*vector = pgvector.Vector{}
+		return nil
+	}
+
+	if err := vector.Scan(raw); err != nil {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+// toJSONBytes normalizes a scanned SQL value to JSON bytes.
+func toJSONBytes(raw any) []byte {
+	switch value := raw.(type) {
+	case nil:
+		return nil
+	case []byte:
+		return value
+	case string:
+		return []byte(value)
+	default:
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil
+		}
+		return encoded
+	}
 }

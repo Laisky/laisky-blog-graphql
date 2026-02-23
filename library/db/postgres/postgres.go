@@ -2,17 +2,16 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormLogger "gorm.io/gorm/logger"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // DB postgres db
 type DB struct {
-	*gorm.DB
+	DB *sql.DB
 }
 
 // DialInfo postgres dial info
@@ -32,24 +31,19 @@ func BuildDSN(dialInfo DialInfo) string {
 func NewDB(ctx context.Context, dialInfo DialInfo) (*DB, error) {
 	dsn := BuildDSN(dialInfo)
 
-	db, err := gorm.Open(postgres.New(postgres.Config{
-		DSN:                  dsn,
-		PreferSimpleProtocol: true,
-	}), &gorm.Config{
-		Logger: newTruncatingParamsLogger(gormLogger.Default.LogMode(gormLogger.Warn)),
-	})
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	// config db
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, errors.Wrap(err, "get db")
+	if err = db.PingContext(ctx); err != nil {
+		return nil, errors.Wrap(err, "ping postgres")
 	}
-	sqlDB.SetMaxIdleConns(6)
-	sqlDB.SetMaxOpenConns(50)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	// config db
+	db.SetMaxIdleConns(6)
+	db.SetMaxOpenConns(50)
+	db.SetConnMaxLifetime(time.Hour)
 
 	return &DB{DB: db}, nil
 }

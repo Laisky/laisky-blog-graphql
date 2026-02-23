@@ -14,8 +14,8 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
 
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
 // NewSavedCommandsHTTPHandler constructs an HTTP mux exposing the saved commands APIs under /api/saved-commands.

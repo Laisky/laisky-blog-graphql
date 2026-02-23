@@ -13,20 +13,20 @@ func TestParseAuthorizationContext(t *testing.T) {
 		expectKey   string
 	}{
 		"bearer prefix": {
-			header:     "Bearer abcdefghijklmnop",
-			expectKey:  "abcdefghijklmnop",
+			header:    "Bearer abcdefghijklmnop",
+			expectKey: "abcdefghijklmnop",
 		},
 		"no prefix": {
-			header:     "token-123",
-			expectKey:  "token-123",
+			header:    "token-123",
+			expectKey: "token-123",
 		},
 		"mixed case prefix": {
-			header:     "bEaReR   spacedtoken ",
-			expectKey:  "spacedtoken",
+			header:    "bEaReR   spacedtoken ",
+			expectKey: "spacedtoken",
 		},
 		"with at symbol": {
-			header:     "Bearer user@example.com",
-			expectKey:  "user@example.com",
+			header:    "Bearer user@example.com",
+			expectKey: "user@example.com",
 		},
 		"missing token": {
 			header:      "Bearer   \t",

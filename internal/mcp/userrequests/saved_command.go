@@ -3,9 +3,7 @@ package userrequests
 import (
 	"time"
 
-	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 const (
@@ -19,13 +17,13 @@ const (
 
 // SavedCommand represents a reusable command template stored by a user for quick access.
 type SavedCommand struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Label        string    `gorm:"type:varchar(255);not null"`
-	Content      string    `gorm:"type:text;not null"`
-	SortOrder    int       `gorm:"type:int;not null;default:0;index"`
-	APIKeyHash   string    `gorm:"type:char(64);not null;index"`
-	KeySuffix    string    `gorm:"type:varchar(16);not null"`
-	UserIdentity string    `gorm:"type:varchar(255);not null"`
+	ID           uuid.UUID
+	Label        string
+	Content      string
+	SortOrder    int
+	APIKeyHash   string
+	KeySuffix    string
+	UserIdentity string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -33,14 +31,6 @@ type SavedCommand struct {
 // TableName specifies the database table name for saved commands.
 func (SavedCommand) TableName() string {
 	return "mcp_saved_commands"
-}
-
-// BeforeCreate populates the ID with a UUIDv7 value when missing.
-func (c *SavedCommand) BeforeCreate(tx *gorm.DB) error {
-	if c.ID == uuid.Nil {
-		c.ID = gutils.UUID7Bytes()
-	}
-	return nil
 }
 
 // SavedCommandDTO is the data transfer object for saved command API responses.

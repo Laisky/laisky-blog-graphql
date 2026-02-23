@@ -2,19 +2,22 @@ package kv
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func setupTestKv(t *testing.T) *Kv {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
 	require.NoError(t, err, "failed to connect to in-memory db")
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 	// Create a new Kv instance with the test table name.
-	kvInstance, err := NewKv(&db, WithDBName("test_kv"))
+	kvInstance, err := NewKv(db, WithDBName("test_kv"))
 	require.NoError(t, err, "failed to create kv instance")
 	return kvInstance
 }

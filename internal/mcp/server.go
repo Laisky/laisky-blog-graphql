@@ -13,8 +13,8 @@ import (
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	srv "github.com/mark3labs/mcp-go/server"
 
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
@@ -101,8 +101,8 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			// Inject authorization header
 			authHeader := r.Header.Get("Authorization")
 			ctx = context.WithValue(ctx, keyAuthorization, authHeader)
-				if authCtx, err := mcpauth.ParseAuthorizationContext(authHeader); err == nil {
-					ctx = mcpauth.WithContext(ctx, authCtx)
+			if authCtx, err := mcpauth.ParseAuthorizationContext(authHeader); err == nil {
+				ctx = mcpauth.WithContext(ctx, authCtx)
 			}
 
 			// Create a per-request logger with request-specific context

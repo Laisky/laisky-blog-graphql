@@ -2,40 +2,59 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"hash/fnv"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
-	"gorm.io/gorm"
 )
 
 // LockProvider serializes mutations within a project scope.
 type LockProvider interface {
-	WithProjectLock(ctx context.Context, db *gorm.DB, apiKeyHash, project string, timeout time.Duration, fn func(tx *gorm.DB) error) error
+	WithProjectLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash, project string, timeout time.Duration, fn func(tx *sql.Tx) error) error
 }
 
 // DefaultLockProvider implements advisory locks when available.
 type DefaultLockProvider struct{}
 
 // WithProjectLock acquires a scoped lock and executes the callback within a transaction.
-func (p DefaultLockProvider) WithProjectLock(ctx context.Context, db *gorm.DB, apiKeyHash, project string, timeout time.Duration, fn func(tx *gorm.DB) error) error {
+func (p DefaultLockProvider) WithProjectLock(ctx context.Context, db *sql.DB, isPostgres bool, apiKeyHash, project string, timeout time.Duration, fn func(tx *sql.Tx) error) error {
 	if db == nil {
 		return errors.New("db is required")
 	}
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := acquireProjectLock(ctx, tx, apiKeyHash, project, timeout); err != nil {
-			return err
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "begin transaction")
+	}
+
+	if err = acquireProjectLock(ctx, tx, isPostgres, apiKeyHash, project, timeout); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return errors.Wrap(rollbackErr, "rollback lock transaction")
 		}
-		return fn(tx)
-	})
+		return err
+	}
+
+	if err = fn(tx); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return errors.Wrap(rollbackErr, "rollback callback transaction")
+		}
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return errors.Wrap(err, "commit transaction")
+	}
+
+	return nil
 }
 
 // acquireProjectLock obtains a project-scoped advisory lock within the transaction.
-func acquireProjectLock(ctx context.Context, tx *gorm.DB, apiKeyHash, project string, timeout time.Duration) error {
+func acquireProjectLock(ctx context.Context, tx *sql.Tx, isPostgres bool, apiKeyHash, project string, timeout time.Duration) error {
 	if tx == nil {
 		return errors.New("transaction is required")
 	}
-	if !isPostgresDialect(tx) {
+	if !isPostgres {
 		return nil
 	}
 
@@ -43,7 +62,7 @@ func acquireProjectLock(ctx context.Context, tx *gorm.DB, apiKeyHash, project st
 	deadline := time.Now().Add(timeout)
 	for {
 		var locked bool
-		if err := tx.WithContext(ctx).Raw("SELECT pg_try_advisory_xact_lock(?)", key).Scan(&locked).Error; err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT pg_try_advisory_xact_lock($1)", key).Scan(&locked); err != nil {
 			return errors.Wrap(err, "acquire advisory lock")
 		}
 		if locked {

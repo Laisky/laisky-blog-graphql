@@ -3,9 +3,7 @@ package askuser
 import (
 	"time"
 
-	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 const (
@@ -21,23 +19,15 @@ const (
 
 // Request represents a single ask_user tool invocation persisted in the database.
 type Request struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Question     string    `gorm:"type:text;not null"`
-	Answer       *string   `gorm:"type:text"`
-	Status       string    `gorm:"type:varchar(16);not null;index"`
-	APIKeyHash   string    `gorm:"type:char(64);not null;index"`
-	KeySuffix    string    `gorm:"type:varchar(16);not null"`
-	UserIdentity string    `gorm:"type:varchar(255);not null"`
-	AIIdentity   string    `gorm:"type:varchar(255);not null"`
+	ID           uuid.UUID
+	Question     string
+	Answer       *string
+	Status       string
+	APIKeyHash   string
+	KeySuffix    string
+	UserIdentity string
+	AIIdentity   string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	AnsweredAt   *time.Time
-}
-
-// BeforeCreate hook ensures the primary key is populated for new records.
-func (r *Request) BeforeCreate(tx *gorm.DB) error {
-	if r.ID == uuid.Nil {
-		r.ID = gutils.UUID7Bytes()
-	}
-	return nil
 }

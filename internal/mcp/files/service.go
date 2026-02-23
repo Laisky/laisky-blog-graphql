@@ -2,6 +2,7 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -9,7 +10,6 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/pgvector/pgvector-go"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -42,7 +42,8 @@ type CredentialStore interface {
 
 // Service coordinates FileIO operations and indexing.
 type Service struct {
-	db             *gorm.DB
+	db             *sql.DB
+	isPostgres     bool
 	settings       Settings
 	logger         logSDK.Logger
 	embedder       Embedder
@@ -56,9 +57,9 @@ type Service struct {
 }
 
 // NewService constructs a FileIO service and runs migrations.
-func NewService(db *gorm.DB, settings Settings, embedder Embedder, rerank RerankClient, credential *CredentialProtector, store CredentialStore, logger logSDK.Logger, lockProvider LockProvider, clock Clock) (*Service, error) {
+func NewService(db *sql.DB, settings Settings, embedder Embedder, rerank RerankClient, credential *CredentialProtector, store CredentialStore, logger logSDK.Logger, lockProvider LockProvider, clock Clock) (*Service, error) {
 	if db == nil {
-		return nil, errors.New("gorm db is required")
+		return nil, errors.New("sql db is required")
 	}
 	if logger == nil {
 		logger = log.Logger.Named("mcp_files_service")
@@ -81,8 +82,14 @@ func NewService(db *gorm.DB, settings Settings, embedder Embedder, rerank Rerank
 		return nil, errors.WithStack(err)
 	}
 
+	isPostgres, err := detectPostgresDialect(context.Background(), db)
+	if err != nil {
+		return nil, errors.Wrap(err, "detect database dialect")
+	}
+
 	svc := &Service{
 		db:             db,
+		isPostgres:     isPostgres,
 		settings:       settings,
 		logger:         logger,
 		embedder:       embedder,

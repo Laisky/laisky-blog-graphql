@@ -2,10 +2,10 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
-	"gorm.io/gorm"
 )
 
 // renameSourceFile represents an active file selected as a rename source.
@@ -43,7 +43,7 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 	}
 
 	movedCount := 0
-	err := s.lockProvider.WithProjectLock(ctx, s.db, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *gorm.DB) error {
+	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
 		sourceFiles, sourceIsDirectory, err := s.resolveRenameSources(ctx, tx, auth.APIKeyHash, project, fromPath)
 		if err != nil {
 			return err
@@ -69,21 +69,26 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 		}
 
 		if len(overwritePaths) > 0 {
-			if err := tx.WithContext(ctx).Model(&File{}).
-				Where("apikey_hash = ? AND project = ? AND path IN ? AND deleted = FALSE", auth.APIKeyHash, project, overwritePaths).
-				Updates(map[string]any{"deleted": true, "deleted_at": now, "updated_at": now}).Error; err != nil {
+			inClause, inArgs := buildInClause(overwritePaths, s.isPostgres, 5)
+			query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
+			args := []any{now, now, auth.APIKeyHash, project}
+			args = append(args, inArgs...)
+			if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
 				return errors.Wrap(err, "soft delete overwritten destination files")
 			}
 		}
 
 		for _, mapping := range mappings {
-			if err := tx.WithContext(ctx).Model(&File{}).
-				Where("id = ?", mapping.ID).
-				Updates(map[string]any{"path": mapping.NewPath, "updated_at": now}).Error; err != nil {
+			if _, err := tx.ExecContext(ctx,
+				rebindSQL(`UPDATE mcp_files SET path = ?, updated_at = ? WHERE id = ?`, s.isPostgres),
+				mapping.NewPath,
+				now,
+				mapping.ID,
+			); err != nil {
 				return errors.Wrap(err, "apply rename path remap")
 			}
 
-			deleteJob := FileIndexJob{
+			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 				APIKeyHash:    auth.APIKeyHash,
 				Project:       project,
 				FilePath:      mapping.OldPath,
@@ -94,12 +99,11 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 				AvailableAt:   now,
 				CreatedAt:     now,
 				UpdatedAt:     now,
-			}
-			if err := tx.WithContext(ctx).Create(&deleteJob).Error; err != nil {
+			}); err != nil {
 				return errors.Wrap(err, "enqueue rename delete job")
 			}
 
-			upsertJob := FileIndexJob{
+			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 				APIKeyHash:    auth.APIKeyHash,
 				Project:       project,
 				FilePath:      mapping.NewPath,
@@ -110,8 +114,7 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 				AvailableAt:   now,
 				CreatedAt:     now,
 				UpdatedAt:     now,
-			}
-			if err := tx.WithContext(ctx).Create(&upsertJob).Error; err != nil {
+			}); err != nil {
 				return errors.Wrap(err, "enqueue rename upsert job")
 			}
 
@@ -121,7 +124,7 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 		}
 
 		for _, overwrittenPath := range overwritePaths {
-			job := FileIndexJob{
+			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 				APIKeyHash:    auth.APIKeyHash,
 				Project:       project,
 				FilePath:      overwrittenPath,
@@ -132,8 +135,7 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 				AvailableAt:   now,
 				CreatedAt:     now,
 				UpdatedAt:     now,
-			}
-			if err := tx.WithContext(ctx).Create(&job).Error; err != nil {
+			}); err != nil {
 				return errors.Wrap(err, "enqueue overwrite delete job")
 			}
 		}
@@ -149,28 +151,41 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 }
 
 // resolveRenameSources resolves source files for a file or directory rename.
-func (s *Service) resolveRenameSources(ctx context.Context, tx *gorm.DB, apiKeyHash, project, fromPath string) ([]renameSourceFile, bool, error) {
-	var exact File
-	err := tx.WithContext(ctx).
-		Select("id", "path").
-		Where("apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE", apiKeyHash, project, fromPath).
-		First(&exact).Error
+
+func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHash, project, fromPath string) ([]renameSourceFile, bool, error) {
+	var exact renameSourceFile
+	err := tx.QueryRowContext(ctx,
+		rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE LIMIT 1`, s.isPostgres),
+		apiKeyHash,
+		project,
+		fromPath,
+	).Scan(&exact.ID, &exact.Path)
 	if err == nil {
-		return []renameSourceFile{{ID: exact.ID, Path: exact.Path}}, false, nil
+		return []renameSourceFile{exact}, false, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, errors.Wrap(err, "query rename source file")
 	}
 
-	var descendants []renameSourceFile
 	prefix := buildPathPrefix(fromPath)
-	if err := tx.WithContext(ctx).
-		Model(&File{}).
-		Select("id", "path").
-		Where("apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE", apiKeyHash, project, prefix).
-		Order("path ASC").
-		Find(&descendants).Error; err != nil {
+	rows, err := tx.QueryContext(ctx,
+		rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE ORDER BY path ASC`, s.isPostgres),
+		apiKeyHash,
+		project,
+		prefix,
+	)
+	if err != nil {
 		return nil, false, errors.Wrap(err, "query rename source descendants")
+	}
+	defer rows.Close()
+
+	descendants := make([]renameSourceFile, 0)
+	for rows.Next() {
+		var row renameSourceFile
+		if scanErr := rows.Scan(&row.ID, &row.Path); scanErr != nil {
+			return nil, false, errors.Wrap(scanErr, "scan rename source descendant")
+		}
+		descendants = append(descendants, row)
 	}
 	if len(descendants) == 0 {
 		return nil, false, NewError(ErrCodeNotFound, "source path not found", false)
@@ -200,7 +215,7 @@ func buildRenameMappings(sourceFiles []renameSourceFile, fromPath, toPath string
 // validateRenameDestinations checks rename collisions and returns overwrite targets.
 func (s *Service) validateRenameDestinations(
 	ctx context.Context,
-	tx *gorm.DB,
+	tx *sql.Tx,
 	apiKeyHash, project string,
 	mappings []renameMapping,
 	toPath string,
@@ -221,9 +236,12 @@ func (s *Service) validateRenameDestinations(
 
 	if !sourceIsDirectory {
 		var descendantCount int64
-		if err := tx.WithContext(ctx).Model(&File{}).
-			Where("apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE", apiKeyHash, project, buildPathPrefix(toPath)).
-			Count(&descendantCount).Error; err != nil {
+		if err := tx.QueryRowContext(ctx,
+			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+			apiKeyHash,
+			project,
+			buildPathPrefix(toPath),
+		).Scan(&descendantCount); err != nil {
 			return nil, errors.Wrap(err, "check destination descendants")
 		}
 		if descendantCount > 0 {
@@ -233,9 +251,12 @@ func (s *Service) validateRenameDestinations(
 
 	if sourceIsDirectory {
 		var destinationRootFileCount int64
-		if err := tx.WithContext(ctx).Model(&File{}).
-			Where("apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE", apiKeyHash, project, toPath).
-			Count(&destinationRootFileCount).Error; err != nil {
+		if err := tx.QueryRowContext(ctx,
+			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE`, s.isPostgres),
+			apiKeyHash,
+			project,
+			toPath,
+		).Scan(&destinationRootFileCount); err != nil {
 			return nil, errors.Wrap(err, "check destination root collision")
 		}
 		if destinationRootFileCount > 0 {
@@ -243,13 +264,23 @@ func (s *Service) validateRenameDestinations(
 		}
 	}
 
-	var destinationFiles []File
-	if err := tx.WithContext(ctx).
-		Model(&File{}).
-		Select("id", "path").
-		Where("apikey_hash = ? AND project = ? AND path IN ? AND deleted = FALSE", apiKeyHash, project, destinationPaths).
-		Find(&destinationFiles).Error; err != nil {
+	inClause, inArgs := buildInClause(destinationPaths, s.isPostgres, 3)
+	query := rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
+	args := []any{apiKeyHash, project}
+	args = append(args, inArgs...)
+	rows, err := tx.QueryContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
+	if err != nil {
 		return nil, errors.Wrap(err, "query destination collisions")
+	}
+	defer rows.Close()
+
+	destinationFiles := make([]renameSourceFile, 0)
+	for rows.Next() {
+		var row renameSourceFile
+		if scanErr := rows.Scan(&row.ID, &row.Path); scanErr != nil {
+			return nil, errors.Wrap(scanErr, "scan destination collision")
+		}
+		destinationFiles = append(destinationFiles, row)
 	}
 
 	overwritePaths := make([]string, 0, len(destinationFiles))

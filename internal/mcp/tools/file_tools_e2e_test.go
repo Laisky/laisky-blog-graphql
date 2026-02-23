@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,10 +10,9 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
@@ -46,7 +46,7 @@ func (s *e2eCredentialStore) Store(_ context.Context, key, payload string, _ tim
 func (s *e2eCredentialStore) Load(_ context.Context, key string) (string, error) {
 	value, ok := s.data[key]
 	if !ok {
-		return "", gorm.ErrRecordNotFound
+		return "", sql.ErrNoRows
 	}
 	return value, nil
 }
@@ -254,8 +254,9 @@ func newE2EFileService(t *testing.T, allowRootWipe bool) *files.Service {
 	settings.Security.EncryptionKEKs = map[uint16]string{1: base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))}
 
 	dsn := fmt.Sprintf("file:%s-%d?mode=memory&cache=shared", t.Name(), time.Now().UTC().UnixNano())
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	db, err := sql.Open("sqlite3", dsn)
 	require.NoError(t, err)
+	require.NoError(t, db.Ping())
 
 	credential, err := files.NewCredentialProtector(settings.Security)
 	require.NoError(t, err)

@@ -2,17 +2,15 @@ package rag
 
 import (
 	"context"
+	"database/sql"
 	"regexp"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/jackc/pgx/v5/pgconn"
+	_ "github.com/mattn/go-sqlite3"
 	pgvector "github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
-	"gorm.io/datatypes"
-	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -39,15 +37,10 @@ func TestEnsureVectorExtensionPostgresSuccess(t *testing.T) {
 	require.NoError(t, err)
 	defer sqlDB.Close()
 
-	gdb, err := gorm.Open(postgres.New(postgres.Config{
-		Conn: sqlDB,
-	}))
-	require.NoError(t, err)
-
 	mock.ExpectExec(`CREATE EXTENSION IF NOT EXISTS vector`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	err = ensureVectorExtension(context.Background(), gdb, log.Logger.Named("test"))
+	err = ensureVectorExtension(context.Background(), sqlDB, log.Logger.Named("test"))
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -59,11 +52,6 @@ func TestEnsureVectorExtensionFallback(t *testing.T) {
 	require.NoError(t, err)
 	defer sqlDB.Close()
 
-	gdb, err := gorm.Open(postgres.New(postgres.Config{
-		Conn: sqlDB,
-	}))
-	require.NoError(t, err)
-
 	pgErr := &pgconn.PgError{Code: "58P01", Message: "extension \"vector\" is not available"}
 
 	mock.ExpectExec(`CREATE EXTENSION IF NOT EXISTS vector`).
@@ -71,7 +59,7 @@ func TestEnsureVectorExtensionFallback(t *testing.T) {
 	mock.ExpectExec(`CREATE EXTENSION IF NOT EXISTS pgvector`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	err = ensureVectorExtension(context.Background(), gdb, log.Logger.Named("test"))
+	err = ensureVectorExtension(context.Background(), sqlDB, log.Logger.Named("test"))
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -79,8 +67,9 @@ func TestEnsureVectorExtensionFallback(t *testing.T) {
 func TestEnsureVectorExtensionSkipNonPostgres(t *testing.T) {
 	t.Parallel()
 
-	gdb, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	gdb, err := sql.Open("sqlite3", "file::memory:?cache=shared")
 	require.NoError(t, err)
+	defer gdb.Close()
 
 	err = ensureVectorExtension(context.Background(), gdb, log.Logger.Named("test"))
 	require.NoError(t, err)
@@ -93,19 +82,17 @@ func TestFetchCandidatesUsesVectorColumn(t *testing.T) {
 	require.NoError(t, err)
 	defer sqlDB.Close()
 
-	gdb, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}))
-	require.NoError(t, err)
-
 	svc := &Service{
-		db:     gdb,
-		logger: log.Logger.Named("test"),
+		db:      sqlDB,
+		dialect: sqlDialectPostgres,
+		logger:  log.Logger.Named("test"),
 	}
 
 	queryVec := pgvector.NewVector([]float32{0.1, 0.2})
 
 	pattern := regexp.MustCompile(`SELECT c\.id, c\.text, c\.cleaned_text, e\.vector AS embedding, b\.tokens[\s\S]+ORDER BY e\.vector <=> \$[0-9]+ ASC[\s\S]+LIMIT \$[0-9]+`)
 	rows := sqlmock.NewRows([]string{"id", "text", "cleaned_text", "embedding", "tokens"}).
-		AddRow(int64(1), "chunk text", "chunk cleaned", queryVec, datatypes.JSON([]byte(`["jwt"]`)))
+		AddRow(int64(1), "chunk text", "chunk cleaned", queryVec, []byte(`["jwt"]`))
 
 	mock.ExpectQuery(pattern.String()).
 		WithArgs(int64(1), sqlmock.AnyArg(), 5).
@@ -123,8 +110,9 @@ func TestFetchCandidatesUsesVectorColumn(t *testing.T) {
 func TestExtractKeyInfoUsesRequestAPIKeyForEmbedding(t *testing.T) {
 	t.Parallel()
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
 	require.NoError(t, err)
+	defer db.Close()
 
 	embedder := &captureRAGEmbedder{}
 	settings := LoadSettingsFromConfig()
@@ -155,10 +143,11 @@ func TestExtractKeyInfoUsesRequestAPIKeyForEmbedding(t *testing.T) {
 }
 
 func TestEnsureTaskFallsBackToLegacyUserID(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:rag_legacy_fallback?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := sql.Open("sqlite3", "file:rag_legacy_fallback?mode=memory&cache=shared")
 	require.NoError(t, err)
+	defer db.Close()
 
-	if err := db.AutoMigrate(&Task{}); err != nil {
+	if err := runRAGMigrations(context.Background(), db, log.Logger.Named("rag_legacy_fallback_test")); err != nil {
 		require.NoError(t, err)
 	}
 
@@ -167,9 +156,17 @@ func TestEnsureTaskFallsBackToLegacyUserID(t *testing.T) {
 	require.NotEmpty(t, legacyUserID)
 
 	task := Task{UserID: legacyUserID, TaskID: "workspace"}
-	require.NoError(t, db.Create(&task).Error)
+	insertResult, err := db.Exec(
+		`INSERT INTO mcp_rag_tasks(user_id, task_id, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		legacyUserID,
+		"workspace",
+	)
+	require.NoError(t, err)
+	taskID, err := insertResult.LastInsertId()
+	require.NoError(t, err)
+	task.ID = taskID
 
-	svc := &Service{db: db, logger: log.Logger.Named("rag_legacy_fallback_test")}
+	svc := &Service{db: db, dialect: detectSQLDialect(db), logger: log.Logger.Named("rag_legacy_fallback_test")}
 	canonicalAuth, err := mcpauth.DeriveFromAPIKey(apiKey)
 	require.NoError(t, err)
 

@@ -4,16 +4,16 @@ import "time"
 
 // File represents a stored file row.
 type File struct {
-	ID         uint64     `gorm:"primaryKey"`
-	APIKeyHash string     `gorm:"column:apikey_hash;size:64;not null"`
-	Project    string     `gorm:"size:128;not null"`
-	Path       string     `gorm:"size:1024;not null"`
-	Content    []byte     `gorm:"type:bytea;not null"`
-	Size       int64      `gorm:"not null"`
-	CreatedAt  time.Time  `gorm:"not null"`
-	UpdatedAt  time.Time  `gorm:"not null"`
-	Deleted    bool       `gorm:"not null"`
-	DeletedAt  *time.Time `gorm:"column:deleted_at"`
+	ID         uint64
+	APIKeyHash string
+	Project    string
+	Path       string
+	Content    []byte
+	Size       int64
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	Deleted    bool
+	DeletedAt  *time.Time
 }
 
 // TableName returns the database table name.

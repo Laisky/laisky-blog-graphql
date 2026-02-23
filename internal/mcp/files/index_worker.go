@@ -3,15 +3,16 @@ package files
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/pgvector/pgvector-go"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -105,35 +106,71 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 		batch = 10
 	}
 
-	var jobs []FileIndexJob
-	err := svc.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := "SELECT * FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? ORDER BY id ASC LIMIT ?"
-		args := []any{"pending", now, batch}
-		if isPostgresDialect(tx) {
-			query += " FOR UPDATE SKIP LOCKED"
-		}
-		if err := tx.Raw(query, args...).Scan(&jobs).Error; err != nil {
-			return errors.Wrap(err, "claim index jobs")
-		}
-		if len(jobs) == 0 {
-			return nil
-		}
-		ids := make([]int64, 0, len(jobs))
-		for _, job := range jobs {
-			ids = append(ids, job.ID)
-		}
-		if err := tx.Model(&FileIndexJob{}).
-			Where("id IN ?", ids).
-			Updates(map[string]any{
-				"status":     "processing",
-				"updated_at": now,
-			}).Error; err != nil {
-			return errors.Wrap(err, "mark jobs processing")
-		}
-		return nil
-	})
+	jobs := make([]FileIndexJob, 0, batch)
+	tx, err := svc.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "begin claim jobs transaction")
+	}
+
+	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? ORDER BY id ASC LIMIT ?"
+	args := []any{"pending", now, batch}
+	if svc.isPostgres {
+		query += " FOR UPDATE SKIP LOCKED"
+	}
+
+	rows, err := tx.QueryContext(ctx, rebindSQL(query, svc.isPostgres), args...)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, errors.Wrap(err, "claim index jobs")
+	}
+	for rows.Next() {
+		var job FileIndexJob
+		if scanErr := rows.Scan(
+			&job.ID,
+			&job.APIKeyHash,
+			&job.Project,
+			&job.FilePath,
+			&job.Operation,
+			&job.FileUpdatedAt,
+			&job.Status,
+			&job.RetryCount,
+			&job.AvailableAt,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+		); scanErr != nil {
+			rows.Close()
+			_ = tx.Rollback()
+			return nil, errors.Wrap(scanErr, "scan claimed index jobs")
+		}
+		jobs = append(jobs, job)
+	}
+	if closeErr := rows.Close(); closeErr != nil {
+		_ = tx.Rollback()
+		return nil, errors.Wrap(closeErr, "close claimed index jobs rows")
+	}
+
+	if len(jobs) == 0 {
+		if commitErr := tx.Commit(); commitErr != nil {
+			return nil, errors.Wrap(commitErr, "commit empty claim transaction")
+		}
+		return jobs, nil
+	}
+
+	ids := make([]int64, 0, len(jobs))
+	for _, job := range jobs {
+		ids = append(ids, job.ID)
+	}
+	inClause, inArgs := buildInClauseInt64(ids, svc.isPostgres, 3)
+	updateQuery := rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id IN (%s)`, svc.isPostgres)
+	updateArgs := []any{"processing", now}
+	updateArgs = append(updateArgs, inArgs...)
+	if _, err = tx.ExecContext(ctx, strings.Replace(updateQuery, "%s", inClause, 1), updateArgs...); err != nil {
+		_ = tx.Rollback()
+		return nil, errors.Wrap(err, "mark jobs processing")
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, errors.Wrap(err, "commit claim jobs transaction")
 	}
 
 	return jobs, nil
@@ -169,44 +206,49 @@ func (w *IndexWorker) handleJobError(ctx context.Context, job FileIndexJob, err 
 		backoff = time.Second
 	}
 	next := svc.clock().Add(backoff * time.Duration(job.RetryCount+1))
-	return svc.db.WithContext(ctx).Model(&FileIndexJob{}).
-		Where("id = ?", job.ID).
-		Updates(map[string]any{
-			"status":       "pending",
-			"retry_count":  job.RetryCount + 1,
-			"available_at": next,
-			"updated_at":   svc.clock(),
-		}).Error
+	_, execErr := svc.db.ExecContext(ctx,
+		rebindSQL(`UPDATE mcp_file_index_jobs
+		SET status = ?, retry_count = ?, available_at = ?, updated_at = ?
+		WHERE id = ?`, svc.isPostgres),
+		"pending",
+		job.RetryCount+1,
+		next,
+		svc.clock(),
+		job.ID,
+	)
+	return execErr
 }
 
 // markJobFailed updates the job status to failed.
 func (w *IndexWorker) markJobFailed(ctx context.Context, job FileIndexJob, err error) error {
 	svc := w.svc
 	w.logger.Warn("index job failed", zap.Error(err), zap.Int64("job_id", job.ID))
-	return svc.db.WithContext(ctx).Model(&FileIndexJob{}).
-		Where("id = ?", job.ID).
-		Updates(map[string]any{
-			"status":     "failed",
-			"updated_at": svc.clock(),
-		}).Error
+	_, execErr := svc.db.ExecContext(ctx,
+		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id = ?`, svc.isPostgres),
+		"failed",
+		svc.clock(),
+		job.ID,
+	)
+	return execErr
 }
 
 // markJobDone updates the job status to done.
 func (w *IndexWorker) markJobDone(ctx context.Context, job FileIndexJob) error {
 	svc := w.svc
-	return svc.db.WithContext(ctx).Model(&FileIndexJob{}).
-		Where("id = ?", job.ID).
-		Updates(map[string]any{
-			"status":     "done",
-			"updated_at": svc.clock(),
-		}).Error
+	_, err := svc.db.ExecContext(ctx,
+		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id = ?`, svc.isPostgres),
+		"done",
+		svc.clock(),
+		job.ID,
+	)
+	return err
 }
 
 // processUpsertJob rebuilds search index rows for a file path.
 func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error {
 	file, err := s.findActiveFile(ctx, job.APIKeyHash, job.Project, job.FilePath)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return s.deleteIndexRows(ctx, job.APIKeyHash, job.Project, job.FilePath)
 		}
 		return errors.Wrap(err, "load file for indexing")
@@ -309,7 +351,7 @@ func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error 
 			return nil
 		}
 	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return errors.Wrap(err, "check file for delete")
 	}
 	return s.deleteIndexRows(ctx, job.APIKeyHash, job.Project, job.FilePath)
@@ -318,81 +360,125 @@ func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error 
 // replaceIndexRows rebuilds all chunk rows and lexical metadata for a file,
 // and writes embeddings when vectors are provided.
 func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, indexContents []string, vectors []pgvector.Vector) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath); err != nil {
-			return err
-		}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "begin replace index rows transaction")
+	}
 
-		now := s.clock()
-		if len(chunks) == 0 {
-			return nil
-		}
-		shouldWriteEmbeddings := len(vectors) == len(chunks)
-		shouldUseContextualizedContent := len(indexContents) == len(chunks)
+	if err := s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 
-		for i, ch := range chunks {
-			hash := sha256.Sum256([]byte(ch.Content))
-			chunk := FileChunk{
-				APIKeyHash:  job.APIKeyHash,
-				Project:     job.Project,
-				FilePath:    job.FilePath,
-				ChunkIndex:  ch.Index,
-				StartByte:   ch.StartByte,
-				EndByte:     ch.EndByte,
-				Content:     ch.Content,
-				ContentHash: hex.EncodeToString(hash[:]),
-				CreatedAt:   now,
-				UpdatedAt:   now,
-			}
-			if err := tx.WithContext(ctx).Create(&chunk).Error; err != nil {
-				return errors.Wrap(err, "insert chunk")
-			}
-			indexContent := ch.Content
-			if shouldUseContextualizedContent && indexContents[i] != "" {
-				indexContent = indexContents[i]
-			}
-			if err := s.insertBM25(ctx, tx, chunk.ID, indexContent, now); err != nil {
-				return err
-			}
-			if shouldWriteEmbeddings {
-				if err := s.insertEmbedding(ctx, tx, chunk.ID, vectors[i], now); err != nil {
-					return err
-				}
-			}
+	now := s.clock()
+	if len(chunks) == 0 {
+		if commitErr := tx.Commit(); commitErr != nil {
+			return errors.Wrap(commitErr, "commit empty replace index rows")
 		}
 		return nil
-	})
+	}
+	shouldWriteEmbeddings := len(vectors) == len(chunks)
+	shouldUseContextualizedContent := len(indexContents) == len(chunks)
+
+	for i, ch := range chunks {
+		hash := sha256.Sum256([]byte(ch.Content))
+		insertChunkQuery := rebindSQL(`INSERT INTO mcp_file_chunks (apikey_hash, project, file_path, chunk_index, start_byte, end_byte, chunk_content, content_hash, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres)
+		var chunkID int64
+		if s.isPostgres {
+			if err = tx.QueryRowContext(ctx, insertChunkQuery+" RETURNING id",
+				job.APIKeyHash,
+				job.Project,
+				job.FilePath,
+				ch.Index,
+				ch.StartByte,
+				ch.EndByte,
+				ch.Content,
+				hex.EncodeToString(hash[:]),
+				now,
+				now,
+			).Scan(&chunkID); err != nil {
+				_ = tx.Rollback()
+				return errors.Wrap(err, "insert chunk")
+			}
+		} else {
+			result, execErr := tx.ExecContext(ctx, insertChunkQuery,
+				job.APIKeyHash,
+				job.Project,
+				job.FilePath,
+				ch.Index,
+				ch.StartByte,
+				ch.EndByte,
+				ch.Content,
+				hex.EncodeToString(hash[:]),
+				now,
+				now,
+			)
+			if execErr != nil {
+				_ = tx.Rollback()
+				return errors.Wrap(execErr, "insert chunk")
+			}
+			chunkID, err = result.LastInsertId()
+			if err != nil {
+				_ = tx.Rollback()
+				return errors.Wrap(err, "load inserted chunk id")
+			}
+		}
+
+		indexContent := ch.Content
+		if shouldUseContextualizedContent && indexContents[i] != "" {
+			indexContent = indexContents[i]
+		}
+		if err := s.insertBM25(ctx, tx, chunkID, indexContent, now); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if shouldWriteEmbeddings {
+			if err := s.insertEmbedding(ctx, tx, chunkID, vectors[i], now); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return errors.Wrap(err, "commit replace index rows transaction")
+	}
+
+	return nil
 }
 
 // insertEmbedding stores a chunk embedding, using pgvector when available.
-func (s *Service) insertEmbedding(ctx context.Context, tx *gorm.DB, chunkID int64, vector pgvector.Vector, now time.Time) error {
-	if isPostgresDialect(tx) {
-		row := FileChunkEmbedding{
-			ChunkID:   chunkID,
-			Embedding: vector,
-			Model:     s.settings.EmbeddingModel,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-		return tx.WithContext(ctx).Create(&row).Error
+func (s *Service) insertEmbedding(ctx context.Context, tx *sql.Tx, chunkID int64, vector pgvector.Vector, now time.Time) error {
+	if s.isPostgres {
+		_, err := tx.ExecContext(ctx,
+			rebindSQL(`INSERT INTO mcp_file_chunk_embeddings (chunk_id, embedding, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, s.isPostgres),
+			chunkID,
+			vector,
+			s.settings.EmbeddingModel,
+			now,
+			now,
+		)
+		return err
 	}
 
 	payload, err := json.Marshal(vector.Slice())
 	if err != nil {
 		return errors.Wrap(err, "marshal embedding")
 	}
-	return tx.WithContext(ctx).Exec(
-		"INSERT INTO mcp_file_chunk_embeddings (chunk_id, embedding, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+	_, err = tx.ExecContext(ctx,
+		rebindSQL("INSERT INTO mcp_file_chunk_embeddings (chunk_id, embedding, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", s.isPostgres),
 		chunkID,
 		string(payload),
 		s.settings.EmbeddingModel,
 		now,
 		now,
-	).Error
+	)
+	return err
 }
 
 // insertBM25 stores lexical token metadata for a chunk.
-func (s *Service) insertBM25(ctx context.Context, tx *gorm.DB, chunkID int64, content string, now time.Time) error {
+func (s *Service) insertBM25(ctx context.Context, tx *sql.Tx, chunkID int64, content string, now time.Time) error {
 	tokens := tokenize(content)
 	tokenCounts := make(map[string]int, len(tokens))
 	for _, token := range tokens {
@@ -402,33 +488,48 @@ func (s *Service) insertBM25(ctx context.Context, tx *gorm.DB, chunkID int64, co
 	if err != nil {
 		return errors.Wrap(err, "marshal tokens")
 	}
-	row := FileChunkBM25{
-		ChunkID:    chunkID,
-		Tokens:     payload,
-		TokenCount: len(tokens),
-		Tokenizer:  "simple",
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	return tx.WithContext(ctx).Create(&row).Error
+	_, execErr := tx.ExecContext(ctx,
+		rebindSQL(`INSERT INTO mcp_file_chunk_bm25 (chunk_id, tokens, token_count, tokenizer, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, s.isPostgres),
+		chunkID,
+		payload,
+		len(tokens),
+		"simple",
+		now,
+		now,
+	)
+	return execErr
 }
 
 // deleteIndexRows deletes all index rows for a file path.
 func (s *Service) deleteIndexRows(ctx context.Context, apiKeyHash, project, path string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.deleteIndexRowsTx(ctx, tx, apiKeyHash, project, path)
-	})
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "begin delete index rows transaction")
+	}
+	if err = s.deleteIndexRowsTx(ctx, tx, apiKeyHash, project, path); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return errors.Wrap(err, "commit delete index rows transaction")
+	}
+	return nil
 }
 
 // deleteIndexRowsTx deletes index rows for a file within a transaction.
-func (s *Service) deleteIndexRowsTx(ctx context.Context, tx *gorm.DB, apiKeyHash, project, path string) error {
-	if err := tx.WithContext(ctx).Where("apikey_hash = ? AND project = ? AND file_path = ?", apiKeyHash, project, path).Delete(&FileChunk{}).Error; err != nil {
+func (s *Service) deleteIndexRowsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
+	if _, err := tx.ExecContext(ctx,
+		rebindSQL(`DELETE FROM mcp_file_chunks WHERE apikey_hash = ? AND project = ? AND file_path = ?`, s.isPostgres),
+		apiKeyHash,
+		project,
+		path,
+	); err != nil {
 		return errors.Wrap(err, "delete chunks")
 	}
-	if err := tx.WithContext(ctx).Where("chunk_id NOT IN (SELECT id FROM mcp_file_chunks)").Delete(&FileChunkEmbedding{}).Error; err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_file_chunk_embeddings WHERE chunk_id NOT IN (SELECT id FROM mcp_file_chunks)"); err != nil {
 		return errors.Wrap(err, "cleanup embeddings")
 	}
-	if err := tx.WithContext(ctx).Where("chunk_id NOT IN (SELECT id FROM mcp_file_chunks)").Delete(&FileChunkBM25{}).Error; err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_file_chunk_bm25 WHERE chunk_id NOT IN (SELECT id FROM mcp_file_chunks)"); err != nil {
 		return errors.Wrap(err, "cleanup bm25")
 	}
 	return nil
@@ -461,4 +562,19 @@ func (s *Service) deleteCredential(ctx context.Context, ref CredentialReference)
 		s.LoggerFromContext(ctx).Warn("delete credential envelope", zap.Error(err), zap.String("key", key))
 	}
 	return nil
+}
+
+// buildInClauseInt64 returns placeholders and args for int64 IN clauses.
+func buildInClauseInt64(values []int64, isPostgres bool, startIndex int) (string, []any) {
+	placeholders := make([]string, 0, len(values))
+	args := make([]any, 0, len(values))
+	for i, value := range values {
+		if isPostgres {
+			placeholders = append(placeholders, "$"+strconvItoa(startIndex+i))
+		} else {
+			placeholders = append(placeholders, "?")
+		}
+		args = append(args, value)
+	}
+	return strings.Join(placeholders, ","), args
 }

@@ -2,13 +2,16 @@ package userrequests
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	gutils "github.com/Laisky/go-utils/v6"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
@@ -20,10 +23,11 @@ type Clock func() time.Time
 
 // Service provides persistence helpers for MCP user requests.
 type Service struct {
-	db       *gorm.DB
-	logger   logSDK.Logger
-	clock    Clock
-	settings Settings
+	db        *sql.DB
+	logger    logSDK.Logger
+	clock     Clock
+	settings  Settings
+	useDollar bool
 }
 
 const (
@@ -33,10 +37,10 @@ const (
 	maxTaskIDLength = 255
 )
 
-// NewService constructs a Service backed by the provided gorm database.
-func NewService(db *gorm.DB, logger logSDK.Logger, clock Clock, settings Settings) (*Service, error) {
+// NewService constructs a Service backed by the provided SQL database.
+func NewService(db *sql.DB, logger logSDK.Logger, clock Clock, settings Settings) (*Service, error) {
 	if db == nil {
-		return nil, errors.New("gorm db is required")
+		return nil, errors.New("sql db is required")
 	}
 	if logger == nil {
 		logger = log.Logger.Named("user_requests_service")
@@ -56,11 +60,70 @@ func NewService(db *gorm.DB, logger logSDK.Logger, clock Clock, settings Setting
 		settings.RetentionSweepInterval = DefaultRetentionSweepInterval
 	}
 
-	if err := db.AutoMigrate(&Request{}, &SavedCommand{}, &UserPreference{}); err != nil {
-		return nil, errors.Wrap(err, "auto migrate mcp user requests tables")
+	svc := &Service{
+		db:        db,
+		logger:    logger,
+		clock:     clock,
+		settings:  settings,
+		useDollar: useDollarPlaceholders(db),
 	}
 
-	return &Service{db: db, logger: logger, clock: clock, settings: settings}, nil
+	if err := svc.ensureSchema(context.Background()); err != nil {
+		return nil, errors.Wrap(err, "migrate mcp user requests tables")
+	}
+
+	return svc, nil
+}
+
+// ensureSchema creates user request tables and indexes when they do not already exist.
+func (s *Service) ensureSchema(ctx context.Context) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS mcp_user_requests (
+			id UUID PRIMARY KEY,
+			content TEXT NOT NULL,
+			status VARCHAR(16) NOT NULL,
+			task_id VARCHAR(255) NOT NULL DEFAULT 'default',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			api_key_hash CHAR(64) NOT NULL,
+			key_suffix VARCHAR(16) NOT NULL,
+			user_identity VARCHAR(255) NOT NULL,
+			consumed_at TIMESTAMPTZ NULL,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_user_requests_api_status_task_sort_created ON mcp_user_requests (api_key_hash, status, task_id, sort_order, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_user_requests_api_status_id ON mcp_user_requests (api_key_hash, status, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_user_requests_created_at ON mcp_user_requests (created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_user_requests_consumed_at ON mcp_user_requests (consumed_at)`,
+		`CREATE TABLE IF NOT EXISTS mcp_saved_commands (
+			id UUID PRIMARY KEY,
+			label VARCHAR(255) NOT NULL,
+			content TEXT NOT NULL,
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			api_key_hash CHAR(64) NOT NULL,
+			key_suffix VARCHAR(16) NOT NULL,
+			user_identity VARCHAR(255) NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_saved_commands_api_sort_created ON mcp_saved_commands (api_key_hash, sort_order, created_at)`,
+		`CREATE TABLE IF NOT EXISTS mcp_user_preferences (
+			api_key_hash CHAR(64) PRIMARY KEY,
+			key_suffix VARCHAR(16) NOT NULL,
+			user_identity VARCHAR(255) NOT NULL,
+			preferences TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+	}
+
+	for _, stmt := range statements {
+		if _, err := s.execContext(ctx, stmt); err != nil {
+			return errors.Wrap(err, "apply schema statement")
+		}
+	}
+
+	return nil
 }
 
 // CreateRequest stores a new user directive scoped to the provided authorization context.
@@ -75,16 +138,22 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 
 	taskID = normalizeTaskID(taskID)
 
-	// Get the next sort order for pending requests
 	var maxOrder int
-	s.db.WithContext(ctx).
-		Model(&Request{}).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending).
-		Select("COALESCE(MAX(sort_order), -1)").
-		Row().
-		Scan(&maxOrder)
+	err = s.queryRowContext(ctx,
+		`SELECT COALESCE(MAX(sort_order), -1)
+		 FROM mcp_user_requests
+		 WHERE api_key_hash = ? AND status = ?`,
+		auth.APIKeyHash,
+		StatusPending,
+	).Scan(&maxOrder)
+	if err != nil {
+		return nil, errors.Wrap(err, "query max sort order")
+	}
+
+	now := s.clock()
 
 	req := &Request{
+		ID:           gutils.UUID7Bytes(),
 		Content:      body,
 		Status:       StatusPending,
 		TaskID:       taskID,
@@ -92,9 +161,27 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 		APIKeyHash:   auth.APIKeyHash,
 		KeySuffix:    auth.KeySuffix,
 		UserIdentity: auth.UserIdentity,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
-	if err := s.db.WithContext(ctx).Create(req).Error; err != nil {
+	_, err = s.execContext(ctx,
+		`INSERT INTO mcp_user_requests
+		 (id, content, status, task_id, sort_order, api_key_hash, key_suffix, user_identity, consumed_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		req.ID.String(),
+		req.Content,
+		req.Status,
+		req.TaskID,
+		req.SortOrder,
+		req.APIKeyHash,
+		req.KeySuffix,
+		req.UserIdentity,
+		nil,
+		req.CreatedAt,
+		req.UpdatedAt,
+	)
+	if err != nil {
 		return nil, errors.Wrap(err, "create user request")
 	}
 
@@ -128,39 +215,58 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 	if err != nil {
 		return nil, nil, 0, errors.WithStack(err)
 	}
-	pendingQuery := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending)
-	consumedQuery := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed)
-
+	countQuery := `SELECT COUNT(1) FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
+	countArgs := []any{auth.APIKeyHash, StatusConsumed}
 	if !includeAllTasks {
-		pendingQuery = pendingQuery.Where("task_id = ?", filteredTaskID)
-		consumedQuery = consumedQuery.Where("task_id = ?", filteredTaskID)
+		countQuery += ` AND task_id = ?`
+		countArgs = append(countArgs, filteredTaskID)
 	}
 
 	var totalConsumed int64
-	if err := consumedQuery.Model(&Request{}).Count(&totalConsumed).Error; err != nil {
+	if err := s.queryRowContext(ctx, countQuery, countArgs...).Scan(&totalConsumed); err != nil {
 		return nil, nil, 0, errors.Wrap(err, "count consumed user requests")
 	}
 
-	if cursor != "" {
-		consumedQuery = consumedQuery.Where("id < ?", cursor)
+	pendingQuery := `SELECT id, content, status, task_id, sort_order, api_key_hash, key_suffix, user_identity, consumed_at, created_at, updated_at
+		FROM mcp_user_requests
+		WHERE api_key_hash = ? AND status = ?`
+	pendingArgs := []any{auth.APIKeyHash, StatusPending}
+	if !includeAllTasks {
+		pendingQuery += ` AND task_id = ?`
+		pendingArgs = append(pendingArgs, filteredTaskID)
 	}
-
-	pending := make([]Request, 0)
-	if err := pendingQuery.
-		Order("sort_order ASC, created_at ASC").
-		Limit(defaultListLimit).
-		Find(&pending).Error; err != nil {
+	pendingQuery += ` ORDER BY sort_order ASC, created_at ASC LIMIT ?`
+	pendingArgs = append(pendingArgs, defaultListLimit)
+	pendingRows, err := s.queryContext(ctx, pendingQuery, pendingArgs...)
+	if err != nil {
 		return nil, nil, 0, errors.Wrap(err, "list pending user requests")
 	}
+	pending, err := scanRequestRows(pendingRows)
+	if err != nil {
+		return nil, nil, 0, errors.Wrap(err, "scan pending user requests")
+	}
 
-	consumed := make([]Request, 0)
-	if err := consumedQuery.
-		Order("id DESC").
-		Limit(limit).
-		Find(&consumed).Error; err != nil {
+	consumedQuery := `SELECT id, content, status, task_id, sort_order, api_key_hash, key_suffix, user_identity, consumed_at, created_at, updated_at
+		FROM mcp_user_requests
+		WHERE api_key_hash = ? AND status = ?`
+	consumedArgs := []any{auth.APIKeyHash, StatusConsumed}
+	if !includeAllTasks {
+		consumedQuery += ` AND task_id = ?`
+		consumedArgs = append(consumedArgs, filteredTaskID)
+	}
+	if cursor != "" {
+		consumedQuery += ` AND id < ?`
+		consumedArgs = append(consumedArgs, cursor)
+	}
+	consumedQuery += ` ORDER BY id DESC LIMIT ?`
+	consumedArgs = append(consumedArgs, limit)
+	consumedRows, err := s.queryContext(ctx, consumedQuery, consumedArgs...)
+	if err != nil {
 		return nil, nil, 0, errors.Wrap(err, "list consumed user requests")
+	}
+	consumed, err := scanRequestRows(consumedRows)
+	if err != nil {
+		return nil, nil, 0, errors.Wrap(err, "scan consumed user requests")
 	}
 
 	logTaskID := filteredTaskID
@@ -192,14 +298,23 @@ func (s *Service) SearchRequests(ctx context.Context, auth *askuser.Authorizatio
 	}
 	escaped := escapeLike(sanitizedQuery)
 
-	var results []Request
-	// Case-insensitive search
-	if err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND content LIKE ? ESCAPE '\\'", auth.APIKeyHash, "%"+escaped+"%").
-		Order("created_at DESC").
-		Limit(limit).
-		Find(&results).Error; err != nil {
+	rows, err := s.queryContext(ctx,
+		`SELECT id, content, status, task_id, sort_order, api_key_hash, key_suffix, user_identity, consumed_at, created_at, updated_at
+		 FROM mcp_user_requests
+		 WHERE api_key_hash = ? AND content LIKE ? ESCAPE '\'
+		 ORDER BY created_at DESC
+		 LIMIT ?`,
+		auth.APIKeyHash,
+		"%"+escaped+"%",
+		limit,
+	)
+	if err != nil {
 		return nil, errors.Wrap(err, "search user requests")
+	}
+
+	results, err := scanRequestRows(rows)
+	if err != nil {
+		return nil, errors.Wrap(err, "scan search user requests")
 	}
 
 	return results, nil
@@ -217,37 +332,44 @@ func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.Authoriza
 		return nil, errors.WithStack(err)
 	}
 
-	// Fetch all pending requests in FIFO order (oldest first)
-	var candidates []Request
-	err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
-		Order("sort_order ASC, created_at ASC").
-		Find(&candidates).Error
+	candidatesRows, err := s.queryContext(ctx,
+		`SELECT id, content, status, task_id, sort_order, api_key_hash, key_suffix, user_identity, consumed_at, created_at, updated_at
+		 FROM mcp_user_requests
+		 WHERE api_key_hash = ? AND task_id = ? AND status = ?
+		 ORDER BY sort_order ASC, created_at ASC`,
+		auth.APIKeyHash,
+		taskID,
+		StatusPending,
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch pending user requests")
+	}
+	candidates, err := scanRequestRows(candidatesRows)
+	if err != nil {
+		return nil, errors.Wrap(err, "scan pending user requests")
 	}
 
 	if len(candidates) == 0 {
 		return nil, ErrNoPendingRequests
 	}
 
-	// Extract IDs for batch update
-	ids := make([]string, len(candidates))
-	for i, c := range candidates {
-		ids[i] = c.ID.String()
+	now := s.clock()
+	placeholders := make([]string, 0, len(candidates))
+	args := make([]any, 0, len(candidates)+4)
+	args = append(args, StatusConsumed, now, now, StatusPending)
+	for _, candidate := range candidates {
+		placeholders = append(placeholders, "?")
+		args = append(args, candidate.ID.String())
 	}
 
-	now := s.clock()
-	update := s.db.WithContext(ctx).
-		Model(&Request{}).
-		Where("id IN ? AND status = ?", ids, StatusPending).
-		Updates(map[string]any{
-			"status":      StatusConsumed,
-			"consumed_at": now,
-			"updated_at":  now,
-		})
-	if update.Error != nil {
-		return nil, errors.Wrap(update.Error, "consume user requests")
+	updateSQL := fmt.Sprintf(
+		`UPDATE mcp_user_requests
+		 SET status = ?, consumed_at = ?, updated_at = ?
+		 WHERE status = ? AND id IN (%s)`,
+		strings.Join(placeholders, ","),
+	)
+	if _, err := s.execContext(ctx, updateSQL, args...); err != nil {
+		return nil, errors.Wrap(err, "consume user requests")
 	}
 
 	// Update in-memory objects
@@ -280,30 +402,35 @@ func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.Authori
 		return nil, errors.WithStack(err)
 	}
 
-	// Fetch the oldest pending request (FIFO)
-	var candidate Request
-	err := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND task_id = ? AND status = ?", auth.APIKeyHash, taskID, StatusPending).
-		Order("sort_order ASC, created_at ASC").
-		First(&candidate).Error
+	candidate, err := scanRequestRow(s.queryRowContext(ctx,
+		`SELECT id, content, status, task_id, sort_order, api_key_hash, key_suffix, user_identity, consumed_at, created_at, updated_at
+		 FROM mcp_user_requests
+		 WHERE api_key_hash = ? AND task_id = ? AND status = ?
+		 ORDER BY sort_order ASC, created_at ASC
+		 LIMIT 1`,
+		auth.APIKeyHash,
+		taskID,
+		StatusPending,
+	))
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNoPendingRequests
 		}
 		return nil, errors.Wrap(err, "fetch first pending user request")
 	}
 
 	now := s.clock()
-	update := s.db.WithContext(ctx).
-		Model(&Request{}).
-		Where("id = ? AND status = ?", candidate.ID, StatusPending).
-		Updates(map[string]any{
-			"status":      StatusConsumed,
-			"consumed_at": now,
-			"updated_at":  now,
-		})
-	if update.Error != nil {
-		return nil, errors.Wrap(update.Error, "consume first user request")
+	if _, err := s.execContext(ctx,
+		`UPDATE mcp_user_requests
+		 SET status = ?, consumed_at = ?, updated_at = ?
+		 WHERE id = ? AND status = ?`,
+		StatusConsumed,
+		now,
+		now,
+		candidate.ID.String(),
+		StatusPending,
+	); err != nil {
+		return nil, errors.Wrap(err, "consume first user request")
 	}
 
 	// Update in-memory object
@@ -318,25 +445,31 @@ func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.Authori
 		zap.Int("sort_order", candidate.SortOrder),
 	)
 
-	return &candidate, nil
+	return candidate, nil
 }
 
 // ConsumeRequestByID marks a specific pending request as consumed.
 // This is used when a command is sent directly to a waiting agent via the hold mechanism.
 func (s *Service) ConsumeRequestByID(ctx context.Context, id uuid.UUID) error {
 	now := s.clock()
-	result := s.db.WithContext(ctx).
-		Model(&Request{}).
-		Where("id = ? AND status = ?", id, StatusPending).
-		Updates(map[string]any{
-			"status":      StatusConsumed,
-			"consumed_at": now,
-			"updated_at":  now,
-		})
-	if result.Error != nil {
-		return errors.Wrap(result.Error, "consume request by id")
+	result, err := s.execContext(ctx,
+		`UPDATE mcp_user_requests
+		 SET status = ?, consumed_at = ?, updated_at = ?
+		 WHERE id = ? AND status = ?`,
+		StatusConsumed,
+		now,
+		now,
+		id.String(),
+		StatusPending,
+	)
+	if err != nil {
+		return errors.Wrap(err, "consume request by id")
 	}
-	if result.RowsAffected == 0 {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return errors.Wrap(err, "read consume request rows affected")
+	}
+	if rowsAffected == 0 {
 		// Already consumed or not found - this is not an error in this context
 		s.log().Debug("request already consumed or not found",
 			zap.String("request_id", id.String()),
@@ -351,19 +484,25 @@ func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.Authorization
 		return ErrInvalidAuthorization
 	}
 
-	result := s.db.WithContext(ctx).
-		Where("id = ? AND api_key_hash = ?", id, auth.APIKeyHash).
-		Delete(&Request{})
-	if result.Error != nil {
-		return errors.Wrap(result.Error, "delete user request")
+	result, err := s.execContext(ctx,
+		`DELETE FROM mcp_user_requests WHERE id = ? AND api_key_hash = ?`,
+		id.String(),
+		auth.APIKeyHash,
+	)
+	if err != nil {
+		return errors.Wrap(err, "delete user request")
 	}
-	if result.RowsAffected == 0 {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return errors.Wrap(err, "read deleted rows affected")
+	}
+	if rowsAffected == 0 {
 		return ErrRequestNotFound
 	}
 	s.log().Debug("deleted user request",
 		zap.String("user", auth.UserIdentity),
 		zap.String("request_id", id.String()),
-		zap.Int64("deleted", result.RowsAffected),
+		zap.Int64("deleted", rowsAffected),
 	)
 	return nil
 }
@@ -376,15 +515,20 @@ func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationCont
 	}
 
 	filteredTaskID := normalizeTaskID(taskID)
-	query := s.db.WithContext(ctx).
-		Where("api_key_hash = ?", auth.APIKeyHash)
+	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ?`
+	args := []any{auth.APIKeyHash}
 	if !includeAllTasks {
-		query = query.Where("task_id = ?", filteredTaskID)
+		query += ` AND task_id = ?`
+		args = append(args, filteredTaskID)
 	}
 
-	result := query.Delete(&Request{})
-	if result.Error != nil {
-		return 0, errors.Wrap(result.Error, "delete all user requests")
+	result, err := s.execContext(ctx, query, args...)
+	if err != nil {
+		return 0, errors.Wrap(err, "delete all user requests")
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, errors.Wrap(err, "read deleted rows affected")
 	}
 	logTaskID := filteredTaskID
 	if includeAllTasks {
@@ -394,9 +538,9 @@ func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationCont
 		zap.String("user", auth.UserIdentity),
 		zap.Bool("all_tasks", includeAllTasks),
 		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", result.RowsAffected),
+		zap.Int64("deleted", rowsAffected),
 	)
-	return result.RowsAffected, nil
+	return rowsAffected, nil
 }
 
 // DeleteAllPending removes pending requests. When includeAllTasks is false the operation is
@@ -407,15 +551,20 @@ func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.Authorizat
 	}
 
 	filteredTaskID := normalizeTaskID(taskID)
-	query := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusPending)
+	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
+	args := []any{auth.APIKeyHash, StatusPending}
 	if !includeAllTasks {
-		query = query.Where("task_id = ?", filteredTaskID)
+		query += ` AND task_id = ?`
+		args = append(args, filteredTaskID)
 	}
 
-	result := query.Delete(&Request{})
-	if result.Error != nil {
-		return 0, errors.Wrap(result.Error, "delete pending user requests")
+	result, err := s.execContext(ctx, query, args...)
+	if err != nil {
+		return 0, errors.Wrap(err, "delete pending user requests")
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, errors.Wrap(err, "read deleted rows affected")
 	}
 	logTaskID := filteredTaskID
 	if includeAllTasks {
@@ -425,9 +574,9 @@ func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.Authorizat
 		zap.String("user", auth.UserIdentity),
 		zap.Bool("all_tasks", includeAllTasks),
 		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", result.RowsAffected),
+		zap.Int64("deleted", rowsAffected),
 	)
-	return result.RowsAffected, nil
+	return rowsAffected, nil
 }
 
 func (s *Service) log() logSDK.Logger {
@@ -453,16 +602,17 @@ func (s *Service) pruneExpired(ctx context.Context) error {
 		return nil
 	}
 	cutoff := s.clock().AddDate(0, 0, -s.settings.RetentionDays)
-	result := s.db.WithContext(ctx).
-		Where("created_at < ?", cutoff).
-		Delete(&Request{})
-	if result.Error != nil {
+	_, err := s.execContext(ctx,
+		`DELETE FROM mcp_user_requests WHERE created_at < ?`,
+		cutoff,
+	)
+	if err != nil {
 		switch {
-		case errors.Is(result.Error, context.Canceled), errors.Is(result.Error, context.DeadlineExceeded):
-			s.log().Debug("prune expired aborted", zap.Error(result.Error))
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+			s.log().Debug("prune expired aborted", zap.Error(err))
 			return nil
 		default:
-			return errors.Wrap(result.Error, "prune expired user requests")
+			return errors.Wrap(err, "prune expired user requests")
 		}
 	}
 	return nil
@@ -479,33 +629,38 @@ func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.Authorizatio
 	}
 
 	filteredTaskID := normalizeTaskID(taskID)
-	query := s.db.WithContext(ctx).
-		Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed)
+	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
+	args := []any{auth.APIKeyHash, StatusConsumed}
 	if !includeAllTasks {
-		query = query.Where("task_id = ?", filteredTaskID)
+		query += ` AND task_id = ?`
+		args = append(args, filteredTaskID)
 	}
 
 	if keepCount > 0 {
-		// Retain only the most recent N items.
-		// We use a subquery to identify the IDs to keep.
-		subQuery := s.db.Model(&Request{}).
-			Select("id").
-			Where("api_key_hash = ? AND status = ?", auth.APIKeyHash, StatusConsumed)
+		subQuery := `SELECT id FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
+		subArgs := []any{auth.APIKeyHash, StatusConsumed}
 		if !includeAllTasks {
-			subQuery = subQuery.Where("task_id = ?", filteredTaskID)
+			subQuery += ` AND task_id = ?`
+			subArgs = append(subArgs, filteredTaskID)
 		}
-		subQuery = subQuery.Order("consumed_at DESC").Limit(keepCount)
+		subQuery += ` ORDER BY consumed_at DESC LIMIT ?`
+		subArgs = append(subArgs, keepCount)
 
-		query = query.Where("id NOT IN (?)", subQuery)
+		query += ` AND id NOT IN (` + subQuery + `)`
+		args = append(args, subArgs...)
 	} else if keepDays > 0 {
-		// Retain items from the last N days.
 		cutoff := s.clock().AddDate(0, 0, -keepDays)
-		query = query.Where("consumed_at < ?", cutoff)
+		query += ` AND consumed_at < ?`
+		args = append(args, cutoff)
 	}
 
-	result := query.Delete(&Request{})
-	if result.Error != nil {
-		return 0, errors.Wrap(result.Error, "delete consumed requests")
+	result, err := s.execContext(ctx, query, args...)
+	if err != nil {
+		return 0, errors.Wrap(err, "delete consumed requests")
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, errors.Wrap(err, "read deleted rows affected")
 	}
 	logTaskID := filteredTaskID
 	if includeAllTasks {
@@ -515,9 +670,9 @@ func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.Authorizatio
 		zap.String("user", auth.UserIdentity),
 		zap.Bool("all_tasks", includeAllTasks),
 		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", result.RowsAffected),
+		zap.Int64("deleted", rowsAffected),
 	)
-	return result.RowsAffected, nil
+	return rowsAffected, nil
 }
 
 // ReorderRequests updates the sort order for multiple pending requests at once.
@@ -530,20 +685,28 @@ func (s *Service) ReorderRequests(ctx context.Context, auth *askuser.Authorizati
 		return nil
 	}
 
-	tx := s.db.WithContext(ctx).Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "begin reorder transaction")
+	}
 	defer func() {
 		if r := recover(); r != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 		}
 	}()
 
 	for i, id := range orderedIDs {
-		result := tx.Model(&Request{}).
-			Where("id = ? AND api_key_hash = ? AND status = ?", id, auth.APIKeyHash, StatusPending).
-			Update("sort_order", i)
-		if result.Error != nil {
-			tx.Rollback()
-			return errors.Wrap(result.Error, "update sort order")
+		_, execErr := tx.ExecContext(ctx,
+			rebindQuery(`UPDATE mcp_user_requests SET sort_order = ?, updated_at = ? WHERE id = ? AND api_key_hash = ? AND status = ?`, s.useDollar),
+			i,
+			s.clock(),
+			id.String(),
+			auth.APIKeyHash,
+			StatusPending,
+		)
+		if execErr != nil {
+			_ = tx.Rollback()
+			return errors.Wrap(execErr, "update sort order")
 		}
 
 		s.log().Debug("updated request sort order",
@@ -552,7 +715,7 @@ func (s *Service) ReorderRequests(ctx context.Context, auth *askuser.Authorizati
 		)
 	}
 
-	if err := tx.Commit().Error; err != nil {
+	if err := tx.Commit(); err != nil {
 		return errors.Wrap(err, "commit reorder transaction")
 	}
 
@@ -588,4 +751,82 @@ func (s *Service) StartRetentionWorker(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// scanRequestRows reads request rows into request models.
+func scanRequestRows(rows *sql.Rows) ([]Request, error) {
+	defer rows.Close()
+
+	requests := make([]Request, 0)
+	for rows.Next() {
+		entry, err := scanRequestValues(rows.Scan)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		requests = append(requests, *entry)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate request rows")
+	}
+
+	return requests, nil
+}
+
+// scanRequestRow reads a single request row into a request model.
+func scanRequestRow(row *sql.Row) (*Request, error) {
+	entry, err := scanRequestValues(row.Scan)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return entry, nil
+}
+
+// scanRequestValues extracts a Request from a scanner callback.
+func scanRequestValues(scanFn func(dest ...any) error) (*Request, error) {
+	var (
+		idRaw         string
+		consumedAtRaw any
+		createdAtRaw  any
+		updatedAtRaw  any
+		entry         Request
+	)
+	if err := scanFn(
+		&idRaw,
+		&entry.Content,
+		&entry.Status,
+		&entry.TaskID,
+		&entry.SortOrder,
+		&entry.APIKeyHash,
+		&entry.KeySuffix,
+		&entry.UserIdentity,
+		&consumedAtRaw,
+		&createdAtRaw,
+		&updatedAtRaw,
+	); err != nil {
+		return nil, errors.Wrap(err, "scan request row")
+	}
+
+	parsedID, err := uuid.Parse(idRaw)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse request id")
+	}
+	entry.ID = parsedID
+
+	consumedAt, err := parseNullableSQLTime(consumedAtRaw)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse consumed_at")
+	}
+	entry.ConsumedAt = consumedAt
+
+	entry.CreatedAt, err = parseSQLTime(createdAtRaw)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse created_at")
+	}
+	entry.UpdatedAt, err = parseSQLTime(updatedAtRaw)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse updated_at")
+	}
+
+	return &entry, nil
 }

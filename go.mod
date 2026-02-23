@@ -2,6 +2,8 @@ module github.com/Laisky/laisky-blog-graphql
 
 go 1.25.0
 
+replace github.com/pgvector/pgvector-go => ./third_party/pgvector-go
+
 require (
 	cloud.google.com/go/firestore v1.21.0
 	github.com/99designs/gqlgen v0.17.86
@@ -22,7 +24,9 @@ require (
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/jinzhu/copier v0.4.0
 	github.com/mark3labs/mcp-go v0.43.2
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/minio/minio-go/v7 v7.0.98
+	github.com/pashagolub/pgxmock/v4 v4.9.0
 	github.com/pgvector/pgvector-go v0.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.17.3
@@ -33,10 +37,6 @@ require (
 	golang.org/x/sync v0.19.0
 	google.golang.org/api v0.266.0
 	gopkg.in/telebot.v3 v3.3.8
-	gorm.io/datatypes v1.2.7
-	gorm.io/driver/postgres v1.6.0
-	gorm.io/driver/sqlite v1.6.0
-	gorm.io/gorm v1.31.1
 )
 
 require (
@@ -45,7 +45,6 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/longrunning v0.8.0 // indirect
-	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Laisky/errors v0.9.2-0.20221107084216-4b771a197718 // indirect
 	github.com/Laisky/fast-skiplist/v2 v2.0.1 // indirect
 	github.com/Laisky/go-chaining v0.0.0-20180507092046-43dcdc5a21be // indirect
@@ -88,7 +87,6 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
-	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
@@ -105,8 +103,6 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
@@ -118,7 +114,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
-	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -130,7 +125,6 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
-	github.com/pashagolub/pgxmock/v4 v4.9.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
@@ -193,5 +187,4 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/mysql v1.5.6 // indirect
 )

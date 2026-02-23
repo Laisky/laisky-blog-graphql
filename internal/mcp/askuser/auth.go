@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Laisky/errors/v2"
+
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 

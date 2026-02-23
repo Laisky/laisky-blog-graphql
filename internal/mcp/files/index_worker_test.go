@@ -54,9 +54,29 @@ func TestIndexWorkerRetriesWhenCredentialMissing(t *testing.T) {
 	require.NoError(t, worker.RunOnce(context.Background()))
 
 	var job FileIndexJob
-	err = svc.db.WithContext(context.Background()).
-		Where("apikey_hash = ? AND project = ? AND file_path = ?", auth.APIKeyHash, "proj", "/a.txt").
-		First(&job).Error
+	err = svc.db.QueryRowContext(
+		context.Background(),
+		`SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at
+		FROM mcp_file_index_jobs
+		WHERE apikey_hash = ? AND project = ? AND file_path = ?
+		ORDER BY id DESC
+		LIMIT 1`,
+		auth.APIKeyHash,
+		"proj",
+		"/a.txt",
+	).Scan(
+		&job.ID,
+		&job.APIKeyHash,
+		&job.Project,
+		&job.FilePath,
+		&job.Operation,
+		&job.FileUpdatedAt,
+		&job.Status,
+		&job.RetryCount,
+		&job.AvailableAt,
+		&job.CreatedAt,
+		&job.UpdatedAt,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "pending", job.Status)
 	require.Equal(t, 1, job.RetryCount)

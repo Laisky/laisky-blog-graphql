@@ -2,12 +2,12 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"sort"
 	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
-	"gorm.io/gorm"
 )
 
 // List returns directory listings for the given path.
@@ -93,7 +93,7 @@ func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path s
 	if err == nil {
 		return fileToEntry(*file), true, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return FileEntry{}, false, errors.Wrap(err, "query file")
 	}
 
@@ -124,11 +124,14 @@ func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path s
 // listDescendants builds file and directory entries under a prefix.
 func (s *Service) listDescendants(ctx context.Context, apiKeyHash, project, path string, depth int) ([]FileEntry, error) {
 	prefix := buildPathPrefix(path)
-	rows, err := s.db.WithContext(ctx).
-		Model(&File{}).
-		Select("path", "size", "created_at", "updated_at").
-		Where("apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE", apiKeyHash, project, prefix).
-		Rows()
+	rows, err := s.db.QueryContext(ctx,
+		rebindSQL(`SELECT path, size, created_at, updated_at
+		FROM mcp_files
+		WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+		apiKeyHash,
+		project,
+		prefix,
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query descendant files")
 	}

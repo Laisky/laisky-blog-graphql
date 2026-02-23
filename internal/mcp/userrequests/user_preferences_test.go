@@ -108,10 +108,10 @@ func TestServiceSetReturnModeRecoversLegacyPreference(t *testing.T) {
 
 	legacyPref := `\\"return_mode\\":\\"first\\"`
 	now := clock.Now()
-	execErr := db.Exec(
+	_, execErr := db.Exec(
 		`INSERT INTO mcp_user_preferences (api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
 		auth.APIKeyHash, auth.KeySuffix, auth.UserIdentity, legacyPref, now, now,
-	).Error
+	)
 	require.NoError(t, execErr)
 
 	mode, err := svc.GetReturnMode(ctx, auth)
@@ -138,10 +138,10 @@ func TestServiceGetReturnModeHandlesEscapedObject(t *testing.T) {
 	ctx := context.Background()
 	legacyPref := `\{"return_mode":"first"}`
 	now := clock.Now()
-	execErr := db.Exec(
+	_, execErr := db.Exec(
 		`INSERT INTO mcp_user_preferences (api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
 		auth.APIKeyHash, auth.KeySuffix, auth.UserIdentity, legacyPref, now, now,
-	).Error
+	)
 	require.NoError(t, execErr)
 
 	mode, err := svc.GetReturnMode(ctx, auth)
@@ -159,10 +159,10 @@ func TestServiceGetReturnModeHandlesHexEncodedPreference(t *testing.T) {
 	ctx := context.Background()
 	legacyPref := `\x7b2272657475726e5f6d6f6465223a226669727374227d`
 	now := clock.Now()
-	execErr := db.Exec(
+	_, execErr := db.Exec(
 		`INSERT INTO mcp_user_preferences (api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
 		auth.APIKeyHash, auth.KeySuffix, auth.UserIdentity, legacyPref, now, now,
-	).Error
+	)
 	require.NoError(t, execErr)
 
 	mode, err := svc.GetReturnMode(ctx, auth)

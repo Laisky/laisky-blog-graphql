@@ -2,14 +2,14 @@ package userrequests
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 )
@@ -106,7 +106,8 @@ func TestServicePrunesExpiredRequests(t *testing.T) {
 	require.NoError(t, err)
 
 	oldCreatedAt := clock.Now().AddDate(0, 0, -(settings.RetentionDays + 5))
-	require.NoError(t, db.Model(&Request{}).Where("id = ?", oldReq.ID).Update("created_at", oldCreatedAt).Error)
+	_, err = db.Exec(`UPDATE mcp_user_requests SET created_at = ? WHERE id = ?`, oldCreatedAt, oldReq.ID.String())
+	require.NoError(t, err)
 
 	pending, _, _, err := svc.ListRequests(ctx, auth, "task-expired", false, "", 0)
 	require.NoError(t, err)
@@ -126,10 +127,13 @@ func fixedClock(ts time.Time) *testClock {
 	return &testClock{now: ts}
 }
 
-func newTestDB(t *testing.T) *gorm.DB {
+func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:userrequests_test?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := sql.Open("sqlite3", "file:userrequests_test?mode=memory&cache=shared")
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 	return db
 }
 
@@ -470,7 +474,7 @@ func TestServiceReturnModeRawDBVerification(t *testing.T) {
 
 	// Verify at raw DB level - read the preferences column directly
 	var rawPref string
-	err = db.Raw("SELECT preferences FROM mcp_user_preferences WHERE api_key_hash = ?", auth.APIKeyHash).Scan(&rawPref).Error
+	err = db.QueryRow("SELECT preferences FROM mcp_user_preferences WHERE api_key_hash = ?", auth.APIKeyHash).Scan(&rawPref)
 	require.NoError(t, err)
 	require.Contains(t, rawPref, `"return_mode":"first"`, "preferences column should contain first mode")
 
@@ -478,7 +482,7 @@ func TestServiceReturnModeRawDBVerification(t *testing.T) {
 	_, err = svc.SetReturnMode(ctx, auth, ReturnModeAll)
 	require.NoError(t, err)
 
-	err = db.Raw("SELECT preferences FROM mcp_user_preferences WHERE api_key_hash = ?", auth.APIKeyHash).Scan(&rawPref).Error
+	err = db.QueryRow("SELECT preferences FROM mcp_user_preferences WHERE api_key_hash = ?", auth.APIKeyHash).Scan(&rawPref)
 	require.NoError(t, err)
 	require.Contains(t, rawPref, `"return_mode":"all"`, "preferences column should contain all mode after update")
 }

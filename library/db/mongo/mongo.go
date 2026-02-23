@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
+
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 const (

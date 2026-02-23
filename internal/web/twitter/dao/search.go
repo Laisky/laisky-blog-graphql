@@ -2,9 +2,9 @@ package dao
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/Laisky/errors/v2"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 )
@@ -14,24 +14,41 @@ type Search interface {
 }
 
 type sqlSearch struct {
-	db *gorm.DB
+	db *sql.DB
 }
 
-func NewSQLSearch(db *gorm.DB) Search {
+// NewSQLSearch creates a SQL-backed tweet search DAO.
+func NewSQLSearch(db *sql.DB) Search {
 	return &sqlSearch{
 		db: db,
 	}
 }
 
 func (s *sqlSearch) SearchByText(ctx context.Context, text string) (tweetIDs []string, err error) {
-	var tweets []model.SearchTweet
-	err = s.db.Model(model.SearchTweet{}).
-		// Where("text LIKE ?", "%"+text+"%").
-		Where("match(text, ?)", text).
-		Order("created_at DESC").
-		Find(&tweets).Error
+	const query = `
+SELECT tweet_id, text, user_id, created_at
+FROM tweets
+WHERE match(text, $1)
+ORDER BY created_at DESC
+`
+
+	rows, err := s.db.QueryContext(ctx, query, text)
 	if err != nil {
 		return nil, errors.Wrapf(err, "search text `%s", text)
+	}
+	defer rows.Close()
+
+	var tweets []model.SearchTweet
+	for rows.Next() {
+		var tweet model.SearchTweet
+		if scanErr := rows.Scan(&tweet.TweetID, &tweet.Text, &tweet.UserID, &tweet.CreatedAt); scanErr != nil {
+			return nil, errors.Wrap(scanErr, "scan tweet")
+		}
+		tweets = append(tweets, tweet)
+	}
+
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, errors.Wrap(rowsErr, "iterate tweets")
 	}
 
 	for i := range tweets {

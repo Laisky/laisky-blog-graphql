@@ -2,26 +2,28 @@ package kv
 
 import (
 	"context"
+	"database/sql"
 	"regexp"
 	"time"
 
-	"github.com/pkg/errors"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	errors "github.com/Laisky/errors/v2"
 )
 
 var (
 	_ Interface = new(Kv)
 
-	regexpKey = regexp.MustCompile(`^[a-zA-Z0-9_]{1,64}$`)
+	regexpKey       = regexp.MustCompile(`^[a-zA-Z0-9_]{1,64}$`)
+	regexpTableName = regexp.MustCompile(`^[a-zA-Z0-9_]{1,64}$`)
+	errKeyNotFound  = errors.New("key not found")
+	errKeyExpired   = errors.New("key expired")
 )
 
 // KvItem is a kv doc
 type KvItem struct {
-	Key       string    `gorm:"column:key;primaryKey" json:"key"`
-	Value     string    `gorm:"column:value" json:"value"`
-	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
-	ExpireAt  time.Time `gorm:"column:expire_at" json:"expire_at"`
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpireAt  time.Time `json:"expire_at"`
 }
 
 // Interface is a kv interface
@@ -36,7 +38,7 @@ type Interface interface {
 // Kv is a key-value store for postgres
 type Kv struct {
 	opt *option
-	db  *gorm.DB
+	db  *sql.DB
 }
 
 type option struct {
@@ -65,13 +67,20 @@ func applyOpts(opts ...Option) (*option, error) {
 // WithDBName is a option to set db name
 func WithDBName(tableName string) Option {
 	return func(o *option) error {
+		if !regexpTableName.MatchString(tableName) {
+			return errors.Errorf("invalid table name: %s", tableName)
+		}
 		o.tableName = tableName
 		return nil
 	}
 }
 
 // NewKv create a new kv
-func NewKv(db **gorm.DB, opts ...Option) (*Kv, error) {
+func NewKv(db *sql.DB, opts ...Option) (*Kv, error) {
+	if db == nil {
+		return nil, errors.New("db cannot be nil")
+	}
+
 	opt, err := applyOpts(opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "apply opts")
@@ -79,7 +88,7 @@ func NewKv(db **gorm.DB, opts ...Option) (*Kv, error) {
 
 	kv := &Kv{
 		opt: opt,
-		db:  *db,
+		db:  db,
 	}
 
 	if err := kv.setup(); err != nil {
@@ -90,8 +99,19 @@ func NewKv(db **gorm.DB, opts ...Option) (*Kv, error) {
 }
 
 func (kv *Kv) setup() error {
-	err := kv.db.Table(kv.opt.tableName).AutoMigrate(&KvItem{})
-	return errors.Wrap(err, "auto migrate kv")
+	stmt := `
+CREATE TABLE IF NOT EXISTS ` + kv.opt.tableName + ` (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  expire_at TIMESTAMP NOT NULL
+)`
+
+	if _, err := kv.db.Exec(stmt); err != nil {
+		return errors.Wrap(err, "create kv table")
+	}
+
+	return nil
 }
 
 func (kv *Kv) validKey(key string) error {
@@ -126,7 +146,6 @@ func (kv *Kv) SetWithTTL(ctx context.Context, key, value string, ttl time.Durati
 }
 
 // SetWithExpireAt stores the key-value pair with a specific expiration time.
-// Uses GORM's OnConflict clause to avoid SQL injection risks.
 func (kv *Kv) SetWithExpireAt(ctx context.Context, key, value string, expireAt time.Time) error {
 	if expireAt.Before(time.Now()) {
 		return errors.Errorf("expire time is in the past: %s", expireAt)
@@ -135,30 +154,29 @@ func (kv *Kv) SetWithExpireAt(ctx context.Context, key, value string, expireAt t
 		return errors.Errorf("expire time is too far in the future: %s", expireAt)
 	}
 
-	doc := KvItem{
-		Key:      key,
-		Value:    value,
-		ExpireAt: expireAt,
+	now := time.Now().UTC()
+	stmt := `
+INSERT INTO ` + kv.opt.tableName + ` (key, value, created_at, expire_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT(key)
+DO UPDATE SET value = EXCLUDED.value, expire_at = EXCLUDED.expire_at`
+
+	if _, err := kv.db.ExecContext(ctx, stmt, key, value, now, expireAt.UTC()); err != nil {
+		return errors.Wrap(err, "upsert kv item")
 	}
 
-	return kv.db.WithContext(ctx).Table(kv.opt.tableName).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "key"}},
-			DoUpdates: clause.AssignmentColumns([]string{"value", "expire_at"}),
-		}).
-		Create(&doc).Error
+	return nil
 }
 
 // Get retrieves the key's document. If the key is expired,
 // it deletes the record and returns an error.
 func (kv *Kv) Get(ctx context.Context, key string) (*KvItem, error) {
 	var doc KvItem
-	err := kv.db.WithContext(ctx).Table(kv.opt.tableName).
-		Where("key = ?", key).
-		First(&doc).Error
+	stmt := `SELECT key, value, created_at, expire_at FROM ` + kv.opt.tableName + ` WHERE key = $1 LIMIT 1`
+	err := kv.db.QueryRowContext(ctx, stmt, key).Scan(&doc.Key, &doc.Value, &doc.CreatedAt, &doc.ExpireAt)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.Errorf("key not found: %s", key)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.Wrapf(errKeyNotFound, "key %s", key)
 		}
 		return nil, errors.Wrap(err, "failed to get key")
 	}
@@ -166,30 +184,33 @@ func (kv *Kv) Get(ctx context.Context, key string) (*KvItem, error) {
 	// Check expiration if expire_at is non-zero.
 	if !doc.ExpireAt.IsZero() && time.Now().After(doc.ExpireAt) {
 		_ = kv.Del(ctx, key)
-		return nil, errors.Errorf("key expired: %s", key)
+		return nil, errors.Wrapf(errKeyExpired, "key %s", key)
 	}
 	return &doc, nil
 }
 
 // Exists checks whether a key exists and hasn't expired.
 func (kv *Kv) Exists(ctx context.Context, key string) (bool, error) {
-	var count int64
-	err := kv.db.WithContext(ctx).Table(kv.opt.tableName).
-		Where("key = ? AND (expire_at IS NULL OR expire_at = '0001-01-01 00:00:00' OR expire_at > ?)", key, time.Now()).
-		Count(&count).Error
+	item, err := kv.Get(ctx, key)
 	if err != nil {
+		if errors.Is(err, errKeyNotFound) || errors.Is(err, errKeyExpired) {
+			return false, nil
+		}
 		return false, errors.Wrap(err, "failed to check existence")
 	}
-	return count > 0, nil
+
+	if item == nil {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // Del removes the key from the store.
 func (kv *Kv) Del(ctx context.Context, key string) error {
-	result := kv.db.WithContext(ctx).Table(kv.opt.tableName).
-		Where("key = ?", key).
-		Delete(&KvItem{})
-	if result.Error != nil {
-		return errors.Wrap(result.Error, "failed to delete key")
+	stmt := `DELETE FROM ` + kv.opt.tableName + ` WHERE key = $1`
+	if _, err := kv.db.ExecContext(ctx, stmt, key); err != nil {
+		return errors.Wrap(err, "failed to delete key")
 	}
 	return nil
 }

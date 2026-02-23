@@ -210,7 +210,7 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 		args = append(args, pathPrefix+"%")
 	}
 
-	rows, err := s.db.WithContext(ctx).Raw(statement, args...).Rows()
+	rows, err := s.db.QueryContext(ctx, rebindSQL(statement, s.isPostgres), args...)
 	if err != nil {
 		return nil, errors.Wrap(err, "query raw files fallback")
 	}
@@ -347,7 +347,7 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, pr
 
 	query := "SELECT COUNT(1) FROM " + source + " WHERE " + where
 	var count int64
-	if err := s.db.WithContext(ctx).Raw(query, args...).Scan(&count).Error; err != nil {
+	if err := s.db.QueryRowContext(ctx, rebindSQL(query, s.isPostgres), args...).Scan(&count); err != nil {
 		return 0
 	}
 	return count
@@ -356,13 +356,14 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, pr
 // countPendingIndexJobs returns pending or processing index jobs for diagnostics.
 func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash, project string) int64 {
 	var count int64
-	err := s.db.WithContext(ctx).Raw(
+	err := s.db.QueryRowContext(ctx, rebindSQL(
 		"SELECT COUNT(1) FROM mcp_file_index_jobs WHERE apikey_hash = ? AND project = ? AND status IN (?, ?)",
+		s.isPostgres),
 		apiKeyHash,
 		project,
 		"pending",
 		"processing",
-	).Scan(&count).Error
+	).Scan(&count)
 	if err != nil {
 		return 0
 	}
@@ -374,7 +375,7 @@ func (s *Service) fetchSemanticCandidates(ctx context.Context, apiKeyHash, proje
 	if limit <= 0 {
 		return nil, nil
 	}
-	if isPostgresDialect(s.db) {
+	if s.isPostgres {
 		return s.fetchSemanticCandidatesPostgres(ctx, apiKeyHash, project, pathPrefix, queryVec, limit)
 	}
 	return s.fetchSemanticCandidatesInMemory(ctx, apiKeyHash, project, pathPrefix, queryVec, limit)
@@ -404,13 +405,18 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 		FileSize  int64
 		Distance  float64
 	}
-	rows := make([]row, 0, limit)
-	if err := s.db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
+	result := make([]searchCandidate, 0, limit)
+	queryRows, err := s.db.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
+	if err != nil {
 		return nil, errors.Wrap(err, "query semantic candidates")
 	}
+	defer queryRows.Close()
 
-	result := make([]searchCandidate, 0, len(rows))
-	for _, r := range rows {
+	for queryRows.Next() {
+		var r row
+		if scanErr := queryRows.Scan(&r.ID, &r.FilePath, &r.StartByte, &r.EndByte, &r.Content, &r.FileSize, &r.Distance); scanErr != nil {
+			return nil, errors.Wrap(scanErr, "scan semantic candidate")
+		}
 		score := 1.0 / (1.0 + r.Distance)
 		result = append(result, searchCandidate{
 			Chunk: FileChunk{
@@ -423,6 +429,9 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 			},
 			SemanticScore: score,
 		})
+	}
+	if err = queryRows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate semantic candidates")
 	}
 	return result, nil
 }
@@ -465,7 +474,7 @@ func (s *Service) fetchLexicalCandidates(ctx context.Context, apiKeyHash, projec
 	if limit <= 0 {
 		return nil, nil
 	}
-	if isPostgresDialect(s.db) {
+	if s.isPostgres {
 		return s.fetchLexicalCandidatesPostgres(ctx, apiKeyHash, project, pathPrefix, query, limit)
 	}
 	return s.fetchLexicalCandidatesInMemory(ctx, apiKeyHash, project, pathPrefix, query, limit)
@@ -495,13 +504,18 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 		FileSize  int64
 		Score     float64
 	}
-	rows := make([]row, 0, limit)
-	if err := s.db.WithContext(ctx).Raw(statement, args...).Scan(&rows).Error; err != nil {
+	result := make([]searchCandidate, 0, limit)
+	queryRows, err := s.db.QueryContext(ctx, rebindSQL(statement, s.isPostgres), args...)
+	if err != nil {
 		return nil, errors.Wrap(err, "query lexical candidates")
 	}
+	defer queryRows.Close()
 
-	result := make([]searchCandidate, 0, len(rows))
-	for _, r := range rows {
+	for queryRows.Next() {
+		var r row
+		if scanErr := queryRows.Scan(&r.ID, &r.FilePath, &r.StartByte, &r.EndByte, &r.Content, &r.FileSize, &r.Score); scanErr != nil {
+			return nil, errors.Wrap(scanErr, "scan lexical candidate")
+		}
 		result = append(result, searchCandidate{
 			Chunk: FileChunk{
 				ID:        r.ID,
@@ -513,6 +527,9 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 			},
 			LexicalScore: r.Score,
 		})
+	}
+	if err = queryRows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate lexical candidates")
 	}
 	return result, nil
 }
@@ -620,9 +637,12 @@ func (s *Service) updateLastServed(ctx context.Context, chunkIDs []int64) error 
 		return nil
 	}
 	now := s.clock()
-	return s.db.WithContext(ctx).Model(&FileChunk{}).
-		Where("id IN ?", chunkIDs).
-		Update("last_served_at", now).Error
+	inClause, inArgs := buildInClauseInt64(chunkIDs, s.isPostgres, 2)
+	query := rebindSQL(`UPDATE mcp_file_chunks SET last_served_at = ? WHERE id IN (%s)`, s.isPostgres)
+	args := []any{now}
+	args = append(args, inArgs...)
+	_, err := s.db.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
+	return err
 }
 
 type chunkEmbeddingRow struct {
@@ -648,7 +668,7 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project,
 		args = append(args, pathPrefix+"%")
 	}
 
-	rows, err := s.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := s.db.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
 	if err != nil {
 		return nil, errors.Wrap(err, "query chunk embeddings")
 	}
@@ -718,7 +738,7 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathP
 		args = append(args, pathPrefix+"%")
 	}
 
-	rows, err := s.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := s.db.QueryContext(ctx, rebindSQL(query, s.isPostgres), args...)
 	if err != nil {
 		return nil, errors.Wrap(err, "query chunks")
 	}

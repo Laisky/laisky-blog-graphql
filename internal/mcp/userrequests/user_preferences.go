@@ -3,6 +3,7 @@ package userrequests
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/hex"
 	"encoding/json"
@@ -12,7 +13,6 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/Laisky/zap"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -102,10 +102,10 @@ func (p *PreferenceData) Scan(value any) error {
 
 // UserPreference stores per-user configuration for the MCP user requests feature.
 type UserPreference struct {
-	APIKeyHash   string         `gorm:"type:char(64);primaryKey"`
-	KeySuffix    string         `gorm:"type:varchar(16);not null"`
-	UserIdentity string         `gorm:"type:varchar(255);not null"`
-	Preferences  PreferenceData `gorm:"type:text;not null"`
+	APIKeyHash   string
+	KeySuffix    string
+	UserIdentity string
+	Preferences  PreferenceData
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -123,14 +123,36 @@ func (s *Service) GetUserPreference(ctx context.Context, auth *askuser.Authoriza
 	}
 
 	var pref UserPreference
-	err := s.db.WithContext(ctx).
-		Where("api_key_hash = ?", auth.APIKeyHash).
-		First(&pref).Error
+	var createdAtRaw any
+	var updatedAtRaw any
+	err := s.queryRowContext(ctx,
+		`SELECT api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at
+		 FROM mcp_user_preferences
+		 WHERE api_key_hash = ?
+		 LIMIT 1`,
+		auth.APIKeyHash,
+	).Scan(
+		&pref.APIKeyHash,
+		&pref.KeySuffix,
+		&pref.UserIdentity,
+		&pref.Preferences,
+		&createdAtRaw,
+		&updatedAtRaw,
+	)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, errors.Wrap(err, "get user preference")
+	}
+
+	pref.CreatedAt, err = parseSQLTime(createdAtRaw)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse preference created_at")
+	}
+	pref.UpdatedAt, err = parseSQLTime(updatedAtRaw)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse preference updated_at")
 	}
 
 	return &pref, nil
@@ -221,19 +243,28 @@ func (s *Service) SetReturnMode(ctx context.Context, auth *askuser.Authorization
 		UpdatedAt: now,
 	}
 
-	// Use upsert to handle both create and update
-	err := s.db.WithContext(ctx).
-		Where("api_key_hash = ?", auth.APIKeyHash).
-		Assign(map[string]any{
-			"preferences": PreferenceData{
-				ReturnMode:    mode,
-				DisabledTools: disabledTools,
-			},
-			"key_suffix":    auth.KeySuffix,
-			"user_identity": auth.UserIdentity,
-			"updated_at":    now,
-		}).
-		FirstOrCreate(pref).Error
+	prefPayload, err := pref.Preferences.Value()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshal return mode preference payload")
+	}
+
+	_, err = s.execContext(ctx,
+		`INSERT INTO mcp_user_preferences
+		 (api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(api_key_hash)
+		 DO UPDATE SET
+		 	key_suffix = excluded.key_suffix,
+		 	user_identity = excluded.user_identity,
+		 	preferences = excluded.preferences,
+		 	updated_at = excluded.updated_at`,
+		auth.APIKeyHash,
+		auth.KeySuffix,
+		auth.UserIdentity,
+		prefPayload,
+		now,
+		now,
+	)
 	if err != nil {
 		s.log().Error("SetReturnMode database error",
 			zap.String("user", auth.UserIdentity),
@@ -275,18 +306,28 @@ func (s *Service) SetDisabledTools(ctx context.Context, auth *askuser.Authorizat
 		UpdatedAt: now,
 	}
 
-	err = s.db.WithContext(ctx).
-		Where("api_key_hash = ?", auth.APIKeyHash).
-		Assign(map[string]any{
-			"preferences": PreferenceData{
-				ReturnMode:    mode,
-				DisabledTools: normalized,
-			},
-			"key_suffix":    auth.KeySuffix,
-			"user_identity": auth.UserIdentity,
-			"updated_at":    now,
-		}).
-		FirstOrCreate(pref).Error
+	prefPayload, err := pref.Preferences.Value()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshal disabled tools preference payload")
+	}
+
+	_, err = s.execContext(ctx,
+		`INSERT INTO mcp_user_preferences
+		 (api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(api_key_hash)
+		 DO UPDATE SET
+		 	key_suffix = excluded.key_suffix,
+		 	user_identity = excluded.user_identity,
+		 	preferences = excluded.preferences,
+		 	updated_at = excluded.updated_at`,
+		auth.APIKeyHash,
+		auth.KeySuffix,
+		auth.UserIdentity,
+		prefPayload,
+		now,
+		now,
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "set disabled tools preference")
 	}

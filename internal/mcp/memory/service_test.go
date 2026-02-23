@@ -2,13 +2,13 @@ package memory
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -64,27 +64,33 @@ func TestServiceBeforeAfterTurnFlow(t *testing.T) {
 	require.NotNil(t, listOut.Summaries)
 
 	var guardCount int64
-	err = db.Model(&TurnGuard{}).
-		Where("api_key_hash = ? AND project = ? AND session_id = ? AND turn_id = ?", auth.APIKeyHash, "demo", "session-1", "turn-1").
-		Count(&guardCount).Error
+	err = db.QueryRowContext(context.Background(),
+		"SELECT COUNT(1) FROM turn_guards WHERE api_key_hash = ? AND project = ? AND session_id = ? AND turn_id = ?",
+		auth.APIKeyHash,
+		"demo",
+		"session-1",
+		"turn-1",
+	).Scan(&guardCount)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), guardCount)
 }
 
 // newTestMemoryService creates a memory service backed by sqlite and real FileIO service.
-func newTestMemoryService(t *testing.T) (*Service, *gorm.DB) {
+func newTestMemoryService(t *testing.T) (*Service, *sql.DB) {
 	t.Helper()
 
 	dsn := fmt.Sprintf("file:%s-%d?mode=memory&cache=shared", t.Name(), time.Now().UTC().UnixNano())
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	db, err := sql.Open("sqlite3", dsn)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 
 	fileSettings := files.LoadSettingsFromConfig()
 	fileSettings.Search.Enabled = false
 	fileSettings.MaxProjectBytes = 2_000_000
 	fileSettings.MaxFileBytes = 1_000_000
 	fileSettings.MaxPayloadBytes = 1_000_000
-
 	fileService, err := files.NewService(db, fileSettings, nil, nil, nil, nil, log.Logger.Named("memory_service_test_files"), nil, nil)
 	require.NoError(t, err)
 

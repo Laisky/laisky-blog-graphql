@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +12,8 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	srv "github.com/mark3labs/mcp-go/server"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 
 	glog "github.com/Laisky/go-utils/v6/log"
 
@@ -230,8 +230,11 @@ func TestResolveAuthorizationForListRequestWithoutAuthorization(t *testing.T) {
 func newUserPreferenceServiceForToolsListTest(t *testing.T, dsn string) *userrequests.Service {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	db, err := sql.Open("sqlite3", dsn)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 
 	service, err := userrequests.NewService(db, logSDK.Shared, nil, userrequests.Settings{})
 	require.NoError(t, err)

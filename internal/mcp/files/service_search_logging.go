@@ -35,7 +35,7 @@ func (s *Service) logSearchStage(ctx context.Context, project, pathPrefix string
 
 // lexicalSearchEngineName returns the lexical backend identifier for diagnostics.
 func (s *Service) lexicalSearchEngineName() string {
-	if isPostgresDialect(s.db) {
+	if s.isPostgres {
 		return "postgres_tsvector"
 	}
 	return "in_memory_lexical"
@@ -43,7 +43,7 @@ func (s *Service) lexicalSearchEngineName() string {
 
 // semanticSearchEngineName returns the semantic backend identifier for diagnostics.
 func (s *Service) semanticSearchEngineName() string {
-	if isPostgresDialect(s.db) {
+	if s.isPostgres {
 		return "pgvector"
 	}
 	return "in_memory_cosine"

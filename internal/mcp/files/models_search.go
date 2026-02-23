@@ -8,19 +8,19 @@ import (
 
 // FileChunk stores a chunk extracted from a file for search.
 type FileChunk struct {
-	ID          int64      `gorm:"primaryKey"`
-	APIKeyHash  string     `gorm:"column:apikey_hash;size:64;not null"`
-	Project     string     `gorm:"size:128;not null"`
-	FilePath    string     `gorm:"column:file_path;size:1024;not null"`
-	ChunkIndex  int        `gorm:"not null"`
-	StartByte   int64      `gorm:"column:start_byte;not null"`
-	EndByte     int64      `gorm:"column:end_byte;not null"`
-	FileSize    int64      `gorm:"-:all"`
-	Content     string     `gorm:"column:chunk_content;type:text;not null"`
-	ContentHash string     `gorm:"column:content_hash;size:64;not null"`
-	CreatedAt   time.Time  `gorm:"not null"`
-	UpdatedAt   time.Time  `gorm:"not null"`
-	LastServed  *time.Time `gorm:"column:last_served_at"`
+	ID          int64
+	APIKeyHash  string
+	Project     string
+	FilePath    string
+	ChunkIndex  int
+	StartByte   int64
+	EndByte     int64
+	FileSize    int64
+	Content     string
+	ContentHash string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	LastServed  *time.Time
 }
 
 // TableName returns the database table name.
@@ -30,11 +30,11 @@ func (FileChunk) TableName() string {
 
 // FileChunkEmbedding stores vector embeddings for a chunk.
 type FileChunkEmbedding struct {
-	ChunkID   int64           `gorm:"column:chunk_id;primaryKey"`
-	Embedding pgvector.Vector `gorm:"type:vector(1536);not null"`
-	Model     string          `gorm:"size:128;not null"`
-	CreatedAt time.Time       `gorm:"not null"`
-	UpdatedAt time.Time       `gorm:"not null"`
+	ChunkID   int64
+	Embedding pgvector.Vector
+	Model     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // TableName returns the database table name.
@@ -44,12 +44,12 @@ func (FileChunkEmbedding) TableName() string {
 
 // FileChunkBM25 stores lexical tokens for a chunk.
 type FileChunkBM25 struct {
-	ChunkID    int64     `gorm:"column:chunk_id;primaryKey"`
-	Tokens     []byte    `gorm:"type:jsonb;not null"`
-	TokenCount int       `gorm:"column:token_count;not null"`
-	Tokenizer  string    `gorm:"size:64;not null"`
-	CreatedAt  time.Time `gorm:"not null"`
-	UpdatedAt  time.Time `gorm:"not null"`
+	ChunkID    int64
+	Tokens     []byte
+	TokenCount int
+	Tokenizer  string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // TableName returns the database table name.
@@ -59,17 +59,17 @@ func (FileChunkBM25) TableName() string {
 
 // FileIndexJob captures pending indexing operations.
 type FileIndexJob struct {
-	ID            int64      `gorm:"primaryKey"`
-	APIKeyHash    string     `gorm:"column:apikey_hash;size:64;not null"`
-	Project       string     `gorm:"size:128;not null"`
-	FilePath      string     `gorm:"column:file_path;size:1024;not null"`
-	Operation     string     `gorm:"size:16;not null"`
-	FileUpdatedAt *time.Time `gorm:"column:file_updated_at"`
-	Status        string     `gorm:"size:16;not null"`
-	RetryCount    int        `gorm:"column:retry_count;not null"`
-	AvailableAt   time.Time  `gorm:"column:available_at;not null"`
-	CreatedAt     time.Time  `gorm:"not null"`
-	UpdatedAt     time.Time  `gorm:"not null"`
+	ID            int64
+	APIKeyHash    string
+	Project       string
+	FilePath      string
+	Operation     string
+	FileUpdatedAt *time.Time
+	Status        string
+	RetryCount    int
+	AvailableAt   time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // TableName returns the database table name.

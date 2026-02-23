@@ -2,16 +2,16 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"testing"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/pgvector/pgvector-go"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 // testEmbedder is a stub embedder that returns deterministic vectors.
@@ -78,11 +78,11 @@ func (s *memoryCredentialStore) Store(_ context.Context, key, payload string, _ 
 // Load retrieves a payload from memory.
 func (s *memoryCredentialStore) Load(_ context.Context, key string) (string, error) {
 	if s.data == nil {
-		return "", gorm.ErrRecordNotFound
+		return "", sql.ErrNoRows
 	}
 	value, ok := s.data[key]
 	if !ok {
-		return "", gorm.ErrRecordNotFound
+		return "", sql.ErrNoRows
 	}
 	return value, nil
 }
@@ -101,10 +101,11 @@ func testEncryptionKey() string {
 }
 
 // newTestDB creates an in-memory sqlite database.
-func newTestDB(t *testing.T) *gorm.DB {
+func newTestDB(t *testing.T) *sql.DB {
 	dsn := fmt.Sprintf("file:%s-%d?mode=memory&cache=shared", t.Name(), time.Now().UTC().UnixNano())
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	db, err := sql.Open("sqlite3", dsn)
 	require.NoError(t, err)
+	require.NoError(t, db.Ping())
 	return db
 }
 

@@ -3,9 +3,7 @@ package userrequests
 import (
 	"time"
 
-	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 const (
@@ -19,28 +17,20 @@ const (
 
 // Request represents a single piece of user-provided feedback destined for an AI agent.
 type Request struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Content      string    `gorm:"type:text;not null"`
-	Status       string    `gorm:"type:varchar(16);not null;index"`
-	TaskID       string    `gorm:"type:varchar(255);not null;default:'default';index"`
-	SortOrder    int       `gorm:"type:integer;not null;default:0"`
-	APIKeyHash   string    `gorm:"type:char(64);not null;index"`
-	KeySuffix    string    `gorm:"type:varchar(16);not null"`
-	UserIdentity string    `gorm:"type:varchar(255);not null"`
+	ID           uuid.UUID
+	Content      string
+	Status       string
+	TaskID       string
+	SortOrder    int
+	APIKeyHash   string
+	KeySuffix    string
+	UserIdentity string
 	ConsumedAt   *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
 
-// TableName forces the gorm table to match the required schema name.
+// TableName returns the storage table name for requests.
 func (Request) TableName() string {
 	return "mcp_user_requests"
-}
-
-// BeforeCreate fills the ID with a UUIDv7-compatible value when missing.
-func (r *Request) BeforeCreate(tx *gorm.DB) error {
-	if r.ID == uuid.Nil {
-		r.ID = gutils.UUID7Bytes()
-	}
-	return nil
 }

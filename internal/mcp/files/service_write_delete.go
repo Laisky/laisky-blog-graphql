@@ -2,11 +2,11 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
-	"gorm.io/gorm"
 )
 
 // Write applies content updates to a file path.
@@ -46,7 +46,7 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 	}
 
 	var bytesWritten int64
-	err = s.lockProvider.WithProjectLock(ctx, s.db, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *gorm.DB) error {
+	err = s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
 		if err := s.ensureNoDescendantFile(ctx, tx, auth.APIKeyHash, project, path); err != nil {
 			return err
 		}
@@ -54,8 +54,8 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 			return err
 		}
 
-		existing, findErr := s.findActiveFile(ctx, auth.APIKeyHash, project, path)
-		if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		existing, findErr := s.findActiveFileTx(ctx, tx, auth.APIKeyHash, project, path)
+		if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
 			return errors.Wrap(findErr, "query existing file")
 		}
 
@@ -63,7 +63,7 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 		var newContent []byte
 		var createdAt time.Time
 		switch {
-		case errors.Is(findErr, gorm.ErrRecordNotFound):
+		case errors.Is(findErr, sql.ErrNoRows):
 			createdAt = now
 			newContent, err = applyWriteMode(nil, content, offset, mode)
 		default:
@@ -82,36 +82,33 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 			return err
 		}
 
-		if errors.Is(findErr, gorm.ErrRecordNotFound) {
-			record := &File{
-				APIKeyHash: auth.APIKeyHash,
-				Project:    project,
-				Path:       path,
-				Content:    newContent,
-				Size:       newSize,
-				CreatedAt:  createdAt,
-				UpdatedAt:  now,
-				Deleted:    false,
-				DeletedAt:  nil,
-			}
-			if err := tx.WithContext(ctx).Create(record).Error; err != nil {
+		if errors.Is(findErr, sql.ErrNoRows) {
+			if _, err := tx.ExecContext(ctx,
+				rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL)`, s.isPostgres),
+				auth.APIKeyHash,
+				project,
+				path,
+				newContent,
+				newSize,
+				createdAt,
+				now,
+			); err != nil {
 				return errors.Wrap(err, "create file")
 			}
 		} else {
-			if err := tx.WithContext(ctx).Model(&File{}).
-				Where("id = ?", existing.ID).
-				Updates(map[string]any{
-					"content":    newContent,
-					"size":       newSize,
-					"updated_at": now,
-					"deleted":    false,
-					"deleted_at": nil,
-				}).Error; err != nil {
+			if _, err := tx.ExecContext(ctx,
+				rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL WHERE id = ?`, s.isPostgres),
+				newContent,
+				newSize,
+				now,
+				existing.ID,
+			); err != nil {
 				return errors.Wrap(err, "update file")
 			}
 		}
 
-		job := FileIndexJob{
+		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 			APIKeyHash:    auth.APIKeyHash,
 			Project:       project,
 			FilePath:      path,
@@ -122,8 +119,7 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 			AvailableAt:   now,
 			CreatedAt:     now,
 			UpdatedAt:     now,
-		}
-		if err := tx.WithContext(ctx).Create(&job).Error; err != nil {
+		}); err != nil {
 			return errors.Wrap(err, "enqueue index job")
 		}
 
@@ -158,7 +154,7 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	}
 
 	var deletedCount int
-	err := s.lockProvider.WithProjectLock(ctx, s.db, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *gorm.DB) error {
+	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
 		now := s.clock()
 		paths, err := s.resolveDeleteTargets(ctx, tx, auth.APIKeyHash, project, path, recursive)
 		if err != nil {
@@ -168,18 +164,16 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 			return errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
 		}
 
-		if err := tx.WithContext(ctx).Model(&File{}).
-			Where("apikey_hash = ? AND project = ? AND path IN ? AND deleted = FALSE", auth.APIKeyHash, project, paths).
-			Updates(map[string]any{
-				"deleted":    true,
-				"deleted_at": now,
-				"updated_at": now,
-			}).Error; err != nil {
+		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
+		inClause, inArgs := buildInClause(paths, s.isPostgres, 5)
+		args := []any{now, now, auth.APIKeyHash, project}
+		args = append(args, inArgs...)
+		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
 			return errors.Wrap(err, "soft delete files")
 		}
 
 		for _, p := range paths {
-			job := FileIndexJob{
+			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 				APIKeyHash:    auth.APIKeyHash,
 				Project:       project,
 				FilePath:      p,
@@ -190,8 +184,7 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 				AvailableAt:   now,
 				CreatedAt:     now,
 				UpdatedAt:     now,
-			}
-			if err := tx.WithContext(ctx).Create(&job).Error; err != nil {
+			}); err != nil {
 				return errors.Wrap(err, "enqueue delete job")
 			}
 		}
@@ -232,12 +225,15 @@ func applyWriteMode(existing []byte, content string, offset int64, mode WriteMod
 }
 
 // ensureNoDescendantFile validates that the target path has no child files.
-func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *gorm.DB, apiKeyHash, project, path string) error {
+func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
 	prefix := buildPathPrefix(path)
 	var count int64
-	if err := tx.WithContext(ctx).Model(&File{}).
-		Where("apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE", apiKeyHash, project, prefix).
-		Count(&count).Error; err != nil {
+	if err := tx.QueryRowContext(ctx,
+		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+		apiKeyHash,
+		project,
+		prefix,
+	).Scan(&count); err != nil {
 		return errors.Wrap(err, "check descendant files")
 	}
 	if count > 0 {
@@ -247,15 +243,17 @@ func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *gorm.DB, apiKe
 }
 
 // ensureNoParentFile validates that no parent segment is an existing file.
-func (s *Service) ensureNoParentFile(ctx context.Context, tx *gorm.DB, apiKeyHash, project, path string) error {
+func (s *Service) ensureNoParentFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
 	parents := parentPaths(path)
 	if len(parents) == 0 {
 		return nil
 	}
 	var count int64
-	if err := tx.WithContext(ctx).Model(&File{}).
-		Where("apikey_hash = ? AND project = ? AND path IN ? AND deleted = FALSE", apiKeyHash, project, parents).
-		Count(&count).Error; err != nil {
+	inClause, inArgs := buildInClause(parents, s.isPostgres, 3)
+	query := rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
+	args := []any{apiKeyHash, project}
+	args = append(args, inArgs...)
+	if err := tx.QueryRowContext(ctx, strings.Replace(query, "%s", inClause, 1), args...).Scan(&count); err != nil {
 		return errors.Wrap(err, "check parent files")
 	}
 	if count > 0 {
@@ -282,12 +280,14 @@ func parentPaths(path string) []string {
 }
 
 // ensureProjectQuota enforces project storage limits.
-func (s *Service) ensureProjectQuota(ctx context.Context, tx *gorm.DB, apiKeyHash, project string, newSize int64, existing *File) error {
+
+func (s *Service) ensureProjectQuota(ctx context.Context, tx *sql.Tx, apiKeyHash, project string, newSize int64, existing *File) error {
 	var total int64
-	if err := tx.WithContext(ctx).Model(&File{}).
-		Select("COALESCE(SUM(size), 0)").
-		Where("apikey_hash = ? AND project = ? AND deleted = FALSE", apiKeyHash, project).
-		Row().Scan(&total); err != nil {
+	if err := tx.QueryRowContext(ctx,
+		rebindSQL(`SELECT COALESCE(SUM(size), 0) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE`, s.isPostgres),
+		apiKeyHash,
+		project,
+	).Scan(&total); err != nil {
 		return errors.Wrap(err, "sum project size")
 	}
 	if existing != nil {
@@ -300,19 +300,22 @@ func (s *Service) ensureProjectQuota(ctx context.Context, tx *gorm.DB, apiKeyHas
 }
 
 // resolveDeleteTargets determines which file paths should be deleted.
-func (s *Service) resolveDeleteTargets(ctx context.Context, tx *gorm.DB, apiKeyHash, project, path string, recursive bool) ([]string, error) {
+func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string, recursive bool) ([]string, error) {
 	if path == "" {
 		return s.listAllFilePaths(ctx, tx, apiKeyHash, project)
 	}
 
-	var file File
-	err := tx.WithContext(ctx).
-		Where("apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE", apiKeyHash, project, path).
-		First(&file).Error
+	var foundPath string
+	err := tx.QueryRowContext(ctx,
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE LIMIT 1`, s.isPostgres),
+		apiKeyHash,
+		project,
+		path,
+	).Scan(&foundPath)
 	if err == nil {
-		return []string{file.Path}, nil
+		return []string{foundPath}, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.Wrap(err, "query delete target")
 	}
 
@@ -330,12 +333,14 @@ func (s *Service) resolveDeleteTargets(ctx context.Context, tx *gorm.DB, apiKeyH
 }
 
 // listDescendantPaths returns all active descendant file paths for a directory.
-func (s *Service) listDescendantPaths(ctx context.Context, tx *gorm.DB, apiKeyHash, project, path string) ([]string, error) {
+func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) ([]string, error) {
 	prefix := buildPathPrefix(path)
-	rows, err := tx.WithContext(ctx).Model(&File{}).
-		Select("path").
-		Where("apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE", apiKeyHash, project, prefix).
-		Rows()
+	rows, err := tx.QueryContext(ctx,
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+		apiKeyHash,
+		project,
+		prefix,
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query descendant paths")
 	}
@@ -353,11 +358,12 @@ func (s *Service) listDescendantPaths(ctx context.Context, tx *gorm.DB, apiKeyHa
 }
 
 // listAllFilePaths returns all active file paths in a project.
-func (s *Service) listAllFilePaths(ctx context.Context, tx *gorm.DB, apiKeyHash, project string) ([]string, error) {
-	rows, err := tx.WithContext(ctx).Model(&File{}).
-		Select("path").
-		Where("apikey_hash = ? AND project = ? AND deleted = FALSE", apiKeyHash, project).
-		Rows()
+func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx,
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE`, s.isPostgres),
+		apiKeyHash,
+		project,
+	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query project paths")
 	}
@@ -372,4 +378,71 @@ func (s *Service) listAllFilePaths(ctx context.Context, tx *gorm.DB, apiKeyHash,
 		paths = append(paths, p)
 	}
 	return paths, nil
+}
+
+// insertIndexJobTx inserts one index queue job in the current transaction.
+func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) error {
+	_, err := tx.ExecContext(ctx,
+		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
+		job.APIKeyHash,
+		job.Project,
+		job.FilePath,
+		job.Operation,
+		job.FileUpdatedAt,
+		job.Status,
+		job.RetryCount,
+		job.AvailableAt,
+		job.CreatedAt,
+		job.UpdatedAt,
+	)
+	if err != nil {
+		return errors.Wrap(err, "insert index job")
+	}
+	return nil
+}
+
+// findActiveFileTx loads one non-deleted file row in a transaction by path.
+func (s *Service) findActiveFileTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (*File, error) {
+	var file File
+	err := tx.QueryRowContext(ctx,
+		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at
+		FROM mcp_files
+		WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE
+		LIMIT 1`, s.isPostgres),
+		apiKeyHash,
+		project,
+		path,
+	).Scan(
+		&file.ID,
+		&file.APIKeyHash,
+		&file.Project,
+		&file.Path,
+		&file.Content,
+		&file.Size,
+		&file.CreatedAt,
+		&file.UpdatedAt,
+		&file.Deleted,
+		&file.DeletedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &file, nil
+}
+
+// buildInClause returns a placeholder list and positional args for IN clauses.
+func buildInClause(values []string, isPostgres bool, startIndex int) (string, []any) {
+	placeholders := make([]string, 0, len(values))
+	args := make([]any, 0, len(values))
+	for i, value := range values {
+		if isPostgres {
+			placeholders = append(placeholders, "$"+strconvItoa(startIndex+i))
+		} else {
+			placeholders = append(placeholders, "?")
+		}
+		args = append(args, value)
+	}
+	return strings.Join(placeholders, ","), args
 }

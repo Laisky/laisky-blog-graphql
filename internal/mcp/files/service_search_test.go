@@ -217,10 +217,7 @@ func TestSearchUpdatesLastServedOnlyForReturned(t *testing.T) {
 	require.NoError(t, err)
 
 	var servedCount int64
-	err = svc.db.WithContext(context.Background()).
-		Model(&FileChunk{}).
-		Where("last_served_at IS NOT NULL").
-		Count(&servedCount).Error
+	err = svc.db.QueryRowContext(context.Background(), "SELECT COUNT(1) FROM mcp_file_chunks WHERE last_served_at IS NOT NULL").Scan(&servedCount)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), servedCount)
 }
@@ -279,7 +276,7 @@ func TestSearchFallsBackWhenSemanticBackendFails(t *testing.T) {
 	worker := svc.NewIndexWorker()
 	require.NoError(t, worker.RunOnce(context.Background()))
 
-	err = svc.db.WithContext(context.Background()).Exec("UPDATE mcp_file_chunk_embeddings SET embedding = ?", "not-a-valid-embedding").Error
+	_, err = svc.db.ExecContext(context.Background(), "UPDATE mcp_file_chunk_embeddings SET embedding = ?", "not-a-valid-embedding")
 	require.NoError(t, err)
 
 	searchRes, err := svc.Search(context.Background(), auth, "proj", "alpha", "", 5)
@@ -314,12 +311,12 @@ func TestSearchKeepsLexicalResultsWhenEmbeddingFails(t *testing.T) {
 	require.Equal(t, "/a.txt", searchRes.Chunks[0].FilePath)
 
 	var chunkCount int64
-	err = svc.db.WithContext(context.Background()).Model(&FileChunk{}).Count(&chunkCount).Error
+	err = svc.db.QueryRowContext(context.Background(), "SELECT COUNT(1) FROM mcp_file_chunks").Scan(&chunkCount)
 	require.NoError(t, err)
 	require.Greater(t, chunkCount, int64(0))
 
 	var embeddingCount int64
-	err = svc.db.WithContext(context.Background()).Model(&FileChunkEmbedding{}).Count(&embeddingCount).Error
+	err = svc.db.QueryRowContext(context.Background(), "SELECT COUNT(1) FROM mcp_file_chunk_embeddings").Scan(&embeddingCount)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), embeddingCount)
 }
@@ -352,9 +349,29 @@ func TestSearchKeepsLexicalResultsWhenCredentialMissing(t *testing.T) {
 	require.Equal(t, "/a.txt", searchRes.Chunks[0].FilePath)
 
 	var job FileIndexJob
-	err = svc.db.WithContext(context.Background()).
-		Where("apikey_hash = ? AND project = ? AND file_path = ?", auth.APIKeyHash, "proj", "/a.txt").
-		First(&job).Error
+	err = svc.db.QueryRowContext(
+		context.Background(),
+		`SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at
+		FROM mcp_file_index_jobs
+		WHERE apikey_hash = ? AND project = ? AND file_path = ?
+		ORDER BY id DESC
+		LIMIT 1`,
+		auth.APIKeyHash,
+		"proj",
+		"/a.txt",
+	).Scan(
+		&job.ID,
+		&job.APIKeyHash,
+		&job.Project,
+		&job.FilePath,
+		&job.Operation,
+		&job.FileUpdatedAt,
+		&job.Status,
+		&job.RetryCount,
+		&job.AvailableAt,
+		&job.CreatedAt,
+		&job.UpdatedAt,
+	)
 	require.NoError(t, err)
 	require.Equal(t, "pending", job.Status)
 	require.Equal(t, 1, job.RetryCount)

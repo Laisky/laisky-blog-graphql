@@ -2,12 +2,12 @@ package memory
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mattn/go-sqlite3"
-	"gorm.io/gorm"
 )
 
 const (
@@ -17,24 +17,60 @@ const (
 
 // TurnGuard stores idempotency state for one committed memory turn.
 type TurnGuard struct {
-	ID         uint      `gorm:"primaryKey"`
-	APIKeyHash string    `gorm:"type:char(64);not null;index:idx_mcp_memory_turn_guard_key,unique"`
-	Project    string    `gorm:"type:varchar(128);not null;index:idx_mcp_memory_turn_guard_key,unique"`
-	SessionID  string    `gorm:"type:varchar(256);not null;index:idx_mcp_memory_turn_guard_key,unique"`
-	TurnID     string    `gorm:"type:varchar(256);not null;index:idx_mcp_memory_turn_guard_key,unique"`
-	Status     string    `gorm:"type:varchar(32);not null"`
-	UpdatedAt  time.Time `gorm:"not null;index"`
-	CreatedAt  time.Time `gorm:"not null"`
+	ID         int64
+	APIKeyHash string
+	Project    string
+	SessionID  string
+	TurnID     string
+	Status     string
+	UpdatedAt  time.Time
+	CreatedAt  time.Time
 }
 
 // runMigrations ensures required memory tables exist.
-func runMigrations(ctx context.Context, db *gorm.DB) error {
+func runMigrations(ctx context.Context, db *sql.DB) error {
 	if db == nil {
-		return errors.New("gorm db is required")
+		return errors.New("sql db is required")
 	}
-	if err := db.WithContext(ctx).AutoMigrate(&TurnGuard{}); err != nil {
-		return errors.Wrap(err, "auto migrate mcp memory tables")
+
+	if isPostgresDB(db) {
+		if _, err := db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS turn_guards (
+	id BIGSERIAL PRIMARY KEY,
+	api_key_hash CHAR(64) NOT NULL,
+	project VARCHAR(128) NOT NULL,
+	session_id VARCHAR(256) NOT NULL,
+	turn_id VARCHAR(256) NOT NULL,
+	status VARCHAR(32) NOT NULL,
+	updated_at TIMESTAMPTZ NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL
+)`); err != nil {
+			return errors.Wrap(err, "create turn_guards table")
+		}
+	} else {
+		if _, err := db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS turn_guards (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	api_key_hash TEXT NOT NULL,
+	project TEXT NOT NULL,
+	session_id TEXT NOT NULL,
+	turn_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	updated_at TIMESTAMP NOT NULL,
+	created_at TIMESTAMP NOT NULL
+)`); err != nil {
+			return errors.Wrap(err, "create turn_guards table")
+		}
 	}
+
+	if _, err := db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_memory_turn_guard_key ON turn_guards (api_key_hash, project, session_id, turn_id)`); err != nil {
+		return errors.Wrap(err, "create idx_mcp_memory_turn_guard_key")
+	}
+
+	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_turn_guards_updated_at ON turn_guards (updated_at)`); err != nil {
+		return errors.Wrap(err, "create idx_turn_guards_updated_at")
+	}
+
 	return nil
 }
 

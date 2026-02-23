@@ -2,34 +2,41 @@ package files
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
-	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // RunMigrations ensures FileIO tables and indexes exist.
-func RunMigrations(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error {
+func RunMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) error {
 	if db == nil {
-		return errors.New("gorm db is required")
+		return errors.New("sql db is required")
 	}
 	if logger == nil {
 		logger = log.Logger.Named("mcp_files_migration")
 	}
 
-	if err := ensureVectorExtension(ctx, db, logger); err != nil {
+	isPostgres, err := detectPostgresDialect(ctx, db)
+	if err != nil {
+		return errors.Wrap(err, "detect database dialect")
+	}
+
+	if err := ensureVectorExtension(ctx, db, logger, isPostgres); err != nil {
 		return errors.WithStack(err)
 	}
 
-	if err := db.WithContext(ctx).AutoMigrate(&File{}, &FileChunk{}, &FileChunkEmbedding{}, &FileChunkBM25{}, &FileIndexJob{}); err != nil {
-		return errors.Wrap(err, "auto migrate mcp files tables")
+	for _, stmt := range migrationTableStatements(isPostgres) {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return errors.Wrap(err, "create mcp files tables")
+		}
 	}
 
 	statements := []string{}
-	if isPostgresDialect(db) {
+	if isPostgres {
 		statements = []string{
 			`CREATE UNIQUE INDEX IF NOT EXISTS uq_mcp_files_active ON mcp_files (apikey_hash, project, path) WHERE deleted = FALSE`,
 			`CREATE INDEX IF NOT EXISTS idx_mcp_files_prefix ON mcp_files (apikey_hash, project, path text_pattern_ops) WHERE deleted = FALSE`,
@@ -40,7 +47,7 @@ func RunMigrations(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error
 	}
 
 	for _, stmt := range statements {
-		if err := db.WithContext(ctx).Exec(stmt).Error; err != nil {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return errors.Wrap(err, "create index")
 		}
 	}
@@ -49,21 +56,140 @@ func RunMigrations(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error
 	return nil
 }
 
-// ensureVectorExtension creates the pgvector extension when available.
-func ensureVectorExtension(ctx context.Context, db *gorm.DB, logger logSDK.Logger) error {
-	if db == nil {
-		return errors.New("gorm db is nil")
+// migrationTableStatements returns CREATE TABLE statements for supported databases.
+func migrationTableStatements(isPostgres bool) []string {
+	if isPostgres {
+		return []string{
+			`CREATE TABLE IF NOT EXISTS mcp_files (
+				id BIGSERIAL PRIMARY KEY,
+				apikey_hash VARCHAR(64) NOT NULL,
+				project VARCHAR(128) NOT NULL,
+				path VARCHAR(1024) NOT NULL,
+				content BYTEA NOT NULL,
+				size BIGINT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL,
+				deleted BOOLEAN NOT NULL DEFAULT FALSE,
+				deleted_at TIMESTAMPTZ
+			)`,
+			`CREATE TABLE IF NOT EXISTS mcp_file_chunks (
+				id BIGSERIAL PRIMARY KEY,
+				apikey_hash VARCHAR(64) NOT NULL,
+				project VARCHAR(128) NOT NULL,
+				file_path VARCHAR(1024) NOT NULL,
+				chunk_index INTEGER NOT NULL,
+				start_byte BIGINT NOT NULL,
+				end_byte BIGINT NOT NULL,
+				chunk_content TEXT NOT NULL,
+				content_hash VARCHAR(64) NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL,
+				last_served_at TIMESTAMPTZ
+			)`,
+			`CREATE TABLE IF NOT EXISTS mcp_file_chunk_embeddings (
+				chunk_id BIGINT PRIMARY KEY,
+				embedding vector(1536) NOT NULL,
+				model VARCHAR(128) NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS mcp_file_chunk_bm25 (
+				chunk_id BIGINT PRIMARY KEY,
+				tokens JSONB NOT NULL,
+				token_count INTEGER NOT NULL,
+				tokenizer VARCHAR(64) NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS mcp_file_index_jobs (
+				id BIGSERIAL PRIMARY KEY,
+				apikey_hash VARCHAR(64) NOT NULL,
+				project VARCHAR(128) NOT NULL,
+				file_path VARCHAR(1024) NOT NULL,
+				operation VARCHAR(16) NOT NULL,
+				file_updated_at TIMESTAMPTZ,
+				status VARCHAR(16) NOT NULL,
+				retry_count INTEGER NOT NULL,
+				available_at TIMESTAMPTZ NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+		}
 	}
-	if !isPostgresDialect(db) {
+
+	return []string{
+		`CREATE TABLE IF NOT EXISTS mcp_files (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			apikey_hash TEXT NOT NULL,
+			project TEXT NOT NULL,
+			path TEXT NOT NULL,
+			content BLOB NOT NULL,
+			size INTEGER NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			deleted BOOLEAN NOT NULL DEFAULT FALSE,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS mcp_file_chunks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			apikey_hash TEXT NOT NULL,
+			project TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			chunk_index INTEGER NOT NULL,
+			start_byte INTEGER NOT NULL,
+			end_byte INTEGER NOT NULL,
+			chunk_content TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			last_served_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS mcp_file_chunk_embeddings (
+			chunk_id INTEGER PRIMARY KEY,
+			embedding TEXT NOT NULL,
+			model TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS mcp_file_chunk_bm25 (
+			chunk_id INTEGER PRIMARY KEY,
+			tokens TEXT NOT NULL,
+			token_count INTEGER NOT NULL,
+			tokenizer TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS mcp_file_index_jobs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			apikey_hash TEXT NOT NULL,
+			project TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			operation TEXT NOT NULL,
+			file_updated_at DATETIME,
+			status TEXT NOT NULL,
+			retry_count INTEGER NOT NULL,
+			available_at DATETIME NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+	}
+}
+
+// ensureVectorExtension creates the pgvector extension when available.
+func ensureVectorExtension(ctx context.Context, db *sql.DB, logger logSDK.Logger, isPostgres bool) error {
+	if db == nil {
+		return errors.New("sql db is nil")
+	}
+	if !isPostgres {
 		return nil
 	}
 
-	if err := db.WithContext(ctx).Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+	if _, err := db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
 		if shouldFallbackToPgvector(err) {
 			if logger != nil {
 				logger.Debug("pgvector extension unavailable under name 'vector', retrying with legacy name")
 			}
-			if execErr := db.WithContext(ctx).Exec("CREATE EXTENSION IF NOT EXISTS pgvector").Error; execErr != nil {
+			if _, execErr := db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS pgvector"); execErr != nil {
 				return errors.Wrap(execErr, "create pgvector extension")
 			}
 			return nil
@@ -71,14 +197,6 @@ func ensureVectorExtension(ctx context.Context, db *gorm.DB, logger logSDK.Logge
 		return errors.Wrap(err, "create vector extension")
 	}
 	return nil
-}
-
-// isPostgresDialect reports whether the gorm dialector is Postgres.
-func isPostgresDialect(db *gorm.DB) bool {
-	if db == nil || db.Dialector == nil {
-		return false
-	}
-	return strings.EqualFold(db.Dialector.Name(), "postgres")
 }
 
 // shouldFallbackToPgvector checks whether the error indicates a legacy extension name.
