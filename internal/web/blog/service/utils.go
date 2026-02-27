@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gutils "github.com/Laisky/go-utils/v6"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"
@@ -34,6 +35,15 @@ func init() {
 
 // ParseMarkdown2HTML parse markdown to string
 func ParseMarkdown2HTML(md []byte) (cnt string) {
+	return ParseMarkdown2HTMLWithLogger(log.Logger.Named("blog_markdown"), md)
+}
+
+// ParseMarkdown2HTMLWithLogger parse markdown to html string with caller-provided logger.
+func ParseMarkdown2HTMLWithLogger(logger logSDK.Logger, md []byte) (cnt string) {
+	if logger == nil {
+		logger = log.Logger.Named("blog_markdown")
+	}
+
 	htmlFlags := html.CommonFlags | html.HrefTargetBlank
 	opts := html.RendererOptions{Flags: htmlFlags}
 	renderer := html.NewRenderer(opts)
@@ -58,7 +68,7 @@ func ParseMarkdown2HTML(md []byte) (cnt string) {
 			l3cnt++
 			ttext = strconv.FormatInt(int64(l3cnt), 10) + "、" + ttext
 		default:
-			log.Logger.Error("unknown title level", zap.String("lev", tlev))
+			logger.Warn("unknown title level", zap.String("lev", tlev))
 		}
 
 		tid = convertTitleID(tid)

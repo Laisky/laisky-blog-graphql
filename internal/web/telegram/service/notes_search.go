@@ -46,7 +46,7 @@ func (s *Telegram) notesSearchHandler(ctx context.Context, us *userStat, msg *tb
 
 	keyword := strings.TrimSpace(msg.Text)
 	if keyword == "" {
-		s.PleaseRetry(us.user, msg.Text)
+		s.PleaseRetry(ctx, us.user, msg.Text)
 		return
 	}
 

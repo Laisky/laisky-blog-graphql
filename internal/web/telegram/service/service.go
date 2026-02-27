@@ -10,7 +10,6 @@ import (
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
-	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
 	tb "gopkg.in/telebot.v3"
@@ -26,7 +25,7 @@ var (
 )
 
 type Interface interface {
-	PleaseRetry(sender *tb.User, msg string)
+	PleaseRetry(ctx context.Context, sender *tb.User, msg string)
 	SendMsgToUser(uid int, msg string) (err error)
 	LoadAlertTypesByUser(ctx context.Context, u *model.MonitorUsers) (alerts []*model.AlertTypes, err error)
 	LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error)
@@ -200,8 +199,8 @@ func (s *Telegram) dispatcher(ctx context.Context, msg *tb.Message) {
 }
 
 // PleaseRetry echo retry
-func (s *Telegram) PleaseRetry(sender *tb.User, msg string) {
-	logger := logSDK.Shared.Named("telegram_please_retry")
+func (s *Telegram) PleaseRetry(ctx context.Context, sender *tb.User, msg string) {
+	logger := gmw.GetLogger(ctx).Named("telegram_please_retry")
 	logger.Warn("unknown msg", zap.String("msg", msg))
 	if _, err := s.bot.Send(sender, "[Error] unknown msg, please retry"); err != nil {
 		logger.Error("send msg by telegram", zap.Error(err))

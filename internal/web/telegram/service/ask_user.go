@@ -10,7 +10,6 @@ import (
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gutils "github.com/Laisky/go-utils/v6"
-	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
 	tb "gopkg.in/telebot.v3"
@@ -23,9 +22,8 @@ func (s *Telegram) SetAskUserService(svc *askuser.Service) {
 	svc.RegisterNotifier(s)
 }
 
-func (s *Telegram) OnNewRequest(req *askuser.Request) {
-	logger := logSDK.Shared.Named("telegram_ask_user_new_request")
-	ctx := context.Background()
+func (s *Telegram) OnNewRequest(ctx context.Context, req *askuser.Request) {
+	logger := gmw.GetLogger(ctx).Named("telegram_ask_user_new_request")
 	uid, err := s.lookupTelegramUID(ctx, req.APIKeyHash)
 	if err != nil {
 		// It's normal that not all requests have a linked telegram user
@@ -46,9 +44,8 @@ func (s *Telegram) OnNewRequest(req *askuser.Request) {
 	logger.Debug("tracked ask_user session", zap.Int("uid", uid), zap.Int("prompt_msg_id", msg.ID), zap.String("request_id", req.ID.String()))
 }
 
-func (s *Telegram) OnRequestCancelled(req *askuser.Request) {
-	logger := logSDK.Shared.Named("telegram_ask_user_cancelled")
-	ctx := context.Background()
+func (s *Telegram) OnRequestCancelled(ctx context.Context, req *askuser.Request) {
+	logger := gmw.GetLogger(ctx).Named("telegram_ask_user_cancelled")
 	uid, err := s.lookupTelegramUID(ctx, req.APIKeyHash)
 	if err != nil {
 		return

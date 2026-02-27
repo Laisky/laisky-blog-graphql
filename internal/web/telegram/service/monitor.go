@@ -61,7 +61,7 @@ func (s *Telegram) monitorHandler(ctx context.Context, us *userStat, msg *tb.Mes
 		ans = strings.SplitN(msg.Text, " - ", 2)
 	}
 	if len(ans) < 2 {
-		s.PleaseRetry(us.user, msg.Text)
+		s.PleaseRetry(ctx, us.user, msg.Text)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (s *Telegram) monitorHandler(ctx context.Context, us *userStat, msg *tb.Mes
 			}
 		}
 	default:
-		s.PleaseRetry(us.user, msg.Text)
+		s.PleaseRetry(ctx, us.user, msg.Text)
 	}
 }
 

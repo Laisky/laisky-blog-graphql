@@ -343,11 +343,11 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 		// be noticed that p.Markdown could be empty!
 		if p.Markdown != "" &&
 			p.ModifiedAt.Before(time.Date(2024, 9, 23, 0, 0, 0, 0, time.UTC)) {
-			p.Content = ParseMarkdown2HTML([]byte(p.Markdown))
+			p.Content = ParseMarkdown2HTMLWithLogger(logger, []byte(p.Markdown))
 			p.Menu = ExtractMenu(p.Content)
 
 			if p.I18N.EnUs.PostMarkdown != "" {
-				p.I18N.EnUs.PostContent = ParseMarkdown2HTML([]byte(p.I18N.EnUs.PostMarkdown))
+				p.I18N.EnUs.PostContent = ParseMarkdown2HTMLWithLogger(logger, []byte(p.I18N.EnUs.PostMarkdown))
 				p.I18N.EnUs.PostMenu = ExtractMenu(p.I18N.EnUs.PostContent)
 			}
 
@@ -375,7 +375,7 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 				p.Title = p.I18N.EnUs.PostTitle
 
 				if p.I18N.EnUs.PostContent == "" || p.I18N.EnUs.PostMenu == "" {
-					p.I18N.EnUs.PostContent = ParseMarkdown2HTML([]byte(p.Markdown))
+					p.I18N.EnUs.PostContent = ParseMarkdown2HTMLWithLogger(logger, []byte(p.Markdown))
 					p.I18N.EnUs.PostMenu = ExtractMenu(p.I18N.EnUs.PostContent)
 
 					// update post i18n content
@@ -533,6 +533,7 @@ func (s *Blog) IsNameExists(ctx context.Context, name string) (bool, error) {
 //   - ptype: post type, markdown/slide
 func (s *Blog) NewPost(ctx context.Context,
 	authorID primitive.ObjectID, title, name, md, ptype string) (post *model.Post, err error) {
+	logger := gmw.GetLogger(ctx).Named("blog_new_post")
 	normalizedName, err := normalizePostNameForQuery(name)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize post name")
@@ -556,7 +557,7 @@ func (s *Blog) NewPost(ctx context.Context,
 	p := &model.Post{
 		Type:       normalizedType,
 		Markdown:   md,
-		Content:    ParseMarkdown2HTML([]byte(md)),
+		Content:    ParseMarkdown2HTMLWithLogger(logger, []byte(md)),
 		ModifiedAt: ts,
 		CreatedAt:  ts,
 		Title:      normalizedTitle,
@@ -576,7 +577,7 @@ func (s *Blog) NewPost(ctx context.Context,
 	}
 
 	if gconfig.Shared.GetBool("dry") {
-		s.logger.Info("insert post",
+		logger.Info("insert post",
 			zap.String("title", p.Title),
 			zap.String("name", p.Name),
 			// zap.String("markdown", p.Markdown),
@@ -585,7 +586,7 @@ func (s *Blog) NewPost(ctx context.Context,
 	} else {
 		// save to arweave
 		if arFileId, err := s.dao.SaveToArweave(ctx, p); err != nil {
-			s.logger.Error("try to save new post to arweave got error", zap.Error(err))
+			logger.Error("try to save new post to arweave got error", zap.Error(err))
 		} else {
 			p.ArweaveId = slices.Insert(p.ArweaveId, 0, model.ArweaveHistoryItem{
 				Time: p.ModifiedAt,
@@ -647,6 +648,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	typeArg string,
 	language models.Language,
 ) (p *model.Post, err error) {
+	logger := gmw.GetLogger(ctx).Named("blog_update_post")
 	p = &model.Post{}
 	if name, err = normalizePostNameForQuery(name); err != nil {
 		return nil, errors.Wrap(err, "sanitize post name")
@@ -676,7 +678,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 
 	p.ModifiedAt = gutils.Clock.GetUTCNow()
 	p.Type = typeArg
-	parsedMd := ParseMarkdown2HTML([]byte(md))
+	parsedMd := ParseMarkdown2HTMLWithLogger(logger, []byte(md))
 	switch language {
 	case models.LanguageZhCn:
 		p.Title = title
@@ -695,7 +697,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 
 	// save to arweave
 	if arFileId, err := s.dao.SaveToArweave(ctx, p); err != nil {
-		s.logger.Error("try to save updated post to arweave got error", zap.Error(err))
+		logger.Error("try to save updated post to arweave got error", zap.Error(err))
 	} else {
 		p.ArweaveId = slices.Insert(p.ArweaveId, 0, model.ArweaveHistoryItem{
 			Time: p.ModifiedAt,
@@ -707,7 +709,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 		return nil, errors.Wrap(err, "try to update post got error")
 	}
 
-	s.logger.Info("updated post", zap.String("post", p.Name), zap.String("user", user.Account))
+	logger.Info("updated post", zap.String("post", p.Name), zap.String("user", user.Account))
 	return p, nil
 }
 

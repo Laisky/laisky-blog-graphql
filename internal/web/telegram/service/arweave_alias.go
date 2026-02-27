@@ -83,7 +83,7 @@ func (s *Telegram) arweaveAliasHandler(ctx context.Context, us *userStat, msg *t
 		ans = strings.SplitN(msg.Text, " - ", 2)
 	}
 	if len(ans) < 2 {
-		s.PleaseRetry(us.user, msg.Text)
+		s.PleaseRetry(ctx, us.user, msg.Text)
 		return
 	}
 
@@ -110,7 +110,7 @@ func (s *Telegram) arweaveAliasHandler(ctx context.Context, us *userStat, msg *t
 			}
 		}
 	default:
-		s.PleaseRetry(us.user, msg.Text)
+		s.PleaseRetry(ctx, us.user, msg.Text)
 	}
 }
 

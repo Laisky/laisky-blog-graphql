@@ -31,8 +31,8 @@ type Service struct {
 
 // Notifier receives lifecycle events for ask_user requests.
 type Notifier interface {
-	OnNewRequest(req *Request)
-	OnRequestCancelled(req *Request)
+	OnNewRequest(ctx context.Context, req *Request)
+	OnRequestCancelled(ctx context.Context, req *Request)
 }
 
 // RegisterNotifier adds a listener for request lifecycle events.
@@ -103,7 +103,7 @@ INSERT INTO requests (
 	)
 
 	for _, n := range s.notifiers {
-		n.OnNewRequest(req)
+		n.OnNewRequest(ctx, req)
 	}
 
 	return req, nil
@@ -163,7 +163,7 @@ WHERE id = $3 AND status = $4
 	// Update local object for notification
 	req.Status = status
 	for _, n := range s.notifiers {
-		n.OnRequestCancelled(req)
+		n.OnRequestCancelled(ctx, req)
 	}
 
 	return nil

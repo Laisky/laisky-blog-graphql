@@ -8,10 +8,9 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 	"github.com/gin-gonic/gin"
-
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 const (
@@ -63,7 +62,7 @@ func registerOneapiProxyRoutes(server *gin.Engine, prefix urlPrefixConfig) {
 // It expects JSON body {"api_key":"..."} and returns {success,data:{remain_quota,used_quota}}.
 func oneapiBalanceHandler() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		logger := log.Logger.Named("oneapi_balance")
+		logger := gmw.GetLogger(ctx).Named("oneapi_balance")
 
 		switch ctx.Request.Method {
 		case http.MethodPost:

@@ -294,20 +294,42 @@ func RunServer(addr string, resolver *Resolver) {
 	h.AddTransport(transport.MultipartForm{})
 	h.Use(extension.Introspection{})
 	h.SetErrorPresenter(func(ctx context.Context, e error) *gqlerror.Error {
-		err := graphql.DefaultErrorPresenter(ctx, e)
+		presentedErr := graphql.DefaultErrorPresenter(ctx, e)
+		logger := ginMw.GetLogger(ctx).Named("graphql")
 
-		// there are huge of junk logs about "alert token invalidate",
-		// so we just ignore it
-		errMsg := e.Error()
-		if !strings.Contains(errMsg, "token invalidate for ") &&
-			!strings.Contains(errMsg, "ValidateTokenForAlertType") &&
-			!strings.Contains(errMsg, "deny by throttle") {
-			// gqlgen will wrap origin error, that will make error stack trace lost,
-			// so we need to unwrap it and log the origin error.
-			log.Logger.Error("graphql server", zap.Error(err.Err))
+		originErr := presentedErr.Err
+		if originErr == nil {
+			originErr = e
 		}
 
-		return err
+		errMsg := originErr.Error()
+		isClientSideErr, reason := classifyGraphQLClientError(errMsg)
+		fields := []zap.Field{
+			zap.Error(originErr),
+			zap.String("classification", reason),
+			zap.String("error_message", errMsg),
+		}
+
+		if opCtx := graphql.GetOperationContext(ctx); opCtx != nil {
+			fields = append(fields,
+				zap.String("operation_name", opCtx.OperationName),
+			)
+		}
+
+		if ginCtx, ok := ginMw.GetGinCtxFromStdCtx(ctx); ok && ginCtx != nil && ginCtx.Request != nil {
+			fields = append(fields,
+				zap.String("http_method", ginCtx.Request.Method),
+				zap.String("http_path", ginCtx.Request.URL.Path),
+			)
+		}
+
+		if isClientSideErr {
+			logger.Warn("graphql request failed by client input", fields...)
+		} else {
+			logger.Error("graphql server", fields...)
+		}
+
+		return presentedErr
 	})
 
 	graphqlHandler := ginMw.FromStd(h.ServeHTTP)
@@ -464,11 +486,12 @@ func shouldServeFrontend(r *http.Request) bool {
 }
 
 func allowCORS(ctx *gin.Context) {
+	logger := ginMw.GetLogger(ctx).Named("cors")
 	origin := ctx.Request.Header.Get("Origin")
 	allowedOrigin := ""
 
 	// Always add debug logging for CORS requests
-	log.Logger.Debug("CORS request",
+	logger.Debug("CORS request",
 		zap.String("method", ctx.Request.Method),
 		zap.String("origin", origin),
 		zap.String("user-agent", ctx.Request.Header.Get("User-Agent")))
@@ -486,18 +509,18 @@ func allowCORS(ctx *gin.Context) {
 				strings.HasPrefix(host, "10.") ||
 				isCarrierGradeNatIP(host) {
 				allowedOrigin = origin
-				log.Logger.Debug("CORS: origin allowed",
+				logger.Debug("CORS: origin allowed",
 					zap.String("origin", origin),
 					zap.String("host", host))
 			} else {
 				// Add debug logging for denied origins
-				log.Logger.Debug("CORS: origin denied",
+				logger.Debug("CORS: origin denied",
 					zap.String("origin", origin),
 					zap.String("host", host))
 			}
 		} else {
 			// Add debug logging for parsing errors
-			log.Logger.Debug("CORS: failed to parse origin",
+			logger.Debug("CORS: failed to parse origin",
 				zap.String("origin", origin),
 				zap.Error(err))
 		}
@@ -513,20 +536,20 @@ func allowCORS(ctx *gin.Context) {
 		ctx.Header("Vary", "Origin")                  // Indicate that the response varies based on the Origin header
 
 		if ctx.Request.Method == http.MethodOptions {
-			log.Logger.Debug("CORS: handling preflight request", zap.String("origin", origin))
+			logger.Debug("CORS: handling preflight request", zap.String("origin", origin))
 			ctx.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 	} else if origin != "" && ctx.Request.Method == http.MethodOptions {
 		// If Origin is present, but not allowed, and it's an OPTIONS request (preflight)
 		// Deny the preflight request from disallowed origins.
-		log.Logger.Debug("CORS: denying preflight for disallowed origin",
+		logger.Debug("CORS: denying preflight for disallowed origin",
 			zap.String("origin", origin))
 		ctx.AbortWithStatus(http.StatusForbidden)
 		return
 	} else if origin == "" && ctx.Request.Method == http.MethodOptions {
 		// Handle OPTIONS requests without Origin header (some tools/browsers)
-		log.Logger.Debug("CORS: OPTIONS request without Origin header")
+		logger.Debug("CORS: OPTIONS request without Origin header")
 		ctx.Header("Access-Control-Allow-Origin", "*")
 		ctx.Header("Access-Control-Allow-Headers", "*")
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
@@ -566,6 +589,32 @@ func isCarrierGradeNatIP(host string) bool {
 	}
 
 	return ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127
+}
+
+// classifyGraphQLClientError classifies a GraphQL error message into client-side or server-side.
+// Parameters: errMsg is the error message to classify.
+// Returns: isClientSideErr indicates whether the error is caused by client input, and reason describes the matched rule.
+func classifyGraphQLClientError(errMsg string) (isClientSideErr bool, reason string) {
+	lowerMsg := strings.ToLower(errMsg)
+
+	if strings.Contains(lowerMsg, "token invalidate for ") ||
+		strings.Contains(lowerMsg, "validatetokenforalerttype") {
+		return true, "invalid_alert_token"
+	}
+
+	if strings.Contains(lowerMsg, "deny by throttle") {
+		return true, "throttled_request"
+	}
+
+	if strings.Contains(lowerMsg, "cannot find post by name") {
+		return true, "post_not_found"
+	}
+
+	if strings.Contains(lowerMsg, "not found") {
+		return true, "resource_not_found"
+	}
+
+	return false, "server_error"
 }
 
 func allowUnprefixedAsset(path string) bool {

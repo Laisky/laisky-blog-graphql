@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -310,4 +311,57 @@ func TestNewStatusHandler(t *testing.T) {
 		assert.Empty(t, w.Body.String())
 		assert.Equal(t, "GET, HEAD, OPTIONS", w.Header().Get("Allow"))
 	})
+}
+
+func TestClassifyGraphQLClientError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		errMsg         string
+		expectedClient bool
+		expectedReason string
+	}{
+		{
+			name:           "alert token invalidation is client-side",
+			errMsg:         "token invalidate for type monitor",
+			expectedClient: true,
+			expectedReason: "invalid_alert_token",
+		},
+		{
+			name:           "throttle denial is client-side",
+			errMsg:         "deny by throttle",
+			expectedClient: true,
+			expectedReason: "throttled_request",
+		},
+		{
+			name:           "missing post by name is client-side",
+			errMsg:         "cannot find post by name `history`",
+			expectedClient: true,
+			expectedReason: "post_not_found",
+		},
+		{
+			name:           "generic not found is client-side",
+			errMsg:         "resource not found",
+			expectedClient: true,
+			expectedReason: "resource_not_found",
+		},
+		{
+			name:           "database failure is server-side",
+			errMsg:         "dial tcp: connection refused",
+			expectedClient: false,
+			expectedReason: "server_error",
+		},
+	}
+
+	for _, tt := range tests {
+		tc := tt
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			actualClient, actualReason := classifyGraphQLClientError(tc.errMsg)
+			require.Equal(t, tc.expectedClient, actualClient)
+			require.Equal(t, tc.expectedReason, actualReason)
+		})
+	}
 }
