@@ -9,6 +9,8 @@ ENV GO111MODULE=on
 WORKDIR /app
 COPY go.mod .
 COPY go.sum .
+COPY third_party/pgvector-go/go.mod ./third_party/pgvector-go/go.mod
+COPY third_party/pgvector-go/go.sum ./third_party/pgvector-go/go.sum
 RUN go mod download
 
 # static build
