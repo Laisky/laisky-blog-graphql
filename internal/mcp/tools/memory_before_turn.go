@@ -39,6 +39,7 @@ func (tool *MemoryBeforeTurnTool) Definition() mcp.Tool {
 			mcp.Required(),
 			mcp.Items(memoryResponseItemSchema()),
 		),
+		mcp.WithString("current_input_text", mcp.Description("Plain-text current turn input. Use this when the caller only has a single user text message; server converts it to current_input automatically.")),
 		mcp.WithString("base_instructions", mcp.Description("Optional base system instructions.")),
 		mcp.WithNumber("max_input_tok", mcp.Description("Optional max context token budget. Defaults to 120000 when omitted.")),
 		mcp.WithReadOnlyHintAnnotation(true),

@@ -54,6 +54,9 @@ func TestMemoryBeforeTurnDefinitionCurrentInputIncludesItems(t *testing.T) {
 
 	_, hasItems := schema["items"]
 	require.True(t, hasItems)
+
+	_, hasCurrentInputText := definition.InputSchema.Properties["current_input_text"]
+	require.True(t, hasCurrentInputText)
 }
 
 // TestMemoryAfterTurnDefinitionArraysIncludeItems verifies input/output array schemas have explicit items schemas.

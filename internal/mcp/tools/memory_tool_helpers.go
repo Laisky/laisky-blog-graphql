@@ -109,6 +109,12 @@ func normalizeBeforeTurnArguments(arguments map[string]any) (map[string]any, err
 		normalized[key] = value
 	}
 
+	if _, exists := normalized["current_input"]; !exists {
+		if currentInputText, textExists := normalized["current_input_text"]; textExists {
+			normalized["current_input"] = currentInputText
+		}
+	}
+
 	currentInput, exists := normalized["current_input"]
 	if !exists {
 		return normalized, nil

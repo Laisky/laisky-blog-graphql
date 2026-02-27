@@ -106,6 +106,36 @@ func TestMemoryBeforeTurnHandleRejectsInvalidCurrentInputType(t *testing.T) {
 	require.Equal(t, false, payload["retryable"])
 }
 
+// TestMemoryBeforeTurnHandleAcceptsCurrentInputText verifies schema fallback field current_input_text is converted into current_input.
+func TestMemoryBeforeTurnHandleAcceptsCurrentInputText(t *testing.T) {
+	memoryService := newTestToolMemoryService(t)
+	tool, err := NewMemoryBeforeTurnTool(memoryService)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
+		APIKey:       "sk-test",
+		APIKeyHash:   "hash-test",
+		UserIdentity: "user:test",
+	})
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project":            "bot",
+		"session_id":         "task-2026-02-27-0015",
+		"base_instructions":  "Diagnostic test: memory_before_turn",
+		"current_input_text": "Diagnostic test via current_input_text",
+		"max_input_tok":      120000,
+	}}}
+
+	result, handleErr := tool.Handle(ctx, req)
+	require.NoError(t, handleErr)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+
+	payload := decodeToolPayload(t, result)
+	inputItems, ok := payload["input_items"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, inputItems)
+}
+
 // newTestToolMemoryService creates a real memory service for tool-level regression tests.
 func newTestToolMemoryService(t *testing.T) *mcpmemory.Service {
 	t.Helper()
