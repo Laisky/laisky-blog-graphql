@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"regexp"
+	"strings"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
@@ -174,4 +175,20 @@ func TestEnsureTaskFallsBackToLegacyUserID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, task.ID, resolved.ID)
 	require.Equal(t, legacyUserID, resolved.UserID)
+}
+
+func TestRAGMigrationStatementsUnknownDialectUsesPostgresDDL(t *testing.T) {
+	t.Parallel()
+
+	stmts := ragMigrationStatements(sqlDialectUnknown)
+	require.NotEmpty(t, stmts)
+	require.Contains(t, stmts[0], "BIGSERIAL")
+	require.NotContains(t, strings.ToUpper(stmts[0]), "AUTOINCREMENT")
+}
+
+func TestDetectSQLDialectByDriverTypePGXStdlib(t *testing.T) {
+	t.Parallel()
+
+	dialect := detectSQLDialectByDriverType("*stdlib.Driver")
+	require.Equal(t, sqlDialectPostgres, dialect)
 }

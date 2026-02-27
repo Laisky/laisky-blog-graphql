@@ -87,6 +87,16 @@ func runRAGMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) err
 		logger = log.Logger.Named("mcp_rag_service")
 	}
 
+	dialect := detectSQLDialect(db)
+	driverType := ""
+	if db != nil {
+		driverType = fmt.Sprintf("%T", db.Driver())
+	}
+	logger.Debug("detected rag sql dialect",
+		zap.String("dialect", dialect.String()),
+		zap.String("driver_type", driverType),
+	)
+
 	logger.Debug("ensuring pgvector extension for rag service")
 	if err := ensureVectorExtension(ctx, db, logger); err != nil {
 		return errors.Wrap(err, "ensure pgvector extension")
@@ -94,9 +104,19 @@ func runRAGMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) err
 	logger.Debug("pgvector extension ensured for rag service")
 
 	logger.Debug("running rag sql migrations")
-	for _, statement := range ragMigrationStatements(detectSQLDialect(db)) {
+	for idx, statement := range ragMigrationStatements(dialect) {
+		logger.Debug("executing rag migration statement",
+			zap.Int("statement_index", idx),
+			zap.String("dialect", dialect.String()),
+		)
 		if _, err := db.ExecContext(ctx, statement); err != nil {
-			return errors.Wrap(err, "run rag migration statement")
+			logger.Debug("rag migration statement failed",
+				zap.Int("statement_index", idx),
+				zap.String("dialect", dialect.String()),
+				zap.String("statement", statement),
+				zap.Error(err),
+			)
+			return errors.Wrapf(err, "run rag migration statement #%d with dialect %s", idx, dialect.String())
 		}
 	}
 	logger.Debug("rag sql migrations finished")
@@ -124,7 +144,15 @@ func ensureVectorExtension(ctx context.Context, db *sql.DB, logger logSDK.Logger
 	if db == nil {
 		return errors.New("sql db is nil")
 	}
-	if !isPostgresDialect(db) {
+	dialect := detectSQLDialect(db)
+	if dialect != sqlDialectPostgres {
+		if logger != nil {
+			driverType := fmt.Sprintf("%T", db.Driver())
+			logger.Debug("skip pgvector extension because sql dialect is not postgres",
+				zap.String("dialect", dialect.String()),
+				zap.String("driver_type", driverType),
+			)
+		}
 		return nil
 	}
 
@@ -145,19 +173,7 @@ func ensureVectorExtension(ctx context.Context, db *sql.DB, logger logSDK.Logger
 
 // isPostgresDialect reports whether the database is PostgreSQL-compatible.
 func isPostgresDialect(db *sql.DB) bool {
-	if db == nil {
-		return false
-	}
-
-	t := strings.ToLower(fmt.Sprintf("%T", db.Driver()))
-	if strings.Contains(t, "sqlite") {
-		return false
-	}
-	if strings.Contains(t, "postgres") || strings.Contains(t, "pgx") || strings.Contains(t, "pq") || strings.Contains(t, "sqlmock") {
-		return true
-	}
-
-	return false
+	return detectSQLDialect(db) == sqlDialectPostgres
 }
 
 func shouldFallbackToPgvector(err error) bool {
@@ -174,7 +190,7 @@ func shouldFallbackToPgvector(err error) bool {
 
 // ragMigrationStatements returns idempotent DDL statements for RAG tables and indexes.
 func ragMigrationStatements(dialect sqlDialect) []string {
-	if dialect == sqlDialectPostgres {
+	if dialect != sqlDialectSQLite {
 		return []string{
 			`CREATE TABLE IF NOT EXISTS mcp_rag_tasks (
 				id BIGSERIAL PRIMARY KEY,
@@ -659,15 +675,37 @@ func detectSQLDialect(db *sql.DB) sqlDialect {
 		return sqlDialectUnknown
 	}
 
-	t := strings.ToLower(fmt.Sprintf("%T", db.Driver()))
+	return detectSQLDialectByDriverType(fmt.Sprintf("%T", db.Driver()))
+}
+
+// detectSQLDialectByDriverType infers SQL dialect from a concrete driver type name.
+func detectSQLDialectByDriverType(driverType string) sqlDialect {
+	t := strings.ToLower(driverType)
+
 	if strings.Contains(t, "sqlite") {
 		return sqlDialectSQLite
 	}
-	if strings.Contains(t, "postgres") || strings.Contains(t, "pgx") || strings.Contains(t, "pq") || strings.Contains(t, "sqlmock") {
+	if strings.Contains(t, "postgres") ||
+		strings.Contains(t, "pgx") ||
+		strings.Contains(t, "pq") ||
+		strings.Contains(t, "sqlmock") ||
+		strings.Contains(t, "stdlib.driver") {
 		return sqlDialectPostgres
 	}
 
 	return sqlDialectUnknown
+}
+
+// String returns the human-readable sql dialect name.
+func (d sqlDialect) String() string {
+	switch d {
+	case sqlDialectPostgres:
+		return "postgres"
+	case sqlDialectSQLite:
+		return "sqlite"
+	default:
+		return "unknown"
+	}
 }
 
 // rebindPlaceholders rewrites '?' placeholders to PostgreSQL-style positional parameters.
