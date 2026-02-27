@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -69,6 +70,56 @@ func TestMemoryAfterTurnDefinitionArraysIncludeItems(t *testing.T) {
 		require.Equal(t, "array", schema["type"])
 
 		_, hasItems := schema["items"]
+		require.True(t, hasItems)
+	}
+}
+
+// TestMemoryBeforeTurnDefinitionMarshaledSchemaKeepsItems verifies current_input keeps items after JSON marshalling.
+func TestMemoryBeforeTurnDefinitionMarshaledSchemaKeepsItems(t *testing.T) {
+	tool, err := NewMemoryBeforeTurnTool(schemaTestMemoryService{})
+	require.NoError(t, err)
+
+	data, err := json.Marshal(tool.Definition())
+	require.NoError(t, err)
+
+	decoded := map[string]any{}
+	err = json.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+
+	inputSchema, ok := decoded["inputSchema"].(map[string]any)
+	require.True(t, ok)
+	properties, ok := inputSchema["properties"].(map[string]any)
+	require.True(t, ok)
+
+	property, ok := properties["current_input"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "array", property["type"])
+	_, hasItems := property["items"]
+	require.True(t, hasItems)
+}
+
+// TestMemoryAfterTurnDefinitionMarshaledSchemaKeepsItems verifies input/output arrays keep items after JSON marshalling.
+func TestMemoryAfterTurnDefinitionMarshaledSchemaKeepsItems(t *testing.T) {
+	tool, err := NewMemoryAfterTurnTool(schemaTestMemoryService{})
+	require.NoError(t, err)
+
+	data, err := json.Marshal(tool.Definition())
+	require.NoError(t, err)
+
+	decoded := map[string]any{}
+	err = json.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+
+	inputSchema, ok := decoded["inputSchema"].(map[string]any)
+	require.True(t, ok)
+	properties, ok := inputSchema["properties"].(map[string]any)
+	require.True(t, ok)
+
+	for _, propertyName := range []string{"input_items", "output_items"} {
+		property, ok := properties[propertyName].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "array", property["type"])
+		_, hasItems := property["items"]
 		require.True(t, hasItems)
 	}
 }

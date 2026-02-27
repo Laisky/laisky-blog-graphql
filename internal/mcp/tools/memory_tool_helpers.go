@@ -25,7 +25,10 @@ const (
 
 // memoryResponseItemSchema returns a permissive JSON schema for one Responses-style item.
 func memoryResponseItemSchema() map[string]any {
-	return map[string]any{}
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": true,
+	}
 }
 
 // MemoryService exposes memory lifecycle operations for MCP tools.
