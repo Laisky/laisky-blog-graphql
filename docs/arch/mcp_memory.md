@@ -129,6 +129,13 @@ Output:
 
 Purpose: persist turn artifacts, extract/merge facts, update metadata.
 
+Current engine behavior note:
+
+1. callers may pass `memory_before_turn` returned `input_items` directly,
+2. engine strips injected `<memory_reference>` block and recalled-context prefix before persistence,
+3. engine applies delta upsert for facts (skips unchanged value+tier),
+4. MCP service should not duplicate these normalization rules.
+
 Input:
 
 ```json
@@ -520,9 +527,10 @@ settings:
 ### 12.2 Integration tests
 
 1. `before_turn -> after_turn` roundtrip with real DB/FileIO service
-2. Retention sweep and compaction behavior
-3. Legacy fallback compatibility (`legacy*.json`) during migration
-4. Call-log redaction for memory payload fields
+2. after_turn with prepared `before_turn` input persists only turn-delta inputs
+3. Retention sweep and compaction behavior
+4. Legacy fallback compatibility (`legacy*.json`) during migration
+5. Call-log redaction for memory payload fields
 
 ### 12.3 Race and reliability
 

@@ -3,7 +3,9 @@ package memory
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,6 +77,72 @@ func TestServiceBeforeAfterTurnFlow(t *testing.T) {
 	require.Equal(t, int64(1), guardCount)
 }
 
+// TestServiceAfterTurnPersistsOnlyDeltaInput verifies after_turn persistence drops recalled prefixes and memory reference blocks.
+func TestServiceAfterTurnPersistsOnlyDeltaInput(t *testing.T) {
+	service, _ := newTestMemoryService(t)
+	auth := files.AuthContext{APIKey: "sk-test", APIKeyHash: "hash-test", UserIdentity: "user:test"}
+	ctx := context.Background()
+
+	firstBefore, err := service.BeforeTurn(ctx, auth, BeforeTurnRequest{
+		Project:      "demo",
+		SessionID:    "session-delta",
+		UserID:       "user-1",
+		TurnID:       "turn-1",
+		CurrentInput: newTextItems("I prefer concise replies"),
+		MaxInputTok:  120000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, service.AfterTurn(ctx, auth, AfterTurnRequest{
+		Project:     "demo",
+		SessionID:   "session-delta",
+		UserID:      "user-1",
+		TurnID:      "turn-1",
+		InputItems:  firstBefore.InputItems,
+		OutputItems: newAssistantTextItems("Understood."),
+	}))
+
+	secondBefore, err := service.BeforeTurn(ctx, auth, BeforeTurnRequest{
+		Project:      "demo",
+		SessionID:    "session-delta",
+		UserID:       "user-1",
+		TurnID:       "turn-2",
+		CurrentInput: newTextItems("Please summarize this plan"),
+		MaxInputTok:  120000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, service.AfterTurn(ctx, auth, AfterTurnRequest{
+		Project:     "demo",
+		SessionID:   "session-delta",
+		UserID:      "user-1",
+		TurnID:      "turn-2",
+		InputItems:  secondBefore.InputItems,
+		OutputItems: newAssistantTextItems("Summary ready."),
+	}))
+
+	runtimeContent, readErr := service.fileService.Read(ctx, auth, "demo", "/memory/session-delta/runtime/context/current.jsonl", 0, -1)
+	require.NoError(t, readErr)
+
+	events := parseRuntimeEventsJSONL(t, runtimeContent.Content)
+	var turn2InputTexts []string
+	for _, event := range events {
+		if event.TurnID != "turn-2" || event.Type != "input_item" {
+			continue
+		}
+		for _, part := range event.Item.Content {
+			if strings.TrimSpace(part.Text) == "" {
+				continue
+			}
+			turn2InputTexts = append(turn2InputTexts, part.Text)
+		}
+	}
+
+	require.NotEmpty(t, turn2InputTexts)
+	require.Equal(t, 1, len(turn2InputTexts))
+	require.Contains(t, turn2InputTexts[0], "Please summarize this plan")
+	require.NotContains(t, turn2InputTexts[0], "<memory_reference>")
+	require.NotContains(t, turn2InputTexts[0], "I prefer concise replies")
+}
+
 // newTestMemoryService creates a memory service backed by sqlite and real FileIO service.
 func newTestMemoryService(t *testing.T) (*Service, *sql.DB) {
 	t.Helper()
@@ -110,4 +178,53 @@ func newTextItems(text string) []ResponseItem {
 			Text: text,
 		}},
 	}}
+}
+
+// newAssistantTextItems builds a single assistant message item for SDK-compatible payloads.
+func newAssistantTextItems(text string) []ResponseItem {
+	return []ResponseItem{{
+		Type: "message",
+		Role: "assistant",
+		Content: []ResponseContentPart{{
+			Type: "output_text",
+			Text: text,
+		}},
+	}}
+}
+
+// runtimeLogEvent is a local JSON shape used to decode memory runtime context events in tests.
+type runtimeLogEvent struct {
+	Type   string      `json:"type"`
+	TurnID string      `json:"turn_id"`
+	Item   runtimeItem `json:"item"`
+}
+
+// runtimeItem is a local JSON shape used to decode event item payloads in tests.
+type runtimeItem struct {
+	Content []runtimePart `json:"content"`
+}
+
+// runtimePart is a local JSON shape used to decode message content parts in tests.
+type runtimePart struct {
+	Text string `json:"text"`
+}
+
+// parseRuntimeEventsJSONL parses JSONL runtime context content into decoded event records.
+func parseRuntimeEventsJSONL(t *testing.T, body string) []runtimeLogEvent {
+	t.Helper()
+
+	lines := strings.Split(body, "\n")
+	events := make([]runtimeLogEvent, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		event := runtimeLogEvent{}
+		require.NoError(t, json.Unmarshal([]byte(line), &event))
+		events = append(events, event)
+	}
+
+	return events
 }

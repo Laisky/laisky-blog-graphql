@@ -49,6 +49,13 @@ For every user turn:
 
 This is the only required pattern for normal usage.
 
+With current `go-utils/agents/memory`, clients can continue passing `before.input_items` to `memory_after_turn` directly. The engine will automatically:
+
+1. remove injected memory-reference blocks,
+2. strip leading recalled-context prefix,
+3. persist only turn-delta input,
+4. avoid no-op duplicate fact writes when value/tier are unchanged.
+
 ## Call examples
 
 ### 1) memory_before_turn
@@ -254,6 +261,8 @@ Client strategy:
 3. Run memory_run_maintenance periodically for long-lived sessions.
 4. Use memory_list_dir_with_abstract for debugging memory quality.
 5. Keep content format aligned with Responses-style items.
+6. Keep MCP server logic thin: let the SDK own recall ranking and delta persistence behavior.
+7. Keep one writer per session to reduce `RESOURCE_BUSY` contention from server-side session lock.
 
 ## Minimal pseudo workflow
 
