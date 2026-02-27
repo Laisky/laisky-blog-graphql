@@ -65,6 +65,94 @@ func decodeMemoryRequest(req mcp.CallToolRequest, out any) error {
 	return json.Unmarshal(data, out)
 }
 
+// decodeMemoryBeforeTurnRequest decodes memory_before_turn arguments into request DTO.
+// It accepts the tool request and target request DTO pointer, and returns a validation/decoding error when payload cannot be normalized.
+func decodeMemoryBeforeTurnRequest(req mcp.CallToolRequest, out *mcpmemory.BeforeTurnRequest) error {
+	arguments := map[string]any{}
+	if req.Params.Arguments != nil {
+		typedArguments, ok := req.Params.Arguments.(map[string]any)
+		if ok {
+			arguments = typedArguments
+		} else {
+			data, err := json.Marshal(req.Params.Arguments)
+			if err != nil {
+				return mcpmemory.NewError(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false)
+			}
+			if err = json.Unmarshal(data, &arguments); err != nil {
+				return mcpmemory.NewError(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false)
+			}
+		}
+	}
+
+	normalizedArguments, err := normalizeBeforeTurnArguments(arguments)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(normalizedArguments)
+	if err != nil {
+		return err
+	}
+
+	if err = json.Unmarshal(data, out); err != nil {
+		return mcpmemory.NewError(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false)
+	}
+
+	return nil
+}
+
+// normalizeBeforeTurnArguments normalizes memory_before_turn payload into decode-friendly JSON arguments.
+// It accepts raw tool arguments and returns a cloned argument map with compatibility coercions applied.
+func normalizeBeforeTurnArguments(arguments map[string]any) (map[string]any, error) {
+	normalized := make(map[string]any, len(arguments))
+	for key, value := range arguments {
+		normalized[key] = value
+	}
+
+	currentInput, exists := normalized["current_input"]
+	if !exists {
+		return normalized, nil
+	}
+
+	normalizedCurrentInput, err := normalizeCurrentInputArgument(currentInput)
+	if err != nil {
+		return nil, err
+	}
+
+	normalized["current_input"] = normalizedCurrentInput
+	return normalized, nil
+}
+
+// normalizeCurrentInputArgument normalizes a current_input argument into an array payload.
+// It accepts a raw current_input value and returns either an array-compatible value or a typed validation error.
+func normalizeCurrentInputArgument(value any) (any, error) {
+	switch typedValue := value.(type) {
+	case nil:
+		return []any{}, nil
+	case string:
+		return []any{buildCurrentInputTextItem(typedValue)}, nil
+	case map[string]any:
+		return []any{typedValue}, nil
+	case []any:
+		return typedValue, nil
+	default:
+		return nil, mcpmemory.NewError(mcpmemory.ErrCodeInvalidArgument, "current_input must be an array of response items or a string", false)
+	}
+}
+
+// buildCurrentInputTextItem builds one user message item for plain-text current_input compatibility.
+// It accepts plain user text and returns a single Responses-style message item.
+func buildCurrentInputTextItem(text string) map[string]any {
+	return map[string]any{
+		"type": "message",
+		"role": "user",
+		"content": []map[string]any{{
+			"type": "input_text",
+			"text": text,
+		}},
+	}
+}
+
 // memoryToolErrorResult builds structured tool errors for memory tools.
 func memoryToolErrorResult(code mcpmemory.ErrorCode, message string, retryable bool) *mcp.CallToolResult {
 	payload := map[string]any{

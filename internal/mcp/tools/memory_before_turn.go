@@ -35,7 +35,7 @@ func (tool *MemoryBeforeTurnTool) Definition() mcp.Tool {
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
 		mcp.WithArray(
 			"current_input",
-			mcp.Description("Current turn input items in Responses API format."),
+			mcp.Description("Current turn input items in Responses API format (array). Compatibility fallback: plain string is accepted and converted into one user input_text message item."),
 			mcp.Required(),
 			mcp.Items(memoryResponseItemSchema()),
 		),
@@ -54,7 +54,11 @@ func (tool *MemoryBeforeTurnTool) Handle(ctx context.Context, req mcp.CallToolRe
 	}
 
 	request := mcpmemory.BeforeTurnRequest{}
-	if err := decodeMemoryRequest(req, &request); err != nil {
+	if err := decodeMemoryBeforeTurnRequest(req, &request); err != nil {
+		typed, ok := mcpmemory.AsError(err)
+		if ok {
+			return memoryToolErrorResult(typed.Code, typed.Message, typed.Retryable), nil
+		}
 		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil
 	}
 	applyMemoryDefaultsBeforeTurn(&request)

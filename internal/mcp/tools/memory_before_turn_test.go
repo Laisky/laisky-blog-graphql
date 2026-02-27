@@ -46,6 +46,66 @@ func TestMemoryBeforeTurnHandleRequiresCurrentInput(t *testing.T) {
 	require.Equal(t, false, payload["retryable"])
 }
 
+// TestMemoryBeforeTurnHandleAcceptsStringCurrentInput verifies plain-text current_input is accepted and normalized.
+func TestMemoryBeforeTurnHandleAcceptsStringCurrentInput(t *testing.T) {
+	memoryService := newTestToolMemoryService(t)
+	tool, err := NewMemoryBeforeTurnTool(memoryService)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
+		APIKey:       "sk-test",
+		APIKeyHash:   "hash-test",
+		UserIdentity: "user:test",
+	})
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project":           "bot",
+		"session_id":        "task-2026-02-27-0014",
+		"base_instructions": "Diagnostic test: memory_before_turn",
+		"current_input":     "Diagnostic test: memory_before_turn",
+		"max_input_tok":     120000,
+	}}}
+
+	result, handleErr := tool.Handle(ctx, req)
+	require.NoError(t, handleErr)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+
+	payload := decodeToolPayload(t, result)
+	inputItems, ok := payload["input_items"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, inputItems)
+}
+
+// TestMemoryBeforeTurnHandleRejectsInvalidCurrentInputType verifies invalid current_input type returns an actionable argument error.
+func TestMemoryBeforeTurnHandleRejectsInvalidCurrentInputType(t *testing.T) {
+	memoryService := newTestToolMemoryService(t)
+	tool, err := NewMemoryBeforeTurnTool(memoryService)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
+		APIKey:       "sk-test",
+		APIKeyHash:   "hash-test",
+		UserIdentity: "user:test",
+	})
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project":           "bot",
+		"session_id":        "task-2026-02-27-0014",
+		"base_instructions": "Diagnostic test: memory_before_turn",
+		"current_input":     123,
+		"max_input_tok":     120000,
+	}}}
+
+	result, handleErr := tool.Handle(ctx, req)
+	require.NoError(t, handleErr)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+
+	payload := decodeToolPayload(t, result)
+	require.Equal(t, string(mcpmemory.ErrCodeInvalidArgument), payload["code"])
+	require.Equal(t, "current_input must be an array of response items or a string", payload["message"])
+	require.Equal(t, false, payload["retryable"])
+}
+
 // newTestToolMemoryService creates a real memory service for tool-level regression tests.
 func newTestToolMemoryService(t *testing.T) *mcpmemory.Service {
 	t.Helper()
