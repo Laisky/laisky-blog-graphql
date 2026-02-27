@@ -272,6 +272,9 @@ func validateBeforeTurnRequest(auth files.AuthContext, request BeforeTurnRequest
 	if strings.TrimSpace(request.TurnID) == "" {
 		return NewError(ErrCodeInvalidArgument, "turn_id is required", false)
 	}
+	if len(request.CurrentInput) == 0 {
+		return NewError(ErrCodeInvalidArgument, "current_input is required", false)
+	}
 	return nil
 }
 

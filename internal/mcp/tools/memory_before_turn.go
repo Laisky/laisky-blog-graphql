@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Laisky/zap"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -35,6 +36,7 @@ func (tool *MemoryBeforeTurnTool) Definition() mcp.Tool {
 		mcp.WithArray(
 			"current_input",
 			mcp.Description("Current turn input items in Responses API format."),
+			mcp.Required(),
 			mcp.Items(memoryResponseItemSchema()),
 		),
 		mcp.WithString("base_instructions", mcp.Description("Optional base system instructions.")),
@@ -60,12 +62,26 @@ func (tool *MemoryBeforeTurnTool) Handle(ctx context.Context, req mcp.CallToolRe
 	response, err := tool.service.BeforeTurn(ctx, auth, request)
 	if err != nil {
 		logger := fileToolLoggerFromContext(ctx)
+		typedErr, typedErrOK := mcpmemory.AsError(err)
+		errorCode := ""
+		retryable := false
+		message := strings.TrimSpace(err.Error())
+		if typedErrOK {
+			errorCode = string(typedErr.Code)
+			retryable = typedErr.Retryable
+			if strings.TrimSpace(typedErr.Message) != "" {
+				message = strings.TrimSpace(typedErr.Message)
+			}
+		}
 		logger.Debug("memory_before_turn failed",
 			zap.String("project", request.Project),
 			zap.String("session_id", request.SessionID),
 			zap.String("turn_id", request.TurnID),
 			zap.String("user_identity", auth.UserIdentity),
 			zap.String("error_type", fmt.Sprintf("%T", err)),
+			zap.String("error_code", errorCode),
+			zap.Bool("retryable", retryable),
+			zap.String("error_message", message),
 		)
 		return memoryToolErrorFromErr(err), nil
 	}

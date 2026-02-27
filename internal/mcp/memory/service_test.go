@@ -143,6 +143,26 @@ func TestServiceAfterTurnPersistsOnlyDeltaInput(t *testing.T) {
 	require.NotContains(t, turn2InputTexts[0], "I prefer concise replies")
 }
 
+// TestServiceBeforeTurnRequiresCurrentInput verifies BeforeTurn rejects empty current_input payloads.
+func TestServiceBeforeTurnRequiresCurrentInput(t *testing.T) {
+	service, _ := newTestMemoryService(t)
+	auth := files.AuthContext{APIKey: "sk-test", APIKeyHash: "hash-test", UserIdentity: "user:test"}
+
+	_, err := service.BeforeTurn(context.Background(), auth, BeforeTurnRequest{
+		Project:      "demo",
+		SessionID:    "session-empty-input",
+		UserID:       "user-1",
+		TurnID:       "turn-empty-input",
+		CurrentInput: nil,
+		MaxInputTok:  120000,
+	})
+	require.Error(t, err)
+	asserted, ok := AsError(err)
+	require.True(t, ok)
+	require.Equal(t, ErrCodeInvalidArgument, asserted.Code)
+	require.Equal(t, "current_input is required", asserted.Message)
+}
+
 // newTestMemoryService creates a memory service backed by sqlite and real FileIO service.
 func newTestMemoryService(t *testing.T) (*Service, *sql.DB) {
 	t.Helper()

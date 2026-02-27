@@ -44,6 +44,7 @@ func TestMemoryBeforeTurnDefinitionCurrentInputIncludesItems(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := tool.Definition()
+	require.Contains(t, definition.InputSchema.Required, "current_input")
 	property, ok := definition.InputSchema.Properties["current_input"]
 	require.True(t, ok)
 
