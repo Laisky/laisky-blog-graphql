@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 )
 
@@ -74,4 +75,19 @@ func TestGenerateMemoryTurnIDFormat(t *testing.T) {
 
 	matcher := regexp.MustCompile(`^turn-` + regexp.QuoteMeta("1771668672000") + `-[0-9a-f]{6}$`)
 	require.True(t, matcher.MatchString(turnID))
+}
+
+// TestMemoryToolErrorFromErrMapsFileError verifies file-layer typed errors are mapped to memory error categories.
+func TestMemoryToolErrorFromErrMapsFileError(t *testing.T) {
+	err := files.NewError(files.ErrCodeInvalidQuery, "invalid query", false)
+	result := memoryToolErrorFromErr(err)
+
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+
+	content, ok := result.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, string(mcpmemory.ErrCodeInvalidArgument), content["code"])
+	require.Equal(t, "invalid query", content["message"])
+	require.Equal(t, false, content["retryable"])
 }

@@ -86,10 +86,38 @@ func memoryToolErrorFromErr(err error) *mcp.CallToolResult {
 		return nil
 	}
 	typed, ok := mcpmemory.AsError(err)
-	if !ok {
-		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "internal error", true)
+	if ok {
+		return memoryToolErrorResult(typed.Code, typed.Message, typed.Retryable)
 	}
-	return memoryToolErrorResult(typed.Code, typed.Message, typed.Retryable)
+
+	if fileErr, fileErrOK := files.AsError(err); fileErrOK {
+		return memoryToolErrorResult(mapFileErrorCodeToMemory(fileErr.Code), fileErr.Message, fileErr.Retryable)
+	}
+
+	return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "internal error", true)
+}
+
+// mapFileErrorCodeToMemory maps file-layer error codes into memory-tool error categories.
+func mapFileErrorCodeToMemory(code files.ErrorCode) mcpmemory.ErrorCode {
+	switch code {
+	case files.ErrCodePermissionDenied:
+		return mcpmemory.ErrCodePermissionDenied
+	case files.ErrCodeResourceBusy, files.ErrCodeRateLimited:
+		return mcpmemory.ErrCodeResourceBusy
+	case files.ErrCodeInvalidPath,
+		files.ErrCodeInvalidOffset,
+		files.ErrCodeInvalidQuery,
+		files.ErrCodeNotDirectory,
+		files.ErrCodeIsDirectory,
+		files.ErrCodePayloadTooLarge,
+		files.ErrCodeQuotaExceeded,
+		files.ErrCodeAlreadyExists,
+		files.ErrCodeNotFound,
+		files.ErrCodeNotEmpty:
+		return mcpmemory.ErrCodeInvalidArgument
+	default:
+		return mcpmemory.ErrCodeInternal
+	}
 }
 
 // applyMemoryDefaultsBeforeTurn fills optional memory_before_turn fields with defaults.

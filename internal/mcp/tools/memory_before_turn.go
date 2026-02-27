@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/Laisky/zap"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
@@ -57,6 +59,14 @@ func (tool *MemoryBeforeTurnTool) Handle(ctx context.Context, req mcp.CallToolRe
 
 	response, err := tool.service.BeforeTurn(ctx, auth, request)
 	if err != nil {
+		logger := fileToolLoggerFromContext(ctx)
+		logger.Debug("memory_before_turn failed",
+			zap.String("project", request.Project),
+			zap.String("session_id", request.SessionID),
+			zap.String("turn_id", request.TurnID),
+			zap.String("user_identity", auth.UserIdentity),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+		)
 		return memoryToolErrorFromErr(err), nil
 	}
 

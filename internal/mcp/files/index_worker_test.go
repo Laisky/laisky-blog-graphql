@@ -31,8 +31,8 @@ func TestIndexWorkerDeletesCredentialAfterSuccess(t *testing.T) {
 	require.Empty(t, store.data)
 }
 
-// TestIndexWorkerRetriesWhenCredentialMissing verifies missing envelopes reschedule jobs with retry.
-func TestIndexWorkerRetriesWhenCredentialMissing(t *testing.T) {
+// TestIndexWorkerDegradesWhenCredentialMissing verifies missing envelopes degrade to lexical indexing without retries.
+func TestIndexWorkerDegradesWhenCredentialMissing(t *testing.T) {
 	settings := LoadSettingsFromConfig()
 	settings.Search.Enabled = true
 	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
@@ -78,8 +78,19 @@ func TestIndexWorkerRetriesWhenCredentialMissing(t *testing.T) {
 		&job.UpdatedAt,
 	)
 	require.NoError(t, err)
-	require.Equal(t, "pending", job.Status)
-	require.Equal(t, 1, job.RetryCount)
+	require.Equal(t, "done", job.Status)
+	require.Equal(t, 0, job.RetryCount)
+
+	var chunkCount int
+	err = svc.db.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(1) FROM mcp_file_chunks WHERE apikey_hash = ? AND project = ? AND file_path = ?`,
+		auth.APIKeyHash,
+		"proj",
+		"/a.txt",
+	).Scan(&chunkCount)
+	require.NoError(t, err)
+	require.Greater(t, chunkCount, 0)
 }
 
 // TestIndexWorkerUsesContextualizedInputs verifies indexing prepends generated context before embedding.

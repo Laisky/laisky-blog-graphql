@@ -283,7 +283,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 	}
 
 	indexContents := s.buildContextualizedChunkInputs(ctx, apiKey, string(file.Content), job.FilePath, chunks)
-	plan := s.buildEmbeddingPlan(ctx, job, indexContents)
+	plan := s.buildEmbeddingPlan(ctx, job, apiKey, indexContents)
 	if err := s.replaceIndexRows(ctx, job, chunks, indexContents, plan.vectors); err != nil {
 		return err
 	}
@@ -314,22 +314,19 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 }
 
 // buildEmbeddingPlan prepares vectors when semantic indexing is available.
-func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, indexContents []string) embeddingPlan {
+func (s *Service) buildEmbeddingPlan(ctx context.Context, job FileIndexJob, apiKey string, indexContents []string) embeddingPlan {
 	if len(indexContents) == 0 {
 		return embeddingPlan{}
 	}
 	if s.embedder == nil {
 		return embeddingPlan{}
 	}
-
-	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
-	if job.FileUpdatedAt != nil {
-		ref.UpdatedAt = *job.FileUpdatedAt
-	}
-
-	apiKey, err := s.loadCredential(ctx, ref)
-	if err != nil {
-		return embeddingPlan{err: err}
+	if strings.TrimSpace(apiKey) == "" {
+		s.LoggerFromContext(ctx).Debug("skip embedding for index upsert: missing credential envelope",
+			zap.String("project", job.Project),
+			zap.String("file_path", job.FilePath),
+		)
+		return embeddingPlan{}
 	}
 
 	vectors, err := s.embedder.EmbedTexts(ctx, apiKey, indexContents)

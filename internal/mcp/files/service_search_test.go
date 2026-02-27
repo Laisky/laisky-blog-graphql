@@ -373,8 +373,8 @@ func TestSearchKeepsLexicalResultsWhenCredentialMissing(t *testing.T) {
 		&job.UpdatedAt,
 	)
 	require.NoError(t, err)
-	require.Equal(t, "pending", job.Status)
-	require.Equal(t, 1, job.RetryCount)
+	require.Equal(t, "done", job.Status)
+	require.Equal(t, 0, job.RetryCount)
 }
 
 // TestSearchFallbackReturnsResultsBeforeIndexReady verifies write-then-search works even before index workers process jobs.
