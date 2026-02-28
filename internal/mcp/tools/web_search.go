@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
@@ -83,22 +84,35 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError("query cannot be empty"), nil
 	}
 
+	start := time.Now().UTC()
+	t.logger.Debug("web_search started", zap.Int("query_len", len(query)))
+
 	apiKey := t.apiKeyProvider(ctx)
 	if apiKey == "" {
-		t.logger.Warn("web_search missing api key", zap.String("query", query))
+		t.logger.Warn("web_search missing api key", zap.Int("query_len", len(query)))
 		return mcp.NewToolResultError("missing authorization bearer token"), nil
 	}
 
+	t.logger.Debug("web_search billing check started", zap.Int("query_len", len(query)))
+
 	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebSearch, "web search"); err != nil {
-		t.logger.Warn("web_search billing denied", zap.Error(err), zap.String("query", query))
+		t.logger.Warn("web_search billing denied", zap.Error(err), zap.Int("query_len", len(query)))
 		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
 	}
 
+	t.logger.Debug("web_search billing check passed", zap.Int("query_len", len(query)))
+
 	items, err := t.searchProvider.Search(ctx, query)
 	if err != nil {
-		t.logger.Error("web_search failed", zap.Error(err), zap.String("query", query))
+		t.logger.Error("web_search failed", zap.Error(err), zap.Int("query_len", len(query)))
 		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 	}
+
+	t.logger.Debug("web_search completed",
+		zap.Int("query_len", len(query)),
+		zap.Int("results_count", len(items)),
+		zap.Duration("duration", time.Since(start)),
+	)
 
 	response := searchlib.SimplifiedSearchResult{
 		Results: items,

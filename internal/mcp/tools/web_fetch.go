@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -101,21 +102,31 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 
 	start := time.Now().UTC()
+	logURL := sanitizeURLForLog(urlValue)
 	t.logger.Debug("web_fetch started",
-		zap.String("url", urlValue),
+		zap.String("url", logURL),
+		zap.Bool("output_markdown", outputMarkdown),
+	)
+	t.logger.Debug("web_fetch billing check started",
+		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 
 	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebFetch, "web fetch"); err != nil {
-		t.logger.Warn("web_fetch billing denied", zap.Error(err), zap.String("url", urlValue))
+		t.logger.Warn("web_fetch billing denied", zap.Error(err), zap.String("url", logURL))
 		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
 	}
+
+	t.logger.Debug("web_fetch billing check passed",
+		zap.String("url", logURL),
+		zap.Bool("output_markdown", outputMarkdown),
+	)
 
 	content, err := t.fetcher(ctx, t.store, urlValue, apiKey, outputMarkdown)
 	if err != nil {
 		t.logger.Error("web_fetch failed",
 			zap.Error(err),
-			zap.String("url", urlValue),
+			zap.String("url", logURL),
 			zap.Bool("output_markdown", outputMarkdown),
 			zap.Duration("duration", time.Since(start)),
 		)
@@ -123,7 +134,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 
 	t.logger.Debug("web_fetch completed",
-		zap.String("url", urlValue),
+		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 		zap.Duration("duration", time.Since(start)),
 		zap.Int("content_len", len(content)),
@@ -163,4 +174,24 @@ func parseOptionalBool(raw any) bool {
 	default:
 		return false
 	}
+}
+
+// sanitizeURLForLog removes query and fragment components from a URL before
+// writing it into logs.
+//
+// Parameters:
+//   - rawURL: original URL string from the request.
+//
+// Returns:
+//   - sanitized URL string without query or fragment; falls back to host/path-like
+//     input when parsing fails.
+func sanitizeURLForLog(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return strings.TrimSpace(rawURL)
+	}
+
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	errors "github.com/Laisky/errors/v2"
 	gutils "github.com/Laisky/go-utils/v6"
@@ -132,11 +133,22 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 	streamable := srv.NewStreamableHTTPServer(
 		mcpServer,
 		srv.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
-			// Inject authorization header
-			authHeader := r.Header.Get("Authorization")
+			// Inject authorization header with backward-compatible query fallback.
+			authHeader, authSource := resolveRequestAuthorizationHeader(r)
 			ctx = context.WithValue(ctx, keyAuthorization, authHeader)
 			if authCtx, err := mcpauth.ParseAuthorizationContext(authHeader); err == nil {
 				ctx = mcpauth.WithContext(ctx, authCtx)
+			} else if authHeader != "" {
+				serverLogger.Debug("mcp authorization parse failed",
+					zap.String("auth_source", authSource),
+					zap.Error(err),
+				)
+			}
+			if authSource != "header" {
+				serverLogger.Debug("mcp authorization source resolved",
+					zap.String("auth_source", authSource),
+					zap.Bool("has_session_header", strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID)) != ""),
+				)
 			}
 
 			// Create a per-request logger with request-specific context
@@ -152,15 +164,15 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 		}),
 	)
 
+	normalizedAuthHandler := withAuthorizationHeaderNormalization(streamable, serverLogger.Named("auth"))
 	s := &Server{
-		handler:    withHTTPLogging(withToolsListFiltering(streamable, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
+		handler:    withHTTPLogging(withToolsListFiltering(normalizedAuthHandler, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
 		logger:     serverLogger,
 		callLogger: callLogger,
 	}
 
 	apiKeyProvider := func(ctx context.Context) string {
-		authHeader, _ := ctx.Value(keyAuthorization).(string)
-		return extractAPIKey(authHeader)
+		return apiKeyFromContext(ctx)
 	}
 	headerProvider := func(ctx context.Context) string {
 		authHeader, _ := ctx.Value(keyAuthorization).(string)

@@ -226,6 +226,68 @@ func TestResolveAuthorizationForListRequestWithoutAuthorization(t *testing.T) {
 	require.Equal(t, "none", source)
 }
 
+func TestResolveAuthorizationForListRequestWithAPIKeyQuery(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/mcp/?APIKEY=sk-tools-list-query", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`))
+	auth, source := resolveAuthorizationForListRequest(request, nil)
+	require.NotNil(t, auth)
+	require.Equal(t, "query_apikey", source)
+	require.Equal(t, "sk-tools-list-query", auth.APIKey)
+}
+
+func TestCacheSessionAuthorizationForRequestWithAPIKeyQuery(t *testing.T) {
+	sessionID := "mcp-session-query-cache"
+	store := newSessionAuthorizationStore()
+	req := httptest.NewRequest(http.MethodPost, "/mcp/?apikey=sk-tools-list-query-cache", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	req.Header.Set(srv.HeaderKeySessionID, sessionID)
+
+	cacheSessionAuthorizationForRequest(req, nil, store)
+
+	cached, ok := store.Get(sessionID)
+	require.True(t, ok)
+	require.Equal(t, "user:"+cached.APIKeyHash[:16], cached.UserIdentity)
+	require.Equal(t, "ache", cached.KeySuffix)
+}
+
+func TestResolveRequestAuthorizationHeader(t *testing.T) {
+	t.Run("header first", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/mcp/?APIKEY=sk-query-token", nil)
+		req.Header.Set("Authorization", "Bearer sk-header-token")
+
+		authHeader, source := resolveRequestAuthorizationHeader(req)
+		require.Equal(t, "Bearer sk-header-token", authHeader)
+		require.Equal(t, "header", source)
+	})
+
+	t.Run("query fallback", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/mcp/?api_key=Bearer%20sk-query-token", nil)
+
+		authHeader, source := resolveRequestAuthorizationHeader(req)
+		require.Equal(t, "Bearer sk-query-token", authHeader)
+		require.Equal(t, "query_apikey", source)
+	})
+
+	t.Run("none", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/mcp/", nil)
+
+		authHeader, source := resolveRequestAuthorizationHeader(req)
+		require.Equal(t, "", authHeader)
+		require.Equal(t, "none", source)
+	})
+}
+
+func TestWithAuthorizationHeaderNormalization(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/mcp/?APIKEY=sk-normalize-query", nil)
+	recorder := httptest.NewRecorder()
+
+	h := withAuthorizationHeaderNormalization(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer sk-normalize-query", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusNoContent)
+	}), nil)
+
+	h.ServeHTTP(recorder, req)
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+}
+
 // newUserPreferenceServiceForToolsListTest builds a user preference service backed by sqlite for tools/list tests.
 func newUserPreferenceServiceForToolsListTest(t *testing.T, dsn string) *userrequests.Service {
 	t.Helper()

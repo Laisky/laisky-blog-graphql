@@ -220,7 +220,8 @@ func cacheSessionAuthorizationForRequest(r *http.Request, logger logSDK.Logger, 
 		return
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	authHeader, authSource := resolveRequestAuthorizationHeader(r)
+	auth, err := askuser.ParseAuthorizationContext(authHeader)
 	if err != nil {
 		return
 	}
@@ -229,6 +230,7 @@ func cacheSessionAuthorizationForRequest(r *http.Request, logger logSDK.Logger, 
 	if logger != nil {
 		logger.Debug("cached authorization for mcp session",
 			zap.String("session_id", sessionID),
+			zap.String("auth_source", authSource),
 			zap.String("user_identity", auth.UserIdentity),
 		)
 	}
@@ -240,9 +242,10 @@ func resolveAuthorizationForListRequest(r *http.Request, sessionAuthStore *sessi
 		return nil, "none"
 	}
 
-	auth, err := askuser.ParseAuthorizationContext(r.Header.Get("Authorization"))
+	authHeader, authSource := resolveRequestAuthorizationHeader(r)
+	auth, err := askuser.ParseAuthorizationContext(authHeader)
 	if err == nil {
-		return auth, "header"
+		return auth, authSource
 	}
 
 	sessionID := strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID))
