@@ -84,9 +84,19 @@ func (service *Service) BeforeTurn(ctx context.Context, auth files.AuthContext, 
 		return BeforeTurnResponse{}, errors.Wrap(err, "run before turn")
 	}
 
+	recallFactIDs := output.RecallFactIDs
+	if recallFactIDs == nil {
+		recallFactIDs = []string{}
+	}
+	recallInsightIDs := output.RecallInsightIDs
+	if recallInsightIDs == nil {
+		recallInsightIDs = []string{}
+	}
+
 	return BeforeTurnResponse{
 		InputItems:        output.InputItems,
-		RecallFactIDs:     output.RecallFactIDs,
+		RecallFactIDs:     recallFactIDs,
+		RecallInsightIDs:  recallInsightIDs,
 		ContextTokenCount: output.ContextTokenCount,
 	}, nil
 }
@@ -272,8 +282,8 @@ func validateBeforeTurnRequest(auth files.AuthContext, request BeforeTurnRequest
 	if strings.TrimSpace(request.TurnID) == "" {
 		return NewError(ErrCodeInvalidArgument, "turn_id is required", false)
 	}
-	if len(request.CurrentInput) == 0 {
-		return NewError(ErrCodeInvalidArgument, "current_input is required", false)
+	if len(request.ConversationItems) == 0 && len(request.CurrentInput) == 0 {
+		return NewError(ErrCodeInvalidArgument, "current_input is required when conversation_items is empty", false)
 	}
 	return nil
 }

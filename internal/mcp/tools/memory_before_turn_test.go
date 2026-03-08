@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/mark3labs/mcp-go/mcp"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
@@ -42,8 +42,46 @@ func TestMemoryBeforeTurnHandleRequiresCurrentInput(t *testing.T) {
 
 	payload := decodeToolPayload(t, result)
 	require.Equal(t, string(mcpmemory.ErrCodeInvalidArgument), payload["code"])
-	require.Equal(t, "current_input is required", payload["message"])
+	require.Equal(t, "current_input is required when conversation_items is empty", payload["message"])
 	require.Equal(t, false, payload["retryable"])
+}
+
+// TestMemoryBeforeTurnHandleAcceptsConversationItems verifies v2 conversation_items path works without current_input.
+func TestMemoryBeforeTurnHandleAcceptsConversationItems(t *testing.T) {
+	memoryService := newTestToolMemoryService(t)
+	tool, err := NewMemoryBeforeTurnTool(memoryService)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
+		APIKey:       "sk-test",
+		APIKeyHash:   "hash-test",
+		UserIdentity: "user:test",
+	})
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project":       "bot",
+		"session_id":    "task-2026-02-27-0013",
+		"turn_id":       "turn-v2-1",
+		"max_input_tok": 120000,
+		"conversation_items": []any{
+			map[string]any{
+				"type":    "message",
+				"role":    "user",
+				"content": []any{map[string]any{"type": "input_text", "text": "v2 conversation item"}},
+			},
+		},
+		"current_input_start": 0,
+		"current_input_count": 1,
+	}}}
+
+	result, handleErr := tool.Handle(ctx, req)
+	require.NoError(t, handleErr)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
+
+	payload := decodeToolPayload(t, result)
+	inputItems, ok := payload["input_items"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, inputItems)
 }
 
 // TestMemoryBeforeTurnHandleAcceptsStringCurrentInput verifies plain-text current_input is accepted and normalized.

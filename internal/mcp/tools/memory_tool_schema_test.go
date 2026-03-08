@@ -44,7 +44,6 @@ func TestMemoryBeforeTurnDefinitionCurrentInputIncludesItems(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := tool.Definition()
-	require.Contains(t, definition.InputSchema.Required, "current_input")
 	property, ok := definition.InputSchema.Properties["current_input"]
 	require.True(t, ok)
 
@@ -57,6 +56,13 @@ func TestMemoryBeforeTurnDefinitionCurrentInputIncludesItems(t *testing.T) {
 
 	_, hasCurrentInputText := definition.InputSchema.Properties["current_input_text"]
 	require.True(t, hasCurrentInputText)
+
+	_, hasConversationItems := definition.InputSchema.Properties["conversation_items"]
+	require.True(t, hasConversationItems)
+	_, hasCurrentInputStart := definition.InputSchema.Properties["current_input_start"]
+	require.True(t, hasCurrentInputStart)
+	_, hasCurrentInputCount := definition.InputSchema.Properties["current_input_count"]
+	require.True(t, hasCurrentInputCount)
 }
 
 // TestMemoryAfterTurnDefinitionArraysIncludeItems verifies input/output array schemas have explicit items schemas.
@@ -65,7 +71,7 @@ func TestMemoryAfterTurnDefinitionArraysIncludeItems(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := tool.Definition()
-	for _, propertyName := range []string{"input_items", "output_items"} {
+	for _, propertyName := range []string{"conversation_items", "input_items", "output_items"} {
 		property, ok := definition.InputSchema.Properties[propertyName]
 		require.True(t, ok)
 
@@ -119,11 +125,16 @@ func TestMemoryAfterTurnDefinitionMarshaledSchemaKeepsItems(t *testing.T) {
 	properties, ok := inputSchema["properties"].(map[string]any)
 	require.True(t, ok)
 
-	for _, propertyName := range []string{"input_items", "output_items"} {
+	for _, propertyName := range []string{"conversation_items", "input_items", "output_items"} {
 		property, ok := properties[propertyName].(map[string]any)
 		require.True(t, ok)
 		require.Equal(t, "array", property["type"])
 		_, hasItems := property["items"]
 		require.True(t, hasItems)
 	}
+
+	_, hasCurrentInputStart := properties["current_input_start"]
+	require.True(t, hasCurrentInputStart)
+	_, hasCurrentInputCount := properties["current_input_count"]
+	require.True(t, hasCurrentInputCount)
 }

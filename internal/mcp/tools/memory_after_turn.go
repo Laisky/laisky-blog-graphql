@@ -31,8 +31,15 @@ func (tool *MemoryAfterTurnTool) Definition() mcp.Tool {
 		mcp.WithString("turn_id", mcp.Description("Turn identifier. Auto-generated when omitted.")),
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
 		mcp.WithArray(
+			"conversation_items",
+			mcp.Description("Full caller-visible conversation slice ordered oldest to newest."),
+			mcp.Items(memoryResponseItemSchema()),
+		),
+		mcp.WithNumber("current_input_start", mcp.Description("Start index of current turn items inside conversation_items.")),
+		mcp.WithNumber("current_input_count", mcp.Description("Count of current turn items inside conversation_items.")),
+		mcp.WithArray(
 			"input_items",
-			mcp.Description("Prepared turn input items."),
+			mcp.Description("Prepared turn input items. The server strips generated memory reference blocks before persistence."),
 			mcp.Items(memoryResponseItemSchema()),
 		),
 		mcp.WithArray(

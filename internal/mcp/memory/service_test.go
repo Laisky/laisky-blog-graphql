@@ -31,6 +31,7 @@ func TestServiceBeforeAfterTurnFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, beforeOut.InputItems)
+	require.NotNil(t, beforeOut.RecallInsightIDs)
 
 	err = service.AfterTurn(context.Background(), auth, AfterTurnRequest{
 		Project:     "demo",
@@ -143,7 +144,7 @@ func TestServiceAfterTurnPersistsOnlyDeltaInput(t *testing.T) {
 	require.NotContains(t, turn2InputTexts[0], "I prefer concise replies")
 }
 
-// TestServiceBeforeTurnRequiresCurrentInput verifies BeforeTurn rejects empty current_input payloads.
+// TestServiceBeforeTurnRequiresCurrentInput verifies BeforeTurn rejects empty payloads when neither v2 nor legacy input is provided.
 func TestServiceBeforeTurnRequiresCurrentInput(t *testing.T) {
 	service, _ := newTestMemoryService(t)
 	auth := files.AuthContext{APIKey: "sk-test", APIKeyHash: "hash-test", UserIdentity: "user:test"}
@@ -160,7 +161,33 @@ func TestServiceBeforeTurnRequiresCurrentInput(t *testing.T) {
 	asserted, ok := AsError(err)
 	require.True(t, ok)
 	require.Equal(t, ErrCodeInvalidArgument, asserted.Code)
-	require.Equal(t, "current_input is required", asserted.Message)
+	require.Equal(t, "current_input is required when conversation_items is empty", asserted.Message)
+}
+
+// TestServiceBeforeTurnAcceptsConversationItems verifies BeforeTurn accepts v2 conversation_items path without legacy current_input.
+func TestServiceBeforeTurnAcceptsConversationItems(t *testing.T) {
+	service, _ := newTestMemoryService(t)
+	auth := files.AuthContext{APIKey: "sk-test", APIKeyHash: "hash-test", UserIdentity: "user:test"}
+
+	out, err := service.BeforeTurn(context.Background(), auth, BeforeTurnRequest{
+		Project:   "demo",
+		SessionID: "session-v2-input",
+		UserID:    "user-1",
+		TurnID:    "turn-v2-input",
+		ConversationItems: []ResponseItem{{
+			Type: "message",
+			Role: "user",
+			Content: []ResponseContentPart{{
+				Type: "input_text",
+				Text: "hello v2 memory",
+			}},
+		}},
+		CurrentInputStart: 0,
+		CurrentInputCount: 1,
+		MaxInputTok:       120000,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, out.InputItems)
 }
 
 // newTestMemoryService creates a memory service backed by sqlite and real FileIO service.

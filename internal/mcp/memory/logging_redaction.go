@@ -23,6 +23,12 @@ func RedactToolArguments(toolName string, args map[string]any) map[string]any {
 	if value, ok := cloned["current_input"]; ok {
 		cloned["current_input"] = summarizeRedaction(value)
 	}
+	if value, ok := cloned["current_input_text"]; ok {
+		cloned["current_input_text"] = summarizeRedaction(value)
+	}
+	if value, ok := cloned["conversation_items"]; ok {
+		cloned["conversation_items"] = summarizeRedaction(value)
+	}
 	if value, ok := cloned["input_items"]; ok {
 		cloned["input_items"] = summarizeRedaction(value)
 	}

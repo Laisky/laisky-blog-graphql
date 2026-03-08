@@ -59,11 +59,13 @@ func TestRedactMCPBodyMemoryArguments(t *testing.T) {
 		"params": map[string]any{
 			"tool_name": "memory_after_turn",
 			"arguments": map[string]any{
-				"project":      "demo",
-				"session_id":   "s-1",
-				"turn_id":      "t-1",
-				"input_items":  []any{map[string]any{"type": "message"}},
-				"output_items": []any{map[string]any{"type": "message"}},
+				"project":            "demo",
+				"session_id":         "s-1",
+				"turn_id":            "t-1",
+				"current_input_text": "secret-user-input",
+				"conversation_items": []any{map[string]any{"type": "message"}},
+				"input_items":        []any{map[string]any{"type": "message"}},
+				"output_items":       []any{map[string]any{"type": "message"}},
 			},
 		},
 	}
@@ -80,4 +82,8 @@ func TestRedactMCPBodyMemoryArguments(t *testing.T) {
 	require.Equal(t, true, inputItems["redacted"])
 	outputItems := args["output_items"].(map[string]any)
 	require.Equal(t, true, outputItems["redacted"])
+	currentInputText := args["current_input_text"].(map[string]any)
+	require.Equal(t, true, currentInputText["redacted"])
+	conversationItems := args["conversation_items"].(map[string]any)
+	require.Equal(t, true, conversationItems["redacted"])
 }

@@ -34,9 +34,15 @@ func (tool *MemoryBeforeTurnTool) Definition() mcp.Tool {
 		mcp.WithString("turn_id", mcp.Description("Turn identifier. Auto-generated when omitted.")),
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
 		mcp.WithArray(
+			"conversation_items",
+			mcp.Description("Full conversation items ordered oldest to newest."),
+			mcp.Items(memoryResponseItemSchema()),
+		),
+		mcp.WithNumber("current_input_start", mcp.Description("Start index of current turn items inside conversation_items.")),
+		mcp.WithNumber("current_input_count", mcp.Description("Count of current turn items inside conversation_items.")),
+		mcp.WithArray(
 			"current_input",
 			mcp.Description("Current turn input items in Responses API format (array). Compatibility fallback: plain string is accepted and converted into one user input_text message item."),
-			mcp.Required(),
 			mcp.Items(memoryResponseItemSchema()),
 		),
 		mcp.WithString("current_input_text", mcp.Description("Plain-text current turn input. Use this when the caller only has a single user text message; server converts it to current_input automatically.")),

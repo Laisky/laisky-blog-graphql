@@ -42,14 +42,19 @@ Recommended: set `turn_id` explicitly in clients and reuse the same value for re
 
 For every user turn:
 
-1. Build current_input from the new user message (Responses-style items).
+1. Build one turn payload from the new user message.
 2. Call memory_before_turn.
 3. Send returned input_items to your model.
 4. Call memory_after_turn with the same project, session_id, and turn_id.
 
 This is the only required pattern for normal usage.
 
-With current `go-utils/agents/memory`, clients can continue passing `before.input_items` to `memory_after_turn` directly. The engine will automatically:
+You can provide turn payloads in either of these forms:
+
+1. conversation_items + current_input_start + current_input_count
+2. current_input (or current_input_text)
+
+For `memory_after_turn`, clients can continue passing `before.input_items` directly. The engine will automatically:
 
 1. remove injected memory-reference blocks,
 2. strip leading recalled-context prefix,
@@ -111,7 +116,34 @@ Response:
     }
   ],
   "recall_fact_ids": ["fact_xxx"],
+  "recall_insight_ids": ["insight_xxx"],
   "context_token_count": 1830
+}
+```
+
+Alternative request form using conversation indexes:
+
+```json
+{
+  "project": "demo",
+  "session_id": "session-001",
+  "user_id": "user-001",
+  "turn_id": "turn-20260221-0001",
+  "conversation_items": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Please summarize today plan in 3 bullets"
+        }
+      ]
+    }
+  ],
+  "current_input_start": 0,
+  "current_input_count": 1,
+  "max_input_tok": 120000
 }
 ```
 
@@ -125,6 +157,20 @@ Request:
   "session_id": "session-001",
   "user_id": "user-001",
   "turn_id": "turn-20260221-0001",
+  "conversation_items": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Please summarize today plan in 3 bullets"
+        }
+      ]
+    }
+  ],
+  "current_input_start": 0,
+  "current_input_count": 1,
   "input_items": [
     {
       "type": "message",
@@ -163,6 +209,7 @@ Request:
 ```
 
 Note: `current_input`, `input_items`, and `output_items` must be JSON arrays of Responses-style item objects.
+`conversation_items` also uses the same array item format.
 
 Response:
 
@@ -269,9 +316,9 @@ Client strategy:
 ```text
 on user message:
 	turn_id = new_unique_turn_id()
-	before = call memory_before_turn(project, session_id, turn_id, current_input)
+  before = call memory_before_turn(project, session_id, turn_id, conversation_items, current_input_start, current_input_count)
 	output_items = run_model(before.input_items)
-	call memory_after_turn(project, session_id, turn_id, before.input_items, output_items)
+  call memory_after_turn(project, session_id, turn_id, conversation_items, current_input_start, current_input_count, before.input_items, output_items)
 	return output_items
 ```
 
