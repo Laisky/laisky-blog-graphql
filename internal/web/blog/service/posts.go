@@ -286,33 +286,33 @@ func (s *Blog) filterPosts(ctx context.Context,
 	)
 
 	const defaultPostFilterCapacity = 64
+	filters := [...]func(*model.Post) bool{
+		// filters pipeline
+		passwordFilter,
+		hiddenFilter,
+		i18nFilter,
+		lengthFilter,
+		defaultTypeFilter,
+	}
+
 	results = make([]*model.Post, 0, defaultPostFilterCapacity)
-	isValidate := true
 	for iter.Next(ctx) {
 		post := &model.Post{}
 		if err = iter.Decode(post); err != nil {
 			return nil, errors.Wrap(err, "iter posts")
 		}
 
-		//s.logger.Debug("filter post", zap.String("post", fmt.Sprintf("%+v", result)))
-		for _, f := range [...]func(*model.Post) bool{
-			// filters pipeline
-			passwordFilter,
-			hiddenFilter,
-			i18nFilter,
-			lengthFilter,
-			defaultTypeFilter,
-		} {
+		isValid := true
+		for _, f := range filters {
 			if !f(post) {
-				isValidate = false
+				isValid = false
 				break
 			}
 		}
 
-		if isValidate {
+		if isValid {
 			results = append(results, post)
 		}
-		isValidate = true
 	}
 
 	if err != nil {

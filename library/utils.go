@@ -38,3 +38,23 @@ func StripBearerPrefix(header string) string {
 
 	return strings.Join(fields, " ")
 }
+
+// Truncate truncates string to n runes without extra allocations.
+//
+// It iterates over the string using range, which handles UTF-8 runes
+// correctly and identifies byte boundaries without allocating a []rune slice.
+func Truncate(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+
+	var count int
+	for i := range s {
+		if count == n {
+			return s[:i]
+		}
+		count++
+	}
+
+	return s
+}

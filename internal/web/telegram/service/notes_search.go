@@ -9,6 +9,7 @@ import (
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
+	"github.com/Laisky/laisky-blog-graphql/library"
 	tb "gopkg.in/telebot.v3"
 )
 
@@ -77,21 +78,24 @@ func (s *Telegram) notesSearchByKeyword(ctx context.Context, us *userStat, msg s
 	}
 
 	// Initialize response with first separator
-	resp := "=====================================\n"
+	var resp strings.Builder
+	resp.WriteString("=====================================\n")
 
 	// Append each note's information
 	for _, note := range notes {
 		summary := strings.ReplaceAll(note.Content, "\n", " ")
-		if len([]rune(summary)) > noteSummaryLen {
-			summary = string([]rune(summary)[:noteSummaryLen]) + "..."
+		truncatedSummary := library.Truncate(summary, noteSummaryLen)
+		if len(truncatedSummary) < len(summary) {
+			summary = truncatedSummary + "..."
+		} else {
+			summary = truncatedSummary
 		}
 
-		resp += fmt.Sprintf("link: https://t.me/laiskynotes/%d\n", note.PostID) +
-			fmt.Sprintf("note: %s\n", summary) +
-			"=====================================\n"
+		fmt.Fprintf(&resp, "link: https://t.me/laiskynotes/%d\nnote: %s\n=====================================\n",
+			note.PostID, summary)
 	}
 
-	if _, err = s.bot.Send(us.user, resp, &tb.SendOptions{
+	if _, err = s.bot.Send(us.user, resp.String(), &tb.SendOptions{
 		// ParseMode:             tb.ModeMarkdown,
 		DisableWebPagePreview: true,
 	}); err != nil {

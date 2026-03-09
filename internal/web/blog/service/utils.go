@@ -14,6 +14,7 @@ import (
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"
 
+	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -85,20 +86,10 @@ func convertTitleID(title string) string {
 }
 
 // Truncate truncate string to n runes
+//
+// Deprecated: use library.Truncate instead
 func Truncate(s string, n int) string {
-	if n <= 0 {
-		return s
-	}
-
-	var count int
-	for i := range s {
-		if count == n {
-			return s[:i]
-		}
-		count++
-	}
-
-	return s
+	return library.Truncate(s, n)
 }
 
 func ExtractMenu(html string) string {

@@ -2,7 +2,7 @@ package userrequests
 
 import (
 	"strings"
-	"unicode/utf8"
+	"github.com/Laisky/laisky-blog-graphql/library"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/google/uuid"
@@ -25,9 +25,7 @@ func sanitizeSearchQuery(query string) (string, error) {
 	if strings.ContainsRune(trimmed, '\x00') {
 		return "", errors.Wrap(ErrInvalidSearchQuery, "search query contains invalid null byte")
 	}
-	if utf8.RuneCountInString(trimmed) > maxSearchQueryLength {
-		trimmed = string([]rune(trimmed)[:maxSearchQueryLength])
-	}
+	trimmed = library.Truncate(trimmed, maxSearchQueryLength)
 	return trimmed, nil
 }
 
@@ -74,8 +72,6 @@ func sanitizeRequestContent(content string) (string, error) {
 	if strings.ContainsRune(trimmed, '\x00') {
 		return "", errors.Wrap(ErrInvalidRequestContent, "request content contains invalid null byte")
 	}
-	if utf8.RuneCountInString(trimmed) > maxRequestContentLength {
-		trimmed = string([]rune(trimmed)[:maxRequestContentLength])
-	}
+	trimmed = library.Truncate(trimmed, maxRequestContentLength)
 	return trimmed, nil
 }
