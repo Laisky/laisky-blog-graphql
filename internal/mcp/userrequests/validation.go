@@ -2,10 +2,11 @@ package userrequests
 
 import (
 	"strings"
-	"github.com/Laisky/laisky-blog-graphql/library"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/google/uuid"
+
+	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
 const (
