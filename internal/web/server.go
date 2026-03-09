@@ -168,6 +168,7 @@ func RunServer(addr string, resolver *Resolver) {
 			ginMw.WithLevel(log.Logger.Level().String()),
 			ginMw.WithLogger(log.Logger.Named("gin")),
 		),
+		addSecurityHeaders,
 		allowCORS,
 	)
 
@@ -487,7 +488,7 @@ func shouldServeFrontend(r *http.Request) bool {
 
 func allowCORS(ctx *gin.Context) {
 	logger := ginMw.GetLogger(ctx).Named("cors")
-	origin := ctx.Request.Header.Get("Origin")
+	origin := strings.TrimSpace(ctx.Request.Header.Get("Origin"))
 	allowedOrigin := ""
 
 	// Always add debug logging for CORS requests
@@ -497,32 +498,23 @@ func allowCORS(ctx *gin.Context) {
 		zap.String("user-agent", ctx.Request.Header.Get("User-Agent")))
 
 	if origin != "" {
-		parsedOriginURL, err := url.Parse(origin)
-		if err == nil {
-			host := strings.ToLower(parsedOriginURL.Hostname())
-			// Allow *.laisky.com, laisky.com, and localhost for development
-			if strings.HasSuffix(host, ".laisky.com") ||
-				host == "laisky.com" ||
-				host == "localhost" ||
-				strings.HasPrefix(host, "127.0.0.1") ||
-				strings.HasPrefix(host, "192.168.") ||
-				strings.HasPrefix(host, "10.") ||
-				isCarrierGradeNatIP(host) {
-				allowedOrigin = origin
-				logger.Debug("CORS: origin allowed",
-					zap.String("origin", origin),
-					zap.String("host", host))
-			} else {
-				// Add debug logging for denied origins
-				logger.Debug("CORS: origin denied",
-					zap.String("origin", origin),
-					zap.String("host", host))
-			}
-		} else {
+		allowed, host, reason, err := evaluateCORSOrigin(origin)
+		if err != nil {
 			// Add debug logging for parsing errors
 			logger.Debug("CORS: failed to parse origin",
 				zap.String("origin", origin),
 				zap.Error(err))
+		} else if allowed {
+			allowedOrigin = origin
+			logger.Debug("CORS: origin allowed",
+				zap.String("origin", origin),
+				zap.String("host", host),
+				zap.String("rule", reason))
+		} else {
+			logger.Debug("CORS: origin denied",
+				zap.String("origin", origin),
+				zap.String("host", host),
+				zap.String("reason", reason))
 		}
 	}
 
@@ -561,6 +553,68 @@ func allowCORS(ctx *gin.Context) {
 	ctx.Next()
 }
 
+// evaluateCORSOrigin parses an Origin header, extracts its hostname, and reports whether it is allowed.
+// Parameters: origin is the raw Origin header value from the request.
+// Returns: allowed reports whether the origin is permitted, host is the parsed lowercase hostname when available, reason describes the allow or deny rule, and err reports URL parsing failures.
+func evaluateCORSOrigin(origin string) (allowed bool, host string, reason string, err error) {
+	parsedOriginURL, err := url.Parse(origin)
+	if err != nil {
+		return false, "", "invalid_origin", err
+	}
+
+	host = strings.ToLower(parsedOriginURL.Hostname())
+	if host == "" {
+		return false, "", "missing_host", nil
+	}
+
+	allowed, reason = classifyCORSHost(host)
+	return allowed, host, reason, nil
+}
+
+// classifyCORSHost reports whether a hostname matches the supported production or development origin allowlist.
+// Parameters: host is the lowercase hostname extracted from the Origin header.
+// Returns: allowed reports whether the host is trusted, and reason describes the matched allow or deny rule.
+func classifyCORSHost(host string) (allowed bool, reason string) {
+	switch {
+	case strings.HasSuffix(host, ".laisky.com"):
+		return true, "laisky_subdomain"
+	case host == "laisky.com":
+		return true, "laisky_root_domain"
+	case host == "localhost":
+		return true, "localhost"
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false, "host_not_allowed"
+	}
+
+	return isAllowedDevelopmentIP(ip)
+}
+
+// isAllowedDevelopmentIP reports whether an IP address belongs to the supported local development ranges.
+// Parameters: ip is the parsed IP address from the Origin hostname.
+// Returns: allowed reports whether the IP is trusted for development, and reason describes the matched allow or deny rule.
+func isAllowedDevelopmentIP(ip net.IP) (allowed bool, reason string) {
+	ipv4 := ip.To4()
+	if ipv4 == nil {
+		return false, "ip_not_allowed"
+	}
+
+	switch {
+	case ipv4[0] == 127 && ipv4[1] == 0 && ipv4[2] == 0 && ipv4[3] == 1:
+		return true, "loopback_ipv4"
+	case ipv4[0] == 192 && ipv4[1] == 168:
+		return true, "private_ipv4_192_168"
+	case ipv4[0] == 10:
+		return true, "private_ipv4_10"
+	case isCarrierGradeNatIPv4(ipv4):
+		return true, "carrier_grade_nat_ipv4"
+	default:
+		return false, "ip_not_allowed"
+	}
+}
+
 // newStatusHandler returns a handler that reports MCP service availability.
 func newStatusHandler() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
@@ -577,12 +631,32 @@ func newStatusHandler() gin.HandlerFunc {
 	}
 }
 
-func isCarrierGradeNatIP(host string) bool {
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
+// addSecurityHeaders applies default response headers that harden browser handling without overriding explicit handler values.
+// Parameters: ctx is the current Gin request context.
+// Returns: This middleware does not return values and forwards the request to the next handler.
+func addSecurityHeaders(ctx *gin.Context) {
+	setDefaultHeader(ctx, "X-Content-Type-Options", "nosniff")
+	setDefaultHeader(ctx, "X-Frame-Options", "SAMEORIGIN")
+	setDefaultHeader(ctx, "Referrer-Policy", "strict-origin-when-cross-origin")
+	setDefaultHeader(ctx, "Content-Security-Policy", "frame-ancestors 'self'; base-uri 'self'; form-action 'self'")
+	ctx.Next()
+}
+
+// setDefaultHeader sets a response header only when the current response does not already define it.
+// Parameters: ctx is the current Gin request context, key is the response header name, and value is the default header value.
+// Returns: This helper does not return values.
+func setDefaultHeader(ctx *gin.Context, key string, value string) {
+	if ctx.Writer.Header().Get(key) != "" {
+		return
 	}
 
+	ctx.Header(key, value)
+}
+
+// isCarrierGradeNatIPv4 reports whether an IPv4 address falls within the carrier-grade NAT range 100.64.0.0/10.
+// Parameters: ip is the IPv4 address to inspect.
+// Returns: The return value is true when the IP belongs to the carrier-grade NAT range.
+func isCarrierGradeNatIPv4(ip net.IP) bool {
 	ip = ip.To4()
 	if ip == nil {
 		return false

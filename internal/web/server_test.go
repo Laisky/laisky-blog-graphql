@@ -147,6 +147,38 @@ func TestAllowCORS(t *testing.T) {
 			expectedOrigin: "https://100.70.1.2",
 		},
 		{
+			name:           "Attack host using loopback prefix is denied",
+			method:         "GET",
+			origin:         "https://127.0.0.1.attacker.com",
+			expectedStatus: http.StatusOK,
+			expectedCORS:   false,
+			expectedOrigin: "",
+		},
+		{
+			name:           "Attack host using private 192.168 prefix is denied",
+			method:         "GET",
+			origin:         "https://192.168.1.10.attacker.com",
+			expectedStatus: http.StatusOK,
+			expectedCORS:   false,
+			expectedOrigin: "",
+		},
+		{
+			name:           "Attack host using private 10 prefix is denied",
+			method:         "GET",
+			origin:         "https://10.0.0.8.attacker.com",
+			expectedStatus: http.StatusOK,
+			expectedCORS:   false,
+			expectedOrigin: "",
+		},
+		{
+			name:           "Attack host using CGNAT prefix is denied",
+			method:         "GET",
+			origin:         "https://100.70.1.2.attacker.com",
+			expectedStatus: http.StatusOK,
+			expectedCORS:   false,
+			expectedOrigin: "",
+		},
+		{
 			name:           "Outside CGNAT range",
 			method:         "GET",
 			origin:         "https://100.128.0.1",
@@ -266,6 +298,52 @@ func TestAllowCORSEdgeCases(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "https://blog.laisky.com:8080", w.Header().Get("Access-Control-Allow-Origin"))
+	})
+}
+
+func TestAddSecurityHeaders(t *testing.T) {
+	setupGinTestMode()
+	t.Parallel()
+
+	t.Run("Headers are applied to standard responses", func(t *testing.T) {
+		t.Parallel()
+
+		router := gin.New()
+		router.Use(addSecurityHeaders)
+		router.GET("/test", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "success"})
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
+		require.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+		require.Equal(t, "strict-origin-when-cross-origin", w.Header().Get("Referrer-Policy"))
+		require.Equal(t, "frame-ancestors 'self'; base-uri 'self'; form-action 'self'", w.Header().Get("Content-Security-Policy"))
+	})
+
+	t.Run("Headers survive CORS preflight short circuit", func(t *testing.T) {
+		t.Parallel()
+
+		router := gin.New()
+		router.Use(addSecurityHeaders, allowCORS)
+		router.Any("/test", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "success"})
+		})
+
+		req := httptest.NewRequest(http.MethodOptions, "/test", nil)
+		req.Header.Set("Origin", "https://blog.laisky.com")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusNoContent, w.Code)
+		require.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
+		require.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+		require.Equal(t, "strict-origin-when-cross-origin", w.Header().Get("Referrer-Policy"))
+		require.Equal(t, "frame-ancestors 'self'; base-uri 'self'; form-action 'self'", w.Header().Get("Content-Security-Policy"))
 	})
 }
 
