@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/Laisky/errors/v2"
@@ -93,11 +92,11 @@ func (s *Telegram) notesSearchByKeyword(ctx context.Context, us *userStat, msg s
 			summary = truncatedSummary
 		}
 
-		resp.WriteString("link: https://t.me/laiskynotes/")
-		resp.WriteString(strconv.FormatInt(int64(note.PostID), 10))
-		resp.WriteString("\nnote: ")
-		resp.WriteString(summary)
-		resp.WriteString("\n=====================================\n")
+		_, _ = fmt.Fprintf(&resp,
+			"link: https://t.me/laiskynotes/%d\nnote: %s\n=====================================\n",
+			note.PostID,
+			summary,
+		)
 	}
 
 	if _, err = s.bot.Send(us.user, resp.String(), &tb.SendOptions{

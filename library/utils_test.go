@@ -62,6 +62,9 @@ func TestTruncate_MemoryIsolation(t *testing.T) {
 	truncated := Truncate(input, 3)
 
 	require.Equal(t, "你好你", truncated)
+	// Truncate clones truncated strings so persisted user input does not keep
+	// the original large backing string alive; comparing StringData pointers
+	// verifies the cloned result has distinct storage.
 	require.NotEqual(t,
 		uintptr(unsafe.Pointer(unsafe.StringData(input))),
 		uintptr(unsafe.Pointer(unsafe.StringData(truncated))),
