@@ -1,6 +1,7 @@
 package userrequests
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,4 +22,18 @@ func TestSanitizeCursor_Invalid(t *testing.T) {
 	_, err := sanitizeCursor("not-a-uuid")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrInvalidCursor)
+}
+
+// TestSanitizeSearchQuery_Truncates verifies overlong search queries are trimmed and bounded.
+func TestSanitizeSearchQuery_Truncates(t *testing.T) {
+	query, err := sanitizeSearchQuery(strings.Repeat("你", maxSearchQueryLength+10))
+	require.NoError(t, err)
+	require.Len(t, []rune(query), maxSearchQueryLength)
+}
+
+// TestSanitizeRequestContent_Truncates verifies overlong request content is trimmed and bounded.
+func TestSanitizeRequestContent_Truncates(t *testing.T) {
+	content, err := sanitizeRequestContent(strings.Repeat("x", maxRequestContentLength+32))
+	require.NoError(t, err)
+	require.Len(t, content, maxRequestContentLength)
 }

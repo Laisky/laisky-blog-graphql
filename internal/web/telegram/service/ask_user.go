@@ -15,6 +15,7 @@ import (
 	tb "gopkg.in/telebot.v3"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/formatting"
 )
 
 func (s *Telegram) SetAskUserService(svc *askuser.Service) {
@@ -30,12 +31,26 @@ func (s *Telegram) OnNewRequest(ctx context.Context, req *askuser.Request) {
 		return
 	}
 
-	msgText := fmt.Sprintf("❓ *New Question*\n\n%s", escapeMsg(req.Question))
+	escapedQuestion := escapeMsg(req.Question)
+	msgText := fmt.Sprintf("❓ *New Question*\n\n%s", escapedQuestion)
+	logger.Debug("prepared ask_user telegram question",
+		zap.Int("uid", uid),
+		zap.String("request_id", req.ID.String()),
+		zap.Int("question_len", len(req.Question)),
+		zap.Int("escaped_question_len", len(escapedQuestion)),
+		zap.Int("message_len", len(msgText)),
+	)
 	msg, err := s.bot.Send(&tb.User{ID: int64(uid)}, msgText, &tb.SendOptions{
 		ParseMode: tb.ModeMarkdown,
 	})
 	if err != nil {
-		logger.Error("failed to send ask_user question to telegram", zap.Error(err), zap.Int("uid", uid))
+		logger.Error("failed to send ask_user question to telegram",
+			zap.Error(err),
+			zap.Int("uid", uid),
+			zap.String("request_id", req.ID.String()),
+			zap.Int("question_len", len(req.Question)),
+			zap.Int("escaped_question_len", len(escapedQuestion)),
+		)
 		return
 	}
 
@@ -51,11 +66,25 @@ func (s *Telegram) OnRequestCancelled(ctx context.Context, req *askuser.Request)
 		return
 	}
 
-	msgText := fmt.Sprintf("❌ *Question Cancelled*\n\nThe question has been cancelled or expired: %s", escapeMsg(req.Question))
+	escapedQuestion := escapeMsg(req.Question)
+	msgText := fmt.Sprintf("❌ *Question Cancelled*\n\nThe question has been cancelled or expired: %s", escapedQuestion)
+	logger.Debug("prepared ask_user cancellation message",
+		zap.Int("uid", uid),
+		zap.String("request_id", req.ID.String()),
+		zap.Int("question_len", len(req.Question)),
+		zap.Int("escaped_question_len", len(escapedQuestion)),
+		zap.Int("message_len", len(msgText)),
+	)
 	if _, err := s.bot.Send(&tb.User{ID: int64(uid)}, msgText, &tb.SendOptions{
 		ParseMode: tb.ModeMarkdown,
 	}); err != nil {
-		logger.Error("failed to send ask_user cancellation to telegram", zap.Error(err), zap.Int("uid", uid))
+		logger.Error("failed to send ask_user cancellation to telegram",
+			zap.Error(err),
+			zap.Int("uid", uid),
+			zap.String("request_id", req.ID.String()),
+			zap.Int("question_len", len(req.Question)),
+			zap.Int("escaped_question_len", len(escapedQuestion)),
+		)
 	}
 
 	s.clearAskUserSession(int64(uid), 0, req.ID)
@@ -228,26 +257,5 @@ func (s *Telegram) handleAskUserAnswer(ctx context.Context, c tb.Context, reqID 
 
 // escapeMsg escapes special characters in a message to prevent Telegram from interpreting them as formatting
 func escapeMsg(msg string) string {
-	// Escape special characters that Telegram interprets as formatting
-	// Replace backticks with single quotes to avoid code block formatting issues
-	msg = strings.ReplaceAll(msg, "`", "'")
-
-	// Escape other special Telegram formatting characters
-	msg = strings.ReplaceAll(msg, "_", "\\_")
-	msg = strings.ReplaceAll(msg, "*", "\\*")
-	msg = strings.ReplaceAll(msg, "[", "\\[")
-	msg = strings.ReplaceAll(msg, "]", "\\]")
-	msg = strings.ReplaceAll(msg, "(", "\\(")
-	msg = strings.ReplaceAll(msg, ")", "\\)")
-	msg = strings.ReplaceAll(msg, "~", "\\~")
-	msg = strings.ReplaceAll(msg, ">", "\\>")
-	msg = strings.ReplaceAll(msg, "#", "\\#")
-	msg = strings.ReplaceAll(msg, "+", "\\+")
-	msg = strings.ReplaceAll(msg, "-", "\\-")
-	msg = strings.ReplaceAll(msg, "=", "\\=")
-	msg = strings.ReplaceAll(msg, "|", "\\|")
-	msg = strings.ReplaceAll(msg, "{", "\\{")
-	msg = strings.ReplaceAll(msg, "}", "\\}")
-
-	return msg
+	return formatting.EscapeTelegramMarkdown(msg)
 }

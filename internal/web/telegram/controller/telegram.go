@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/formatting"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
@@ -173,10 +173,12 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		maxlen = 3000
 	}
 
-	// Truncate message if too long, preserving closing delimiters if present
-	msgRunes := []rune(msg)
-	if len(msgRunes) > maxlen {
-		msg = escapeMsg(string(msgRunes[:maxlen]) + "...")
+	// Truncate message if too long.
+	truncatedMsg := library.Truncate(msg, maxlen)
+	if len(truncatedMsg) < len(msg) {
+		msg = escapeMsg(truncatedMsg) + "..."
+	} else {
+		msg = escapeMsg(msg)
 	}
 
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
@@ -213,26 +215,5 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 
 // escapeMsg escapes special characters in a message to prevent Telegram from interpreting them as formatting
 func escapeMsg(msg string) string {
-	// Escape special characters that Telegram interprets as formatting
-	// Replace backticks with single quotes to avoid code block formatting issues
-	msg = strings.ReplaceAll(msg, "`", "'")
-
-	// Escape other special Telegram formatting characters
-	msg = strings.ReplaceAll(msg, "_", "\\_")
-	msg = strings.ReplaceAll(msg, "*", "\\*")
-	msg = strings.ReplaceAll(msg, "[", "\\[")
-	msg = strings.ReplaceAll(msg, "]", "\\]")
-	msg = strings.ReplaceAll(msg, "(", "\\(")
-	msg = strings.ReplaceAll(msg, ")", "\\)")
-	msg = strings.ReplaceAll(msg, "~", "\\~")
-	msg = strings.ReplaceAll(msg, ">", "\\>")
-	msg = strings.ReplaceAll(msg, "#", "\\#")
-	msg = strings.ReplaceAll(msg, "+", "\\+")
-	msg = strings.ReplaceAll(msg, "-", "\\-")
-	msg = strings.ReplaceAll(msg, "=", "\\=")
-	msg = strings.ReplaceAll(msg, "|", "\\|")
-	msg = strings.ReplaceAll(msg, "{", "\\{")
-	msg = strings.ReplaceAll(msg, "}", "\\}")
-
-	return msg
+	return formatting.EscapeTelegramMarkdown(msg)
 }
