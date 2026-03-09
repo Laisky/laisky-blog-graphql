@@ -25,7 +25,6 @@ func TestSanitizeCursor_Invalid(t *testing.T) {
 }
 
 // TestSanitizeSearchQuery_Truncates verifies overlong search queries are trimmed and bounded.
-// It accepts no parameters besides the testing handle and asserts on truncation behavior.
 func TestSanitizeSearchQuery_Truncates(t *testing.T) {
 	query, err := sanitizeSearchQuery(strings.Repeat("你", maxSearchQueryLength+10))
 	require.NoError(t, err)
@@ -33,7 +32,6 @@ func TestSanitizeSearchQuery_Truncates(t *testing.T) {
 }
 
 // TestSanitizeRequestContent_Truncates verifies overlong request content is trimmed and bounded.
-// It accepts no parameters besides the testing handle and asserts on truncation behavior.
 func TestSanitizeRequestContent_Truncates(t *testing.T) {
 	content, err := sanitizeRequestContent(strings.Repeat("x", maxRequestContentLength+32))
 	require.NoError(t, err)

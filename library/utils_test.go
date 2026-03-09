@@ -57,7 +57,7 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
-func TestTruncateClonesTruncatedSubstring(t *testing.T) {
+func TestTruncate_MemoryIsolation(t *testing.T) {
 	input := strings.Repeat("你好", 8)
 	truncated := Truncate(input, 3)
 
