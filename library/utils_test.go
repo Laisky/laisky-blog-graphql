@@ -70,3 +70,26 @@ func TestTruncate_MemoryIsolation(t *testing.T) {
 		uintptr(unsafe.Pointer(unsafe.StringData(truncated))),
 	)
 }
+	tests := []struct {
+		name     string
+		s        string
+		n        int
+		expected string
+	}{
+		{"empty", "", 5, ""},
+		{"short", "abc", 5, "abc"},
+		{"exact", "abcde", 5, "abcde"},
+		{"long", "abcdef", 5, "abcde"},
+		{"utf8_short", "你好", 5, "你好"},
+		{"utf8_exact", "你好世界", 4, "你好世界"},
+		{"utf8_long", "你好世界！", 4, "你好世界"},
+		{"zero", "abc", 0, "abc"},
+		{"negative", "abc", -1, "abc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, Truncate(tt.s, tt.n))
+		})
+	}
+}
