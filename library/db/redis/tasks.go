@@ -49,7 +49,7 @@ func (db *DB) GetLLMStormTaskResult(ctx context.Context, taskID string) (task *L
 
 // AddHTMLCrawlerTask adds a new HTMLCrawlerTask to the queue.
 func (db *DB) AddHTMLCrawlerTask(ctx context.Context, url string) (taskID string, err error) {
-	return db.AddHTMLCrawlerTaskWithOptions(ctx, url, "", false)
+	return db.AddHTMLCrawlerTaskWithOptions(ctx, url, "", true)
 }
 
 // AddHTMLCrawlerTaskWithOptions adds a new HTMLCrawlerTask to the queue with extra fields.

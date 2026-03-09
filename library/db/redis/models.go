@@ -123,15 +123,13 @@ func NewHTMLCrawlerTaskFromString(taskStr string) (*HTMLCrawlerTask, error) {
 }
 
 // NewHTMLCrawlerTask creates a new HTMLCrawlerTask instance.
-
-// NewHTMLCrawlerTask creates a new HTMLCrawlerTask instance.
 func NewHTMLCrawlerTask(url string) *HTMLCrawlerTask {
-	return NewHTMLCrawlerTaskWithOptions(url, "", false)
+	return NewHTMLCrawlerTaskWithOptions(url, "", true)
 }
 
 // NewHTMLCrawlerTaskWithOptions creates a new HTMLCrawlerTask instance with additional options.
 // apiKey may be empty. When outputMarkdown is true and apiKey is not empty, the task runner may
-// convert the fetched HTML body to markdown.
+// convert the fetched HTML body to markdown. Callers can pass false to keep returning raw HTML.
 func NewHTMLCrawlerTaskWithOptions(url, apiKey string, outputMarkdown bool) *HTMLCrawlerTask {
 	return &HTMLCrawlerTask{
 		baseTask:       newBaseTask(),

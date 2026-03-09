@@ -94,12 +94,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultError("missing authorization bearer token"), nil
 	}
 
-	outputMarkdown := true
-	if args, ok := req.Params.Arguments.(map[string]any); ok {
-		if raw, ok := args["output_markdown"]; ok {
-			outputMarkdown = parseOptionalBool(raw)
-		}
-	}
+	outputMarkdown := resolveOutputMarkdownArg(req.Params.Arguments)
 
 	start := time.Now().UTC()
 	logURL := sanitizeURLForLog(urlValue)
@@ -153,15 +148,39 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	return toolResult, nil
 }
 
-// parseOptionalBool parses optional boolean-like values from MCP JSON arguments.
-// It takes a raw value and returns true only when the value explicitly represents true.
-func parseOptionalBool(raw any) bool {
+// resolveOutputMarkdownArg returns whether web_fetch should return markdown.
+// It defaults to true and only returns false when the caller explicitly provides
+// a false-like value for output_markdown.
+func resolveOutputMarkdownArg(arguments any) bool {
+	args, ok := arguments.(map[string]any)
+	if !ok {
+		return true
+	}
+
+	raw, ok := args["output_markdown"]
+	if !ok {
+		return true
+	}
+
+	return parseExplicitFalseBool(raw)
+}
+
+// parseExplicitFalseBool parses optional boolean-like values from MCP JSON arguments.
+// It defaults to true and returns false only when the value explicitly represents false.
+func parseExplicitFalseBool(raw any) bool {
 	switch v := raw.(type) {
 	case bool:
 		return v
 	case string:
 		s := strings.TrimSpace(strings.ToLower(v))
-		return s == "true" || s == "1" || s == "yes" || s == "y" || s == "on"
+		switch s {
+		case "false", "0", "no", "n", "off":
+			return false
+		case "", "true", "1", "yes", "y", "on":
+			return true
+		default:
+			return true
+		}
 	case float64:
 		// MCP JSON numbers decode into float64
 		return v != 0
@@ -172,7 +191,7 @@ func parseOptionalBool(raw any) bool {
 	case uint64:
 		return v != 0
 	default:
-		return false
+		return true
 	}
 }
 
