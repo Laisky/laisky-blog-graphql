@@ -168,6 +168,7 @@ func RunServer(addr string, resolver *Resolver) {
 			ginMw.WithLevel(log.Logger.Level().String()),
 			ginMw.WithLogger(log.Logger.Named("gin")),
 		),
+		addSecurityHeaders,
 		allowCORS,
 	)
 
@@ -504,10 +505,7 @@ func allowCORS(ctx *gin.Context) {
 			if strings.HasSuffix(host, ".laisky.com") ||
 				host == "laisky.com" ||
 				host == "localhost" ||
-				strings.HasPrefix(host, "127.0.0.1") ||
-				strings.HasPrefix(host, "192.168.") ||
-				strings.HasPrefix(host, "10.") ||
-				isCarrierGradeNatIP(host) {
+				isInternalIPAddress(host) {
 				allowedOrigin = origin
 				logger.Debug("CORS: origin allowed",
 					zap.String("origin", origin),
@@ -577,8 +575,17 @@ func newStatusHandler() gin.HandlerFunc {
 	}
 }
 
-func isCarrierGradeNatIP(host string) bool {
+// isInternalIPAddress checks if the host is a loopback, private, or carrier-grade NAT IP address.
+func isInternalIPAddress(host string) bool {
 	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	return ip.IsLoopback() || ip.IsPrivate() || isCarrierGradeNatIP(ip)
+}
+
+func isCarrierGradeNatIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
@@ -615,6 +622,15 @@ func classifyGraphQLClientError(errMsg string) (isClientSideErr bool, reason str
 	}
 
 	return false, "server_error"
+}
+
+func addSecurityHeaders(ctx *gin.Context) {
+	ctx.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+	ctx.Header("X-Content-Type-Options", "nosniff")
+	ctx.Header("X-Frame-Options", "SAMEORIGIN")
+	ctx.Header("X-XSS-Protection", "1; mode=block")
+	ctx.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+	ctx.Next()
 }
 
 func allowUnprefixedAsset(path string) bool {

@@ -1,0 +1,36 @@
+<<<<<<< SEARCH
+	server.Use(
+		gin.Recovery(),
+		ginMw.NewLoggerMiddleware(
+			ginMw.WithLoggerMwColored(),
+			ginMw.WithLevel(log.Logger.Level().String()),
+			ginMw.WithLogger(log.Logger.Named("gin")),
+		),
+		allowCORS,
+	)
+=======
+	server.Use(
+		gin.Recovery(),
+		ginMw.NewLoggerMiddleware(
+			ginMw.WithLoggerMwColored(),
+			ginMw.WithLevel(log.Logger.Level().String()),
+			ginMw.WithLogger(log.Logger.Named("gin")),
+		),
+		addSecurityHeaders,
+		allowCORS,
+	)
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+func allowUnprefixedAsset(path string) bool {
+=======
+func addSecurityHeaders(ctx *gin.Context) {
+	ctx.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+	ctx.Header("X-Content-Type-Options", "nosniff")
+	ctx.Header("X-Frame-Options", "SAMEORIGIN")
+	ctx.Header("X-XSS-Protection", "1; mode=block")
+	ctx.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+	ctx.Next()
+}
+
+func allowUnprefixedAsset(path string) bool {
+>>>>>>> REPLACE

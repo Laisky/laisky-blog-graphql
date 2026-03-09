@@ -1,0 +1,38 @@
+<<<<<<< SEARCH
+func isCarrierGradeNatIP(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	ip = ip.To4()
+	if ip == nil {
+		return false
+	}
+
+	return ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127
+}
+=======
+// isInternalIPAddress checks if the host is a loopback, private, or carrier-grade NAT IP address.
+func isInternalIPAddress(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	return ip.IsLoopback() || ip.IsPrivate() || isCarrierGradeNatIP(ip)
+}
+
+func isCarrierGradeNatIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+
+	ip = ip.To4()
+	if ip == nil {
+		return false
+	}
+
+	return ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127
+}
+>>>>>>> REPLACE
