@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/formatting"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
@@ -213,26 +213,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	return alert, nil
 }
 
-var telegramMsgReplacer = strings.NewReplacer(
-	"`", "'",
-	"_", "\\_",
-	"*", "\\*",
-	"[", "\\[",
-	"]", "\\]",
-	"(", "\\(",
-	")", "\\)",
-	"~", "\\~",
-	">", "\\>",
-	"#", "\\#",
-	"+", "\\+",
-	"-", "\\-",
-	"=", "\\=",
-	"|", "\\|",
-	"{", "\\{",
-	"}", "\\}",
-)
-
 // escapeMsg escapes special characters in a message to prevent Telegram from interpreting them as formatting
 func escapeMsg(msg string) string {
-	return telegramMsgReplacer.Replace(msg)
+	return formatting.EscapeTelegramMarkdown(msg)
 }

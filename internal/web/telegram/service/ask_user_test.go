@@ -5,7 +5,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/formatting"
 )
+
+func TestEscapeMsgUsesSharedTelegramFormatting(t *testing.T) {
+	input := "question-beta=gamma|{delta}`"
+	require.Equal(t, formatting.EscapeTelegramMarkdown(input), escapeMsg(input))
+}
 
 func TestBuildAskUserIntroPrompt(t *testing.T) {
 	t.Run("without payload", func(t *testing.T) {
