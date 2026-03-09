@@ -173,7 +173,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		maxlen = 3000
 	}
 
-	// Truncate message if too long, preserving closing delimiters if present
+	// Truncate message if too long.
 	truncatedMsg := library.Truncate(msg, maxlen)
 	if len(truncatedMsg) < len(msg) {
 		msg = escapeMsg(truncatedMsg) + "..."
@@ -212,8 +212,6 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	}
 	return alert, nil
 }
-
-
 
 var telegramMsgReplacer = strings.NewReplacer(
 	"`", "'",
