@@ -60,7 +60,8 @@ func TestValidateStartupConfigWithGetterInvalidWebsearchEngine(t *testing.T) {
 		"settings": map[string]any{
 			"websearch": map[string]any{
 				"engines": map[string]any{
-					"google": map[string]any{
+					"my_google": map[string]any{
+						"type":    "google",
 						"enabled": true,
 					},
 				},
@@ -70,8 +71,8 @@ func TestValidateStartupConfigWithGetterInvalidWebsearchEngine(t *testing.T) {
 
 	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "settings.websearch.engines.google.api_key")
-	require.Contains(t, err.Error(), "settings.websearch.engines.google.cx")
+	require.Contains(t, err.Error(), "settings.websearch.engines.my_google.api_key")
+	require.Contains(t, err.Error(), "settings.websearch.engines.my_google.cx")
 }
 
 // TestValidateStartupConfigWithGetterValidConfig verifies valid explicit configuration passes validation.
@@ -147,7 +148,8 @@ func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 			"websearch": map[string]any{
 				"max_retry": 2,
 				"engines": map[string]any{
-					"google": map[string]any{
+					"my_google": map[string]any{
+						"type":     "google",
 						"enabled":  true,
 						"priority": 1,
 						"api_key":  "x",

@@ -18,11 +18,16 @@ type GoogleEngineAdapter struct {
 
 // NewGoogleEngineAdapter wraps the provided google.SearchEngine so that it satisfies the Engine interface.
 // It returns the initialised adapter or an error when the input engine is nil.
-func NewGoogleEngineAdapter(engine *google.SearchEngine) (*GoogleEngineAdapter, error) {
+// An optional name overrides the default engine identifier; when empty, the default is used.
+func NewGoogleEngineAdapter(engine *google.SearchEngine, name ...string) (*GoogleEngineAdapter, error) {
 	if engine == nil {
 		return nil, errors.New("google search engine cannot be nil")
 	}
-	return &GoogleEngineAdapter{engine: engine, name: googleProgrammableEngineName}, nil
+	n := googleProgrammableEngineName
+	if len(name) > 0 && name[0] != "" {
+		n = name[0]
+	}
+	return &GoogleEngineAdapter{engine: engine, name: n}, nil
 }
 
 // Name returns the configured identifier for the Google engine.

@@ -509,13 +509,24 @@ func buildSearchEngineTiers(logger logSDK.Logger) ([][]searchlib.Engine, int) {
 			priority = 1
 		}
 
-		engine, err := instantiateSearchEngine(name, cfg)
+		engineType := stringFromValue(cfg["type"])
+		if engineType == "" {
+			// backward compatibility: if no type is specified, use the engine name as type
+			engineType = name
+		}
+
+		engine, err := instantiateSearchEngine(name, engineType, cfg)
 		if err != nil {
-			logger.Error("init search engine", zap.String("engine", name), zap.Error(err))
+			logger.Error("init search engine",
+				zap.String("engine", name),
+				zap.String("type", engineType),
+				zap.Error(err))
 			continue
 		}
 		if engine == nil {
-			logger.Warn("skip unknown search engine", zap.String("engine", name))
+			logger.Warn("skip unknown search engine type",
+				zap.String("engine", name),
+				zap.String("type", engineType))
 			continue
 		}
 
@@ -544,16 +555,17 @@ func buildSearchEngineTiers(logger logSDK.Logger) ([][]searchlib.Engine, int) {
 	return tiers, maxRetries
 }
 
-// instantiateSearchEngine creates a concrete search engine based on its name and raw configuration map.
-func instantiateSearchEngine(name string, cfg map[string]any) (searchlib.Engine, error) {
-	switch name {
+// instantiateSearchEngine creates a concrete search engine based on its type and raw configuration map.
+// The name parameter is the user-chosen identifier for the engine instance.
+func instantiateSearchEngine(name, engineType string, cfg map[string]any) (searchlib.Engine, error) {
+	switch engineType {
 	case "google":
 		apiKey := stringFromValue(cfg["api_key"])
 		cx := stringFromValue(cfg["cx"])
 		if apiKey == "" || cx == "" {
 			return nil, errors.New("missing api_key or cx")
 		}
-		adapter, err := searchlib.NewGoogleEngineAdapter(google.NewSearchEngine(apiKey, cx))
+		adapter, err := searchlib.NewGoogleEngineAdapter(google.NewSearchEngine(apiKey, cx), name)
 		if err != nil {
 			return nil, errors.Wrap(err, "wrap google adapter")
 		}
@@ -563,7 +575,7 @@ func instantiateSearchEngine(name string, cfg map[string]any) (searchlib.Engine,
 		if apiKey == "" {
 			return nil, errors.New("missing api_key")
 		}
-		return serpgoogle.NewSearchEngine(apiKey), nil
+		return serpgoogle.NewSearchEngine(apiKey, serpgoogle.WithName(name)), nil
 	default:
 		return nil, nil
 	}

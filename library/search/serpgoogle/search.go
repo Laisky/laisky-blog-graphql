@@ -60,6 +60,16 @@ func WithDefaultParameters(parameters map[string]string) Option {
 	}
 }
 
+// WithName overrides the default engine name used by the manager to identify this instance.
+func WithName(name string) Option {
+	return func(engine *SearchEngine) {
+		trimmed := strings.TrimSpace(name)
+		if trimmed != "" {
+			engine.name = trimmed
+		}
+	}
+}
+
 // WithEndpoint overrides the SerpApi endpoint, primarily for testing.
 func WithEndpoint(endpoint string) Option {
 	return func(engine *SearchEngine) {
@@ -77,6 +87,7 @@ type SearchEngine struct {
 	endpoint      string
 	defaultParams map[string]string
 	logger        logSDK.Logger
+	name          string
 }
 
 // NewSearchEngine constructs a SerpApi-backed search engine using the provided API key.
@@ -89,6 +100,7 @@ func NewSearchEngine(apiKey string, opts ...Option) *SearchEngine {
 		endpoint:      defaultEndpoint,
 		defaultParams: map[string]string{"engine": "google", "device": "desktop"},
 		logger:        log.Logger.Named("serp_google"),
+		name:          serpGoogleEngineName,
 	}
 
 	for _, opt := range opts {
@@ -102,6 +114,9 @@ func NewSearchEngine(apiKey string, opts ...Option) *SearchEngine {
 
 // Name returns the identifier used by the manager to distinguish the engine.
 func (e *SearchEngine) Name() string {
+	if e.name != "" {
+		return e.name
+	}
 	return serpGoogleEngineName
 }
 

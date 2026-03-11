@@ -102,12 +102,19 @@ settings:
   websearch:
     max_retry: 3 # default: 3
     engines:
-      google:
+      my_google: # engine name (unique identifier)
+        type: google # required: engine type (google, serp_google)
         enabled: true # default: false
         priority: 1 # lower numbers indicate higher priority; default is 1
         api_key: YOUR_GOOGLE_API_KEY
         cx: YOUR_PROGRAMMABLE_SEARCH_ENGINE_ID
-      serp_google:
+      my_serp_1: # you can configure multiple engines of the same type
+        type: serp_google
         enabled: true
         priority: 2
-        api_key: YOUR_SERP_API_KEY
+        api_key: YOUR_SERP_API_KEY_1
+      my_serp_2:
+        type: serp_google
+        enabled: true
+        priority: 2
+        api_key: YOUR_SERP_API_KEY_2

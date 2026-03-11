@@ -196,12 +196,28 @@ func validateWebsearchConfig(get configGetter, errs *[]string) {
 			continue
 		}
 
-		switch engineName {
+		engineType := ""
+		if typeVal, ok := engineCfg["type"]; ok {
+			if s, isStr := typeVal.(string); isStr && s != "" {
+				engineType = s
+			} else {
+				appendValidationError(errs, "settings.websearch.engines.%s.type must be a non-empty string", engineName)
+				continue
+			}
+		} else {
+			// backward compatibility: use engine name as type if not specified
+			engineType = engineName
+		}
+
+		prefix := fmt.Sprintf("settings.websearch.engines.%s", engineName)
+		switch engineType {
 		case "google":
-			validateRequiredStringInMap(errs, engineCfg, "settings.websearch.engines.google.api_key")
-			validateRequiredStringInMap(errs, engineCfg, "settings.websearch.engines.google.cx")
+			validateRequiredStringInMap(errs, engineCfg, prefix+".api_key")
+			validateRequiredStringInMap(errs, engineCfg, prefix+".cx")
 		case "serp_google":
-			validateRequiredStringInMap(errs, engineCfg, "settings.websearch.engines.serp_google.api_key")
+			validateRequiredStringInMap(errs, engineCfg, prefix+".api_key")
+		default:
+			appendValidationError(errs, "settings.websearch.engines.%s.type has unknown value %q", engineName, engineType)
 		}
 	}
 }
