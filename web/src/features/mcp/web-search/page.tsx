@@ -21,6 +21,8 @@ interface WebSearchResponse {
   WebSearch: {
     query: string;
     created_at: string;
+    engine_name: string | null;
+    engine_type: string | null;
     results: WebSearchResultItem[];
   };
 }
@@ -30,6 +32,8 @@ const WEB_SEARCH_MUTATION = `
     WebSearch(query: $query) {
       query
       created_at
+      engine_name
+      engine_type
       results {
         name
         url
@@ -178,7 +182,19 @@ export function WebSearchPage() {
 
                 {lastResult && (
                   <div className="mt-6 space-y-4">
-                    <h3 className="text-sm font-medium text-foreground">Results:</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium text-foreground">Results:</h3>
+                      {lastResult.engine_type && (
+                        <Badge variant="outline" className="text-xs">
+                          {lastResult.engine_type}
+                        </Badge>
+                      )}
+                      {lastResult.engine_name && (
+                        <Badge variant="secondary" className="text-xs">
+                          {lastResult.engine_name}
+                        </Badge>
+                      )}
+                    </div>
                     <div className="max-h-[600px] overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-4">
                       {lastResult.results.length === 0 ? (
                         <p className="text-muted-foreground italic">No results found.</p>

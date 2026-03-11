@@ -120,6 +120,11 @@ func (e *SearchEngine) Name() string {
 	return serpGoogleEngineName
 }
 
+// Type returns the engine type identifier.
+func (e *SearchEngine) Type() string {
+	return "serp_google"
+}
+
 // Search performs the SerpApi request and returns the organic results as SearchResultItem values.
 func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.SearchResultItem, error) {
 	trimmedQuery := strings.TrimSpace(query)

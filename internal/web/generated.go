@@ -14,9 +14,6 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
-	gqlparser "github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
-
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
 	dto1 "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
@@ -26,6 +23,8 @@ import (
 	model1 "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
+	gqlparser "github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // region    ************************** generated!.gotpl **************************
@@ -302,9 +301,11 @@ type ComplexityRoot struct {
 	}
 
 	WebSearchResult struct {
-		CreatedAt func(childComplexity int) int
-		Query     func(childComplexity int) int
-		Results   func(childComplexity int) int
+		CreatedAt  func(childComplexity int) int
+		EngineName func(childComplexity int) int
+		EngineType func(childComplexity int) int
+		Query      func(childComplexity int) int
+		Results    func(childComplexity int) int
 	}
 
 	WebSearchResultItem struct {
@@ -1577,6 +1578,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.WebSearchResult.CreatedAt(childComplexity), true
+	case "WebSearchResult.engine_name":
+		if e.complexity.WebSearchResult.EngineName == nil {
+			break
+		}
+
+		return e.complexity.WebSearchResult.EngineName(childComplexity), true
+	case "WebSearchResult.engine_type":
+		if e.complexity.WebSearchResult.EngineType == nil {
+			break
+		}
+
+		return e.complexity.WebSearchResult.EngineType(childComplexity), true
 	case "WebSearchResult.query":
 		if e.complexity.WebSearchResult.Query == nil {
 			break
@@ -5517,6 +5530,10 @@ func (ec *executionContext) fieldContext_Mutation_WebSearch(ctx context.Context,
 				return ec.fieldContext_WebSearchResult_query(ctx, field)
 			case "created_at":
 				return ec.fieldContext_WebSearchResult_created_at(ctx, field)
+			case "engine_name":
+				return ec.fieldContext_WebSearchResult_engine_name(ctx, field)
+			case "engine_type":
+				return ec.fieldContext_WebSearchResult_engine_type(ctx, field)
 			case "results":
 				return ec.fieldContext_WebSearchResult_results(ctx, field)
 			}
@@ -8339,6 +8356,64 @@ func (ec *executionContext) fieldContext_WebSearchResult_created_at(_ context.Co
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _WebSearchResult_engine_name(ctx context.Context, field graphql.CollectedField, obj *search.SearchResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebSearchResult_engine_name,
+		func(ctx context.Context) (any, error) {
+			return obj.EngineName, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_WebSearchResult_engine_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "WebSearchResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _WebSearchResult_engine_type(ctx context.Context, field graphql.CollectedField, obj *search.SearchResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_WebSearchResult_engine_type,
+		func(ctx context.Context) (any, error) {
+			return obj.EngineType, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_WebSearchResult_engine_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "WebSearchResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -13266,6 +13341,10 @@ func (ec *executionContext) _WebSearchResult(ctx context.Context, sel ast.Select
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "engine_name":
+			out.Values[i] = ec._WebSearchResult_engine_name(ctx, field, obj)
+		case "engine_type":
+			out.Values[i] = ec._WebSearchResult_engine_type(ctx, field, obj)
 		case "results":
 			out.Values[i] = ec._WebSearchResult_results(ctx, field, obj)
 			if out.Values[i] == graphql.Null {

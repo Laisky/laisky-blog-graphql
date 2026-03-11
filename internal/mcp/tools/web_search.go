@@ -17,9 +17,9 @@ import (
 
 // SearchProvider abstracts the search execution capability used by the tool.
 // The Search method accepts a context and plain-text query string, returning
-// zero or more search items or an error when the lookup fails.
+// search output with items and engine metadata, or an error when the lookup fails.
 type SearchProvider interface {
-	Search(context.Context, string) ([]searchlib.SearchResultItem, error)
+	Search(context.Context, string) (*searchlib.SearchOutput, error)
 }
 
 // BillingChecker validates external billing quotas for tool usage requests.
@@ -102,7 +102,7 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 
 	t.logger.Debug("web_search billing check passed", zap.Int("query_len", len(query)))
 
-	items, err := t.searchProvider.Search(ctx, query)
+	output, err := t.searchProvider.Search(ctx, query)
 	if err != nil {
 		t.logger.Error("web_search failed", zap.Error(err), zap.Int("query_len", len(query)))
 		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
@@ -110,12 +110,14 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 
 	t.logger.Debug("web_search completed",
 		zap.Int("query_len", len(query)),
-		zap.Int("results_count", len(items)),
+		zap.Int("results_count", len(output.Items)),
+		zap.String("engine_name", output.EngineName),
+		zap.String("engine_type", output.EngineType),
 		zap.Duration("duration", time.Since(start)),
 	)
 
 	response := searchlib.SimplifiedSearchResult{
-		Results: items,
+		Results: output.Items,
 	}
 
 	toolResult, err := mcp.NewToolResultJSON(response)

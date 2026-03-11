@@ -38,6 +38,11 @@ func (a *GoogleEngineAdapter) Name() string {
 	return a.name
 }
 
+// Type returns the engine type identifier.
+func (a *GoogleEngineAdapter) Type() string {
+	return "google"
+}
+
 // Search executes the underlying Google search and converts the response into SearchResultItem values.
 // It returns the converted items or an error when the Google client fails.
 func (a *GoogleEngineAdapter) Search(ctx context.Context, query string) ([]SearchResultItem, error) {

@@ -150,11 +150,15 @@ type stubSearchProvider struct {
 	err   error
 }
 
-func (s *stubSearchProvider) Search(context.Context, string) ([]searchlib.SearchResultItem, error) {
+func (s *stubSearchProvider) Search(_ context.Context, _ string) (*searchlib.SearchOutput, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
-	return s.items, nil
+	return &searchlib.SearchOutput{
+		Items:      s.items,
+		EngineName: "test_engine",
+		EngineType: "test",
+	}, nil
 }
 
 func mustWebSearchTool(t *testing.T, keyProvider APIKeyProvider, billing BillingChecker, provider SearchProvider) *WebSearchTool {

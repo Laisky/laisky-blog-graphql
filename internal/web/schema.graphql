@@ -26,6 +26,8 @@ type WebSearchResultItem {
 type WebSearchResult {
   query: String!
   created_at: Date!
+  engine_name: String
+  engine_type: String
   results: [WebSearchResultItem!]!
 }
 

@@ -25,14 +25,23 @@ const (
 type Engine interface {
 	// Name returns the unique identifier for the engine instance.
 	Name() string
+	// Type returns the engine type (e.g. "google", "serp_google").
+	Type() string
 	// Search executes the query and returns a slice of SearchResultItem when successful.
 	Search(ctx context.Context, query string) ([]SearchResultItem, error)
+}
+
+// SearchOutput contains the search results along with metadata about the engine that produced them.
+type SearchOutput struct {
+	Items      []SearchResultItem
+	EngineName string
+	EngineType string
 }
 
 // Provider exposes the high level search capability used by resolvers and tools.
 type Provider interface {
 	// Search routes the query through the configured engines and returns the first successful result.
-	Search(ctx context.Context, query string) ([]SearchResultItem, error)
+	Search(ctx context.Context, query string) (*SearchOutput, error)
 }
 
 // ManagerOption customises a Manager during construction.
@@ -127,7 +136,7 @@ func NewManager(tiers [][]Engine, opts ...ManagerOption) (*Manager, error) {
 }
 
 // Search routes the query through the configured engines until one succeeds or the constraints are exhausted.
-func (m *Manager) Search(ctx context.Context, query string) ([]SearchResultItem, error) {
+func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, error) {
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {
 		return nil, errors.New("search query cannot be empty")
@@ -191,11 +200,16 @@ func (m *Manager) Search(ctx context.Context, query string) ([]SearchResultItem,
 				if tierLogger != nil {
 					tierLogger.Info("search manager succeeded",
 						zap.String("engine", engine.Name()),
+						zap.String("engine_type", engine.Type()),
 						zap.Int("tier", tierIdx),
 						zap.Int("attempt", attempts),
 					)
 				}
-				return items, nil
+				return &SearchOutput{
+					Items:      items,
+					EngineName: engine.Name(),
+					EngineType: engine.Type(),
+				}, nil
 			}
 
 			failureDetails = append(failureDetails, fmt.Sprintf("%s: %v", engine.Name(), err))

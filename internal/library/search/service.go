@@ -121,7 +121,7 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 		return nil, errors.New("web search provider is not configured")
 	}
 
-	items, err := r.provider.Search(ctx, query)
+	output, err := r.provider.Search(ctx, query)
 	status := calllog.StatusSuccess
 	var errMsg string
 	if err != nil {
@@ -130,13 +130,18 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 	}
 
 	if r.calllogger != nil {
+		params := map[string]any{"query": query}
+		if output != nil {
+			params["engine_name"] = output.EngineName
+			params["engine_type"] = output.EngineType
+		}
 		if recordErr := r.calllogger.Record(ctx, calllog.RecordInput{
 			ToolName:     "web_search",
 			APIKey:       apikey,
 			Status:       status,
 			Cost:         oneapi.PriceWebSearch.Int(),
 			Duration:     time.Since(startAt),
-			Parameters:   map[string]any{"query": query},
+			Parameters:   params,
 			ErrorMessage: errMsg,
 			OccurredAt:   startAt,
 		}); recordErr != nil {
@@ -149,11 +154,13 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 	}
 
 	result := &searchlib.SearchResult{
-		Query:     query,
-		CreatedAt: time.Now(),
+		Query:      query,
+		CreatedAt:  time.Now(),
+		EngineName: output.EngineName,
+		EngineType: output.EngineType,
 	}
 
-	result.Results = append(result.Results, items...)
+	result.Results = append(result.Results, output.Items...)
 
 	logger.Info("successfully search", zap.Duration("cost", time.Since(startAt)))
 	return result, nil

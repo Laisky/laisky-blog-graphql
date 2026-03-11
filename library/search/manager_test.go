@@ -9,14 +9,22 @@ import (
 )
 
 type testEngine struct {
-	name  string
-	items []SearchResultItem
-	err   error
-	calls int
+	name       string
+	engineType string
+	items      []SearchResultItem
+	err        error
+	calls      int
 }
 
 func (e *testEngine) Name() string {
 	return e.name
+}
+
+func (e *testEngine) Type() string {
+	if e.engineType != "" {
+		return e.engineType
+	}
+	return "test"
 }
 
 func (e *testEngine) Search(context.Context, string) ([]SearchResultItem, error) {
@@ -39,7 +47,8 @@ func TestManagerSearchReturnsFirstSuccess(t *testing.T) {
 
 	result, err := manager.Search(context.Background(), "golang")
 	require.NoError(t, err)
-	require.Equal(t, primary.items, result)
+	require.Equal(t, primary.items, result.Items)
+	require.Equal(t, "primary", result.EngineName)
 	require.Equal(t, 1, primary.calls)
 	require.Equal(t, 0, fallback.calls)
 }
@@ -56,7 +65,8 @@ func TestManagerSearchFallsBackAcrossTiers(t *testing.T) {
 
 	result, err := manager.Search(context.Background(), "rust")
 	require.NoError(t, err)
-	require.Equal(t, secondary.items, result)
+	require.Equal(t, secondary.items, result.Items)
+	require.Equal(t, "secondary", result.EngineName)
 	require.Equal(t, 1, primary.calls)
 	require.Equal(t, 1, secondary.calls)
 }
