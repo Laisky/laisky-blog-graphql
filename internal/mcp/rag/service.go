@@ -286,7 +286,7 @@ func (s *Service) ExtractKeyInfo(ctx context.Context, input ExtractInput) ([]str
 		return nil, errors.WithStack(err)
 	}
 
-	queryTokens := tokenize(input.Query)
+	queryTokens := Tokenize(input.Query)
 	queryVecs, err := s.embedder.EmbedTexts(ctx, input.APIKey, []string{input.Query})
 	if err != nil {
 		return nil, errors.Wrap(err, "embed query")
@@ -566,8 +566,8 @@ func (s *Service) rankAndSelect(candidates []candidateChunk, queryVec pgvector.V
 
 	scoredChunks := make([]scored, 0, len(candidates))
 	for _, candidate := range candidates {
-		semantic := cosineSimilarity(queryVec, candidate.Embedding)
-		lexical := lexicalScore(candidate.tokens(), tokenSet)
+		semantic := CosineSimilarity(queryVec, candidate.Embedding)
+		lexical := LexicalScore(candidate.tokens(), tokenSet)
 		score := s.settings.SemanticWeight*semantic + s.settings.LexicalWeight*lexical
 		scoredChunks = append(scoredChunks, scored{text: candidate.Text, score: score})
 	}
@@ -614,7 +614,8 @@ func (c candidateChunk) tokens() []string {
 	return tokens
 }
 
-func cosineSimilarity(a, b pgvector.Vector) float64 {
+// CosineSimilarity computes the cosine similarity between two vectors.
+func CosineSimilarity(a, b pgvector.Vector) float64 {
 	av := a.Slice()
 	bv := b.Slice()
 	if len(av) == 0 || len(bv) == 0 {
@@ -636,7 +637,8 @@ func cosineSimilarity(a, b pgvector.Vector) float64 {
 	return dot / (sqrt(normA) * sqrt(normB))
 }
 
-func lexicalScore(tokens []string, query map[string]struct{}) float64 {
+// LexicalScore computes a simplified BM25-inspired keyword overlap score.
+func LexicalScore(tokens []string, query map[string]struct{}) float64 {
 	if len(tokens) == 0 || len(query) == 0 {
 		return 0
 	}

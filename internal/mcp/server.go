@@ -47,6 +47,20 @@ func addToolWithSchemaValidation(mcpServer *srv.MCPServer, logger logSDK.Logger,
 	mcpServer.AddTool(definition, handler)
 }
 
+// registerTool registers a tool on the MCP server and records its handler
+// so that mcp_pipe can dynamically invoke any registered tool.
+func (s *Server) registerTool(mcpServer *srv.MCPServer, definition mcp.Tool, handler srv.ToolHandlerFunc) {
+	addToolWithSchemaValidation(mcpServer, s.logger, definition, handler)
+	s.toolHandlers[definition.Name] = handler
+	s.toolDefinitions[definition.Name] = definition
+}
+
+// getToolDefinition retrieves a registered tool definition by name.
+func (s *Server) getToolDefinition(name string) (mcp.Tool, bool) {
+	def, ok := s.toolDefinitions[name]
+	return def, ok
+}
+
 // logInvalidArrayItemSchemas emits debug logs when an array input property has no items schema.
 func logInvalidArrayItemSchemas(logger logSDK.Logger, definition mcp.Tool) {
 	if logger == nil {
@@ -96,8 +110,13 @@ type Server struct {
 	memoryRunMaintenance      *tools.MemoryRunMaintenanceTool
 	memoryListDirWithAbstract *tools.MemoryListDirWithAbstractTool
 	mcpPipe                   *tools.MCPPipeTool
+	findTool                  *tools.FindToolTool
 	callLogger                callRecorder
 	holdManager               *userrequests.HoldManager
+	// toolHandlers maps tool names to their handler functions,
+	// enabling mcp_pipe to dynamically invoke any registered tool.
+	toolHandlers    map[string]srv.ToolHandlerFunc
+	toolDefinitions map[string]mcp.Tool
 }
 
 // NewServer constructs an MCP HTTP server.
@@ -110,7 +129,7 @@ type Server struct {
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
 func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, fileService *files.Service, memoryService *mcpmemory.Service, rdb *rlibs.DB, callLogger callRecorder, toolsSettings ToolsSettings, logger logSDK.Logger) (*Server, error) {
-	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && fileService == nil && memoryService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled {
+	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && fileService == nil && memoryService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled && !toolsSettings.FindToolEnabled {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
 	if logger == nil {
@@ -166,9 +185,11 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 
 	normalizedAuthHandler := withAuthorizationHeaderNormalization(streamable, serverLogger.Named("auth"))
 	s := &Server{
-		handler:    withHTTPLogging(withToolsListFiltering(normalizedAuthHandler, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
-		logger:     serverLogger,
-		callLogger: callLogger,
+		handler:      withHTTPLogging(withToolsListFiltering(normalizedAuthHandler, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
+		logger:       serverLogger,
+		callLogger:   callLogger,
+		toolHandlers:    make(map[string]srv.ToolHandlerFunc),
+		toolDefinitions: make(map[string]mcp.Tool),
 	}
 
 	apiKeyProvider := func(ctx context.Context) string {
@@ -190,7 +211,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init web_search tool")
 		}
 		s.webSearch = webSearchTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, webSearchTool.Definition(), s.handleWebSearch)
+		s.registerTool(mcpServer,webSearchTool.Definition(), s.handleWebSearch)
 	} else if searchProvider != nil && !toolsSettings.WebSearchEnabled {
 		serverLogger.Info("web_search tool disabled by configuration")
 	}
@@ -207,7 +228,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init web_fetch tool")
 		}
 		s.webFetch = webFetchTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, webFetchTool.Definition(), s.handleWebFetch)
+		s.registerTool(mcpServer,webFetchTool.Definition(), s.handleWebFetch)
 	} else if rdb != nil && !toolsSettings.WebFetchEnabled {
 		serverLogger.Info("web_fetch tool disabled by configuration")
 	}
@@ -224,7 +245,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init ask_user tool")
 		}
 		s.askUser = askUserTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, askUserTool.Definition(), s.handleAskUser)
+		s.registerTool(mcpServer,askUserTool.Definition(), s.handleAskUser)
 	} else if askUserService != nil && !toolsSettings.AskUserEnabled {
 		serverLogger.Info("ask_user tool disabled by configuration")
 	}
@@ -245,7 +266,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init get_user_request tool")
 		}
 		s.getUserRequest = getUserRequestTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, getUserRequestTool.Definition(), s.handleGetUserRequest)
+		s.registerTool(mcpServer,getUserRequestTool.Definition(), s.handleGetUserRequest)
 	} else if userRequestService != nil && !toolsSettings.GetUserRequestEnabled {
 		serverLogger.Info("get_user_request tool disabled by configuration")
 	}
@@ -262,7 +283,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init extract_key_info tool")
 		}
 		s.extractKeyInfo = ragTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, ragTool.Definition(), s.handleExtractKeyInfo)
+		s.registerTool(mcpServer,ragTool.Definition(), s.handleExtractKeyInfo)
 	} else if ragService != nil && !toolsSettings.ExtractKeyInfoEnabled {
 		serverLogger.Info("extract_key_info tool disabled by configuration")
 	}
@@ -273,49 +294,49 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init file_stat tool")
 		}
 		s.fileStat = fileStatTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, fileStatTool.Definition(), s.handleFileStat)
+		s.registerTool(mcpServer,fileStatTool.Definition(), s.handleFileStat)
 
 		fileReadTool, err := tools.NewFileReadTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_read tool")
 		}
 		s.fileRead = fileReadTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, fileReadTool.Definition(), s.handleFileRead)
+		s.registerTool(mcpServer,fileReadTool.Definition(), s.handleFileRead)
 
 		fileWriteTool, err := tools.NewFileWriteTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_write tool")
 		}
 		s.fileWrite = fileWriteTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, fileWriteTool.Definition(), s.handleFileWrite)
+		s.registerTool(mcpServer,fileWriteTool.Definition(), s.handleFileWrite)
 
 		fileDeleteTool, err := tools.NewFileDeleteTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_delete tool")
 		}
 		s.fileDelete = fileDeleteTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, fileDeleteTool.Definition(), s.handleFileDelete)
+		s.registerTool(mcpServer,fileDeleteTool.Definition(), s.handleFileDelete)
 
 		fileRenameTool, err := tools.NewFileRenameTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_rename tool")
 		}
 		s.fileRename = fileRenameTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, fileRenameTool.Definition(), s.handleFileRename)
+		s.registerTool(mcpServer,fileRenameTool.Definition(), s.handleFileRename)
 
 		fileListTool, err := tools.NewFileListTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_list tool")
 		}
 		s.fileList = fileListTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, fileListTool.Definition(), s.handleFileList)
+		s.registerTool(mcpServer,fileListTool.Definition(), s.handleFileList)
 
 		fileSearchTool, err := tools.NewFileSearchTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_search tool")
 		}
 		s.fileSearch = fileSearchTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, fileSearchTool.Definition(), s.handleFileSearch)
+		s.registerTool(mcpServer,fileSearchTool.Definition(), s.handleFileSearch)
 	} else if fileService != nil && !toolsSettings.FileIOEnabled {
 		serverLogger.Info("file tools disabled by configuration")
 	}
@@ -326,28 +347,28 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init memory_before_turn tool")
 		}
 		s.memoryBeforeTurn = memoryBeforeTurnTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, memoryBeforeTurnTool.Definition(), s.handleMemoryBeforeTurn)
+		s.registerTool(mcpServer,memoryBeforeTurnTool.Definition(), s.handleMemoryBeforeTurn)
 
 		memoryAfterTurnTool, err := tools.NewMemoryAfterTurnTool(memoryService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init memory_after_turn tool")
 		}
 		s.memoryAfterTurn = memoryAfterTurnTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, memoryAfterTurnTool.Definition(), s.handleMemoryAfterTurn)
+		s.registerTool(mcpServer,memoryAfterTurnTool.Definition(), s.handleMemoryAfterTurn)
 
 		memoryMaintenanceTool, err := tools.NewMemoryRunMaintenanceTool(memoryService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init memory_run_maintenance tool")
 		}
 		s.memoryRunMaintenance = memoryMaintenanceTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, memoryMaintenanceTool.Definition(), s.handleMemoryRunMaintenance)
+		s.registerTool(mcpServer,memoryMaintenanceTool.Definition(), s.handleMemoryRunMaintenance)
 
 		memoryListTool, err := tools.NewMemoryListDirWithAbstractTool(memoryService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init memory_list_dir_with_abstract tool")
 		}
 		s.memoryListDirWithAbstract = memoryListTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, memoryListTool.Definition(), s.handleMemoryListDirWithAbstract)
+		s.registerTool(mcpServer,memoryListTool.Definition(), s.handleMemoryListDirWithAbstract)
 	} else if memoryService != nil && !toolsSettings.MemoryEnabled {
 		serverLogger.Info("memory tools disabled by configuration")
 	}
@@ -361,43 +382,13 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 					return mcp.NewToolResultError("mcp_pipe cannot invoke itself"), nil
 				}
 
-				req := mcp.CallToolRequest{Params: mcp.CallToolParams{Name: toolName, Arguments: args}}
-				switch toolName {
-				case "web_search":
-					return s.handleWebSearch(ctx, req)
-				case "web_fetch":
-					return s.handleWebFetch(ctx, req)
-				case "ask_user":
-					return s.handleAskUser(ctx, req)
-				case "get_user_request":
-					return s.handleGetUserRequest(ctx, req)
-				case "extract_key_info":
-					return s.handleExtractKeyInfo(ctx, req)
-				case "file_stat":
-					return s.handleFileStat(ctx, req)
-				case "file_read":
-					return s.handleFileRead(ctx, req)
-				case "file_write":
-					return s.handleFileWrite(ctx, req)
-				case "file_delete":
-					return s.handleFileDelete(ctx, req)
-				case "file_rename":
-					return s.handleFileRename(ctx, req)
-				case "file_list":
-					return s.handleFileList(ctx, req)
-				case "file_search":
-					return s.handleFileSearch(ctx, req)
-				case "memory_before_turn":
-					return s.handleMemoryBeforeTurn(ctx, req)
-				case "memory_after_turn":
-					return s.handleMemoryAfterTurn(ctx, req)
-				case "memory_run_maintenance":
-					return s.handleMemoryRunMaintenance(ctx, req)
-				case "memory_list_dir_with_abstract":
-					return s.handleMemoryListDirWithAbstract(ctx, req)
-				default:
+				handler, ok := s.toolHandlers[toolName]
+				if !ok {
 					return mcp.NewToolResultError(fmt.Sprintf("unknown tool: %s", toolName)), nil
 				}
+
+				req := mcp.CallToolRequest{Params: mcp.CallToolParams{Name: toolName, Arguments: args}}
+				return handler(ctx, req)
 			},
 			tools.PipeLimits{},
 		)
@@ -405,9 +396,38 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init mcp_pipe tool")
 		}
 		s.mcpPipe = pipeTool
-		addToolWithSchemaValidation(mcpServer, serverLogger, pipeTool.Definition(), s.handleMCPPipe)
+		s.registerTool(mcpServer,pipeTool.Definition(), s.handleMCPPipe)
 	} else {
 		serverLogger.Info("mcp_pipe tool disabled by configuration")
+	}
+
+	if toolsSettings.FindToolEnabled && ragSettings.OpenAIBaseURL != "" && ragSettings.EmbeddingModel != "" {
+		embedder := rag.NewOpenAIEmbedder(ragSettings.OpenAIBaseURL, ragSettings.EmbeddingModel, nil)
+		findToolInstance, err := tools.NewFindToolTool(
+			embedder,
+			serverLogger.Named("find_tool"),
+			headerProvider,
+			oneapi.CheckUserExternalBilling,
+			ragSettings,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "init find_tool tool")
+		}
+		s.findTool = findToolInstance
+		s.registerTool(mcpServer, findToolInstance.Definition(), s.handleFindTool)
+
+		// Collect all registered tool definitions (excluding find_tool itself)
+		// and provide them to the find_tool for indexing.
+		allTools := make([]mcp.Tool, 0, len(s.toolDefinitions))
+		for name, def := range s.toolDefinitions {
+			if name == "find_tool" {
+				continue
+			}
+			allTools = append(allTools, def)
+		}
+		findToolInstance.SetTools(allTools)
+	} else if toolsSettings.FindToolEnabled {
+		serverLogger.Info("find_tool disabled: missing embedding configuration")
 	}
 
 	return s, nil
@@ -430,57 +450,9 @@ func (s *Server) AvailableToolNames() []string {
 		return []string{}
 	}
 
-	toolNames := make([]string, 0, 16)
-	if s.webSearch != nil {
-		toolNames = append(toolNames, "web_search")
-	}
-	if s.webFetch != nil {
-		toolNames = append(toolNames, "web_fetch")
-	}
-	if s.askUser != nil {
-		toolNames = append(toolNames, "ask_user")
-	}
-	if s.getUserRequest != nil {
-		toolNames = append(toolNames, "get_user_request")
-	}
-	if s.extractKeyInfo != nil {
-		toolNames = append(toolNames, "extract_key_info")
-	}
-	if s.fileStat != nil {
-		toolNames = append(toolNames, "file_stat")
-	}
-	if s.fileRead != nil {
-		toolNames = append(toolNames, "file_read")
-	}
-	if s.fileWrite != nil {
-		toolNames = append(toolNames, "file_write")
-	}
-	if s.fileDelete != nil {
-		toolNames = append(toolNames, "file_delete")
-	}
-	if s.fileRename != nil {
-		toolNames = append(toolNames, "file_rename")
-	}
-	if s.fileList != nil {
-		toolNames = append(toolNames, "file_list")
-	}
-	if s.fileSearch != nil {
-		toolNames = append(toolNames, "file_search")
-	}
-	if s.memoryBeforeTurn != nil {
-		toolNames = append(toolNames, "memory_before_turn")
-	}
-	if s.memoryAfterTurn != nil {
-		toolNames = append(toolNames, "memory_after_turn")
-	}
-	if s.memoryRunMaintenance != nil {
-		toolNames = append(toolNames, "memory_run_maintenance")
-	}
-	if s.memoryListDirWithAbstract != nil {
-		toolNames = append(toolNames, "memory_list_dir_with_abstract")
-	}
-	if s.mcpPipe != nil {
-		toolNames = append(toolNames, "mcp_pipe")
+	toolNames := make([]string, 0, len(s.toolHandlers))
+	for name := range s.toolHandlers {
+		toolNames = append(toolNames, name)
 	}
 
 	sort.Strings(toolNames)

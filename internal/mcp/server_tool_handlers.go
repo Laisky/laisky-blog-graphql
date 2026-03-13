@@ -414,6 +414,26 @@ func (s *Server) handleMCPPipe(ctx context.Context, req mcp.CallToolRequest) (*m
 	return result, nil
 }
 
+// handleFindTool executes the find_tool MCP tool, auditing the invocation via the call logger.
+func (s *Server) handleFindTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	apiKey := apiKeyFromContext(ctx)
+	args := argumentsMap(req.Params.Arguments)
+	if s.findTool == nil {
+		result := mcp.NewToolResultError("find_tool tool is not available")
+		s.recordToolInvocation(ctx, "find_tool", apiKey, args, time.Now().UTC(), 0, oneapi.PriceFindTool.Int(), result, nil)
+		return result, nil
+	}
+
+	start := time.Now().UTC()
+	result, err := s.findTool.Handle(ctx, req)
+	duration := time.Since(start)
+	s.recordToolInvocation(ctx, "find_tool", apiKey, args, start, duration, oneapi.PriceFindTool.Int(), result, err)
+	if err != nil {
+		return result, errors.WithStack(err)
+	}
+	return result, nil
+}
+
 // handleMemoryBeforeTurn executes the memory_before_turn MCP tool and records call logs.
 func (s *Server) handleMemoryBeforeTurn(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	apiKey := apiKeyFromContext(ctx)

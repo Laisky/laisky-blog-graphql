@@ -35,7 +35,7 @@ func (ParagraphChunker) Split(materials string, maxChars int) []ChunkFragment {
 		segments := splitBlock(block, maxChars)
 		for _, segment := range segments {
 			cleaned := normalizeWhitespace(segment)
-			tokens := tokenize(cleaned)
+			tokens := Tokenize(cleaned)
 			fragments = append(fragments, ChunkFragment{
 				Index:   idx,
 				Text:    segment,

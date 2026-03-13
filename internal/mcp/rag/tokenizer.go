@@ -7,8 +7,8 @@ import (
 
 var nonWord = regexp.MustCompile(`[^a-z0-9]+`)
 
-// tokenize splits the text into lowercase alphanumeric tokens suitable for approximate BM25 scoring.
-func tokenize(text string) []string {
+// Tokenize splits the text into lowercase alphanumeric tokens suitable for approximate BM25 scoring.
+func Tokenize(text string) []string {
 	lowered := strings.ToLower(text)
 	cleaned := nonWord.Split(lowered, -1)
 	tokens := make([]string, 0, len(cleaned))

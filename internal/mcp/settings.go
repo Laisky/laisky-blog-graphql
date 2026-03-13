@@ -15,6 +15,7 @@ type ToolsSettings struct {
 	FileIOEnabled         bool
 	MemoryEnabled         bool
 	MCPPipeEnabled        bool
+	FindToolEnabled       bool
 }
 
 // LoadToolsSettingsFromConfig reads the MCP tools configuration and returns a ToolsSettings instance.
@@ -29,6 +30,7 @@ func LoadToolsSettingsFromConfig() ToolsSettings {
 		FileIOEnabled:         boolFromConfig("settings.mcp.tools.file_io.enabled", true),
 		MemoryEnabled:         boolFromConfig("settings.mcp.tools.memory.enabled", false),
 		MCPPipeEnabled:        boolFromConfig("settings.mcp.tools.mcp_pipe.enabled", true),
+		FindToolEnabled:       boolFromConfig("settings.mcp.tools.find_tool.enabled", true),
 	}
 }
 
