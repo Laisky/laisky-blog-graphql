@@ -631,7 +631,7 @@ export function UserRequestsPage() {
               <code className="text-xs">get_user_request</code> repeatedly, only one charge applies.
               <p>
                 <strong>How it works:</strong> When your AI agent calls <code className="text-xs">get_user_request</code>, the server
-                returns the newest pending directive from this queue and marks it as consumed. This lets your agent immediately start the
+                returns the oldest pending directive from this queue and marks it as consumed. This lets your agent immediately start the
                 next task after finishing the current one.
               </p>
               <p>

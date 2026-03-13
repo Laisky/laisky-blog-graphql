@@ -59,7 +59,7 @@ func NewWebFetchTool(store *rlibs.DB, logger logSDK.Logger, apiKeyProvider APIKe
 func (t *WebFetchTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"web_fetch",
-		mcp.WithDescription("Fetch and render dynamic web content by URL."),
+		mcp.WithDescription("Fetch and render dynamic web content by URL. Downloads a web page and returns its content as HTML or Markdown. Use this to retrieve, read, or scrape a specific webpage."),
 		mcp.WithString(
 			"url",
 			mcp.Required(),

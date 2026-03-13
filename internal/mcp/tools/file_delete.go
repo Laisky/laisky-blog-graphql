@@ -25,7 +25,7 @@ func NewFileDeleteTool(svc FileService) (*FileDeleteTool, error) {
 func (t *FileDeleteTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"file_delete",
-		mcp.WithDescription("Delete a file or directory subtree."),
+		mcp.WithDescription("Delete a file or directory subtree. Use this to remove files or recursively delete folders from disk."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Description("File or directory path; empty string means project root.")),
 		mcp.WithBoolean("recursive", mcp.Description("Delete descendants when target is a directory.")),

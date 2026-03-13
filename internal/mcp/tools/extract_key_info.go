@@ -61,7 +61,7 @@ func NewExtractKeyInfoTool(service KeyInfoService, logger logSDK.Logger, headerP
 func (t *ExtractKeyInfoTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"extract_key_info",
-		mcp.WithDescription("Extract the most relevant context chunks for a query from provided materials."),
+		mcp.WithDescription("Extract the most relevant context chunks for a query from provided materials using RAG (retrieval-augmented generation). Splits text into chunks, embeds them, and returns the top-K most relevant passages."),
 		mcp.WithString(
 			"query",
 			mcp.Required(),

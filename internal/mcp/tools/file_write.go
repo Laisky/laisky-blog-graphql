@@ -26,7 +26,7 @@ func NewFileWriteTool(svc FileService) (*FileWriteTool, error) {
 func (t *FileWriteTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"file_write",
-		mcp.WithDescription("Write or append file content."),
+		mcp.WithDescription("Write, create, or append file content. Use this to save, update, or modify files on disk."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path to write.")),
 		mcp.WithString("content", mcp.Required(), mcp.Description("UTF-8 encoded content.")),

@@ -60,7 +60,7 @@ func NewWebSearchTool(provider SearchProvider, logger logSDK.Logger, apiKeyProvi
 func (t *WebSearchTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"web_search",
-		mcp.WithDescription("Search the public web using search engines and return a structured result set."),
+		mcp.WithDescription("Search the public web using search engines (Google, Bing) and return a structured result set. Use this to find information, articles, documentation, or answers from the internet."),
 		mcp.WithString(
 			"query",
 			mcp.Required(),

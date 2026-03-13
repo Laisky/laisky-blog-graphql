@@ -25,7 +25,7 @@ func NewFileSearchTool(svc FileService) (*FileSearchTool, error) {
 func (t *FileSearchTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"file_search",
-		mcp.WithDescription("Search file content using hybrid retrieval."),
+		mcp.WithDescription("Search file content using hybrid retrieval (semantic + keyword). Use this to find text, code, or patterns within files, similar to grep or full-text search."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query string.")),
 		mcp.WithString("path_prefix", mcp.Description("Optional path prefix filter.")),

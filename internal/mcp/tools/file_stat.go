@@ -25,7 +25,7 @@ func NewFileStatTool(svc FileService) (*FileStatTool, error) {
 func (t *FileStatTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"file_stat",
-		mcp.WithDescription("Return metadata for a file or directory path."),
+		mcp.WithDescription("Return metadata (size, timestamps, permissions) for a file or directory path. Use this to inspect file properties without reading content."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Description("File path; empty string means project root.")),
 		mcp.WithReadOnlyHintAnnotation(true),

@@ -25,7 +25,7 @@ func NewFileRenameTool(svc FileService) (*FileRenameTool, error) {
 func (t *FileRenameTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"file_rename",
-		mcp.WithDescription("Rename or move a file or directory path."),
+		mcp.WithDescription("Rename or move a file or directory to a new path. Use this to relocate or change the name of files and folders."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("from_path", mcp.Required(), mcp.Description("Source file or directory path.")),
 		mcp.WithString("to_path", mcp.Required(), mcp.Description("Destination file or directory path.")),

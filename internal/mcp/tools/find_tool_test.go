@@ -121,6 +121,7 @@ func TestNewFindToolTool_Validation(t *testing.T) {
 	require.Error(t, err, "nil billing checker")
 }
 
+// TestFindToolTool_HandleSuccess verifies the default (auto) mode returns tools.
 func TestFindToolTool_HandleSuccess(t *testing.T) {
 	tool := mustFindToolTool(t)
 
@@ -181,14 +182,16 @@ func TestFindToolTool_Definition(t *testing.T) {
 	require.Equal(t, "find_tool", def.Name)
 	require.NotEmpty(t, def.Description)
 	require.Contains(t, def.InputSchema.Properties, "query")
+	require.Contains(t, def.InputSchema.Properties, "mode")
+	require.Contains(t, def.InputSchema.Properties, "return_references_only")
 }
 
 func TestFindToolTool_SetToolsResetsIndex(t *testing.T) {
 	tool := mustFindToolTool(t)
 
-	// First query to build the index.
+	// First query to build the index (use embedding mode to trigger index build).
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
-		Arguments: map[string]any{"query": "search"},
+		Arguments: map[string]any{"query": "search", "mode": "embedding"},
 	}}
 	result, err := tool.Handle(context.Background(), req)
 	require.NoError(t, err)
@@ -211,7 +214,6 @@ func TestFindToolTool_SetToolsResetsIndex(t *testing.T) {
 	require.Equal(t, "only_tool", tools[0].(map[string]any)["name"])
 }
 
-
 func TestBuildToolDocument(t *testing.T) {
 	tool := mcp.NewTool("web_search",
 		mcp.WithDescription("Search the web."),
@@ -221,4 +223,374 @@ func TestBuildToolDocument(t *testing.T) {
 	require.Contains(t, doc, "Tool: web_search")
 	require.Contains(t, doc, "Description: Search the web.")
 	require.Contains(t, doc, "Parameters:")
+}
+
+// --- Regex mode tests ---
+
+func TestFindToolTool_RegexMode(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "file_.*",
+			"mode":  "regex",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	tools := payload["tools"].([]any)
+	require.NotEmpty(t, tools)
+
+	// All matched tools should have "file_" prefix.
+	for _, raw := range tools {
+		m := raw.(map[string]any)
+		name := m["name"].(string)
+		require.Contains(t, name, "file_")
+	}
+}
+
+func TestFindToolTool_RegexMode_CaseInsensitive(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "WEB",
+			"mode":  "regex",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	tools := payload["tools"].([]any)
+	require.NotEmpty(t, tools)
+
+	// Should match web_search and web_fetch.
+	names := make([]string, 0, len(tools))
+	for _, raw := range tools {
+		names = append(names, raw.(map[string]any)["name"].(string))
+	}
+	require.Contains(t, names, "web_search")
+	require.Contains(t, names, "web_fetch")
+}
+
+func TestFindToolTool_RegexMode_InvalidPattern(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "[invalid",
+			"mode":  "regex",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+}
+
+func TestFindToolTool_RegexMode_PatternTooLong(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	longPattern := ""
+	for i := 0; i < 201; i++ {
+		longPattern += "a"
+	}
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": longPattern,
+			"mode":  "regex",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+}
+
+// --- BM25 mode tests ---
+
+func TestFindToolTool_BM25Mode(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "search web engine",
+			"mode":  "bm25",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	tools := payload["tools"].([]any)
+	require.NotEmpty(t, tools)
+
+	// "web_search" should rank highest for "search web engine".
+	first := tools[0].(map[string]any)
+	require.Equal(t, "web_search", first["name"])
+}
+
+func TestFindToolTool_BM25Mode_FileQuery(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "read file contents from disk",
+			"mode":  "bm25",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	tools := payload["tools"].([]any)
+	require.NotEmpty(t, tools)
+
+	// "file_read" should rank highly for "read file contents from disk".
+	first := tools[0].(map[string]any)
+	require.Equal(t, "file_read", first["name"])
+}
+
+// --- Embedding mode tests ---
+
+func TestFindToolTool_EmbeddingMode(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "search the web",
+			"mode":  "embedding",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	tools := payload["tools"].([]any)
+	require.NotEmpty(t, tools)
+	require.LessOrEqual(t, len(tools), findToolDefaultTopK)
+}
+
+// --- Auto mode tests ---
+
+func TestFindToolTool_AutoMode_DetectsRegex(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	// Query with regex metacharacters should auto-detect regex mode.
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "file_.*",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	tools := payload["tools"].([]any)
+	require.NotEmpty(t, tools)
+
+	// All results should be file_ tools.
+	for _, raw := range tools {
+		m := raw.(map[string]any)
+		name := m["name"].(string)
+		require.Contains(t, name, "file_")
+	}
+}
+
+func TestFindToolTool_AutoMode_DetectsToolNamePattern(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	// Query that looks like a tool name (has underscore, no spaces).
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "web_search",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	tools := payload["tools"].([]any)
+	require.NotEmpty(t, tools)
+
+	first := tools[0].(map[string]any)
+	require.Equal(t, "web_search", first["name"])
+}
+
+func TestFindToolTool_AutoMode_FallsBM25(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	// Natural language query should use BM25.
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "I want to search the web",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	tools := payload["tools"].([]any)
+	require.NotEmpty(t, tools)
+}
+
+// --- return_references_only tests ---
+
+func TestFindToolTool_ReturnReferencesOnly(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query":                  "web",
+			"mode":                   "regex",
+			"return_references_only": true,
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+
+	// Should have tool_references key, not tools key.
+	refs, ok := payload["tool_references"].([]any)
+	require.True(t, ok, "response should contain tool_references key")
+	require.NotEmpty(t, refs)
+
+	// Each reference should have type and tool_name.
+	for _, raw := range refs {
+		ref := raw.(map[string]any)
+		require.Equal(t, "tool_reference", ref["type"])
+		require.NotEmpty(t, ref["tool_name"])
+	}
+
+	// Should NOT contain full schemas.
+	for _, raw := range refs {
+		ref := raw.(map[string]any)
+		require.NotContains(t, ref, "description")
+		require.NotContains(t, ref, "inputSchema")
+	}
+}
+
+func TestFindToolTool_ReturnReferencesOnly_False(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query":                  "web",
+			"mode":                   "regex",
+			"return_references_only": false,
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := toolResultText(result)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+
+	// Should return full schemas under tools key.
+	tools, ok := payload["tools"].([]any)
+	require.True(t, ok, "response should contain tools key")
+	require.NotEmpty(t, tools)
+
+	first := tools[0].(map[string]any)
+	require.Contains(t, first, "name")
+	require.Contains(t, first, "description")
+	require.Contains(t, first, "inputSchema")
+}
+
+// --- Invalid mode test ---
+
+func TestFindToolTool_InvalidMode(t *testing.T) {
+	tool := mustFindToolTool(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "test",
+			"mode":  "invalid_mode",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+}
+
+// --- detectSearchMode unit tests ---
+
+func TestDetectSearchMode(t *testing.T) {
+	tests := []struct {
+		query    string
+		expected string
+	}{
+		{"file_.*", FindToolModeRegex},
+		{"web_search", FindToolModeRegex},
+		{"file_read", FindToolModeRegex},
+		{"(?i)web", FindToolModeRegex},
+		{"search|fetch", FindToolModeRegex},
+		{"I want to search the web", FindToolModeBM25},
+		{"read a file from disk", FindToolModeBM25},
+		{"memory context", FindToolModeBM25},
+		{"hello world", FindToolModeBM25},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			got := detectSearchMode(tt.query)
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+// --- isToolNamePattern unit tests ---
+
+func TestIsToolNamePattern(t *testing.T) {
+	tests := []struct {
+		query    string
+		expected bool
+	}{
+		{"file_read", true},
+		{"web_search", true},
+		{"memory_before_turn", true},
+		{"hello world", false},
+		{"search the web", false},
+		{"", false},
+		{"nounderscores", false},
+		{"has_one", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			got := isToolNamePattern(tt.query)
+			require.Equal(t, tt.expected, got)
+		})
+	}
 }

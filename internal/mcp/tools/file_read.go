@@ -25,7 +25,7 @@ func NewFileReadTool(svc FileService) (*FileReadTool, error) {
 func (t *FileReadTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"file_read",
-		mcp.WithDescription("Read file content with optional byte offsets."),
+		mcp.WithDescription("Read file content with optional byte offsets. Use this to view, open, or get the contents of a text or binary file from disk."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path to read.")),
 		mcp.WithNumber("offset", mcp.Description("Byte offset to start reading from.")),
