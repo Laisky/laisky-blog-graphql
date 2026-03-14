@@ -12,7 +12,7 @@ import {
   Trash2,
   UploadCloud,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -140,6 +140,7 @@ function FileTreeNode({
   onToggle,
   onSelect,
   selectedPath,
+  disabled = false,
 }: {
   entry: FileEntry;
   level: number;
@@ -149,6 +150,7 @@ function FileTreeNode({
   onToggle: (entry: FileEntry) => void;
   onSelect: (entry: FileEntry) => void;
   selectedPath: string;
+  disabled?: boolean;
 }) {
   const isExpanded = expandedPaths.has(entry.path);
   const isDirectory = entry.type === 'DIRECTORY';
@@ -161,12 +163,17 @@ function FileTreeNode({
     <div className="select-none">
       <div
         className={cn(
-          'flex cursor-pointer items-center gap-2 rounded-sm py-1 pr-2 text-sm transition-colors hover:bg-accent/50',
+          'flex items-center gap-2 rounded-sm py-1 pr-2 text-sm transition-colors',
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-accent/50',
           isSelected && 'bg-accent font-medium text-accent-foreground'
         )}
         style={{ paddingLeft: `${Math.max(4, level * 16)}px` }}
         onClick={(e) => {
           e.stopPropagation();
+          if (disabled) {
+            return;
+          }
+
           if (isDirectory) {
             onToggle(entry);
           } else {
@@ -175,8 +182,15 @@ function FileTreeNode({
         }}
       >
         <div
-          className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+          className={cn(
+            'flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground',
+            disabled ? 'cursor-not-allowed' : 'hover:text-foreground'
+          )}
           onClick={(e) => {
+            if (disabled) {
+              return;
+            }
+
             if (isDirectory) {
               e.stopPropagation();
               onToggle(entry);
@@ -225,6 +239,7 @@ function FileTreeNode({
               onToggle={onToggle}
               onSelect={onSelect}
               selectedPath={selectedPath}
+              disabled={disabled}
             />
           ))}
           {childrenData.hasMore && (
@@ -244,7 +259,7 @@ function FileTreeNode({
 }
 
 export function FileIOPage() {
-  const { apiKey } = useApiKey();
+  const { apiKey, isToolConsoleLocked } = useApiKey();
   const persistedInputs = useFileIOInputDefaults();
   const [project, setProject] = useState(persistedInputs.project ?? '');
   const [currentPath, setCurrentPath] = useState(persistedInputs.currentPath ?? '');
@@ -324,6 +339,25 @@ export function FileIOPage() {
     searchLimit,
   });
 
+  useEffect(() => {
+    if (!apiKey || isToolConsoleLocked) {
+      setRootEntries([]);
+      setDirCache({});
+      setExpandedPaths(new Set());
+      setLoadingPaths(new Set());
+      setHasMore(false);
+      setBrowserError(null);
+      setSelectedPath('');
+      setSelectedStat(null);
+      setSelectedContent('');
+      setReadError(null);
+      setIsReading(false);
+      setIsFilePreviewOpen(false);
+      setSearchResults([]);
+      setSearchError(null);
+    }
+  }, [apiKey, isToolConsoleLocked]);
+
   // Helper to process flat list into tree structure
   function processEntries(basePath: string, rawEntries: FileEntry[]) {
     const normBase = basePath === '/' ? '' : basePath.replace(/\/$/, '');
@@ -367,7 +401,7 @@ export function FileIOPage() {
   }
 
   async function callTool<T>(toolName: string, args: Record<string, unknown>) {
-    if (!apiKey) {
+    if (!apiKey || isToolConsoleLocked) {
       throw new Error('API key is required');
     }
     const result = await callMcpTool(apiKey, toolName, args);
@@ -598,6 +632,10 @@ export function FileIOPage() {
   }
 
   function openFilePreview(targetPath: string) {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     setIsFilePreviewOpen(true);
     void loadFile(targetPath);
   }
@@ -716,356 +754,362 @@ export function FileIOPage() {
         )}
       </section>
 
-      <Card className="border border-border/60 bg-card">
-        <CardHeader>
-          <CardTitle className="text-xl">Workspace Browser</CardTitle>
-          <CardDescription>Browse project paths and load file content.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-1">
-              <label htmlFor="file-io-project" className={cn(inputLabelClass, isProjectMissing && 'text-destructive')}>
-                Project <span className={cn('font-semibold', isProjectMissing ? 'text-destructive' : 'text-muted-foreground')}>*</span>
-              </label>
-              <Input
-                id="file-io-project"
-                placeholder="Required"
-                required
-                aria-required="true"
-                className={cn(isProjectMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
-                value={project}
-                onChange={(event) => setProject(event.target.value)}
-              />
-              {isProjectMissing && <p className="text-xs font-medium text-destructive">Required field</p>}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="file-io-current-path" className={inputLabelClass}>
-                Path Prefix
-              </label>
-              <Input
-                id="file-io-current-path"
-                placeholder="Empty means root (/)"
-                value={currentPath}
-                onChange={(event) => setCurrentPath(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="file-io-depth" className={inputLabelClass}>
-                Browse Depth
-              </label>
-              <Input
-                id="file-io-depth"
-                placeholder="0 or greater"
-                type="number"
-                value={depth}
-                onChange={(event) => setDepth(Number(event.target.value))}
-                min={0}
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="file-io-list-limit" className={inputLabelClass}>
-                List Limit
-              </label>
-              <Input
-                id="file-io-list-limit"
-                placeholder="1 or greater"
-                type="number"
-                value={limit}
-                onChange={(event) => setLimit(Number(event.target.value))}
-                min={1}
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" onClick={() => loadList()} disabled={!project || isListing}>
-              <RefreshCw className={cn('mr-2 h-4 w-4', isListing && 'animate-spin')} />
-              Refresh list
-            </Button>
-            {hasMore && <Badge variant="secondary">List truncated</Badge>}
-            {browserError && <span className="text-sm text-destructive">{browserError}</span>}
-          </div>
-          <div className="rounded-lg border border-border/60 bg-muted/30">
-            <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              <span>Entries</span>
-              <span>{rootEntries.length} root item(s)</span>
-            </div>
-            <div className="max-h-[480px] overflow-y-auto px-1 py-1">
-              {rootEntries.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">No entries yet. Load a project to see files.</div>
-              ) : (
-                <div className="space-y-[1px]">
-                  {rootEntries.map((entry) => (
-                    <FileTreeNode
-                      key={entry.path}
-                      entry={entry}
-                      level={0}
-                      expandedPaths={expandedPaths}
-                      dirCache={dirCache}
-                      loadingPaths={loadingPaths}
-                      onToggle={toggleFolder}
-                      onSelect={(e) => {
-                        openFilePreview(e.path);
-                        setWritePath(e.path);
-                        setDeletePath(e.path);
-                        setRenameFromPath(e.path);
-                      }}
-                      selectedPath={selectedPath}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-6 lg:grid-cols-3">
+      <fieldset disabled={isToolConsoleLocked} className="m-0 min-w-0 space-y-8 border-0 p-0">
         <Card className="border border-border/60 bg-card">
           <CardHeader>
-            <CardTitle className="text-xl">Write</CardTitle>
-            <CardDescription>Append or overwrite file content.</CardDescription>
+            <CardTitle className="text-xl">Workspace Browser</CardTitle>
+            <CardDescription>Browse project paths and load file content.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <label htmlFor="file-io-write-path" className={inputLabelClass}>
-                Target Path
-              </label>
-              <Input
-                id="file-io-write-path"
-                placeholder="/path/to/file"
-                value={writePath}
-                onChange={(event) => setWritePath(event.target.value)}
-              />
-            </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1">
-                <label htmlFor="file-io-write-mode" className={inputLabelClass}>
-                  Write Mode
-                </label>
-                <select
-                  id="file-io-write-mode"
-                  value={writeMode}
-                  onChange={(event) => setWriteMode(event.target.value as 'APPEND' | 'OVERWRITE' | 'TRUNCATE')}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
-                >
-                  <option value="APPEND">APPEND</option>
-                  <option value="OVERWRITE">OVERWRITE</option>
-                  <option value="TRUNCATE">TRUNCATE</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-write-offset" className={inputLabelClass}>
-                  Write Offset (bytes)
+                <label htmlFor="file-io-project" className={cn(inputLabelClass, isProjectMissing && 'text-destructive')}>
+                  Project <span className={cn('font-semibold', isProjectMissing ? 'text-destructive' : 'text-muted-foreground')}>*</span>
                 </label>
                 <Input
-                  id="file-io-write-offset"
+                  id="file-io-project"
+                  placeholder="Required"
+                  required
+                  aria-required="true"
+                  className={cn(isProjectMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
+                  value={project}
+                  onChange={(event) => setProject(event.target.value)}
+                />
+                {isProjectMissing && <p className="text-xs font-medium text-destructive">Required field</p>}
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-current-path" className={inputLabelClass}>
+                  Path Prefix
+                </label>
+                <Input
+                  id="file-io-current-path"
+                  placeholder="Empty means root (/)"
+                  value={currentPath}
+                  onChange={(event) => setCurrentPath(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-depth" className={inputLabelClass}>
+                  Browse Depth
+                </label>
+                <Input
+                  id="file-io-depth"
+                  placeholder="0 or greater"
                   type="number"
-                  placeholder="0"
-                  value={writeOffset}
-                  onChange={(event) => setWriteOffset(Number(event.target.value))}
+                  value={depth}
+                  onChange={(event) => setDepth(Number(event.target.value))}
                   min={0}
                 />
               </div>
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="file-io-write-content" className={inputLabelClass}>
-                Write Content (UTF-8)
-              </label>
-              <Textarea
-                id="file-io-write-content"
-                rows={8}
-                value={writeContent}
-                onChange={(event) => setWriteContent(event.target.value)}
-                placeholder="Enter UTF-8 content to write."
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" onClick={submitWrite} disabled={!project || !writePath || isWriting}>
-                <UploadCloud className={cn('mr-2 h-4 w-4', isWriting && 'animate-bounce')} />
-                Write
-              </Button>
-              {writeInfo && <span className="text-sm text-emerald-600">{writeInfo}</span>}
-              {writeError && <span className="text-sm text-destructive">{writeError}</span>}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/60 bg-card">
-          <CardHeader>
-            <CardTitle className="text-xl">Rename</CardTitle>
-            <CardDescription>Rename or move a file or directory path.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <label htmlFor="file-io-rename-from" className={inputLabelClass}>
-                Source Path
-              </label>
-              <Input
-                id="file-io-rename-from"
-                placeholder="/path/to/source"
-                value={renameFromPath}
-                onChange={(event) => setRenameFromPath(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="file-io-rename-to" className={inputLabelClass}>
-                Destination Path
-              </label>
-              <Input
-                id="file-io-rename-to"
-                placeholder="/path/to/destination"
-                value={renameToPath}
-                onChange={(event) => setRenameToPath(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <span className={inputLabelClass}>Rename Options</span>
-              <label htmlFor="file-io-rename-overwrite" className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  id="file-io-rename-overwrite"
-                  type="checkbox"
-                  checked={renameOverwrite}
-                  onChange={(event) => setRenameOverwrite(event.target.checked)}
-                  className="h-4 w-4 rounded border-border"
+              <div className="space-y-1">
+                <label htmlFor="file-io-list-limit" className={inputLabelClass}>
+                  List Limit
+                </label>
+                <Input
+                  id="file-io-list-limit"
+                  placeholder="1 or greater"
+                  type="number"
+                  value={limit}
+                  onChange={(event) => setLimit(Number(event.target.value))}
+                  min={1}
                 />
-                Overwrite destination file when supported
-              </label>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" onClick={submitRename} disabled={!project || !renameFromPath || !renameToPath || isRenaming}>
-                <ArrowRightLeft className={cn('mr-2 h-4 w-4', isRenaming && 'animate-pulse')} />
-                Rename
+              <Button type="button" onClick={() => loadList()} disabled={!project || isListing}>
+                <RefreshCw className={cn('mr-2 h-4 w-4', isListing && 'animate-spin')} />
+                Refresh list
               </Button>
-              {renameInfo && <span className="text-sm text-emerald-600">{renameInfo}</span>}
-              {renameError && <span className="text-sm text-destructive">{renameError}</span>}
+              {hasMore && <Badge variant="secondary">List truncated</Badge>}
+              {browserError && <span className="text-sm text-destructive">{browserError}</span>}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/60 bg-card">
-          <CardHeader>
-            <CardTitle className="text-xl">Delete</CardTitle>
-            <CardDescription>Remove files or directories.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <label htmlFor="file-io-delete-path" className={inputLabelClass}>
-                Path To Delete
-              </label>
-              <Input
-                id="file-io-delete-path"
-                placeholder="/path/to/file-or-directory"
-                value={deletePath}
-                onChange={(event) => setDeletePath(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <span className={inputLabelClass}>Delete Options</span>
-              <label htmlFor="file-io-delete-recursive" className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  id="file-io-delete-recursive"
-                  type="checkbox"
-                  checked={deleteRecursive}
-                  onChange={(event) => setDeleteRecursive(event.target.checked)}
-                  className="h-4 w-4 rounded border-border"
-                />
-                Recursive delete
-              </label>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" variant="destructive" onClick={submitDelete} disabled={!project || !deletePath || isDeleting}>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </Button>
-              {deleteInfo && <span className="text-sm text-emerald-600">{deleteInfo}</span>}
-              {deleteError && <span className="text-sm text-destructive">{deleteError}</span>}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="border border-border/60 bg-card">
-        <CardHeader>
-          <CardTitle className="text-xl">Search</CardTitle>
-          <CardDescription>Run hybrid file_search across indexed content.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="space-y-1">
-              <label htmlFor="file-io-search-query" className={inputLabelClass}>
-                Search Query
-              </label>
-              <Input
-                id="file-io-search-query"
-                placeholder="Keywords or question"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="file-io-search-prefix" className={inputLabelClass}>
-                Path Prefix
-              </label>
-              <Input
-                id="file-io-search-prefix"
-                placeholder="Optional directory filter"
-                value={searchPrefix}
-                onChange={(event) => setSearchPrefix(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="file-io-search-limit" className={inputLabelClass}>
-                Result Limit
-              </label>
-              <Input
-                id="file-io-search-limit"
-                type="number"
-                placeholder="1 - 20"
-                min={1}
-                max={20}
-                value={searchLimit}
-                onChange={(event) => setSearchLimit(Number(event.target.value))}
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" onClick={submitSearch} disabled={!project || !searchQuery || isSearching}>
-              <Search className={cn('mr-2 h-4 w-4', isSearching && 'animate-pulse')} />
-              Search
-            </Button>
-            {searchError && (
-              <span className="inline-flex items-center gap-2 text-sm text-destructive">
-                <ShieldAlert className="h-4 w-4" />
-                {searchError}
-              </span>
-            )}
-          </div>
-          <div className="rounded-lg border border-border/60 bg-muted/30">
-            <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              <span>Results</span>
-              <span>{searchResults.length} chunk(s)</span>
-            </div>
-            <div className="space-y-4 px-4 py-3">
-              {searchResults.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No results yet.</div>
-              ) : (
-                searchResults.map((chunk) => (
-                  <div key={`${chunk.file_path}-${chunk.file_seek_start_bytes}`} className="rounded-md border border-border/60 bg-card p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-foreground">{chunk.file_path}</span>
-                      <Badge variant="secondary">Score {chunk.score.toFixed(3)}</Badge>
-                    </div>
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Bytes {chunk.file_seek_start_bytes} - {chunk.file_seek_end_bytes}
-                    </div>
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">{chunk.chunk_content}</p>
+            <div className="rounded-lg border border-border/60 bg-muted/30">
+              <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                <span>Entries</span>
+                <span>{rootEntries.length} root item(s)</span>
+              </div>
+              <div className="max-h-[480px] overflow-y-auto px-1 py-1">
+                {rootEntries.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">No entries yet. Load a project to see files.</div>
+                ) : (
+                  <div className="space-y-[1px]">
+                    {rootEntries.map((entry) => (
+                      <FileTreeNode
+                        key={entry.path}
+                        entry={entry}
+                        level={0}
+                        expandedPaths={expandedPaths}
+                        dirCache={dirCache}
+                        loadingPaths={loadingPaths}
+                        onToggle={toggleFolder}
+                        onSelect={(e) => {
+                          openFilePreview(e.path);
+                          setWritePath(e.path);
+                          setDeletePath(e.path);
+                          setRenameFromPath(e.path);
+                        }}
+                        selectedPath={selectedPath}
+                        disabled={isToolConsoleLocked}
+                      />
+                    ))}
                   </div>
-                ))
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Card className="border border-border/60 bg-card">
+            <CardHeader>
+              <CardTitle className="text-xl">Write</CardTitle>
+              <CardDescription>Append or overwrite file content.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1">
+                <label htmlFor="file-io-write-path" className={inputLabelClass}>
+                  Target Path
+                </label>
+                <Input
+                  id="file-io-write-path"
+                  placeholder="/path/to/file"
+                  value={writePath}
+                  onChange={(event) => setWritePath(event.target.value)}
+                />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label htmlFor="file-io-write-mode" className={inputLabelClass}>
+                    Write Mode
+                  </label>
+                  <select
+                    id="file-io-write-mode"
+                    value={writeMode}
+                    onChange={(event) => setWriteMode(event.target.value as 'APPEND' | 'OVERWRITE' | 'TRUNCATE')}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
+                  >
+                    <option value="APPEND">APPEND</option>
+                    <option value="OVERWRITE">OVERWRITE</option>
+                    <option value="TRUNCATE">TRUNCATE</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="file-io-write-offset" className={inputLabelClass}>
+                    Write Offset (bytes)
+                  </label>
+                  <Input
+                    id="file-io-write-offset"
+                    type="number"
+                    placeholder="0"
+                    value={writeOffset}
+                    onChange={(event) => setWriteOffset(Number(event.target.value))}
+                    min={0}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-write-content" className={inputLabelClass}>
+                  Write Content (UTF-8)
+                </label>
+                <Textarea
+                  id="file-io-write-content"
+                  rows={8}
+                  value={writeContent}
+                  onChange={(event) => setWriteContent(event.target.value)}
+                  placeholder="Enter UTF-8 content to write."
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" onClick={submitWrite} disabled={!project || !writePath || isWriting}>
+                  <UploadCloud className={cn('mr-2 h-4 w-4', isWriting && 'animate-bounce')} />
+                  Write
+                </Button>
+                {writeInfo && <span className="text-sm text-emerald-600">{writeInfo}</span>}
+                {writeError && <span className="text-sm text-destructive">{writeError}</span>}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border/60 bg-card">
+            <CardHeader>
+              <CardTitle className="text-xl">Rename</CardTitle>
+              <CardDescription>Rename or move a file or directory path.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1">
+                <label htmlFor="file-io-rename-from" className={inputLabelClass}>
+                  Source Path
+                </label>
+                <Input
+                  id="file-io-rename-from"
+                  placeholder="/path/to/source"
+                  value={renameFromPath}
+                  onChange={(event) => setRenameFromPath(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-rename-to" className={inputLabelClass}>
+                  Destination Path
+                </label>
+                <Input
+                  id="file-io-rename-to"
+                  placeholder="/path/to/destination"
+                  value={renameToPath}
+                  onChange={(event) => setRenameToPath(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <span className={inputLabelClass}>Rename Options</span>
+                <label htmlFor="file-io-rename-overwrite" className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    id="file-io-rename-overwrite"
+                    type="checkbox"
+                    checked={renameOverwrite}
+                    onChange={(event) => setRenameOverwrite(event.target.checked)}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  Overwrite destination file when supported
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" onClick={submitRename} disabled={!project || !renameFromPath || !renameToPath || isRenaming}>
+                  <ArrowRightLeft className={cn('mr-2 h-4 w-4', isRenaming && 'animate-pulse')} />
+                  Rename
+                </Button>
+                {renameInfo && <span className="text-sm text-emerald-600">{renameInfo}</span>}
+                {renameError && <span className="text-sm text-destructive">{renameError}</span>}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border/60 bg-card">
+            <CardHeader>
+              <CardTitle className="text-xl">Delete</CardTitle>
+              <CardDescription>Remove files or directories.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1">
+                <label htmlFor="file-io-delete-path" className={inputLabelClass}>
+                  Path To Delete
+                </label>
+                <Input
+                  id="file-io-delete-path"
+                  placeholder="/path/to/file-or-directory"
+                  value={deletePath}
+                  onChange={(event) => setDeletePath(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <span className={inputLabelClass}>Delete Options</span>
+                <label htmlFor="file-io-delete-recursive" className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    id="file-io-delete-recursive"
+                    type="checkbox"
+                    checked={deleteRecursive}
+                    onChange={(event) => setDeleteRecursive(event.target.checked)}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  Recursive delete
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" variant="destructive" onClick={submitDelete} disabled={!project || !deletePath || isDeleting}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
+                {deleteInfo && <span className="text-sm text-emerald-600">{deleteInfo}</span>}
+                {deleteError && <span className="text-sm text-destructive">{deleteError}</span>}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="border border-border/60 bg-card">
+          <CardHeader>
+            <CardTitle className="text-xl">Search</CardTitle>
+            <CardDescription>Run hybrid file_search across indexed content.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-1">
+                <label htmlFor="file-io-search-query" className={inputLabelClass}>
+                  Search Query
+                </label>
+                <Input
+                  id="file-io-search-query"
+                  placeholder="Keywords or question"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-search-prefix" className={inputLabelClass}>
+                  Path Prefix
+                </label>
+                <Input
+                  id="file-io-search-prefix"
+                  placeholder="Optional directory filter"
+                  value={searchPrefix}
+                  onChange={(event) => setSearchPrefix(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="file-io-search-limit" className={inputLabelClass}>
+                  Result Limit
+                </label>
+                <Input
+                  id="file-io-search-limit"
+                  type="number"
+                  placeholder="1 - 20"
+                  min={1}
+                  max={20}
+                  value={searchLimit}
+                  onChange={(event) => setSearchLimit(Number(event.target.value))}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="button" onClick={submitSearch} disabled={!project || !searchQuery || isSearching}>
+                <Search className={cn('mr-2 h-4 w-4', isSearching && 'animate-pulse')} />
+                Search
+              </Button>
+              {searchError && (
+                <span className="inline-flex items-center gap-2 text-sm text-destructive">
+                  <ShieldAlert className="h-4 w-4" />
+                  {searchError}
+                </span>
               )}
             </div>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="rounded-lg border border-border/60 bg-muted/30">
+              <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                <span>Results</span>
+                <span>{searchResults.length} chunk(s)</span>
+              </div>
+              <div className="space-y-4 px-4 py-3">
+                {searchResults.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No results yet.</div>
+                ) : (
+                  searchResults.map((chunk) => (
+                    <div
+                      key={`${chunk.file_path}-${chunk.file_seek_start_bytes}`}
+                      className="rounded-md border border-border/60 bg-card p-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">{chunk.file_path}</span>
+                        <Badge variant="secondary">Score {chunk.score.toFixed(3)}</Badge>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Bytes {chunk.file_seek_start_bytes} - {chunk.file_seek_end_bytes}
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">{chunk.chunk_content}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </fieldset>
 
       <Dialog open={isFilePreviewOpen} onOpenChange={setIsFilePreviewOpen}>
         <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col overflow-hidden p-0">

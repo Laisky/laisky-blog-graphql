@@ -32,6 +32,8 @@ describe('SettingsPage', () => {
   it('should show authenticated status when valid', () => {
     (useApiKey as any).mockReturnValue({
       apiKey: 'test-key',
+      keyEntries: [],
+      setAliasForKey: vi.fn(),
       status: 'valid',
       remainQuota: 1234.56,
       history: [],
@@ -46,6 +48,8 @@ describe('SettingsPage', () => {
   it('should render mcp tools list when preferences loaded', async () => {
     (useApiKey as any).mockReturnValue({
       apiKey: 'test-key',
+      keyEntries: [],
+      setAliasForKey: vi.fn(),
       status: 'valid',
       remainQuota: 1234,
       history: [],
@@ -63,6 +67,8 @@ describe('SettingsPage', () => {
   it('should show insufficient balance status', () => {
     (useApiKey as any).mockReturnValue({
       apiKey: 'test-key',
+      keyEntries: [],
+      setAliasForKey: vi.fn(),
       status: 'insufficient',
       remainQuota: 0,
       history: [],
@@ -77,6 +83,8 @@ describe('SettingsPage', () => {
   it('should show invalid status when error', () => {
     (useApiKey as any).mockReturnValue({
       apiKey: 'test-key',
+      keyEntries: [],
+      setAliasForKey: vi.fn(),
       status: 'error',
       remainQuota: null,
       history: [],
@@ -91,6 +99,8 @@ describe('SettingsPage', () => {
     const disconnect = vi.fn();
     (useApiKey as any).mockReturnValue({
       apiKey: 'test-key',
+      keyEntries: [],
+      setAliasForKey: vi.fn(),
       status: 'valid',
       remainQuota: 1000,
       history: [],

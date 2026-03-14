@@ -11,6 +11,7 @@ const STATUS_STORAGE = 'mcp_api_key_status';
 const QUOTA_STORAGE = 'mcp_api_key_quota';
 
 export type ApiKeyStatus = 'none' | 'error' | 'insufficient' | 'valid' | 'validating';
+const TOOL_CONSOLE_LOCKED_STATUSES = new Set<ApiKeyStatus>(['none', 'error', 'validating']);
 
 /** ApiKeyEntry stores one API key and its optional user-defined alias. */
 export interface ApiKeyEntry {
@@ -27,11 +28,21 @@ export function normalizeApiKey(value: string): string {
   return output;
 }
 
+/**
+ * isToolConsoleLockedStatus returns whether MCP tool consoles should be disabled for the given API key status.
+ * It accepts the current API key validation status and returns true when interaction must be blocked.
+ */
+export function isToolConsoleLockedStatus(status: ApiKeyStatus): boolean {
+  return TOOL_CONSOLE_LOCKED_STATUSES.has(status);
+}
+
 interface ApiKeyContextValue {
   /** The active API key (already normalised). */
   apiKey: string;
   /** Validation status. */
   status: ApiKeyStatus;
+  /** Whether MCP tool console interactions should be disabled for the current API key status. */
+  isToolConsoleLocked: boolean;
   /** Remaining quota. */
   remainQuota: number | null;
   /** Recent API keys, newest first. Does not include the current key unless it was explicitly committed. */
@@ -201,6 +212,7 @@ const VALIDATE_API_KEY_QUERY = `
 export function ApiKeyProvider({ children }: { children: ReactNode }) {
   const [apiKey, setApiKeyRaw] = useState<string>(() => loadCurrentKey());
   const [status, setStatus] = useState<ApiKeyStatus>(() => (apiKey ? loadStatus() : 'none'));
+  const isToolConsoleLocked = isToolConsoleLockedStatus(status);
   const [remainQuota, setRemainQuota] = useState<number | null>(() => (apiKey ? loadQuota() : null));
   const [keyEntries, setKeyEntries] = useState<ApiKeyEntry[]>(() => loadKeyEntries());
   const [sessionId, setSessionId] = useState(0);
@@ -376,6 +388,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     () => ({
       apiKey,
       status,
+      isToolConsoleLocked,
       remainQuota,
       history,
       keyEntries,
@@ -390,6 +403,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     [
       apiKey,
       status,
+      isToolConsoleLocked,
       remainQuota,
       history,
       keyEntries,

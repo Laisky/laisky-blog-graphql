@@ -34,14 +34,24 @@ interface PendingRequestCardProps {
   onPickup: (request: UserRequest) => void;
   onCopy: (request: UserRequest) => void;
   isEditorDisabled: boolean;
+  isDragDisabled?: boolean;
 }
 
 /**
  * PendingRequestCard displays a single pending request with a delete action.
  */
-export function PendingRequestCard({ request, onDelete, deleting, onPickup, onCopy, isEditorDisabled }: PendingRequestCardProps) {
+export function PendingRequestCard({
+  request,
+  onDelete,
+  deleting,
+  onPickup,
+  onCopy,
+  isEditorDisabled,
+  isDragDisabled = false,
+}: PendingRequestCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: request.id,
+    disabled: isDragDisabled,
   });
 
   const style = {
@@ -63,7 +73,12 @@ export function PendingRequestCard({ request, onDelete, deleting, onPickup, onCo
       <div
         {...attributes}
         {...listeners}
-        className="absolute left-1 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing p-1 text-muted-foreground/30 hover:text-muted-foreground group-hover:opacity-100 opacity-0 transition-opacity"
+        className={cn(
+          'absolute left-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground/30 transition-opacity',
+          isDragDisabled
+            ? 'cursor-not-allowed opacity-30'
+            : 'cursor-grab opacity-0 hover:text-muted-foreground group-hover:opacity-100 active:cursor-grabbing'
+        )}
         title="Drag to reorder"
       >
         <GripVertical className="h-4 w-4" />
@@ -105,7 +120,13 @@ export function PendingRequestCard({ request, onDelete, deleting, onPickup, onCo
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant="destructive" size="icon" onClick={() => onDelete(request)} disabled={deleting} title="Delete request">
+        <Button
+          variant="destructive"
+          size="icon"
+          onClick={() => onDelete(request)}
+          disabled={deleting || isEditorDisabled}
+          title="Delete request"
+        >
           <Trash2 className="h-4 w-4" />
           <span className="sr-only">{deleting ? 'Deleting…' : 'Delete'}</span>
         </Button>
@@ -194,7 +215,7 @@ export function ConsumedCard({
           variant="ghost"
           size="icon"
           onClick={() => onDelete(request)}
-          disabled={deleting}
+          disabled={deleting || isEditorDisabled}
           title="Delete from history"
           className="h-9 w-9 text-muted-foreground hover:text-destructive"
         >

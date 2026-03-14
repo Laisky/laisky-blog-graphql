@@ -136,7 +136,7 @@ function parseJSONArray(text: string, fieldName: string): MemoryResponseItem[] {
 }
 
 export function MemoryPage() {
-  const { apiKey } = useApiKey();
+  const { apiKey, isToolConsoleLocked } = useApiKey();
   const persistedInputs = useMemoryInputDefaults();
 
   const [project, setProject] = useState((persistedInputs.project ?? '').trim() || defaultMemoryProject);
@@ -193,7 +193,7 @@ export function MemoryPage() {
   });
 
   async function callTool<T>(toolName: string, args: Record<string, unknown>) {
-    if (!apiKey) {
+    if (!apiKey || isToolConsoleLocked) {
       throw new Error('API key is required');
     }
 
@@ -299,7 +299,7 @@ export function MemoryPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <fieldset disabled={isToolConsoleLocked} className="m-0 min-w-0 space-y-8 border-0 p-0">
       <section className="space-y-3">
         <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
           <Brain className="h-4 w-4" />
@@ -596,6 +596,6 @@ export function MemoryPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </fieldset>
   );
 }

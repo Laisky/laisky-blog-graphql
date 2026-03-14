@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { useApiKey } from '@/lib/api-key-context';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,7 +31,7 @@ vi.mock('./api', () => ({
 
 // Mock child components that might interfere or are complex
 vi.mock('./hold-button', () => ({
-  HoldButton: () => <button>Hold</button>,
+  HoldButton: ({ disabled }: { disabled?: boolean }) => <button disabled={disabled}>Hold</button>,
 }));
 vi.mock('./request-cards', () => ({
   ConsumedCard: () => <div>Consumed</div>,
@@ -41,14 +42,14 @@ vi.mock('./saved-commands', () => ({
   SavedCommands: () => <div>SavedCommands</div>,
 }));
 vi.mock('./task-id-selector', () => ({
-  TaskIdSelector: () => <input data-testid="task-id-selector" />,
+  TaskIdSelector: ({ disabled }: { disabled?: boolean }) => <input data-testid="task-id-selector" disabled={disabled} />,
   useTaskIdHistory: () => ({ recordUsage: vi.fn() }),
 }));
 
 describe('UserRequestsPage Keyboard Behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (useApiKey as any).mockReturnValue({ apiKey: 'test-api-key' });
+    (useApiKey as any).mockReturnValue({ apiKey: 'test-api-key', isToolConsoleLocked: false, status: 'valid' });
     (api.listUserRequests as any).mockResolvedValue({ pending: [], consumed: [] });
     (api.getPreferencesFromServer as any).mockResolvedValue({ return_mode: 'all' });
   });
@@ -117,5 +118,34 @@ describe('UserRequestsPage Keyboard Behavior', () => {
     } as any);
 
     expect(api.createUserRequest).not.toHaveBeenCalled();
+  });
+
+  it.each(['none', 'error', 'validating'] as const)('should disable editor actions when status is %s', (status) => {
+    (useApiKey as any).mockReturnValue({
+      apiKey: status === 'none' ? '' : 'test-api-key',
+      isToolConsoleLocked: true,
+      status,
+    });
+
+    render(<UserRequestsPage />);
+
+    expect(screen.getByPlaceholderText(/Describe the feedback/i)).toBeDisabled();
+    expect(screen.getByTestId('task-id-selector')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /hold/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /queue/i })).toBeDisabled();
+  });
+
+  it('should keep editor inputs enabled when status is insufficient', () => {
+    (useApiKey as any).mockReturnValue({
+      apiKey: 'test-api-key',
+      isToolConsoleLocked: false,
+      status: 'insufficient',
+    });
+
+    render(<UserRequestsPage />);
+
+    expect(screen.getByPlaceholderText(/Describe the feedback/i)).toBeEnabled();
+    expect(screen.getByTestId('task-id-selector')).toBeEnabled();
+    expect(screen.getByRole('button', { name: /hold/i })).toBeEnabled();
   });
 });

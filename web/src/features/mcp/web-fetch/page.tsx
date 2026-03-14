@@ -30,7 +30,7 @@ const WEB_FETCH_MUTATION = `
 `;
 
 export function WebFetchPage() {
-  const { apiKey } = useApiKey();
+  const { apiKey, isToolConsoleLocked } = useApiKey();
   const [entries, setEntries] = useState<CallLogEntry[]>([]);
   const [pagination, setPagination] = useState<CallLogListResponse['pagination'] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,9 +45,13 @@ export function WebFetchPage() {
   const [execError, setExecError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!apiKey) {
+    if (!apiKey || isToolConsoleLocked) {
       setEntries([]);
       setPagination(null);
+      setIsLoading(false);
+      setError(null);
+      setLastResult(null);
+      setExecError(null);
       return;
     }
 
@@ -84,11 +88,11 @@ export function WebFetchPage() {
       });
 
     return () => controller.abort();
-  }, [apiKey, page]);
+  }, [apiKey, isToolConsoleLocked, page]);
 
   const handleExecute = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim() || isExecuting) return;
+    if (!apiKey || isToolConsoleLocked || !url.trim() || isExecuting) return;
 
     setIsExecuting(true);
     setExecError(null);
@@ -146,10 +150,10 @@ export function WebFetchPage() {
                     placeholder="Enter URL (e.g. https://example.com)..."
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
-                    disabled={isExecuting}
+                    disabled={isToolConsoleLocked || isExecuting}
                     className="flex-1"
                   />
-                  <Button type="submit" disabled={isExecuting || !url.trim()}>
+                  <Button type="submit" disabled={isToolConsoleLocked || isExecuting || !url.trim()}>
                     {isExecuting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -251,14 +255,19 @@ export function WebFetchPage() {
                 Page {page} of {totalPages}
               </p>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={isToolConsoleLocked || page <= 1}
+                >
                   Previous
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
+                  disabled={isToolConsoleLocked || page >= totalPages}
                 >
                   Next
                 </Button>

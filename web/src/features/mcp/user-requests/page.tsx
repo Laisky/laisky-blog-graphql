@@ -54,7 +54,7 @@ const DELETE_OPTIONS: DeleteOption[] = [
 ];
 
 export function UserRequestsPage() {
-  const { apiKey } = useApiKey();
+  const { apiKey, isToolConsoleLocked } = useApiKey();
   const [pending, setPending] = useState<UserRequest[]>([]);
   const [consumed, setConsumed] = useState<UserRequest[]>([]);
   const [totalConsumed, setTotalConsumed] = useState(0);
@@ -114,11 +114,18 @@ export function UserRequestsPage() {
   }, [visibleConsumedCount]);
 
   useEffect(() => {
-    if (!apiKey) {
+    if (!apiKey || isToolConsoleLocked) {
       setPending([]);
       setConsumed([]);
+      setTotalConsumed(0);
       setVisibleConsumedCount(10);
       setHasMoreConsumed(true);
+      setHoldState({
+        active: false,
+        waiting: false,
+        remaining_secs: 0,
+      });
+      setIsLoading(false);
       return;
     }
 
@@ -205,11 +212,11 @@ export function UserRequestsPage() {
       }
       pollControlsRef.current = null;
     };
-  }, [apiKey]);
+  }, [apiKey, isToolConsoleLocked]);
 
   // Poll hold state when hold is active
   useEffect(() => {
-    if (!apiKey || !holdState.active) {
+    if (!apiKey || isToolConsoleLocked || !holdState.active) {
       if (holdPollRef.current) {
         clearInterval(holdPollRef.current);
         holdPollRef.current = null;
@@ -242,7 +249,17 @@ export function UserRequestsPage() {
         holdPollRef.current = null;
       }
     };
-  }, [apiKey, holdState.active, normalizedTaskId]);
+  }, [apiKey, holdState.active, isToolConsoleLocked, normalizedTaskId]);
+
+  useEffect(() => {
+    if (!apiKey || isToolConsoleLocked) {
+      setIsSearchOpen(false);
+      setShowDeleteAllConfirm(false);
+      setShowDeleteConsumedConfirm(false);
+      setSearchResults([]);
+      setIsSearching(false);
+    }
+  }, [apiKey, isToolConsoleLocked]);
 
   //   const handleRefresh = useCallback(() => {
   //     setVisibleConsumedCount(10);
@@ -250,6 +267,10 @@ export function UserRequestsPage() {
   //   }, []);
 
   const handleLoadMore = useCallback(async () => {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     const key = normalizeApiKey(apiKey);
     if (!key || consumed.length === 0) return;
 
@@ -269,9 +290,13 @@ export function UserRequestsPage() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [apiKey, consumed]);
+  }, [apiKey, consumed, isToolConsoleLocked]);
 
   const handleCreateRequest = useCallback(async () => {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     const key = normalizeApiKey(apiKey);
     if (!key) {
       return;
@@ -305,9 +330,13 @@ export function UserRequestsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [apiKey, newContent, taskId, holdState.active, recordTaskIdUsage]);
+  }, [apiKey, holdState.active, isToolConsoleLocked, newContent, recordTaskIdUsage, taskId]);
 
   const handleActivateHold = useCallback(async () => {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     const key = normalizeApiKey(apiKey);
     if (!key) {
       return;
@@ -317,9 +346,13 @@ export function UserRequestsPage() {
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
     } catch (error) {}
-  }, [apiKey, normalizedTaskId]);
+  }, [apiKey, isToolConsoleLocked, normalizedTaskId]);
 
   const handleReleaseHold = useCallback(async () => {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     const key = normalizeApiKey(apiKey);
     if (!key) {
       return;
@@ -329,10 +362,14 @@ export function UserRequestsPage() {
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
     } catch (error) {}
-  }, [apiKey, normalizedTaskId]);
+  }, [apiKey, isToolConsoleLocked, normalizedTaskId]);
 
   const handleReturnModeChange = useCallback(
     async (mode: ReturnMode) => {
+      if (isToolConsoleLocked) {
+        return;
+      }
+
       setReturnModeState(mode);
       // Persist to localStorage as fallback
       persistReturnModeLocal(mode);
@@ -349,11 +386,15 @@ export function UserRequestsPage() {
         }
       }
     },
-    [apiKey]
+    [apiKey, isToolConsoleLocked]
   );
 
   const handleDeleteRequest = useCallback(
     async (request: UserRequest) => {
+      if (isToolConsoleLocked) {
+        return;
+      }
+
       const key = normalizeApiKey(apiKey);
       if (!key) {
         return;
@@ -375,11 +416,15 @@ export function UserRequestsPage() {
         });
       }
     },
-    [apiKey, pickedRequestId]
+    [apiKey, isToolConsoleLocked, pickedRequestId]
   );
 
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
+      if (isToolConsoleLocked) {
+        return;
+      }
+
       const { active, over } = event;
       if (!over || active.id === over.id) {
         return;
@@ -405,22 +450,31 @@ export function UserRequestsPage() {
         // and let the next poll fix it if it's a transient error.
       }
     },
-    [apiKey, pending]
+    [apiKey, isToolConsoleLocked, pending]
   );
 
-  const isEditorDisabled = !apiKey || isSubmitting;
+  const isInteractionDisabled = isToolConsoleLocked || !apiKey;
+  const isEditorDisabled = isInteractionDisabled || isSubmitting;
 
   // Opens the confirmation dialog for deleting all pending requests
   const handleDeleteAllPendingClick = useCallback(() => {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     const key = normalizeApiKey(apiKey);
     if (!key) {
       return;
     }
     setShowDeleteAllConfirm(true);
-  }, [apiKey]);
+  }, [apiKey, isToolConsoleLocked]);
 
   // Actually performs the deletion after user confirms
   const handleDeleteAllPendingConfirm = useCallback(async () => {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     const key = normalizeApiKey(apiKey);
     if (!key) {
       return;
@@ -435,17 +489,25 @@ export function UserRequestsPage() {
     } finally {
       setIsDeletingAllPending(false);
     }
-  }, [apiKey]);
+  }, [apiKey, isToolConsoleLocked]);
 
   const handleDeleteConsumedClick = useCallback(() => {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     const key = normalizeApiKey(apiKey);
     if (!key) {
       return;
     }
     setShowDeleteConsumedConfirm(true);
-  }, [apiKey]);
+  }, [apiKey, isToolConsoleLocked]);
 
   const handleDeleteConsumedConfirm = useCallback(async () => {
+    if (isToolConsoleLocked) {
+      return;
+    }
+
     const key = normalizeApiKey(apiKey);
     if (!key) return;
 
@@ -462,7 +524,7 @@ export function UserRequestsPage() {
     } finally {
       setIsDeletingConsumed(false);
     }
-  }, [apiKey, selectedDeleteOptionIdx]);
+  }, [apiKey, isToolConsoleLocked, selectedDeleteOptionIdx]);
 
   const handleSelectDeleteOption = useCallback((idx: number) => {
     setSelectedDeleteOptionIdx(idx);
@@ -472,6 +534,11 @@ export function UserRequestsPage() {
   const handleSearch = useCallback(
     async (q: string) => {
       setSearchQuery(q);
+      if (isToolConsoleLocked) {
+        setSearchResults([]);
+        return;
+      }
+
       const key = normalizeApiKey(apiKey);
       if (!key || !q.trim()) {
         setSearchResults([]);
@@ -488,7 +555,7 @@ export function UserRequestsPage() {
         setIsSearching(false);
       }
     },
-    [apiKey]
+    [apiKey, isToolConsoleLocked]
   );
 
   const handleSelectSavedCommand = useCallback((content: string) => {
@@ -516,7 +583,7 @@ export function UserRequestsPage() {
    */
   const handleEditInEditor = useCallback(
     (request: UserRequest) => {
-      if (!apiKey) {
+      if (!apiKey || isToolConsoleLocked) {
         return;
       }
       if (isSubmitting) {
@@ -536,12 +603,12 @@ export function UserRequestsPage() {
       setPickedRequestId(request.id);
       setNewContent(request.content);
     },
-    [apiKey, editorBackup, isSubmitting, newContent, pickedRequestId]
+    [apiKey, editorBackup, isSubmitting, isToolConsoleLocked, newContent, pickedRequestId]
   );
 
   const handlePickUpPending = useCallback(
     async (request: UserRequest) => {
-      if (!apiKey) return;
+      if (!apiKey || isToolConsoleLocked) return;
 
       // Load into editor
       setNewContent(request.content);
@@ -552,15 +619,21 @@ export function UserRequestsPage() {
       // Delete from pending
       await handleDeleteRequest(request);
     },
-    [apiKey, handleDeleteRequest]
+    [apiKey, handleDeleteRequest, isToolConsoleLocked]
   );
 
-  const handleCopyPending = useCallback((request: UserRequest) => {
-    setNewContent(request.content);
-    if (request.task_id) {
-      setTaskId(request.task_id);
-    }
-  }, []);
+  const handleCopyPending = useCallback(
+    (request: UserRequest) => {
+      if (isToolConsoleLocked) {
+        return;
+      }
+      setNewContent(request.content);
+      if (request.task_id) {
+        setTaskId(request.task_id);
+      }
+    },
+    [isToolConsoleLocked]
+  );
 
   /**
    * handleAddToPending re-queues a consumed directive directly to the pending list.
@@ -568,6 +641,10 @@ export function UserRequestsPage() {
    */
   const handleAddToPending = useCallback(
     async (request: UserRequest) => {
+      if (isToolConsoleLocked) {
+        return;
+      }
+
       const key = normalizeApiKey(apiKey);
       if (!key) {
         return;
@@ -582,7 +659,7 @@ export function UserRequestsPage() {
         setIsSubmitting(false);
       }
     },
-    [apiKey]
+    [apiKey, isToolConsoleLocked]
   );
 
   return (
@@ -718,7 +795,7 @@ export function UserRequestsPage() {
                 remainingSecs={holdState.remaining_secs}
                 onActivate={handleActivateHold}
                 onRelease={handleReleaseHold}
-                disabled={!apiKey}
+                disabled={isInteractionDisabled}
               />
               <Button onClick={handleCreateRequest} disabled={isEditorDisabled} title="Queue request">
                 <Send className="mr-2 h-4 w-4" />
@@ -744,7 +821,13 @@ export function UserRequestsPage() {
               <Badge variant="secondary">{pending.length}</Badge>
             </div>
             {pending.length > 0 && (
-              <Button type="button" variant="destructive" size="sm" onClick={handleDeleteAllPendingClick} disabled={isDeletingAllPending}>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteAllPendingClick}
+                disabled={isInteractionDisabled || isDeletingAllPending}
+              >
                 <Trash2 className="mr-2 h-4 w-4" />
                 {isDeletingAllPending ? 'Deleting…' : 'Delete all'}
               </Button>
@@ -768,6 +851,7 @@ export function UserRequestsPage() {
                         onPickup={handlePickUpPending}
                         onCopy={handleCopyPending}
                         isEditorDisabled={isEditorDisabled}
+                        isDragDisabled={isInteractionDisabled}
                       />
                     ))}
                   </div>
@@ -783,7 +867,14 @@ export function UserRequestsPage() {
               <Badge variant="outline">
                 {consumed.length}/{totalConsumed}
               </Badge>
-              <Button type="button" variant="ghost" size="icon" onClick={() => setIsSearchOpen(true)} title="Search history">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsSearchOpen(true)}
+                title="Search history"
+                disabled={isInteractionDisabled}
+              >
                 <Search className="h-4 w-4" />
               </Button>
             </div>
@@ -795,14 +886,20 @@ export function UserRequestsPage() {
                   size="sm"
                   className="rounded-r-none border-r border-destructive-foreground/20"
                   onClick={handleDeleteConsumedClick}
-                  disabled={isDeletingConsumed}
+                  disabled={isInteractionDisabled || isDeletingConsumed}
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   {isDeletingConsumed ? 'Deleting…' : DELETE_OPTIONS[selectedDeleteOptionIdx].label}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="destructive" size="sm" className="rounded-l-none px-2" disabled={isDeletingConsumed}>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="rounded-l-none px-2"
+                      disabled={isInteractionDisabled || isDeletingConsumed}
+                    >
                       <ChevronDown className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -811,6 +908,7 @@ export function UserRequestsPage() {
                       <DropdownMenuItem
                         key={option.label}
                         onClick={() => handleSelectDeleteOption(idx)}
+                        disabled={isInteractionDisabled}
                         className={idx === selectedDeleteOptionIdx ? 'bg-accent' : ''}
                       >
                         {option.label}
@@ -843,7 +941,7 @@ export function UserRequestsPage() {
                     variant="ghost"
                     className="w-full border-2 border-dashed hover:bg-accent/50"
                     onClick={handleLoadMore}
-                    disabled={isLoadingMore}
+                    disabled={isInteractionDisabled || isLoadingMore}
                   >
                     {isLoadingMore ? 'Loading…' : 'Load more'}
                   </Button>
@@ -894,10 +992,12 @@ export function UserRequestsPage() {
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                   className="pl-10 pr-10 h-12 text-base rounded-xl border-muted-foreground/20 focus-visible:ring-primary/20 transition-all bg-muted/50 focus:bg-background"
+                  disabled={isInteractionDisabled}
                 />
                 {searchQuery && (
                   <button
                     onClick={() => handleSearch('')}
+                    disabled={isInteractionDisabled}
                     className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-muted rounded-lg text-muted-foreground transition-all hover:text-foreground"
                   >
                     <X className="h-4 w-4" />
@@ -933,7 +1033,7 @@ export function UserRequestsPage() {
                   <p className="text-lg">
                     No matches found for <span className="font-semibold text-foreground">"{searchQuery}"</span>
                   </p>
-                  <Button variant="outline" size="sm" onClick={() => handleSearch('')} className="mt-4">
+                  <Button variant="outline" size="sm" onClick={() => handleSearch('')} className="mt-4" disabled={isInteractionDisabled}>
                     Clear search
                   </Button>
                 </div>

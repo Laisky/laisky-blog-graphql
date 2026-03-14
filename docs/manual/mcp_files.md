@@ -358,7 +358,7 @@ Response example:
       "file_path": "/docs/readme.txt",
       "file_seek_start_bytes": 0,
       "file_seek_end_bytes": 120,
-			"is_full_file": false,
+      "is_full_file": false,
       "chunk_content": "...",
       "score": 0.93
     }

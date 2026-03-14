@@ -33,7 +33,7 @@ const SORT_FIELDS: Array<{ label: string; value: string }> = [
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 export function CallLogPage() {
-  const { apiKey } = useApiKey();
+  const { apiKey, isToolConsoleLocked } = useApiKey();
   const [entries, setEntries] = useState<CallLogEntry[]>([]);
   const [pagination, setPagination] = useState<CallLogListResponse['pagination'] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,9 +49,11 @@ export function CallLogPage() {
   const [pageSize, setPageSize] = useState(20);
 
   useEffect(() => {
-    if (!apiKey) {
+    if (!apiKey || isToolConsoleLocked) {
       setEntries([]);
       setPagination(null);
+      setIsLoading(false);
+      setError(null);
       return;
     }
 
@@ -90,7 +92,7 @@ export function CallLogPage() {
       });
 
     return () => controller.abort();
-  }, [apiKey, page, pageSize, sortBy, sortOrder, toolFilter, userFilter, fromDate, toDate]);
+  }, [apiKey, isToolConsoleLocked, page, pageSize, sortBy, sortOrder, toolFilter, userFilter, fromDate, toDate]);
 
   const dateFormatter = useMemo(
     () =>
@@ -128,6 +130,7 @@ export function CallLogPage() {
               <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Tool</label>
               <select
                 value={toolFilter}
+                disabled={isToolConsoleLocked}
                 onChange={(event) => {
                   setToolFilter(event.target.value);
                   setPage(1);
@@ -145,6 +148,7 @@ export function CallLogPage() {
               <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">User prefix</label>
               <Input
                 value={userFilter}
+                disabled={isToolConsoleLocked}
                 onChange={(event) => {
                   setUserFilter(event.target.value);
                   setPage(1);
@@ -156,6 +160,7 @@ export function CallLogPage() {
               <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Sort by</label>
               <select
                 value={sortBy}
+                disabled={isToolConsoleLocked}
                 onChange={(event) => {
                   setSortBy(event.target.value);
                   setPage(1);
@@ -173,6 +178,7 @@ export function CallLogPage() {
               <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Sort order</label>
               <select
                 value={sortOrder}
+                disabled={isToolConsoleLocked}
                 onChange={(event) => {
                   setSortOrder(event.target.value as 'ASC' | 'DESC');
                   setPage(1);
@@ -187,6 +193,7 @@ export function CallLogPage() {
               <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">From date</label>
               <Input
                 value={fromDate}
+                disabled={isToolConsoleLocked}
                 onChange={(event) => {
                   setFromDate(event.target.value);
                   setPage(1);
@@ -198,6 +205,7 @@ export function CallLogPage() {
               <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">To date</label>
               <Input
                 value={toDate}
+                disabled={isToolConsoleLocked}
                 onChange={(event) => {
                   setToDate(event.target.value);
                   setPage(1);
@@ -209,6 +217,7 @@ export function CallLogPage() {
               <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Page size</label>
               <select
                 value={pageSize}
+                disabled={isToolConsoleLocked}
                 onChange={(event) => {
                   setPageSize(Number(event.target.value));
                   setPage(1);
@@ -290,7 +299,7 @@ export function CallLogPage() {
               type="button"
               variant="outline"
               size="sm"
-              disabled={displayedPage <= 1 || isLoading}
+              disabled={isToolConsoleLocked || displayedPage <= 1 || isLoading}
               onClick={() => setPage((prev) => Math.max(1, prev - 1))}
             >
               Previous
@@ -299,7 +308,7 @@ export function CallLogPage() {
               type="button"
               variant="outline"
               size="sm"
-              disabled={Boolean(totalPages && displayedPage >= totalPages) || isLoading}
+              disabled={isToolConsoleLocked || Boolean(totalPages && displayedPage >= totalPages) || isLoading}
               onClick={() => setPage((prev) => prev + 1)}
             >
               Next

@@ -98,7 +98,7 @@ interface SavedCommandsProps {
 }
 
 export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentContent, disabled = false }: SavedCommandsProps) {
-  const { apiKey } = useApiKey();
+  const { apiKey, isToolConsoleLocked } = useApiKey();
   const [commands, setCommands] = useState<SavedCommand[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,13 +116,15 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
   const commandListRef = useRef<HTMLDivElement>(null);
 
   const hasContent = useMemo(() => currentContent.trim().length > 0, [currentContent]);
+  const isDisabled = disabled || isToolConsoleLocked || !apiKey;
 
   // Fetch commands from API when apiKey changes
   useEffect(() => {
     const key = normalizeApiKey(apiKey);
-    if (!key) {
+    if (!key || isToolConsoleLocked) {
       setCommands([]);
       setError(null);
+      setIsLoading(false);
       return;
     }
 
@@ -152,7 +154,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
       disposed = true;
       controller.abort();
     };
-  }, [apiKey]);
+  }, [apiKey, isToolConsoleLocked]);
 
   // Filter and sort commands based on search query using fuzzy matching
   const filteredCommands = useMemo(() => {
@@ -268,10 +270,10 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
 
   const handleSelectCommand = useCallback(
     (command: SavedCommand) => {
-      if (disabled || editingId) return;
+      if (isDisabled || editingId) return;
       onSelectCommand(command.content);
     },
-    [disabled, editingId, onSelectCommand]
+    [editingId, isDisabled, onSelectCommand]
   );
 
   const handleToggleSaveInput = useCallback(() => {
@@ -327,8 +329,6 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
     [apiKey, commands]
   );
 
-  const isDisabled = disabled || !apiKey;
-
   return (
     <Card className="border border-border/60 bg-card shadow-sm">
       <CardHeader className="pb-3">
@@ -375,7 +375,12 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
           {error && (
             <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
               {error}
-              <button type="button" onClick={() => setError(null)} className="ml-2 underline hover:no-underline">
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                disabled={isDisabled}
+                className="ml-2 underline hover:no-underline disabled:cursor-not-allowed disabled:opacity-60"
+              >
                 Dismiss
               </button>
             </div>
@@ -412,9 +417,9 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
             </div>
           )}
 
-          {!apiKey ? (
+          {!apiKey || isToolConsoleLocked ? (
             <div className="rounded-lg border border-dashed bg-muted/50 px-4 py-6 text-center text-sm text-muted-foreground">
-              Connect with your API key to access saved commands.
+              Saved commands are unavailable while the tool console is locked.
             </div>
           ) : isLoading && commands.length === 0 ? (
             <div className="rounded-lg border border-dashed bg-muted/50 px-4 py-6 text-center text-sm text-muted-foreground">
@@ -443,6 +448,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
+                    disabled={isDisabled}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                     aria-label="Clear search"
                   >

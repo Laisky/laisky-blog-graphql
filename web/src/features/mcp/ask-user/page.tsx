@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { listRequests, submitAnswer, type AskUserRequest } from './api';
 
 export function AskUserPage() {
-  const { apiKey } = useApiKey();
+  const { apiKey, isToolConsoleLocked } = useApiKey();
   const [pendingRequests, setPendingRequests] = useState<AskUserRequest[]>([]);
   const [historyRequests, setHistoryRequests] = useState<AskUserRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -26,9 +26,10 @@ export function AskUserPage() {
   } | null>(null);
 
   useEffect(() => {
-    if (!apiKey) {
+    if (!apiKey || isToolConsoleLocked) {
       setPendingRequests([]);
       setHistoryRequests([]);
+      setIsLoading(false);
       return;
     }
 
@@ -93,7 +94,7 @@ export function AskUserPage() {
       }
       pollControlsRef.current = null;
     };
-  }, [apiKey]);
+  }, [apiKey, isToolConsoleLocked]);
 
   const handleAnswerChange = useCallback((id: string, value: string) => {
     setDraftAnswers((prev) => ({ ...prev, [id]: value }));
@@ -101,6 +102,10 @@ export function AskUserPage() {
 
   const handleAnswerSubmit = useCallback(
     async (requestId: string) => {
+      if (isToolConsoleLocked) {
+        return;
+      }
+
       const key = normalizeApiKey(apiKey);
       if (!key) {
         return;
@@ -125,7 +130,7 @@ export function AskUserPage() {
         });
       }
     },
-    [apiKey, draftAnswers]
+    [apiKey, draftAnswers, isToolConsoleLocked]
   );
 
   return (
@@ -161,7 +166,7 @@ export function AskUserPage() {
                   draftValue={draftAnswers[request.id] ?? ''}
                   onDraftChange={handleAnswerChange}
                   onSubmit={handleAnswerSubmit}
-                  disabled={Boolean(pendingSubmissions[request.id])}
+                  disabled={isToolConsoleLocked || Boolean(pendingSubmissions[request.id])}
                 />
               ))
             )}

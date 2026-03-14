@@ -41,7 +41,7 @@ const consoleItems: ConsoleMenuItem[] = [
 export function AppLayout() {
   const location = useLocation();
   const toolsConfig = useToolsConfig();
-  const { apiKey, status, sessionId } = useApiKey();
+  const { apiKey, isToolConsoleLocked, status, sessionId } = useApiKey();
 
   // Filter console items based on enabled tools
   const filteredConsoleItems = useMemo(() => {
@@ -63,20 +63,48 @@ export function AppLayout() {
       {status !== 'valid' && !isSettingsPage && (
         <div
           className={cn(
-            'px-4 py-2 text-center text-sm font-medium shadow-inner',
-            status === 'insufficient' ? 'bg-amber-500/10 text-amber-600' : 'bg-primary/10 text-primary'
+            'sticky top-0 z-50 border-b shadow-inner',
+            isToolConsoleLocked ? 'bg-primary text-primary-foreground' : 'bg-amber-500 text-amber-950'
           )}
         >
-          <div className="container mx-auto flex items-center justify-center gap-2">
-            {status === 'insufficient' ? <AlertTriangle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-            <span>
-              {status === 'none' && 'API key is not set. MCP features are disabled.'}
-              {status === 'error' && 'API key is invalid. Please check your settings.'}
-              {status === 'insufficient' && 'Insufficient balance. Some features may be limited.'}
-              {status === 'validating' && 'Validating API key...'}
-            </span>
-            <Link to="/settings" className="underline hover:opacity-80">
-              {status === 'none' ? 'Set API Key' : 'Check Settings'}
+          <div
+            className={cn(
+              'container mx-auto flex max-w-6xl items-center justify-between gap-4 px-4',
+              isToolConsoleLocked ? 'flex-col py-4 text-left sm:flex-row sm:items-center' : 'py-2 text-sm font-medium'
+            )}
+          >
+            <div className={cn('flex gap-3', isToolConsoleLocked ? 'items-start' : 'items-center')}>
+              {status === 'insufficient' ? (
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              ) : (
+                <AlertCircle className={cn('shrink-0', isToolConsoleLocked ? 'mt-0.5 h-5 w-5' : 'h-4 w-4')} />
+              )}
+              <div className="space-y-1">
+                {isToolConsoleLocked && (
+                  <p className="text-base font-semibold tracking-tight sm:text-lg">
+                    {status === 'none' && 'API key required to use MCP tool consoles'}
+                    {status === 'error' && 'The saved API key is invalid'}
+                    {status === 'validating' && 'API key validation is in progress'}
+                  </p>
+                )}
+                <p className={cn(isToolConsoleLocked ? 'max-w-3xl text-sm sm:text-base' : 'text-sm')}>
+                  {status === 'none' && 'API key is not set. MCP features are disabled until you add a valid key in Settings.'}
+                  {status === 'error' && 'Tool consoles are disabled until you replace the current API key in Settings.'}
+                  {status === 'insufficient' && 'Insufficient balance. Some features may be limited.'}
+                  {status === 'validating' && 'Tool consoles stay disabled until the current API key finishes validation.'}
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/settings"
+              className={cn(
+                'shrink-0 rounded-md border transition-colors',
+                isToolConsoleLocked
+                  ? 'border-primary-foreground/25 bg-primary-foreground px-4 py-2 text-sm font-semibold text-primary hover:bg-primary-foreground/90'
+                  : 'border-amber-950/20 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100'
+              )}
+            >
+              {status === 'none' ? 'Set API Key' : 'Open Settings'}
             </Link>
           </div>
         </div>
