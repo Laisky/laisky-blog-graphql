@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { ArrowRight, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -90,12 +91,11 @@ export function loadTurnstileScript(documentRef: Document): Promise<TurnstileAPI
   }
 
   return new Promise<TurnstileAPI>((resolve, reject) => {
-    let timeoutID: number | undefined;
     let script: HTMLScriptElement | null = null;
 
-    const cleanup = () => {
-      if (timeoutID !== undefined) {
-        window.clearTimeout(timeoutID);
+    const cleanup = (tid: number | undefined) => {
+      if (tid !== undefined) {
+        window.clearTimeout(tid);
       }
       if (script) {
         script.removeEventListener('load', resolveIfReady);
@@ -106,20 +106,20 @@ export function loadTurnstileScript(documentRef: Document): Promise<TurnstileAPI
     const resolveIfReady = () => {
       const api = getTurnstileAPI();
       if (!api) {
-        cleanup();
+        cleanup(timeoutID);
         reject(new Error('Turnstile script loaded but API is unavailable.'));
         return;
       }
-      cleanup();
+      cleanup(timeoutID);
       resolve(api);
     };
 
     const rejectWithError = () => {
-      cleanup();
+      cleanup(timeoutID);
       reject(new Error('Failed to load Cloudflare Turnstile script.'));
     };
 
-    timeoutID = window.setTimeout(() => {
+    const timeoutID = window.setTimeout(() => {
       rejectWithError();
     }, 10_000);
 
@@ -462,26 +462,24 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     : { tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' };
   const redirectBanner = { status: redirectStatus, subtext: redirectTarget.display };
 
-  // Hut 8-inspired Color Scheme applied to Original Layout
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-gray-50 dark:bg-[#0d0d0d] px-4 py-12 text-zinc-900 dark:text-slate-200 selection:bg-yellow-500 selection:text-black transition-colors duration-300">
-      {/* Background patterns/grid for "Hut 8" vibe without changing layout structure */}
-      <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,#0000000a_1px,transparent_1px),linear-gradient(to_bottom,#0000000a_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground transition-colors">
+      <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,hsl(var(--border)/0.3)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/0.3)_1px,transparent_1px)] bg-[size:24px_24px]" />
 
       <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
         <ThemeToggle />
       </div>
 
-      <div className="z-10 flex w-full max-w-lg flex-col gap-6">
+      <main className="z-10 flex w-full max-w-lg flex-col gap-6">
         <div className="space-y-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-widest text-blue-600 dark:text-[#d8ff00] font-mono">
+          <div className="flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-widest text-primary font-mono">
             <Lock className="h-4 w-4" />
             <span>Laisky SSO</span>
           </div>
         </div>
 
-        <Card className="border-0 bg-white/80 dark:bg-zinc-900/40 text-zinc-900 dark:text-slate-200 shadow-2xl backdrop-blur-sm ring-1 ring-black/5 dark:ring-white/10 transition-colors duration-300">
-          <CardHeader className="space-y-2 border-b border-black/5 dark:border-white/5 pb-6">
+        <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-sm transition-colors">
+          <CardHeader className="space-y-2 border-b border-border/40 pb-6">
             <StatusBanner status={redirectBanner.status} subtext={redirectBanner.subtext} />
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
@@ -489,10 +487,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <label
-                  htmlFor="sso-account"
-                  className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1"
-                >
+                <label htmlFor="sso-account" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
                   Account ID
                 </label>
                 <Input
@@ -502,15 +497,12 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   placeholder="USER_IDENTIFIER"
                   value={account}
                   onChange={(event) => setAccount(event.target.value)}
-                  className="bg-gray-50 dark:bg-black/40 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-700 h-12 font-mono focus-visible:ring-blue-600/30 dark:focus-visible:ring-[#d8ff00]/30 focus-visible:border-blue-600/50 dark:focus-visible:border-[#d8ff00]/50 transition-colors"
+                  className="h-12 font-mono transition-colors"
                 />
               </div>
 
               <div className="space-y-2">
-                <label
-                  htmlFor="sso-password"
-                  className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1"
-                >
+                <label htmlFor="sso-password" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
                   Passphrase
                 </label>
                 <Input
@@ -521,26 +513,24 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   placeholder="••••••••••••"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  className="bg-gray-50 dark:bg-black/40 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-700 h-12 font-mono focus-visible:ring-blue-600/30 dark:focus-visible:ring-[#d8ff00]/30 focus-visible:border-blue-600/50 dark:focus-visible:border-[#d8ff00]/50 transition-colors"
+                  className="h-12 font-mono transition-colors"
                 />
               </div>
 
               {turnstileEnabled && (
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 font-mono uppercase tracking-widest pl-1">
-                    Security Check
-                  </label>
+                  <label className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">Security Check</label>
                   <div
                     ref={turnstileContainerRef}
-                    className="flex min-h-20 items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-800 bg-gray-50 dark:bg-black/20 px-2 py-3 transition-colors"
+                    className="flex min-h-20 items-center justify-center rounded-md border border-input bg-background px-2 py-3 transition-colors"
                   />
-                  {turnstileMessage && <p className="text-xs text-zinc-500 font-mono">{turnstileMessage}</p>}
+                  {turnstileMessage && <p className="text-xs text-muted-foreground font-mono">{turnstileMessage}</p>}
                 </div>
               )}
 
               <Button
                 type="submit"
-                className="w-full h-12 bg-zinc-900 dark:bg-[#d8ff00] hover:bg-zinc-800 dark:hover:bg-[#c5e600] text-white dark:text-black font-bold uppercase tracking-widest font-mono transition-all duration-300 transform active:scale-95"
+                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
                 disabled={!canSubmit}
               >
                 {isSubmitting ? 'Authenticating...' : 'Login'}
@@ -549,12 +539,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
             </form>
           </CardContent>
         </Card>
-
-        <div className="flex justify-between text-[10px] text-zinc-400 dark:text-zinc-600 font-mono uppercase">
-          <span>Sys.Status: Online</span>
-          <span>Encrypted: TLS 1.3</span>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }

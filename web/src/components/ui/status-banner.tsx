@@ -35,7 +35,7 @@ export function StatusBanner({ status, subtext, subtextOnSuccessOnly = true, cla
   return (
     <div className={cn('flex flex-col gap-1 rounded-lg border px-4 py-3 text-sm transition-colors', toneStyles[status.tone], className)}>
       <span>{status.message}</span>
-      {showSubtext && <span className="text-xs text-inherit/80">{subtext}</span>}
+      {showSubtext && <span className="text-xs opacity-80">{subtext}</span>}
     </div>
   );
 }

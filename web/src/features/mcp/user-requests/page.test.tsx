@@ -49,9 +49,9 @@ vi.mock('./task-id-selector', () => ({
 describe('UserRequestsPage Keyboard Behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (useApiKey as any).mockReturnValue({ apiKey: 'test-api-key', isToolConsoleLocked: false, status: 'valid' });
-    (api.listUserRequests as any).mockResolvedValue({ pending: [], consumed: [] });
-    (api.getPreferencesFromServer as any).mockResolvedValue({ return_mode: 'all' });
+    vi.mocked(useApiKey).mockReturnValue({ apiKey: 'test-api-key', isToolConsoleLocked: false, status: 'valid' });
+    vi.mocked(api.listUserRequests).mockResolvedValue({ pending: [], consumed: [] });
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all' });
   });
 
   it('should show the correct hint in the placeholder', () => {
@@ -73,7 +73,7 @@ describe('UserRequestsPage Keyboard Behavior', () => {
   });
 
   it('should trigger send on Ctrl+Enter', async () => {
-    (api.createUserRequest as any).mockResolvedValue({ id: '1', status: 'pending' });
+    vi.mocked(api.createUserRequest).mockResolvedValue({ id: '1', status: 'pending' });
     render(<UserRequestsPage />);
 
     const textarea = screen.getByPlaceholderText(/Describe the feedback/i);
@@ -88,7 +88,7 @@ describe('UserRequestsPage Keyboard Behavior', () => {
   });
 
   it('should trigger send on Meta+Enter (for Mac)', async () => {
-    (api.createUserRequest as any).mockResolvedValue({ id: '1', status: 'pending' });
+    vi.mocked(api.createUserRequest).mockResolvedValue({ id: '1', status: 'pending' });
     render(<UserRequestsPage />);
 
     const textarea = screen.getByPlaceholderText(/Describe the feedback/i);
@@ -115,13 +115,13 @@ describe('UserRequestsPage Keyboard Behavior', () => {
       ctrlKey: true,
       isComposing: true,
       nativeEvent: { isComposing: true },
-    } as any);
+    } as unknown as KeyboardEvent);
 
     expect(api.createUserRequest).not.toHaveBeenCalled();
   });
 
   it.each(['none', 'error', 'validating'] as const)('should disable editor actions when status is %s', (status) => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: status === 'none' ? '' : 'test-api-key',
       isToolConsoleLocked: true,
       status,
@@ -136,7 +136,7 @@ describe('UserRequestsPage Keyboard Behavior', () => {
   });
 
   it('should keep editor inputs enabled when status is insufficient', () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: 'test-api-key',
       isToolConsoleLocked: false,
       status: 'insufficient',

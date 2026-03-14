@@ -11,7 +11,7 @@ vi.mock('@/lib/api-key-context', () => ({
 
 describe('ApiKeyInput', () => {
   it('should show Connect button when not validating', () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: '',
       status: 'none',
       history: [],
@@ -25,7 +25,7 @@ describe('ApiKeyInput', () => {
   });
 
   it('should show loading spinner and disable button when validating', () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: '',
       status: 'validating',
       history: [],
@@ -41,7 +41,7 @@ describe('ApiKeyInput', () => {
   });
 
   it('should show Re-validate when same key is entered', () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: 'test-key',
       status: 'valid',
       history: [],
@@ -55,7 +55,7 @@ describe('ApiKeyInput', () => {
 
   it('should call setApiKey on form submit', () => {
     const setApiKey = vi.fn();
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: '',
       status: 'none',
       history: [],
@@ -74,7 +74,7 @@ describe('ApiKeyInput', () => {
   });
 
   it('should show history dropdown when available', () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: '',
       status: 'none',
       history: ['key1', 'key2'],

@@ -1,4 +1,3 @@
-import { MessageSquare } from 'lucide-react';
 import type { ChangeEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -56,7 +55,7 @@ export function AskUserPage() {
         setPendingRequests(data.pending ?? []);
         setHistoryRequests(data.history ?? []);
         schedule(5000);
-      } catch (error) {
+      } catch {
         if (disposed || controller.signal.aborted) return;
         schedule(8000);
       } finally {
@@ -135,16 +134,9 @@ export function AskUserPage() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <MessageSquare className="h-4 w-4" />
-          <span>MCP Tools</span>
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Ask User Console</h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          Review pending MCP questions routed to your bearer token, send human answers, and browse the recent history. The HTTP API remains
-          available under <code>/tools/ask_user/api</code> and respects the configured public base path.
-        </p>
+      <section className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">ask_user</h1>
+        <p className="max-w-2xl text-muted-foreground">Review pending questions, send answers, and browse history.</p>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">

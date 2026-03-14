@@ -30,7 +30,7 @@ vi.mock('../user-requests/api', () => ({
 
 describe('SettingsPage', () => {
   it('should show authenticated status when valid', () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: 'test-key',
       keyEntries: [],
       setAliasForKey: vi.fn(),
@@ -46,7 +46,7 @@ describe('SettingsPage', () => {
   });
 
   it('should render mcp tools list when preferences loaded', async () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: 'test-key',
       keyEntries: [],
       setAliasForKey: vi.fn(),
@@ -65,7 +65,7 @@ describe('SettingsPage', () => {
   });
 
   it('should show insufficient balance status', () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: 'test-key',
       keyEntries: [],
       setAliasForKey: vi.fn(),
@@ -81,7 +81,7 @@ describe('SettingsPage', () => {
   });
 
   it('should show invalid status when error', () => {
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: 'test-key',
       keyEntries: [],
       setAliasForKey: vi.fn(),
@@ -97,7 +97,7 @@ describe('SettingsPage', () => {
 
   it('should show disconnect button when key is set', () => {
     const disconnect = vi.fn();
-    (useApiKey as any).mockReturnValue({
+    vi.mocked(useApiKey).mockReturnValue({
       apiKey: 'test-key',
       keyEntries: [],
       setAliasForKey: vi.fn(),

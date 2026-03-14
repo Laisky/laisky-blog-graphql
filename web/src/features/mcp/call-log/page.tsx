@@ -1,4 +1,3 @@
-import { Server } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -108,16 +107,9 @@ export function CallLogPage() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <Server className="h-4 w-4" />
-          <span>MCP Tools</span>
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Call Log</h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          Review every MCP tool invocation associated with your bearer token. Filter by tool, time range, or API key prefix to monitor usage
-          and costs.
-        </p>
+      <section className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Call Log</h1>
+        <p className="max-w-2xl text-muted-foreground">Tool invocation history with cost and performance tracking.</p>
       </section>
 
       <Card className="border border-border/60 bg-card">
@@ -127,8 +119,11 @@ export function CallLogPage() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Tool</label>
+              <label htmlFor="calllog-tool" className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Tool
+              </label>
               <select
+                id="calllog-tool"
                 value={toolFilter}
                 disabled={isToolConsoleLocked}
                 onChange={(event) => {
@@ -145,8 +140,11 @@ export function CallLogPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">User prefix</label>
+              <label htmlFor="calllog-user" className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                User prefix
+              </label>
               <Input
+                id="calllog-user"
                 value={userFilter}
                 disabled={isToolConsoleLocked}
                 onChange={(event) => {
@@ -157,8 +155,11 @@ export function CallLogPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Sort by</label>
+              <label htmlFor="calllog-sortby" className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Sort by
+              </label>
               <select
+                id="calllog-sortby"
                 value={sortBy}
                 disabled={isToolConsoleLocked}
                 onChange={(event) => {
@@ -175,8 +176,11 @@ export function CallLogPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Sort order</label>
+              <label htmlFor="calllog-sortorder" className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Sort order
+              </label>
               <select
+                id="calllog-sortorder"
                 value={sortOrder}
                 disabled={isToolConsoleLocked}
                 onChange={(event) => {
@@ -190,8 +194,11 @@ export function CallLogPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">From date</label>
+              <label htmlFor="calllog-from" className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                From date
+              </label>
               <Input
+                id="calllog-from"
                 value={fromDate}
                 disabled={isToolConsoleLocked}
                 onChange={(event) => {
@@ -202,8 +209,11 @@ export function CallLogPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">To date</label>
+              <label htmlFor="calllog-to" className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                To date
+              </label>
               <Input
+                id="calllog-to"
                 value={toDate}
                 disabled={isToolConsoleLocked}
                 onChange={(event) => {
@@ -214,8 +224,11 @@ export function CallLogPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Page size</label>
+              <label htmlFor="calllog-pagesize" className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Page size
+              </label>
               <select
+                id="calllog-pagesize"
                 value={pageSize}
                 disabled={isToolConsoleLocked}
                 onChange={(event) => {
@@ -247,13 +260,27 @@ export function CallLogPage() {
           <table className="min-w-full divide-y divide-border/60 text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left uppercase tracking-widest text-xs text-muted-foreground">
-                <th className="px-4 py-3 font-medium">Occurred</th>
-                <th className="px-4 py-3 font-medium">Tool</th>
-                <th className="px-4 py-3 font-medium">User</th>
-                <th className="px-4 py-3 font-medium">Cost</th>
-                <th className="px-4 py-3 font-medium">Duration</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Parameters</th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Occurred
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Tool
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  User
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Cost
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Duration
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Parameters
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60 text-foreground">

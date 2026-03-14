@@ -1,4 +1,4 @@
-import { Brain, Database, RefreshCw, Wrench } from 'lucide-react';
+import { Database, RefreshCw, Wrench } from 'lucide-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -300,26 +300,19 @@ export function MemoryPage() {
 
   return (
     <fieldset disabled={isToolConsoleLocked} className="m-0 min-w-0 space-y-8 border-0 p-0">
-      <section className="space-y-3">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <Brain className="h-4 w-4" />
-          <span>Memory Console</span>
-        </div>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Manage server-side memory lifecycle with MCP tools: <strong>before_turn</strong>, <strong>after_turn</strong>,{' '}
-          <strong>run_maintenance</strong>, and <strong>list_dir_with_abstract</strong>.
-        </p>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          Detailed user manual:
+      <section className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">memory</h1>
+        <p className="max-w-2xl text-muted-foreground">
+          Server-side memory lifecycle: before_turn, after_turn, maintenance, and directory listing.{' '}
           <a
             href="https://github.com/Laisky/laisky-blog-graphql/blob/master/docs/manual/mcp_memory.md"
             target="_blank"
             rel="noopener noreferrer"
-            className="font-mono text-xs text-primary underline-offset-4 hover:underline"
+            className="text-primary underline-offset-4 hover:underline"
           >
-            docs/manual/mcp_memory.md
+            Manual
           </a>
-        </div>
+        </p>
       </section>
 
       <Card className="border border-border/60 bg-card">

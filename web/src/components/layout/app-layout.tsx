@@ -63,56 +63,39 @@ export function AppLayout() {
       {status !== 'valid' && !isSettingsPage && (
         <div
           className={cn(
-            'sticky top-0 z-50 border-b shadow-inner',
+            'sticky top-0 z-50 border-b',
             isToolConsoleLocked ? 'bg-primary text-primary-foreground' : 'bg-amber-500 text-amber-950'
           )}
         >
-          <div
-            className={cn(
-              'container mx-auto flex max-w-6xl items-center justify-between gap-4 px-4',
-              isToolConsoleLocked ? 'flex-col py-4 text-left sm:flex-row sm:items-center' : 'py-2 text-sm font-medium'
-            )}
-          >
-            <div className={cn('flex gap-3', isToolConsoleLocked ? 'items-start' : 'items-center')}>
-              {status === 'insufficient' ? (
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              ) : (
-                <AlertCircle className={cn('shrink-0', isToolConsoleLocked ? 'mt-0.5 h-5 w-5' : 'h-4 w-4')} />
-              )}
-              <div className="space-y-1">
-                {isToolConsoleLocked && (
-                  <p className="text-base font-semibold tracking-tight sm:text-lg">
-                    {status === 'none' && 'API key required to use MCP tool consoles'}
-                    {status === 'error' && 'The saved API key is invalid'}
-                    {status === 'validating' && 'API key validation is in progress'}
-                  </p>
-                )}
-                <p className={cn(isToolConsoleLocked ? 'max-w-3xl text-sm sm:text-base' : 'text-sm')}>
-                  {status === 'none' && 'API key is not set. MCP features are disabled until you add a valid key in Settings.'}
-                  {status === 'error' && 'Tool consoles are disabled until you replace the current API key in Settings.'}
-                  {status === 'insufficient' && 'Insufficient balance. Some features may be limited.'}
-                  {status === 'validating' && 'Tool consoles stay disabled until the current API key finishes validation.'}
-                </p>
-              </div>
+          <div className="container mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-2 text-sm font-medium">
+            <div className="flex items-center gap-2">
+              {status === 'insufficient' ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+              <span>
+                {status === 'none' && 'API key required. Set one in Settings to enable tools.'}
+                {status === 'error' && 'Invalid API key. Update it in Settings.'}
+                {status === 'insufficient' && 'Insufficient balance. Some features may be limited.'}
+                {status === 'validating' && 'Validating API key...'}
+              </span>
             </div>
             <Link
               to="/settings"
               className={cn(
-                'shrink-0 rounded-md border transition-colors',
+                'shrink-0 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
                 isToolConsoleLocked
-                  ? 'border-primary-foreground/25 bg-primary-foreground px-4 py-2 text-sm font-semibold text-primary hover:bg-primary-foreground/90'
-                  : 'border-amber-950/20 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100'
+                  ? 'border-primary-foreground/25 bg-primary-foreground text-primary hover:bg-primary-foreground/90'
+                  : 'border-amber-950/20 bg-amber-50 text-amber-900 hover:bg-amber-100'
               )}
             >
-              {status === 'none' ? 'Set API Key' : 'Open Settings'}
+              {status === 'none' ? 'Set API Key' : 'Settings'}
             </Link>
           </div>
         </div>
       )}
       <header className="border-b border-border bg-card/80 backdrop-blur">
+        <div className="h-0.5 bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
         <div className="container mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4 md:flex-nowrap">
           <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
-            <Cpu className="h-5 w-5" />
+            <Cpu className="h-5 w-5 text-primary" />
             <span>Laisky MCP</span>
           </Link>
           <div className="flex w-full items-center justify-between gap-4 md:w-auto md:justify-end">
@@ -173,7 +156,7 @@ export function AppLayout() {
         )}
       </main>
       <footer className="border-t border-border bg-card/80 py-4 text-center text-xs text-muted-foreground">
-        Enpower your agents. &copy; 2026 Laisky.
+        Empower your agents. &copy; 2026 Laisky.
       </footer>
     </div>
   );

@@ -42,24 +42,24 @@ describe('AppLayout API key banner', () => {
       status: 'none',
       isToolConsoleLocked: true,
       apiKey: '',
-      title: 'API key required to use MCP tool consoles',
+      bannerText: 'API key required. Set one in Settings to enable tools.',
       cta: 'Set API Key',
     },
     {
       status: 'error',
       isToolConsoleLocked: true,
       apiKey: 'saved-key',
-      title: 'The saved API key is invalid',
-      cta: 'Open Settings',
+      bannerText: 'Invalid API key. Update it in Settings.',
+      cta: 'Settings',
     },
     {
       status: 'validating',
       isToolConsoleLocked: true,
       apiKey: 'saved-key',
-      title: 'API key validation is in progress',
-      cta: 'Open Settings',
+      bannerText: 'Validating API key...',
+      cta: 'Settings',
     },
-  ])('shows the prominent locked banner for $status status', ({ apiKey, cta, isToolConsoleLocked, status, title }) => {
+  ])('shows the prominent locked banner for $status status', ({ apiKey, cta, isToolConsoleLocked, status, bannerText }) => {
     vi.mocked(useToolsConfig).mockReturnValue({
       ask_user: true,
       extract_key_info: true,
@@ -87,7 +87,7 @@ describe('AppLayout API key banner', () => {
 
     renderLayout('/');
 
-    expect(screen.getByText(title)).toBeInTheDocument();
+    expect(screen.getByText(bannerText)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: cta })).toHaveAttribute('href', '/settings');
   });
 
@@ -119,6 +119,6 @@ describe('AppLayout API key banner', () => {
 
     renderLayout('/settings');
 
-    expect(screen.queryByText('API key required to use MCP tool consoles')).not.toBeInTheDocument();
+    expect(screen.queryByText('API key required. Set one in Settings to enable tools.')).not.toBeInTheDocument();
   });
 });

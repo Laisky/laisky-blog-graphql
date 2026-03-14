@@ -178,16 +178,9 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <User className="h-4 w-4" />
-          <span>User Settings</span>
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Profile & Authentication</h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          Manage your API key and authentication settings for Laisky MCP tools. The API key is stored securely in your browser's local
-          storage.
-        </p>
+      <section className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
+        <p className="max-w-2xl text-muted-foreground">API key configuration and tool preferences. Keys are stored in your browser.</p>
       </section>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -310,8 +303,10 @@ export function SettingsPage() {
                                 </Badge>
                               )}
                             </div>
-                            <p className="truncate pl-1 font-mono text-[11px] text-muted-foreground/70" title={entry.key}>
-                              {entry.key}
+                            <p className="truncate pl-1 font-mono text-[11px] text-muted-foreground/70">
+                              {entry.key.length <= 8
+                                ? entry.key
+                                : `${entry.key.slice(0, 6)}${'•'.repeat(Math.min(entry.key.length - 10, 20))}${entry.key.slice(-4)}`}
                             </p>
                           </div>
                           <div className="flex shrink-0 items-center justify-end">

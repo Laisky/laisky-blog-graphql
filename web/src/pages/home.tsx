@@ -1,10 +1,11 @@
-import { Activity, ClipboardList, Cpu, Database, ExternalLink, FolderOpen, Globe, Key, MessageSquare, Search, Server } from 'lucide-react';
+import { Activity, ClipboardList, Database, ExternalLink, FolderOpen, Globe, Key, MessageSquare, Search, Server } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToolsConfig } from '@/lib/tools-config-context';
+import { cn } from '@/lib/utils';
 
 /**
  * HomePage renders the MCP workspace landing page.
@@ -13,7 +14,6 @@ import { useToolsConfig } from '@/lib/tools-config-context';
 export function HomePage() {
   const toolsConfig = useToolsConfig();
 
-  // Tool cards - show all tools with enabled state for visual distinction
   const toolCards = [
     {
       key: 'inspector',
@@ -24,7 +24,6 @@ export function HomePage() {
           description="Debug and test MCP tools directly. Inspect JSON-RPC traffic and tool definitions."
           icon={<Activity className="h-5 w-5" />}
           priceLabel="Free"
-          tags={['Debug', 'Test']}
           href="/debug"
           external
         />
@@ -36,10 +35,9 @@ export function HomePage() {
       element: (
         <ToolCard
           title="web_search"
-          description="Performs Google Programmable Search queries to retrieve relevant web results."
+          description="Google Programmable Search queries to retrieve relevant web results."
           icon={<Search className="h-5 w-5" />}
           priceLabel="$0.005/call"
-          tags={['External API', 'Billing']}
           enabled={toolsConfig.web_search}
           href="/tools/web_search"
         />
@@ -51,10 +49,9 @@ export function HomePage() {
       element: (
         <ToolCard
           title="web_fetch"
-          description="Fetches and renders dynamic web pages using a headless browser (via Redis)."
+          description="Fetch and render dynamic web pages using a headless browser."
           icon={<Globe className="h-5 w-5" />}
           priceLabel="$0.0001/call"
-          tags={['Headless Browser', 'Content Extraction']}
           enabled={toolsConfig.web_fetch}
           href="/tools/web_fetch"
         />
@@ -66,10 +63,9 @@ export function HomePage() {
       element: (
         <ToolCard
           title="ask_user"
-          description="Suspends execution to request input from a human operator via the console."
+          description="Suspend execution to request input from a human operator."
           icon={<MessageSquare className="h-5 w-5" />}
           priceLabel="Free"
-          tags={['Human-in-the-loop', 'Async']}
           enabled={toolsConfig.ask_user}
           href="/tools/ask_user"
         />
@@ -81,10 +77,9 @@ export function HomePage() {
       element: (
         <ToolCard
           title="get_user_request"
-          description="Delivers the latest human-authored directive queued for the AI agent."
+          description="Deliver the latest human-authored directive queued for the AI agent."
           icon={<ClipboardList className="h-5 w-5" />}
           priceLabel="Free"
-          tags={['Human-in-the-loop', 'Push-based']}
           enabled={toolsConfig.get_user_request}
           href="/tools/get_user_requests"
         />
@@ -96,10 +91,9 @@ export function HomePage() {
       element: (
         <ToolCard
           title="extract_key_info"
-          description="RAG capability that chunks text and retrieves relevant context using vector embeddings."
+          description="RAG capability: chunk text and retrieve context using vector embeddings."
           icon={<Database className="h-5 w-5" />}
           priceLabel="Free"
-          tags={['RAG', 'Vector DB', 'Embeddings']}
           enabled={toolsConfig.extract_key_info}
         />
       ),
@@ -110,10 +104,9 @@ export function HomePage() {
       element: (
         <ToolCard
           title="file_io"
-          description="Project-scoped file workspace for reading, writing, listing, and searching content."
+          description="Project-scoped file workspace for reading, writing, listing, and searching."
           icon={<FolderOpen className="h-5 w-5" />}
           priceLabel="Free"
-          tags={['Storage', 'Workspace', 'Search']}
           enabled={toolsConfig.file_io}
           href="/tools/file_io"
         />
@@ -125,10 +118,9 @@ export function HomePage() {
       element: (
         <ToolCard
           title="memory"
-          description="Server-side turn memory lifecycle tools: before_turn, after_turn, maintenance, and directory abstracts."
+          description="Server-side turn memory: before_turn, after_turn, maintenance, and directory listing."
           icon={<Database className="h-5 w-5" />}
           priceLabel="Free"
-          tags={['Context', 'Recall', 'Lifecycle']}
           enabled={toolsConfig.memory}
           href="/tools/memory"
         />
@@ -140,10 +132,9 @@ export function HomePage() {
       element: (
         <ToolCard
           title="Call Logs"
-          description="Audit trail of all tool invocations, including costs, duration, and error rates."
+          description="Audit trail of all tool invocations with costs, duration, and error tracking."
           icon={<Server className="h-5 w-5" />}
           priceLabel="Free"
-          tags={['Audit', 'Cost Tracking']}
           href="/tools/call_log"
         />
       ),
@@ -151,46 +142,26 @@ export function HomePage() {
   ];
 
   return (
-    <div className="space-y-12">
-      {/* Hero Section */}
-      <section className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <Cpu className="h-4 w-4" />
-          <span>MCP Workspace</span>
-        </div>
-        <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">Model Context Protocol</h1>
-        <p className="max-w-3xl text-lg text-muted-foreground">
-          A unified interface for AI agents to interact with external tools and data. This workspace provides management consoles and
-          documentation for the available capabilities.
+    <div className="space-y-10">
+      <section className="space-y-3">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">MCP Workspace</h1>
+        <p className="max-w-2xl text-muted-foreground">
+          Manage and test your AI agent tools.{' '}
+          <Button variant="link" asChild className="h-auto p-0 text-base">
+            <a href="https://wiki.laisky.com/projects/gpt/pay/" target="_blank" rel="noopener noreferrer">
+              <Key className="mr-1 h-3.5 w-3.5" />
+              Get an API key
+              <ExternalLink className="ml-1 h-3 w-3" />
+            </a>
+          </Button>{' '}
+          to enable all tools.
         </p>
-
-        <Card className="max-w-3xl border-primary/20 bg-primary/5">
-          <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <h3 className="flex items-center gap-2 font-semibold text-foreground">
-                <Key className="h-4 w-4 text-primary" />
-                API Key Required
-              </h3>
-              <p className="text-sm text-muted-foreground">Access to all tools in this MCP requires an API key.</p>
-            </div>
-            <Button asChild className="shrink-0">
-              <a href="https://wiki.laisky.com/projects/gpt/pay/" target="_blank" rel="noopener noreferrer">
-                Get API Key
-                <ExternalLink className="ml-2 h-4 w-4" />
-              </a>
-            </Button>
-          </CardContent>
-        </Card>
       </section>
 
-      {/* Tools Section */}
       {toolCards.length > 0 && (
-        <section className="space-y-6">
-          <div className="flex items-center gap-2 border-b border-border pb-2">
-            <Database className="h-5 w-5 text-foreground" />
-            <h2 className="text-2xl font-semibold tracking-tight">Available Tools</h2>
-          </div>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
+        <section className="space-y-5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Available Tools</h2>
+          <div className="grid gap-4 md:grid-cols-2">
             {toolCards.map((card) => (
               <div key={card.key}>{card.element}</div>
             ))}
@@ -201,16 +172,11 @@ export function HomePage() {
   );
 }
 
-/**
- * ToolCard renders a homepage card for a single tool.
- * It accepts tool metadata and returns a static or linked card with status, tags, and pricing.
- */
 function ToolCard({
   title,
   description,
   icon,
   priceLabel,
-  tags,
   enabled = true,
   href,
   external,
@@ -219,70 +185,53 @@ function ToolCard({
   description: string;
   icon: React.ReactNode;
   priceLabel: string;
-  tags: string[];
   enabled?: boolean;
   href?: string;
   external?: boolean;
 }) {
   const content = (
     <Card
-      className={`group h-full transition-all ${
-        enabled
-          ? 'border-sky-200/60 bg-sky-50/30 hover:border-sky-300/80 hover:shadow-sm dark:border-sky-800/40 dark:bg-sky-950/20 dark:hover:border-sky-700/60'
-          : 'cursor-not-allowed border-gray-200/40 bg-gray-100/30 opacity-60 dark:border-gray-700/30 dark:bg-gray-800/20'
-      } ${href ? 'cursor-pointer' : ''}`}
+      className={cn(
+        'group h-full transition-colors',
+        enabled ? 'hover:border-primary/40 hover:shadow-sm' : 'cursor-not-allowed opacity-50',
+        href && enabled && 'cursor-pointer'
+      )}
     >
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div
-            className={`flex h-8 w-8 items-center justify-center rounded-md ${
-              enabled
-                ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300'
-                : 'bg-gray-200 text-gray-400 dark:bg-gray-700/50 dark:text-gray-500'
-            }`}
+            className={cn(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
+              enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+            )}
           >
             {icon}
           </div>
-          <CardTitle className={`font-mono text-lg font-medium ${enabled ? '' : 'text-muted-foreground'}`}>{title}</CardTitle>
-          {!enabled && (
-            <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
-              Disabled
-            </Badge>
-          )}
+          <CardTitle className={cn('font-mono text-base font-medium', !enabled && 'text-muted-foreground')}>{title}</CardTitle>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Badge
             variant="outline"
-            className={
+            className={cn(
+              'text-xs',
               enabled
                 ? priceLabel === 'Free'
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300'
                   : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300'
-                : 'border-gray-300 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'
-            }
+                : ''
+            )}
           >
             {priceLabel}
           </Badge>
-          {href && enabled && (
-            <div className="text-muted-foreground/50 transition-colors group-hover:text-primary">
-              {external ? <ExternalLink className="h-4 w-4" /> : <span className="text-xl">→</span>}
-            </div>
+          {!enabled && (
+            <Badge variant="outline" className="text-xs text-muted-foreground">
+              Off
+            </Badge>
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <CardDescription className={`text-sm leading-relaxed ${enabled ? '' : 'text-muted-foreground/70'}`}>{description}</CardDescription>
-        <div className="flex flex-wrap gap-2">
-          {tags.map((tag) => (
-            <Badge
-              key={tag}
-              variant="secondary"
-              className={`text-xs font-normal ${enabled ? '' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}
-            >
-              {tag}
-            </Badge>
-          ))}
-        </div>
+      <CardContent>
+        <CardDescription className={cn('text-sm leading-relaxed', !enabled && 'text-muted-foreground/70')}>{description}</CardDescription>
       </CardContent>
     </Card>
   );

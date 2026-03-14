@@ -1,6 +1,6 @@
 import { closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { ChevronDown, ChevronUp, ClipboardList, Loader2, Search, Send, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Search, Send, Trash2, X } from 'lucide-react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -176,7 +176,7 @@ export function UserRequestsPage() {
         }
 
         schedule(5000);
-      } catch (error) {
+      } catch {
         if (disposed || controller.signal.aborted) return;
         schedule(8000);
       } finally {
@@ -261,11 +261,6 @@ export function UserRequestsPage() {
     }
   }, [apiKey, isToolConsoleLocked]);
 
-  //   const handleRefresh = useCallback(() => {
-  //     setVisibleConsumedCount(10);
-  //     pollControlsRef.current?.refresh();
-  //   }, []);
-
   const handleLoadMore = useCallback(async () => {
     if (isToolConsoleLocked) {
       return;
@@ -286,7 +281,8 @@ export function UserRequestsPage() {
       setTotalConsumed(data.total_consumed ?? 0);
       setVisibleConsumedCount((prev) => prev + newItems.length);
       setHasMoreConsumed(newItems.length >= 10);
-    } catch (error) {
+    } catch {
+      // Silently ignore load-more failures; user can retry
     } finally {
       setIsLoadingMore(false);
     }
@@ -323,10 +319,10 @@ export function UserRequestsPage() {
         setHoldState({ active: false, waiting: false, remaining_secs: 0 });
       } else if (holdState.active) {
         // Hold was active but no agent was waiting, command is queued
-      } else {
       }
       pollControlsRef.current?.schedule(0);
-    } catch (error) {
+    } catch {
+      // Silently ignore; user can retry
     } finally {
       setIsSubmitting(false);
     }
@@ -345,7 +341,9 @@ export function UserRequestsPage() {
       const state = await setHold(key, normalizedTaskId);
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
-    } catch (error) {}
+    } catch {
+      // Silently ignore hold activation failure
+    }
   }, [apiKey, isToolConsoleLocked, normalizedTaskId]);
 
   const handleReleaseHold = useCallback(async () => {
@@ -361,7 +359,9 @@ export function UserRequestsPage() {
       const state = await releaseHold(key, normalizedTaskId);
       setHoldState(state);
       // No status message - the Hold button provides sufficient visual feedback
-    } catch (error) {}
+    } catch {
+      // Silently ignore hold release failure
+    }
   }, [apiKey, isToolConsoleLocked, normalizedTaskId]);
 
   const handleReturnModeChange = useCallback(
@@ -407,7 +407,8 @@ export function UserRequestsPage() {
           setEditorBackup(null);
         }
         pollControlsRef.current?.schedule(0);
-      } catch (error) {
+      } catch {
+        // Silently ignore delete failure
       } finally {
         setPendingDeletes((prev) => {
           const next = { ...prev };
@@ -485,7 +486,8 @@ export function UserRequestsPage() {
         allTasks: true,
       });
       pollControlsRef.current?.schedule(0);
-    } catch (error) {
+    } catch {
+      // Silently ignore bulk delete failure
     } finally {
       setIsDeletingAllPending(false);
     }
@@ -520,7 +522,8 @@ export function UserRequestsPage() {
         allTasks: true,
       });
       pollControlsRef.current?.schedule(0);
-    } catch (error) {
+    } catch {
+      // Silently ignore consumed-delete failure
     } finally {
       setIsDeletingConsumed(false);
     }
@@ -564,7 +567,10 @@ export function UserRequestsPage() {
     setNewContent(content);
   }, []);
 
-  const handleSaveCurrentContent = useCallback((_label: string) => {}, []);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleSaveCurrentContent = useCallback((_label: string) => {
+    /* no-op placeholder */
+  }, []);
 
   const handleEditorChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -654,7 +660,8 @@ export function UserRequestsPage() {
       try {
         await createUserRequest(key, request.content, request.task_id || undefined);
         pollControlsRef.current?.schedule(0);
-      } catch (error) {
+      } catch {
+        // Silently ignore re-queue failure
       } finally {
         setIsSubmitting(false);
       }
@@ -665,12 +672,8 @@ export function UserRequestsPage() {
   return (
     <div className="space-y-8">
       <section className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <ClipboardList className="h-4 w-4" />
-          <span>MCP Tools</span>
-        </div>
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Get User Requests Console</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">get_user_request</h1>
           <button
             type="button"
             onClick={() => {
@@ -771,7 +774,6 @@ export function UserRequestsPage() {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 if (!isEditorDisabled && newContent.trim()) {
-                  console.debug('[UserRequests] Keyboard shortcut triggered request creation');
                   handleCreateRequest();
                 }
               }

@@ -1,4 +1,4 @@
-import { Globe, Loader2, Play } from 'lucide-react';
+import { Loader2, Play } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -123,16 +123,9 @@ export function WebFetchPage() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <Globe className="h-4 w-4" />
-          <span>Tool Console</span>
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">web_fetch</h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          Fetches and renders dynamic web pages using a headless browser. This tool helps AI models extract content from modern websites
-          that require JavaScript.
-        </p>
+      <section className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">web_fetch</h1>
+        <p className="max-w-2xl text-muted-foreground">Fetch and render dynamic web pages using a headless browser.</p>
       </section>
 
       <div className="flex flex-col gap-8">
@@ -147,6 +140,8 @@ export function WebFetchPage() {
               <form onSubmit={handleExecute} className="space-y-4">
                 <div className="flex gap-2">
                   <Input
+                    id="web-fetch-url"
+                    aria-label="URL to fetch"
                     placeholder="Enter URL (e.g. https://example.com)..."
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
@@ -193,10 +188,18 @@ export function WebFetchPage() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-muted text-muted-foreground">
                   <tr>
-                    <th className="px-4 py-3 font-medium uppercase tracking-wider">Timestamp</th>
-                    <th className="px-4 py-3 font-medium uppercase tracking-wider">Parameters</th>
-                    <th className="px-4 py-3 font-medium uppercase tracking-wider text-right">Cost (USD)</th>
-                    <th className="px-4 py-3 font-medium uppercase tracking-wider text-right">Duration</th>
+                    <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider">
+                      Timestamp
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider">
+                      Parameters
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider text-right">
+                      Cost (USD)
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider text-right">
+                      Duration
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">

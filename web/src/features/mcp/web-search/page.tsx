@@ -1,4 +1,4 @@
-import { Loader2, Play, Search } from 'lucide-react';
+import { Loader2, Play } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -137,16 +137,9 @@ export function WebSearchPage() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-          <Search className="h-4 w-4" />
-          <span>Tool Console</span>
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">web_search</h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          Performs Google Programmable Search queries to retrieve relevant web results. This tool allows AI models to access real-time
-          information from the web.
-        </p>
+      <section className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">web_search</h1>
+        <p className="max-w-2xl text-muted-foreground">Google Programmable Search queries for real-time web results.</p>
       </section>
 
       <div className="flex flex-col gap-8">
@@ -161,6 +154,8 @@ export function WebSearchPage() {
               <form onSubmit={handleExecute} className="space-y-4">
                 <div className="flex gap-2">
                   <Input
+                    id="web-search-query"
+                    aria-label="Search query"
                     placeholder="Enter search query..."
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
@@ -236,10 +231,18 @@ export function WebSearchPage() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-muted text-muted-foreground">
                   <tr>
-                    <th className="px-4 py-3 font-medium uppercase tracking-wider">Timestamp</th>
-                    <th className="px-4 py-3 font-medium uppercase tracking-wider">Parameters</th>
-                    <th className="px-4 py-3 font-medium uppercase tracking-wider text-right">Cost (USD)</th>
-                    <th className="px-4 py-3 font-medium uppercase tracking-wider text-right">Duration</th>
+                    <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider">
+                      Timestamp
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider">
+                      Parameters
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider text-right">
+                      Cost (USD)
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium uppercase tracking-wider text-right">
+                      Duration
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
