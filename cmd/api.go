@@ -335,7 +335,8 @@ func runAPI() error {
 		})
 
 		if ragSettings.Enabled {
-			embedder := rag.NewOpenAIEmbedder(ragSettings.OpenAIBaseURL, ragSettings.EmbeddingModel, nil)
+			embedder := rag.NewOpenAIEmbedder(ragSettings.OpenAIBaseURL, ragSettings.EmbeddingModel, nil,
+				rag.WithLogger(logger.Named("rag_embedder")))
 			chunker := rag.ParagraphChunker{}
 			egServices.Go(func() error {
 				start := time.Now()
@@ -397,7 +398,8 @@ func runAPI() error {
 			if credErr != nil {
 				return errors.Wrap(credErr, "invalid mcp files credential configuration")
 			}
-			embedder := rag.NewOpenAIEmbedder(filesSettings.EmbeddingBaseURL, filesSettings.EmbeddingModel, nil)
+			embedder := rag.NewOpenAIEmbedder(filesSettings.EmbeddingBaseURL, filesSettings.EmbeddingModel, nil,
+				rag.WithLogger(logger.Named("files_embedder")))
 			rerankClient := files.NewCohereRerankClient(filesSettings.Search.RerankEndpoint, filesSettings.Search.RerankModel, filesSettings.Search.RerankTimeout)
 			fileSvc, err := files.NewService(mcpDB.DB, filesSettings, embedder, rerankClient, credential, credStore, logger.Named("mcp_files"), nil, nil)
 			if err != nil {

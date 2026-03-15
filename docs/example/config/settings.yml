@@ -23,7 +23,7 @@ settings:
       user: postgres
       pwd: changeme
   openai:
-    base_url: https://api.openai.com/v1
+    base_url: https://api.openai.com  # Base URL without /v1 suffix (the code appends /v1/embeddings automatically)
     embedding_model: text-embedding-3-small
   mcp:
     tools:

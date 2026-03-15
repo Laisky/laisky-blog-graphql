@@ -402,7 +402,8 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 	}
 
 	if toolsSettings.FindToolEnabled && ragSettings.OpenAIBaseURL != "" && ragSettings.EmbeddingModel != "" {
-		embedder := rag.NewOpenAIEmbedder(ragSettings.OpenAIBaseURL, ragSettings.EmbeddingModel, nil)
+		embedder := rag.NewOpenAIEmbedder(ragSettings.OpenAIBaseURL, ragSettings.EmbeddingModel, nil,
+			rag.WithLogger(serverLogger.Named("embedder")))
 		findToolInstance, err := tools.NewFindToolTool(
 			embedder,
 			serverLogger.Named("find_tool"),

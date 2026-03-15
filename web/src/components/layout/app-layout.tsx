@@ -91,7 +91,7 @@ export function AppLayout() {
           </div>
         </div>
       )}
-      <header className="border-b border-border bg-card/80 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur">
         <div className="h-0.5 bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
         <div className="container mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4 md:flex-nowrap">
           <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">

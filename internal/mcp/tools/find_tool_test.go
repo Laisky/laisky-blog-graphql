@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"testing"
 
@@ -568,6 +569,45 @@ func TestDetectSearchMode(t *testing.T) {
 			require.Equal(t, tt.expected, got)
 		})
 	}
+}
+
+// --- Embedding fallback tests ---
+
+// failingEmbedder always returns an error, simulating a broken embeddings endpoint.
+type failingEmbedder struct{}
+
+func (d *failingEmbedder) EmbedTexts(_ context.Context, _ string, _ []string) ([]pgvector.Vector, error) {
+	return nil, fmt.Errorf("embeddings endpoint status 404, url=http://localhost/v1/embeddings, body=not found")
+}
+
+func mustFindToolToolWithEmbedder(t *testing.T, embedder rag.Embedder) *FindToolTool {
+	t.Helper()
+	tool, err := NewFindToolTool(
+		embedder,
+		log.Logger.Named("find_tool_test"),
+		func(ctx context.Context) string { return "Bearer task@sk-test" },
+		func(context.Context, string, oneapi.Price, string) error { return nil },
+		testSettings(),
+	)
+	require.NoError(t, err)
+	tool.SetTools(sampleTools())
+	return tool
+}
+
+// TestFindToolTool_EmbeddingFailureReturnsError verifies that when the embedding
+// endpoint fails, the error is surfaced to the caller (not silently swallowed).
+func TestFindToolTool_EmbeddingFailureReturnsError(t *testing.T) {
+	tool := mustFindToolToolWithEmbedder(t, &failingEmbedder{})
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{
+			"query": "search the web",
+			"mode":  "embedding",
+		},
+	}}
+	result, err := tool.Handle(context.Background(), req)
+	require.NoError(t, err)
+	require.True(t, result.IsError, "embedding failure should return an error result")
 }
 
 // --- isToolNamePattern unit tests ---

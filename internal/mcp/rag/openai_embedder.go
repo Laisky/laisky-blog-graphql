@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
+	logSDK "github.com/Laisky/go-utils/v6/log"
+	"github.com/Laisky/zap"
 	pgvector "github.com/pgvector/pgvector-go"
 )
 
@@ -21,18 +24,40 @@ type OpenAIEmbedder struct {
 	baseURL    string
 	model      string
 	httpClient *http.Client
+	logger     logSDK.Logger
 }
 
 // NewOpenAIEmbedder constructs an embedder for the configured model.
-func NewOpenAIEmbedder(baseURL, model string, httpClient *http.Client) *OpenAIEmbedder {
+func NewOpenAIEmbedder(baseURL, model string, httpClient *http.Client, opts ...OpenAIEmbedderOption) *OpenAIEmbedder {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	trimmedBaseURL := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	return &OpenAIEmbedder{
+	trimmedBaseURL := normalizeBaseURL(baseURL)
+	e := &OpenAIEmbedder{
 		baseURL:    trimmedBaseURL,
 		model:      strings.TrimSpace(model),
 		httpClient: httpClient,
+	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	if e.logger != nil {
+		e.logger.Debug("openai embedder initialized",
+			zap.String("base_url", e.baseURL),
+			zap.String("model", e.model),
+			zap.String("embeddings_endpoint", e.baseURL+"/v1/embeddings"),
+		)
+	}
+	return e
+}
+
+// OpenAIEmbedderOption configures optional fields on OpenAIEmbedder.
+type OpenAIEmbedderOption func(*OpenAIEmbedder)
+
+// WithLogger sets the logger for debug diagnostics.
+func WithLogger(logger logSDK.Logger) OpenAIEmbedderOption {
+	return func(e *OpenAIEmbedder) {
+		e.logger = logger
 	}
 }
 
@@ -101,7 +126,8 @@ func (e *OpenAIEmbedder) createEmbeddings(ctx context.Context, apiKey string, ba
 		return nil, errors.Wrap(err, "marshal embeddings request")
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.baseURL+"/v1/embeddings", bytes.NewReader(body))
+	endpoint := e.baseURL + "/v1/embeddings"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, errors.Wrap(err, "build embeddings request")
 	}
@@ -115,7 +141,19 @@ func (e *OpenAIEmbedder) createEmbeddings(ctx context.Context, apiKey string, ba
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
-		return nil, errors.Errorf("embeddings endpoint status %d", httpResp.StatusCode)
+		// Read a limited portion of the response body for diagnostics.
+		respSnippet, _ := io.ReadAll(io.LimitReader(httpResp.Body, 512))
+		if e.logger != nil {
+			e.logger.Debug("embeddings endpoint returned non-2xx",
+				zap.String("url", endpoint),
+				zap.String("model", e.model),
+				zap.Int("status", httpResp.StatusCode),
+				zap.Int("batch_size", len(batch)),
+				zap.String("response_body", string(respSnippet)),
+			)
+		}
+		return nil, errors.Errorf("embeddings endpoint status %d, url=%s, body=%s",
+			httpResp.StatusCode, endpoint, string(respSnippet))
 	}
 
 	var decoded embeddingsResponse
@@ -124,4 +162,26 @@ func (e *OpenAIEmbedder) createEmbeddings(ctx context.Context, apiKey string, ba
 	}
 
 	return &decoded, nil
+}
+
+// normalizeBaseURL strips whitespace, trailing slashes, and any OpenAI-style
+// path suffixes ("/v1", "/v1/", "/v1/embeddings", "/v1/embeddings/") so the
+// caller can unconditionally append "/v1/embeddings".
+//
+// Examples:
+//
+//	"https://api.openai.com/v1"             → "https://api.openai.com"
+//	"https://api.openai.com/v1/"            → "https://api.openai.com"
+//	"https://api.openai.com/v1/embeddings"  → "https://api.openai.com"
+//	"https://api.openai.com/v1/embeddings/" → "https://api.openai.com"
+//	"https://oneapi.laisky.com"             → "https://oneapi.laisky.com"
+//	"https://oneapi.laisky.com/"            → "https://oneapi.laisky.com"
+func normalizeBaseURL(raw string) string {
+	u := strings.TrimSpace(raw)
+	u = strings.TrimRight(u, "/")
+	for _, suffix := range []string{"/embeddings", "/v1"} {
+		u = strings.TrimSuffix(u, suffix)
+		u = strings.TrimRight(u, "/")
+	}
+	return u
 }
