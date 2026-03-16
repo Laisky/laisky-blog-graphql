@@ -181,6 +181,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
 
   const handleSearchKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.nativeEvent.isComposing) return;
       if (filteredCommands.length === 0) return;
 
       switch (e.key) {
@@ -396,6 +397,7 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
                   placeholder="Enter a label for this command…"
                   className="flex-1"
                   onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing) return;
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       handleSaveNewCommand();
