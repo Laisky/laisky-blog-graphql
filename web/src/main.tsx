@@ -30,13 +30,16 @@ type RouterKind = 'mcp' | 'sso';
  */
 async function bootstrap() {
   const runtimeConfig = await loadRuntimeConfig();
-  const basename = normalizeBasename(runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL);
+  const routeContext = resolveRouteContext(
+    window.location.pathname,
+    runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL,
+    runtimeConfig?.site?.router
+  );
   const toolsConfig: ToolsConfig = runtimeConfig?.tools ?? defaultToolsConfig;
   const turnstileSiteKey = runtimeConfig?.site?.turnstileSiteKey;
   applySiteBranding(runtimeConfig?.site);
-  const routerKind = resolveRouterKind(runtimeConfig?.site?.router);
-  const routes = routerKind === 'sso' ? buildSsoRoutes(turnstileSiteKey) : buildMcpRoutes(turnstileSiteKey);
-  const router = createBrowserRouter(routes, { basename });
+  const routes = routeContext.routerKind === 'sso' ? buildSsoRoutes(turnstileSiteKey) : buildMcpRoutes(turnstileSiteKey);
+  const router = createBrowserRouter(routes, { basename: routeContext.basename });
 
   const container = document.getElementById('root');
   if (!container) {
@@ -112,6 +115,64 @@ function resolveRouterKind(raw: string | undefined): RouterKind {
     return 'sso';
   }
   return 'mcp';
+}
+
+/**
+ * resolveRouteContext chooses the effective router kind and basename for the active URL.
+ * It accepts the current pathname, configured basename, and configured router, then returns the routing context to use.
+ */
+function resolveRouteContext(pathname: string, configuredBasename: string | undefined, configuredRouter: string | undefined): {
+  basename: string;
+  routerKind: RouterKind;
+} {
+  const basename = normalizeBasename(configuredBasename);
+  const routerKind = resolveRouterKind(configuredRouter);
+
+  if (isPathOutsideBasename(pathname, basename) && isRootMcpConsolePath(pathname)) {
+    return {
+      basename: '/',
+      routerKind: 'mcp',
+    };
+  }
+
+  return {
+    basename,
+    routerKind,
+  };
+}
+
+/**
+ * isPathOutsideBasename reports whether the current pathname is outside the configured basename.
+ * It accepts the pathname and basename and returns true when the URL cannot be matched by that basename.
+ */
+function isPathOutsideBasename(pathname: string, basename: string): boolean {
+  if (basename === '/') {
+    return false;
+  }
+
+  return pathname !== basename && !pathname.startsWith(`${basename}/`);
+}
+
+/**
+ * isRootMcpConsolePath reports whether the active path targets a root-level MCP console route.
+ * It accepts the current pathname and returns true for MCP routes such as /debug, /settings, and /tools/*.
+ */
+function isRootMcpConsolePath(pathname: string): boolean {
+  if (!pathname.startsWith('/')) {
+    return false;
+  }
+
+  switch (true) {
+    case pathname === '/debug':
+    case pathname.startsWith('/debug/'):
+    case pathname === '/settings':
+    case pathname.startsWith('/settings/'):
+    case pathname === '/tools':
+    case pathname.startsWith('/tools/'):
+      return true;
+    default:
+      return false;
+  }
 }
 
 /**

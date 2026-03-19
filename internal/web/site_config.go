@@ -202,15 +202,34 @@ func (s siteConfigSet) resolveForRequest(r *http.Request) SiteConfig {
 		return site
 	}
 
+	if site, ok := s.resolveConsoleSite(r.URL.Path); ok {
+		return site
+	}
+
 	if site, ok := s.matchByPath(r.URL.Path); ok {
 		return site
 	}
 
-	if site, ok := s.matchByPath(requestPathFromReferer(r)); ok {
+	refererPath := requestPathFromReferer(r)
+	if site, ok := s.resolveConsoleSite(refererPath); ok {
+		return site
+	}
+
+	if site, ok := s.matchByPath(refererPath); ok {
 		return site
 	}
 
 	return s.defaultSite
+}
+
+// resolveConsoleSite resolves the MCP console site for root-level console routes.
+// It accepts a request path and returns the matched site plus a boolean indicating whether a match was found.
+func (s siteConfigSet) resolveConsoleSite(path string) (SiteConfig, bool) {
+	if !isMCPConsolePath(path) {
+		return SiteConfig{}, false
+	}
+
+	return s.findFirstSiteByRouter(defaultSiteRouter)
 }
 
 // matchByPath tries to resolve a site by matching path prefixes.
@@ -226,6 +245,41 @@ func (s siteConfigSet) matchByPath(path string) (SiteConfig, bool) {
 	}
 
 	return SiteConfig{}, false
+}
+
+// findFirstSiteByRouter returns the first configured site that matches the requested router kind.
+// It accepts a router identifier and returns the matching site plus a boolean indicating whether a match was found.
+func (s siteConfigSet) findFirstSiteByRouter(router string) (SiteConfig, bool) {
+	for _, site := range s.sites {
+		if site.Router == router {
+			return site, true
+		}
+	}
+
+	if s.defaultSite.Router == router {
+		return s.defaultSite, true
+	}
+
+	return SiteConfig{}, false
+}
+
+// isMCPConsolePath reports whether the path targets the root-level MCP console UI.
+// It accepts a request path and returns true for MCP console routes such as /debug, /settings, and /tools/*.
+func isMCPConsolePath(path string) bool {
+	if path == "" || !strings.HasPrefix(path, "/") {
+		return false
+	}
+
+	switch {
+	case path == "/debug", strings.HasPrefix(path, "/debug/"):
+		return true
+	case path == "/settings", strings.HasPrefix(path, "/settings/"):
+		return true
+	case path == "/tools", strings.HasPrefix(path, "/tools/"):
+		return true
+	default:
+		return false
+	}
 }
 
 // requestHost extracts and normalizes the host for the incoming request.

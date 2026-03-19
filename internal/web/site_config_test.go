@@ -106,9 +106,20 @@ func TestSiteConfigSetResolvePath(t *testing.T) {
 	site = set.resolveForRequest(req)
 	require.Equal(t, "sso", site.ID)
 
+	req = httptest.NewRequest(http.MethodGet, "http://127.0.0.1/debug", nil)
+	req.Host = "127.0.0.1:5173"
+	site = set.resolveForRequest(req)
+	require.Equal(t, "mcp", site.ID)
+
 	req = httptest.NewRequest(http.MethodGet, "http://127.0.0.1/runtime-config.json", nil)
 	req.Host = "127.0.0.1:5173"
 	req.Header.Set("Referer", "http://127.0.0.1/sso/")
 	site = set.resolveForRequest(req)
 	require.Equal(t, "sso", site.ID)
+
+	req = httptest.NewRequest(http.MethodGet, "http://127.0.0.1/runtime-config.json", nil)
+	req.Host = "127.0.0.1:5173"
+	req.Header.Set("Referer", "http://127.0.0.1/debug")
+	site = set.resolveForRequest(req)
+	require.Equal(t, "mcp", site.ID)
 }

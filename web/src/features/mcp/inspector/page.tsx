@@ -1,34 +1,27 @@
-import { sha256 } from 'js-sha256';
 import { Activity, ShieldAlert, ShieldCheck } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { useApiKey } from '@/lib/api-key-context';
 
-const inspectorScriptModules = import.meta.glob<InspectorModule>(
-  '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.js'
+const inspectorScriptModules = import.meta.glob<string>(
+  '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.js',
+  { eager: true, import: 'default', query: '?url' }
 );
-const inspectorStyleModules = import.meta.glob('../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.css');
+const inspectorStyleModules = import.meta.glob<string>(
+  '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.css',
+  { eager: true, import: 'default', query: '?url' }
+);
 const DEFAULT_ENDPOINT_PATH = (import.meta.env.VITE_MCP_ENDPOINT_PATH as string | undefined) || '/mcp';
 
-type InspectorInstance = {
-  destroy?: () => void;
-  setAuthorizationToken?: (token: string) => void;
-  setEndpointUrl?: (endpoint: string) => void;
+type CustomHeader = {
+  enabled: boolean;
+  name: string;
+  value: string;
 };
-
-type CreateInspectorFn = (options: { target: HTMLElement; endpointUrl: string }) => Promise<InspectorInstance>;
-
-type InspectorModule = {
-  createInspector?: CreateInspectorFn;
-  default?: CreateInspectorFn;
-};
-
-type SubtleDigest = (algorithm: AlgorithmIdentifier, data: BufferSource) => Promise<ArrayBuffer>;
 
 export function InspectorPage() {
   const { apiKey: contextKey } = useApiKey();
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,92 +29,41 @@ export function InspectorPage() {
 
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const authorization = params.get('token') || params.get('authorization') || contextKey || '';
+  const inspectorScriptUrl = useMemo(() => pickFirstAssetUrl(inspectorScriptModules), []);
+  const inspectorStyleUrl = useMemo(() => pickFirstAssetUrl(inspectorStyleModules), []);
+  const inspectorDocument = useMemo(() => {
+    if (!inspectorScriptUrl || !inspectorStyleUrl) {
+      return '';
+    }
+
+    return buildInspectorDocument(inspectorScriptUrl, inspectorStyleUrl);
+  }, [inspectorScriptUrl, inspectorStyleUrl]);
 
   useEffect(() => {
-    let cancelled = false;
-    let inspector: InspectorInstance | undefined;
-    const mount = containerRef.current;
     const endpointParam = params.get('endpoint');
     const endpointUrl = endpointParam ? endpointParam : new URL(DEFAULT_ENDPOINT_PATH, window.location.origin).toString();
     setEndpointDisplay(endpointUrl);
 
-    applyInspectorDefaults(params);
+    setError(null);
+    setIsLoading(true);
 
-    async function loadInspector() {
-      if (!mount) {
-        setError('Unable to mount MCP Inspector container');
-        setIsLoading(false);
-        return;
-      }
-
-      setError(null);
-      setIsLoading(true);
-
-      try {
-        const cryptoReady = ensureSubtleCryptoDigest();
-        if (!cryptoReady.ok) {
-          setError(cryptoReady.message ?? 'Secure WebCrypto APIs are required for the MCP Inspector.');
-          return;
-        }
-
-        const scriptLoader = pickFirstLoader(inspectorScriptModules);
-        if (!scriptLoader) {
-          throw new Error('Inspector script assets not found. Ensure @modelcontextprotocol/inspector-client is installed.');
-        }
-
-        await Promise.all(loadAllStyles(inspectorStyleModules));
-
-        const inspectorModule = await scriptLoader();
-        const createInspector = inspectorModule.createInspector ?? inspectorModule.default;
-
-        if (typeof createInspector !== 'function') {
-          throw new Error('createInspector export not found in inspector module');
-        }
-
-        if (cancelled) {
-          return;
-        }
-
-        inspector = await createInspector({
-          target: mount,
-          endpointUrl,
-        });
-
-        if (cancelled) {
-          inspector?.destroy?.();
-          return;
-        }
-
-        if (authorization) {
-          inspector?.setAuthorizationToken?.(authorization);
-        }
-
-        inspector?.setEndpointUrl?.(endpointUrl);
-      } catch (err) {
-        console.error('Failed to bootstrap MCP Inspector:', err);
-        if (!cancelled) {
-          setError('Failed to load MCP Inspector. Check console for details or open https://inspector.modelcontextprotocol.io manually.');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
+    if (!inspectorScriptUrl || !inspectorStyleUrl) {
+      setError('Inspector assets not found. Ensure @modelcontextprotocol/inspector-client is installed.');
+      setIsLoading(false);
+      return;
     }
 
-    loadInspector();
-
-    return () => {
-      cancelled = true;
-      inspector?.destroy?.();
-      if (mount) {
-        mount.innerHTML = '';
-      }
-    };
-  }, [params, authorization]);
+    try {
+      applyInspectorDefaults(params, endpointUrl, authorization);
+    } catch (err) {
+      console.error('Failed to prepare MCP Inspector defaults:', err);
+      setError('Failed to configure MCP Inspector defaults. Check browser storage permissions for this origin.');
+      setIsLoading(false);
+    }
+  }, [params, authorization, inspectorScriptUrl, inspectorStyleUrl]);
 
   return (
-    <div className="flex h-full min-h-[calc(100vh-8rem)] flex-col bg-background text-foreground">
+    <div className="flex h-full min-h-[calc(100vh-8rem)] min-w-0 flex-col bg-background text-foreground">
       <header className="border-b border-border bg-card/80 px-6 py-3 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
           <Activity className="h-5 w-5 text-primary" />
@@ -151,11 +93,16 @@ export function InspectorPage() {
         </div>
         <span className="mt-1 block text-[10px] opacity-70">Override with ?endpoint=&lt;url&gt; and ?token=&lt;value&gt;.</span>
       </header>
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
         {error ? (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-destructive">{error}</div>
         ) : (
-          <div ref={containerRef} className="h-full w-full" />
+          <iframe
+            title="MCP Inspector"
+            srcDoc={inspectorDocument}
+            className="absolute inset-0 block h-full w-full border-0 bg-background"
+            onLoad={() => setIsLoading(false)}
+          />
         )}
         {isLoading && !error ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/60 text-sm text-muted-foreground">
@@ -167,100 +114,67 @@ export function InspectorPage() {
   );
 }
 
-function pickFirstLoader<T>(modules: Record<string, () => Promise<T>>): (() => Promise<T>) | undefined {
-  const loaders = Object.values(modules);
-  return loaders.length > 0 ? loaders[0] : undefined;
+function pickFirstAssetUrl(modules: Record<string, string>): string | undefined {
+  const assets = Object.values(modules);
+  return assets.length > 0 ? assets[0] : undefined;
 }
 
-function loadAllStyles(modules: Record<string, () => Promise<unknown>>): Array<Promise<unknown>> {
-  return Object.values(modules).map((loader) => loader());
+function buildInspectorDocument(scriptUrl: string, styleUrl: string): string {
+  return [
+    '<!doctype html>',
+    '<html lang="en">',
+    '  <head>',
+    '    <meta charset="UTF-8" />',
+    '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+    '    <title>MCP Inspector</title>',
+    '    <style>',
+    '      html, body, #root {',
+    '        height: 100%;',
+    '        min-height: 100%;',
+    '        margin: 0;',
+    '      }',
+    '      body {',
+    '        overflow: auto;',
+    '      }',
+    '    </style>',
+    `    <link rel="stylesheet" href="${styleUrl}">`,
+    '  </head>',
+    '  <body>',
+    '    <div id="root" class="h-full w-full"></div>',
+    `    <script type="module" src="${scriptUrl}"></script>`,
+    '  </body>',
+    '</html>',
+  ].join('\n');
 }
 
-function ensureSubtleCryptoDigest(): { ok: boolean; message?: string } {
-  if (typeof window === 'undefined') {
-    return { ok: true };
-  }
-
-  const globalCrypto = window.crypto as (Crypto & { subtle?: SubtleCrypto }) | undefined;
-  if (!globalCrypto) {
-    return {
-      ok: false,
-      message: 'window.crypto is not available in this environment. Use a modern browser or enable secure context.',
-    };
-  }
-
-  if (globalCrypto.subtle) {
-    return { ok: true };
-  }
-
-  const digest: SubtleDigest = async (algorithm, data) => {
-    const name = typeof algorithm === 'string' ? algorithm : algorithm?.name;
-    if (!name || name.toUpperCase() !== 'SHA-256') {
-      throw new Error('SubtleCrypto polyfill only supports SHA-256 digests');
-    }
-
-    const input = normalizeBufferSource(data);
-    return sha256.arrayBuffer(input);
-  };
-
-  const subtlePolyfill: SubtleCrypto = {
-    digest,
-  } as SubtleCrypto;
-
-  try {
-    Object.defineProperty(globalCrypto, 'subtle', {
-      configurable: true,
-      enumerable: false,
-      value: subtlePolyfill,
-    });
-  } catch (error) {
-    console.error('Failed to attach SubtleCrypto polyfill:', error);
-    return {
-      ok: false,
-      message:
-        'Secure WebCrypto APIs are unavailable on this origin. Access the site via https:// or localhost (secure contexts are required for MCP Inspector).',
-    };
-  }
-
-  return { ok: true };
-}
-
-function normalizeBufferSource(source: BufferSource): Uint8Array {
-  if (source instanceof ArrayBuffer) {
-    return new Uint8Array(source);
-  }
-
-  if (ArrayBuffer.isView(source)) {
-    return new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
-  }
-
-  throw new Error('Unsupported BufferSource type for SubtleCrypto polyfill');
-}
-
-function applyInspectorDefaults(params: URLSearchParams): void {
+function applyInspectorDefaults(params: URLSearchParams, endpointUrl: string, authorization: string): void {
   if (typeof window === 'undefined') {
     return;
   }
 
   const defaults: Array<{
+    force?: boolean;
     key: string;
     value: string;
     previous?: string[];
     queryOverride?: string;
   }> = [
     {
+      force: true,
       key: 'lastTransportType',
       value: 'streamable-http',
       previous: ['stdio', ''],
       queryOverride: 'transport',
     },
     {
+      force: true,
       key: 'lastSseUrl',
-      value: 'https://mcp.laisky.com',
+      value: endpointUrl,
       previous: ['http://localhost:3001/sse', ''],
       queryOverride: 'serverUrl',
     },
     {
+      force: true,
       key: 'lastConnectionType',
       value: 'direct',
       previous: ['proxy', ''],
@@ -268,14 +182,14 @@ function applyInspectorDefaults(params: URLSearchParams): void {
     },
   ];
 
-  for (const { key, value, previous = [], queryOverride } of defaults) {
+  for (const { key, value, previous = [], queryOverride, force = false } of defaults) {
     try {
       if (queryOverride && params.has(queryOverride)) {
         continue;
       }
 
       const current = window.localStorage.getItem(key);
-      const shouldUpdate = current === null || previous.includes(current);
+      const shouldUpdate = force || current === null || previous.includes(current);
 
       if (shouldUpdate) {
         window.localStorage.setItem(key, value);
@@ -287,4 +201,64 @@ function applyInspectorDefaults(params: URLSearchParams): void {
       });
     }
   }
+
+  if (!authorization) {
+    return;
+  }
+
+  const currentHeaders = readCustomHeaders(window.localStorage.getItem('lastCustomHeaders'));
+  const shouldOverrideHeaders =
+    params.has('token') ||
+    params.has('authorization') ||
+    currentHeaders.length === 0 ||
+    hasOnlyDefaultAuthorizationPlaceholder(currentHeaders);
+
+  if (!shouldOverrideHeaders) {
+    return;
+  }
+
+  const nextHeaders: CustomHeader[] = [
+    {
+      name: 'Authorization',
+      value: `Bearer ${authorization}`,
+      enabled: true,
+    },
+  ];
+
+  window.localStorage.setItem('lastCustomHeaders', JSON.stringify(nextHeaders));
+}
+
+function readCustomHeaders(rawValue: string | null): CustomHeader[] {
+  if (!rawValue) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(isCustomHeader);
+  } catch {
+    return [];
+  }
+}
+
+function isCustomHeader(value: unknown): value is CustomHeader {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<CustomHeader>;
+  return typeof candidate.name === 'string' && typeof candidate.value === 'string' && typeof candidate.enabled === 'boolean';
+}
+
+function hasOnlyDefaultAuthorizationPlaceholder(headers: CustomHeader[]): boolean {
+  if (headers.length !== 1) {
+    return false;
+  }
+
+  const [header] = headers;
+  return header.name.trim().toLowerCase() === 'authorization' && header.value.trim() === 'Bearer' && !header.enabled;
 }
