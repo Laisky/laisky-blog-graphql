@@ -20,6 +20,8 @@ import (
 // FetchDynamicURLContent is a wrapper for submit & fetch dynamic url content.
 // When apiKey is not empty and outputMarkdown is true, it converts the fetched HTML body
 // to markdown. If conversion fails, it returns the raw HTML body unchanged.
+//
+//nolint:gocognit // complex but straightforward state-machine loop
 func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey string, outputMarkdown bool) ([]byte, error) {
 	logger := gmw.GetLogger(ctx)
 	if logger != nil {
@@ -71,7 +73,7 @@ func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey stri
 						zap.Int("content_len", len(task.ResultMarkdown)),
 					)
 				}
-				return []byte(task.ResultMarkdown), nil
+				return task.ResultMarkdown, nil
 			}
 
 			if logger != nil {

@@ -14,7 +14,7 @@ func ValidateProject(project string) error {
 	}
 	for i := 0; i < len(project); i++ {
 		char := project[i]
-		if !(char == '_' || char == '-' || char == '.' || isASCIILetterOrDigit(char)) {
+		if char != '_' && char != '-' && char != '.' && !isASCIILetterOrDigit(char) {
 			return NewError(ErrCodeInvalidPath, "project contains invalid characters", false)
 		}
 	}
@@ -55,7 +55,7 @@ func ValidatePath(path string) error {
 		if char == ' ' || char == '\t' || char == '\n' || char == '\r' {
 			return NewError(ErrCodeInvalidPath, "path must not contain whitespace", false)
 		}
-		if !(char == '/' || char == '_' || char == '-' || char == '.' || isASCIILetterOrDigit(char)) {
+		if char != '/' && char != '_' && char != '-' && char != '.' && !isASCIILetterOrDigit(char) {
 			return NewError(ErrCodeInvalidPath, "path contains invalid characters", false)
 		}
 	}

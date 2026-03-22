@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
 
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -135,7 +135,7 @@ func (se *SearchEngine) Search(ctx context.Context, query string) (*CustomSearch
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to send request")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

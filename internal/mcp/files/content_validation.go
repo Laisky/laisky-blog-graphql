@@ -14,16 +14,16 @@ func NormalizeContentEncoding(encoding string) (string, error) {
 }
 
 // ValidatePayloadSize enforces request payload size limits.
-func ValidatePayloadSize(size int64, max int64) error {
-	if max > 0 && size > max {
+func ValidatePayloadSize(size int64, maxSize int64) error {
+	if maxSize > 0 && size > maxSize {
 		return NewError(ErrCodePayloadTooLarge, "payload exceeds max size", false)
 	}
 	return nil
 }
 
 // ValidateFileSize enforces file size limits.
-func ValidateFileSize(size int64, max int64) error {
-	if max > 0 && size > max {
+func ValidateFileSize(size int64, maxSize int64) error {
+	if maxSize > 0 && size > maxSize {
 		return NewError(ErrCodePayloadTooLarge, "file exceeds max size", false)
 	}
 	return nil

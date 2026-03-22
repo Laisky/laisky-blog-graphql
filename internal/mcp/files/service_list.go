@@ -135,7 +135,7 @@ func (s *Service) listDescendants(ctx context.Context, apiKeyHash, project, path
 	if err != nil {
 		return nil, errors.Wrap(err, "query descendant files")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	entries := make(map[string]FileEntry)
 	dirUpdated := make(map[string]time.Time)
@@ -184,6 +184,9 @@ func (s *Service) listDescendants(ctx context.Context, apiKeyHash, project, path
 				}
 			}
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate descendant files")
 	}
 
 	result := make([]FileEntry, 0, len(entries))

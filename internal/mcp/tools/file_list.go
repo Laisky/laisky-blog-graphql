@@ -79,16 +79,16 @@ func (t *FileListTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 				emptyPayload := map[string]any{"entries": []files.FileEntry{}, "has_more": false}
 				emptyResult, encodeErr := mcp.NewToolResultJSON(emptyPayload)
 				if encodeErr != nil {
-					return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
+					return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
 				}
 				return emptyResult, nil
 			}
-			return fileToolErrorFromErr(svcErr), nil
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // error returned as tool result text
 		}
 		payload := map[string]any{"entries": result.Entries, "has_more": result.HasMore}
 		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
 		}
 		return toolResult, nil
 	}

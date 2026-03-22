@@ -32,7 +32,7 @@ func parseSQLTime(value any) (time.Time, error) {
 // parseNullableSQLTime converts SQL driver values into optional UTC time values.
 func parseNullableSQLTime(value any) (*time.Time, error) {
 	if value == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil time is a valid "not set" value for nullable SQL columns
 	}
 
 	parsed, err := parseSQLTime(value)

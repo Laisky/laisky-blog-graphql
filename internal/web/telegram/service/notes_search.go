@@ -54,7 +54,7 @@ func (s *Telegram) notesSearchHandler(ctx context.Context, us *userStat, msg *tb
 
 	if err := s.notesSearchByKeyword(ctx, us, keyword); err != nil {
 		logger.Error("notes search by keyword", zap.Error(err))
-		s.bot.Send(us.user, fmt.Sprintf("internal error: %s", err.Error()))
+		_, _ = s.bot.Send(us.user, fmt.Sprintf("internal error: %s", err.Error())) //nolint:errcheck // best-effort error notification
 	}
 }
 

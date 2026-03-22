@@ -99,6 +99,7 @@ func NewKv(db *sql.DB, opts ...Option) (*Kv, error) {
 }
 
 func (kv *Kv) setup() error {
+	//nolint:gosec // G202: table name is not user input, validated by regexpTableName
 	stmt := `
 CREATE TABLE IF NOT EXISTS ` + kv.opt.tableName + ` (
   key TEXT PRIMARY KEY,
@@ -107,7 +108,7 @@ CREATE TABLE IF NOT EXISTS ` + kv.opt.tableName + ` (
   expire_at TIMESTAMP NOT NULL
 )`
 
-	if _, err := kv.db.Exec(stmt); err != nil {
+	if _, err := kv.db.ExecContext(context.Background(), stmt); err != nil {
 		return errors.Wrap(err, "create kv table")
 	}
 
@@ -155,6 +156,7 @@ func (kv *Kv) SetWithExpireAt(ctx context.Context, key, value string, expireAt t
 	}
 
 	now := time.Now().UTC()
+	//nolint:gosec // G202: table name is not user input, validated by regexpTableName
 	stmt := `
 INSERT INTO ` + kv.opt.tableName + ` (key, value, created_at, expire_at)
 VALUES ($1, $2, $3, $4)
@@ -172,7 +174,7 @@ DO UPDATE SET value = EXCLUDED.value, expire_at = EXCLUDED.expire_at`
 // it deletes the record and returns an error.
 func (kv *Kv) Get(ctx context.Context, key string) (*KvItem, error) {
 	var doc KvItem
-	stmt := `SELECT key, value, created_at, expire_at FROM ` + kv.opt.tableName + ` WHERE key = $1 LIMIT 1`
+	stmt := `SELECT key, value, created_at, expire_at FROM ` + kv.opt.tableName + ` WHERE key = $1 LIMIT 1` //nolint:gosec // G202: table name is not user input, validated by regexpTableName
 	err := kv.db.QueryRowContext(ctx, stmt, key).Scan(&doc.Key, &doc.Value, &doc.CreatedAt, &doc.ExpireAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -208,7 +210,7 @@ func (kv *Kv) Exists(ctx context.Context, key string) (bool, error) {
 
 // Del removes the key from the store.
 func (kv *Kv) Del(ctx context.Context, key string) error {
-	stmt := `DELETE FROM ` + kv.opt.tableName + ` WHERE key = $1`
+	stmt := `DELETE FROM ` + kv.opt.tableName + ` WHERE key = $1` //nolint:gosec // G202: table name is not user input, validated by regexpTableName
 	if _, err := kv.db.ExecContext(ctx, stmt, key); err != nil {
 		return errors.Wrap(err, "failed to delete key")
 	}

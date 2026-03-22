@@ -171,7 +171,7 @@ func (s *Blog) LoadPostHistory(ctx context.Context, fileID string, language mode
 		return nil, errors.Wrap(err, "new request")
 	}
 
-	resp, err := httpcli.Do(req)
+	resp, err := httpcli.Do(req) //nolint:bodyclose // closed via gutils.CloseWithLog below
 	if err != nil {
 		return nil, errors.Wrapf(err, "do request `%s`", req.URL.String())
 	}
@@ -400,8 +400,8 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 
 func hiddenFilter(docu *model.Post) bool {
 	if docu.Hidden {
-		docu.Markdown = "本文已被设置为隐藏"
-		docu.Content = "本文已被设置为隐藏"
+		docu.Markdown = "本文已被设置为隐藏" //nolint:gosmopolitan // intentional Chinese string
+		docu.Content = "本文已被设置为隐藏"  //nolint:gosmopolitan // intentional Chinese string
 	}
 
 	return true
@@ -409,8 +409,8 @@ func hiddenFilter(docu *model.Post) bool {
 
 func passwordFilter(docu *model.Post) bool {
 	if docu.Password != "" {
-		docu.Content = "🔒本文已设置为加密"
-		docu.Markdown = "🔒本文已设置为加密"
+		docu.Content = "🔒本文已设置为加密"  //nolint:gosmopolitan // intentional Chinese string
+		docu.Markdown = "🔒本文已设置为加密" //nolint:gosmopolitan // intentional Chinese string
 	}
 
 	return true
@@ -496,7 +496,7 @@ func (s *Blog) LoadCategoryByURL(ctx context.Context, url string) (cate *model.C
 		return nil, errors.Wrap(err, "sanitize category url")
 	}
 	if url == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // empty URL means no category found, not an error
 	}
 
 	cate = &model.Category{}

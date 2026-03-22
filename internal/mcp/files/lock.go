@@ -81,5 +81,6 @@ func hashLockKey(apiKeyHash, project string) int64 {
 	_, _ = h.Write([]byte(apiKeyHash))
 	_, _ = h.Write([]byte(":"))
 	_, _ = h.Write([]byte(project))
-	return int64(h.Sum64())
+	v := h.Sum64()
+	return int64(v & 0x7FFFFFFFFFFFFFFF) //nolint:gosec // intentional truncation for advisory lock key
 }

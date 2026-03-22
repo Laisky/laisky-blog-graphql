@@ -32,9 +32,9 @@ func (s *Telegram) uploadCmdHandler(ctx context.Context, msg *tb.Message) {
 	logger := gmw.GetLogger(ctx)
 
 	// check whether user has permission to upload file
-	if hasPerm, err := s.UploadDao.IsUserHasPermToUpload(context.Background(), msg.Sender.ID); err != nil {
+	if hasPerm, err := s.UploadDao.IsUserHasPermToUpload(ctx, msg.Sender.ID); err != nil { //nolint:contextcheck
 		logger.Error("check user has perm to upload", zap.Error(err))
-		s.bot.Send(msg.Sender, fmt.Sprintf("failed to check user permission: %s", err.Error()))
+		_, _ = s.bot.Send(msg.Sender, fmt.Sprintf("failed to check user permission: %s", err.Error())) //nolint:errcheck
 		return
 	} else if !hasPerm {
 		s.userStats.Store(msg.Sender.ID, &userStat{
@@ -47,7 +47,7 @@ func (s *Telegram) uploadCmdHandler(ctx context.Context, msg *tb.Message) {
 			"This feature requires payment, so you need to bind to a supported payment account.\n\n" +
 			"Please choose the way you want to bind your account. The fee will be deducted from your account each time you upload a file:\n\n" +
 			"1. [oneapi apikey](https://wiki.laisky.com/projects/gpt/pay/): Please reply `1 - <YOUR_ONEAPI_APIKEY>`\n"
-		_, err = s.bot.Send(msg.Sender, reply, &tb.SendOptions{
+		_, _ = s.bot.Send(msg.Sender, reply, &tb.SendOptions{ //nolint:errcheck // best-effort notification
 			ParseMode:             tb.ModeMarkdown,
 			DisableWebPagePreview: true,
 		})
@@ -75,7 +75,7 @@ func (s *Telegram) uploadCmdHandler(ctx context.Context, msg *tb.Message) {
 		},
 	); err != nil {
 		logger.Error("send msg by telegram", zap.Error(err))
-		s.bot.Send(msg.Sender, "failed to send msg")
+		_, _ = s.bot.Send(msg.Sender, "failed to send msg") //nolint:errcheck // best-effort error notification
 		return
 	}
 }
@@ -91,7 +91,7 @@ func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.
 
 	ansers := strings.Split(msg.Text, " - ")
 	if len(ansers) != 2 {
-		s.bot.Send(us.user, errMsg, &tb.SendOptions{
+		_, _ = s.bot.Send(us.user, errMsg, &tb.SendOptions{ //nolint:errcheck // best-effort notification
 			ParseMode:             tb.ModeMarkdown,
 			DisableWebPagePreview: true,
 		})
@@ -122,7 +122,7 @@ func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.
 
 	if err != nil {
 		logger.Debug("save oneapi user", zap.Error(err))
-		s.bot.Send(us.user,
+		_, _ = s.bot.Send(us.user, //nolint:errcheck // best-effort error notification
 			fmt.Sprintf("failed to save oneapi user: %s", err.Error()),
 			&tb.SendOptions{
 				ParseMode:             tb.ModeMarkdown,
@@ -133,7 +133,7 @@ func (s *Telegram) uploadAuthHandler(ctx context.Context, us *userStat, msg *tb.
 	}
 
 	s.userStats.Delete(us.user.ID)
-	s.bot.Send(us.user, "successfully bind oneapi user")
+	_, _ = s.bot.Send(us.user, "successfully bind oneapi user") //nolint:errcheck // best-effort notification
 }
 
 func (s *Telegram) uploadHandler(ctx context.Context, us *userStat, msg *tb.Message) {
@@ -145,20 +145,20 @@ func (s *Telegram) uploadHandler(ctx context.Context, us *userStat, msg *tb.Mess
 
 	// reset upload auth
 	if strings.ToLower(strings.TrimSpace(msg.Text)) == "reset" {
-		s.UploadDao.ResetUser(ctx, us.user.ID)
+		_ = s.UploadDao.ResetUser(ctx, us.user.ID) //nolint:errcheck // best-effort reset
 		s.uploadCmdHandler(ctx, msg)
 		return
 	}
 
 	if msg.Document == nil && msg.Photo == nil {
-		s.bot.Send(us.user, "please send a file or image to upload")
+		_, _ = s.bot.Send(us.user, "please send a file or image to upload") //nolint:errcheck // best-effort notification
 		return
 	}
 
 	fileID, err := s._handleUserUploadedFile(ctx, logger, msg)
 	if err != nil {
 		logger.Error("handle user uploaded file", zap.Error(err))
-		s.bot.Send(us.user, fmt.Sprintf("failed to upload file: %s", err.Error()))
+		_, _ = s.bot.Send(us.user, fmt.Sprintf("failed to upload file: %s", err.Error())) //nolint:errcheck // best-effort error notification
 		return
 	}
 

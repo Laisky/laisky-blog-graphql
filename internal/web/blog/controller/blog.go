@@ -14,7 +14,7 @@ import (
 	ginMw "github.com/Laisky/gin-middlewares/v7"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
-	jwtLib "github.com/golang-jwt/jwt/v4"
+	jwtLib "github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"

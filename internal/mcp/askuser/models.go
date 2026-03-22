@@ -11,8 +11,8 @@ const (
 	StatusPending = "pending"
 	// StatusAnswered indicates the request has been answered by the user.
 	StatusAnswered = "answered"
-	// StatusCancelled indicates the request was cancelled by the caller before an answer was received.
-	StatusCancelled = "cancelled"
+	// StatusCanceled indicates the request was canceled by the caller before an answer was received.
+	StatusCanceled = "canceled"
 	// StatusExpired indicates the request expired while waiting for an answer.
 	StatusExpired = "expired"
 )

@@ -58,7 +58,7 @@ func (s *Service) NewIndexWorker() *IndexWorker {
 	return &IndexWorker{svc: s, logger: logger.Named("worker")}
 }
 
-// Start runs the worker loop until the context is cancelled.
+// Start runs the worker loop until the context is canceled.
 func (w *IndexWorker) Start(ctx context.Context) error {
 	if w == nil || w.svc == nil {
 		return errors.New("worker is not configured")
@@ -123,6 +123,7 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 		_ = tx.Rollback()
 		return nil, errors.Wrap(err, "claim index jobs")
 	}
+	defer rows.Close() //nolint:errcheck // rows closed explicitly below; defer is safety net
 	for rows.Next() {
 		var job FileIndexJob
 		if scanErr := rows.Scan(
@@ -138,11 +139,16 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 			&job.CreatedAt,
 			&job.UpdatedAt,
 		); scanErr != nil {
-			rows.Close()
+			_ = rows.Close()
 			_ = tx.Rollback()
 			return nil, errors.Wrap(scanErr, "scan claimed index jobs")
 		}
 		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		_ = tx.Rollback()
+		return nil, errors.Wrap(err, "iterate claimed index jobs")
 	}
 	if closeErr := rows.Close(); closeErr != nil {
 		_ = tx.Rollback()
@@ -162,7 +168,8 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 	}
 	inClause, inArgs := buildInClauseInt64(ids, svc.isPostgres, 3)
 	updateQuery := rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id IN (%s)`, svc.isPostgres)
-	updateArgs := []any{"processing", now}
+	updateArgs := make([]any, 0, 2+len(inArgs))
+	updateArgs = append(updateArgs, "processing", now)
 	updateArgs = append(updateArgs, inArgs...)
 	if _, err = tx.ExecContext(ctx, strings.Replace(updateQuery, "%s", inClause, 1), updateArgs...); err != nil {
 		_ = tx.Rollback()

@@ -10,7 +10,7 @@ import (
 )
 
 // Write applies content updates to a file path.
-func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, content, encoding string, offset int64, mode WriteMode) (WriteResult, error) {
+func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, content, encoding string, offset int64, mode WriteMode) (WriteResult, error) { //nolint:gocognit // write involves multiple validation and upsert steps
 	if err := s.validateAuth(auth); err != nil {
 		return WriteResult{}, errors.WithStack(err)
 	}
@@ -166,7 +166,8 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 
 		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
 		inClause, inArgs := buildInClause(paths, s.isPostgres, 5)
-		args := []any{now, now, auth.APIKeyHash, project}
+		args := make([]any, 0, 4+len(inArgs))
+		args = append(args, now, now, auth.APIKeyHash, project)
 		args = append(args, inArgs...)
 		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
 			return errors.Wrap(err, "soft delete files")
@@ -251,7 +252,8 @@ func (s *Service) ensureNoParentFile(ctx context.Context, tx *sql.Tx, apiKeyHash
 	var count int64
 	inClause, inArgs := buildInClause(parents, s.isPostgres, 3)
 	query := rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
-	args := []any{apiKeyHash, project}
+	args := make([]any, 0, 2+len(inArgs))
+	args = append(args, apiKeyHash, project)
 	args = append(args, inArgs...)
 	if err := tx.QueryRowContext(ctx, strings.Replace(query, "%s", inClause, 1), args...).Scan(&count); err != nil {
 		return errors.Wrap(err, "check parent files")
@@ -344,7 +346,7 @@ func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHas
 	if err != nil {
 		return nil, errors.Wrap(err, "query descendant paths")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var paths []string
 	for rows.Next() {
@@ -353,6 +355,9 @@ func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHas
 			return nil, errors.Wrap(scanErr, "scan descendant path")
 		}
 		paths = append(paths, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate descendant paths")
 	}
 	return paths, nil
 }
@@ -367,7 +372,7 @@ func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 	if err != nil {
 		return nil, errors.Wrap(err, "query project paths")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var paths []string
 	for rows.Next() {
@@ -376,6 +381,9 @@ func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 			return nil, errors.Wrap(scanErr, "scan project path")
 		}
 		paths = append(paths, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate project paths")
 	}
 	return paths, nil
 }

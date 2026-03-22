@@ -9,6 +9,8 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
+const authSourceNone = "none"
+
 // withAuthorizationHeaderNormalization normalizes backward-compatible query
 // API key authentication into the Authorization header so downstream code can
 // consistently rely on a single auth channel.
@@ -48,7 +50,7 @@ func withAuthorizationHeaderNormalization(next http.Handler, logger logSDK.Logge
 //   - source: where authorization was sourced from: "header", "query_apikey", or "none".
 func resolveRequestAuthorizationHeader(r *http.Request) (authHeader string, source string) {
 	if r == nil {
-		return "", "none"
+		return "", authSourceNone
 	}
 
 	header := strings.TrimSpace(r.Header.Get("Authorization"))
@@ -61,7 +63,7 @@ func resolveRequestAuthorizationHeader(r *http.Request) (authHeader string, sour
 		return "Bearer " + apiKey, "query_apikey"
 	}
 
-	return "", "none"
+	return "", authSourceNone
 }
 
 // extractAPIKeyFromQuery extracts a backward-compatible API key from common

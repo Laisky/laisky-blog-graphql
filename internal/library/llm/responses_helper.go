@@ -98,7 +98,7 @@ func (h *ResponsesHelper) CreateText(ctx context.Context, apiKey string, req Res
 	if err != nil {
 		return "", errors.Wrap(err, "call responses endpoint")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return "", errors.Errorf("responses endpoint status %d", resp.StatusCode)

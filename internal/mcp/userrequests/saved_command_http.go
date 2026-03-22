@@ -286,14 +286,14 @@ func (h *savedCommandsHTTPHandler) writeErrorWithLogger(w http.ResponseWriter, l
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": message})
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": message}) //nolint:errchkjson // best-effort error response
 }
 
 func (h *savedCommandsHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(payload)
+	_ = enc.Encode(payload) //nolint:errchkjson // best-effort JSON response
 }
 
 // logFromCtx extracts a context-aware logger from the context.

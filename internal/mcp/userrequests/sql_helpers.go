@@ -28,7 +28,7 @@ func rebindQuery(query string, dollar bool) string {
 	argIdx := 1
 	for _, ch := range query {
 		if ch == '?' {
-			builder.WriteString(fmt.Sprintf("$%d", argIdx))
+			fmt.Fprintf(&builder, "$%d", argIdx)
 			argIdx++
 			continue
 		}

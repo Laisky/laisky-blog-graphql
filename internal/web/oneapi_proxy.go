@@ -124,7 +124,7 @@ func fetchOneapiQuota(ctx context.Context, apiKey string) (*oneapiQuotaData, err
 	if err != nil {
 		return nil, errors.Wrap(err, "request")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.Errorf("unexpected status %d", resp.StatusCode)

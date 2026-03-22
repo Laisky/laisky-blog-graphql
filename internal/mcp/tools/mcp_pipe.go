@@ -407,11 +407,11 @@ func validateStep(step pipeStep) error {
 }
 
 // increment increases the step counter and enforces MaxSteps.
-func (c *stepCounter) increment(max int) error {
+func (c *stepCounter) increment(maxSteps int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.count++
-	if c.count > max {
+	if c.count > maxSteps {
 		return errors.New("pipeline exceeds maximum step limit")
 	}
 	return nil
@@ -443,7 +443,7 @@ var placeholderPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 func resolveAny(value any, env map[string]any) (any, error) {
 	switch v := value.(type) {
 	case nil:
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil input resolves to nil output by design
 	case string:
 		return resolveString(v, env)
 	case map[string]any:

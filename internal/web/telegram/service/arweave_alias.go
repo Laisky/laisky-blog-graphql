@@ -16,7 +16,7 @@ import (
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	tb "gopkg.in/telebot.v3"
 
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
@@ -114,6 +114,7 @@ func (s *Telegram) arweaveAliasHandler(ctx context.Context, us *userStat, msg *t
 	}
 }
 
+//nolint:dupl // arweaveCreateAlias and arweaveUpdateAlias share structure but differ in HTTP method and semantics
 func (s *Telegram) arweaveCreateAlias(ctx context.Context, us *userStat, msg string) error {
 	logger := gmw.GetLogger(ctx)
 
@@ -158,7 +159,7 @@ func (s *Telegram) arweaveCreateAlias(ctx context.Context, us *userStat, msg str
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", userToken))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpcli.Do(req)
+	resp, err := httpcli.Do(req) //nolint:bodyclose // closed via gutils.CloseWithLog below
 	if err != nil {
 		return errors.Wrap(err, "do request")
 	}
@@ -186,6 +187,7 @@ func (s *Telegram) arweaveCreateAlias(ctx context.Context, us *userStat, msg str
 	return nil
 }
 
+//nolint:dupl // arweaveUpdateAlias and arweaveCreateAlias share structure but differ in HTTP method and semantics
 func (s *Telegram) arweaveUpdateAlias(ctx context.Context, us *userStat, msg string) error {
 	logger := gmw.GetLogger(ctx)
 
@@ -230,7 +232,7 @@ func (s *Telegram) arweaveUpdateAlias(ctx context.Context, us *userStat, msg str
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", userToken))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpcli.Do(req)
+	resp, err := httpcli.Do(req) //nolint:bodyclose // closed via gutils.CloseWithLog below
 	if err != nil {
 		return errors.Wrap(err, "do request")
 	}
@@ -272,7 +274,7 @@ func (s *Telegram) arweaveGetAlias(ctx context.Context, us *userStat, alias stri
 		return errors.Wrap(err, "new request")
 	}
 
-	resp, err := httpcli.Do(req)
+	resp, err := httpcli.Do(req) //nolint:bodyclose // closed via gutils.CloseWithLog below
 	if err != nil {
 		return errors.Wrap(err, "do request")
 	}

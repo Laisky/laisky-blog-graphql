@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
 
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -97,15 +97,6 @@ type BingAnswer struct {
 	} `json:"rankingResponse"`
 }
 
-// bingResponse is the full JSON response from the Bing Search API.
-type bingResponse struct {
-	WebPages struct {
-		WebSearchURL          string       `json:"webSearchUrl"`
-		TotalEstimatedMatches int          `json:"totalEstimatedMatches"`
-		Value                 []BingAnswer `json:"value"`
-	} `json:"webPages"`
-}
-
 // Search performs a web search using the Bing Search API and returns a slice of BingAnswer.
 func (se *SearchEngine) Search(ctx context.Context, query string) (*BingAnswer, error) {
 	const endpoint = "https://api.bing.microsoft.com/v7.0/search"
@@ -143,7 +134,7 @@ func (se *SearchEngine) Search(ctx context.Context, query string) (*BingAnswer, 
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to send request")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

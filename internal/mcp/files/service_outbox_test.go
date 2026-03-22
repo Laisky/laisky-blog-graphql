@@ -20,7 +20,7 @@ func listIndexJobs(t *testing.T, svc *Service) []FileIndexJob {
 		ORDER BY id ASC`,
 	)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	jobs := []FileIndexJob{}
 	for rows.Next() {

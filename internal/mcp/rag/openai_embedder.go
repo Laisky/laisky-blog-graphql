@@ -138,7 +138,7 @@ func (e *OpenAIEmbedder) createEmbeddings(ctx context.Context, apiKey string, ba
 	if err != nil {
 		return nil, errors.Wrap(err, "call embeddings endpoint")
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
 		// Read a limited portion of the response body for diagnostics.

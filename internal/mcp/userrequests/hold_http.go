@@ -14,6 +14,8 @@ import (
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
+const holdAPIPath = "/api/hold"
+
 // holdHTTPHandler exposes HTTP endpoints for the hold feature.
 type holdHTTPHandler struct {
 	holdManager *HoldManager
@@ -28,11 +30,11 @@ func NewHoldHTTPHandler(holdManager *HoldManager, logger logSDK.Logger) http.Han
 // ServeHTTP routes hold requests based on path and method.
 func (h *holdHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
-	case r.URL.Path == "/api/hold" && r.Method == http.MethodGet:
+	case r.URL.Path == holdAPIPath && r.Method == http.MethodGet:
 		h.handleGetHold(w, r)
-	case r.URL.Path == "/api/hold" && r.Method == http.MethodPost:
+	case r.URL.Path == holdAPIPath && r.Method == http.MethodPost:
 		h.handleSetHold(w, r)
-	case r.URL.Path == "/api/hold" && r.Method == http.MethodDelete:
+	case r.URL.Path == holdAPIPath && r.Method == http.MethodDelete:
 		h.handleReleaseHold(w, r)
 	default:
 		logger := h.logFromCtx(r.Context())
@@ -134,14 +136,14 @@ func (h *holdHTTPHandler) writeErrorWithLogger(w http.ResponseWriter, logger log
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": message})
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": message}) //nolint:errchkjson // best-effort error response
 }
 
 func (h *holdHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(payload)
+	_ = enc.Encode(payload) //nolint:errchkjson // best-effort JSON response
 }
 
 // logFromCtx extracts a context-aware logger from the context.

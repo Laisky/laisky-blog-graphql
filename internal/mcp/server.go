@@ -55,12 +55,6 @@ func (s *Server) registerTool(mcpServer *srv.MCPServer, definition mcp.Tool, han
 	s.toolDefinitions[definition.Name] = definition
 }
 
-// getToolDefinition retrieves a registered tool definition by name.
-func (s *Server) getToolDefinition(name string) (mcp.Tool, bool) {
-	def, ok := s.toolDefinitions[name]
-	return def, ok
-}
-
 // logInvalidArrayItemSchemas emits debug logs when an array input property has no items schema.
 func logInvalidArrayItemSchemas(logger logSDK.Logger, definition mcp.Tool) {
 	if logger == nil {
@@ -128,7 +122,21 @@ type Server struct {
 // callLogger records tool invocations for auditing when provided.
 // logger overrides the default logger when provided.
 // It returns the configured server or an error if no capability is available.
-func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Service, userRequestService *userrequests.Service, ragService *rag.Service, ragSettings rag.Settings, fileService *files.Service, memoryService *mcpmemory.Service, rdb *rlibs.DB, callLogger callRecorder, toolsSettings ToolsSettings, logger logSDK.Logger) (*Server, error) {
+//
+//nolint:gocognit,maintidx // factory function with many optional capabilities
+func NewServer(
+	searchProvider searchlib.Provider,
+	askUserService *askuser.Service,
+	userRequestService *userrequests.Service,
+	ragService *rag.Service,
+	ragSettings rag.Settings,
+	fileService *files.Service,
+	memoryService *mcpmemory.Service,
+	rdb *rlibs.DB,
+	callLogger callRecorder,
+	toolsSettings ToolsSettings,
+	logger logSDK.Logger,
+) (*Server, error) {
 	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && fileService == nil && memoryService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled && !toolsSettings.FindToolEnabled {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}

@@ -48,18 +48,18 @@ func (tool *MemoryListDirWithAbstractTool) Handle(ctx context.Context, req mcp.C
 		Limit: defaultListLimit,
 	}
 	if err := decodeMemoryRequest(req, &request); err != nil {
-		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil
+		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil //nolint:nilerr // error returned as tool result text
 	}
 	applyMemoryDefaultsListDir(&request)
 
 	response, err := tool.service.ListDirWithAbstract(ctx, auth, request)
 	if err != nil {
-		return memoryToolErrorFromErr(err), nil
+		return memoryToolErrorFromErr(err), nil //nolint:nilerr // error returned as tool result text
 	}
 
 	result, err := mcp.NewToolResultJSON(response)
 	if err != nil {
-		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "failed to encode response", true), nil
+		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
 	}
 	return result, nil
 }

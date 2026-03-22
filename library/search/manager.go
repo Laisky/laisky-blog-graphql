@@ -44,7 +44,7 @@ type Provider interface {
 	Search(ctx context.Context, query string) (*SearchOutput, error)
 }
 
-// ManagerOption customises a Manager during construction.
+// ManagerOption customizes a Manager during construction.
 type ManagerOption func(*Manager)
 
 // WithLogger overrides the fallback logger used when no contextual logger is available.

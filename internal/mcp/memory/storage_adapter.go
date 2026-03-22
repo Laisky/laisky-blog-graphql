@@ -61,11 +61,14 @@ func (adapter *storageAdapter) Stat(ctx context.Context, project, path string) (
 		return memorystorage.FileInfo{}, errors.WithStack(err)
 	}
 
-	fileType := filesdk.FileTypeUnknown
-	if result.Type == files.FileTypeFile {
+	var fileType filesdk.FileType
+	switch result.Type {
+	case files.FileTypeFile:
 		fileType = filesdk.FileTypeFile
-	} else if result.Type == files.FileTypeDirectory {
+	case files.FileTypeDirectory:
 		fileType = filesdk.FileTypeDirectory
+	default:
+		fileType = filesdk.FileTypeUnknown
 	}
 
 	return memorystorage.FileInfo{
@@ -91,11 +94,14 @@ func (adapter *storageAdapter) List(ctx context.Context, project, path string, d
 
 	output := make([]memorystorage.FileInfo, 0, len(result.Entries))
 	for _, entry := range result.Entries {
-		fileType := filesdk.FileTypeUnknown
-		if entry.Type == files.FileTypeFile {
+		var fileType filesdk.FileType
+		switch entry.Type {
+		case files.FileTypeFile:
 			fileType = filesdk.FileTypeFile
-		} else if entry.Type == files.FileTypeDirectory {
+		case files.FileTypeDirectory:
 			fileType = filesdk.FileTypeDirectory
+		default:
+			fileType = filesdk.FileTypeUnknown
 		}
 
 		output = append(output, memorystorage.FileInfo{

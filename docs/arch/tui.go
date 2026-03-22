@@ -195,12 +195,8 @@ type AdvancedModel struct {
 	state ViewState
 
 	// Built-in components from bubbles package
-	menuList list.Model        // List selection component
-	inputs   []textinput.Model // Text input fields
-	spinner  spinner.Model     // Loading spinner
-
-	// Focus management for multiple inputs
-	focusIndex int
+	menuList list.Model    // List selection component
+	spinner  spinner.Model // Loading spinner
 
 	// Window dimensions for responsive layouts
 	width  int

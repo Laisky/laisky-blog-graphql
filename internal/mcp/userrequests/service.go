@@ -35,6 +35,8 @@ const (
 	defaultListLimit = 200
 	// maxTaskIDLength caps the length of task IDs stored with requests.
 	maxTaskIDLength = 255
+	// sqlAndTaskID is the SQL fragment used to filter by task_id.
+	sqlAndTaskID = ` AND task_id = ?`
 )
 
 // NewService constructs a Service backed by the provided SQL database.
@@ -218,7 +220,7 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 	countQuery := `SELECT COUNT(1) FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
 	countArgs := []any{auth.APIKeyHash, StatusConsumed}
 	if !includeAllTasks {
-		countQuery += ` AND task_id = ?`
+		countQuery += sqlAndTaskID
 		countArgs = append(countArgs, filteredTaskID)
 	}
 
@@ -232,7 +234,7 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 		WHERE api_key_hash = ? AND status = ?`
 	pendingArgs := []any{auth.APIKeyHash, StatusPending}
 	if !includeAllTasks {
-		pendingQuery += ` AND task_id = ?`
+		pendingQuery += sqlAndTaskID
 		pendingArgs = append(pendingArgs, filteredTaskID)
 	}
 	pendingQuery += ` ORDER BY sort_order ASC, created_at ASC LIMIT ?`
@@ -251,7 +253,7 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 		WHERE api_key_hash = ? AND status = ?`
 	consumedArgs := []any{auth.APIKeyHash, StatusConsumed}
 	if !includeAllTasks {
-		consumedQuery += ` AND task_id = ?`
+		consumedQuery += sqlAndTaskID
 		consumedArgs = append(consumedArgs, filteredTaskID)
 	}
 	if cursor != "" {
@@ -518,7 +520,7 @@ func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationCont
 	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ?`
 	args := []any{auth.APIKeyHash}
 	if !includeAllTasks {
-		query += ` AND task_id = ?`
+		query += sqlAndTaskID
 		args = append(args, filteredTaskID)
 	}
 
@@ -554,7 +556,7 @@ func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.Authorizat
 	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
 	args := []any{auth.APIKeyHash, StatusPending}
 	if !includeAllTasks {
-		query += ` AND task_id = ?`
+		query += sqlAndTaskID
 		args = append(args, filteredTaskID)
 	}
 
@@ -632,7 +634,7 @@ func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.Authorizatio
 	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
 	args := []any{auth.APIKeyHash, StatusConsumed}
 	if !includeAllTasks {
-		query += ` AND task_id = ?`
+		query += sqlAndTaskID
 		args = append(args, filteredTaskID)
 	}
 
@@ -640,7 +642,7 @@ func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.Authorizatio
 		subQuery := `SELECT id FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
 		subArgs := []any{auth.APIKeyHash, StatusConsumed}
 		if !includeAllTasks {
-			subQuery += ` AND task_id = ?`
+			subQuery += sqlAndTaskID
 			subArgs = append(subArgs, filteredTaskID)
 		}
 		subQuery += ` ORDER BY consumed_at DESC LIMIT ?`
@@ -743,7 +745,7 @@ func (s *Service) StartRetentionWorker(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				sweepCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				sweepCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute) //nolint:contextcheck // detached context for background sweep
 				if err := s.pruneExpired(sweepCtx); err != nil {
 					s.log().Error("prune expired user requests", zap.Error(err))
 				}
@@ -755,7 +757,7 @@ func (s *Service) StartRetentionWorker(ctx context.Context) {
 
 // scanRequestRows reads request rows into request models.
 func scanRequestRows(rows *sql.Rows) ([]Request, error) {
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	requests := make([]Request, 0)
 	for rows.Next() {

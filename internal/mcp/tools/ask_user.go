@@ -107,7 +107,7 @@ func (t *AskUserTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	answered, err := t.service.WaitForAnswer(callCtx, stored.ID)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			_ = t.service.CancelRequest(context.Background(), stored.ID, askuser.StatusExpired)
+			_ = t.service.CancelRequest(context.Background(), stored.ID, askuser.StatusExpired) //nolint:contextcheck // intentional: use fresh context for cleanup after caller context is done
 			return mcp.NewToolResultError("timeout waiting for user response"), nil
 		}
 

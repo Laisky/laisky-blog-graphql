@@ -94,12 +94,12 @@ func (tool *MemoryBeforeTurnTool) Handle(ctx context.Context, req mcp.CallToolRe
 			zap.Bool("retryable", retryable),
 			zap.String("error_message", message),
 		)
-		return memoryToolErrorFromErr(err), nil
+		return memoryToolErrorFromErr(err), nil //nolint:nilerr // error returned as tool result text
 	}
 
 	result, err := mcp.NewToolResultJSON(response)
 	if err != nil {
-		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "failed to encode response", true), nil
+		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
 	}
 	return result, nil
 }

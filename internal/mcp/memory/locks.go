@@ -77,7 +77,7 @@ func hashSessionLockKey(apiKeyHash, project, sessionID string) int64 {
 	_, _ = h.Write([]byte(project))
 	_, _ = h.Write([]byte(":"))
 	_, _ = h.Write([]byte(sessionID))
-	return int64(h.Sum64())
+	return int64(h.Sum64() & 0x7FFFFFFFFFFFFFFF) //nolint:gosec // intentional truncation for advisory lock key
 }
 
 // isPostgresDB reports whether the active SQL driver is postgres/pgx.

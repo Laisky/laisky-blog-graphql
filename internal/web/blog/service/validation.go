@@ -247,14 +247,14 @@ func sanitizeEmail(email string) (string, error) {
 // It accepts the raw website string pointer and returns the sanitized pointer or an error.
 func sanitizeWebsite(website *string) (*string, error) {
 	if website == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil input means no website provided, not an error
 	}
 	trimmed, err := sanitizeOptionalText(*website, maxCommentWebsiteLen, "author website")
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 	if trimmed == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // empty website after trimming means no website, not an error
 	}
 	if _, err := url.ParseRequestURI(trimmed); err != nil {
 		return nil, errors.Wrap(err, "invalid website url")

@@ -172,7 +172,7 @@ func (s *Service) Record(ctx context.Context, input RecordInput) error {
 		UpdatedAt:      s.clock(),
 	}
 
-	// Use a detached context to ensure logging completes even if the request is cancelled.
+	// Use a detached context to ensure logging completes even if the request is canceled.
 	ctx = context.WithoutCancel(ctx)
 	_, err = s.db.Exec(ctx, `
 		INSERT INTO mcp_call_logs (

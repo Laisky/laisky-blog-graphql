@@ -42,18 +42,18 @@ func (tool *MemoryRunMaintenanceTool) Handle(ctx context.Context, req mcp.CallTo
 
 	request := mcpmemory.SessionRequest{}
 	if err := decodeMemoryRequest(req, &request); err != nil {
-		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil
+		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil //nolint:nilerr // error returned as tool result text
 	}
 	applyMemoryDefaultsSession(&request)
 
 	err := tool.service.RunMaintenance(ctx, auth, request)
 	if err != nil {
-		return memoryToolErrorFromErr(err), nil
+		return memoryToolErrorFromErr(err), nil //nolint:nilerr // error returned as tool result text
 	}
 
 	result, err := mcp.NewToolResultJSON(map[string]any{"ok": true})
 	if err != nil {
-		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "failed to encode response", true), nil
+		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
 	}
 	return result, nil
 }

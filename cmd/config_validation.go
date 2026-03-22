@@ -163,14 +163,14 @@ func validateWebsearchConfig(get configGetter, errs *[]string) {
 
 	engines := toStringMap(rawEngines)
 	if engines == nil {
-		appendValidationError(errs, "settings.websearch.engines must be an object")
+		appendValidationErrorf(errs, "settings.websearch.engines must be an object")
 		return
 	}
 
 	for engineName, engineVal := range engines {
 		engineCfg := toStringMap(engineVal)
 		if engineCfg == nil {
-			appendValidationError(errs, "settings.websearch.engines.%s must be an object", engineName)
+			appendValidationErrorf(errs, "settings.websearch.engines.%s must be an object", engineName)
 			continue
 		}
 
@@ -178,7 +178,7 @@ func validateWebsearchConfig(get configGetter, errs *[]string) {
 		if enabledVal, ok := engineCfg["enabled"]; ok {
 			parsed, parseOK := parseStrictBool(enabledVal)
 			if !parseOK {
-				appendValidationError(errs, "settings.websearch.engines.%s.enabled must be a boolean", engineName)
+				appendValidationErrorf(errs, "settings.websearch.engines.%s.enabled must be a boolean", engineName)
 			} else {
 				enabled = parsed
 			}
@@ -186,9 +186,9 @@ func validateWebsearchConfig(get configGetter, errs *[]string) {
 
 		if priorityVal, ok := engineCfg["priority"]; ok {
 			if _, parseErr := parseStrictInt(priorityVal); parseErr != nil {
-				appendValidationError(errs, "settings.websearch.engines.%s.priority must be an integer >= 1", engineName)
+				appendValidationErrorf(errs, "settings.websearch.engines.%s.priority must be an integer >= 1", engineName)
 			} else if priority, _ := parseStrictInt(priorityVal); priority < 1 {
-				appendValidationError(errs, "settings.websearch.engines.%s.priority must be >= 1", engineName)
+				appendValidationErrorf(errs, "settings.websearch.engines.%s.priority must be >= 1", engineName)
 			}
 		}
 
@@ -196,12 +196,12 @@ func validateWebsearchConfig(get configGetter, errs *[]string) {
 			continue
 		}
 
-		engineType := ""
+		var engineType string
 		if typeVal, ok := engineCfg["type"]; ok {
 			if s, isStr := typeVal.(string); isStr && s != "" {
 				engineType = s
 			} else {
-				appendValidationError(errs, "settings.websearch.engines.%s.type must be a non-empty string", engineName)
+				appendValidationErrorf(errs, "settings.websearch.engines.%s.type must be a non-empty string", engineName)
 				continue
 			}
 		} else {
@@ -217,7 +217,7 @@ func validateWebsearchConfig(get configGetter, errs *[]string) {
 		case "serp_google":
 			validateRequiredStringInMap(errs, engineCfg, prefix+".api_key")
 		default:
-			appendValidationError(errs, "settings.websearch.engines.%s.type has unknown value %q", engineName, engineType)
+			appendValidationErrorf(errs, "settings.websearch.engines.%s.type has unknown value %q", engineName, engineType)
 		}
 	}
 }
@@ -235,39 +235,39 @@ func validateWebSiteConfig(get configGetter, errs *[]string) {
 
 	sites := toStringMap(rawSites)
 	if sites == nil {
-		appendValidationError(errs, "settings.web.sites must be an object")
+		appendValidationErrorf(errs, "settings.web.sites must be an object")
 		return
 	}
 
 	for siteKey, siteVal := range sites {
 		siteCfg := toStringMap(siteVal)
 		if siteCfg == nil {
-			appendValidationError(errs, "settings.web.sites.%s must be an object", siteKey)
+			appendValidationErrorf(errs, "settings.web.sites.%s must be an object", siteKey)
 			continue
 		}
 
 		if hostVal, ok := siteCfg["host"]; ok {
 			host, parseErr := parseStrictString(hostVal)
 			if parseErr != nil || !isValidHost(host) {
-				appendValidationError(errs, "settings.web.sites.%s.host must be a valid host", siteKey)
+				appendValidationErrorf(errs, "settings.web.sites.%s.host must be a valid host", siteKey)
 			}
 		}
 
 		if routerVal, ok := siteCfg["router"]; ok {
 			router, parseErr := parseStrictString(routerVal)
 			if parseErr != nil {
-				appendValidationError(errs, "settings.web.sites.%s.router must be a string", siteKey)
+				appendValidationErrorf(errs, "settings.web.sites.%s.router must be a string", siteKey)
 			} else if normalized := strings.ToLower(strings.TrimSpace(router)); normalized != "mcp" && normalized != "sso" {
-				appendValidationError(errs, "settings.web.sites.%s.router must be one of [mcp, sso]", siteKey)
+				appendValidationErrorf(errs, "settings.web.sites.%s.router must be one of [mcp, sso]", siteKey)
 			}
 		}
 
 		if basePathVal, ok := siteCfg["public_base_path"]; ok {
 			basePath, parseErr := parseStrictString(basePathVal)
 			if parseErr != nil {
-				appendValidationError(errs, "settings.web.sites.%s.public_base_path must be a string path", siteKey)
+				appendValidationErrorf(errs, "settings.web.sites.%s.public_base_path must be a string path", siteKey)
 			} else if !isValidBasePath(basePath) {
-				appendValidationError(errs, "settings.web.sites.%s.public_base_path must be empty or start with '/'", siteKey)
+				appendValidationErrorf(errs, "settings.web.sites.%s.public_base_path must be empty or start with '/'", siteKey)
 			}
 		}
 	}
@@ -290,24 +290,24 @@ func validateFileIOSecurityKEKs(get configGetter, errs *[]string) {
 
 	keks := toStringMap(raw)
 	if keks == nil {
-		appendValidationError(errs, "settings.mcp.files.security.encryption_keks must be an object")
+		appendValidationErrorf(errs, "settings.mcp.files.security.encryption_keks must be an object")
 		return
 	}
 
 	for rawID, rawSecret := range keks {
 		if _, parseErr := strconv.ParseUint(strings.TrimSpace(rawID), 10, 16); parseErr != nil {
-			appendValidationError(errs, "settings.mcp.files.security.encryption_keks.%s must use a uint16 key id", rawID)
+			appendValidationErrorf(errs, "settings.mcp.files.security.encryption_keks.%s must use a uint16 key id", rawID)
 			continue
 		}
 
 		secret, parseErr := parseStrictString(rawSecret)
 		if parseErr != nil {
-			appendValidationError(errs, "settings.mcp.files.security.encryption_keks.%s must be a string", rawID)
+			appendValidationErrorf(errs, "settings.mcp.files.security.encryption_keks.%s must be a string", rawID)
 			continue
 		}
 
 		if len(strings.TrimSpace(secret)) <= 16 {
-			appendValidationError(errs, "settings.mcp.files.security.encryption_keks.%s must be longer than 16 characters", rawID)
+			appendValidationErrorf(errs, "settings.mcp.files.security.encryption_keks.%s must be longer than 16 characters", rawID)
 		}
 	}
 }
@@ -321,7 +321,7 @@ func validateFileIOLimitRelations(get configGetter, errs *[]string) {
 		listDefault, defaultErr := parseStrictInt(listDefaultRaw)
 		listMax, maxErr := parseStrictInt(listMaxRaw)
 		if defaultErr == nil && maxErr == nil && listDefault > listMax {
-			appendValidationError(errs, "settings.mcp.files.list_limit_default must be <= settings.mcp.files.list_limit_max")
+			appendValidationErrorf(errs, "settings.mcp.files.list_limit_default must be <= settings.mcp.files.list_limit_max")
 		}
 	}
 
@@ -331,7 +331,7 @@ func validateFileIOLimitRelations(get configGetter, errs *[]string) {
 		searchDefault, defaultErr := parseStrictInt(searchDefaultRaw)
 		searchMax, maxErr := parseStrictInt(searchMaxRaw)
 		if defaultErr == nil && maxErr == nil && searchDefault > searchMax {
-			appendValidationError(errs, "settings.mcp.files.search.limit_default must be <= settings.mcp.files.search.limit_max")
+			appendValidationErrorf(errs, "settings.mcp.files.search.limit_default must be <= settings.mcp.files.search.limit_max")
 		}
 	}
 }
@@ -345,13 +345,13 @@ func validateOptionalBool(get configGetter, key string, errs *[]string) {
 	}
 
 	if _, ok := parseStrictBool(raw); !ok {
-		appendValidationError(errs, "%s must be a boolean", key)
+		appendValidationErrorf(errs, "%s must be a boolean", key)
 	}
 }
 
 // validateOptionalIntMin validates an optionally configured integer key with a minimum constraint.
 // It accepts a getter, the key, a minimum value, and an error collector pointer and appends validation errors.
-func validateOptionalIntMin(get configGetter, key string, min int, errs *[]string) {
+func validateOptionalIntMin(get configGetter, key string, minVal int, errs *[]string) {
 	raw := get(key)
 	if raw == nil {
 		return
@@ -359,18 +359,18 @@ func validateOptionalIntMin(get configGetter, key string, min int, errs *[]strin
 
 	value, parseErr := parseStrictInt(raw)
 	if parseErr != nil {
-		appendValidationError(errs, "%s must be an integer", key)
+		appendValidationErrorf(errs, "%s must be an integer", key)
 		return
 	}
 
-	if value < min {
-		appendValidationError(errs, "%s must be >= %d", key, min)
+	if value < minVal {
+		appendValidationErrorf(errs, "%s must be >= %d", key, minVal)
 	}
 }
 
 // validateOptionalInt64Min validates an optionally configured int64 key with a minimum constraint.
 // It accepts a getter, the key, a minimum value, and an error collector pointer and appends validation errors.
-func validateOptionalInt64Min(get configGetter, key string, min int64, errs *[]string) {
+func validateOptionalInt64Min(get configGetter, key string, minVal int64, errs *[]string) {
 	raw := get(key)
 	if raw == nil {
 		return
@@ -378,12 +378,12 @@ func validateOptionalInt64Min(get configGetter, key string, min int64, errs *[]s
 
 	value, parseErr := parseStrictInt64(raw)
 	if parseErr != nil {
-		appendValidationError(errs, "%s must be an integer", key)
+		appendValidationErrorf(errs, "%s must be an integer", key)
 		return
 	}
 
-	if value < min {
-		appendValidationError(errs, "%s must be >= %d", key, min)
+	if value < minVal {
+		appendValidationErrorf(errs, "%s must be >= %d", key, minVal)
 	}
 }
 
@@ -397,18 +397,18 @@ func validateOptionalFloatPositive(get configGetter, key string, errs *[]string)
 
 	value, parseErr := parseStrictFloat(raw)
 	if parseErr != nil {
-		appendValidationError(errs, "%s must be a float", key)
+		appendValidationErrorf(errs, "%s must be a float", key)
 		return
 	}
 
 	if value <= 0 {
-		appendValidationError(errs, "%s must be > 0", key)
+		appendValidationErrorf(errs, "%s must be > 0", key)
 	}
 }
 
 // validateOptionalFloatRange validates an optionally configured float key against a numeric range.
 // It accepts a getter, range bounds, inclusivity toggles, and an error collector pointer.
-func validateOptionalFloatRange(get configGetter, key string, min float64, max float64, includeMin bool, includeMax bool, errs *[]string) {
+func validateOptionalFloatRange(get configGetter, key string, minVal float64, maxVal float64, includeMin bool, includeMax bool, errs *[]string) {
 	raw := get(key)
 	if raw == nil {
 		return
@@ -416,21 +416,21 @@ func validateOptionalFloatRange(get configGetter, key string, min float64, max f
 
 	value, parseErr := parseStrictFloat(raw)
 	if parseErr != nil {
-		appendValidationError(errs, "%s must be a float", key)
+		appendValidationErrorf(errs, "%s must be a float", key)
 		return
 	}
 
-	validMin := value > min
+	validMin := value > minVal
 	if includeMin {
-		validMin = value >= min
+		validMin = value >= minVal
 	}
-	validMax := value < max
+	validMax := value < maxVal
 	if includeMax {
-		validMax = value <= max
+		validMax = value <= maxVal
 	}
 
 	if !validMin || !validMax {
-		appendValidationError(errs, "%s must be within range", key)
+		appendValidationErrorf(errs, "%s must be within range", key)
 	}
 }
 
@@ -444,19 +444,19 @@ func validateOptionalURL(get configGetter, key string, errs *[]string) {
 
 	value, parseErr := parseStrictString(raw)
 	if parseErr != nil {
-		appendValidationError(errs, "%s must be a string URL", key)
+		appendValidationErrorf(errs, "%s must be a string URL", key)
 		return
 	}
 
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		appendValidationError(errs, "%s must not be empty", key)
+		appendValidationErrorf(errs, "%s must not be empty", key)
 		return
 	}
 
 	parsed, err := url.Parse(trimmed)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		appendValidationError(errs, "%s must be a valid absolute URL", key)
+		appendValidationErrorf(errs, "%s must be a valid absolute URL", key)
 	}
 }
 
@@ -470,12 +470,12 @@ func validateOptionalPathPrefix(get configGetter, key string, errs *[]string) {
 
 	value, parseErr := parseStrictString(raw)
 	if parseErr != nil {
-		appendValidationError(errs, "%s must be a string path", key)
+		appendValidationErrorf(errs, "%s must be a string path", key)
 		return
 	}
 
 	if !isValidBasePath(value) {
-		appendValidationError(errs, "%s must be empty or start with '/'", key)
+		appendValidationErrorf(errs, "%s must be empty or start with '/'", key)
 	}
 }
 
@@ -489,12 +489,12 @@ func validateOptionalStringNonEmpty(get configGetter, key string, errs *[]string
 
 	value, parseErr := parseStrictString(raw)
 	if parseErr != nil {
-		appendValidationError(errs, "%s must be a string", key)
+		appendValidationErrorf(errs, "%s must be a string", key)
 		return
 	}
 
 	if strings.TrimSpace(value) == "" {
-		appendValidationError(errs, "%s must not be empty", key)
+		appendValidationErrorf(errs, "%s must not be empty", key)
 	}
 }
 
@@ -505,13 +505,13 @@ func validateRequiredStringInMap(errs *[]string, source map[string]any, fieldPat
 	key := parts[len(parts)-1]
 	value, ok := source[key]
 	if !ok {
-		appendValidationError(errs, "%s is required", fieldPath)
+		appendValidationErrorf(errs, "%s is required", fieldPath)
 		return
 	}
 
 	text, parseErr := parseStrictString(value)
 	if parseErr != nil || strings.TrimSpace(text) == "" {
-		appendValidationError(errs, "%s must be a non-empty string", fieldPath)
+		appendValidationErrorf(errs, "%s must be a non-empty string", fieldPath)
 	}
 }
 
@@ -647,9 +647,9 @@ func isValidHost(host string) bool {
 	return true
 }
 
-// appendValidationError appends a formatted validation error to the collector.
+// appendValidationErrorf appends a formatted validation error to the collector.
 // It accepts an error slice pointer, a format string, and format arguments, and has no return value.
-func appendValidationError(errs *[]string, format string, args ...any) {
+func appendValidationErrorf(errs *[]string, format string, args ...any) {
 	if errs == nil {
 		return
 	}

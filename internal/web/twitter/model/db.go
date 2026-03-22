@@ -26,5 +26,4 @@ func Initialize(ctx context.Context) {
 	); err != nil {
 		log.Logger.Panic("connect to twitter db", zap.Error(err))
 	}
-
 }

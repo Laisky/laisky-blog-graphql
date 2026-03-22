@@ -142,6 +142,7 @@ func (c urlPrefixConfig) display(value string) string {
 	return value
 }
 
+//nolint:gocognit,maintidx // server setup inherently involves many configuration steps
 func RunServer(addr string, resolver *Resolver) {
 	prefix := newURLPrefixConfig()
 	log.Logger.Info("configuring web url prefix",
@@ -178,8 +179,24 @@ func RunServer(addr string, resolver *Resolver) {
 
 	registerOneapiProxyRoutes(server, prefix)
 
-	if resolver != nil && (resolver.args.WebSearchProvider != nil || resolver.args.AskUserService != nil || resolver.args.UserRequestService != nil || resolver.args.RAGService != nil || resolver.args.FilesService != nil) {
-		mcpServer, err := mcp.NewServer(resolver.args.WebSearchProvider, resolver.args.AskUserService, resolver.args.UserRequestService, resolver.args.RAGService, resolver.args.RAGSettings, resolver.args.FilesService, resolver.args.MemoryService, resolver.args.Rdb, resolver.args.CallLogService, resolver.args.MCPToolsSettings, log.Logger)
+	if resolver != nil && (resolver.args.WebSearchProvider != nil ||
+		resolver.args.AskUserService != nil ||
+		resolver.args.UserRequestService != nil ||
+		resolver.args.RAGService != nil ||
+		resolver.args.FilesService != nil) {
+		mcpServer, err := mcp.NewServer(
+			resolver.args.WebSearchProvider,
+			resolver.args.AskUserService,
+			resolver.args.UserRequestService,
+			resolver.args.RAGService,
+			resolver.args.RAGSettings,
+			resolver.args.FilesService,
+			resolver.args.MemoryService,
+			resolver.args.Rdb,
+			resolver.args.CallLogService,
+			resolver.args.MCPToolsSettings,
+			log.Logger,
+		)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {

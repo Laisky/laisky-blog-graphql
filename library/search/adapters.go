@@ -17,7 +17,7 @@ type GoogleEngineAdapter struct {
 }
 
 // NewGoogleEngineAdapter wraps the provided google.SearchEngine so that it satisfies the Engine interface.
-// It returns the initialised adapter or an error when the input engine is nil.
+// It returns the initialized adapter or an error when the input engine is nil.
 // An optional name overrides the default engine identifier; when empty, the default is used.
 func NewGoogleEngineAdapter(engine *google.SearchEngine, name ...string) (*GoogleEngineAdapter, error) {
 	if engine == nil {
@@ -47,7 +47,7 @@ func (a *GoogleEngineAdapter) Type() string {
 // It returns the converted items or an error when the Google client fails.
 func (a *GoogleEngineAdapter) Search(ctx context.Context, query string) ([]SearchResultItem, error) {
 	if a == nil || a.engine == nil {
-		return nil, errors.New("google engine adapter is not initialised")
+		return nil, errors.New("google engine adapter is not initialized")
 	}
 
 	resp, err := a.engine.Search(ctx, query)

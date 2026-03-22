@@ -15,7 +15,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 )
 
-const oneapiTokenPath = "/api/user/get-by-token"
+const oneapiTokenPath = "/api/user/get-by-token" //nolint:gosec // G101: this is a URL path, not credentials
 
 var defaultHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -47,7 +47,7 @@ func (s *Telegram) validateOneAPIToken(ctx context.Context, key string) (string,
 	if err != nil {
 		return "", errors.Wrap(err, "call oneapi validation api")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err != nil {

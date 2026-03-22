@@ -13,6 +13,8 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
+const sqlAndFilePathLike = " AND c.file_path LIKE ?"
+
 type searchCandidate struct {
 	Chunk         FileChunk
 	SemanticScore float64
@@ -214,7 +216,7 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 	if err != nil {
 		return nil, errors.Wrap(err, "query raw files fallback")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	queryTokens := tokenize(query)
 	type fallbackCandidate struct {
@@ -237,6 +239,9 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 			continue
 		}
 		candidates = append(candidates, fallbackCandidate{Path: path, Score: score, Content: text, Size: size})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate raw files fallback")
 	}
 
 	if len(candidates) == 0 {
@@ -341,7 +346,7 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, pr
 	where := "c.apikey_hash = ? AND c.project = ?"
 	args := []any{apiKeyHash, project}
 	if strings.TrimSpace(pathPrefix) != "" {
-		where += " AND c.file_path LIKE ?"
+		where += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
 	}
 
@@ -390,7 +395,7 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
 		WHERE c.apikey_hash = ? AND c.project = ?`
 	if strings.TrimSpace(pathPrefix) != "" {
-		query += " AND c.file_path LIKE ?"
+		query += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
 	}
 	query += " ORDER BY e.embedding <-> ? LIMIT ?"
@@ -410,7 +415,7 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 	if err != nil {
 		return nil, errors.Wrap(err, "query semantic candidates")
 	}
-	defer queryRows.Close()
+	defer func() { _ = queryRows.Close() }()
 
 	for queryRows.Next() {
 		var r row
@@ -489,7 +494,7 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
 		WHERE c.apikey_hash = ? AND c.project = ?`
 	if strings.TrimSpace(pathPrefix) != "" {
-		statement += " AND c.file_path LIKE ?"
+		statement += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
 	}
 	statement += " ORDER BY score DESC LIMIT ?"
@@ -509,7 +514,7 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 	if err != nil {
 		return nil, errors.Wrap(err, "query lexical candidates")
 	}
-	defer queryRows.Close()
+	defer func() { _ = queryRows.Close() }()
 
 	for queryRows.Next() {
 		var r row
@@ -639,7 +644,8 @@ func (s *Service) updateLastServed(ctx context.Context, chunkIDs []int64) error 
 	now := s.clock()
 	inClause, inArgs := buildInClauseInt64(chunkIDs, s.isPostgres, 2)
 	query := rebindSQL(`UPDATE mcp_file_chunks SET last_served_at = ? WHERE id IN (%s)`, s.isPostgres)
-	args := []any{now}
+	args := make([]any, 0, 1+len(inArgs))
+	args = append(args, now)
 	args = append(args, inArgs...)
 	_, err := s.db.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
 	return err
@@ -664,7 +670,7 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project,
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
 		WHERE c.apikey_hash = ? AND c.project = ?`
 	if strings.TrimSpace(pathPrefix) != "" {
-		query += " AND c.file_path LIKE ?"
+		query += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
 	}
 
@@ -672,7 +678,7 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project,
 	if err != nil {
 		return nil, errors.Wrap(err, "query chunk embeddings")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []chunkEmbeddingRow
 	for rows.Next() {
@@ -687,6 +693,9 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project,
 		}
 		row.Embedding = emb
 		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate chunk embeddings")
 	}
 	return results, nil
 }
@@ -734,7 +743,7 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathP
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
 		WHERE c.apikey_hash = ? AND c.project = ?`
 	if strings.TrimSpace(pathPrefix) != "" {
-		query += " AND c.file_path LIKE ?"
+		query += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
 	}
 
@@ -742,7 +751,7 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathP
 	if err != nil {
 		return nil, errors.Wrap(err, "query chunks")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []chunkRow
 	for rows.Next() {
@@ -751,6 +760,9 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathP
 			return nil, errors.Wrap(scanErr, "scan chunk row")
 		}
 		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate chunk rows")
 	}
 	return result, nil
 }

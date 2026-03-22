@@ -37,7 +37,7 @@ func newFrontendSPAHandler(logger logSDK.Logger, defaultBase string) http.Handle
 			logger.Error("parse VITE_DEV_URL", zap.Error(err), zap.String("url", devURL))
 		} else {
 			logger.Info("frontend dev proxy enabled", zap.String("target", devURL))
-			proxy := httputil.NewSingleHostReverseProxy(target)
+			proxy := httputil.NewSingleHostReverseProxy(target) //nolint:gosec // G704: VITE_DEV_URL is a trusted env variable set by developers
 			base := normalizeBasePath(defaultBase)
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if base != "" && strings.HasPrefix(r.URL.Path, base) {
@@ -101,7 +101,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fsPath := filepath.Join(h.root, clean)
+	fsPath := filepath.Join(h.root, clean) //nolint:gosec // G703: path traversal prevented by filepath.Clean and ".." check above
 	info, err := os.Stat(fsPath)
 	if err == nil && !info.IsDir() {
 		http.ServeFile(w, r, fsPath)
@@ -109,7 +109,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// if the path looks like a static asset (contains an extension) and we did not find
-	// it, return 404 to mirror standard static hosting behaviour.
+	// it, return 404 to mirror standard static hosting behavior.
 	if strings.Contains(clean, ".") {
 		h.logger.Debug("frontend asset not found", zap.String("path", requestPath))
 		http.NotFound(w, r)
@@ -163,7 +163,7 @@ func locateFrontendDist(logger logSDK.Logger) string {
 		if candidate == "" {
 			continue
 		}
-		info, err := os.Stat(candidate)
+		info, err := os.Stat(candidate) //nolint:gosec // G703: candidate is derived from trusted config paths
 		if err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
 				logger.Debug("inspect frontend dist", zap.Error(err), zap.String("path", candidate))

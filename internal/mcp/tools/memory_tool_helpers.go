@@ -282,5 +282,5 @@ func generateMemoryTurnIDSuffix() string {
 	}
 
 	fallback := time.Now().UTC().UnixNano()
-	return hex.EncodeToString([]byte{byte(fallback), byte(fallback >> 8), byte(fallback >> 16)})
+	return hex.EncodeToString([]byte{byte(fallback), byte(fallback >> 8), byte(fallback >> 16)}) //nolint:gosec // G115 intentional truncation for random suffix
 }

@@ -8,7 +8,6 @@ import (
 	errors "github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
-	"github.com/Laisky/zap"
 	"github.com/pgvector/pgvector-go"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
@@ -129,24 +128,7 @@ func (s *Service) validateAuth(auth AuthContext) error {
 	return nil
 }
 
-// wrapServiceError adds stack context without logging.
-func wrapServiceError(err error, message string) error {
-	if err == nil {
-		return nil
-	}
-	return errors.Wrap(err, message)
-}
-
-// warnOnError logs an error when needed for diagnostics.
-func (s *Service) warnOnError(ctx context.Context, err error, msg string, fields ...zap.Field) {
-	if err == nil {
-		return
-	}
-	logger := s.LoggerFromContext(ctx)
-	logger.Warn(msg, append(fields, zap.Error(err))...)
-}
-
-// isContextDone reports whether the context has been cancelled or exceeded its deadline.
+// isContextDone reports whether the context has been canceled or exceeded its deadline.
 func isContextDone(ctx context.Context) bool {
 	if ctx == nil {
 		return false

@@ -141,7 +141,7 @@ func (s *Service) GetUserPreference(ctx context.Context, auth *askuser.Authoriza
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, nil //nolint:nilnil // nil preference means "not found", callers check for nil
 		}
 		return nil, errors.Wrap(err, "get user preference")
 	}

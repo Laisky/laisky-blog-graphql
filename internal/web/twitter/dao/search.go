@@ -36,7 +36,7 @@ ORDER BY created_at DESC
 	if err != nil {
 		return nil, errors.Wrapf(err, "search text `%s", text)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tweets []model.SearchTweet
 	for rows.Next() {

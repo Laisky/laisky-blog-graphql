@@ -59,7 +59,7 @@ func (c *CohereRerankClient) Rerank(ctx context.Context, apiKey, query string, d
 	if err != nil {
 		return nil, errors.Wrap(err, "call rerank endpoint")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(resp.Body)
 		return nil, errors.Errorf("rerank endpoint status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))

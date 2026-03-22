@@ -13,6 +13,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const (
+	cmdAPI            = "api"
+	cmdImportComments = "import-comments"
+)
+
 // ViewState represents the current view state of the TUI
 type ViewState int
 
@@ -70,15 +75,9 @@ type Model struct {
 	// Results from command execution
 	result *CommandResult
 
-	// Error message if any
-	err error
-
 	// Window dimensions
 	width  int
 	height int
-
-	// Callback to execute the selected command
-	executeCallback func(cmd string, args map[string]string) error
 
 	// Current command being configured
 	currentCommand string
@@ -136,12 +135,12 @@ func NewModel() Model {
 		MenuItem{
 			title:       "🚀 Start API Server",
 			description: "Launch the GraphQL API server with custom configuration",
-			command:     "api",
+			command:     cmdAPI,
 		},
 		MenuItem{
 			title:       "📥 Import Comments",
 			description: "Import comments from Disqus XML export into MongoDB",
-			command:     "import-comments",
+			command:     cmdImportComments,
 		},
 		MenuItem{
 			title:       "🔄 Database Migration",
@@ -297,16 +296,16 @@ func (m Model) handleMainMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Enter):
 		if selectedItem, ok := m.menuList.SelectedItem().(MenuItem); ok {
 			switch selectedItem.command {
-			case "api":
+			case cmdAPI:
 				m.state = ViewAPIConfig
 				m.inputs = createAPIInputs()
 				m.focusIndex = 0
-				m.currentCommand = "api"
-			case "import-comments":
+				m.currentCommand = cmdAPI
+			case cmdImportComments:
 				m.state = ViewImportComments
 				m.inputs = createImportInputs()
 				m.focusIndex = 0
-				m.currentCommand = "import-comments"
+				m.currentCommand = cmdImportComments
 			case "migrate":
 				// Migrate doesn't need configuration
 				m.state = ViewResult
@@ -392,10 +391,10 @@ func (m Model) executeCommand() (tea.Model, tea.Cmd) {
 	args := make(map[string]string)
 
 	switch m.currentCommand {
-	case "import-comments":
+	case cmdImportComments:
 		args["disqus_file"] = m.inputs[0].Value()
 		args["db_uri"] = m.inputs[1].Value()
-	case "api":
+	case cmdAPI:
 		args["config"] = m.inputs[0].Value()
 		args["listen"] = m.inputs[1].Value()
 		args["tasks"] = m.inputs[2].Value()
@@ -418,7 +417,7 @@ func formatArgs(args map[string]string) string {
 	var sb strings.Builder
 	sb.WriteString("Configuration:\n")
 	for k, v := range args {
-		sb.WriteString(fmt.Sprintf("  • %s: %s\n", k, v))
+		fmt.Fprintf(&sb, "  • %s: %s\n", k, v)
 	}
 	return sb.String()
 }

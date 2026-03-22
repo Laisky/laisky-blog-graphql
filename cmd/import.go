@@ -224,7 +224,7 @@ func parseDisqusXML(filePath string) (*DisqusXML, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "open file %s", filePath)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
@@ -353,7 +353,7 @@ func lookupBlogPosts(ctx context.Context, db *mongo.Database, threadToPostName m
 	if err != nil {
 		return nil, errors.Wrap(err, "find posts")
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	result := make(map[string]primitive.ObjectID)
 	for cursor.Next(ctx) {
@@ -382,6 +382,8 @@ type importStats struct {
 }
 
 // importComments imports Disqus posts as comments into MongoDB
+//
+//nolint:gocognit // complex but straightforward sequential import logic
 func importComments(
 	ctx context.Context,
 	db *mongo.Database,
@@ -608,7 +610,7 @@ func getExistingDisqusIDs(ctx context.Context, coll *mongo.Collection) (map[stri
 	if err != nil {
 		return nil, errors.Wrap(err, "find existing disqus comments")
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	for cursor.Next(ctx) {
 		var comment struct {

@@ -92,7 +92,7 @@ type SearchEngine struct {
 
 // NewSearchEngine constructs a SerpApi-backed search engine using the provided API key.
 // The apiKey parameter must be non-empty at search time.
-// Options can customise the HTTP client, logging, endpoint, or default parameters.
+// Options can customize the HTTP client, logging, endpoint, or default parameters.
 func NewSearchEngine(apiKey string, opts ...Option) *SearchEngine {
 	engine := &SearchEngine{
 		apiKey:        strings.TrimSpace(apiKey),
@@ -176,7 +176,7 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 	if err != nil {
 		return nil, errors.Wrap(err, "send serp google request")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

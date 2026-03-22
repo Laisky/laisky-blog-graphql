@@ -201,7 +201,7 @@ func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string, tas
 		entry.waiting = true
 		entry.expiresAt = m.clock().Add(HoldMaxDuration)
 
-		expireCtx, cancel := context.WithCancel(context.Background())
+		expireCtx, cancel := context.WithCancel(context.WithoutCancel(ctx)) //nolint:contextcheck,gosec // detached context for background expiration; cancel stored in entry.cancel
 		entry.cancel = cancel
 
 		m.log().Info("agent connected, hold timer started",

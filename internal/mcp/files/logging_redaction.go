@@ -73,14 +73,12 @@ func redactChunks(value any) any {
 
 // summarizeRedaction builds a lightweight redaction summary for logs.
 func summarizeRedaction(value any) map[string]any {
-	length := 0
+	var length int
 	switch v := value.(type) {
 	case string:
 		length = len(v)
 	case []byte:
 		length = len(v)
-	default:
-		length = 0
 	}
 	return map[string]any{
 		"redacted": true,

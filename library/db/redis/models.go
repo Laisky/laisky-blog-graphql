@@ -3,9 +3,9 @@ package redis
 import (
 	"time"
 
+	"github.com/Laisky/errors/v2"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/go-utils/v6/json"
-	"github.com/pkg/errors"
 )
 
 const (

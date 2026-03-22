@@ -50,7 +50,7 @@ func (t *FileReadTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Read(ctx, auth, project, path, offset, length)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // error returned as tool result text
 		}
 		payload := map[string]any{
 			"content":          result.Content,
@@ -58,7 +58,7 @@ func (t *FileReadTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		}
 		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
 		}
 		return toolResult, nil
 	}

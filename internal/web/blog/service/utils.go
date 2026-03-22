@@ -102,7 +102,8 @@ func ExtractMenu(html string) string {
 		level = strings.ToLower(ts[1])
 		escapedTl = ts[2]
 		tl = ts[3]
-		if level == "h2" {
+		switch level {
+		case "h2":
 			if l2cnt != "" {
 				if l3cnt != "" {
 					l2cnt += l3cnt + `</nav>`
@@ -111,7 +112,7 @@ func ExtractMenu(html string) string {
 			}
 			l3cnt = ""
 			l2cnt = `<a class="nav-link" href="#` + escapedTl + `">` + tl + `</a>`
-		} else if level == "h3" {
+		case "h3":
 			if l3cnt == "" {
 				l3cnt = `<nav class="nav nav-pills flex-column"><a class="nav-link ms-3 my-1" href="#` + escapedTl + `">` + tl + `</a>`
 			} else {

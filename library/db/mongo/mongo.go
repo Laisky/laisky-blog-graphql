@@ -166,7 +166,7 @@ func getOrCreateSharedClient(ctx context.Context, dialInfo DialInfo) (*sharedCli
 
 	sc.err = nil
 	close(sc.ready)
-	sc.startHealthCheck()
+	sc.startHealthCheck() //nolint:contextcheck // health check uses its own background context
 	return sc, nil
 }
 
@@ -215,14 +215,14 @@ func (s *sharedClient) dial(ctx context.Context) error {
 
 	// Force a first server selection now so failures happen at startup, not later.
 	if err := pingMongo(ctx, cli); err != nil {
-		_ = disconnectMongo(context.Background(), cli)
+		_ = disconnectMongo(context.Background(), cli) //nolint:contextcheck // ctx may be canceled; use background for cleanup
 		return errors.Wrap(err, "ping db")
 	}
 
 	s.mu.Lock()
 	// Defensive: if somehow called twice, close the old client before replacing.
 	if s.cli != nil {
-		_ = disconnectMongo(context.Background(), s.cli)
+		_ = disconnectMongo(context.Background(), s.cli) //nolint:contextcheck // use background for cleanup
 	}
 	s.cli = cli
 	s.mu.Unlock()
@@ -255,7 +255,7 @@ func (d *db) CurrentDB() *mongo.Database {
 // startHealthCheck starts a single background health checker.
 func (s *sharedClient) startHealthCheck() {
 	s.checkOnce.Do(func() {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // G118: cancel is stored in s.cancel and called in Close
 		s.cancel = cancel
 		go s.runReconnectCheck(ctx)
 	})
@@ -282,8 +282,8 @@ func (s *sharedClient) runReconnectCheck(ctx context.Context) {
 		}
 
 		// Never use the long-lived ctx directly for ping; always bound it.
-		pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := pingMongo(pingCtx, cli)
+		pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:contextcheck // health check uses its own background context
+		err := pingMongo(pingCtx, cli)                                              //nolint:contextcheck // health check uses its own bounded context
 		cancel()
 
 		if err != nil {
@@ -296,7 +296,7 @@ func (s *sharedClient) runReconnectCheck(ctx context.Context) {
 }
 
 // Close decreases the ref-count and disconnects when the last user closes.
-func (d *db) Close(ctx context.Context) error {
+func (d *db) Close(ctx context.Context) error { //nolint:contextcheck // uses background context as fallback when ctx is nil
 	if d.shared == nil {
 		return nil
 	}
@@ -324,7 +324,7 @@ func (d *db) Close(ctx context.Context) error {
 
 	// Bound shutdown time to avoid hanging on exit.
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = context.Background() //nolint:contextcheck // fallback when caller passes nil
 	}
 	closeCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

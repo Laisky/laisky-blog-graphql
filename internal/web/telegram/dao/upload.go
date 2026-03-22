@@ -148,7 +148,7 @@ func (d *Upload) UploadFileWithTelegramUID(ctx context.Context,
 	}
 
 	// save file info
-	go func() {
+	go func() { //nolint:gosec,contextcheck // G118: goroutine intentionally outlives request to persist file metadata
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 
@@ -188,7 +188,7 @@ func (d *Upload) UploadFile(ctx context.Context, cnt []byte, contentType string)
 	}
 
 	// also upload to minio as cache
-	go func() {
+	go func() { //nolint:gosec,contextcheck // G118: goroutine intentionally outlives request to cache file in minio
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 

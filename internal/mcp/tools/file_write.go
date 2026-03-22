@@ -58,12 +58,12 @@ func (t *FileWriteTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Write(ctx, auth, project, path, content, encoding, offset, mode)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // error returned as tool result text
 		}
 		payload := map[string]any{"bytes_written": result.BytesWritten}
 		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
 		}
 		return toolResult, nil
 	}

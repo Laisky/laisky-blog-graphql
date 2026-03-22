@@ -165,7 +165,7 @@ func (r *QueryResolver) ValidateOneapiAPIKey(ctx context.Context, apiKey string)
 	if err != nil {
 		return nil, errors.Wrap(err, "http request")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		logger.Debug("ValidateOneapiAPIKey non-200 response",

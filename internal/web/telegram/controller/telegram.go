@@ -162,7 +162,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	token string,
 	msg string) (*model.AlertTypes, error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_alert")
-	if !telegramRatelimiter.Allow(typeArg) {
+	if !telegramRatelimiter.Allow(typeArg) { //nolint:contextcheck // Allow is a rate-limiter check that does not need request context
 		// logger.Warn("deny by throttle", zap.String("type", typeArg))
 		return nil, errors.Errorf("deny by throttle")
 	}

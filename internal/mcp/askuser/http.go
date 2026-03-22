@@ -252,7 +252,9 @@ func writeJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(payload)
+	if err := enc.Encode(payload); err != nil {
+		logSDK.Shared.Named("ask_user_http").Warn("encode json response", zap.Error(err))
+	}
 }
 
 func serviceLogger() logSDK.Logger {
@@ -294,11 +296,12 @@ func (h *httpHandler) bootstrapStaticAssets() {
 		if candidate == "" {
 			continue
 		}
-		info, err := os.Stat(candidate)
+		cleaned := filepath.Clean(candidate)
+		info, err := os.Stat(cleaned) //nolint:gosec // G703 candidate paths are from trusted sources (env, executable dir, cwd)
 		if err != nil || !info.IsDir() {
 			continue
 		}
-		distDir = candidate
+		distDir = cleaned
 		break
 	}
 
@@ -307,15 +310,15 @@ func (h *httpHandler) bootstrapStaticAssets() {
 		return
 	}
 
-	indexPath := filepath.Join(distDir, "index.html")
-	indexBytes, err := os.ReadFile(indexPath)
+	indexPath := filepath.Clean(filepath.Join(distDir, "index.html"))
+	indexBytes, err := os.ReadFile(indexPath) //nolint:gosec // G703 distDir is validated above from trusted sources
 	if err != nil {
 		h.log().Warn("read ask_user index", zap.Error(err), zap.String("path", indexPath))
 	} else {
 		h.index = indexBytes
 	}
 
-	h.static = http.FileServer(http.Dir(distDir))
+	h.static = http.FileServer(http.Dir(distDir)) //nolint:gosec // G703 distDir is validated above from trusted sources
 	h.log().Info("ask_user web assets mounted", zap.String("dist", distDir))
 }
 
@@ -335,7 +338,11 @@ const pageHTML = `<!DOCTYPE html>
 	form#auth-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 24px 0; }
 	form#auth-form .input-wrapper { position: relative; flex: 1; min-width: 240px; }
 	form#auth-form .input-wrapper input { width: 100%; padding: 10px 14px; padding-right: 96px; border-radius: 8px; border: none; background: rgba(15, 23, 42, 0.6); color: inherit; box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.4); }
-	form#auth-form .input-wrapper button { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.5); background: rgba(15, 23, 42, 0.4); color: #e2e8f0; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+	form#auth-form .input-wrapper button {
+		position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+		padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.5);
+		background: rgba(15, 23, 42, 0.4); color: #e2e8f0; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+	}
 	form#auth-form .input-wrapper button:hover { background: rgba(148, 163, 184, 0.2); }
 	form#auth-form > button { padding: 10px 18px; border-radius: 8px; border: none; background: #38bdf8; color: #0f172a; font-weight: 600; cursor: pointer; }
 	form#auth-form > button:hover { background: #0ea5e9; }

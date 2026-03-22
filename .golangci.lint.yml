@@ -69,6 +69,8 @@ linters:
       rules:
         - name: indent-error-flow
           disabled: true
+    gomoddirectives:
+      replace-local: true
     dupl:
       threshold: 200
     exhaustive:

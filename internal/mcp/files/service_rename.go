@@ -22,7 +22,7 @@ type renameMapping struct {
 }
 
 // Rename renames or moves a file path or directory subtree.
-func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool) (RenameResult, error) {
+func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool) (RenameResult, error) { //nolint:gocognit // rename involves multiple validation and migration steps
 	if err := s.validateAuth(auth); err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}
@@ -71,7 +71,8 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 		if len(overwritePaths) > 0 {
 			inClause, inArgs := buildInClause(overwritePaths, s.isPostgres, 5)
 			query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
-			args := []any{now, now, auth.APIKeyHash, project}
+			args := make([]any, 0, 4+len(inArgs))
+			args = append(args, now, now, auth.APIKeyHash, project)
 			args = append(args, inArgs...)
 			if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
 				return errors.Wrap(err, "soft delete overwritten destination files")
@@ -177,15 +178,18 @@ func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHa
 	if err != nil {
 		return nil, false, errors.Wrap(err, "query rename source descendants")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
-	descendants := make([]renameSourceFile, 0)
+	var descendants []renameSourceFile
 	for rows.Next() {
 		var row renameSourceFile
 		if scanErr := rows.Scan(&row.ID, &row.Path); scanErr != nil {
 			return nil, false, errors.Wrap(scanErr, "scan rename source descendant")
 		}
 		descendants = append(descendants, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, errors.Wrap(err, "iterate rename source descendants")
 	}
 	if len(descendants) == 0 {
 		return nil, false, NewError(ErrCodeNotFound, "source path not found", false)
@@ -266,21 +270,25 @@ func (s *Service) validateRenameDestinations(
 
 	inClause, inArgs := buildInClause(destinationPaths, s.isPostgres, 3)
 	query := rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
-	args := []any{apiKeyHash, project}
+	args := make([]any, 0, 2+len(inArgs))
+	args = append(args, apiKeyHash, project)
 	args = append(args, inArgs...)
 	rows, err := tx.QueryContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
 	if err != nil {
 		return nil, errors.Wrap(err, "query destination collisions")
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
-	destinationFiles := make([]renameSourceFile, 0)
+	var destinationFiles []renameSourceFile
 	for rows.Next() {
 		var row renameSourceFile
 		if scanErr := rows.Scan(&row.ID, &row.Path); scanErr != nil {
 			return nil, errors.Wrap(scanErr, "scan destination collision")
 		}
 		destinationFiles = append(destinationFiles, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate destination collisions")
 	}
 
 	overwritePaths := make([]string, 0, len(destinationFiles))

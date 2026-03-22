@@ -3,9 +3,9 @@ package arweave
 import (
 	"context"
 
+	"github.com/Laisky/errors/v2"
 	"github.com/everFinance/goar"
 	"github.com/everFinance/goar/types"
-	"github.com/pkg/errors"
 )
 
 const arweaveGateway = "https://arweave.net"

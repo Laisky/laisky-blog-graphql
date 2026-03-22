@@ -513,14 +513,3 @@ func (s *Server) handleMemoryListDirWithAbstract(ctx context.Context, req mcp.Ca
 	}
 	return result, nil
 }
-
-// wrapMemoryError maps memory service errors into typed calllog-safe errors.
-func wrapMemoryError(err error) error {
-	if err == nil {
-		return nil
-	}
-	if typed, ok := mcpmemory.AsError(err); ok {
-		return errors.Errorf("memory error: %s", typed.Code)
-	}
-	return errors.WithStack(err)
-}

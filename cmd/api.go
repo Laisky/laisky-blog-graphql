@@ -70,6 +70,7 @@ func init() {
 	rootCMD.AddCommand(apiCMD)
 }
 
+//nolint:gocognit,maintidx // large but straightforward initialization sequence
 func runAPI() error {
 	ctx := context.Background()
 	logger := log.Logger.Named("api")
@@ -282,7 +283,7 @@ func runAPI() error {
 			svcMu   sync.Mutex
 		)
 
-		egServices, _ := errgroup.WithContext(ctx)
+		egServices, _ := errgroup.WithContext(ctx) //nolint:contextcheck // service constructors do not accept context
 
 		egServices.Go(func() error {
 			start := time.Now()
@@ -320,7 +321,7 @@ func runAPI() error {
 
 		egServices.Go(func() error {
 			start := time.Now()
-			svc, err := userrequests.NewService(mcpDB.DB, logger.Named("user_requests"), nil, userrequests.LoadSettingsFromConfig())
+			svc, err := userrequests.NewService(mcpDB.DB, logger.Named("user_requests"), nil, userrequests.LoadSettingsFromConfig()) //nolint:contextcheck // service factory does not require request context
 			if err != nil {
 				logger.Error("init user_requests service", zap.Error(err))
 				return nil
@@ -451,7 +452,7 @@ func runAPI() error {
 // It accepts FileIO settings and returns nil when encryption is not configured, or a protector/error when configured.
 func buildFileCredentialProtector(settings files.Settings) (*files.CredentialProtector, error) {
 	if len(settings.Security.KEKs()) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil,nil is intentional when encryption is not configured
 	}
 
 	credential, err := files.NewCredentialProtector(settings.Security)
@@ -559,7 +560,7 @@ func buildSearchEngineTiers(logger logSDK.Logger) ([][]searchlib.Engine, int) {
 
 // instantiateSearchEngine creates a concrete search engine based on its type and raw configuration map.
 // The name parameter is the user-chosen identifier for the engine instance.
-func instantiateSearchEngine(name, engineType string, cfg map[string]any) (searchlib.Engine, error) {
+func instantiateSearchEngine(name, engineType string, cfg map[string]any) (searchlib.Engine, error) { //nolint:nilnil // nil,nil signals unknown engine type to caller
 	switch engineType {
 	case "google":
 		apiKey := stringFromValue(cfg["api_key"])
@@ -579,7 +580,7 @@ func instantiateSearchEngine(name, engineType string, cfg map[string]any) (searc
 		}
 		return serpgoogle.NewSearchEngine(apiKey, serpgoogle.WithName(name)), nil
 	default:
-		return nil, nil
+		return nil, nil //nolint:nilnil // unknown engine type is not an error
 	}
 }
 

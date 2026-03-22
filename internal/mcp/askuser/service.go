@@ -32,7 +32,7 @@ type Service struct {
 // Notifier receives lifecycle events for ask_user requests.
 type Notifier interface {
 	OnNewRequest(ctx context.Context, req *Request)
-	OnRequestCancelled(ctx context.Context, req *Request)
+	OnRequestCanceled(ctx context.Context, req *Request)
 }
 
 // RegisterNotifier adds a listener for request lifecycle events.
@@ -109,7 +109,7 @@ INSERT INTO requests (
 	return req, nil
 }
 
-// WaitForAnswer blocks until the referenced request transitions to answered or the context is cancelled.
+// WaitForAnswer blocks until the referenced request transitions to answered or the context is canceled.
 func (s *Service) WaitForAnswer(ctx context.Context, id uuid.UUID) (*Request, error) {
 	ticker := time.NewTicker(defaultPollInterval)
 	defer ticker.Stop()
@@ -122,7 +122,7 @@ func (s *Service) WaitForAnswer(ctx context.Context, id uuid.UUID) (*Request, er
 		switch req.Status {
 		case StatusAnswered:
 			return req, nil
-		case StatusCancelled, StatusExpired:
+		case StatusCanceled, StatusExpired:
 			return nil, errors.Errorf("request %s closed with status %s", id, req.Status)
 		}
 
@@ -134,11 +134,11 @@ func (s *Service) WaitForAnswer(ctx context.Context, id uuid.UUID) (*Request, er
 	}
 }
 
-// CancelRequest marks a request as cancelled when the caller stops waiting.
+// CancelRequest marks a request as canceled when the caller stops waiting.
 func (s *Service) CancelRequest(ctx context.Context, id uuid.UUID, status string) error {
-	allowed := map[string]bool{StatusCancelled: true, StatusExpired: true}
+	allowed := map[string]bool{StatusCanceled: true, StatusExpired: true}
 	if !allowed[status] {
-		status = StatusCancelled
+		status = StatusCanceled
 	}
 
 	// First, fetch the request to notify listeners
@@ -163,7 +163,7 @@ WHERE id = $3 AND status = $4
 	// Update local object for notification
 	req.Status = status
 	for _, n := range s.notifiers {
-		n.OnRequestCancelled(ctx, req)
+		n.OnRequestCanceled(ctx, req)
 	}
 
 	return nil
@@ -285,19 +285,17 @@ func listRequestsByStatus(ctx context.Context, db *sql.DB, apiKeyHash, status, o
 		comparator = "<>"
 	}
 
-	query := `
-SELECT id, question, answer, status, api_key_hash, key_suffix, user_identity, ai_identity, created_at, updated_at, answered_at
-FROM requests
-WHERE api_key_hash = $1 AND status ` + comparator + ` $2
-ORDER BY ` + orderExpr + `
-LIMIT $3
-`
+	//nolint:gosec // G202 comparator and orderExpr are internal constants, not user input
+	query := `SELECT id, question, answer, status, api_key_hash, key_suffix,
+		user_identity, ai_identity, created_at, updated_at, answered_at
+		FROM requests WHERE api_key_hash = $1 AND status ` +
+		comparator + ` $2 ORDER BY ` + orderExpr + ` LIMIT $3`
 
 	rows, err := db.QueryContext(ctx, query, apiKeyHash, status, limit)
 	if err != nil {
 		return nil, errors.Wrap(err, "query requests")
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // best-effort close
 
 	requests := make([]Request, 0)
 	for rows.Next() {

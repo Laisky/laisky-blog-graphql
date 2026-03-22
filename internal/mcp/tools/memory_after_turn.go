@@ -61,18 +61,18 @@ func (tool *MemoryAfterTurnTool) Handle(ctx context.Context, req mcp.CallToolReq
 
 	request := mcpmemory.AfterTurnRequest{}
 	if err := decodeMemoryRequest(req, &request); err != nil {
-		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil
+		return memoryToolErrorResult(mcpmemory.ErrCodeInvalidArgument, "invalid request payload", false), nil //nolint:nilerr // error returned as tool result text
 	}
 	applyMemoryDefaultsAfterTurn(&request)
 
 	err := tool.service.AfterTurn(ctx, auth, request)
 	if err != nil {
-		return memoryToolErrorFromErr(err), nil
+		return memoryToolErrorFromErr(err), nil //nolint:nilerr // error returned as tool result text
 	}
 
 	result, err := mcp.NewToolResultJSON(map[string]any{"ok": true})
 	if err != nil {
-		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "failed to encode response", true), nil
+		return memoryToolErrorResult(mcpmemory.ErrCodeInternal, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
 	}
 	return result, nil
 }

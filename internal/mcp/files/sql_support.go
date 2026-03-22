@@ -8,13 +8,6 @@ import (
 	errors "github.com/Laisky/errors/v2"
 )
 
-// sqlDBTX describes operations shared by sql.DB and sql.Tx.
-type sqlDBTX interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
 // detectPostgresDialect reports whether the current database is PostgreSQL.
 func detectPostgresDialect(ctx context.Context, db *sql.DB) (bool, error) {
 	if db == nil {

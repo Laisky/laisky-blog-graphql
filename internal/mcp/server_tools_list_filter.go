@@ -239,7 +239,7 @@ func cacheSessionAuthorizationForRequest(r *http.Request, logger logSDK.Logger, 
 // resolveAuthorizationForListRequest resolves authorization for tools/list from header first, then session cache.
 func resolveAuthorizationForListRequest(r *http.Request, sessionAuthStore *sessionAuthorizationStore) (*askuser.AuthorizationContext, string) {
 	if r == nil {
-		return nil, "none"
+		return nil, authSourceNone
 	}
 
 	authHeader, authSource := resolveRequestAuthorizationHeader(r)
@@ -250,14 +250,14 @@ func resolveAuthorizationForListRequest(r *http.Request, sessionAuthStore *sessi
 
 	sessionID := strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID))
 	if sessionID == "" {
-		return nil, "none"
+		return nil, authSourceNone
 	}
 
 	if cachedAuth, ok := sessionAuthStore.Get(sessionID); ok {
 		return cachedAuth, "session"
 	}
 
-	return nil, "none"
+	return nil, authSourceNone
 }
 
 // filterToolsListBody removes disabled tool definitions from a JSON-RPC tools/list response body.

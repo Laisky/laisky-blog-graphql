@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
-	"github.com/pkg/errors"
 
 	"github.com/Laisky/laisky-blog-graphql/library"
 )

@@ -47,7 +47,7 @@ func (d *Telegram) Search(ctx context.Context, keyword string) (notes []*telemod
 	if err != nil {
 		return nil, errors.Wrap(err, "search notes")
 	}
-	defer cur.Close(ctx)
+	defer func() { _ = cur.Close(ctx) }()
 
 	for cur.Next(ctx) {
 		note := &telemodel.TelegramNote{}

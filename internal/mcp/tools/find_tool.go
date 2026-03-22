@@ -524,7 +524,7 @@ func buildToolDocument(tool mcp.Tool) string {
 		sb.WriteString("Parameters:\n")
 		schemaBytes, err := json.Marshal(tool.InputSchema)
 		if err == nil {
-			sb.WriteString(string(schemaBytes))
+			sb.Write(schemaBytes)
 		}
 	}
 

@@ -59,15 +59,15 @@ func (s *Telegram) OnNewRequest(ctx context.Context, req *askuser.Request) {
 	logger.Debug("tracked ask_user session", zap.Int("uid", uid), zap.Int("prompt_msg_id", msg.ID), zap.String("request_id", req.ID.String()))
 }
 
-func (s *Telegram) OnRequestCancelled(ctx context.Context, req *askuser.Request) {
-	logger := gmw.GetLogger(ctx).Named("telegram_ask_user_cancelled")
+func (s *Telegram) OnRequestCanceled(ctx context.Context, req *askuser.Request) {
+	logger := gmw.GetLogger(ctx).Named("telegram_ask_user_canceled")
 	uid, err := s.lookupTelegramUID(ctx, req.APIKeyHash)
 	if err != nil {
 		return
 	}
 
 	escapedQuestion := escapeMsg(req.Question)
-	msgText := fmt.Sprintf("❌ *Question Cancelled*\n\nThe question has been cancelled or expired: %s", escapedQuestion)
+	msgText := fmt.Sprintf("❌ *Question Canceled*\n\nThe question has been canceled or expired: %s", escapedQuestion)
 	logger.Debug("prepared ask_user cancellation message",
 		zap.Int("uid", uid),
 		zap.String("request_id", req.ID.String()),
@@ -134,7 +134,7 @@ func (s *Telegram) askUserTokenHandler(ctx context.Context, us *userStat, msg *t
 
 	if strings.EqualFold(input, "cancel") {
 		s.userStats.Delete(us.user.ID)
-		if _, err := s.bot.Send(us.user, "Linking cancelled. You can run /askuser again anytime.", nil); err != nil {
+		if _, err := s.bot.Send(us.user, "Linking canceled. You can run /askuser again anytime.", nil); err != nil {
 			logger.Error("send ask_user cancel ack", zap.Error(err))
 		}
 		return

@@ -22,11 +22,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
-const (
-	collComments    = "comments"
-	collCommentLike = "comment_likes"
-)
-
 // mapDBCommentToAPIComment converts a model.Comment to models.Comment for API response
 func (s *Blog) mapDBCommentToAPIComment(comment *model.Comment) *models.Comment {
 	if comment == nil {
@@ -143,7 +138,7 @@ func (s *Blog) BlogComments(ctx context.Context,
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to find comments")
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	// Decode results
 	var dbComments []*model.Comment
@@ -254,7 +249,7 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 	if parentID != nil {
 		trimmedParentID := strings.TrimSpace(*parentID)
 		if trimmedParentID == "" {
-			parentID = nil
+			parentID = nil //nolint:ineffassign,wastedassign // parentID not used after but kept for clarity
 		} else {
 			parentObjID, err := primitive.ObjectIDFromHex(trimmedParentID)
 			if err != nil {
@@ -462,7 +457,7 @@ func (s *Blog) BlogDeleteComment(ctx context.Context, commentID string) (*models
 	}
 	defer session.EndSession(ctx)
 
-	err = mongo.WithSession(ctx, session, func(sc mongo.SessionContext) error {
+	err = mongo.WithSession(ctx, session, func(sc mongo.SessionContext) error { //nolint:contextcheck // mongo session callback provides its own context via SessionContext
 		if err := session.StartTransaction(); err != nil {
 			return errors.Wrap(err, "failed to start transaction")
 		}

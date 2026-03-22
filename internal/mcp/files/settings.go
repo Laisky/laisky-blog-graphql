@@ -7,7 +7,15 @@ import (
 	"strings"
 	"time"
 
+	errors "github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
+)
+
+// Sentinel errors for parseUint16.
+var (
+	errOutOfRange      = errors.New("out of range")
+	errEmpty           = errors.New("empty")
+	errUnsupportedType = errors.New("unsupported type")
 )
 
 // Settings captures runtime configuration for FileIO features.
@@ -264,24 +272,24 @@ func parseUint16(raw any) (uint16, error) {
 		return v, nil
 	case int:
 		if v < 0 || v > int(^uint16(0)) {
-			return 0, fmt.Errorf("out of range")
+			return 0, errOutOfRange
 		}
 		return uint16(v), nil
 	case int64:
 		if v < 0 || v > int64(^uint16(0)) {
-			return 0, fmt.Errorf("out of range")
+			return 0, errOutOfRange
 		}
 		return uint16(v), nil
 	case float64:
 		iv := int64(v)
 		if float64(iv) != v || iv < 0 || iv > int64(^uint16(0)) {
-			return 0, fmt.Errorf("out of range")
+			return 0, errOutOfRange
 		}
 		return uint16(iv), nil
 	case string:
 		trimmed := strings.TrimSpace(v)
 		if trimmed == "" {
-			return 0, fmt.Errorf("empty")
+			return 0, errEmpty
 		}
 		parsed, err := strconv.ParseUint(trimmed, 10, 16)
 		if err != nil {
@@ -289,7 +297,7 @@ func parseUint16(raw any) (uint16, error) {
 		}
 		return uint16(parsed), nil
 	default:
-		return 0, fmt.Errorf("unsupported type")
+		return 0, errUnsupportedType
 	}
 }
 

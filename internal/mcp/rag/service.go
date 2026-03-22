@@ -171,11 +171,6 @@ func ensureVectorExtension(ctx context.Context, db *sql.DB, logger logSDK.Logger
 	return nil
 }
 
-// isPostgresDialect reports whether the database is PostgreSQL-compatible.
-func isPostgresDialect(db *sql.DB) bool {
-	return detectSQLDialect(db) == sqlDialectPostgres
-}
-
 func shouldFallbackToPgvector(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
@@ -526,7 +521,7 @@ func (s *Service) fetchCandidates(ctx context.Context, taskID int64, queryVec pg
 	if err != nil {
 		return nil, errors.Wrap(err, "query rag candidates")
 	}
-	defer dbRows.Close()
+	defer func() { _ = dbRows.Close() }()
 
 	for dbRows.Next() {
 		var row candidateChunk
@@ -655,13 +650,6 @@ func sqrt(value float64) float64 {
 	return math.Sqrt(value)
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // sqlDialect represents the SQL placeholder style and DDL variant in use.
 type sqlDialect int
 
@@ -721,7 +709,7 @@ func rebindPlaceholders(dialect sqlDialect, query string) string {
 	builder.Grow(len(query) + 16)
 	for _, ch := range query {
 		if ch == '?' {
-			builder.WriteString(fmt.Sprintf("$%d", index))
+			fmt.Fprintf(&builder, "$%d", index)
 			index++
 			continue
 		}

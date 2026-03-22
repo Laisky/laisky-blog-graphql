@@ -280,7 +280,7 @@ func sanitizeSavedCommandLabel(input string) string {
 
 // scanSavedCommandRows reads saved command rows into models.
 func scanSavedCommandRows(rows *sql.Rows) ([]SavedCommand, error) {
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]SavedCommand, 0)
 	for rows.Next() {
