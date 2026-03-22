@@ -14,6 +14,9 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
+	gqlparser "github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
 	dto1 "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
@@ -23,8 +26,6 @@ import (
 	model1 "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
-	gqlparser "github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // region    ************************** generated!.gotpl **************************

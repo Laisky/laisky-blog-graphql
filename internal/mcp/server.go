@@ -185,9 +185,9 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 
 	normalizedAuthHandler := withAuthorizationHeaderNormalization(streamable, serverLogger.Named("auth"))
 	s := &Server{
-		handler:      withHTTPLogging(withToolsListFiltering(normalizedAuthHandler, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
-		logger:       serverLogger,
-		callLogger:   callLogger,
+		handler:         withHTTPLogging(withToolsListFiltering(normalizedAuthHandler, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
+		logger:          serverLogger,
+		callLogger:      callLogger,
 		toolHandlers:    make(map[string]srv.ToolHandlerFunc),
 		toolDefinitions: make(map[string]mcp.Tool),
 	}
@@ -211,7 +211,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init web_search tool")
 		}
 		s.webSearch = webSearchTool
-		s.registerTool(mcpServer,webSearchTool.Definition(), s.handleWebSearch)
+		s.registerTool(mcpServer, webSearchTool.Definition(), s.handleWebSearch)
 	} else if searchProvider != nil && !toolsSettings.WebSearchEnabled {
 		serverLogger.Info("web_search tool disabled by configuration")
 	}
@@ -228,7 +228,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init web_fetch tool")
 		}
 		s.webFetch = webFetchTool
-		s.registerTool(mcpServer,webFetchTool.Definition(), s.handleWebFetch)
+		s.registerTool(mcpServer, webFetchTool.Definition(), s.handleWebFetch)
 	} else if rdb != nil && !toolsSettings.WebFetchEnabled {
 		serverLogger.Info("web_fetch tool disabled by configuration")
 	}
@@ -245,7 +245,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init ask_user tool")
 		}
 		s.askUser = askUserTool
-		s.registerTool(mcpServer,askUserTool.Definition(), s.handleAskUser)
+		s.registerTool(mcpServer, askUserTool.Definition(), s.handleAskUser)
 	} else if askUserService != nil && !toolsSettings.AskUserEnabled {
 		serverLogger.Info("ask_user tool disabled by configuration")
 	}
@@ -266,7 +266,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init get_user_request tool")
 		}
 		s.getUserRequest = getUserRequestTool
-		s.registerTool(mcpServer,getUserRequestTool.Definition(), s.handleGetUserRequest)
+		s.registerTool(mcpServer, getUserRequestTool.Definition(), s.handleGetUserRequest)
 	} else if userRequestService != nil && !toolsSettings.GetUserRequestEnabled {
 		serverLogger.Info("get_user_request tool disabled by configuration")
 	}
@@ -283,7 +283,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init extract_key_info tool")
 		}
 		s.extractKeyInfo = ragTool
-		s.registerTool(mcpServer,ragTool.Definition(), s.handleExtractKeyInfo)
+		s.registerTool(mcpServer, ragTool.Definition(), s.handleExtractKeyInfo)
 	} else if ragService != nil && !toolsSettings.ExtractKeyInfoEnabled {
 		serverLogger.Info("extract_key_info tool disabled by configuration")
 	}
@@ -294,49 +294,49 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init file_stat tool")
 		}
 		s.fileStat = fileStatTool
-		s.registerTool(mcpServer,fileStatTool.Definition(), s.handleFileStat)
+		s.registerTool(mcpServer, fileStatTool.Definition(), s.handleFileStat)
 
 		fileReadTool, err := tools.NewFileReadTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_read tool")
 		}
 		s.fileRead = fileReadTool
-		s.registerTool(mcpServer,fileReadTool.Definition(), s.handleFileRead)
+		s.registerTool(mcpServer, fileReadTool.Definition(), s.handleFileRead)
 
 		fileWriteTool, err := tools.NewFileWriteTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_write tool")
 		}
 		s.fileWrite = fileWriteTool
-		s.registerTool(mcpServer,fileWriteTool.Definition(), s.handleFileWrite)
+		s.registerTool(mcpServer, fileWriteTool.Definition(), s.handleFileWrite)
 
 		fileDeleteTool, err := tools.NewFileDeleteTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_delete tool")
 		}
 		s.fileDelete = fileDeleteTool
-		s.registerTool(mcpServer,fileDeleteTool.Definition(), s.handleFileDelete)
+		s.registerTool(mcpServer, fileDeleteTool.Definition(), s.handleFileDelete)
 
 		fileRenameTool, err := tools.NewFileRenameTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_rename tool")
 		}
 		s.fileRename = fileRenameTool
-		s.registerTool(mcpServer,fileRenameTool.Definition(), s.handleFileRename)
+		s.registerTool(mcpServer, fileRenameTool.Definition(), s.handleFileRename)
 
 		fileListTool, err := tools.NewFileListTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_list tool")
 		}
 		s.fileList = fileListTool
-		s.registerTool(mcpServer,fileListTool.Definition(), s.handleFileList)
+		s.registerTool(mcpServer, fileListTool.Definition(), s.handleFileList)
 
 		fileSearchTool, err := tools.NewFileSearchTool(fileService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init file_search tool")
 		}
 		s.fileSearch = fileSearchTool
-		s.registerTool(mcpServer,fileSearchTool.Definition(), s.handleFileSearch)
+		s.registerTool(mcpServer, fileSearchTool.Definition(), s.handleFileSearch)
 	} else if fileService != nil && !toolsSettings.FileIOEnabled {
 		serverLogger.Info("file tools disabled by configuration")
 	}
@@ -347,28 +347,28 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init memory_before_turn tool")
 		}
 		s.memoryBeforeTurn = memoryBeforeTurnTool
-		s.registerTool(mcpServer,memoryBeforeTurnTool.Definition(), s.handleMemoryBeforeTurn)
+		s.registerTool(mcpServer, memoryBeforeTurnTool.Definition(), s.handleMemoryBeforeTurn)
 
 		memoryAfterTurnTool, err := tools.NewMemoryAfterTurnTool(memoryService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init memory_after_turn tool")
 		}
 		s.memoryAfterTurn = memoryAfterTurnTool
-		s.registerTool(mcpServer,memoryAfterTurnTool.Definition(), s.handleMemoryAfterTurn)
+		s.registerTool(mcpServer, memoryAfterTurnTool.Definition(), s.handleMemoryAfterTurn)
 
 		memoryMaintenanceTool, err := tools.NewMemoryRunMaintenanceTool(memoryService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init memory_run_maintenance tool")
 		}
 		s.memoryRunMaintenance = memoryMaintenanceTool
-		s.registerTool(mcpServer,memoryMaintenanceTool.Definition(), s.handleMemoryRunMaintenance)
+		s.registerTool(mcpServer, memoryMaintenanceTool.Definition(), s.handleMemoryRunMaintenance)
 
 		memoryListTool, err := tools.NewMemoryListDirWithAbstractTool(memoryService)
 		if err != nil {
 			return nil, errors.Wrap(err, "init memory_list_dir_with_abstract tool")
 		}
 		s.memoryListDirWithAbstract = memoryListTool
-		s.registerTool(mcpServer,memoryListTool.Definition(), s.handleMemoryListDirWithAbstract)
+		s.registerTool(mcpServer, memoryListTool.Definition(), s.handleMemoryListDirWithAbstract)
 	} else if memoryService != nil && !toolsSettings.MemoryEnabled {
 		serverLogger.Info("memory tools disabled by configuration")
 	}
@@ -396,7 +396,7 @@ func NewServer(searchProvider searchlib.Provider, askUserService *askuser.Servic
 			return nil, errors.Wrap(err, "init mcp_pipe tool")
 		}
 		s.mcpPipe = pipeTool
-		s.registerTool(mcpServer,pipeTool.Definition(), s.handleMCPPipe)
+		s.registerTool(mcpServer, pipeTool.Definition(), s.handleMCPPipe)
 	} else {
 		serverLogger.Info("mcp_pipe tool disabled by configuration")
 	}

@@ -34,15 +34,12 @@ COPY web/ ./
 RUN pnpm build
 
 # copy executable file, certs, and assets to a pure container
-FROM node:24-bookworm AS runtime
+FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates haveged \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-
-# install ardrive cli
-RUN npm install -g ardrive-cli
 
 COPY --from=gobuild /etc/ssl/certs /etc/ssl/certs
 COPY --from=gobuild /app/main /app/go-graphql-srv
