@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -162,9 +163,25 @@ func makeReader(cnt []byte) (reader io.Reader, err error) {
 	return reader, nil
 }
 
+// arweaveFileIDRegexp matches valid Arweave transaction IDs (43 Base64URL chars).
+var arweaveFileIDRegexp = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+
+// validateArweaveFileID ensures the file ID is a valid Arweave transaction ID
+// to prevent SSRF and path traversal attacks.
+func validateArweaveFileID(fileID string) error {
+	if !arweaveFileIDRegexp.MatchString(fileID) {
+		return errors.Errorf("invalid arweave file id %q", fileID)
+	}
+	return nil
+}
+
 // LoadPostHistory load post history by arweave file id
 func (s *Blog) LoadPostHistory(ctx context.Context, fileID string, language models.Language) (*model.Post, error) {
 	logger := gmw.GetLogger(ctx)
+
+	if err := validateArweaveFileID(fileID); err != nil {
+		return nil, errors.Wrap(err, "validate file id")
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ario.laisky.com/"+fileID, nil)
 	if err != nil {

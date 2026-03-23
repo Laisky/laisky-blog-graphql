@@ -24,7 +24,7 @@ type DialInfo struct {
 
 // BuildDSN builds a PostgreSQL DSN for shared database clients.
 func BuildDSN(dialInfo DialInfo) string {
-	return "host=" + dialInfo.Addr + " user=" + dialInfo.User + " password=" + dialInfo.Pwd + " dbname=" + dialInfo.DBName + " port=5432 sslmode=disable TimeZone=UTC"
+	return "host=" + dialInfo.Addr + " user=" + dialInfo.User + " password=" + dialInfo.Pwd + " dbname=" + dialInfo.DBName + " port=5432 sslmode=prefer TimeZone=UTC"
 }
 
 // NewDB create a new postgres db

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -86,6 +87,10 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	urlValue = strings.TrimSpace(urlValue)
 	if urlValue == "" {
 		return mcp.NewToolResultError("url cannot be empty"), nil
+	}
+
+	if err := validateFetchURL(urlValue); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid url: %v", err)), nil
 	}
 
 	apiKey := t.apiKeyProvider(ctx)
@@ -193,6 +198,47 @@ func parseExplicitFalseBool(raw any) bool {
 	default:
 		return true
 	}
+}
+
+// validateFetchURL checks that the URL uses an allowed scheme (http/https)
+// and does not target private, loopback, or link-local IP addresses to
+// prevent Server-Side Request Forgery (SSRF) attacks.
+func validateFetchURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return errors.Wrap(err, "malformed url")
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return errors.Errorf("scheme %q is not allowed, only http and https are permitted", scheme)
+	}
+
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return errors.New("url must include a hostname")
+	}
+
+	// Resolve the hostname to check for private IPs.
+	// Also catch literal IP addresses.
+	ips, err := net.LookupHost(hostname)
+	if err != nil {
+		// If DNS resolution fails, reject the request.
+		return errors.Wrap(err, "cannot resolve hostname")
+	}
+
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return errors.Errorf("url resolves to non-routable address %s", ipStr)
+		}
+	}
+
+	return nil
 }
 
 // sanitizeURLForLog removes query and fragment components from a URL before
