@@ -92,26 +92,26 @@ export function AppLayout() {
         </div>
       )}
       <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur">
-        <div className="container mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4 md:flex-nowrap">
-          <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
+        <div className="container mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2 md:gap-4 md:px-6 md:py-4">
+          <Link to="/" className="flex shrink-0 items-center gap-1.5 text-base font-semibold tracking-tight text-foreground md:gap-2 md:text-lg">
             <Cpu className="h-5 w-5 text-primary" />
-            <span>Laisky MCP</span>
+            <span className="hidden sm:inline">Laisky MCP</span>
           </Link>
-          <div className="flex w-full items-center justify-between gap-4 md:w-auto md:justify-end">
-            <nav className="flex flex-1 flex-wrap items-center gap-3 text-sm font-medium text-muted-foreground md:flex-none">
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2 md:gap-4">
+            <nav className="flex min-w-0 items-center gap-1 text-sm font-medium text-muted-foreground md:gap-3">
               {navItems.map((item) => (
                 <NavItem key={item.to} to={item.to} label={item.label} />
               ))}
               {filteredConsoleItems.length > 0 && <ConsoleMenu items={filteredConsoleItems} isActive={isConsoleRoute} />}
               <NavItem to="/tools/call_log" label="Logs" />
             </nav>
-            <div className="flex items-center gap-2 border-l border-border pl-4">
+            <div className="flex shrink-0 items-center gap-1 border-l border-border pl-2 md:gap-2 md:pl-4">
               <ApiKeyAliasSwitcher />
               <ThemeToggle />
               <Link
                 to="/settings"
                 className={cn(
-                  'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
+                  'flex h-8 w-8 items-center justify-center rounded-full transition-colors md:h-9 md:w-9',
                   status === 'valid' && 'bg-green-500/10 text-green-600 hover:bg-green-500/20 dark:text-green-400',
                   status === 'insufficient' && 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400',
                   status === 'error' && 'bg-destructive/10 text-destructive hover:bg-destructive/20',
@@ -182,7 +182,7 @@ function ApiKeyAliasSwitcher() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground md:h-9 md:w-9"
           aria-label="Switch API key"
           title="Switch API key alias"
         >
@@ -224,7 +224,7 @@ function NavItem({ to, label }: { to: string; label: string }) {
       to={to}
       className={({ isActive }) =>
         cn(
-          'rounded-md px-3 py-1.5 transition-colors hover:bg-muted hover:text-foreground',
+          'whitespace-nowrap rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground md:px-3 md:py-1.5 md:text-sm',
           isActive ? 'bg-muted text-foreground' : 'text-muted-foreground'
         )
       }
@@ -276,7 +276,7 @@ function ConsoleMenu({ items, isActive }: ConsoleMenuProps) {
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         className={cn(
-          'flex items-center gap-1 rounded-md px-3 py-1.5 transition-colors hover:bg-muted hover:text-foreground',
+          'flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground md:px-3 md:py-1.5 md:text-sm',
           isActive || open ? 'bg-muted text-foreground' : 'text-muted-foreground'
         )}
         aria-expanded={open}
