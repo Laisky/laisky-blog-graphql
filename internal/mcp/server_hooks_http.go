@@ -70,12 +70,11 @@ func shouldDowngradeMCPErrorLog(method mcp.MCPMethod, err error) bool {
 		return false
 	}
 	errText := strings.ToLower(err.Error())
-	if !strings.Contains(errText, "resources not supported") {
-		return false
-	}
 	switch method {
 	case mcp.MethodResourcesList, mcp.MethodResourcesTemplatesList:
-		return true
+		return strings.Contains(errText, "resources not supported")
+	case mcp.MethodPromptsList, mcp.MethodPromptsGet:
+		return strings.Contains(errText, "prompts not supported")
 	default:
 		return false
 	}
