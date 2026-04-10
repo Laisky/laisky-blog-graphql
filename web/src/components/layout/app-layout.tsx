@@ -59,7 +59,7 @@ export function AppLayout() {
   const isSettingsPage = location.pathname === '/settings';
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex min-h-screen w-full max-w-full flex-col overflow-x-hidden bg-background text-foreground">
       {status !== 'valid' && !isSettingsPage && (
         <div
           className={cn(

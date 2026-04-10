@@ -731,7 +731,7 @@ export function UserRequestsPage() {
             Draft a new instruction for your AI agent. Requests are delivered in FIFO order (oldest first) when they call{' '}
             <code>get_user_request</code>.
           </p>
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <span className="text-sm text-muted-foreground">Return mode:</span>
             <div className="inline-flex rounded-md border border-border bg-background shadow-sm">
               <button
