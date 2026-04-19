@@ -19,6 +19,7 @@ This guide explains how to connect to the remote Model Context Protocol (MCP) en
       - [User Requests Console Workflow](#user-requests-console-workflow)
     - [`extract_key_info`](#extract_key_info)
     - [`mcp_pipe`](#mcp_pipe)
+    - [Image Messages](#image-messages)
     - [Data Storage Notes](#data-storage-notes)
   - [Client Integration Tips](#client-integration-tips)
   - [Troubleshooting](#troubleshooting)
@@ -378,10 +379,26 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 
   Disable the tool with `settings.mcp.tools.mcp_pipe.enabled=false`.
 
+### Image Messages
+
+`get_user_request` supports image attachments alongside the usual text directives. Submitted attachments ride along with the directive, get normalized server-side, and are surfaced to the AI agent via the MCP response as a combination of inline `ImageContent` (for small images) and `resource_link` blocks (for every image).
+
+- **Enabling the feature**: set `settings.mcp.user_requests.images.enabled: true` and fill in the `minio` subsection with endpoint/bucket/credentials. When disabled (the default) the feature is invisible: the compose UI hides the image controls, multipart POSTs return `415 feature_disabled`, and MCP responses stay byte-identical to the pure-text shape.
+- **Attachment intake**: callers either POST `multipart/form-data` with `content`, `task_id`, `images` file parts, and `image_urls` text parts, or keep the JSON variant and provide `image_urls` there. Up to 5 attachments per request (files and URLs combined), 20 MiB raw cap per attachment, 100 MiB per-user quota across live objects.
+- **Accepted formats**: `image/jpeg`, `image/png`, `image/webp`, `image/bmp`, `image/tiff`, and the first frame of `image/gif`. `image/svg+xml` and `image/heic` are rejected (`unsupported_mime`). Every stored object is re-encoded as PNG after decode -> orientation fix -> resize to a 1536-pixel longest edge.
+- **Storage & expiry**: images live in MinIO keyed by SHA256 under the configured prefix. A bucket-level lifecycle rule expires objects after 7 days; the same SHA from the same user dedupes and refreshes the TTL. A DB-side GC hourly reaps expired metadata rows.
+- **Retrieval**: agents receive presigned MinIO URLs (30-minute validity) and, when the image fits the inline budget (40 KiB per image, 80 KiB per response), also the base64 bytes directly. Claude Code consumes the inline image natively; Codex CLI calls `view_image` on the `resource_link` URI.
+- **Quota probe**: `GET /api/quota` returns `{used_bytes, quota_bytes, object_count, ttl_days}` for the authenticated caller.
+- **Error codes** (response body `{"error": code, "message": ..., "attachment_index": N}`): `unsupported_mime` (400), `decode_failed` (422), `image_too_large` / `quota_exceeded` / `too_many_images` (413), `feature_disabled` (415), `url_blocked` (400), `url_timeout` (504), `url_fetch_failed` (502), `storage_unavailable` (503).
+- **Per-client caveats**:
+  - Claude Code renders inline `ImageContent` natively; mixed text + image messages are supported but a known Claude Code bug ([anthropics/claude-code#14150](https://github.com/anthropics/claude-code/issues/14150)) sometimes spools the result to disk.
+  - Codex CLI does not render inline `ImageContent`; it relies on the `view_image` tool to fetch the `resource_link` URI introduced in v0.115.0 (2026-03-16).
+
 ### Data Storage Notes
 
 - Requests are stored in the `mcp` PostgreSQL database, table inferred from the GORM model `askuser.Request`.
 - User-authored directives powering `get_user_request` live in the `mcp_user_requests` table (model `userrequests.Request`) and are scoped by the hashed API key plus optional `task_id`. A periodic sweeper removes rows older than the configured retention window (default 30 days).
+- Image attachments are metadata-only in Postgres (`mcp_user_image_refs`, with `mcp_user_request_image_links` for many-to-many binding to requests); the PNG bytes live in MinIO. See `docs/arch/mcp_pipe.md` for the image pipeline architecture.
 - Primary key: UUID generated on insert.
 - Sensitive fields:
   - `api_key_hash` holds the SHA-256 hash of the bearer token.

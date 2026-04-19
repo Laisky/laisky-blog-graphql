@@ -37,6 +37,68 @@ settings:
         enabled: true # Enable/disable get_user_request tool
       extract_key_info:
         enabled: true # Enable/disable extract_key_info tool
+    user_requests:
+      # How long a user request row is kept before TTL pruning deletes it.
+      # Optional. Default: 30 (days).
+      retention_days: 30
+      # How often the retention worker wakes up to sweep expired rows, in seconds.
+      # Optional. Default: 21600 (= 6h).
+      retention_sweep_seconds: 21600
+      images:
+        # Master switch for image attachments on get_user_request. When false the
+        # compose UI hides image controls and the HTTP layer returns
+        # 415 feature_disabled for any multipart submission.
+        # Optional. Default: false.
+        enabled: false
+        minio:
+          # Hostname of the MinIO / S3 endpoint (no scheme).
+          # Optional. Default: s3.laisky.com.
+          endpoint: s3.laisky.com
+          # Bucket that owns every image object. Required when `enabled: true`;
+          # no default because buckets are deployment-specific.
+          bucket: REPLACE_WITH_BUCKET_NAME
+          # Object-key prefix under the bucket. Leading / trailing slashes are
+          # trimmed. Optional. Default: mcp/user_requests/images.
+          prefix: mcp/user_requests/images
+          # MinIO access key. Required when `enabled: true`. Must live in a
+          # private overlay — never commit real credentials.
+          access_key: REPLACE_WITH_ACCESS_KEY
+          # MinIO secret key. Required when `enabled: true`. Must live in a
+          # private overlay — never commit real credentials.
+          secret_key: REPLACE_WITH_SECRET_KEY
+          # Use HTTPS against the endpoint. Set to false only for local testing.
+          # Optional. Default: true.
+          use_ssl: true
+        # Per-user quota across live (non-expired) post-normalization bytes.
+        # Optional. Default: 104857600 (= 100 MiB).
+        per_user_quota_bytes: 104857600
+        # Hard raw-byte cap per input image, applied before decode. Same limit
+        # applies to uploaded files and URL-fetched bodies.
+        # Optional. Default: 20971520 (= 20 MiB).
+        per_image_max_bytes: 20971520
+        # Maximum attachments per request (files and image_urls combined).
+        # Optional. Default: 5.
+        max_per_request: 5
+        # How many days a MinIO object lives before the bucket lifecycle rule
+        # deletes it. Re-uploading the same SHA refreshes this TTL.
+        # Optional. Default: 7.
+        object_ttl_days: 7
+        # Validity window (minutes) of presigned GET URLs handed to AI agents.
+        # Optional. Default: 30.
+        presign_ttl_minutes: 30
+        # How often the DB-side image GC sweeps expired refs, in seconds. Set
+        # to 0 to disable the worker. Optional. Default: 3600 (= 1h).
+        gc_sweep_seconds: 3600
+        url_fetch:
+          # Allow plain http:// image_url inputs. Not recommended for
+          # production. Optional. Default: false (HTTPS only).
+          allow_http: false
+          # Maximum number of redirect hops the fetcher will follow per URL.
+          # Optional. Default: 3.
+          max_redirects: 3
+          # Overall deadline for one image_url fetch (headers + body), in
+          # seconds. Optional. Default: 15.
+          total_timeout_seconds: 15
     extract_key_info:
       enabled: true
       top_k_default: 5

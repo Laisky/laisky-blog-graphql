@@ -125,6 +125,10 @@ func (s *Service) ensureSchema(ctx context.Context) error {
 		}
 	}
 
+	if err := s.ensureImageSchema(ctx); err != nil {
+		return errors.Wrap(err, "apply image schema")
+	}
+
 	return nil
 }
 
@@ -271,6 +275,13 @@ func (s *Service) ListRequests(ctx context.Context, auth *askuser.AuthorizationC
 		return nil, nil, 0, errors.Wrap(err, "scan consumed user requests")
 	}
 
+	if err := s.loadImagesForRequests(ctx, pending); err != nil {
+		return nil, nil, 0, errors.Wrap(err, "load images for pending requests")
+	}
+	if err := s.loadImagesForRequests(ctx, consumed); err != nil {
+		return nil, nil, 0, errors.Wrap(err, "load images for consumed requests")
+	}
+
 	logTaskID := filteredTaskID
 	if includeAllTasks {
 		logTaskID = "*"
@@ -383,6 +394,10 @@ func (s *Service) ConsumeAllPending(ctx context.Context, auth *askuser.Authoriza
 		consumed = append(consumed, c)
 	}
 
+	if err := s.loadImagesForRequests(ctx, consumed); err != nil {
+		return nil, errors.Wrap(err, "load images for consumed requests")
+	}
+
 	s.log().Debug("consumed all pending user requests",
 		zap.String("user", auth.UserIdentity),
 		zap.String("task_id", taskID),
@@ -440,6 +455,12 @@ func (s *Service) ConsumeFirstPending(ctx context.Context, auth *askuser.Authori
 	candidate.ConsumedAt = &now
 	candidate.UpdatedAt = now
 
+	holder := []Request{*candidate}
+	if err := s.loadImagesForRequests(ctx, holder); err != nil {
+		return nil, errors.Wrap(err, "load images for first consumed request")
+	}
+	candidate.Images = holder[0].Images
+
 	s.log().Debug("consumed first pending user request",
 		zap.String("user", auth.UserIdentity),
 		zap.String("task_id", taskID),
@@ -480,112 +501,21 @@ func (s *Service) ConsumeRequestByID(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// DeleteRequest removes a single request belonging to the authenticated user.
-func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.AuthorizationContext, id uuid.UUID, taskID string) error {
-	if auth == nil {
-		return ErrInvalidAuthorization
-	}
-
-	result, err := s.execContext(ctx,
-		`DELETE FROM mcp_user_requests WHERE id = ? AND api_key_hash = ?`,
-		id.String(),
-		auth.APIKeyHash,
-	)
-	if err != nil {
-		return errors.Wrap(err, "delete user request")
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return errors.Wrap(err, "read deleted rows affected")
-	}
-	if rowsAffected == 0 {
-		return ErrRequestNotFound
-	}
-	s.log().Debug("deleted user request",
-		zap.String("user", auth.UserIdentity),
-		zap.String("request_id", id.String()),
-		zap.Int64("deleted", rowsAffected),
-	)
-	return nil
-}
-
-// DeleteAll removes requests tied to the authenticated user. When includeAllTasks is false,
-// only the provided taskID is affected.
-func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool) (int64, error) {
-	if auth == nil {
-		return 0, ErrInvalidAuthorization
-	}
-
-	filteredTaskID := normalizeTaskID(taskID)
-	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ?`
-	args := []any{auth.APIKeyHash}
-	if !includeAllTasks {
-		query += sqlAndTaskID
-		args = append(args, filteredTaskID)
-	}
-
-	result, err := s.execContext(ctx, query, args...)
-	if err != nil {
-		return 0, errors.Wrap(err, "delete all user requests")
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, errors.Wrap(err, "read deleted rows affected")
-	}
-	logTaskID := filteredTaskID
-	if includeAllTasks {
-		logTaskID = "*"
-	}
-	s.log().Debug("deleted user requests",
-		zap.String("user", auth.UserIdentity),
-		zap.Bool("all_tasks", includeAllTasks),
-		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", rowsAffected),
-	)
-	return rowsAffected, nil
-}
-
-// DeleteAllPending removes pending requests. When includeAllTasks is false the operation is
-// restricted to the provided taskID.
-func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string, includeAllTasks bool) (int64, error) {
-	if auth == nil {
-		return 0, ErrInvalidAuthorization
-	}
-
-	filteredTaskID := normalizeTaskID(taskID)
-	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
-	args := []any{auth.APIKeyHash, StatusPending}
-	if !includeAllTasks {
-		query += sqlAndTaskID
-		args = append(args, filteredTaskID)
-	}
-
-	result, err := s.execContext(ctx, query, args...)
-	if err != nil {
-		return 0, errors.Wrap(err, "delete pending user requests")
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, errors.Wrap(err, "read deleted rows affected")
-	}
-	logTaskID := filteredTaskID
-	if includeAllTasks {
-		logTaskID = "*"
-	}
-	s.log().Debug("deleted pending user requests",
-		zap.String("user", auth.UserIdentity),
-		zap.Bool("all_tasks", includeAllTasks),
-		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", rowsAffected),
-	)
-	return rowsAffected, nil
-}
-
 func (s *Service) log() logSDK.Logger {
 	if s != nil && s.logger != nil {
 		return s.logger
 	}
 	return log.Logger.Named("user_requests_service")
+}
+
+// ImageSettings exposes the image configuration slice so callers (e.g. the
+// command that wires the ImageManager at boot) can make settings-aware decisions
+// without importing the config layer directly.
+func (s *Service) ImageSettings() ImageSettings {
+	if s == nil {
+		return ImageSettings{}
+	}
+	return s.settings.Images
 }
 
 func normalizeTaskID(input string) string {
@@ -597,84 +527,6 @@ func normalizeTaskID(input string) string {
 		sanitized = sanitized[:maxTaskIDLength]
 	}
 	return sanitized
-}
-
-func (s *Service) pruneExpired(ctx context.Context) error {
-	if s == nil || s.settings.RetentionDays <= 0 {
-		return nil
-	}
-	cutoff := s.clock().AddDate(0, 0, -s.settings.RetentionDays)
-	_, err := s.execContext(ctx,
-		`DELETE FROM mcp_user_requests WHERE created_at < ?`,
-		cutoff,
-	)
-	if err != nil {
-		switch {
-		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-			s.log().Debug("prune expired aborted", zap.Error(err))
-			return nil
-		default:
-			return errors.Wrap(err, "prune expired user requests")
-		}
-	}
-	return nil
-}
-
-// DeleteConsumed removes consumed requests based on retention policies.
-// If keepCount > 0, it retains the N most recent consumed requests.
-// If keepDays > 0, it retains requests consumed within the last N days.
-// If both are 0, it deletes all consumed requests. When includeAllTasks is false, only the
-// provided taskID is considered.
-func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.AuthorizationContext, keepCount int, keepDays int, taskID string, includeAllTasks bool) (int64, error) {
-	if auth == nil {
-		return 0, ErrInvalidAuthorization
-	}
-
-	filteredTaskID := normalizeTaskID(taskID)
-	query := `DELETE FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
-	args := []any{auth.APIKeyHash, StatusConsumed}
-	if !includeAllTasks {
-		query += sqlAndTaskID
-		args = append(args, filteredTaskID)
-	}
-
-	if keepCount > 0 {
-		subQuery := `SELECT id FROM mcp_user_requests WHERE api_key_hash = ? AND status = ?`
-		subArgs := []any{auth.APIKeyHash, StatusConsumed}
-		if !includeAllTasks {
-			subQuery += sqlAndTaskID
-			subArgs = append(subArgs, filteredTaskID)
-		}
-		subQuery += ` ORDER BY consumed_at DESC LIMIT ?`
-		subArgs = append(subArgs, keepCount)
-
-		query += ` AND id NOT IN (` + subQuery + `)`
-		args = append(args, subArgs...)
-	} else if keepDays > 0 {
-		cutoff := s.clock().AddDate(0, 0, -keepDays)
-		query += ` AND consumed_at < ?`
-		args = append(args, cutoff)
-	}
-
-	result, err := s.execContext(ctx, query, args...)
-	if err != nil {
-		return 0, errors.Wrap(err, "delete consumed requests")
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, errors.Wrap(err, "read deleted rows affected")
-	}
-	logTaskID := filteredTaskID
-	if includeAllTasks {
-		logTaskID = "*"
-	}
-	s.log().Debug("deleted consumed user requests",
-		zap.String("user", auth.UserIdentity),
-		zap.Bool("all_tasks", includeAllTasks),
-		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", rowsAffected),
-	)
-	return rowsAffected, nil
 }
 
 // ReorderRequests updates the sort order for multiple pending requests at once.

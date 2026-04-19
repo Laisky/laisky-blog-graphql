@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -22,6 +24,15 @@ type UserRequestService interface {
 	GetReturnMode(context.Context, *askuser.AuthorizationContext) (string, error)
 }
 
+// ImageIssuer is the abstraction the tool uses to serve image attachments back
+// to agents. It exposes the two operations from userrequests.ImageManager —
+// presigning the object URL and fetching the raw bytes for inlining — so tests
+// can substitute a deterministic fake without importing MinIO.
+type ImageIssuer interface {
+	PresignURL(ctx context.Context, image userrequests.RequestImage) (string, error)
+	FetchInline(ctx context.Context, image userrequests.RequestImage) ([]byte, error)
+}
+
 // HoldWaiter waits for a command to be submitted during an active hold.
 type HoldWaiter interface {
 	IsHoldActive(apiKeyHash string, taskID string) bool
@@ -35,6 +46,8 @@ type GetUserRequestTool struct {
 	logger         logSDK.Logger
 	headerProvider AuthorizationHeaderProvider
 	parser         AuthorizationParser
+	imageIssuer    ImageIssuer
+	budget         ImageBudgetConfig
 }
 
 // NewGetUserRequestTool constructs the tool with the required dependencies.
@@ -59,20 +72,42 @@ func NewGetUserRequestTool(service UserRequestService, holdWaiter HoldWaiter, lo
 		logger:         logger,
 		headerProvider: headerProvider,
 		parser:         parser,
+		budget:         DefaultImageBudget(),
 	}, nil
 }
 
+// WithImageIssuer attaches an ImageIssuer so the tool can emit image + link
+// content for requests that carry attachments. Passing nil disables image
+// emission entirely, preserving the pure-text response shape.
+func (t *GetUserRequestTool) WithImageIssuer(issuer ImageIssuer) *GetUserRequestTool {
+	if t != nil {
+		t.imageIssuer = issuer
+	}
+	return t
+}
+
 // Definition returns the metadata describing the tool to MCP clients.
+// The response may be mixed content (text + inline image + resource_link) when
+// the user attached images; Anthropic-specific `_meta` hints declare the text
+// portion's size budget so Claude Code can plan its context usage.
 func (t *GetUserRequestTool) Definition() mcp.Tool {
-	return mcp.NewTool(
+	tool := mcp.NewTool(
 		"get_user_request",
-		mcp.WithDescription("During the execution of a task, get the latest user instructions to adjust agent's work objectives or processes."),
+		mcp.WithDescription("During the execution of a task, get the latest user instructions to adjust agent's work objectives or processes. The response may include text, inline images, and resource links when the user attached images."),
 		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithString(
 			"task_id",
 			mcp.Description("Optional task identifier used to isolate commands; defaults to 'default'."),
 		),
 	)
+	if tool.Meta == nil {
+		tool.Meta = &mcp.Meta{}
+	}
+	if tool.Meta.AdditionalFields == nil {
+		tool.Meta.AdditionalFields = map[string]any{}
+	}
+	tool.Meta.AdditionalFields["anthropic/maxResultSizeChars"] = 20000
+	return tool
 }
 
 // Handle executes the core tool logic.
@@ -138,7 +173,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 					zap.Int("sort_order", r.SortOrder),
 				)
 			}
-			return t.buildCommandsResponse(existingRequests)
+			return t.buildCommandsResponse(ctx, existingRequests)
 		}
 
 		// No pending commands, now wait for a command to be submitted
@@ -153,18 +188,10 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 				zap.String("request_id", waitedRequest.ID.String()),
 				zap.String("task_id", taskID),
 			)
-			// Return the single waited command as a list
-			payload := map[string]any{
-				"commands": []map[string]any{
-					{"content": waitedRequest.Content},
-				},
-			}
-			result, encodeErr := mcp.NewToolResultJSON(payload)
-			if encodeErr != nil {
-				t.log().Error("encode get_user_request response", zap.Error(encodeErr))
-				return mcp.NewToolResultError("failed to encode response"), nil
-			}
-			return result, nil
+			// Route the waited command through the same builder so image
+			// payloads surface identically whether the command landed via
+			// hold or via the regular consume path.
+			return t.buildCommandsResponse(ctx, []userrequests.Request{*waitedRequest})
 		}
 		if timedOut {
 			t.log().Info("hold timeout without user command",
@@ -252,7 +279,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return t.emptyResponse(authCtx), nil
 	}
 
-	return t.buildCommandsResponse(requests)
+	return t.buildCommandsResponse(ctx, requests)
 }
 
 func (t *GetUserRequestTool) emptyResponse(auth *askuser.AuthorizationContext) *mcp.CallToolResult {
@@ -282,23 +309,130 @@ func (t *GetUserRequestTool) holdTimeoutResponse(auth *askuser.AuthorizationCont
 	return result
 }
 
-// buildCommandsResponse constructs the MCP response payload from a list of requests.
-func (t *GetUserRequestTool) buildCommandsResponse(requests []userrequests.Request) (*mcp.CallToolResult, error) {
-	commands := make([]map[string]any, len(requests))
-	for i, r := range requests {
-		commands[i] = map[string]any{
-			"content": r.Content,
+// buildCommandsResponse constructs the MCP response payload from a list of
+// requests. When no attachments are present the response is byte-identical to
+// NewToolResultJSON for backwards compatibility. Otherwise the result carries
+// a mixed content sequence: text summary, optional ImageContent blocks for
+// images that fit the inline budget, and ResourceLink blocks for every image.
+func (t *GetUserRequestTool) buildCommandsResponse(ctx context.Context, requests []userrequests.Request) (*mcp.CallToolResult, error) {
+	hasImages := false
+	for _, r := range requests {
+		if len(r.Images) > 0 {
+			hasImages = true
+			break
 		}
 	}
-	payload := map[string]any{
-		"commands": commands,
+
+	if !hasImages || t.imageIssuer == nil {
+		commands := make([]map[string]any, len(requests))
+		for i, r := range requests {
+			commands[i] = map[string]any{
+				"content": r.Content,
+			}
+		}
+		payload := map[string]any{
+			"commands": commands,
+		}
+		result, encodeErr := mcp.NewToolResultJSON(payload)
+		if encodeErr != nil {
+			t.log().Error("encode get_user_request response", zap.Error(encodeErr))
+			return mcp.NewToolResultError("failed to encode response"), nil
+		}
+		return result, nil
 	}
-	result, encodeErr := mcp.NewToolResultJSON(payload)
-	if encodeErr != nil {
-		t.log().Error("encode get_user_request response", zap.Error(encodeErr))
-		return mcp.NewToolResultError("failed to encode response"), nil
+
+	return t.buildMixedCommandsResponse(ctx, requests)
+}
+
+// buildMixedCommandsResponse composes the dual-channel payload described in
+// the proposal §3.2: one TextContent per command (JSON serialization with
+// image metadata and inline placeholders), then ImageContent / ResourceLink
+// blocks for each attachment, followed by structuredContent.
+func (t *GetUserRequestTool) buildMixedCommandsResponse(ctx context.Context, requests []userrequests.Request) (*mcp.CallToolResult, error) {
+	content := make([]mcp.Content, 0, len(requests)*3)
+	structuredCommands := make([]map[string]any, 0, len(requests))
+
+	for i, req := range requests {
+		issuedImages := make([]map[string]any, 0, len(req.Images))
+		resolved := make([]resolvedImage, 0, len(req.Images))
+		for _, img := range req.Images {
+			url, err := t.imageIssuer.PresignURL(ctx, img)
+			if err != nil {
+				t.log().Warn("presign image for tool response",
+					zap.String("image_id", img.ID.String()),
+					zap.Error(err),
+				)
+				continue
+			}
+			meta := map[string]any{
+				"id":         img.ID.String(),
+				"mime":       img.MIMEType,
+				"url":        url,
+				"width":      img.Width,
+				"height":     img.Height,
+				"sha256":     img.SHA256,
+				"expires_at": img.ExpiresAt,
+			}
+			issuedImages = append(issuedImages, meta)
+			resolved = append(resolved, resolvedImage{meta: img, url: url})
+		}
+
+		cmdSummary := map[string]any{
+			"command": i,
+			"content": req.Content,
+			"images":  issuedImages,
+		}
+		jsonBytes, err := json.Marshal(cmdSummary)
+		if err != nil {
+			t.log().Error("marshal command summary", zap.Error(err))
+			return mcp.NewToolResultError("failed to encode response"), nil
+		}
+		content = append(content, mcp.TextContent{Type: "text", Text: string(jsonBytes)})
+
+		// Plan inline budgets based on base64 size estimates; fetch inline
+		// bytes only for images that stay under the ceiling.
+		sizeEstimates := make([]int, 0, len(resolved))
+		for _, r := range resolved {
+			sizeEstimates = append(sizeEstimates, base64.StdEncoding.EncodedLen(int(r.meta.SizeBytes)))
+		}
+		decisions := PlanInlineBudget(sizeEstimates, t.budget)
+		for idx, decision := range decisions {
+			img := resolved[idx]
+			if decision.Inline {
+				body, err := t.imageIssuer.FetchInline(ctx, img.meta)
+				if err != nil {
+					t.log().Warn("fetch inline image bytes", zap.String("image_id", img.meta.ID.String()), zap.Error(err))
+				} else {
+					content = append(content, mcp.ImageContent{
+						Type:     "image",
+						Data:     base64.StdEncoding.EncodeToString(body),
+						MIMEType: img.meta.MIMEType,
+					})
+				}
+			}
+			content = append(content, mcp.ResourceLink{
+				Type:     "resource_link",
+				URI:      img.url,
+				Name:     img.meta.SHA256 + ".png",
+				MIMEType: img.meta.MIMEType,
+			})
+		}
+
+		structuredCommands = append(structuredCommands, cmdSummary)
 	}
-	return result, nil
+
+	return &mcp.CallToolResult{
+		Content: content,
+		StructuredContent: map[string]any{
+			"commands":         structuredCommands,
+			"protocol_version": "v2",
+		},
+	}, nil
+}
+
+type resolvedImage struct {
+	meta userrequests.RequestImage
+	url  string
 }
 
 func (t *GetUserRequestTool) log() logSDK.Logger {

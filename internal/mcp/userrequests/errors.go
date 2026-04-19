@@ -21,4 +21,12 @@ var (
 	ErrInvalidCursor = errors.New("invalid cursor")
 	// ErrInvalidRequestContent indicates the request content did not pass validation.
 	ErrInvalidRequestContent = errors.New("invalid request content")
+	// ErrQuotaExceeded is returned when an upload would push the user above the configured storage quota.
+	ErrQuotaExceeded = errors.New("image storage quota exceeded")
+	// ErrTooManyImages is returned when more than the per-request limit of images is attached.
+	ErrTooManyImages = errors.New("too many images attached to a single request")
+	// ErrImageFeatureDisabled indicates image attachments are disabled by configuration.
+	ErrImageFeatureDisabled = errors.New("image attachments feature is disabled")
+	// ErrStorageUnavailable is returned when the object store could not accept an upload.
+	ErrStorageUnavailable = errors.New("image storage unavailable")
 )

@@ -27,6 +27,7 @@ vi.mock('./api', () => ({
   setHold: vi.fn(),
   setReturnModeOnServer: vi.fn(),
   setReturnMode: vi.fn(),
+  getQuota: vi.fn().mockResolvedValue({ user_identity: 'u', used_bytes: 0, quota_bytes: 0, object_count: 0, ttl_days: 0 }),
 }));
 
 // Mock child components that might interfere or are complex
@@ -73,7 +74,7 @@ describe('UserRequestsPage Keyboard Behavior', () => {
   });
 
   it('should trigger send on Ctrl+Enter', async () => {
-    vi.mocked(api.createUserRequest).mockResolvedValue({ id: '1', status: 'pending' });
+    vi.mocked(api.createUserRequest).mockResolvedValue({ id: '1', status: 'pending' } as never);
     render(<UserRequestsPage />);
 
     const textarea = screen.getByPlaceholderText(/Describe the feedback/i);
@@ -83,12 +84,15 @@ describe('UserRequestsPage Keyboard Behavior', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter', ctrlKey: true });
 
     await waitFor(() => {
-      expect(api.createUserRequest).toHaveBeenCalledWith('test-api-key', 'test command', undefined);
+      expect(api.createUserRequest).toHaveBeenCalledWith(
+        'test-api-key',
+        expect.objectContaining({ content: 'test command' })
+      );
     });
   });
 
   it('should trigger send on Meta+Enter (for Mac)', async () => {
-    vi.mocked(api.createUserRequest).mockResolvedValue({ id: '1', status: 'pending' });
+    vi.mocked(api.createUserRequest).mockResolvedValue({ id: '1', status: 'pending' } as never);
     render(<UserRequestsPage />);
 
     const textarea = screen.getByPlaceholderText(/Describe the feedback/i);
@@ -98,7 +102,10 @@ describe('UserRequestsPage Keyboard Behavior', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter', metaKey: true });
 
     await waitFor(() => {
-      expect(api.createUserRequest).toHaveBeenCalledWith('test-api-key', 'test command', undefined);
+      expect(api.createUserRequest).toHaveBeenCalledWith(
+        'test-api-key',
+        expect.objectContaining({ content: 'test command' })
+      );
     });
   });
 

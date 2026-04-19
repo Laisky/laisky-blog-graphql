@@ -269,3 +269,47 @@ Direct recursion (`mcp_pipe` calling `mcp_pipe`) is rejected; nested pipelines s
   "return": { "$ref": "steps.extract.structured.contexts" }
 }
 ```
+
+## Appendix: `get_user_request` Image Attachment Pipeline
+
+The `get_user_request` tool carries optional image attachments. The image path is orthogonal to the pipeline executor documented above, but it shares the same transport layer and authorization context. This appendix summarizes where bytes flow and which packages own what.
+
+```
++----------+  multipart/form-data          +-----------------+   normalize   +---------------+
+| Web UI   |------------------------------>|  handleCreate   |-------------->|  imageproc    |
+| (image   |  text + images[] + urls[]     |  (internal/     |  (decode,     |  pipeline.go  |
+|  button, |                               |  mcp/user-      |  EXIF fix,    |  + urlfetch   |
+|  drop,   |                               |  requests)      |  resize, PNG) +------+--------+
+|  paste)  |                               |                 |                      |
++----------+                               +-------+---------+                      |
+                                                   |                                |
+                                                   |  UploadedImage (PNG bytes)     |
+                                                   v                                |
+                                        +-----------------------+                   |
+                                        |  storage.ObjectStore  |<------------------+
+                                        |  (MinIO in prod,      |
+                                        |   FakeStore in tests) |
+                                        +----------+------------+
+                                                   |
+                                                   v   metadata only
+                                        +-----------------------+
+                                        |  Postgres             |
+                                        |  mcp_user_image_refs  |
+                                        |  + request_image_links|
+                                        +-----------------------+
+
+                   tools/call      +-------------------------+  presign GET URL ----> agent
+AI client <-------------------->   |  get_user_request tool  |  fetch inline bytes --> agent
+   (Claude Code / Codex CLI)       |  buildCommandsResponse  |
+                                   +-------------------------+
+```
+
+Key design decisions (§3.1–§3.8 of `docs/proposals/get_user_request_image_support.md`):
+
+- **Dual-channel output.** Each image surfaces once as a `ResourceLink` and — when the per-image base64 fits the budget — also as an `ImageContent` block. Claude Code consumes `ImageContent` natively; Codex CLI loads the `ResourceLink` via its `view_image` tool.
+- **PNG-only storage.** All input formats (`jpeg|png|webp|bmp|tiff|gif[:frame0]`) are decoded and re-encoded as PNG during normalization, so agents and the storage layer only deal with one format. Input dimensions > 8192 px are rejected pre-decode as decode bombs.
+- **Quota and TTL.** Per-user 100 MiB quota (post-normalization bytes) with `FOR UPDATE`-guarded reservation. Each object lives 7 days under a MinIO bucket lifecycle rule; re-upload of the same SHA refreshes the TTL without charging quota.
+- **SSRF-guarded URL intake.** `imageproc.URLFetcher` performs an IP allowlist check during DNS resolution and again at connect-time (`DialContext`) to defeat DNS rebinding. HTTP is blocked by default; redirects cap at 3; body cap at 20 MiB; total deadline 15 s.
+- **Token budget.** `PlanInlineBudget` in `internal/mcp/tools/image_budget.go` is the single source of truth for which images inline vs. link-only (80 KiB per response, 40 KiB per image).
+
+See [`docs/proposals/get_user_request_image_support.md`](../proposals/get_user_request_image_support.md) for the full specification.

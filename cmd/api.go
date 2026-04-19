@@ -376,6 +376,12 @@ func runAPI() error {
 
 		if userSvc != nil {
 			args.UserRequestService = userSvc
+			if imageManager, imgErr := buildUserRequestImageManager(ctx, userSvc, logger.Named("user_requests_images")); imgErr != nil {
+				logger.Warn("user_requests image support unavailable", zap.Error(imgErr))
+			} else if imageManager != nil {
+				args.UserRequestImages = imageManager
+				userSvc.StartImageGCWorker(ctx)
+			}
 		} else {
 			logger.Warn("user_requests service unavailable")
 		}

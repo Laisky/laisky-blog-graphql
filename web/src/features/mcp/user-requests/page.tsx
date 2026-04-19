@@ -1,8 +1,8 @@
 import { closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { ChevronDown, ChevronUp, Loader2, Search, Send, Trash2, X } from 'lucide-react';
-import type { ChangeEvent, KeyboardEvent } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, ImagePlus, Link2, Loader2, Search, Send, Trash2, X } from 'lucide-react';
+import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ import {
   getPreferencesFromServer,
   getReturnMode,
   type HoldState,
+  type ImageSubmissionError,
   listUserRequests,
   setReturnMode as persistReturnModeLocal,
   releaseHold,
@@ -35,10 +36,28 @@ import {
   setReturnModeOnServer,
   type UserRequest,
 } from './api';
+import { AttachmentStrip, type ComposeAttachment } from './AttachmentStrip';
 import { HoldButton } from './hold-button';
+import { IMAGE_ACCEPTED_MIME_TYPES, IMAGE_MAX_BYTES, isAcceptedImage, preshrinkImage } from './image-utils';
 import { ConsumedCard, EmptyState, PendingRequestCard } from './request-cards';
 import { SavedCommands } from './saved-commands';
 import { TaskIdSelector, useTaskIdHistory } from './task-id-selector';
+import { UrlAttachmentDialog } from './UrlAttachmentDialog';
+import { useQuota } from './useQuota';
+
+const MAX_ATTACHMENTS = 5;
+
+function randomClientID() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return '0 B';
+  const kib = bytes / 1024;
+  if (kib < 1024) return `${kib.toFixed(1)} KiB`;
+  const mib = kib / 1024;
+  return `${mib.toFixed(1)} MiB`;
+}
 
 type DeleteOption = {
   label: string;
@@ -89,6 +108,16 @@ export function UserRequestsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<UserRequest[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+
+  // Image attachment state
+  const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
+  const [isUrlDialogOpen, setIsUrlDialogOpen] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageButtonGuardRef = useRef(false);
+  const { quota, percent: quotaPercent, refresh: refreshQuota } = useQuota(apiKey ?? null);
+  const hasImageFeature = Boolean(quota && quota.quota_bytes > 0);
 
   const normalizedTaskId = taskId.trim() || undefined;
 
@@ -288,6 +317,156 @@ export function UserRequestsPage() {
     }
   }, [apiKey, consumed, isToolConsoleLocked]);
 
+  const readyAttachments = useMemo(() => attachments.filter((a) => a.status === 'ready'), [attachments]);
+  const pendingAttachmentCount = attachments.filter((a) => a.status === 'pending').length;
+
+  const addFileAttachments = useCallback((files: File[]) => {
+    if (!files.length) return;
+    setImageError(null);
+    setAttachments((current) => {
+      if (current.length >= MAX_ATTACHMENTS) {
+        setImageError('Maximum 5 attachments reached');
+        return current;
+      }
+      const space = MAX_ATTACHMENTS - current.length;
+      const accepted = files.slice(0, space);
+      if (files.length > accepted.length) {
+        setImageError('5 image limit reached; extras ignored');
+      }
+      const next: ComposeAttachment[] = [...current];
+      for (const file of accepted) {
+        if (!isAcceptedImage(file)) {
+          next.push({
+            clientId: randomClientID(),
+            kind: 'file',
+            label: file.name,
+            status: 'error',
+            errorCode: 'unsupported_mime',
+            errorMessage: `Unsupported image type: ${file.type || 'unknown'}`,
+          });
+          continue;
+        }
+        if (file.size > IMAGE_MAX_BYTES) {
+          next.push({
+            clientId: randomClientID(),
+            kind: 'file',
+            label: file.name,
+            status: 'error',
+            errorCode: 'image_too_large',
+            errorMessage: 'File exceeds the 20 MiB limit',
+          });
+          continue;
+        }
+        next.push({
+          clientId: randomClientID(),
+          kind: 'file',
+          label: file.name,
+          previewUrl: URL.createObjectURL(file),
+          file,
+          status: 'ready',
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  const removeAttachment = useCallback((clientId: string) => {
+    setAttachments((current) => {
+      const target = current.find((a) => a.clientId === clientId);
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return current.filter((a) => a.clientId !== clientId);
+    });
+  }, []);
+
+  const handleFileInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      imageButtonGuardRef.current = false;
+      if (!event.target.files) return;
+      const files = Array.from(event.target.files);
+      addFileAttachments(files);
+      event.target.value = '';
+    },
+    [addFileAttachments]
+  );
+
+  const handleImageButtonClick = useCallback(() => {
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setImageError('Maximum 5 attachments reached');
+      return;
+    }
+    if (imageButtonGuardRef.current) return;
+    imageButtonGuardRef.current = true;
+    fileInputRef.current?.click();
+    setTimeout(() => {
+      imageButtonGuardRef.current = false;
+    }, 500);
+  }, [attachments.length]);
+
+  const handlePaste = useCallback(
+    (event: ClipboardEvent<HTMLTextAreaElement>) => {
+      if (!event.clipboardData) return;
+      const files: File[] = [];
+      for (const item of Array.from(event.clipboardData.items)) {
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (files.length > 0) {
+        event.preventDefault();
+        addFileAttachments(files);
+      }
+    },
+    [addFileAttachments]
+  );
+
+  const handleDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (event.dataTransfer && Array.from(event.dataTransfer.types).includes('Files')) {
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  }, []);
+
+  const handleDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setIsDragOver(false);
+      const dropped = Array.from(event.dataTransfer?.files ?? []);
+      addFileAttachments(dropped);
+    },
+    [addFileAttachments]
+  );
+
+  const handleUrlAttach = useCallback((rawUrl: string) => {
+    setImageError(null);
+    setAttachments((current) => {
+      if (current.length >= MAX_ATTACHMENTS) {
+        setImageError('Maximum 5 attachments reached');
+        return current;
+      }
+      return [
+        ...current,
+        {
+          clientId: randomClientID(),
+          kind: 'url',
+          label: rawUrl,
+          url: rawUrl,
+          status: 'ready',
+        },
+      ];
+    });
+  }, []);
+
   const handleCreateRequest = useCallback(async () => {
     if (isToolConsoleLocked) {
       return;
@@ -298,35 +477,66 @@ export function UserRequestsPage() {
       return;
     }
     const trimmed = newContent.trim();
-    if (!trimmed) {
+    if (!trimmed && readyAttachments.length === 0) {
+      return;
+    }
+    if (pendingAttachmentCount > 0) {
       return;
     }
 
     setIsSubmitting(true);
+    setImageError(null);
     try {
-      // Record task ID usage for history before creating request
       if (taskId.trim()) {
         recordTaskIdUsage(taskId.trim());
       }
-      const createdRequest = await createUserRequest(key, trimmed, taskId.trim() || undefined);
+      const files: File[] = [];
+      for (const attachment of readyAttachments) {
+        if (attachment.kind === 'file' && attachment.file) {
+          files.push(await preshrinkImage(attachment.file));
+        }
+      }
+      const urls = readyAttachments.filter((a) => a.kind === 'url' && a.url).map((a) => a.url!) as string[];
+
+      const createdRequest = await createUserRequest(key, {
+        content: trimmed,
+        taskId: taskId.trim() || undefined,
+        files,
+        urls,
+      });
       setNewContent('');
       setPickedRequestId(null);
       setEditorBackup(null);
-      // Check if the command was directly delivered to a waiting agent
-      // The server marks the request as "consumed" if it was sent to a waiting agent
+      setAttachments((current) => {
+        for (const a of current) {
+          if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+        }
+        return [];
+      });
+      await refreshQuota();
       if (createdRequest.status === 'consumed') {
-        // Command was delivered directly to the waiting agent
         setHoldState({ active: false, waiting: false, remaining_secs: 0 });
-      } else if (holdState.active) {
-        // Hold was active but no agent was waiting, command is queued
       }
       pollControlsRef.current?.schedule(0);
-    } catch {
-      // Silently ignore; user can retry
+    } catch (error) {
+      const imgError = error as ImageSubmissionError;
+      if (imgError && imgError.code) {
+        setImageError(imgError.message || imgError.code);
+        if (typeof imgError.attachmentIndex === 'number') {
+          setAttachments((current) => {
+            const next = [...current];
+            const idx = imgError.attachmentIndex ?? -1;
+            if (idx >= 0 && idx < next.length) {
+              next[idx] = { ...next[idx], status: 'error', errorCode: imgError.code, errorMessage: imgError.message };
+            }
+            return next;
+          });
+        }
+      }
     } finally {
       setIsSubmitting(false);
     }
-  }, [apiKey, holdState.active, isToolConsoleLocked, newContent, recordTaskIdUsage, taskId]);
+  }, [apiKey, isToolConsoleLocked, newContent, pendingAttachmentCount, readyAttachments, recordTaskIdUsage, refreshQuota, taskId]);
 
   const handleActivateHold = useCallback(async () => {
     if (isToolConsoleLocked) {
@@ -760,28 +970,55 @@ export function UserRequestsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Textarea
-            value={newContent}
-            onChange={handleEditorChange}
-            onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
-              // Ignore if composing in IME (Input Method Editor)
-              if (e.nativeEvent.isComposing) {
-                return;
-              }
-
-              // Ctrl+Enter or Meta+Enter (Cmd+Enter on macOS) to submit
-              // Standard Enter now just inserts a newline (default textarea behavior)
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                if (!isEditorDisabled && newContent.trim()) {
-                  handleCreateRequest();
+          <div
+            className={cn(
+              'relative rounded-lg border border-dashed border-transparent transition-colors',
+              isDragOver && 'border-primary/60 bg-primary/5'
+            )}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <Textarea
+              value={newContent}
+              onChange={handleEditorChange}
+              onPaste={handlePaste}
+              onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+                if (e.nativeEvent.isComposing) {
+                  return;
                 }
-              }
-            }}
-            placeholder="Describe the feedback or task for your AI assistant… (Ctrl + Enter to queue)"
-            disabled={isEditorDisabled}
-            className="border-primary/20 bg-background focus-visible:ring-primary/30"
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  if (!isEditorDisabled && (newContent.trim() || readyAttachments.length > 0)) {
+                    handleCreateRequest();
+                  }
+                }
+              }}
+              placeholder="Describe the feedback or task for your AI assistant… (Ctrl + Enter to queue)"
+              disabled={isEditorDisabled}
+              className="border-primary/20 bg-background focus-visible:ring-primary/30"
+            />
+            {isDragOver && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-primary/10 text-sm font-medium text-primary">
+                Drop images to attach
+              </div>
+            )}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={IMAGE_ACCEPTED_MIME_TYPES.join(',')}
+            className="hidden"
+            onChange={handleFileInputChange}
           />
+          <AttachmentStrip
+            attachments={attachments}
+            onRemove={removeAttachment}
+            disabled={isEditorDisabled}
+          />
+          {imageError && <p className="text-sm text-destructive">{imageError}</p>}
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <TaskIdSelector
               value={taskId}
@@ -790,7 +1027,29 @@ export function UserRequestsPage() {
               placeholder="Optional task identifier"
               className="md:flex-1"
             />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleImageButtonClick}
+                disabled={isEditorDisabled || attachments.length >= MAX_ATTACHMENTS}
+                title={attachments.length >= MAX_ATTACHMENTS ? 'Maximum 5 images' : `Attach image (${attachments.length}/${MAX_ATTACHMENTS})`}
+                aria-label={`Attach image, ${attachments.length} of ${MAX_ATTACHMENTS} attached`}
+              >
+                <ImagePlus className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setIsUrlDialogOpen(true)}
+                disabled={isEditorDisabled || attachments.length >= MAX_ATTACHMENTS}
+                title="Attach from URL"
+                aria-label="Attach image from URL"
+              >
+                <Link2 className="h-4 w-4" />
+              </Button>
               <HoldButton
                 isActive={holdState.active}
                 isWaiting={holdState.waiting}
@@ -799,12 +1058,26 @@ export function UserRequestsPage() {
                 onRelease={handleReleaseHold}
                 disabled={isInteractionDisabled}
               />
-              <Button onClick={handleCreateRequest} disabled={isEditorDisabled} title="Queue request">
+              <Button
+                onClick={handleCreateRequest}
+                disabled={
+                  isEditorDisabled ||
+                  pendingAttachmentCount > 0 ||
+                  (!newContent.trim() && readyAttachments.length === 0)
+                }
+                title={pendingAttachmentCount > 0 ? 'Waiting for uploads…' : 'Queue request'}
+              >
                 <Send className="mr-2 h-4 w-4" />
-                {isSubmitting ? 'Queuing…' : 'Queue'}
+                {isSubmitting ? 'Queuing…' : pendingAttachmentCount > 0 ? 'Waiting for uploads…' : 'Queue'}
               </Button>
             </div>
           </div>
+          {hasImageFeature && quota && (
+            <p className="text-xs text-muted-foreground">
+              {formatBytes(quota.used_bytes)} / {formatBytes(quota.quota_bytes)} used ({quotaPercent.toFixed(1)}%), images expire in {quota.ttl_days} days
+            </p>
+          )}
+          <UrlAttachmentDialog open={isUrlDialogOpen} onOpenChange={setIsUrlDialogOpen} onSubmit={handleUrlAttach} />
         </CardContent>
       </Card>
 

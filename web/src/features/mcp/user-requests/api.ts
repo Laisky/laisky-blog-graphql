@@ -171,6 +171,19 @@ export function setSavedCommandsExpanded(expanded: boolean): void {
 // User Request Types
 // ============================================================================
 
+export interface UserRequestImage {
+  id: string;
+  sha256: string;
+  mime: string;
+  url?: string;
+  size: number;
+  width: number;
+  height: number;
+  expires_at: string;
+  source_url?: string;
+  sort_order: number;
+}
+
 export interface UserRequest {
   id: string;
   content: string;
@@ -180,6 +193,33 @@ export interface UserRequest {
   updated_at: string;
   consumed_at?: string | null;
   user_identity?: string;
+  images?: UserRequestImage[];
+}
+
+export interface QuotaResponse {
+  user_identity: string;
+  used_bytes: number;
+  quota_bytes: number;
+  object_count: number;
+  ttl_days: number;
+}
+
+export type ImageErrorCode =
+  | 'quota_exceeded'
+  | 'image_too_large'
+  | 'unsupported_mime'
+  | 'too_many_images'
+  | 'url_blocked'
+  | 'url_fetch_failed'
+  | 'url_timeout'
+  | 'decode_failed'
+  | 'storage_unavailable'
+  | 'feature_disabled'
+  | 'unknown';
+
+export interface ImageSubmissionError extends Error {
+  code: ImageErrorCode;
+  attachmentIndex?: number;
 }
 
 export interface UserRequestListResponse {
@@ -306,27 +346,130 @@ export async function searchUserRequests(
   return response.json();
 }
 
-export async function createUserRequest(apiKey: string, content: string, taskId?: string): Promise<UserRequest> {
+export interface CreateUserRequestOptions {
+  content: string;
+  taskId?: string;
+  files?: File[];
+  urls?: string[];
+}
+
+/**
+ * createUserRequest submits a new directive. When files or urls are present
+ * the request body uses multipart/form-data so attachments can ride along;
+ * otherwise a plain JSON body keeps the wire format byte-identical to the
+ * pre-image-support path.
+ */
+export async function createUserRequest(
+  apiKey: string,
+  options: CreateUserRequestOptions | string,
+  legacyTaskId?: string
+): Promise<UserRequest> {
+  const normalized: CreateUserRequestOptions =
+    typeof options === 'string'
+      ? { content: options, taskId: legacyTaskId }
+      : options;
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/requests`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: authorization,
-      'Cache-Control': 'no-store',
-      Pragma: 'no-cache',
-    },
-    body: JSON.stringify({ content, task_id: taskId }),
-  });
+
+  const hasAttachments = Boolean((normalized.files && normalized.files.length) || (normalized.urls && normalized.urls.length));
+
+  let response: Response;
+  if (hasAttachments) {
+    const form = new FormData();
+    form.append('content', normalized.content ?? '');
+    if (normalized.taskId) {
+      form.append('task_id', normalized.taskId);
+    }
+    for (const file of normalized.files ?? []) {
+      form.append('images', file, file.name);
+    }
+    for (const url of normalized.urls ?? []) {
+      form.append('image_urls', url);
+    }
+    response = await fetch(`${apiBasePath}api/requests`, {
+      method: 'POST',
+      headers: {
+        Authorization: authorization,
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
+      },
+      body: form,
+    });
+  } else {
+    response = await fetch(`${apiBasePath}api/requests`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authorization,
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
+      },
+      body: JSON.stringify({ content: normalized.content, task_id: normalized.taskId }),
+    });
+  }
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    const parsed = await parseImageError(response);
+    throw parsed;
   }
 
   const payload = await response.json();
   return payload.request as UserRequest;
+}
+
+// parseImageError converts a non-2xx response into an ImageSubmissionError
+// carrying the typed error code and optional attachment index. This mirrors
+// the server-side error contract from the proposal §5.1.
+async function parseImageError(response: Response): Promise<ImageSubmissionError> {
+  const text = (await response.text()) || response.statusText;
+  let code: ImageErrorCode = 'unknown';
+  let message = text;
+  let attachmentIndex: number | undefined;
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'object' && parsed !== null) {
+      if (typeof parsed.error === 'string') {
+        code = parsed.error as ImageErrorCode;
+      }
+      if (typeof parsed.message === 'string') {
+        message = parsed.message;
+      } else if (typeof parsed.error === 'string') {
+        message = parsed.error;
+      }
+      if (typeof parsed.attachment_index === 'number') {
+        attachmentIndex = parsed.attachment_index;
+      }
+    }
+  } catch {
+    // Body is not JSON; keep defaults.
+  }
+  const err = new Error(message) as ImageSubmissionError;
+  err.code = code;
+  err.attachmentIndex = attachmentIndex;
+  return err;
+}
+
+/**
+ * getQuota returns live image storage usage for the caller. Returns zero'd
+ * values when the image feature is disabled.
+ */
+export async function getQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaResponse> {
+  const authorization = ensureAuthorization(apiKey);
+  const apiBasePath = resolveToolApiBase('get_user_requests');
+  const response = await fetch(`${apiBasePath}api/quota`, {
+    cache: 'no-store',
+    headers: {
+      Authorization: authorization,
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    },
+    signal,
+  });
+  if (!response.ok) {
+    const message = (await response.text()) || response.statusText;
+    throw new Error(message);
+  }
+  return response.json();
 }
 
 export async function deleteUserRequest(apiKey: string, requestId: string, scope?: TaskScopeOptions): Promise<void> {

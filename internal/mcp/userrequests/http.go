@@ -23,8 +23,14 @@ import (
 // This avoids route conflicts in Gin by handling all paths under /api/* in a single handler.
 // holdManager may be nil if the hold feature is not enabled.
 func NewCombinedHTTPHandler(service *Service, holdManager *HoldManager, logger logSDK.Logger, availableToolsProvider func() []string) http.Handler {
+	return NewCombinedHTTPHandlerWithImages(service, holdManager, nil, logger, availableToolsProvider)
+}
+
+// NewCombinedHTTPHandlerWithImages wires the image manager into the combined handler.
+// imageManager may be nil; when nil, image endpoints return 415 feature_disabled.
+func NewCombinedHTTPHandlerWithImages(service *Service, holdManager *HoldManager, imageManager *ImageManager, logger logSDK.Logger, availableToolsProvider func() []string) http.Handler {
 	handler := &combinedHTTPHandler{
-		requestsHandler:     &httpHandler{service: service, holdManager: holdManager, logger: logger},
+		requestsHandler:     &httpHandler{service: service, holdManager: holdManager, imageManager: imageManager, logger: logger},
 		savedCommandHandler: &savedCommandsHTTPHandler{service: service, logger: logger},
 		preferencesHandler:  &preferencesHTTPHandler{service: service, logger: logger, availableToolsProvider: availableToolsProvider},
 	}
@@ -52,6 +58,8 @@ func (h *combinedHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		h.holdHandler.ServeHTTP(w, r)
+	case r.URL.Path == "/api/quota":
+		h.requestsHandler.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/preferences"):
 		h.preferencesHandler.ServeHTTP(w, r)
 	default:
@@ -67,9 +75,10 @@ func NewHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
 const requestsAPIPath = "/api/requests"
 
 type httpHandler struct {
-	service     *Service
-	holdManager *HoldManager
-	logger      logSDK.Logger
+	service      *Service
+	holdManager  *HoldManager
+	imageManager *ImageManager
+	logger       logSDK.Logger
 }
 
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +97,8 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleReorder(w, r)
 	case r.URL.Path == "/api/requests/search" && r.Method == http.MethodGet:
 		h.handleSearch(w, r)
+	case r.URL.Path == "/api/quota" && r.Method == http.MethodGet:
+		h.handleQuota(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/requests/") && r.Method == http.MethodDelete:
 		h.handleDeleteOne(w, r)
 	default:
@@ -132,8 +143,8 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]any{
-		"pending":        serializeRequests(pending),
-		"consumed":       serializeRequests(consumed),
+		"pending":        serializeRequestsWithPresign(ctx, pending, h.imageManager, logger),
+		"consumed":       serializeRequestsWithPresign(ctx, consumed, h.imageManager, logger),
 		"total_consumed": totalConsumed,
 		"user_id":        auth.UserIdentity,
 		"key_hint":       auth.KeySuffix,
@@ -183,7 +194,7 @@ func (h *httpHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	logger := h.logFromCtx(ctx)
 
@@ -199,17 +210,63 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload := struct {
-		Content string `json:"content"`
-		TaskID  string `json:"task_id"`
-	}{}
-
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
-		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
-		return
+	var (
+		content     string
+		taskID      string
+		attachments []AttachmentInput
+	)
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		parsedContent, parsedTaskID, parsedAttachments, parseErr := h.parseMultipart(r)
+		if parseErr != nil {
+			h.writeImageError(w, logger, parseErr, -1)
+			return
+		}
+		content = parsedContent
+		taskID = parsedTaskID
+		attachments = parsedAttachments
+	} else {
+		payload := struct {
+			Content   string   `json:"content"`
+			TaskID    string   `json:"task_id"`
+			ImageURLs []string `json:"image_urls"`
+		}{}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
+			return
+		}
+		content = payload.Content
+		taskID = payload.TaskID
+		for _, u := range payload.ImageURLs {
+			u = strings.TrimSpace(u)
+			if u == "" {
+				continue
+			}
+			attachments = append(attachments, AttachmentInput{URL: u})
+		}
 	}
 
-	req, err := service.CreateRequest(ctx, auth, payload.Content, payload.TaskID)
+	var uploaded []UploadedImage
+	if len(attachments) > 0 {
+		if h.imageManager == nil || !h.imageManager.Settings().Enabled {
+			h.writeImageError(w, logger, errors.WithStack(ErrImageFeatureDisabled), -1)
+			return
+		}
+		settings := h.imageManager.Settings()
+		if settings.MaxPerRequest > 0 && len(attachments) > settings.MaxPerRequest {
+			h.writeImageError(w, logger, errors.WithStack(ErrTooManyImages), -1)
+			return
+		}
+		processed, processErr := h.imageManager.Process(ctx, auth, attachments)
+		if processErr != nil {
+			idx := extractAttachmentIndex(processErr)
+			h.writeImageError(w, logger, processErr, idx)
+			return
+		}
+		uploaded = processed
+	}
+
+	req, err := service.CreateRequestWithImages(ctx, auth, content, taskID, uploaded)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrEmptyContent):
@@ -218,6 +275,8 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		case errors.Is(err, ErrInvalidAuthorization):
 			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
+		case errors.Is(err, ErrQuotaExceeded), errors.Is(err, ErrTooManyImages):
+			h.writeImageError(w, logger, err, -1)
 		default:
 			logger.Error("create user request", zap.Error(err))
 			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to create user request")
@@ -242,8 +301,52 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	serialized := serializeRequestWithPresign(ctx, *req, h.imageManager, logger)
 	h.writeJSON(w, map[string]any{
-		"request": serializeRequest(*req),
+		"request": serialized,
+	})
+}
+
+// handleQuota reports the caller's live image usage.
+func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	logger := h.logFromCtx(ctx)
+
+	service := h.service
+	if service == nil {
+		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "user requests service unavailable")
+		return
+	}
+	auth, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
+	if err != nil {
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	if h.imageManager == nil || !h.imageManager.Settings().Enabled {
+		h.writeJSON(w, map[string]any{
+			"user_identity": auth.UserIdentity,
+			"used_bytes":    0,
+			"quota_bytes":   0,
+			"object_count":  0,
+			"ttl_days":      0,
+		})
+		return
+	}
+
+	usage, err := service.QuotaUsage(ctx, auth)
+	if err != nil {
+		logger.Error("quota usage", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load quota")
+		return
+	}
+	h.writeJSON(w, map[string]any{
+		"user_identity": usage.UserIdentity,
+		"used_bytes":    usage.UsedBytes,
+		"quota_bytes":   usage.QuotaBytes,
+		"object_count":  usage.ObjectCount,
+		"ttl_days":      usage.TTLDays,
 	})
 }
 

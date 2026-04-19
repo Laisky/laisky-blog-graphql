@@ -8,8 +8,41 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
-import type { UserRequest } from './api';
+import type { UserRequest, UserRequestImage } from './api';
 import { formatDate } from './utils';
+
+/**
+ * RequestImageThumbnails renders the image attachments associated with a
+ * request as a horizontal strip below the main text. Missing URLs (e.g.
+ * expired) render as a muted placeholder so users still see the attachment
+ * count.
+ */
+function RequestImageThumbnails({ images }: { images?: UserRequestImage[] }) {
+  if (!images || images.length === 0) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap gap-2 pt-2">
+      {images.map((img) => (
+        <a
+          key={img.id}
+          href={img.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="block h-14 w-14 overflow-hidden rounded-md border border-border bg-muted/50 hover:ring-2 hover:ring-primary"
+          title={`${img.mime} \u2022 ${img.width}x${img.height}`}
+        >
+          {img.url ? (
+            // eslint-disable-next-line jsx-a11y/img-redundant-alt
+            <img src={img.url} alt={`Request image ${img.sha256.slice(0, 8)}`} className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">expired</span>
+          )}
+        </a>
+      ))}
+    </div>
+  );
+}
 
 interface EmptyStateProps {
   message: string;
@@ -99,6 +132,7 @@ export function PendingRequestCard({
           <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap break-words line-clamp-none">
             {request.content}
           </CardTitle>
+          <RequestImageThumbnails images={request.images} />
         </div>
       </CardHeader>
       <CardContent className="flex justify-end gap-2 shrink-0 pt-0">
@@ -176,6 +210,7 @@ export function ConsumedCard({
           <CardTitle className="text-base font-semibold text-foreground whitespace-pre-wrap break-words line-clamp-none">
             {request.content}
           </CardTitle>
+          <RequestImageThumbnails images={request.images} />
         </div>
       </CardHeader>
       <CardContent className="flex flex-wrap justify-end gap-2 shrink-0 pt-0 pb-3">

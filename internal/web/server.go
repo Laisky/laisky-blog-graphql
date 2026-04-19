@@ -200,6 +200,9 @@ func RunServer(addr string, resolver *Resolver) {
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
+			if resolver.args.UserRequestImages != nil {
+				mcpServer.AttachImageIssuer(resolver.args.UserRequestImages)
+			}
 			mcpHandler := mcpServer.Handler()
 			rootHandler := func(ctx *gin.Context) {
 				if frontendSPA != nil && shouldServeFrontend(ctx.Request) {
@@ -251,7 +254,7 @@ func RunServer(addr string, resolver *Resolver) {
 			if resolver.args.UserRequestService != nil {
 				// Combined handler that routes to either user requests or saved commands based on path
 				// The HoldManager is obtained from the MCP server to share state with the get_user_request tool
-				combinedMux := userrequests.NewCombinedHTTPHandler(resolver.args.UserRequestService, mcpServer.HoldManager(), log.Logger.Named("user_requests_http"), mcpServer.AvailableToolNames)
+				combinedMux := userrequests.NewCombinedHTTPHandlerWithImages(resolver.args.UserRequestService, mcpServer.HoldManager(), resolver.args.UserRequestImages, log.Logger.Named("user_requests_http"), mcpServer.AvailableToolNames)
 				userReqBase := prefix.join("/tools/get_user_requests")
 				stripPrefix := strings.TrimSuffix(userReqBase, "/")
 				if stripPrefix == "" {

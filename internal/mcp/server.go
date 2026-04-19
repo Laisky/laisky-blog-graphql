@@ -453,6 +453,16 @@ func (s *Server) HoldManager() *userrequests.HoldManager {
 	return s.holdManager
 }
 
+// AttachImageIssuer wires an image issuer into the get_user_request tool so
+// the MCP response can include ImageContent / ResourceLink attachments. It is
+// safe to call when the tool is disabled (no-op).
+func (s *Server) AttachImageIssuer(issuer tools.ImageIssuer) {
+	if s == nil || s.getUserRequest == nil {
+		return
+	}
+	s.getUserRequest.WithImageIssuer(issuer)
+}
+
 // AvailableToolNames returns all MCP tool names currently registered by the server.
 func (s *Server) AvailableToolNames() []string {
 	if s == nil {

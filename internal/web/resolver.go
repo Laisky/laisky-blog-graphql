@@ -37,6 +37,7 @@ type ResolverArgs struct {
 	AskUserService     *askuser.Service
 	CallLogService     *calllog.Service
 	UserRequestService *userrequests.Service
+	UserRequestImages  *userrequests.ImageManager
 	FilesService       *files.Service
 	MemoryService      *mcpmemory.Service
 	RAGService         *rag.Service
