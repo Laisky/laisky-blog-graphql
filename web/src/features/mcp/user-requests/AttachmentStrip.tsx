@@ -44,11 +44,7 @@ export function AttachmentStrip({ attachments, onRemove, disabled = false }: Pro
     <ul className="flex flex-wrap gap-2" aria-label="Attached images">
       {attachments.map((attachment) => (
         <li key={attachment.clientId}>
-          <AttachmentTile
-            attachment={attachment}
-            onRemove={onRemove}
-            disabled={disabled}
-          />
+          <AttachmentTile attachment={attachment} onRemove={onRemove} disabled={disabled} />
         </li>
       ))}
     </ul>

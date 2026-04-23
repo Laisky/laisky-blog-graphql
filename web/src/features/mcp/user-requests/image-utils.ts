@@ -2,14 +2,7 @@
  * IMAGE_ACCEPTED_MIME_TYPES mirrors the server-side allowlist from
  * imageproc.AllowedInputMIMETypes. Keep in sync with the Go code.
  */
-export const IMAGE_ACCEPTED_MIME_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/bmp',
-  'image/tiff',
-  'image/gif',
-];
+export const IMAGE_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/gif'];
 
 /** IMAGE_MAX_BYTES is the hard pre-upload cap (20 MiB). */
 export const IMAGE_MAX_BYTES = 20 * 1024 * 1024;

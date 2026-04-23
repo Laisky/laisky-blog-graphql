@@ -233,9 +233,10 @@ func TestGetUserRequestToolHoldWithPendingCommands(t *testing.T) {
 }
 
 type fakeUserRequestService struct {
-	consumeAll    func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error)
-	consumeFirst  func(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error)
-	getReturnMode func(context.Context, *askuser.AuthorizationContext) (string, error)
+	consumeAll         func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error)
+	consumeFirst       func(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error)
+	getReturnMode      func(context.Context, *askuser.AuthorizationContext) (string, error)
+	getCommandTemplate func(context.Context, *askuser.AuthorizationContext) (string, error)
 }
 
 func (f *fakeUserRequestService) ConsumeAllPending(ctx context.Context, auth *askuser.AuthorizationContext, taskID string) ([]userrequests.Request, error) {
@@ -269,6 +270,14 @@ func (f *fakeUserRequestService) GetReturnMode(ctx context.Context, auth *askuse
 	}
 	// Default to "all" mode
 	return "all", nil
+}
+
+func (f *fakeUserRequestService) GetCommandTemplate(ctx context.Context, auth *askuser.AuthorizationContext) (string, error) {
+	if f.getCommandTemplate != nil {
+		return f.getCommandTemplate(ctx, auth)
+	}
+	// Default to empty template (byte-identical legacy response).
+	return "", nil
 }
 
 type fakeHoldWaiter struct {
@@ -491,6 +500,177 @@ func TestGetUserRequestToolReturnModeFirstEmpty(t *testing.T) {
 	text, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
 	require.Contains(t, text.Text, "empty")
+}
+
+// TestGetUserRequestToolEmptyTemplatePreservesLegacyBytes ensures that when the
+// command_template preference is empty the response payload matches the legacy
+// byte sequence (content field equals raw content verbatim).
+func TestGetUserRequestToolEmptyTemplatePreservesLegacyBytes(t *testing.T) {
+	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
+	service := &fakeUserRequestService{
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
+			return []userrequests.Request{{
+				ID:           testUUID("11111111-1111-1111-1111-111111111111"),
+				Content:      "raw content",
+				Status:       userrequests.StatusConsumed,
+				TaskID:       "default",
+				UserIdentity: "u",
+				CreatedAt:    consumedAt.Add(-time.Hour),
+				ConsumedAt:   &consumedAt,
+			}}, nil
+		},
+		getCommandTemplate: func(context.Context, *askuser.AuthorizationContext) (string, error) {
+			return "", nil
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "u"}, nil
+	})
+
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	text := result.Content[0].(mcp.TextContent).Text
+
+	// Compare against the exact shape the tool produced prior to the template
+	// feature: {"commands":[{"content":"raw content"}]}.
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	commands, ok := payload["commands"].([]any)
+	require.True(t, ok)
+	require.Len(t, commands, 1)
+	cmd := commands[0].(map[string]any)
+	require.Equal(t, "raw content", cmd["content"])
+	// Only the "content" key is set (no template leakage).
+	require.Len(t, cmd, 1)
+}
+
+// TestGetUserRequestToolNonEmptyTemplateWraps verifies the template is applied
+// to each command's content in the pure-text path.
+func TestGetUserRequestToolNonEmptyTemplateWraps(t *testing.T) {
+	consumedAt := time.Date(2025, time.January, 10, 8, 30, 0, 0, time.UTC)
+	service := &fakeUserRequestService{
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
+			return []userrequests.Request{
+				{
+					ID:           testUUID("11111111-1111-1111-1111-111111111111"),
+					Content:      "first",
+					Status:       userrequests.StatusConsumed,
+					TaskID:       "default",
+					UserIdentity: "u",
+					CreatedAt:    consumedAt.Add(-2 * time.Hour),
+					ConsumedAt:   &consumedAt,
+				},
+				{
+					ID:           testUUID("22222222-2222-2222-2222-222222222222"),
+					Content:      "second",
+					Status:       userrequests.StatusConsumed,
+					TaskID:       "default",
+					UserIdentity: "u",
+					CreatedAt:    consumedAt.Add(-time.Hour),
+					ConsumedAt:   &consumedAt,
+				},
+			}, nil
+		},
+		getCommandTemplate: func(context.Context, *askuser.AuthorizationContext) (string, error) {
+			return "User said: {{content}} (end)", nil
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "u"}, nil
+	})
+
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := result.Content[0].(mcp.TextContent).Text
+	payload := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	commands := payload["commands"].([]any)
+	require.Len(t, commands, 2)
+	require.Equal(t, "User said: first (end)", commands[0].(map[string]any)["content"])
+	require.Equal(t, "User said: second (end)", commands[1].(map[string]any)["content"])
+}
+
+// TestGetUserRequestToolTemplateAppliesInMixedContent verifies the template is
+// applied to per-command text in the mixed-content (image) path while the
+// image / resource_link blocks themselves remain untouched.
+func TestGetUserRequestToolTemplateAppliesInMixedContent(t *testing.T) {
+	inlineBody := []byte("fake-png-bytes")
+	issuer := &fakeImageIssuer{
+		bodies: map[string][]byte{
+			"mcp/images/u/a1.png": inlineBody,
+		},
+	}
+
+	service := &fakeUserRequestService{
+		getCommandTemplate: func(context.Context, *askuser.AuthorizationContext) (string, error) {
+			return "<<{{content}}>>", nil
+		},
+		consumeAll: func(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error) {
+			return []userrequests.Request{
+				{
+					ID:           testUUID("11111111-1111-1111-1111-111111111111"),
+					Content:      "analyze this",
+					Status:       userrequests.StatusConsumed,
+					TaskID:       "default",
+					UserIdentity: "u",
+					Images: []userrequests.RequestImage{
+						{
+							ID:         testUUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+							StorageKey: "mcp/images/u/a1.png",
+							SHA256:     "a1",
+							SizeBytes:  int64(len(inlineBody)),
+							MIMEType:   "image/png",
+							Width:      100,
+							Height:     50,
+							ExpiresAt:  time.Now().Add(time.Hour),
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+		return &askuser.AuthorizationContext{UserIdentity: "u"}, nil
+	})
+	tool.WithImageIssuer(issuer)
+
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	// First block is the per-command TextContent; its JSON payload's "content"
+	// field should be wrapped by the template.
+	text := result.Content[0].(mcp.TextContent).Text
+	cmd := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(text), &cmd))
+	require.Equal(t, "<<analyze this>>", cmd["content"])
+
+	// Image block and resource_link blocks must be present unmodified.
+	foundImage := false
+	foundLink := false
+	for _, c := range result.Content[1:] {
+		switch v := c.(type) {
+		case mcp.ImageContent:
+			foundImage = true
+			require.Equal(t, "image/png", v.MIMEType)
+		case mcp.ResourceLink:
+			foundLink = true
+			require.Equal(t, "image/png", v.MIMEType)
+		}
+	}
+	require.True(t, foundImage, "expected inline ImageContent block")
+	require.True(t, foundLink, "expected ResourceLink block")
+
+	// StructuredContent commands also reflect the wrapped content.
+	structured := result.StructuredContent.(map[string]any)
+	structuredCmds := structured["commands"].([]map[string]any)
+	require.Equal(t, "<<analyze this>>", structuredCmds[0]["content"])
 }
 
 // TestGetUserRequestToolReturnModeFirstWithHold verifies that when hold is active

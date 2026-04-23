@@ -22,6 +22,7 @@ type UserRequestService interface {
 	ConsumeAllPending(context.Context, *askuser.AuthorizationContext, string) ([]userrequests.Request, error)
 	ConsumeFirstPending(context.Context, *askuser.AuthorizationContext, string) (*userrequests.Request, error)
 	GetReturnMode(context.Context, *askuser.AuthorizationContext) (string, error)
+	GetCommandTemplate(context.Context, *askuser.AuthorizationContext) (string, error)
 }
 
 // ImageIssuer is the abstraction the tool uses to serve image attachments back
@@ -142,6 +143,19 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		)
 	}
 
+	// Fetch the user's command_template preference. An empty template keeps
+	// the response byte-identical to the legacy shape; a non-empty template
+	// wraps each command's content via "{{content}}" substitution.
+	commandTemplate := ""
+	if tmpl, tmplErr := t.service.GetCommandTemplate(ctx, authCtx); tmplErr != nil {
+		t.log().Debug("failed to get user command_template preference, using default",
+			zap.Error(tmplErr),
+			zap.String("user", authCtx.UserIdentity),
+		)
+	} else {
+		commandTemplate = tmpl
+	}
+
 	// If hold is active, first check for existing pending commands.
 	// If there are pending commands, return them immediately without waiting.
 	// Only wait on hold when there are no pending commands.
@@ -173,7 +187,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 					zap.Int("sort_order", r.SortOrder),
 				)
 			}
-			return t.buildCommandsResponse(ctx, existingRequests)
+			return t.buildCommandsResponse(ctx, existingRequests, commandTemplate)
 		}
 
 		// No pending commands, now wait for a command to be submitted
@@ -191,7 +205,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 			// Route the waited command through the same builder so image
 			// payloads surface identically whether the command landed via
 			// hold or via the regular consume path.
-			return t.buildCommandsResponse(ctx, []userrequests.Request{*waitedRequest})
+			return t.buildCommandsResponse(ctx, []userrequests.Request{*waitedRequest}, commandTemplate)
 		}
 		if timedOut {
 			t.log().Info("hold timeout without user command",
@@ -279,7 +293,7 @@ func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return t.emptyResponse(authCtx), nil
 	}
 
-	return t.buildCommandsResponse(ctx, requests)
+	return t.buildCommandsResponse(ctx, requests, commandTemplate)
 }
 
 func (t *GetUserRequestTool) emptyResponse(auth *askuser.AuthorizationContext) *mcp.CallToolResult {
@@ -314,7 +328,12 @@ func (t *GetUserRequestTool) holdTimeoutResponse(auth *askuser.AuthorizationCont
 // NewToolResultJSON for backwards compatibility. Otherwise the result carries
 // a mixed content sequence: text summary, optional ImageContent blocks for
 // images that fit the inline budget, and ResourceLink blocks for every image.
-func (t *GetUserRequestTool) buildCommandsResponse(ctx context.Context, requests []userrequests.Request) (*mcp.CallToolResult, error) {
+//
+// commandTemplate is the user's command_template preference. When it is empty
+// the content field is emitted verbatim (byte-identical to legacy behavior);
+// when non-empty, each command's content is wrapped by replacing the
+// "{{content}}" placeholder with the raw content.
+func (t *GetUserRequestTool) buildCommandsResponse(ctx context.Context, requests []userrequests.Request, commandTemplate string) (*mcp.CallToolResult, error) {
 	hasImages := false
 	for _, r := range requests {
 		if len(r.Images) > 0 {
@@ -327,7 +346,7 @@ func (t *GetUserRequestTool) buildCommandsResponse(ctx context.Context, requests
 		commands := make([]map[string]any, len(requests))
 		for i, r := range requests {
 			commands[i] = map[string]any{
-				"content": r.Content,
+				"content": userrequests.RenderCommandTemplate(commandTemplate, r.Content),
 			}
 		}
 		payload := map[string]any{
@@ -341,14 +360,20 @@ func (t *GetUserRequestTool) buildCommandsResponse(ctx context.Context, requests
 		return result, nil
 	}
 
-	return t.buildMixedCommandsResponse(ctx, requests)
+	return t.buildMixedCommandsResponse(ctx, requests, commandTemplate)
 }
 
 // buildMixedCommandsResponse composes the dual-channel payload described in
 // the proposal §3.2: one TextContent per command (JSON serialization with
 // image metadata and inline placeholders), then ImageContent / ResourceLink
 // blocks for each attachment, followed by structuredContent.
-func (t *GetUserRequestTool) buildMixedCommandsResponse(ctx context.Context, requests []userrequests.Request) (*mcp.CallToolResult, error) {
+//
+// commandTemplate, when non-empty, wraps the "content" field of each command
+// summary (both in the serialized TextContent block and in structuredContent)
+// via "{{content}}" substitution. Image blocks (ImageContent / ResourceLink)
+// are never rewritten — the template applies only to the per-command text
+// serialization so that binary attachments remain untouched.
+func (t *GetUserRequestTool) buildMixedCommandsResponse(ctx context.Context, requests []userrequests.Request, commandTemplate string) (*mcp.CallToolResult, error) {
 	content := make([]mcp.Content, 0, len(requests)*3)
 	structuredCommands := make([]map[string]any, 0, len(requests))
 
@@ -379,7 +404,7 @@ func (t *GetUserRequestTool) buildMixedCommandsResponse(ctx context.Context, req
 
 		cmdSummary := map[string]any{
 			"command": i,
-			"content": req.Content,
+			"content": userrequests.RenderCommandTemplate(commandTemplate, req.Content),
 			"images":  issuedImages,
 		}
 		jsonBytes, err := json.Marshal(cmdSummary)

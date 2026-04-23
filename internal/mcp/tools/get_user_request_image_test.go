@@ -40,7 +40,7 @@ func TestBuildCommandsResponse_PureTextCompatibility(t *testing.T) {
 		ID:      uuid.New(),
 		Content: "hello",
 	}
-	result, err := tool.buildCommandsResponse(context.Background(), []userrequests.Request{req})
+	result, err := tool.buildCommandsResponse(context.Background(), []userrequests.Request{req}, "")
 	require.NoError(t, err)
 	require.Len(t, result.Content, 1)
 	text, ok := result.Content[0].(mcp.TextContent)
@@ -81,7 +81,7 @@ func TestBuildCommandsResponse_WithImages(t *testing.T) {
 		},
 	}
 
-	result, err := tool.buildCommandsResponse(context.Background(), []userrequests.Request{req})
+	result, err := tool.buildCommandsResponse(context.Background(), []userrequests.Request{req}, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, result.StructuredContent)
 
@@ -122,7 +122,7 @@ func TestBuildCommandsResponse_LargeImageGoesLinkOnly(t *testing.T) {
 			},
 		},
 	}
-	result, err := tool.buildCommandsResponse(context.Background(), []userrequests.Request{req})
+	result, err := tool.buildCommandsResponse(context.Background(), []userrequests.Request{req}, "")
 	require.NoError(t, err)
 	// Content order: TextContent then ResourceLink (no ImageContent because inline budget refused).
 	require.Len(t, result.Content, 2)

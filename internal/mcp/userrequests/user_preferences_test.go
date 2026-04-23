@@ -3,6 +3,7 @@ package userrequests
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,6 +148,137 @@ func TestServiceGetReturnModeHandlesEscapedObject(t *testing.T) {
 	mode, err := svc.GetReturnMode(ctx, auth)
 	require.NoError(t, err)
 	require.Equal(t, ReturnModeFirst, mode)
+}
+
+// TestValidateCommandTemplate exercises the validation rules for command_template.
+func TestValidateCommandTemplate(t *testing.T) {
+	// Empty template is allowed (reset to default).
+	require.NoError(t, ValidateCommandTemplate(""))
+
+	// Non-empty template must contain "{{content}}".
+	require.NoError(t, ValidateCommandTemplate("wrap: {{content}} end"))
+	err := ValidateCommandTemplate("no placeholder here")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "{{content}}")
+
+	// Template over 4096 runes should be rejected. Build a runestring slightly over the limit.
+	over := make([]rune, CommandTemplateMaxRunes+1)
+	for i := range over {
+		over[i] = 'a'
+	}
+	// Include placeholder so only length triggers failure.
+	longWithPlaceholder := string(over) + CommandTemplatePlaceholder
+	err = ValidateCommandTemplate(longWithPlaceholder)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "maximum length")
+
+	// Exactly at the max with placeholder should pass.
+	base := make([]rune, CommandTemplateMaxRunes-len([]rune(CommandTemplatePlaceholder)))
+	for i := range base {
+		base[i] = 'a'
+	}
+	exact := string(base) + CommandTemplatePlaceholder
+	require.NoError(t, ValidateCommandTemplate(exact))
+
+	// Multi-byte rune counting: each emoji counts as a single rune, not multiple bytes.
+	emoji := strings.Repeat("\xf0\x9f\x98\x80", CommandTemplateMaxRunes-len([]rune(CommandTemplatePlaceholder)))
+	require.NoError(t, ValidateCommandTemplate(emoji+CommandTemplatePlaceholder))
+}
+
+// TestRenderCommandTemplate verifies substitution semantics.
+func TestRenderCommandTemplate(t *testing.T) {
+	// Empty template returns content verbatim (byte-identical behavior).
+	require.Equal(t, "hello", RenderCommandTemplate("", "hello"))
+	// Non-empty template replaces every occurrence of the placeholder.
+	require.Equal(t, "before: hello :after", RenderCommandTemplate("before: {{content}} :after", "hello"))
+	require.Equal(t, "x|x", RenderCommandTemplate("{{content}}|{{content}}", "x"))
+	// No placeholder in template still renders the template literally (validation ensures
+	// stored templates always contain the placeholder, but Render itself is tolerant).
+	require.Equal(t, "literal", RenderCommandTemplate("literal", "ignored"))
+}
+
+// TestServiceSetAndGetCommandTemplate verifies the template is persisted and round-trips cleanly.
+func TestServiceSetAndGetCommandTemplate(t *testing.T) {
+	db := newTestDB(t)
+	clock := fixedClock(time.Date(2024, 12, 10, 0, 0, 0, 0, time.UTC))
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-command-template", "abcd")
+	ctx := context.Background()
+
+	// Initial Get returns empty template (no record).
+	got, err := svc.GetCommandTemplate(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, "", got)
+
+	// Set and retrieve a valid template.
+	template := "User said: {{content}} (end)"
+	_, err = svc.SetCommandTemplate(ctx, auth, template)
+	require.NoError(t, err)
+
+	got, err = svc.GetCommandTemplate(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, template, got)
+
+	// Clearing with an empty string should persist empty.
+	_, err = svc.SetCommandTemplate(ctx, auth, "")
+	require.NoError(t, err)
+	got, err = svc.GetCommandTemplate(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, "", got)
+}
+
+// TestServiceSetCommandTemplateRejectsInvalid verifies that validation errors are surfaced.
+func TestServiceSetCommandTemplateRejectsInvalid(t *testing.T) {
+	db := newTestDB(t)
+	clock := fixedClock(time.Date(2024, 12, 11, 0, 0, 0, 0, time.UTC))
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-command-template-invalid", "abcd")
+	ctx := context.Background()
+
+	// Missing placeholder.
+	_, err = svc.SetCommandTemplate(ctx, auth, "no placeholder here")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "{{content}}")
+
+	// Too long.
+	over := strings.Repeat("a", CommandTemplateMaxRunes+1) + CommandTemplatePlaceholder
+	_, err = svc.SetCommandTemplate(ctx, auth, over)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "maximum length")
+}
+
+// TestServiceSetReturnModePreservesCommandTemplate ensures SetReturnMode does not wipe an existing template.
+func TestServiceSetReturnModePreservesCommandTemplate(t *testing.T) {
+	db := newTestDB(t)
+	clock := fixedClock(time.Date(2024, 12, 12, 0, 0, 0, 0, time.UTC))
+	svc, err := NewService(db, nil, clock.Now, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+
+	auth := testAuth("hash-preserve", "abcd")
+	ctx := context.Background()
+
+	template := "wrap: {{content}}"
+	_, err = svc.SetCommandTemplate(ctx, auth, template)
+	require.NoError(t, err)
+
+	_, err = svc.SetReturnMode(ctx, auth, ReturnModeFirst)
+	require.NoError(t, err)
+
+	// Template should still be present.
+	got, err := svc.GetCommandTemplate(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, template, got)
+
+	// And disabled tools mutation should also preserve it.
+	_, err = svc.SetDisabledTools(ctx, auth, []string{"tool_x"})
+	require.NoError(t, err)
+	got, err = svc.GetCommandTemplate(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, template, got)
 }
 
 func TestServiceGetReturnModeHandlesHexEncodedPreference(t *testing.T) {

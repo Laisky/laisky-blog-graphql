@@ -121,7 +121,11 @@ function resolveRouterKind(raw: string | undefined): RouterKind {
  * resolveRouteContext chooses the effective router kind and basename for the active URL.
  * It accepts the current pathname, configured basename, and configured router, then returns the routing context to use.
  */
-function resolveRouteContext(pathname: string, configuredBasename: string | undefined, configuredRouter: string | undefined): {
+function resolveRouteContext(
+  pathname: string,
+  configuredBasename: string | undefined,
+  configuredRouter: string | undefined
+): {
   basename: string;
   routerKind: RouterKind;
 } {

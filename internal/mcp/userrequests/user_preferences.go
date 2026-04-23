@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/Laisky/zap"
@@ -25,6 +26,13 @@ const (
 	ReturnModeFirst = "first"
 	// DefaultReturnMode is used when no preference is set.
 	DefaultReturnMode = ReturnModeAll
+
+	// CommandTemplatePlaceholder is the literal marker that a non-empty
+	// command_template must contain; it is replaced by the raw command
+	// content when the template is rendered.
+	CommandTemplatePlaceholder = "{{content}}"
+	// CommandTemplateMaxRunes caps the length of a stored command template.
+	CommandTemplateMaxRunes = 4096
 )
 
 // PreferenceData holds the JSON-serializable user preferences.
@@ -35,6 +43,11 @@ type PreferenceData struct {
 	ReturnMode string `json:"return_mode,omitempty"`
 	// DisabledTools stores MCP tool names explicitly disabled by the user.
 	DisabledTools []string `json:"disabled_tools,omitempty"`
+	// CommandTemplate optionally wraps the raw command content before it is
+	// returned to the agent. When non-empty it MUST contain the literal
+	// substring "{{content}}". Empty value (default) leaves responses
+	// byte-identical to the legacy behavior.
+	CommandTemplate string `json:"command_template,omitempty"`
 }
 
 // DefaultDisabledTools provides the default disabled tool list when no preference exists.
@@ -232,13 +245,18 @@ func (s *Service) SetReturnMode(ctx context.Context, auth *askuser.Authorization
 	if getErr != nil {
 		return nil, errors.Wrap(getErr, "load disabled tools")
 	}
+	commandTemplate, tmplErr := s.GetCommandTemplate(ctx, auth)
+	if tmplErr != nil {
+		return nil, errors.Wrap(tmplErr, "load command template")
+	}
 	pref := &UserPreference{
 		APIKeyHash:   auth.APIKeyHash,
 		KeySuffix:    auth.KeySuffix,
 		UserIdentity: auth.UserIdentity,
 		Preferences: PreferenceData{
-			ReturnMode:    mode,
-			DisabledTools: disabledTools,
+			ReturnMode:      mode,
+			DisabledTools:   disabledTools,
+			CommandTemplate: commandTemplate,
 		},
 		UpdatedAt: now,
 	}
@@ -293,6 +311,10 @@ func (s *Service) SetDisabledTools(ctx context.Context, auth *askuser.Authorizat
 	if err != nil {
 		return nil, errors.Wrap(err, "load return mode")
 	}
+	commandTemplate, tmplErr := s.GetCommandTemplate(ctx, auth)
+	if tmplErr != nil {
+		return nil, errors.Wrap(tmplErr, "load command template")
+	}
 
 	now := s.clock()
 	pref := &UserPreference{
@@ -300,8 +322,9 @@ func (s *Service) SetDisabledTools(ctx context.Context, auth *askuser.Authorizat
 		KeySuffix:    auth.KeySuffix,
 		UserIdentity: auth.UserIdentity,
 		Preferences: PreferenceData{
-			ReturnMode:    mode,
-			DisabledTools: normalized,
+			ReturnMode:      mode,
+			DisabledTools:   normalized,
+			CommandTemplate: commandTemplate,
 		},
 		UpdatedAt: now,
 	}
@@ -333,6 +356,116 @@ func (s *Service) SetDisabledTools(ctx context.Context, auth *askuser.Authorizat
 	}
 
 	return pref, nil
+}
+
+// GetCommandTemplate retrieves the stored command_template preference for the
+// authenticated user. Returns an empty string when no preference record exists
+// or when the user has not configured a template; an empty template preserves
+// the byte-identical default response shape.
+func (s *Service) GetCommandTemplate(ctx context.Context, auth *askuser.AuthorizationContext) (string, error) {
+	pref, err := s.GetUserPreference(ctx, auth)
+	if err != nil {
+		s.log().Debug("GetCommandTemplate failed to get preference",
+			zap.String("user", auth.UserIdentity),
+			zap.Error(err),
+		)
+		return "", err
+	}
+	if pref == nil {
+		return "", nil
+	}
+	return pref.Preferences.CommandTemplate, nil
+}
+
+// SetCommandTemplate updates the command_template preference for the
+// authenticated user. Passing an empty string clears the template (restoring
+// default behavior). A non-empty template must contain the literal placeholder
+// "{{content}}" and must be at most CommandTemplateMaxRunes runes long.
+func (s *Service) SetCommandTemplate(ctx context.Context, auth *askuser.AuthorizationContext, template string) (*UserPreference, error) {
+	if auth == nil {
+		return nil, ErrInvalidAuthorization
+	}
+
+	if err := ValidateCommandTemplate(template); err != nil {
+		return nil, err
+	}
+
+	mode, err := s.GetReturnMode(ctx, auth)
+	if err != nil {
+		return nil, errors.Wrap(err, "load return mode")
+	}
+	disabledTools, dtErr := s.GetDisabledTools(ctx, auth)
+	if dtErr != nil {
+		return nil, errors.Wrap(dtErr, "load disabled tools")
+	}
+
+	now := s.clock()
+	pref := &UserPreference{
+		APIKeyHash:   auth.APIKeyHash,
+		KeySuffix:    auth.KeySuffix,
+		UserIdentity: auth.UserIdentity,
+		Preferences: PreferenceData{
+			ReturnMode:      mode,
+			DisabledTools:   disabledTools,
+			CommandTemplate: template,
+		},
+		UpdatedAt: now,
+	}
+
+	prefPayload, err := pref.Preferences.Value()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshal command template preference payload")
+	}
+
+	_, err = s.execContext(ctx,
+		`INSERT INTO mcp_user_preferences
+		 (api_key_hash, key_suffix, user_identity, preferences, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(api_key_hash)
+		 DO UPDATE SET
+		 	key_suffix = excluded.key_suffix,
+		 	user_identity = excluded.user_identity,
+		 	preferences = excluded.preferences,
+		 	updated_at = excluded.updated_at`,
+		auth.APIKeyHash,
+		auth.KeySuffix,
+		auth.UserIdentity,
+		prefPayload,
+		now,
+		now,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "set command template preference")
+	}
+
+	return pref, nil
+}
+
+// ValidateCommandTemplate enforces the rules documented on CommandTemplate:
+// empty strings are allowed (reset to default), non-empty strings must contain
+// "{{content}}" and must not exceed CommandTemplateMaxRunes runes.
+func ValidateCommandTemplate(template string) error {
+	if template == "" {
+		return nil
+	}
+	if utf8.RuneCountInString(template) > CommandTemplateMaxRunes {
+		return errors.Errorf("command_template exceeds maximum length of %d characters", CommandTemplateMaxRunes)
+	}
+	if !strings.Contains(template, CommandTemplatePlaceholder) {
+		return errors.Errorf("command_template must contain the %q placeholder", CommandTemplatePlaceholder)
+	}
+	return nil
+}
+
+// RenderCommandTemplate applies a non-empty template to the provided content by
+// replacing every occurrence of "{{content}}" with content. When the template
+// is empty the original content is returned unchanged, preserving byte-identity
+// with the legacy response path.
+func RenderCommandTemplate(template, content string) string {
+	if template == "" {
+		return content
+	}
+	return strings.ReplaceAll(template, CommandTemplatePlaceholder, content)
 }
 
 // ValidateReturnMode checks if the provided mode is valid.

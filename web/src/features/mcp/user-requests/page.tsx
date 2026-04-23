@@ -1,12 +1,12 @@
 import { closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { ChevronDown, ChevronUp, ImagePlus, Link2, Loader2, Search, Send, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, ImagePlus, Link2, Loader2, Save, Search, Send, Settings2, Trash2, X } from 'lucide-react';
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/confirm-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -31,6 +31,7 @@ import {
   reorderUserRequests,
   type ReturnMode,
   searchUserRequests,
+  setCommandTemplateOnServer,
   setDescriptionCollapsed,
   setHold,
   setReturnModeOnServer,
@@ -46,6 +47,18 @@ import { UrlAttachmentDialog } from './UrlAttachmentDialog';
 import { useQuota } from './useQuota';
 
 const MAX_ATTACHMENTS = 5;
+
+const COMMAND_TEMPLATE_PLACEHOLDER = '{{content}}';
+const DEFAULT_COMMAND_TEMPLATE = '{{content}}';
+const COMMAND_TEMPLATE_MAX_RUNES = 4096;
+
+function normalizeTemplate(value: string): string {
+  return value === '' ? DEFAULT_COMMAND_TEMPLATE : value;
+}
+
+function countRunes(value: string): number {
+  return Array.from(value).length;
+}
 
 function randomClientID() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -116,6 +129,14 @@ export function UserRequestsPage() {
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageButtonGuardRef = useRef(false);
+
+  // Command template state
+  const [commandTemplate, setCommandTemplate] = useState<string>(DEFAULT_COMMAND_TEMPLATE);
+  const [savedCommandTemplate, setSavedCommandTemplate] = useState<string>('');
+  const [isTemplateLoading, setIsTemplateLoading] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [isTemplateExpanded, setIsTemplateExpanded] = useState(false);
   const { quota, percent: quotaPercent, refresh: refreshQuota } = useQuota(apiKey ?? null);
   const hasImageFeature = Boolean(quota && quota.quota_bytes > 0);
 
@@ -155,6 +176,11 @@ export function UserRequestsPage() {
         remaining_secs: 0,
       });
       setIsLoading(false);
+      setCommandTemplate(DEFAULT_COMMAND_TEMPLATE);
+      setSavedCommandTemplate('');
+      setTemplateError(null);
+      setIsTemplateLoading(false);
+      setIsTemplateExpanded(false);
       return;
     }
 
@@ -166,6 +192,7 @@ export function UserRequestsPage() {
 
       if (initial) {
         setIsLoading(true);
+        setIsTemplateLoading(true);
       }
 
       if (inFlight) {
@@ -204,6 +231,17 @@ export function UserRequestsPage() {
           }
         }
 
+        if (initial && prefs) {
+          const template = prefs.command_template ?? '';
+          setCommandTemplate(normalizeTemplate(template));
+          setSavedCommandTemplate(template);
+          setTemplateError(null);
+          // Auto-expand the template editor when a non-default template is saved,
+          // so active customizations are immediately visible.
+          const hasCustomTemplate = template !== '' && template !== DEFAULT_COMMAND_TEMPLATE;
+          setIsTemplateExpanded(hasCustomTemplate);
+        }
+
         schedule(5000);
       } catch {
         if (disposed || controller.signal.aborted) return;
@@ -211,6 +249,7 @@ export function UserRequestsPage() {
       } finally {
         if (initial && !disposed) {
           setIsLoading(false);
+          setIsTemplateLoading(false);
         }
       }
     }
@@ -598,6 +637,48 @@ export function UserRequestsPage() {
     },
     [apiKey, isToolConsoleLocked]
   );
+
+  const templateRuneCount = useMemo(() => countRunes(commandTemplate), [commandTemplate]);
+  const templateMissingPlaceholder = commandTemplate.length > 0 && !commandTemplate.includes(COMMAND_TEMPLATE_PLACEHOLDER);
+  const templateTooLong = templateRuneCount > COMMAND_TEMPLATE_MAX_RUNES;
+  const templateValidationMessage = templateMissingPlaceholder
+    ? `Template must contain the placeholder ${COMMAND_TEMPLATE_PLACEHOLDER}.`
+    : templateTooLong
+      ? `Template is too long (${templateRuneCount} / ${COMMAND_TEMPLATE_MAX_RUNES} characters).`
+      : null;
+  const templateDirty = normalizeTemplate(commandTemplate) !== normalizeTemplate(savedCommandTemplate);
+  const canSaveTemplate = Boolean(apiKey) && templateDirty && !templateValidationMessage && !isSavingTemplate;
+
+  const handleSaveCommandTemplate = useCallback(async () => {
+    const key = normalizeApiKey(apiKey);
+    if (!key || !canSaveTemplate) {
+      return;
+    }
+    setIsSavingTemplate(true);
+    setTemplateError(null);
+    try {
+      const pref = await setCommandTemplateOnServer(key, commandTemplate);
+      const template = pref.command_template ?? '';
+      setCommandTemplate(normalizeTemplate(template));
+      setSavedCommandTemplate(template);
+    } catch (error) {
+      setTemplateError(error instanceof Error ? error.message : 'Failed to save command template.');
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }, [apiKey, canSaveTemplate, commandTemplate]);
+
+  const handleResetCommandTemplateDraft = useCallback(() => {
+    setCommandTemplate(DEFAULT_COMMAND_TEMPLATE);
+    setTemplateError(null);
+  }, []);
+
+  // Auto-expand the template editor when an error needs the user's attention.
+  useEffect(() => {
+    if (templateError) {
+      setIsTemplateExpanded(true);
+    }
+  }, [templateError]);
 
   const handleDeleteRequest = useCallback(
     async (request: UserRequest) => {
@@ -1013,11 +1094,7 @@ export function UserRequestsPage() {
             className="hidden"
             onChange={handleFileInputChange}
           />
-          <AttachmentStrip
-            attachments={attachments}
-            onRemove={removeAttachment}
-            disabled={isEditorDisabled}
-          />
+          <AttachmentStrip attachments={attachments} onRemove={removeAttachment} disabled={isEditorDisabled} />
           {imageError && <p className="text-sm text-destructive">{imageError}</p>}
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <TaskIdSelector
@@ -1034,7 +1111,9 @@ export function UserRequestsPage() {
                 size="icon"
                 onClick={handleImageButtonClick}
                 disabled={isEditorDisabled || attachments.length >= MAX_ATTACHMENTS}
-                title={attachments.length >= MAX_ATTACHMENTS ? 'Maximum 5 images' : `Attach image (${attachments.length}/${MAX_ATTACHMENTS})`}
+                title={
+                  attachments.length >= MAX_ATTACHMENTS ? 'Maximum 5 images' : `Attach image (${attachments.length}/${MAX_ATTACHMENTS})`
+                }
                 aria-label={`Attach image, ${attachments.length} of ${MAX_ATTACHMENTS} attached`}
               >
                 <ImagePlus className="h-4 w-4" />
@@ -1060,11 +1139,7 @@ export function UserRequestsPage() {
               />
               <Button
                 onClick={handleCreateRequest}
-                disabled={
-                  isEditorDisabled ||
-                  pendingAttachmentCount > 0 ||
-                  (!newContent.trim() && readyAttachments.length === 0)
-                }
+                disabled={isEditorDisabled || pendingAttachmentCount > 0 || (!newContent.trim() && readyAttachments.length === 0)}
                 title={pendingAttachmentCount > 0 ? 'Waiting for uploads…' : 'Queue request'}
               >
                 <Send className="mr-2 h-4 w-4" />
@@ -1074,12 +1149,106 @@ export function UserRequestsPage() {
           </div>
           {hasImageFeature && quota && (
             <p className="text-xs text-muted-foreground">
-              {formatBytes(quota.used_bytes)} / {formatBytes(quota.quota_bytes)} used ({quotaPercent.toFixed(1)}%), images expire in {quota.ttl_days} days
+              {formatBytes(quota.used_bytes)} / {formatBytes(quota.quota_bytes)} used ({quotaPercent.toFixed(1)}%), images expire in{' '}
+              {quota.ttl_days} days
             </p>
           )}
           <UrlAttachmentDialog open={isUrlDialogOpen} onOpenChange={setIsUrlDialogOpen} onSubmit={handleUrlAttach} />
         </CardContent>
       </Card>
+
+      <div className="space-y-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsTemplateExpanded((prev) => !prev)}
+          aria-expanded={isTemplateExpanded}
+          aria-controls="command-template-editor"
+          className="h-auto gap-1.5 px-2 py-1 text-sm font-normal text-muted-foreground hover:text-foreground"
+        >
+          <Settings2 className="h-4 w-4" />
+          <span>{isTemplateExpanded ? 'Hide command template' : 'Customize command template'}</span>
+          {isTemplateExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </Button>
+
+        {isTemplateExpanded && (
+          <Card id="command-template-editor" className="border border-border/60 bg-card shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FileText className="h-5 w-5 text-primary" />
+                Command Template
+              </CardTitle>
+              <CardDescription>
+                Wrap each command before it is returned to the agent. The default {'{{content}}'} returns commands unchanged.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!apiKey && <p className="text-sm text-muted-foreground">Please configure an API key first.</p>}
+
+              {apiKey && (
+                <>
+                  <Textarea
+                    value={commandTemplate}
+                    onChange={(event) => {
+                      setCommandTemplate(event.target.value);
+                      if (templateError) {
+                        setTemplateError(null);
+                      }
+                    }}
+                    rows={6}
+                    spellCheck={false}
+                    placeholder={`Example:\n<user_command>\n${COMMAND_TEMPLATE_PLACEHOLDER}\n</user_command>`}
+                    disabled={isInteractionDisabled || isTemplateLoading || isSavingTemplate}
+                    className="w-full resize-y font-mono text-sm"
+                    style={{ resize: 'vertical' }}
+                  />
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <p>
+                      Default is <code className="rounded bg-muted px-1 py-0.5 font-mono">{DEFAULT_COMMAND_TEMPLATE}</code>, which returns
+                      commands unchanged. Edit to wrap the command with custom wording (the{' '}
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono">{COMMAND_TEMPLATE_PLACEHOLDER}</code> placeholder is
+                      required).
+                    </p>
+                    <span className={cn('font-mono', templateTooLong ? 'text-destructive' : 'text-muted-foreground')}>
+                      {templateRuneCount} / {COMMAND_TEMPLATE_MAX_RUNES}
+                    </span>
+                  </div>
+
+                  {templateValidationMessage && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
+                      {templateValidationMessage}
+                    </div>
+                  )}
+
+                  {templateError && (
+                    <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {templateError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="sm" onClick={handleSaveCommandTemplate} disabled={!canSaveTemplate} className="gap-1.5">
+                      {isSavingTemplate ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      {isSavingTemplate ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleResetCommandTemplateDraft}
+                      disabled={isSavingTemplate || commandTemplate === DEFAULT_COMMAND_TEMPLATE}
+                    >
+                      Reset to default
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       <SavedCommands
         currentContent={newContent}

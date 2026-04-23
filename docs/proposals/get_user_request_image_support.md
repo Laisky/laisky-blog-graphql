@@ -264,11 +264,11 @@ All DB access uses parameterized queries (AGENTS.md: SQL injection rule). All ti
 
 ### 4.3 HTTP API layer
 
-| #   | File                                                                                                 | Change                                                                                                                                                                                                                                                                      |
-| --- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #   | File                                                                                                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | H1  | [internal/mcp/userrequests/http.go:185](../../internal/mcp/userrequests/http.go#L185) `handleCreate` | Branch on `Content-Type`: JSON (with optional `image_urls[]`) → existing path extended; `multipart/form-data` → parse `content`, `task_id`, `images[]` file parts and `image_urls[]` text parts. Per attachment: if it is a URL, run §3.7 fetcher first; then feed into §3.4 pipeline; then §3.5 quota check; then MinIO PUT; then DB upsert. Enforce a total count of 5 across files and URLs. Semantic 4xx errors for quota / MIME / size / SSRF. Body limit 110 MiB (5 × 20 MiB + slack). |
-| H2  | [internal/mcp/userrequests/http.go](../../internal/mcp/userrequests/http.go) response serializer     | Populate each image's `url` field with a fresh presigned MinIO URL so the UI can render thumbnails without going through our server.                                                                                                                                        |
-| H3  | new file `internal/mcp/userrequests/quota_http.go`                                                   | `GET /api/quota` returns `{used_bytes, quota_bytes, object_count, ttl_days}` for the composer UI (see §5.2).                                                                                                                                                                |
+| H2  | [internal/mcp/userrequests/http.go](../../internal/mcp/userrequests/http.go) response serializer     | Populate each image's `url` field with a fresh presigned MinIO URL so the UI can render thumbnails without going through our server.                                                                                                                                                                                                                                                                                                                                                         |
+| H3  | new file `internal/mcp/userrequests/quota_http.go`                                                   | `GET /api/quota` returns `{used_bytes, quota_bytes, object_count, ttl_days}` for the composer UI (see §5.2).                                                                                                                                                                                                                                                                                                                                                                                 |
 
 All errors are wrapped with `github.com/Laisky/errors/v2` (AGENTS.md) and logged via `gmw.GetLogger(c)` when inside a request path.
 
@@ -301,8 +301,8 @@ User-visible compose-box contract (see test matrix §6 for exhaustive coverage):
 - **Submit button** is enabled when (`content` is non-empty OR at least one successful attachment) AND there is no in-flight attachment. Clicking it also blocks while attachments are still uploading.
 - **Quota readout** — always visible near the compose box: "12.3 / 100 MB used, images expire in 7 days". Fetched via `GET /api/quota`, refreshed after each successful upload and after each submit.
 
-| #   | File                                                                                             | Change                                                                                                                                                                                                                                                                                                |
-| --- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #   | File                                                                                             | Change                                                                                                                                                                                                                                                                                               |
+| --- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | F1  | [web/src/features/mcp/user-requests/page.tsx](../../web/src/features/mcp/user-requests/page.tsx) | Compose layout: textarea + toolbar row with the image button, `Attach from URL` menu item, and quota readout; thumbnail strip below. No inline styles (AGENTS.md CSS rule).                                                                                                                          |
 | F2  | new component `web/src/features/mcp/user-requests/AttachmentStrip.tsx`                           | Renders the pending-attachment strip with thumbnails, hover/focus delete, and per-attachment status badges. Handles drop target visuals and paste capture.                                                                                                                                           |
 | F3  | new component `web/src/features/mcp/user-requests/UrlAttachmentDialog.tsx`                       | Inline URL input that validates scheme, submits the URL to the server via `createUserRequest`, and reports failures with inline error text.                                                                                                                                                          |
@@ -316,11 +316,11 @@ All package operations in `web/` use `pnpm` (AGENTS.md JS rule).
 
 ### 4.6 Configuration
 
-| #   | File                                                                       | Change                                                                                                                                                                                                                                                                                           |
-| --- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #   | File                                                                       | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | C1  | [docs/example/config/settings.yml](../../docs/example/config/settings.yml) | Add a `mcp.user_requests.images` section: `enabled`, `minio: {endpoint (default "s3.laisky.com"), bucket, prefix, access_key, secret_key, use_ssl (default true)}`, `per_user_quota_bytes` (default 100 MiB), `per_image_max_bytes` (default 20 MiB), `max_per_request` (default 5), `object_ttl_days` (default 7), `presign_ttl_minutes` (default 30), `url_fetch: {allow_http (default false), max_redirects (default 3), total_timeout_seconds (default 15)}`. |
-| C2  | `cmd/config_validation.go`                                                 | Validate that when `enabled=true`, MinIO endpoint/bucket/creds are non-empty and reachable at startup (a single `BucketExists` probe).                                                                                                                                          |
-| C3  | `.github/instructions/laisky.instructions.md`                              | Record the real MinIO AK / SK for local debugging only. Do not commit real creds to example YAML.                                                                                                                                                                               |
+| C2  | `cmd/config_validation.go`                                                 | Validate that when `enabled=true`, MinIO endpoint/bucket/creds are non-empty and reachable at startup (a single `BucketExists` probe).                                                                                                                                                                                                                                                                                                                            |
+| C3  | `.github/instructions/laisky.instructions.md`                              | Record the real MinIO AK / SK for local debugging only. Do not commit real creds to example YAML.                                                                                                                                                                                                                                                                                                                                                                 |
 
 ### 4.7 Documentation
 
@@ -398,18 +398,18 @@ Success response (the server converted the screenshot to PNG):
 
 Error responses (all JSON `{"error": code, "message": "...", "attachment_index": N /* optional */}`):
 
-| HTTP | `error`               | Trigger                                                                       |
-| ---- | --------------------- | ----------------------------------------------------------------------------- |
-| 400  | `unsupported_mime`    | Input MIME not in allowed set, or magic-byte sniff disagrees with hint.       |
-| 400  | `url_blocked`         | `image_url` uses a disallowed scheme or resolves to a private / metadata IP.  |
-| 413  | `image_too_large`     | Single file / URL body exceeds 20 MiB.                                        |
-| 413  | `quota_exceeded`      | Would push the user above 100 MiB (post-normalization total).                 |
+| HTTP | `error`               | Trigger                                                                      |
+| ---- | --------------------- | ---------------------------------------------------------------------------- |
+| 400  | `unsupported_mime`    | Input MIME not in allowed set, or magic-byte sniff disagrees with hint.      |
+| 400  | `url_blocked`         | `image_url` uses a disallowed scheme or resolves to a private / metadata IP. |
+| 413  | `image_too_large`     | Single file / URL body exceeds 20 MiB.                                       |
+| 413  | `quota_exceeded`      | Would push the user above 100 MiB (post-normalization total).                |
 | 413  | `too_many_images`     | More than 5 attachments in one request (files and URLs counted together).    |
-| 415  | `feature_disabled`    | `images.enabled=false` or flag off.                                           |
-| 422  | `decode_failed`       | Image is corrupt or dimensions exceed 8192 px.                                |
-| 502  | `url_fetch_failed`    | `image_url` returned non-2xx, TLS failure, or unreadable body.                |
-| 504  | `url_timeout`         | `image_url` exceeded the 15 s total fetch deadline.                           |
-| 503  | `storage_unavailable` | MinIO PUT failed.                                                             |
+| 415  | `feature_disabled`    | `images.enabled=false` or flag off.                                          |
+| 422  | `decode_failed`       | Image is corrupt or dimensions exceed 8192 px.                               |
+| 502  | `url_fetch_failed`    | `image_url` returned non-2xx, TLS failure, or unreadable body.               |
+| 504  | `url_timeout`         | `image_url` exceeded the 15 s total fetch deadline.                          |
+| 503  | `storage_unavailable` | MinIO PUT failed.                                                            |
 
 `attachment_index` is the 0-based position of the failing attachment in the combined (files + URLs) list; the composer UI uses it to light up the offending thumbnail.
 
@@ -466,129 +466,129 @@ All Go tests use `github.com/stretchr/testify/require` (AGENTS.md rule). MinIO-b
 
 ### 6.1 Backend unit — service, imageproc, quota, GC
 
-| #   | Layer     | Scenario                                                                 | Expected                                                                         |
-| --- | --------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| U1  | service   | Pure-text request creation                                               | Succeeds, `Images` empty, no MinIO PUT, no refs row                              |
-| U2  | service   | Text + 1 image (PNG input)                                               | PUT called once; refs + links rows written; `ConsumeAllPending` returns metadata |
-| U3  | service   | Text + 5 images (mix of files and URLs)                                  | Succeeds; 5 refs; 5 links with matching sort order                                |
-| U4  | service   | Text + 6 attachments (any mix)                                           | `ErrTooManyImages`, no PUT                                                       |
-| U5  | service   | Single file 20.1 MiB                                                     | `ErrImageTooLarge`, no PUT                                                       |
-| U6  | service   | Empty content + 1 image                                                  | Succeeds (image-only allowed)                                                    |
-| U7  | service   | Empty content + 0 images                                                 | `ErrEmptyRequest` (unchanged from today)                                         |
-| U8  | imageproc | Input MIME `image/gif` (single frame)                                    | First frame extracted, converted to PNG, metadata `original_mime="image/gif"`    |
-| U9  | imageproc | Input MIME `image/svg+xml`                                               | `ErrUnsupportedMIME` (XSS guard)                                                 |
-| U10 | imageproc | Input MIME `image/heic`                                                  | `ErrUnsupportedMIME` (v1 limitation)                                             |
-| U11 | imageproc | JPEG with EXIF orientation = 6 (90° rotation)                            | PNG output is visually corrected                                                 |
-| U12 | imageproc | 5000×4000 JPEG                                                           | Resized to longest edge 1536; dimensions decrease proportionally                 |
-| U13 | imageproc | 9000×9000 input                                                          | `ErrDimensionsTooLarge` (decode-bomb guard)                                      |
-| U14 | imageproc | Corrupt JPEG                                                             | `ErrDecodeFailed`                                                                |
-| U15 | imageproc | Same logical image uploaded twice as JPEG then as PNG                    | After normalization, same SHA256 (byte-exact PNG)                                |
-| U16 | imageproc | 20 MiB JPEG that decompresses to a 4000×3000 RGB                         | Pipeline succeeds; resulting PNG < 10 MiB                                        |
-| U17 | quota     | User at 99 MiB uploads an image whose PNG is > 1 MiB                     | `ErrQuotaExceeded`                                                               |
-| U18 | quota     | User at 99 MiB re-uploads an existing SHA (no new bytes charged)         | Succeeds; TTL refreshed; no quota change                                         |
-| U19 | quota     | Concurrent uploads of different SHAs reaching the quota limit            | Exactly one fails with `ErrQuotaExceeded` (FOR UPDATE lock)                      |
-| U20 | quota     | Expired refs do not count against usage                                  | `used_bytes` excludes expired rows                                               |
-| U21 | gc        | Refs with `expires_at < now` are deleted                                 | Rows gone; no MinIO deletion attempted                                           |
+| #   | Layer     | Scenario                                                         | Expected                                                                         |
+| --- | --------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| U1  | service   | Pure-text request creation                                       | Succeeds, `Images` empty, no MinIO PUT, no refs row                              |
+| U2  | service   | Text + 1 image (PNG input)                                       | PUT called once; refs + links rows written; `ConsumeAllPending` returns metadata |
+| U3  | service   | Text + 5 images (mix of files and URLs)                          | Succeeds; 5 refs; 5 links with matching sort order                               |
+| U4  | service   | Text + 6 attachments (any mix)                                   | `ErrTooManyImages`, no PUT                                                       |
+| U5  | service   | Single file 20.1 MiB                                             | `ErrImageTooLarge`, no PUT                                                       |
+| U6  | service   | Empty content + 1 image                                          | Succeeds (image-only allowed)                                                    |
+| U7  | service   | Empty content + 0 images                                         | `ErrEmptyRequest` (unchanged from today)                                         |
+| U8  | imageproc | Input MIME `image/gif` (single frame)                            | First frame extracted, converted to PNG, metadata `original_mime="image/gif"`    |
+| U9  | imageproc | Input MIME `image/svg+xml`                                       | `ErrUnsupportedMIME` (XSS guard)                                                 |
+| U10 | imageproc | Input MIME `image/heic`                                          | `ErrUnsupportedMIME` (v1 limitation)                                             |
+| U11 | imageproc | JPEG with EXIF orientation = 6 (90° rotation)                    | PNG output is visually corrected                                                 |
+| U12 | imageproc | 5000×4000 JPEG                                                   | Resized to longest edge 1536; dimensions decrease proportionally                 |
+| U13 | imageproc | 9000×9000 input                                                  | `ErrDimensionsTooLarge` (decode-bomb guard)                                      |
+| U14 | imageproc | Corrupt JPEG                                                     | `ErrDecodeFailed`                                                                |
+| U15 | imageproc | Same logical image uploaded twice as JPEG then as PNG            | After normalization, same SHA256 (byte-exact PNG)                                |
+| U16 | imageproc | 20 MiB JPEG that decompresses to a 4000×3000 RGB                 | Pipeline succeeds; resulting PNG < 10 MiB                                        |
+| U17 | quota     | User at 99 MiB uploads an image whose PNG is > 1 MiB             | `ErrQuotaExceeded`                                                               |
+| U18 | quota     | User at 99 MiB re-uploads an existing SHA (no new bytes charged) | Succeeds; TTL refreshed; no quota change                                         |
+| U19 | quota     | Concurrent uploads of different SHAs reaching the quota limit    | Exactly one fails with `ErrQuotaExceeded` (FOR UPDATE lock)                      |
+| U20 | quota     | Expired refs do not count against usage                          | `used_bytes` excludes expired rows                                               |
+| U21 | gc        | Refs with `expires_at < now` are deleted                         | Rows gone; no MinIO deletion attempted                                           |
 
 ### 6.2 Backend — `image_url` fetcher and SSRF
 
-| #   | Layer      | Scenario                                                                | Expected                                               |
-| --- | ---------- | ----------------------------------------------------------------------- | ------------------------------------------------------ |
-| U22 | urlfetch   | HTTPS URL returning a 1 MiB JPEG                                        | Fetch succeeds; bytes match; MIME hint `image/jpeg`    |
-| U23 | urlfetch   | HTTP URL (default config `allow_http=false`)                            | `ErrURLBlocked`                                         |
-| U24 | urlfetch   | URL whose DNS resolves to `127.0.0.1`                                   | `ErrURLBlocked`                                         |
-| U25 | urlfetch   | URL whose DNS resolves to `10.0.0.1`                                    | `ErrURLBlocked`                                         |
-| U26 | urlfetch   | URL whose DNS resolves to `169.254.169.254` (EC2 metadata)              | `ErrURLBlocked`                                         |
-| U27 | urlfetch   | DNS-rebinding: first `A` record is public, second is `127.0.0.1`        | `DialContext` re-check rejects; `ErrURLBlocked`         |
-| U28 | urlfetch   | 4 consecutive redirects                                                 | `ErrURLFetchFailed` (max_redirects=3)                   |
-| U29 | urlfetch   | Redirect hop lands on `http://` (when `allow_http=false`)               | `ErrURLBlocked`                                         |
-| U30 | urlfetch   | Body declared 5 MiB but streams 25 MiB                                  | `ErrImageTooLarge` at 20 MiB + 1                        |
-| U31 | urlfetch   | Server sits on headers for 20 s                                         | `ErrURLTimeout`                                         |
-| U32 | urlfetch   | Server returns `text/html` with `<img>`                                 | Magic-byte sniff fails, `ErrUnsupportedMIME`            |
-| U33 | urlfetch   | Valid HTTPS image, `Content-Type: application/octet-stream`             | Succeeds because magic bytes say `image/png`            |
+| #   | Layer    | Scenario                                                         | Expected                                            |
+| --- | -------- | ---------------------------------------------------------------- | --------------------------------------------------- |
+| U22 | urlfetch | HTTPS URL returning a 1 MiB JPEG                                 | Fetch succeeds; bytes match; MIME hint `image/jpeg` |
+| U23 | urlfetch | HTTP URL (default config `allow_http=false`)                     | `ErrURLBlocked`                                     |
+| U24 | urlfetch | URL whose DNS resolves to `127.0.0.1`                            | `ErrURLBlocked`                                     |
+| U25 | urlfetch | URL whose DNS resolves to `10.0.0.1`                             | `ErrURLBlocked`                                     |
+| U26 | urlfetch | URL whose DNS resolves to `169.254.169.254` (EC2 metadata)       | `ErrURLBlocked`                                     |
+| U27 | urlfetch | DNS-rebinding: first `A` record is public, second is `127.0.0.1` | `DialContext` re-check rejects; `ErrURLBlocked`     |
+| U28 | urlfetch | 4 consecutive redirects                                          | `ErrURLFetchFailed` (max_redirects=3)               |
+| U29 | urlfetch | Redirect hop lands on `http://` (when `allow_http=false`)        | `ErrURLBlocked`                                     |
+| U30 | urlfetch | Body declared 5 MiB but streams 25 MiB                           | `ErrImageTooLarge` at 20 MiB + 1                    |
+| U31 | urlfetch | Server sits on headers for 20 s                                  | `ErrURLTimeout`                                     |
+| U32 | urlfetch | Server returns `text/html` with `<img>`                          | Magic-byte sniff fails, `ErrUnsupportedMIME`        |
+| U33 | urlfetch | Valid HTTPS image, `Content-Type: application/octet-stream`      | Succeeds because magic bytes say `image/png`        |
 
 ### 6.3 Backend — HTTP, storage, MCP tool
 
-| #   | Layer          | Scenario                                                                 | Expected                                                                         |
-| --- | -------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| U34 | http           | Multipart: 2 files + 3 URLs (total 5)                                    | 201; 5 attachments persisted                                                     |
-| U35 | http           | Multipart: 3 files + 3 URLs (total 6)                                    | 413 `too_many_images`                                                            |
-| U36 | http           | Multipart with empty content but 1 image                                 | Succeeds (image-only message allowed)                                            |
-| U37 | http           | JSON variant with `image_urls`                                           | Succeeds; bytes fetched server-side                                              |
-| U38 | http           | Existing JSON path with no images                                        | Byte-identical with pre-change behavior (snapshot)                               |
-| U39 | http           | Body > 110 MiB                                                           | 413                                                                              |
-| U40 | http           | Error payload shape                                                      | Response JSON includes `error`, `message`, and optional `attachment_index`       |
-| U41 | http           | Partial failure: file 1 OK, URL 2 returns 404                            | Whole request rejected; nothing persisted; `attachment_index=1`                   |
-| U42 | http quota     | `GET /api/quota` for fresh user                                          | 200 `{used_bytes:0, quota_bytes:104857600, object_count:0, ttl_days:7}`          |
-| U43 | storage        | PUT on MinIO-down                                                        | `ErrStorageUnavailable`, 503                                                     |
-| U44 | storage        | `EnsureLifecycle` called twice                                           | Idempotent; no duplicate rule                                                    |
-| U45 | tool budget    | 80 KB budget, 1 image of 50 KB                                           | Image inlined, `remaining=30 KB`                                                 |
-| U46 | tool budget    | Two 60 KB images                                                         | First inlined, second link-only                                                  |
-| U47 | tool budget    | Three 30 KB images                                                       | First two inlined, third link-only (per-image ceiling)                           |
-| U48 | tool           | Pure-text response snapshot                                              | Byte-identical with pre-change version                                           |
-| U49 | tool           | One text + one image `CallToolResult`                                    | `Content` order = [text, image, resource_link]; URL is a fresh presign           |
-| U50 | tool           | Presign TTL applied                                                      | URL `X-Amz-Expires=1800`                                                         |
-| U51 | tool           | Hold mode + images                                                       | Hold release delivers text + images correctly                                    |
-| U52 | tool           | `return_mode=first` with multiple images                                 | Only the first request's images are returned                                     |
+| #   | Layer       | Scenario                                      | Expected                                                                   |
+| --- | ----------- | --------------------------------------------- | -------------------------------------------------------------------------- |
+| U34 | http        | Multipart: 2 files + 3 URLs (total 5)         | 201; 5 attachments persisted                                               |
+| U35 | http        | Multipart: 3 files + 3 URLs (total 6)         | 413 `too_many_images`                                                      |
+| U36 | http        | Multipart with empty content but 1 image      | Succeeds (image-only message allowed)                                      |
+| U37 | http        | JSON variant with `image_urls`                | Succeeds; bytes fetched server-side                                        |
+| U38 | http        | Existing JSON path with no images             | Byte-identical with pre-change behavior (snapshot)                         |
+| U39 | http        | Body > 110 MiB                                | 413                                                                        |
+| U40 | http        | Error payload shape                           | Response JSON includes `error`, `message`, and optional `attachment_index` |
+| U41 | http        | Partial failure: file 1 OK, URL 2 returns 404 | Whole request rejected; nothing persisted; `attachment_index=1`            |
+| U42 | http quota  | `GET /api/quota` for fresh user               | 200 `{used_bytes:0, quota_bytes:104857600, object_count:0, ttl_days:7}`    |
+| U43 | storage     | PUT on MinIO-down                             | `ErrStorageUnavailable`, 503                                               |
+| U44 | storage     | `EnsureLifecycle` called twice                | Idempotent; no duplicate rule                                              |
+| U45 | tool budget | 80 KB budget, 1 image of 50 KB                | Image inlined, `remaining=30 KB`                                           |
+| U46 | tool budget | Two 60 KB images                              | First inlined, second link-only                                            |
+| U47 | tool budget | Three 30 KB images                            | First two inlined, third link-only (per-image ceiling)                     |
+| U48 | tool        | Pure-text response snapshot                   | Byte-identical with pre-change version                                     |
+| U49 | tool        | One text + one image `CallToolResult`         | `Content` order = [text, image, resource_link]; URL is a fresh presign     |
+| U50 | tool        | Presign TTL applied                           | URL `X-Amz-Expires=1800`                                                   |
+| U51 | tool        | Hold mode + images                            | Hold release delivers text + images correctly                              |
+| U52 | tool        | `return_mode=first` with multiple images      | Only the first request's images are returned                               |
 
 ### 6.4 Frontend — compose-box user behavior
 
 End-to-end behavioral coverage of the compose box. Each row is one user-centric test.
 
-| #   | Scenario                                                                          | Expected                                                                                                                   |
-| --- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| F1  | Click the image button → native picker → choose 2 files                           | 2 thumbnails appear below the textarea, in selection order; image button remains enabled (count 2/5)                      |
-| F2  | Click the image button, select 6 files in the picker                              | First 5 accepted; 6th dropped with toast "5 image limit reached"; image button becomes disabled                             |
-| F3  | Drag 3 files over the compose area                                                | Drop overlay appears ("Drop images to attach"); dropping adds all 3; overlay disappears                                    |
-| F4  | Drag a PDF over the compose area                                                  | Overlay shows "Only images accepted"; dropping is rejected with a toast                                                    |
-| F5  | Paste a PNG from the system clipboard                                             | One thumbnail appears; attachment count increments                                                                        |
-| F6  | Open "Attach from URL", type a valid URL, press Enter                             | Pending thumbnail with spinner; on success shows the fetched image thumbnail                                              |
-| F7  | Open "Attach from URL", type `http://127.0.0.1/x.png`, press Enter                | Thumbnail flashes a red `!`; tooltip shows "URL blocked" (`url_blocked`)                                                   |
-| F8  | Open "Attach from URL", type a URL the server times out on                        | Thumbnail shows red `!`; tooltip shows "URL fetch timed out"                                                                |
-| F9  | Hover a thumbnail                                                                 | `×` delete button fades in within 150 ms                                                                                   |
-| F10 | Click the `×` delete button on a thumbnail                                        | Thumbnail removed; image button re-enables if count drops below 5                                                          |
-| F11 | Focus a thumbnail with Tab, press `Delete`                                        | Thumbnail removed; focus returns to the image button                                                                       |
-| F12 | Attach 5 images, then try drag-drop another file                                  | Overlay shows "5 image limit reached"; drop is ignored                                                                     |
-| F13 | Attach the same file twice via the file picker                                    | Both thumbnails appear; server returns one shared SHA on submit (not a UI concern but does not error)                      |
-| F14 | Click image button rapidly 10×                                                    | Only one native picker opens (guard with `useRef` flag)                                                                    |
-| F15 | Submit while one attachment is still uploading                                    | Submit button is disabled and shows "Waiting for uploads…"; submits only once all resolve                                  |
-| F16 | Submit with content empty and no attachments                                      | Submit button is disabled; pressing Enter in textarea does not submit                                                      |
-| F17 | Submit with content empty and 1 attachment                                        | Submit allowed; server accepts                                                                                             |
-| F18 | Server returns `quota_exceeded`                                                   | Inline banner shows "Quota exceeded: 98.7 / 100 MB used — delete or wait for expiry"; quota readout refreshes               |
-| F19 | Server returns `image_too_large` for attachment index 2                           | Thumbnail 2 shows red `!`; other thumbnails unaffected; submit button re-enables                                           |
-| F20 | Drop a 25 MiB JPEG                                                                | Client pre-upload check flags `image_too_large` before even sending (pre-resize detects raw size)                          |
-| F21 | Paste a 2 MiB screenshot                                                          | Client resizes via canvas; upload payload < 500 KiB                                                                        |
-| F22 | Navigate away with pending attachments                                            | Browser confirmation prompt ("You have unsaved images") via `beforeunload`                                                 |
-| F23 | Load existing list — submitted request from 6 days ago                            | Thumbnail renders; badge "expires tomorrow" visible                                                                        |
-| F24 | Load existing list — submitted request from 8 days ago (MinIO already purged)    | Thumbnail placeholder + "expired" badge; click goes nowhere                                                                |
-| F25 | Offline (network down) when pressing Submit                                       | Error toast; content and attachments preserved in the compose box for retry                                                |
-| F26 | Accessibility: screen reader on the image button                                  | Announces "Attach image, 2 of 5 attached"                                                                                  |
+| #   | Scenario                                                                      | Expected                                                                                                      |
+| --- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| F1  | Click the image button → native picker → choose 2 files                       | 2 thumbnails appear below the textarea, in selection order; image button remains enabled (count 2/5)          |
+| F2  | Click the image button, select 6 files in the picker                          | First 5 accepted; 6th dropped with toast "5 image limit reached"; image button becomes disabled               |
+| F3  | Drag 3 files over the compose area                                            | Drop overlay appears ("Drop images to attach"); dropping adds all 3; overlay disappears                       |
+| F4  | Drag a PDF over the compose area                                              | Overlay shows "Only images accepted"; dropping is rejected with a toast                                       |
+| F5  | Paste a PNG from the system clipboard                                         | One thumbnail appears; attachment count increments                                                            |
+| F6  | Open "Attach from URL", type a valid URL, press Enter                         | Pending thumbnail with spinner; on success shows the fetched image thumbnail                                  |
+| F7  | Open "Attach from URL", type `http://127.0.0.1/x.png`, press Enter            | Thumbnail flashes a red `!`; tooltip shows "URL blocked" (`url_blocked`)                                      |
+| F8  | Open "Attach from URL", type a URL the server times out on                    | Thumbnail shows red `!`; tooltip shows "URL fetch timed out"                                                  |
+| F9  | Hover a thumbnail                                                             | `×` delete button fades in within 150 ms                                                                      |
+| F10 | Click the `×` delete button on a thumbnail                                    | Thumbnail removed; image button re-enables if count drops below 5                                             |
+| F11 | Focus a thumbnail with Tab, press `Delete`                                    | Thumbnail removed; focus returns to the image button                                                          |
+| F12 | Attach 5 images, then try drag-drop another file                              | Overlay shows "5 image limit reached"; drop is ignored                                                        |
+| F13 | Attach the same file twice via the file picker                                | Both thumbnails appear; server returns one shared SHA on submit (not a UI concern but does not error)         |
+| F14 | Click image button rapidly 10×                                                | Only one native picker opens (guard with `useRef` flag)                                                       |
+| F15 | Submit while one attachment is still uploading                                | Submit button is disabled and shows "Waiting for uploads…"; submits only once all resolve                     |
+| F16 | Submit with content empty and no attachments                                  | Submit button is disabled; pressing Enter in textarea does not submit                                         |
+| F17 | Submit with content empty and 1 attachment                                    | Submit allowed; server accepts                                                                                |
+| F18 | Server returns `quota_exceeded`                                               | Inline banner shows "Quota exceeded: 98.7 / 100 MB used — delete or wait for expiry"; quota readout refreshes |
+| F19 | Server returns `image_too_large` for attachment index 2                       | Thumbnail 2 shows red `!`; other thumbnails unaffected; submit button re-enables                              |
+| F20 | Drop a 25 MiB JPEG                                                            | Client pre-upload check flags `image_too_large` before even sending (pre-resize detects raw size)             |
+| F21 | Paste a 2 MiB screenshot                                                      | Client resizes via canvas; upload payload < 500 KiB                                                           |
+| F22 | Navigate away with pending attachments                                        | Browser confirmation prompt ("You have unsaved images") via `beforeunload`                                    |
+| F23 | Load existing list — submitted request from 6 days ago                        | Thumbnail renders; badge "expires tomorrow" visible                                                           |
+| F24 | Load existing list — submitted request from 8 days ago (MinIO already purged) | Thumbnail placeholder + "expired" badge; click goes nowhere                                                   |
+| F25 | Offline (network down) when pressing Submit                                   | Error toast; content and attachments preserved in the compose box for retry                                   |
+| F26 | Accessibility: screen reader on the image button                              | Announces "Attach image, 2 of 5 attached"                                                                     |
 
 ### 6.5 Integration
 
-| #   | Scenario                                                                 | Expected                                                                       |
-| --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| I1  | Real Claude Code call against `https://s3.laisky.com`                    | Agent describes the image accurately in its reply                              |
-| I2  | Real Codex CLI (v0.117+) call against `https://s3.laisky.com`            | Agent uses `view_image` to load the presigned URL and describes the image      |
-| I3  | Claude Code, `MAX_MCP_OUTPUT_TOKENS=25000`, three images totaling 200 KB | No output warning; oversized images degrade to link-only                       |
-| I4  | Codex CLI with network isolation (presign URL unreachable)               | Agent gets the link, reports a clear error, does not panic                     |
-| I5  | Real MinIO, 7-day lifecycle rule installed                               | After bootstrap, `GetBucketLifecycle` returns the expected rule                |
-| I6  | Older Claude Desktop / MCP Inspector                                     | Mixed content at least surfaces text; image block ignored without crash        |
-| I7  | Full-flow: user drags 2 files + 1 URL, submits, agent reads all 3        | All three attachments surface in the MCP response; agent describes each        |
+| #   | Scenario                                                                 | Expected                                                                  |
+| --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| I1  | Real Claude Code call against `https://s3.laisky.com`                    | Agent describes the image accurately in its reply                         |
+| I2  | Real Codex CLI (v0.117+) call against `https://s3.laisky.com`            | Agent uses `view_image` to load the presigned URL and describes the image |
+| I3  | Claude Code, `MAX_MCP_OUTPUT_TOKENS=25000`, three images totaling 200 KB | No output warning; oversized images degrade to link-only                  |
+| I4  | Codex CLI with network isolation (presign URL unreachable)               | Agent gets the link, reports a clear error, does not panic                |
+| I5  | Real MinIO, 7-day lifecycle rule installed                               | After bootstrap, `GetBucketLifecycle` returns the expected rule           |
+| I6  | Older Claude Desktop / MCP Inspector                                     | Mixed content at least surfaces text; image block ignored without crash   |
+| I7  | Full-flow: user drags 2 files + 1 URL, submits, agent reads all 3        | All three attachments surface in the MCP response; agent describes each   |
 
 ### 6.6 Security
 
-| #   | Scenario                                                                  | Expected                                                                              |
-| --- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| S1  | Upload with spoofed MIME (PHP renamed to image/png)                       | Server rejects after decode failure (`decode_failed`)                                 |
-| S2  | Cross-tenant upload attempt (API key A submits, `UserIdentity` from auth) | `UserIdentity` from auth is authoritative; payload-supplied identity ignored          |
-| S3  | Presigned URL leaked after issuance                                       | Valid for 30 min only; after expiry MinIO returns 403                                 |
-| S4  | Presigned URL tampered (signature flipped)                                | MinIO returns 403                                                                     |
-| S5  | SQL injection attempt (image filename with `';--`)                        | Parameterized query neutralizes                                                       |
-| S6  | Path traversal in `UserIdentity` (e.g. `../`)                             | Sanitization rejects or escapes; object key remains inside the per-user prefix        |
-| S7  | SHA256 collision attempt (not practically feasible; sanity test)          | If two distinct bytes somehow produce same key, the second PUT overwrites — OK        |
-| S8  | `image_url` pointing at internal admin UI                                 | §3.7 blocks via IP check; request fails with `url_blocked`                            |
-| S9  | Content-Disposition smuggling via fetched URL                             | Response headers are ignored; object is always stored with `image/png` Content-Type   |
+| #   | Scenario                                                                  | Expected                                                                            |
+| --- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| S1  | Upload with spoofed MIME (PHP renamed to image/png)                       | Server rejects after decode failure (`decode_failed`)                               |
+| S2  | Cross-tenant upload attempt (API key A submits, `UserIdentity` from auth) | `UserIdentity` from auth is authoritative; payload-supplied identity ignored        |
+| S3  | Presigned URL leaked after issuance                                       | Valid for 30 min only; after expiry MinIO returns 403                               |
+| S4  | Presigned URL tampered (signature flipped)                                | MinIO returns 403                                                                   |
+| S5  | SQL injection attempt (image filename with `';--`)                        | Parameterized query neutralizes                                                     |
+| S6  | Path traversal in `UserIdentity` (e.g. `../`)                             | Sanitization rejects or escapes; object key remains inside the per-user prefix      |
+| S7  | SHA256 collision attempt (not practically feasible; sanity test)          | If two distinct bytes somehow produce same key, the second PUT overwrites — OK      |
+| S8  | `image_url` pointing at internal admin UI                                 | §3.7 blocks via IP check; request fails with `url_blocked`                          |
+| S9  | Content-Disposition smuggling via fetched URL                             | Response headers are ignored; object is always stored with `image/png` Content-Type |
 
 **Manual smoke suite** (required before each release): I1 + I2 + I7 + U43 + S3 + S8.
 

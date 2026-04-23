@@ -44,6 +44,7 @@ export interface UserPreferencesResponse {
   return_mode: ReturnMode;
   disabled_tools?: string[];
   available_tools?: string[];
+  command_template?: string;
   user_id?: string;
   key_hint?: string;
 }
@@ -114,6 +115,34 @@ export async function setDisabledToolsOnServer(apiKey: string, disabledTools: st
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ disabled_tools: disabledTools }),
+  });
+
+  if (!response.ok) {
+    const message = (await response.text()) || response.statusText;
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+/**
+ * setCommandTemplateOnServer persists the user's command template to the server.
+ * Pass an empty string to clear the template (reverts to default no-wrap behavior).
+ * A non-empty template must contain the literal substring `{{content}}` and be at
+ * most 4096 runes long; otherwise the server responds with HTTP 400.
+ */
+export async function setCommandTemplateOnServer(apiKey: string, template: string): Promise<UserPreferencesResponse> {
+  const authorization = ensureAuthorization(apiKey);
+  const apiBasePath = resolveToolApiBase('get_user_requests');
+  const response = await fetch(`${apiBasePath}api/preferences`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: authorization,
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    },
+    body: JSON.stringify({ command_template: template }),
   });
 
   if (!response.ok) {
@@ -364,10 +393,7 @@ export async function createUserRequest(
   options: CreateUserRequestOptions | string,
   legacyTaskId?: string
 ): Promise<UserRequest> {
-  const normalized: CreateUserRequestOptions =
-    typeof options === 'string'
-      ? { content: options, taskId: legacyTaskId }
-      : options;
+  const normalized: CreateUserRequestOptions = typeof options === 'string' ? { content: options, taskId: legacyTaskId } : options;
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
 

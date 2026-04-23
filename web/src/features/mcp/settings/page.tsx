@@ -441,6 +441,7 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
     </div>
   );
 }

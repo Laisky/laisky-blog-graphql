@@ -62,11 +62,13 @@ func (h *preferencesHTTPHandler) handleGet(w http.ResponseWriter, r *http.Reques
 	// Return defaults if no preference exists
 	returnMode := DefaultReturnMode
 	disabledTools := []string{}
+	commandTemplate := ""
 	if pref != nil && pref.Preferences.ReturnMode != "" {
 		returnMode = pref.Preferences.ReturnMode
 	}
 	if pref != nil {
 		disabledTools = NormalizeDisabledTools(pref.Preferences.DisabledTools)
+		commandTemplate = pref.Preferences.CommandTemplate
 	}
 
 	availableTools := h.availableTools()
@@ -76,15 +78,17 @@ func (h *preferencesHTTPHandler) handleGet(w http.ResponseWriter, r *http.Reques
 		zap.Bool("pref_exists", pref != nil),
 		zap.String("return_mode", returnMode),
 		zap.Int("disabled_tools_count", len(disabledTools)),
+		zap.Int("command_template_len", len(commandTemplate)),
 		zap.Int("available_tools_count", len(availableTools)),
 	)
 
 	h.writeJSON(w, map[string]any{
-		"return_mode":     returnMode,
-		"disabled_tools":  disabledTools,
-		"available_tools": availableTools,
-		"user_id":         auth.UserIdentity,
-		"key_hint":        auth.KeySuffix,
+		"return_mode":      returnMode,
+		"disabled_tools":   disabledTools,
+		"command_template": commandTemplate,
+		"available_tools":  availableTools,
+		"user_id":          auth.UserIdentity,
+		"key_hint":         auth.KeySuffix,
 	})
 }
 
@@ -107,8 +111,9 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 	}
 
 	payload := struct {
-		ReturnMode    *string  `json:"return_mode"`
-		DisabledTools []string `json:"disabled_tools"`
+		ReturnMode      *string  `json:"return_mode"`
+		DisabledTools   []string `json:"disabled_tools"`
+		CommandTemplate *string  `json:"command_template"`
 	}{}
 
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&payload); err != nil {
@@ -120,10 +125,11 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 		zap.String("user", auth.UserIdentity),
 		zap.String("requested_mode", stringValue(payload.ReturnMode)),
 		zap.Int("requested_disabled_tools", len(payload.DisabledTools)),
+		zap.Bool("command_template_present", payload.CommandTemplate != nil),
 	)
 
-	if payload.ReturnMode == nil && payload.DisabledTools == nil {
-		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "payload must include return_mode and/or disabled_tools")
+	if payload.ReturnMode == nil && payload.DisabledTools == nil && payload.CommandTemplate == nil {
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "payload must include return_mode, disabled_tools, and/or command_template")
 		return
 	}
 
@@ -148,6 +154,18 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	if payload.CommandTemplate != nil {
+		if err := ValidateCommandTemplate(*payload.CommandTemplate); err != nil {
+			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
+			return
+		}
+		if _, err := service.SetCommandTemplate(ctx, auth, *payload.CommandTemplate); err != nil {
+			logger.Error("set command template preference", zap.Error(err))
+			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to save preferences")
+			return
+		}
+	}
+
 	pref, err := service.GetUserPreference(ctx, auth)
 	if err != nil {
 		logger.Error("reload user preferences", zap.Error(err))
@@ -157,11 +175,13 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 
 	returnMode := DefaultReturnMode
 	disabledTools := []string{}
+	commandTemplate := ""
 	if pref != nil && pref.Preferences.ReturnMode != "" {
 		returnMode = pref.Preferences.ReturnMode
 	}
 	if pref != nil {
 		disabledTools = NormalizeDisabledTools(pref.Preferences.DisabledTools)
+		commandTemplate = pref.Preferences.CommandTemplate
 	}
 	availableTools := h.availableTools()
 
@@ -169,14 +189,16 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 		zap.String("user", auth.UserIdentity),
 		zap.String("saved_mode", returnMode),
 		zap.Int("saved_disabled_tools", len(disabledTools)),
+		zap.Int("saved_command_template_len", len(commandTemplate)),
 	)
 
 	h.writeJSON(w, map[string]any{
-		"return_mode":     returnMode,
-		"disabled_tools":  disabledTools,
-		"available_tools": availableTools,
-		"user_id":         auth.UserIdentity,
-		"key_hint":        auth.KeySuffix,
+		"return_mode":      returnMode,
+		"disabled_tools":   disabledTools,
+		"command_template": commandTemplate,
+		"available_tools":  availableTools,
+		"user_id":          auth.UserIdentity,
+		"key_hint":         auth.KeySuffix,
 	})
 }
 
