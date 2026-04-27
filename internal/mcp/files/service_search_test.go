@@ -2,6 +2,7 @@ package files
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -398,6 +399,239 @@ func TestSearchFallbackReturnsResultsBeforeIndexReady(t *testing.T) {
 	require.Equal(t, "/notes.txt", searchRes.Chunks[0].FilePath)
 	require.Contains(t, strings.ToLower(searchRes.Chunks[0].ChunkContent), "mcp")
 	require.True(t, searchRes.Chunks[0].IsFullFile)
+}
+
+// TestSearchWildcardSpansProjects verifies project="*" returns chunks from
+// every project owned by the caller and surfaces the per-chunk project field.
+func TestSearchWildcardSpansProjects(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj_a", "/a.txt", "alpha sentinel marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), auth, "proj_b", "/b.txt", "alpha sentinel marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	worker := svc.NewIndexWorker()
+	require.NoError(t, worker.RunOnce(context.Background()))
+
+	res, err := svc.Search(context.Background(), auth, ProjectWildcard, "sentinel", "", 10)
+	require.NoError(t, err)
+	require.Len(t, res.Chunks, 2)
+
+	projects := map[string]string{}
+	for _, chunk := range res.Chunks {
+		require.NotEmpty(t, chunk.Project, "wildcard search must populate project on every chunk")
+		require.Contains(t, chunk.ChunkContent, "sentinel")
+		projects[chunk.Project] = chunk.FilePath
+	}
+	require.Equal(t, "/a.txt", projects["proj_a"])
+	require.Equal(t, "/b.txt", projects["proj_b"])
+}
+
+// TestSearchSingleProjectOmitsProjectField guarantees the response shape stays
+// backward compatible: non-wildcard searches must not emit the project field.
+func TestSearchSingleProjectOmitsProjectField(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj_a", "/a.txt", "alpha sentinel marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), auth, "proj_b", "/b.txt", "alpha sentinel marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	worker := svc.NewIndexWorker()
+	require.NoError(t, worker.RunOnce(context.Background()))
+
+	res, err := svc.Search(context.Background(), auth, "proj_a", "sentinel", "", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Chunks)
+	for _, chunk := range res.Chunks {
+		require.Equal(t, "/a.txt", chunk.FilePath)
+		require.Empty(t, chunk.Project, "non-wildcard search must not populate project field")
+	}
+
+	encoded, err := json.Marshal(res.Chunks[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "\"project\"")
+}
+
+// TestSearchWildcardHonorsTenantIsolation confirms project="*" is still bounded
+// by api-key hash and never exposes another tenant's projects.
+func TestSearchWildcardHonorsTenantIsolation(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	authA := AuthContext{APIKeyHash: "hash-a", APIKey: "key-a", UserIdentity: "user:a"}
+	authB := AuthContext{APIKeyHash: "hash-b", APIKey: "key-b", UserIdentity: "user:b"}
+
+	_, err := svc.Write(context.Background(), authA, "proj_a1", "/a1.txt", "tenant unique alpha", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), authA, "proj_a2", "/a2.txt", "tenant unique alpha", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), authB, "proj_b1", "/b1.txt", "tenant unique alpha", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	worker := svc.NewIndexWorker()
+	require.NoError(t, worker.RunOnce(context.Background()))
+
+	resA, err := svc.Search(context.Background(), authA, ProjectWildcard, "alpha", "", 10)
+	require.NoError(t, err)
+	require.Len(t, resA.Chunks, 2)
+	for _, chunk := range resA.Chunks {
+		require.NotEqual(t, "proj_b1", chunk.Project)
+	}
+
+	resB, err := svc.Search(context.Background(), authB, ProjectWildcard, "alpha", "", 10)
+	require.NoError(t, err)
+	require.Len(t, resB.Chunks, 1)
+	require.Equal(t, "proj_b1", resB.Chunks[0].Project)
+	require.Equal(t, "/b1.txt", resB.Chunks[0].FilePath)
+}
+
+// TestSearchWildcardHonorsPathPrefix verifies path_prefix still applies under
+// the cross-project wildcard.
+func TestSearchWildcardHonorsPathPrefix(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj_a", "/dir/a.txt", "match data", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), auth, "proj_b", "/dir/b.txt", "match data", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), auth, "proj_a", "/other/a.txt", "match data", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), auth, "proj_b", "/other/b.txt", "match data", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	worker := svc.NewIndexWorker()
+	require.NoError(t, worker.RunOnce(context.Background()))
+
+	res, err := svc.Search(context.Background(), auth, ProjectWildcard, "match", "/dir", 10)
+	require.NoError(t, err)
+	require.Len(t, res.Chunks, 2)
+	for _, chunk := range res.Chunks {
+		require.True(t, strings.HasPrefix(chunk.FilePath, "/dir"))
+		require.Contains(t, []string{"proj_a", "proj_b"}, chunk.Project)
+	}
+}
+
+// TestSearchWildcardRawFallbackPopulatesProject ensures the raw-file fallback
+// path also surfaces the project for cross-project searches before indexing.
+func TestSearchWildcardRawFallbackPopulatesProject(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.Index.BatchSize = 10
+	settings.Index.ChunkBytes = 64
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	_, err := svc.Write(context.Background(), auth, "proj_a", "/a.txt", "MCP raw fallback marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+	_, err = svc.Write(context.Background(), auth, "proj_b", "/b.txt", "MCP raw fallback marker", "utf-8", 0, WriteModeAppend)
+	require.NoError(t, err)
+
+	res, err := svc.Search(context.Background(), auth, ProjectWildcard, "MCP", "", 5)
+	require.NoError(t, err)
+	require.Len(t, res.Chunks, 2)
+	projects := map[string]struct{}{}
+	for _, chunk := range res.Chunks {
+		require.NotEmpty(t, chunk.Project, "raw-fallback wildcard chunks must include project")
+		projects[chunk.Project] = struct{}{}
+	}
+	require.Contains(t, projects, "proj_a")
+	require.Contains(t, projects, "proj_b")
+}
+
+// TestSearchWildcardEmptyAuthRejected guards against bypassing tenant checks
+// via the wildcard.
+func TestSearchWildcardEmptyAuthRejected(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+
+	_, err := svc.Search(context.Background(), AuthContext{}, ProjectWildcard, "anything", "", 5)
+	require.Error(t, err)
+}
+
+// TestNonSearchOperationsRejectWildcard confirms only Search accepts "*" and
+// every other file operation refuses it so callers cannot accidentally
+// stat/read/write/delete/rename/list across projects.
+func TestNonSearchOperationsRejectWildcard(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = true
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, testEmbedder{vector: pgvector.NewVector([]float32{1, 0})}, &memoryCredentialStore{})
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+
+	wildcard := ProjectWildcard
+
+	t.Run("Stat", func(t *testing.T) {
+		_, err := svc.Stat(context.Background(), auth, wildcard, "/x.txt")
+		require.Error(t, err)
+		var fileErr *Error
+		require.True(t, errors.As(err, &fileErr))
+		require.Equal(t, ErrCodeInvalidPath, fileErr.Code)
+	})
+
+	t.Run("Read", func(t *testing.T) {
+		_, err := svc.Read(context.Background(), auth, wildcard, "/x.txt", 0, 0)
+		require.Error(t, err)
+	})
+
+	t.Run("Write", func(t *testing.T) {
+		_, err := svc.Write(context.Background(), auth, wildcard, "/x.txt", "data", "utf-8", 0, WriteModeAppend)
+		require.Error(t, err)
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		_, err := svc.Delete(context.Background(), auth, wildcard, "/x.txt", false)
+		require.Error(t, err)
+	})
+
+	t.Run("Rename", func(t *testing.T) {
+		_, err := svc.Rename(context.Background(), auth, wildcard, "/a.txt", "/b.txt", false)
+		require.Error(t, err)
+	})
+
+	t.Run("List", func(t *testing.T) {
+		_, err := svc.List(context.Background(), auth, wildcard, "", 1, 10)
+		require.Error(t, err)
+	})
 }
 
 // TestSearchFallbackHonorsPathPrefix verifies raw-file fallback respects path prefix filtering.

@@ -14,6 +14,26 @@ func TestValidateProject(t *testing.T) {
 	require.Error(t, ValidateProject("项目"))
 }
 
+// TestValidateProjectRejectsWildcard ensures ValidateProject rejects "*",
+// guarding non-search file operations from accidental cross-project mutations.
+func TestValidateProjectRejectsWildcard(t *testing.T) {
+	require.Error(t, ValidateProject("*"))
+	require.Error(t, ValidateProject("**"))
+	require.Error(t, ValidateProject("a*"))
+	require.Error(t, ValidateProject("*a"))
+}
+
+// TestValidateSearchProject verifies the search-only validator accepts the
+// wildcard while still enforcing the standard rules for everything else.
+func TestValidateSearchProject(t *testing.T) {
+	require.NoError(t, ValidateSearchProject("*"))
+	require.NoError(t, ValidateSearchProject("proj_1"))
+	require.Error(t, ValidateSearchProject(""))
+	require.Error(t, ValidateSearchProject("bad space"))
+	require.Error(t, ValidateSearchProject("**"))
+	require.Error(t, ValidateSearchProject("a*"))
+}
+
 // TestValidatePath verifies path validation rules.
 func TestValidatePath(t *testing.T) {
 	valid := []string{"", "/a", "/a/b.txt", "/a-b_c.d"}

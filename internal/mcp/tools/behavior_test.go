@@ -464,6 +464,103 @@ func TestFileToolsSuccessfulOperations(t *testing.T) {
 	})
 }
 
+// TestFileSearchToolForwardsWildcardProject verifies the file_search tool
+// forwards "*" to the service unchanged. Defense-in-depth lives in the
+// service layer, but the MCP shim must not strip or rewrite the value.
+func TestFileSearchToolForwardsWildcardProject(t *testing.T) {
+	t.Parallel()
+	ctx := behaviorAuthCtx()
+
+	svc := &behaviorFileService{searchResult: files.SearchResult{Chunks: []files.ChunkEntry{}}}
+	tool, err := NewFileSearchTool(svc)
+	require.NoError(t, err)
+
+	result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "*", "query": "anything"}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Equal(t, "*", svc.lastProject)
+}
+
+// TestFileSearchToolWildcardResponseIncludesProject verifies that when the
+// service returns chunks tagged with a project (cross-project search), the
+// tool serializes the project field into the response payload.
+func TestFileSearchToolWildcardResponseIncludesProject(t *testing.T) {
+	t.Parallel()
+	ctx := behaviorAuthCtx()
+
+	svc := &behaviorFileService{searchResult: files.SearchResult{Chunks: []files.ChunkEntry{
+		{Project: "proj_a", FilePath: "/a.txt", ChunkContent: "alpha", Score: 1},
+		{Project: "proj_b", FilePath: "/b.txt", ChunkContent: "alpha", Score: 0.5},
+	}}}
+	tool, err := NewFileSearchTool(svc)
+	require.NoError(t, err)
+
+	result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "*", "query": "alpha"}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	payload := behaviorJSONContent(t, result)
+	chunks, ok := payload["chunks"].([]any)
+	require.True(t, ok)
+	require.Len(t, chunks, 2)
+
+	first, ok := chunks[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "proj_a", first["project"])
+	require.Equal(t, "/a.txt", first["file_path"])
+
+	second, ok := chunks[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "proj_b", second["project"])
+}
+
+// TestFileSearchToolSingleProjectOmitsProject ensures the response stays
+// backward compatible: single-project searches must not surface a project key.
+func TestFileSearchToolSingleProjectOmitsProject(t *testing.T) {
+	t.Parallel()
+	ctx := behaviorAuthCtx()
+
+	svc := &behaviorFileService{searchResult: files.SearchResult{Chunks: []files.ChunkEntry{
+		{FilePath: "/f.txt", ChunkContent: "match", Score: 0.9},
+	}}}
+	tool, err := NewFileSearchTool(svc)
+	require.NoError(t, err)
+
+	result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "demo", "query": "match"}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := behaviorTextContent(t, result)
+	require.NotContains(t, text, "\"project\"", "single-project search must not surface project field in response")
+
+	payload := behaviorJSONContent(t, result)
+	chunks, ok := payload["chunks"].([]any)
+	require.True(t, ok)
+	require.Len(t, chunks, 1)
+	chunk, ok := chunks[0].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, chunk, "project")
+}
+
+// TestFileSearchToolDefinitionDocumentsWildcard confirms the MCP tool
+// metadata advertises the cross-project wildcard so MCP clients see it.
+func TestFileSearchToolDefinitionDocumentsWildcard(t *testing.T) {
+	t.Parallel()
+
+	svc := &behaviorFileService{}
+	tool, err := NewFileSearchTool(svc)
+	require.NoError(t, err)
+
+	def := tool.Definition()
+	require.NotNil(t, def.InputSchema.Properties)
+	rawProperty, ok := def.InputSchema.Properties["project"]
+	require.True(t, ok)
+	property, ok := rawProperty.(map[string]any)
+	require.True(t, ok)
+	desc, _ := property["description"].(string)
+	require.Contains(t, desc, "*", "project description should mention the wildcard")
+}
+
 // ---------------------------------------------------------------------------
 // web_search: edge cases
 // ---------------------------------------------------------------------------

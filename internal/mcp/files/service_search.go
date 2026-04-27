@@ -27,7 +27,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 	if err := s.validateAuth(auth); err != nil {
 		return SearchResult{}, errors.WithStack(err)
 	}
-	if err := ValidateProject(project); err != nil {
+	if err := ValidateSearchProject(project); err != nil {
 		return SearchResult{}, errors.WithStack(err)
 	}
 	query = strings.TrimSpace(query)
@@ -178,18 +178,23 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 		finalCandidates = finalCandidates[:limit]
 	}
 
+	crossProject := project == ProjectWildcard
 	chunkIDs := make([]int64, 0, len(finalCandidates))
 	chunks := make([]ChunkEntry, 0, len(finalCandidates))
 	for _, c := range finalCandidates {
 		chunkIDs = append(chunkIDs, c.Chunk.ID)
-		chunks = append(chunks, ChunkEntry{
+		entry := ChunkEntry{
 			FilePath:           c.Chunk.FilePath,
 			FileSeekStartBytes: c.Chunk.StartByte,
 			FileSeekEndBytes:   c.Chunk.EndByte,
 			IsFullFile:         isChunkFullFile(c.Chunk.StartByte, c.Chunk.EndByte, c.Chunk.FileSize),
 			ChunkContent:       c.Chunk.Content,
 			Score:              c.FinalScore,
-		})
+		}
+		if crossProject {
+			entry.Project = c.Chunk.Project
+		}
+		chunks = append(chunks, entry)
 	}
 
 	if err := s.updateLastServed(ctx, chunkIDs); err != nil {
@@ -205,8 +210,13 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 		return nil, nil
 	}
 
-	args := []any{apiKeyHash, project}
-	statement := "SELECT path, content, size FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE"
+	crossProject := project == ProjectWildcard
+	args := []any{apiKeyHash}
+	statement := "SELECT path, content, size, project FROM mcp_files WHERE apikey_hash = ? AND deleted = FALSE"
+	if !crossProject {
+		statement += " AND project = ?"
+		args = append(args, project)
+	}
 	if strings.TrimSpace(pathPrefix) != "" {
 		statement += " AND path LIKE ?"
 		args = append(args, pathPrefix+"%")
@@ -221,6 +231,7 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 	queryTokens := tokenize(query)
 	type fallbackCandidate struct {
 		Path    string
+		Project string
 		Score   float64
 		Content string
 		Size    int64
@@ -230,7 +241,8 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 		var path string
 		var content []byte
 		var size int64
-		if scanErr := rows.Scan(&path, &content, &size); scanErr != nil {
+		var rowProject string
+		if scanErr := rows.Scan(&path, &content, &size, &rowProject); scanErr != nil {
 			return nil, errors.Wrap(scanErr, "scan raw file fallback")
 		}
 		text := string(content)
@@ -238,7 +250,7 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 		if score <= 0 {
 			continue
 		}
-		candidates = append(candidates, fallbackCandidate{Path: path, Score: score, Content: text, Size: size})
+		candidates = append(candidates, fallbackCandidate{Path: path, Project: rowProject, Score: score, Content: text, Size: size})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errors.Wrap(err, "iterate raw files fallback")
@@ -261,14 +273,18 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 	result := make([]ChunkEntry, 0, len(candidates))
 	for _, candidate := range candidates {
 		startByte, endByte, snippet := searchFallbackSnippet(candidate.Content, query, s.settings.Index.ChunkBytes)
-		result = append(result, ChunkEntry{
+		entry := ChunkEntry{
 			FilePath:           candidate.Path,
 			FileSeekStartBytes: startByte,
 			FileSeekEndBytes:   endByte,
 			IsFullFile:         isChunkFullFile(startByte, endByte, candidate.Size),
 			ChunkContent:       snippet,
 			Score:              candidate.Score,
-		})
+		}
+		if crossProject {
+			entry.Project = candidate.Project
+		}
+		result = append(result, entry)
 	}
 
 	return result, nil
@@ -343,8 +359,12 @@ func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash, pro
 
 // countRowsForSearch counts indexed rows by tenant/project with optional path prefix filtering.
 func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, project, pathPrefix string) int64 {
-	where := "c.apikey_hash = ? AND c.project = ?"
-	args := []any{apiKeyHash, project}
+	where := "c.apikey_hash = ?"
+	args := []any{apiKeyHash}
+	if project != ProjectWildcard {
+		where += " AND c.project = ?"
+		args = append(args, project)
+	}
 	if strings.TrimSpace(pathPrefix) != "" {
 		where += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
@@ -360,16 +380,17 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, pr
 
 // countPendingIndexJobs returns pending or processing index jobs for diagnostics.
 func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash, project string) int64 {
+	args := []any{apiKeyHash}
+	statement := "SELECT COUNT(1) FROM mcp_file_index_jobs WHERE apikey_hash = ?"
+	if project != ProjectWildcard {
+		statement += " AND project = ?"
+		args = append(args, project)
+	}
+	statement += " AND status IN (?, ?)"
+	args = append(args, "pending", "processing")
+
 	var count int64
-	err := s.db.QueryRowContext(ctx, rebindSQL(
-		"SELECT COUNT(1) FROM mcp_file_index_jobs WHERE apikey_hash = ? AND project = ? AND status IN (?, ?)",
-		s.isPostgres),
-		apiKeyHash,
-		project,
-		"pending",
-		"processing",
-	).Scan(&count)
-	if err != nil {
+	if err := s.db.QueryRowContext(ctx, rebindSQL(statement, s.isPostgres), args...).Scan(&count); err != nil {
 		return 0
 	}
 	return count
@@ -388,12 +409,16 @@ func (s *Service) fetchSemanticCandidates(ctx context.Context, apiKeyHash, proje
 
 // fetchSemanticCandidatesPostgres performs vector distance search via pgvector.
 func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHash, project, pathPrefix string, queryVec pgvector.Vector, limit int) ([]searchCandidate, error) {
-	args := []any{queryVec, apiKeyHash, project}
-	query := `SELECT c.id, c.file_path, c.start_byte, c.end_byte, c.chunk_content, f.size, e.embedding <-> ? AS distance
+	args := []any{queryVec, apiKeyHash}
+	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, c.chunk_content, f.size, e.embedding <-> ? AS distance
 		FROM mcp_file_chunk_embeddings e
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
-		WHERE c.apikey_hash = ? AND c.project = ?`
+		WHERE c.apikey_hash = ?`
+	if project != ProjectWildcard {
+		query += " AND c.project = ?"
+		args = append(args, project)
+	}
 	if strings.TrimSpace(pathPrefix) != "" {
 		query += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
@@ -403,6 +428,7 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 
 	type row struct {
 		ID        int64
+		Project   string
 		FilePath  string
 		StartByte int64
 		EndByte   int64
@@ -419,13 +445,14 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 
 	for queryRows.Next() {
 		var r row
-		if scanErr := queryRows.Scan(&r.ID, &r.FilePath, &r.StartByte, &r.EndByte, &r.Content, &r.FileSize, &r.Distance); scanErr != nil {
+		if scanErr := queryRows.Scan(&r.ID, &r.Project, &r.FilePath, &r.StartByte, &r.EndByte, &r.Content, &r.FileSize, &r.Distance); scanErr != nil {
 			return nil, errors.Wrap(scanErr, "scan semantic candidate")
 		}
 		score := 1.0 / (1.0 + r.Distance)
 		result = append(result, searchCandidate{
 			Chunk: FileChunk{
 				ID:        r.ID,
+				Project:   r.Project,
 				FilePath:  r.FilePath,
 				StartByte: r.StartByte,
 				EndByte:   r.EndByte,
@@ -455,6 +482,7 @@ func (s *Service) fetchSemanticCandidatesInMemory(ctx context.Context, apiKeyHas
 		candidates = append(candidates, searchCandidate{
 			Chunk: FileChunk{
 				ID:        row.ChunkID,
+				Project:   row.Project,
 				FilePath:  row.FilePath,
 				StartByte: row.StartByte,
 				EndByte:   row.EndByte,
@@ -487,12 +515,16 @@ func (s *Service) fetchLexicalCandidates(ctx context.Context, apiKeyHash, projec
 
 // fetchLexicalCandidatesPostgres uses tsvector ranking to score candidates.
 func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash, project, pathPrefix, query string, limit int) ([]searchCandidate, error) {
-	args := []any{query, apiKeyHash, project}
-	statement := `SELECT c.id, c.file_path, c.start_byte, c.end_byte, c.chunk_content, f.size,
+	args := []any{query, apiKeyHash}
+	statement := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, c.chunk_content, f.size,
 		ts_rank_cd(to_tsvector('simple', c.chunk_content), plainto_tsquery('simple', ?)) AS score
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
-		WHERE c.apikey_hash = ? AND c.project = ?`
+		WHERE c.apikey_hash = ?`
+	if project != ProjectWildcard {
+		statement += " AND c.project = ?"
+		args = append(args, project)
+	}
 	if strings.TrimSpace(pathPrefix) != "" {
 		statement += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
@@ -502,6 +534,7 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 
 	type row struct {
 		ID        int64
+		Project   string
 		FilePath  string
 		StartByte int64
 		EndByte   int64
@@ -518,12 +551,13 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 
 	for queryRows.Next() {
 		var r row
-		if scanErr := queryRows.Scan(&r.ID, &r.FilePath, &r.StartByte, &r.EndByte, &r.Content, &r.FileSize, &r.Score); scanErr != nil {
+		if scanErr := queryRows.Scan(&r.ID, &r.Project, &r.FilePath, &r.StartByte, &r.EndByte, &r.Content, &r.FileSize, &r.Score); scanErr != nil {
 			return nil, errors.Wrap(scanErr, "scan lexical candidate")
 		}
 		result = append(result, searchCandidate{
 			Chunk: FileChunk{
 				ID:        r.ID,
+				Project:   r.Project,
 				FilePath:  r.FilePath,
 				StartByte: r.StartByte,
 				EndByte:   r.EndByte,
@@ -555,6 +589,7 @@ func (s *Service) fetchLexicalCandidatesInMemory(ctx context.Context, apiKeyHash
 		candidates = append(candidates, searchCandidate{
 			Chunk: FileChunk{
 				ID:        row.ID,
+				Project:   row.Project,
 				FilePath:  row.FilePath,
 				StartByte: row.StartByte,
 				EndByte:   row.EndByte,
@@ -653,6 +688,7 @@ func (s *Service) updateLastServed(ctx context.Context, chunkIDs []int64) error 
 
 type chunkEmbeddingRow struct {
 	ChunkID   int64
+	Project   string
 	FilePath  string
 	StartByte int64
 	EndByte   int64
@@ -663,12 +699,16 @@ type chunkEmbeddingRow struct {
 
 // fetchChunkEmbeddings loads chunks and embeddings for in-memory similarity.
 func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project, pathPrefix string) ([]chunkEmbeddingRow, error) {
-	args := []any{apiKeyHash, project}
-	query := `SELECT c.id, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content, e.embedding
+	args := []any{apiKeyHash}
+	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content, e.embedding
 		FROM mcp_file_chunk_embeddings e
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
-		WHERE c.apikey_hash = ? AND c.project = ?`
+		WHERE c.apikey_hash = ?`
+	if project != ProjectWildcard {
+		query += " AND c.project = ?"
+		args = append(args, project)
+	}
 	if strings.TrimSpace(pathPrefix) != "" {
 		query += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
@@ -684,7 +724,7 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project,
 	for rows.Next() {
 		var row chunkEmbeddingRow
 		var raw any
-		if scanErr := rows.Scan(&row.ChunkID, &row.FilePath, &row.StartByte, &row.EndByte, &row.FileSize, &row.Content, &raw); scanErr != nil {
+		if scanErr := rows.Scan(&row.ChunkID, &row.Project, &row.FilePath, &row.StartByte, &row.EndByte, &row.FileSize, &row.Content, &raw); scanErr != nil {
 			return nil, errors.Wrap(scanErr, "scan chunk embedding")
 		}
 		emb, err := decodeEmbedding(raw)
@@ -729,6 +769,7 @@ func parseEmbeddingJSON(data []byte) ([]float32, error) {
 
 type chunkRow struct {
 	ID        int64
+	Project   string
 	FilePath  string
 	StartByte int64
 	EndByte   int64
@@ -737,11 +778,15 @@ type chunkRow struct {
 }
 
 func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathPrefix string) ([]chunkRow, error) {
-	args := []any{apiKeyHash, project}
-	query := `SELECT c.id, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content
+	args := []any{apiKeyHash}
+	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content
 		FROM mcp_file_chunks c
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
-		WHERE c.apikey_hash = ? AND c.project = ?`
+		WHERE c.apikey_hash = ?`
+	if project != ProjectWildcard {
+		query += " AND c.project = ?"
+		args = append(args, project)
+	}
 	if strings.TrimSpace(pathPrefix) != "" {
 		query += sqlAndFilePathLike
 		args = append(args, pathPrefix+"%")
@@ -756,7 +801,7 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathP
 	var result []chunkRow
 	for rows.Next() {
 		var row chunkRow
-		if scanErr := rows.Scan(&row.ID, &row.FilePath, &row.StartByte, &row.EndByte, &row.FileSize, &row.Content); scanErr != nil {
+		if scanErr := rows.Scan(&row.ID, &row.Project, &row.FilePath, &row.StartByte, &row.EndByte, &row.FileSize, &row.Content); scanErr != nil {
 			return nil, errors.Wrap(scanErr, "scan chunk row")
 		}
 		result = append(result, row)

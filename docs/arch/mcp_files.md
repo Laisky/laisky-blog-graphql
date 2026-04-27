@@ -100,6 +100,7 @@ type FileEntry struct {
 }
 
 type ChunkEntry struct {
+    Project            string // populated only for file_search with project="*"
     FilePath           string
     FileSeekStartBytes int64 // inclusive
     FileSeekEndBytes   int64 // exclusive
@@ -563,18 +564,20 @@ Execution outline:
 - return only chunks from active files (never deleted).
 - order by final score descending.
 - eventual consistency accepted.
+- `project="*"` is the cross-project wildcard. It is accepted only by `file_search`; all other file tools must continue to reject `"*"` and require an explicit project. Tenant isolation by `apikey_hash` is unchanged, so the wildcard only spans projects owned by the caller.
+- For `project="*"`, every returned `ChunkEntry` must include the source `project` value. For single-project searches the field is omitted from the response.
 
 Execution outline:
 
-1. validate project/query/path_prefix/limit.
+1. validate project/query/path_prefix/limit. Search-specific validator additionally accepts the `"*"` wildcard.
 2. embed query text.
-3. fetch semantic candidates (`top_n_semantic`).
-4. fetch lexical candidates (`top_n_lexical`).
+3. fetch semantic candidates (`top_n_semantic`). When `project="*"`, drop the `c.project = ?` predicate while keeping `apikey_hash` filtering.
+4. fetch lexical candidates (`top_n_lexical`). Same wildcard handling.
 5. merge and dedupe candidates.
 6. rerank merged set via external rerank API.
 7. on rerank failure, apply fused fallback score.
 8. trim to `limit`, update `last_served_at` for returned chunk IDs only.
-9. return `ChunkEntry[]`.
+9. return `ChunkEntry[]`. Populate the per-chunk `project` field only when the caller requested the wildcard.
 
 ## 10. Concurrency and Consistency Design
 

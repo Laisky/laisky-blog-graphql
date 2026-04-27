@@ -101,6 +101,7 @@ type FileEntry struct {
 }
 
 type ChunkEntry struct {
+    Project            string // populated only when file_search is invoked with project="*"
     FilePath           string
     FileSeekStartBytes int64 // byte offset, inclusive
     FileSeekEndBytes   int64 // byte offset, exclusive
@@ -252,7 +253,7 @@ file_search(
 
 Parameter semantics:
 
-- `project`: target project namespace.
+- `project`: target project namespace. The literal value `"*"` expands the search to every project owned by the authenticated caller and is accepted only by `file_search`. All other file tools (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`) must reject `"*"` and require an explicit project to prevent accidental cross-project mutations.
 - `query`: search query string, must be non-empty after trim.
 - `path_prefix`: optional raw string prefix filter on file path.
 - `limit`: max returned chunk entries, default `5`, max `20`.
@@ -263,6 +264,8 @@ Search behavior:
 - Results are ordered by final score descending.
 - The implementation must return only active files (`mcp_files.deleted = FALSE`) and must never return deleted files.
 - Search results are eventually consistent with file writes and updates.
+- When `project="*"`, each returned `ChunkEntry` must carry the source `project` field. For single-project searches the field is omitted.
+- Tenant isolation by `apikey_hash` is enforced regardless of project value, so `"*"` only spans projects owned by the caller.
 
 ## 7. Search Indexing and Retrieval Pipeline
 

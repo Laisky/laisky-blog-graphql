@@ -4,6 +4,10 @@ import (
 	"strings"
 )
 
+// ProjectWildcard expands a file_search call to every project owned by the authenticated user.
+// It is accepted only by Service.Search; all other file operations reject it.
+const ProjectWildcard = "*"
+
 // ValidateProject verifies the project identifier against length and charset rules.
 func ValidateProject(project string) error {
 	if strings.TrimSpace(project) == "" {
@@ -19,6 +23,15 @@ func ValidateProject(project string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateSearchProject verifies the project identifier for file_search,
+// additionally accepting ProjectWildcard ("*") for cross-project searches.
+func ValidateSearchProject(project string) error {
+	if project == ProjectWildcard {
+		return nil
+	}
+	return ValidateProject(project)
 }
 
 // ValidatePath verifies a file path against PRD rules.

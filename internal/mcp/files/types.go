@@ -36,6 +36,8 @@ type FileEntry struct {
 
 // ChunkEntry describes a file chunk returned by file_search.
 type ChunkEntry struct {
+	// Project is populated only for cross-project searches (project="*").
+	Project            string  `json:"project,omitempty"`
 	FilePath           string  `json:"file_path"`
 	FileSeekStartBytes int64   `json:"file_seek_start_bytes"`
 	FileSeekEndBytes   int64   `json:"file_seek_end_bytes"`

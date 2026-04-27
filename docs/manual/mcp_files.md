@@ -328,6 +328,7 @@ Response example:
 Search indexed chunks inside a project.
 
 - Required: `project`, `query`
+  - Set `project` to `"*"` to search across every project owned by the caller. The wildcard is accepted only by `file_search`; all other file tools still require an explicit project.
 - Optional:
   - `path_prefix`: prefix filter, for example `/docs`
   - `limit`: default `5`, max `20`
@@ -368,6 +369,41 @@ Response example:
 
 - `is_full_file=true` means this returned chunk byte range covers the whole file.
 - `is_full_file=false` means this is only part of the file; call `file_read` if full content is needed.
+- When `project="*"`, each chunk also includes a `project` field naming the source project. The field is omitted for single-project searches.
+
+Cross-project example:
+
+```bash
+mcp_call '{
+	"jsonrpc":"2.0",
+	"id":106,
+	"method":"tools/call",
+	"params":{
+		"name":"file_search",
+		"arguments":{
+			"project":"*",
+			"query":"readme",
+			"limit":5
+		}
+	}
+}'
+```
+
+```json
+{
+  "chunks": [
+    {
+      "project": "demo",
+      "file_path": "/docs/readme.txt",
+      "file_seek_start_bytes": 0,
+      "file_seek_end_bytes": 120,
+      "is_full_file": false,
+      "chunk_content": "...",
+      "score": 0.93
+    }
+  ]
+}
+```
 
 > Note: `file_search` can be eventually consistent. Recent writes may take a short time to appear.
 
