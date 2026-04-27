@@ -24,6 +24,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -269,6 +270,25 @@ func RunServer(addr string, resolver *Resolver) {
 				if prefix.public == "" {
 					server.Any("/tools/get_user_requests/api", gin.WrapH(http.StripPrefix("/tools/get_user_requests", combinedMux)))
 					server.Any("/tools/get_user_requests/api/*path", gin.WrapH(http.StripPrefix("/tools/get_user_requests", combinedMux)))
+				}
+			}
+
+			if resolver.args.FilesService != nil {
+				filesMux := files.NewHTTPHandler(resolver.args.FilesService, log.Logger.Named("file_io_http"))
+				filesBase := prefix.join("/tools/file_io")
+				stripPrefix := strings.TrimSuffix(filesBase, "/")
+				if stripPrefix == "" {
+					stripPrefix = "/"
+				}
+				filesHandler := gin.WrapH(http.StripPrefix(stripPrefix, filesMux))
+
+				apiBase := prefix.join("/tools/file_io/api")
+				server.Any(apiBase, filesHandler)
+				server.Any(apiBase+"/*path", filesHandler)
+
+				if prefix.public == "" {
+					server.Any("/tools/file_io/api", gin.WrapH(http.StripPrefix("/tools/file_io", filesMux)))
+					server.Any("/tools/file_io/api/*path", gin.WrapH(http.StripPrefix("/tools/file_io", filesMux)))
 				}
 			}
 		}

@@ -6,7 +6,9 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  History,
   RefreshCw,
+  Save,
   Search,
   ShieldAlert,
   Trash2,
@@ -23,6 +25,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 
+import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
 import { callMcpTool, type CallToolResponse } from '../shared/mcp-api';
 import { useFileIOInputDefaults, usePersistFileIOInputs } from './use-file-io-input-storage';
 
@@ -75,6 +78,27 @@ type FileSearchChunk = {
 
 type FileSearchPayload = {
   chunks: FileSearchChunk[];
+};
+
+type FileVersionEntry = {
+  id: number;
+  size: number;
+  created_at: string;
+};
+
+type FileVersionListPayload = {
+  versions: FileVersionEntry[];
+};
+
+type FileVersionContentPayload = {
+  content: string;
+  content_encoding: string;
+  size: number;
+  created_at: string;
+};
+
+type FileBytesWrittenPayload = {
+  bytes_written: number;
 };
 
 type StructuredToolResponse<T> = CallToolResponse & {
@@ -280,8 +304,16 @@ export function FileIOPage() {
   const [selectedStat, setSelectedStat] = useState<FileStatPayload | null>(null);
   const [selectedContent, setSelectedContent] = useState(persistedInputs.selectedContent ?? '');
   const [readError, setReadError] = useState<string | null>(null);
+  const [readInfo, setReadInfo] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [isFilePreviewOpen, setIsFilePreviewOpen] = useState(false);
+  const [loadedContent, setLoadedContent] = useState('');
+  const [contentEncoding, setContentEncoding] = useState<string>('utf-8');
+  const [versions, setVersions] = useState<FileVersionEntry[]>([]);
+  const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [isSavingFile, setIsSavingFile] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const [writePath, setWritePath] = useState(persistedInputs.writePath ?? '');
   const [writeMode, setWriteMode] = useState<'APPEND' | 'OVERWRITE' | 'TRUNCATE'>(
@@ -350,9 +382,17 @@ export function FileIOPage() {
       setSelectedPath('');
       setSelectedStat(null);
       setSelectedContent('');
+      setLoadedContent('');
+      setContentEncoding('utf-8');
       setReadError(null);
+      setReadInfo(null);
       setIsReading(false);
       setIsFilePreviewOpen(false);
+      setVersions([]);
+      setSelectedVersionId(null);
+      setIsLoadingVersions(false);
+      setIsSavingFile(false);
+      setIsRestoring(false);
       setSearchResults([]);
       setSearchError(null);
     }
@@ -409,6 +449,83 @@ export function FileIOPage() {
       throw new Error(extractToolError(result));
     }
     return extractStructuredPayload<T>(result);
+  }
+
+  async function callFileIOApi<T>(
+    method: 'GET' | 'POST' | 'PUT',
+    path: string,
+    options: { query?: Record<string, string>; body?: unknown } = {}
+  ): Promise<T> {
+    if (!apiKey || isToolConsoleLocked) {
+      throw new Error('API key is required');
+    }
+    const authorization = buildAuthorizationHeader(apiKey);
+    if (!authorization) {
+      throw new Error('API key is required');
+    }
+    const apiBasePath = resolveToolApiBase('file_io');
+    let url = `${apiBasePath}api${path}`;
+    if (options.query) {
+      const params = new URLSearchParams(options.query);
+      url = `${url}?${params.toString()}`;
+    }
+    const headers: Record<string, string> = {
+      Authorization: authorization,
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    };
+    if (options.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+    }
+    const response = await fetch(url, {
+      method,
+      headers,
+      cache: 'no-store',
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    });
+
+    if (!response.ok) {
+      let message = response.statusText || `HTTP ${response.status}`;
+      try {
+        const text = await response.text();
+        if (text) {
+          try {
+            const parsed = JSON.parse(text) as { error?: string };
+            if (parsed?.error) {
+              message = parsed.error;
+            } else {
+              message = text;
+            }
+          } catch {
+            message = text;
+          }
+        }
+      } catch {
+        // ignore body read failures
+      }
+      throw new Error(message);
+    }
+
+    return (await response.json()) as T;
+  }
+
+  async function loadVersions(targetPath: string) {
+    if (!project || !targetPath) {
+      setVersions([]);
+      return;
+    }
+    setIsLoadingVersions(true);
+    try {
+      const payload = await callFileIOApi<FileVersionListPayload>('GET', '/versions', {
+        query: { project, path: targetPath },
+      });
+      setVersions(payload.versions ?? []);
+    } catch (error) {
+      setVersions([]);
+      setReadError(error instanceof Error ? error.message : 'Failed to list versions.');
+    } finally {
+      setIsLoadingVersions(false);
+    }
   }
 
   async function loadList(pathOverride?: string) {
@@ -508,6 +625,8 @@ export function FileIOPage() {
   async function loadFile(targetPath: string) {
     setSelectedPath(targetPath);
     setReadError(null);
+    setReadInfo(null);
+    setSelectedVersionId(null);
     setIsReading(true);
     try {
       const statPayload = await callTool<FileStatPayload>('file_stat', { project, path: targetPath });
@@ -519,14 +638,78 @@ export function FileIOPage() {
           offset: 0,
           length: -1,
         });
-        setSelectedContent(readPayload.content ?? '');
+        const content = readPayload.content ?? '';
+        setSelectedContent(content);
+        setLoadedContent(content);
+        setContentEncoding(readPayload.content_encoding || 'utf-8');
       } else {
         setSelectedContent('');
+        setLoadedContent('');
+        setContentEncoding('utf-8');
       }
     } catch (error) {
       setReadError(error instanceof Error ? error.message : 'Failed to read file.');
     } finally {
       setIsReading(false);
+    }
+  }
+
+  async function loadVersionContent(versionId: number) {
+    if (!project || !selectedPath) return;
+    setReadError(null);
+    setReadInfo(null);
+    setIsReading(true);
+    try {
+      const payload = await callFileIOApi<FileVersionContentPayload>('GET', `/versions/${versionId}/content`, {
+        query: { project, path: selectedPath },
+      });
+      const content = payload.content ?? '';
+      setSelectedContent(content);
+      setLoadedContent(content);
+      setContentEncoding(payload.content_encoding || 'utf-8');
+      setSelectedVersionId(versionId);
+    } catch (error) {
+      setReadError(error instanceof Error ? error.message : 'Failed to load version.');
+    } finally {
+      setIsReading(false);
+    }
+  }
+
+  async function saveFile() {
+    if (!project || !selectedPath) return;
+    setReadError(null);
+    setReadInfo(null);
+    setIsSavingFile(true);
+    try {
+      const payload = await callFileIOApi<FileBytesWrittenPayload>('PUT', '/file', {
+        body: { project, path: selectedPath, content: selectedContent },
+      });
+      setReadInfo(`Saved ${payload.bytes_written} bytes.`);
+      await loadFile(selectedPath);
+      await loadVersions(selectedPath);
+    } catch (error) {
+      setReadError(error instanceof Error ? error.message : 'Failed to save file.');
+    } finally {
+      setIsSavingFile(false);
+    }
+  }
+
+  async function restoreVersion() {
+    if (!project || !selectedPath || selectedVersionId === null) return;
+    setReadError(null);
+    setReadInfo(null);
+    setIsRestoring(true);
+    try {
+      const payload = await callFileIOApi<FileBytesWrittenPayload>('POST', `/versions/${selectedVersionId}/restore`, {
+        body: { project, path: selectedPath },
+      });
+      setReadInfo(`Restored version (${payload.bytes_written} bytes).`);
+      await loadFile(selectedPath);
+      await loadVersions(selectedPath);
+    } catch (error) {
+      setReadError(error instanceof Error ? error.message : 'Failed to restore version.');
+    } finally {
+      setIsRestoring(false);
     }
   }
 
@@ -637,7 +820,10 @@ export function FileIOPage() {
     }
 
     setIsFilePreviewOpen(true);
+    setVersions([]);
+    setSelectedVersionId(null);
     void loadFile(targetPath);
+    void loadVersions(targetPath);
   }
 
   const selectedIsDirectory = selectedStat?.type === 'DIRECTORY';
@@ -1117,43 +1303,134 @@ export function FileIOPage() {
             <DialogTitle className="truncate text-left">File Preview</DialogTitle>
             <DialogDescription className="break-all text-left">{selectedPath || 'No file selected'}</DialogDescription>
           </DialogHeader>
-          <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
-            {readError && <div className="text-sm text-destructive">{readError}</div>}
-            {isReading && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Loading file content...
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
+              {isReading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Loading file content...
+                </div>
+              )}
+              {!isReading && selectedStat && (
+                <div className="grid gap-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Type</span>
+                    <span className="font-medium text-foreground">{selectedStat.type}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Size</span>
+                    <span className="font-medium text-foreground">{selectedStat.size} bytes</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Created</span>
+                    <span className="font-medium text-foreground">{formatTimestamp(selectedStat.created_at)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Updated</span>
+                    <span className="font-medium text-foreground">{formatTimestamp(selectedStat.updated_at)}</span>
+                  </div>
+                </div>
+              )}
+              {!isReading && contentEncoding === 'base64' && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+                  Binary content not previewable.
+                </div>
+              )}
+              {!isReading && (
+                <Textarea
+                  value={selectedContent}
+                  onChange={(event) => setSelectedContent(event.target.value)}
+                  rows={18}
+                  disabled={selectedIsDirectory || contentEncoding === 'base64'}
+                  placeholder={selectedIsDirectory ? 'Directory selected.' : 'File content will appear here.'}
+                  className="min-h-[420px] font-mono text-sm"
+                />
+              )}
+            </div>
+            <div className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                {!selectedIsDirectory && contentEncoding !== 'base64' && selectedContent !== loadedContent && (
+                  <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    Unsaved changes
+                  </span>
+                )}
+                {readError && <span className="text-destructive">{readError}</span>}
+                {readInfo && <span className="text-emerald-600">{readInfo}</span>}
               </div>
-            )}
-            {!isReading && !readError && selectedStat && (
-              <div className="grid gap-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span>Type</span>
-                  <span className="font-medium text-foreground">{selectedStat.type}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  <select
+                    value={selectedVersionId === null ? 'current' : String(selectedVersionId)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === 'current') {
+                        if (selectedPath) {
+                          void loadFile(selectedPath);
+                        }
+                      } else {
+                        const id = Number(value);
+                        if (!Number.isNaN(id)) {
+                          void loadVersionContent(id);
+                        }
+                      }
+                    }}
+                    disabled={
+                      !selectedPath ||
+                      selectedIsDirectory ||
+                      isLoadingVersions ||
+                      isSavingFile ||
+                      isRestoring ||
+                      isReading
+                    }
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <option value="current">Current</option>
+                    {versions.map((version) => (
+                      <option key={version.id} value={String(version.id)}>
+                        {formatTimestamp(version.created_at)} · {version.size} bytes
+                      </option>
+                    ))}
+                  </select>
+                  {isLoadingVersions && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span>Size</span>
-                  <span className="font-medium text-foreground">{selectedStat.size} bytes</span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span>Created</span>
-                  <span className="font-medium text-foreground">{formatTimestamp(selectedStat.created_at)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span>Updated</span>
-                  <span className="font-medium text-foreground">{formatTimestamp(selectedStat.updated_at)}</span>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void restoreVersion()}
+                  disabled={
+                    selectedVersionId === null ||
+                    !selectedPath ||
+                    selectedIsDirectory ||
+                    isSavingFile ||
+                    isRestoring ||
+                    isReading
+                  }
+                >
+                  {isRestoring ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}
+                  Restore as latest
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void saveFile()}
+                  disabled={
+                    !selectedPath ||
+                    selectedIsDirectory ||
+                    contentEncoding === 'base64' ||
+                    selectedContent === loadedContent ||
+                    isSavingFile ||
+                    isRestoring ||
+                    isReading
+                  }
+                >
+                  {isSavingFile ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  Save
+                </Button>
               </div>
-            )}
-            {!isReading && (
-              <Textarea
-                value={selectedContent}
-                readOnly
-                rows={18}
-                placeholder={selectedIsDirectory ? 'Directory selected.' : 'File content will appear here.'}
-                className="min-h-[420px] font-mono text-sm"
-              />
-            )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

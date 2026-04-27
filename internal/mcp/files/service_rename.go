@@ -89,6 +89,16 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 				return errors.Wrap(err, "apply rename path remap")
 			}
 
+			if _, err := tx.ExecContext(ctx,
+				rebindSQL(`UPDATE mcp_file_versions SET path = ? WHERE apikey_hash = ? AND project = ? AND path = ?`, s.isPostgres),
+				mapping.NewPath,
+				auth.APIKeyHash,
+				project,
+				mapping.OldPath,
+			); err != nil {
+				return errors.Wrap(err, "apply rename version path remap")
+			}
+
 			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 				APIKeyHash:    auth.APIKeyHash,
 				Project:       project,

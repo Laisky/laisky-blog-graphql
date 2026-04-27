@@ -10,7 +10,7 @@ import (
 )
 
 // Write applies content updates to a file path.
-func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, content, encoding string, offset int64, mode WriteMode) (WriteResult, error) { //nolint:gocognit // write involves multiple validation and upsert steps
+func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, content, encoding string, offset int64, mode WriteMode) (WriteResult, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return WriteResult{}, errors.WithStack(err)
 	}
@@ -26,8 +26,7 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 	if offset < 0 {
 		return WriteResult{}, errors.WithStack(NewError(ErrCodeInvalidOffset, "offset must be >= 0", false))
 	}
-	encoding, err := NormalizeContentEncoding(encoding)
-	if err != nil {
+	if _, err := NormalizeContentEncoding(encoding); err != nil {
 		return WriteResult{}, errors.WithStack(err)
 	}
 	if mode == "" {
@@ -46,96 +45,124 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 	}
 
 	var bytesWritten int64
-	err = s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
-		if err := s.ensureNoDescendantFile(ctx, tx, auth.APIKeyHash, project, path); err != nil {
-			return err
-		}
-		if err := s.ensureNoParentFile(ctx, tx, auth.APIKeyHash, project, path); err != nil {
-			return err
-		}
-
-		existing, findErr := s.findActiveFileTx(ctx, tx, auth.APIKeyHash, project, path)
-		if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
-			return errors.Wrap(findErr, "query existing file")
-		}
-
-		now := s.clock()
-		var newContent []byte
-		var createdAt time.Time
-		switch {
-		case errors.Is(findErr, sql.ErrNoRows):
-			createdAt = now
-			newContent, err = applyWriteMode(nil, content, offset, mode)
-		default:
-			createdAt = existing.CreatedAt
-			newContent, err = applyWriteMode(existing.Content, content, offset, mode)
-		}
+	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
+		n, err := s.writeWithinTx(ctx, tx, auth, project, path, []byte(content), mode, offset, payloadBytes)
 		if err != nil {
 			return err
 		}
-
-		newSize := int64(len(newContent))
-		if err := ValidateFileSize(newSize, s.settings.MaxFileBytes); err != nil {
-			return err
-		}
-		if err := s.ensureProjectQuota(ctx, tx, auth.APIKeyHash, project, newSize, existing); err != nil {
-			return err
-		}
-
-		if errors.Is(findErr, sql.ErrNoRows) {
-			if _, err := tx.ExecContext(ctx,
-				rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL)`, s.isPostgres),
-				auth.APIKeyHash,
-				project,
-				path,
-				newContent,
-				newSize,
-				createdAt,
-				now,
-			); err != nil {
-				return errors.Wrap(err, "create file")
-			}
-		} else {
-			if _, err := tx.ExecContext(ctx,
-				rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL WHERE id = ?`, s.isPostgres),
-				newContent,
-				newSize,
-				now,
-				existing.ID,
-			); err != nil {
-				return errors.Wrap(err, "update file")
-			}
-		}
-
-		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-			APIKeyHash:    auth.APIKeyHash,
-			Project:       project,
-			FilePath:      path,
-			Operation:     "UPSERT",
-			FileUpdatedAt: &now,
-			Status:        "pending",
-			RetryCount:    0,
-			AvailableAt:   now,
-			CreatedAt:     now,
-			UpdatedAt:     now,
-		}); err != nil {
-			return errors.Wrap(err, "enqueue index job")
-		}
-
-		if err := s.storeCredentialEnvelope(ctx, auth, project, path, now); err != nil {
-			return err
-		}
-
-		bytesWritten = payloadBytes
+		bytesWritten = n
 		return nil
 	})
 	if err != nil {
 		return WriteResult{}, errors.WithStack(err)
 	}
 
-	_ = encoding
 	return WriteResult{BytesWritten: bytesWritten}, nil
+}
+
+// writeWithinTx executes the write pipeline assuming the project lock is held.
+// All snapshot, file upsert, prune, index-job, and credential-store steps live here
+// so that callers such as RestoreVersion can reuse the same atomic flow.
+func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple validation and upsert steps
+	ctx context.Context,
+	tx *sql.Tx,
+	auth AuthContext,
+	project, path string,
+	content []byte,
+	mode WriteMode,
+	offset int64,
+	bytesWritten int64,
+) (int64, error) {
+	if err := s.ensureNoDescendantFile(ctx, tx, auth.APIKeyHash, project, path); err != nil {
+		return 0, err
+	}
+	if err := s.ensureNoParentFile(ctx, tx, auth.APIKeyHash, project, path); err != nil {
+		return 0, err
+	}
+
+	existing, findErr := s.findActiveFileTx(ctx, tx, auth.APIKeyHash, project, path)
+	if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
+		return 0, errors.Wrap(findErr, "query existing file")
+	}
+
+	now := s.clock()
+	var (
+		newContent []byte
+		createdAt  time.Time
+		err        error
+	)
+	switch {
+	case errors.Is(findErr, sql.ErrNoRows):
+		createdAt = now
+		newContent, err = applyWriteModeBytes(nil, content, offset, mode)
+	default:
+		createdAt = existing.CreatedAt
+		newContent, err = applyWriteModeBytes(existing.Content, content, offset, mode)
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	newSize := int64(len(newContent))
+	if err := ValidateFileSize(newSize, s.settings.MaxFileBytes); err != nil {
+		return 0, err
+	}
+	if err := s.ensureProjectQuota(ctx, tx, auth.APIKeyHash, project, newSize, existing); err != nil {
+		return 0, err
+	}
+
+	if errors.Is(findErr, sql.ErrNoRows) {
+		if _, err := tx.ExecContext(ctx,
+			rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL)`, s.isPostgres),
+			auth.APIKeyHash,
+			project,
+			path,
+			newContent,
+			newSize,
+			createdAt,
+			now,
+		); err != nil {
+			return 0, errors.Wrap(err, "create file")
+		}
+	} else {
+		if err := s.snapshotFileVersionTx(ctx, tx, auth.APIKeyHash, project, path, existing.Content, existing.Size, existing.ID, now); err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx,
+			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL WHERE id = ?`, s.isPostgres),
+			newContent,
+			newSize,
+			now,
+			existing.ID,
+		); err != nil {
+			return 0, errors.Wrap(err, "update file")
+		}
+		if err := s.pruneVersionsTx(ctx, tx, auth.APIKeyHash, project, path, now); err != nil {
+			return 0, err
+		}
+	}
+
+	if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+		APIKeyHash:    auth.APIKeyHash,
+		Project:       project,
+		FilePath:      path,
+		Operation:     "UPSERT",
+		FileUpdatedAt: &now,
+		Status:        "pending",
+		RetryCount:    0,
+		AvailableAt:   now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); err != nil {
+		return 0, errors.Wrap(err, "enqueue index job")
+	}
+
+	if err := s.storeCredentialEnvelope(ctx, auth, project, path, now); err != nil {
+		return 0, err
+	}
+
+	return bytesWritten, nil
 }
 
 // Delete removes a file or directory tree.
@@ -164,6 +191,16 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 			return errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
 		}
 
+		snapshots, err := s.loadFilesForSnapshotTx(ctx, tx, auth.APIKeyHash, project, paths)
+		if err != nil {
+			return err
+		}
+		for _, snap := range snapshots {
+			if err := s.snapshotFileVersionTx(ctx, tx, auth.APIKeyHash, project, snap.Path, snap.Content, snap.Size, snap.ID, now); err != nil {
+				return err
+			}
+		}
+
 		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
 		inClause, inArgs := buildInClause(paths, s.isPostgres, 5)
 		args := make([]any, 0, 4+len(inArgs))
@@ -171,6 +208,12 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		args = append(args, inArgs...)
 		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
 			return errors.Wrap(err, "soft delete files")
+		}
+
+		for _, snap := range snapshots {
+			if err := s.pruneVersionsTx(ctx, tx, auth.APIKeyHash, project, snap.Path, now); err != nil {
+				return err
+			}
 		}
 
 		for _, p := range paths {
@@ -201,7 +244,11 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 
 // applyWriteMode merges incoming content with existing data and returns new bytes.
 func applyWriteMode(existing []byte, content string, offset int64, mode WriteMode) ([]byte, error) {
-	incoming := []byte(content)
+	return applyWriteModeBytes(existing, []byte(content), offset, mode)
+}
+
+// applyWriteModeBytes merges raw incoming bytes with existing data per write mode.
+func applyWriteModeBytes(existing, incoming []byte, offset int64, mode WriteMode) ([]byte, error) {
 	switch mode {
 	case WriteModeAppend:
 		return append(existing, incoming...), nil
@@ -408,6 +455,38 @@ func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileInde
 		return errors.Wrap(err, "insert index job")
 	}
 	return nil
+}
+
+// loadFilesForSnapshotTx loads non-deleted file rows in batch for snapshotting.
+func (s *Service) loadFilesForSnapshotTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project string, paths []string) ([]File, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	inClause, inArgs := buildInClause(paths, s.isPostgres, 3)
+	query := rebindSQL(`SELECT id, path, content, size FROM mcp_files
+		WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)
+		ORDER BY path ASC`, s.isPostgres)
+	args := make([]any, 0, 2+len(inArgs))
+	args = append(args, apiKeyHash, project)
+	args = append(args, inArgs...)
+	rows, err := tx.QueryContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
+	if err != nil {
+		return nil, errors.Wrap(err, "query files for snapshot")
+	}
+	defer func() { _ = rows.Close() }()
+
+	var files []File
+	for rows.Next() {
+		var file File
+		if scanErr := rows.Scan(&file.ID, &file.Path, &file.Content, &file.Size); scanErr != nil {
+			return nil, errors.Wrap(scanErr, "scan file for snapshot")
+		}
+		files = append(files, file)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate files for snapshot")
+	}
+	return files, nil
 }
 
 // findActiveFileTx loads one non-deleted file row in a transaction by path.

@@ -43,6 +43,7 @@ func RunMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) error 
 			`CREATE INDEX IF NOT EXISTS idx_mcp_files_deleted_at ON mcp_files (deleted_at) WHERE deleted = TRUE`,
 			`CREATE INDEX IF NOT EXISTS idx_mcp_file_chunks_prefix ON mcp_file_chunks (apikey_hash, project, file_path text_pattern_ops)`,
 			`CREATE INDEX IF NOT EXISTS idx_mcp_file_index_jobs_pending ON mcp_file_index_jobs (status, available_at, id)`,
+			`CREATE INDEX IF NOT EXISTS idx_mcp_file_versions_path ON mcp_file_versions (apikey_hash, project, path, created_at DESC)`,
 		}
 	}
 
@@ -114,6 +115,16 @@ func migrationTableStatements(isPostgres bool) []string {
 				created_at TIMESTAMPTZ NOT NULL,
 				updated_at TIMESTAMPTZ NOT NULL
 			)`,
+			`CREATE TABLE IF NOT EXISTS mcp_file_versions (
+				id BIGSERIAL PRIMARY KEY,
+				apikey_hash VARCHAR(64) NOT NULL,
+				project VARCHAR(128) NOT NULL,
+				path VARCHAR(1024) NOT NULL,
+				content BYTEA NOT NULL,
+				size BIGINT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				source_file_id BIGINT
+			)`,
 		}
 	}
 
@@ -171,6 +182,16 @@ func migrationTableStatements(isPostgres bool) []string {
 			available_at DATETIME NOT NULL,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS mcp_file_versions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			apikey_hash TEXT NOT NULL,
+			project TEXT NOT NULL,
+			path TEXT NOT NULL,
+			content BLOB NOT NULL,
+			size INTEGER NOT NULL,
+			created_at DATETIME NOT NULL,
+			source_file_id INTEGER
 		)`,
 	}
 }
