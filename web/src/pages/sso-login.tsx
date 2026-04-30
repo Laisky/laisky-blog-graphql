@@ -7,6 +7,7 @@ import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 
@@ -474,7 +475,9 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         <div className="space-y-3 text-center">
           <div className="flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-widest text-primary font-mono">
             <Lock className="h-4 w-4" />
-            <span>Laisky SSO</span>
+            <span>
+              <LaiskyLink className="text-primary underline-offset-4 hover:underline">Laisky</LaiskyLink> SSO
+            </span>
           </div>
         </div>
 

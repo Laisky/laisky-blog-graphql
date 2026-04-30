@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { LaiskyLink } from '@/components/ui/laisky-link';
 import { useApiKey } from '@/lib/api-key-context';
 import { useToolsConfig } from '@/lib/tools-config-context';
 import { cn } from '@/lib/utils';
@@ -93,13 +94,17 @@ export function AppLayout() {
       )}
       <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur">
         <div className="container mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2 md:gap-4 md:px-6 md:py-4">
-          <Link
-            to="/"
-            className="flex shrink-0 items-center gap-1.5 text-base font-semibold tracking-tight text-foreground md:gap-2 md:text-lg"
-          >
-            <Cpu className="h-5 w-5 text-primary" />
-            <span className="hidden sm:inline">Laisky MCP</span>
-          </Link>
+          <div className="flex shrink-0 items-center gap-1.5 text-base font-semibold tracking-tight text-foreground md:gap-2 md:text-lg">
+            <Link to="/" className="flex shrink-0 items-center text-foreground transition-colors hover:text-primary" aria-label="Go to overview">
+              <Cpu className="h-5 w-5 text-primary" />
+            </Link>
+            <span className="hidden sm:inline">
+              <LaiskyLink className="text-foreground underline-offset-4 hover:text-primary hover:underline">Laisky</LaiskyLink>{' '}
+              <Link to="/" className="transition-colors hover:text-primary">
+                MCP
+              </Link>
+            </span>
+          </div>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2 md:gap-4">
             <nav className="flex min-w-0 items-center gap-1 text-sm font-medium text-muted-foreground md:gap-3">
               {navItems.map((item) => (
@@ -158,7 +163,7 @@ export function AppLayout() {
         )}
       </main>
       <footer className="border-t border-border bg-card/80 py-4 text-center text-xs text-muted-foreground">
-        Empower your agents. &copy; 2026 Laisky.
+        Empower your agents. &copy; 2026 <LaiskyLink className="underline-offset-4 hover:text-foreground hover:underline" />.
       </footer>
     </div>
   );
