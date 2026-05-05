@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -49,6 +50,68 @@ func (m *behaviorRecorder) count() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.records)
+}
+
+type behaviorBillingCall struct {
+	apiKey string
+	price  oneapi.Price
+	reason string
+}
+
+// behaviorBillingReporter records centralized billing events for assertions.
+type behaviorBillingReporter struct {
+	mu    sync.Mutex
+	calls []behaviorBillingCall
+	err   error
+}
+
+// Check captures centralized billing requests and returns the configured error.
+// Parameters:
+//   - _ : unused request context.
+//   - apiKey: API key sent to centralized billing.
+//   - price: billed quota units.
+//   - reason: tool name or billing reason sent upstream.
+//
+// Returns:
+//   - configured reporter error, if any.
+func (m *behaviorBillingReporter) Check(_ context.Context, apiKey string, price oneapi.Price, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, behaviorBillingCall{apiKey: apiKey, price: price, reason: reason})
+	return m.err
+}
+
+// count returns the number of captured centralized billing events.
+// Returns:
+//   - number of billing calls seen by the reporter.
+func (m *behaviorBillingReporter) count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.calls)
+}
+
+// reasons returns the recorded centralized billing reasons in observation order.
+// Returns:
+//   - copied list of billing reasons.
+func (m *behaviorBillingReporter) reasons() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	reasons := make([]string, 0, len(m.calls))
+	for _, call := range m.calls {
+		reasons = append(reasons, call.reason)
+	}
+
+	return reasons
+}
+
+// last returns the most recent centralized billing event.
+// Returns:
+//   - last captured billing call.
+func (m *behaviorBillingReporter) last() behaviorBillingCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calls[len(m.calls)-1]
 }
 
 // brokenRecorder simulates a broken call logger.
@@ -160,24 +223,60 @@ func TestAllHandlersRecordCallLog(t *testing.T) {
 		tool string
 		fn   func(*Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error)
 	}{
-		{"web_search", "web_search", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleWebSearch }},
-		{"web_fetch", "web_fetch", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleWebFetch }},
-		{"ask_user", "ask_user", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleAskUser }},
-		{"get_user_request", "get_user_request", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleGetUserRequest }},
-		{"extract_key_info", "extract_key_info", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleExtractKeyInfo }},
-		{"file_stat", "file_stat", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleFileStat }},
-		{"file_read", "file_read", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleFileRead }},
-		{"file_write", "file_write", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleFileWrite }},
-		{"file_delete", "file_delete", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleFileDelete }},
-		{"file_rename", "file_rename", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleFileRename }},
-		{"file_list", "file_list", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleFileList }},
-		{"file_search", "file_search", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleFileSearch }},
-		{"mcp_pipe", "mcp_pipe", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleMCPPipe }},
-		{"find_tool", "find_tool", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleFindTool }},
-		{"memory_before_turn", "memory_before_turn", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleMemoryBeforeTurn }},
-		{"memory_after_turn", "memory_after_turn", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleMemoryAfterTurn }},
-		{"memory_run_maintenance", "memory_run_maintenance", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleMemoryRunMaintenance }},
-		{"memory_list_dir_with_abstract", "memory_list_dir_with_abstract", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) { return s.handleMemoryListDirWithAbstract }},
+		{"web_search", "web_search", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleWebSearch
+		}},
+		{"web_fetch", "web_fetch", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleWebFetch
+		}},
+		{"ask_user", "ask_user", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleAskUser
+		}},
+		{"get_user_request", "get_user_request", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleGetUserRequest
+		}},
+		{"extract_key_info", "extract_key_info", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleExtractKeyInfo
+		}},
+		{"file_stat", "file_stat", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleFileStat
+		}},
+		{"file_read", "file_read", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleFileRead
+		}},
+		{"file_write", "file_write", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleFileWrite
+		}},
+		{"file_delete", "file_delete", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleFileDelete
+		}},
+		{"file_rename", "file_rename", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleFileRename
+		}},
+		{"file_list", "file_list", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleFileList
+		}},
+		{"file_search", "file_search", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleFileSearch
+		}},
+		{"mcp_pipe", "mcp_pipe", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleMCPPipe
+		}},
+		{"find_tool", "find_tool", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleFindTool
+		}},
+		{"memory_before_turn", "memory_before_turn", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleMemoryBeforeTurn
+		}},
+		{"memory_after_turn", "memory_after_turn", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleMemoryAfterTurn
+		}},
+		{"memory_run_maintenance", "memory_run_maintenance", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleMemoryRunMaintenance
+		}},
+		{"memory_list_dir_with_abstract", "memory_list_dir_with_abstract", func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return s.handleMemoryListDirWithAbstract
+		}},
 	}
 
 	for _, tc := range handlers {
@@ -681,6 +780,185 @@ func TestWebSearchBillingDenied(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 	require.Contains(t, getText(t, result), "billing check failed")
+}
+
+func TestFreeToolInvocationReportsZeroCostBilling(t *testing.T) {
+	t.Parallel()
+
+	billingReporter := &behaviorBillingReporter{}
+	s := &Server{billingReporter: billingReporter.Check, logger: log.Logger}
+
+	result, err := s.handleFileRead(ctxWithAuthKey("sk-free"), makeReq(map[string]any{"project": "graphql", "path": "/foo.txt"}))
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Eventually(t, func() bool { return billingReporter.count() == 1 }, time.Second, 10*time.Millisecond)
+	require.Equal(t, "sk-free", billingReporter.last().apiKey)
+	require.Equal(t, oneapi.Price(0), billingReporter.last().price)
+	require.Equal(t, "file_read", billingReporter.last().reason)
+}
+
+func TestFreeToolZeroCostBillingDoesNotBlockHandler(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	reporterDone := make(chan struct{})
+	s := &Server{
+		billingReporter: func(_ context.Context, _ string, _ oneapi.Price, _ string) error {
+			close(started)
+			<-release
+			close(reporterDone)
+			return nil
+		},
+		logger: log.Logger,
+	}
+
+	done := make(chan struct{})
+	var (
+		result *mcpgo.CallToolResult
+		err    error
+	)
+	go func() {
+		result, err = s.handleFileRead(ctxWithAuthKey("sk-free"), makeReq(map[string]any{"project": "graphql", "path": "/foo.txt"}))
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		select {
+		case <-started:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	close(release)
+	require.Eventually(t, func() bool {
+		select {
+		case <-reporterDone:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+}
+
+func TestPaidToolValidationErrorReportsZeroCostBilling(t *testing.T) {
+	t.Parallel()
+
+	var preflightCalls int
+	billingReporter := &behaviorBillingReporter{}
+	webSearchTool, err := tools.NewWebSearchTool(
+		&stubSearchProvider{output: &searchlib.SearchOutput{}},
+		log.Logger.Named("test"),
+		func(_ context.Context) string { return "sk-key" },
+		func(_ context.Context, _ string, _ oneapi.Price, _ string) error {
+			preflightCalls++
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	s := &Server{webSearch: webSearchTool, billingReporter: billingReporter.Check, logger: log.Logger}
+	result, handleErr := s.handleWebSearch(ctxWithAuthKey("sk-key"), makeReq(map[string]any{}))
+	require.NoError(t, handleErr)
+	require.True(t, result.IsError)
+	require.Zero(t, preflightCalls)
+	require.Eventually(t, func() bool { return billingReporter.count() == 1 }, time.Second, 10*time.Millisecond)
+	require.Equal(t, oneapi.Price(0), billingReporter.last().price)
+	require.Equal(t, "web_search", billingReporter.last().reason)
+}
+
+func TestPaidToolSkipsZeroCostBillingAfterPreflight(t *testing.T) {
+	t.Parallel()
+
+	var preflightCalls int
+	billingReporter := &behaviorBillingReporter{}
+	webSearchTool, err := tools.NewWebSearchTool(
+		&stubSearchProvider{output: &searchlib.SearchOutput{}},
+		log.Logger.Named("test"),
+		func(_ context.Context) string { return "sk-key" },
+		func(ctx context.Context, _ string, _ oneapi.Price, _ string) error {
+			preflightCalls++
+			markBillingAttempted(ctx)
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	s := &Server{webSearch: webSearchTool, billingReporter: billingReporter.Check, logger: log.Logger}
+	result, handleErr := s.handleWebSearch(ctxWithAuthKey("sk-key"), makeReq(map[string]any{"query": "golang"}))
+	require.NoError(t, handleErr)
+	require.False(t, result.IsError)
+	require.Equal(t, 1, preflightCalls)
+	require.Zero(t, billingReporter.count())
+}
+
+func TestMCPPipeNestedInvocationsKeepSeparateBillingTracking(t *testing.T) {
+	t.Parallel()
+
+	var preflightCalls int
+	billingReporter := &behaviorBillingReporter{}
+	webSearchTool, err := tools.NewWebSearchTool(
+		&stubSearchProvider{output: &searchlib.SearchOutput{}},
+		log.Logger.Named("test"),
+		func(_ context.Context) string { return "sk-key" },
+		func(ctx context.Context, _ string, _ oneapi.Price, _ string) error {
+			preflightCalls++
+			markBillingAttempted(ctx)
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	s := &Server{
+		webSearch:       webSearchTool,
+		billingReporter: billingReporter.Check,
+		logger:          log.Logger,
+		toolHandlers:    make(map[string]srv.ToolHandlerFunc),
+	}
+	s.toolHandlers["web_search"] = s.handleWebSearch
+	s.toolHandlers["file_read"] = s.handleFileRead
+
+	s.mcpPipe = mustBehaviorPipeTool(t, func(ctx context.Context, toolName string, args any) (*mcpgo.CallToolResult, error) {
+		if toolName == "mcp_pipe" {
+			return mcpgo.NewToolResultError("mcp_pipe cannot invoke itself"), nil
+		}
+
+		handler, ok := s.toolHandlers[toolName]
+		if !ok {
+			return mcpgo.NewToolResultError("unknown tool"), nil
+		}
+
+		req := mcpgo.CallToolRequest{Params: mcpgo.CallToolParams{Name: toolName, Arguments: args}}
+		return handler(ctx, req)
+	})
+
+	result, handleErr := s.handleMCPPipe(ctxWithAuthKey("sk-key"), makeReq(map[string]any{
+		"continue_on_error": true,
+		"steps": []any{
+			map[string]any{"id": "search", "tool": "web_search", "args": map[string]any{"query": "golang"}},
+			map[string]any{"id": "read", "tool": "file_read", "args": map[string]any{"project": "graphql", "path": "/foo.txt"}},
+		},
+	}))
+	require.NoError(t, handleErr)
+	require.True(t, result.IsError)
+	require.Equal(t, 1, preflightCalls)
+	require.Eventually(t, func() bool {
+		return billingReporter.count() == 2 &&
+			slices.Contains(billingReporter.reasons(), "file_read") &&
+			slices.Contains(billingReporter.reasons(), "mcp_pipe")
+	}, time.Second, 10*time.Millisecond)
 }
 
 // ---------------------------------------------------------------------------

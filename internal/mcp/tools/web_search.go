@@ -95,7 +95,7 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 
 	t.logger.Debug("web_search billing check started", zap.Int("query_len", len(query)))
 
-	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebSearch, "web search"); err != nil {
+	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebSearch, "web_search"); err != nil {
 		t.logger.Warn("web_search billing denied", zap.Error(err), zap.Int("query_len", len(query)))
 		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
 	}

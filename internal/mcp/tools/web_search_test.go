@@ -48,7 +48,7 @@ func TestWebSearchHandleBillingError(t *testing.T) {
 		func(ctx context.Context, apiKey string, price oneapi.Price, reason string) error {
 			billingCalls++
 			require.Equal(t, oneapi.PriceWebSearch, price)
-			require.Equal(t, "web search", reason)
+			require.Equal(t, "web_search", reason)
 			return expectedErr
 		},
 		&stubSearchProvider{},

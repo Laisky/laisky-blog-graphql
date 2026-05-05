@@ -41,6 +41,9 @@ type callRecorder interface {
 	Record(context.Context, calllog.RecordInput) error
 }
 
+// externalBillingReporter reports MCP usage events to the centralized billing system.
+type externalBillingReporter func(context.Context, string, oneapi.Price, string) error
+
 // addToolWithSchemaValidation logs schema warnings and registers a tool handler.
 func addToolWithSchemaValidation(mcpServer *srv.MCPServer, logger logSDK.Logger, definition mcp.Tool, handler srv.ToolHandlerFunc) {
 	logInvalidArrayItemSchemas(logger, definition)
@@ -87,6 +90,7 @@ func logInvalidArrayItemSchemas(logger logSDK.Logger, definition mcp.Tool) {
 type Server struct {
 	handler                   http.Handler
 	logger                    logSDK.Logger
+	billingReporter           externalBillingReporter
 	webSearch                 *tools.WebSearchTool
 	webFetch                  *tools.WebFetchTool
 	askUser                   *tools.AskUserTool
@@ -156,6 +160,11 @@ func NewServer(
 	)
 
 	serverLogger := logger.Named("mcp")
+	billingReporter := externalBillingReporter(oneapi.CheckUserExternalBilling)
+	trackedBillingReporter := func(ctx context.Context, apiKey string, price oneapi.Price, toolName string) error {
+		markBillingAttempted(ctx)
+		return billingReporter(ctx, apiKey, price, toolName)
+	}
 
 	streamable := srv.NewStreamableHTTPServer(
 		mcpServer,
@@ -195,6 +204,7 @@ func NewServer(
 	s := &Server{
 		handler:         withHTTPLogging(withToolsListFiltering(normalizedAuthHandler, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
 		logger:          serverLogger,
+		billingReporter: billingReporter,
 		callLogger:      callLogger,
 		toolHandlers:    make(map[string]srv.ToolHandlerFunc),
 		toolDefinitions: make(map[string]mcp.Tool),
@@ -213,7 +223,7 @@ func NewServer(
 			searchProvider,
 			serverLogger.Named("web_search"),
 			apiKeyProvider,
-			oneapi.CheckUserExternalBilling,
+			trackedBillingReporter,
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "init web_search tool")
@@ -229,7 +239,7 @@ func NewServer(
 			rdb,
 			serverLogger.Named("web_fetch"),
 			apiKeyProvider,
-			oneapi.CheckUserExternalBilling,
+			trackedBillingReporter,
 			searchlib.FetchDynamicURLContent,
 		)
 		if err != nil {
@@ -284,7 +294,7 @@ func NewServer(
 			ragService,
 			serverLogger.Named("extract_key_info"),
 			headerProvider,
-			oneapi.CheckUserExternalBilling,
+			trackedBillingReporter,
 			ragSettings,
 		)
 		if err != nil {
@@ -416,7 +426,7 @@ func NewServer(
 			embedder,
 			serverLogger.Named("find_tool"),
 			headerProvider,
-			oneapi.CheckUserExternalBilling,
+			trackedBillingReporter,
 			ragSettings,
 		)
 		if err != nil {

@@ -50,7 +50,7 @@ func TestWebFetchHandleBillingError(t *testing.T) {
 			billingCalled = true
 			require.Equal(t, "token", apiKey)
 			require.Equal(t, oneapi.PriceWebFetch, price)
-			require.Equal(t, "web fetch", reason)
+			require.Equal(t, "web_fetch", reason)
 			return expectedErr
 		},
 		func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) { return []byte("ignored"), nil },

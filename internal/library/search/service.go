@@ -53,7 +53,7 @@ func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.We
 		return nil, errors.New("cannot get apikey")
 	}
 
-	err := oneapi.CheckUserExternalBilling(ctx, apikey, oneapi.PriceWebFetch, "web fetch")
+	err := oneapi.CheckUserExternalBilling(ctx, apikey, oneapi.PriceWebFetch, "web_fetch")
 	if err != nil {
 		return nil, errors.Wrap(err, "check user external billing")
 	}
@@ -112,7 +112,7 @@ func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*search
 		return nil, errors.New("cannot get apikey")
 	}
 
-	err := oneapi.CheckUserExternalBilling(ctx, apikey, oneapi.PriceWebSearch, "web search")
+	err := oneapi.CheckUserExternalBilling(ctx, apikey, oneapi.PriceWebSearch, "web_search")
 	if err != nil {
 		return nil, errors.Wrap(err, "check user external billing")
 	}
