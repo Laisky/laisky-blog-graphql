@@ -34,9 +34,11 @@ func (p *Plugin) Capabilities() mcpplugin.Capabilities {
 	return mcpplugin.Capabilities{
 		SearchModes:      []mcpplugin.SearchMode{mcpplugin.SearchModeHybrid, mcpplugin.SearchModeSemantic, mcpplugin.SearchModeLexical},
 		SupportsRandomIO: true,
+		SupportsRename:   true,
 		SupportsVersions: true,
 		AsyncIndexing:    true,
 		FreshnessWindow:  5 * time.Second,
+		MaxPayloadBytes:  0,
 		Notes:            "wraps the existing Postgres + pgvector + BM25 file service",
 	}
 }

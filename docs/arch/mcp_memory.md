@@ -627,3 +627,25 @@ Implemented in this repository:
 - `internal/mcp/memory/service_test.go`
 - `internal/mcp/log_redaction_test.go`
 - `internal/mcp/server_test.go`
+
+## MCP Memory Plugins (Phase 1)
+
+Phase 1 introduces a plugin contract behind the `file_*` toolset so future engines
+can be added without changing the public MCP tool schemas. The contract lives at
+`internal/mcp/memory/plugin/` and exposes `Plugin` (the seven `file_*` operations
+plus `Name` / `Capabilities` / `Start` / `Stop`), `Capabilities` (search modes,
+random-IO and rename support, version support, async-indexing flag, freshness
+window), and `Manager`. The `Manager` resolves a plugin per call from two inputs
+only: an optional per-call `plugin` argument on the tool input and a global
+`settings.mcp.memory.default_plugin` setting. There is no per-project, per-API-key,
+or per-tenant override map.
+
+`rag_plugin` (`internal/mcp/memory/plugins/rag/`) is the only Phase 1 backend; it
+wraps the existing `*files.Service` without behavior change. Per-call `plugin`
+overrides land via an additive optional field on the tool input schema; cross-plugin
+reads return `NOT_FOUND` with a routing hint, never silent fallback. Operator
+guidance is in [../manual/mcp_memory_plugins.md](../manual/mcp_memory_plugins.md);
+the PRD is at [../requirements/mcp_memory_plugins.md](../requirements/mcp_memory_plugins.md);
+the full design (`pageindex_plugin`, `SystemFS`, eval harness, rollout phases) is in
+[../proposals/mcp_memory_plugin_manager.md](../proposals/mcp_memory_plugin_manager.md).
+

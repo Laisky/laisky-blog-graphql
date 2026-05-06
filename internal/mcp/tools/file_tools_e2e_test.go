@@ -16,6 +16,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	rag "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 )
 
 type e2eEmbedder struct{}
@@ -60,25 +61,26 @@ func (s *e2eCredentialStore) Delete(_ context.Context, key string) error {
 // TestFileToolsEndToEndFlow verifies the full MCP tool flow for file operations.
 func TestFileToolsEndToEndFlow(t *testing.T) {
 	svc := newE2EFileService(t, false)
+	plugin := mustE2EPlugin(t, svc)
 	authCtx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
 		APIKey:       "key",
 		APIKeyHash:   "hash",
 		UserIdentity: "user:test",
 	})
 
-	writeTool, err := NewFileWriteTool(svc)
+	writeTool, err := NewFileWriteTool(plugin)
 	require.NoError(t, err)
-	statTool, err := NewFileStatTool(svc)
+	statTool, err := NewFileStatTool(plugin)
 	require.NoError(t, err)
-	readTool, err := NewFileReadTool(svc)
+	readTool, err := NewFileReadTool(plugin)
 	require.NoError(t, err)
-	listTool, err := NewFileListTool(svc)
+	listTool, err := NewFileListTool(plugin)
 	require.NoError(t, err)
-	searchTool, err := NewFileSearchTool(svc)
+	searchTool, err := NewFileSearchTool(plugin)
 	require.NoError(t, err)
-	deleteTool, err := NewFileDeleteTool(svc)
+	deleteTool, err := NewFileDeleteTool(plugin)
 	require.NoError(t, err)
-	renameTool, err := NewFileRenameTool(svc)
+	renameTool, err := NewFileRenameTool(plugin)
 	require.NoError(t, err)
 
 	writeResp, err := writeTool.Handle(authCtx, newToolReq(map[string]any{
@@ -171,17 +173,18 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 // TestFileDeleteToolRootWipe verifies root delete is denied even when wipe is enabled.
 func TestFileDeleteToolRootWipe(t *testing.T) {
 	svc := newE2EFileService(t, true)
+	plugin := mustE2EPlugin(t, svc)
 	authCtx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
 		APIKey:       "key",
 		APIKeyHash:   "hash",
 		UserIdentity: "user:test",
 	})
 
-	writeTool, err := NewFileWriteTool(svc)
+	writeTool, err := NewFileWriteTool(plugin)
 	require.NoError(t, err)
-	deleteTool, err := NewFileDeleteTool(svc)
+	deleteTool, err := NewFileDeleteTool(plugin)
 	require.NoError(t, err)
-	listTool, err := NewFileListTool(svc)
+	listTool, err := NewFileListTool(plugin)
 	require.NoError(t, err)
 
 	_, err = writeTool.Handle(authCtx, newToolReq(map[string]any{
@@ -222,13 +225,14 @@ func TestFileDeleteToolRootWipe(t *testing.T) {
 // TestFileDeleteToolRootWipeDisabled verifies root delete remains blocked when wipe is disabled.
 func TestFileDeleteToolRootWipeDisabled(t *testing.T) {
 	svc := newE2EFileService(t, false)
+	plugin := mustE2EPlugin(t, svc)
 	authCtx := context.WithValue(context.Background(), ctxkeys.AuthContext, &files.AuthContext{
 		APIKey:       "key",
 		APIKeyHash:   "hash",
 		UserIdentity: "user:test",
 	})
 
-	deleteTool, err := NewFileDeleteTool(svc)
+	deleteTool, err := NewFileDeleteTool(plugin)
 	require.NoError(t, err)
 
 	deleteResp, err := deleteTool.Handle(authCtx, newToolReq(map[string]any{
@@ -239,6 +243,15 @@ func TestFileDeleteToolRootWipeDisabled(t *testing.T) {
 	require.True(t, deleteResp.IsError)
 	deletePayload := decodeToolPayload(t, deleteResp)
 	require.Equal(t, string(files.ErrCodePermissionDenied), deletePayload["code"])
+}
+
+// mustE2EPlugin wraps the e2e files.Service in the rag plugin contract for tool tests.
+func mustE2EPlugin(t *testing.T, svc *files.Service) *rag.Plugin {
+	t.Helper()
+
+	p, err := rag.New(svc)
+	require.NoError(t, err)
+	return p
 }
 
 // newE2EFileService creates a concrete file service for MCP tool integration tests.

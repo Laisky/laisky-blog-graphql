@@ -62,6 +62,32 @@ func (m *Manager) DefaultPlugin() string {
 	return m.defaultPlugin
 }
 
+// Name reports the manager's identity for plugin.Plugin compatibility.
+func (m *Manager) Name() string {
+	return m.DefaultPlugin()
+}
+
+// Capabilities returns the default plugin's capabilities; per-call routing surfaces real ones.
+func (m *Manager) Capabilities() Capabilities {
+	if m == nil {
+		return Capabilities{}
+	}
+	if item, exists := m.plugins[m.defaultPlugin]; exists {
+		return item.Capabilities()
+	}
+	return Capabilities{}
+}
+
+// Start delegates to StartAll for plugin.Plugin compatibility.
+func (m *Manager) Start(ctx context.Context) error {
+	return m.StartAll(ctx)
+}
+
+// Stop delegates to StopAll for plugin.Plugin compatibility.
+func (m *Manager) Stop(ctx context.Context) error {
+	return m.StopAll(ctx)
+}
+
 // AvailablePlugins returns the sorted set of registered plugin names.
 func (m *Manager) AvailablePlugins() []string {
 	if m == nil || len(m.plugins) == 0 {

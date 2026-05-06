@@ -12,6 +12,7 @@ import (
 	srv "github.com/mark3labs/mcp-go/server"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -96,6 +97,20 @@ func (s *behaviorFileService) Search(_ context.Context, _ files.AuthContext, _ s
 	}
 	return files.SearchResult{Chunks: []files.ChunkEntry{{FilePath: "/a.txt", ChunkContent: "hello", Score: 0.9}}}, nil
 }
+
+// Name reports the rag plugin identity for plugin.Plugin compatibility in tests.
+func (s *behaviorFileService) Name() string { return mcpplugin.DefaultPluginRAG }
+
+// Capabilities returns stub capabilities for plugin.Plugin compatibility in tests.
+func (s *behaviorFileService) Capabilities() mcpplugin.Capabilities {
+	return mcpplugin.Capabilities{}
+}
+
+// Start is a no-op for plugin.Plugin compatibility in tests.
+func (s *behaviorFileService) Start(context.Context) error { return nil }
+
+// Stop is a no-op for plugin.Plugin compatibility in tests.
+func (s *behaviorFileService) Stop(context.Context) error { return nil }
 
 func (m *behaviorBillingReporter) reasonCounts() map[string]int {
 	m.mu.Lock()

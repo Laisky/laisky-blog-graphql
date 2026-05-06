@@ -1729,9 +1729,5 @@ significant improvement). Below 45%, file a bug.
    plugin links into the existing binary. Default config does not enable it. Run E02/E03
    in staging only. Acceptance: A3, A4, A6, A7, A8, A11, **Q1–Q4, Q9–Q12** (full §7
    scorecard filled in for `pageindex_plugin` against the same golden sets).
-3. **Phase 3 — opt-in for selected projects.**
-   Enable `pageindex_plugin` for projects shipping long-form documents (`books`,
-   `datasheets`, `manuals`). Watch billing and latency metrics. Promotion gate:
-   shadow-replay win-rate per §7.8 across two weeks of production traffic.
-4. **Phase 4 — remove deprecation shim.**
-   In the next minor after Phase 3 stabilizes, delete the `settings.mcp.files.*` shim.
+3. **Phase 3 — remove deprecation shim.**
+   Delete the `settings.mcp.files.*` shim.

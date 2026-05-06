@@ -10,6 +10,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
 
 type stubFileService struct {
@@ -51,6 +52,18 @@ func (s stubFileService) List(context.Context, files.AuthContext, string, string
 func (s stubFileService) Search(context.Context, files.AuthContext, string, string, string, int) (files.SearchResult, error) {
 	return files.SearchResult{}, nil
 }
+
+// Name reports the rag plugin identity for plugin.Plugin compatibility in tests.
+func (s stubFileService) Name() string { return mcpplugin.DefaultPluginRAG }
+
+// Capabilities returns stub capabilities for plugin.Plugin compatibility in tests.
+func (s stubFileService) Capabilities() mcpplugin.Capabilities { return mcpplugin.Capabilities{} }
+
+// Start is a no-op for plugin.Plugin compatibility in tests.
+func (s stubFileService) Start(context.Context) error { return nil }
+
+// Stop is a no-op for plugin.Plugin compatibility in tests.
+func (s stubFileService) Stop(context.Context) error { return nil }
 
 // TestFileWriteMissingAuth verifies authorization checks.
 func TestFileWriteMissingAuth(t *testing.T) {

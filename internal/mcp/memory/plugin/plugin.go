@@ -37,9 +37,11 @@ const (
 type Capabilities struct {
 	SearchModes      []SearchMode
 	SupportsRandomIO bool
+	SupportsRename   bool
 	SupportsVersions bool
 	AsyncIndexing    bool
 	FreshnessWindow  time.Duration
+	MaxPayloadBytes  int64
 	Notes            string
 }
 
