@@ -97,17 +97,12 @@ export function AppLayout() {
           <div className="flex shrink-0 items-center gap-1.5 text-base font-semibold tracking-tight text-foreground md:gap-2 md:text-lg">
             <Link
               to="/"
-              className="flex shrink-0 items-center text-foreground transition-colors hover:text-primary"
+              className="flex shrink-0 items-center gap-1.5 text-foreground transition-colors hover:text-primary md:gap-2"
               aria-label="Go to overview"
             >
               <Cpu className="h-5 w-5 text-primary" />
+              <span className="hidden sm:inline">Laisky MCP</span>
             </Link>
-            <span className="hidden sm:inline">
-              <LaiskyLink className="text-foreground underline-offset-4 hover:text-primary hover:underline">Laisky</LaiskyLink>{' '}
-              <Link to="/" className="transition-colors hover:text-primary">
-                MCP
-              </Link>
-            </span>
           </div>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2 md:gap-4">
             <nav className="flex min-w-0 items-center gap-1 text-sm font-medium text-muted-foreground md:gap-3">
