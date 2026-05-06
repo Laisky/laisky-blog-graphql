@@ -278,6 +278,7 @@ func runAPI() error {
 	ragSettings := rag.LoadSettingsFromConfig()
 	args.RAGSettings = ragSettings
 	filePluginSettings := mcpplugin.LoadSettingsFromConfig()
+	shadowSettings := mcpplugin.LoadShadowSettingsFromConfig()
 	if mcpDB != nil {
 		var (
 			askSvc  *askuser.Service
@@ -462,6 +463,62 @@ func runAPI() error {
 					plugins = append(plugins, piPlugin)
 				} else {
 					logger.Debug("pageindex plugin disabled (settings.mcp.tools.memory.plugins.pageindex.llm.api_key is empty)")
+				}
+
+				if shadowSettings.Enabled {
+					if err := shadowSettings.Validate(); err != nil {
+						return errors.Wrap(err, "shadow settings invalid")
+					}
+
+					var livePlugin, shadowPlugin mcpplugin.Plugin
+					for _, p := range plugins {
+						switch mcpplugin.NormalizeName(p.Name()) {
+						case shadowSettings.LivePlugin:
+							livePlugin = p
+						case shadowSettings.ShadowPlugin:
+							shadowPlugin = p
+						}
+					}
+					if livePlugin == nil {
+						return errors.Errorf("shadow live plugin %q is not registered", shadowSettings.LivePlugin)
+					}
+					if shadowPlugin == nil {
+						return errors.Errorf("shadow shadow plugin %q is not registered", shadowSettings.ShadowPlugin)
+					}
+
+					recorder, recErr := mcpplugin.NewJSONLRecorder(shadowSettings.RecorderPath)
+					if recErr != nil {
+						return errors.Wrap(recErr, "open shadow recorder")
+					}
+
+					wrapper, wrapErr := mcpplugin.NewShadowPlugin(mcpplugin.ShadowConfig{
+						Name:        shadowSettings.LivePlugin,
+						Live:        livePlugin,
+						Shadow:      shadowPlugin,
+						Recorder:    recorder,
+						Logger:      logger.Named("mcp_memory_shadow"),
+						Concurrency: int64(shadowSettings.Concurrency),
+						OpTimeout:   shadowSettings.OpTimeout,
+						DrainGrace:  shadowSettings.DrainGrace,
+					})
+					if wrapErr != nil {
+						if closeErr := recorder.Close(); closeErr != nil {
+							logger.Warn("close shadow recorder after wrap failure", zap.Error(closeErr))
+						}
+						return errors.Wrap(wrapErr, "build shadow wrapper")
+					}
+
+					for i, p := range plugins {
+						if mcpplugin.NormalizeName(p.Name()) == shadowSettings.LivePlugin {
+							plugins[i] = wrapper
+							break
+						}
+					}
+					logger.Info("mcp memory shadow plugin enabled",
+						zap.String("live", shadowSettings.LivePlugin),
+						zap.String("shadow", shadowSettings.ShadowPlugin),
+						zap.String("recorder_path", shadowSettings.RecorderPath),
+					)
 				}
 
 				fileManager, managerErr := mcpplugin.NewManager(filePluginSettings.DefaultPlugin, plugins...)

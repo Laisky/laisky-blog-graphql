@@ -26,10 +26,15 @@ lint:
 	golangci-lint run -c .golangci.lint.yml
 	govulncheck ./...
 	$(MAKE) lint-pure-go
+	$(MAKE) lint-system-owner
 
 .PHONY: lint-pure-go
 lint-pure-go:
 	./.scripts/check_pure_go.sh
+
+.PHONY: lint-system-owner
+lint-system-owner:
+	./.scripts/check_system_owner.sh
 
 .PHONY: build
 build:

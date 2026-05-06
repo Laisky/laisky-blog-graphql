@@ -547,9 +547,11 @@ func (s *Service) deleteIndexRowsTx(ctx context.Context, tx *sql.Tx, apiKeyHash,
 	// The orphan cleanups below are keyed by chunk_id (a primary-key reference),
 	// so the system_owner predicate on mcp_file_chunks above is sufficient to keep
 	// system rows out of scope.
+	// system_owner-checked: orphan cleanup; mcp_file_chunks already filtered by system_owner above
 	if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_file_chunk_embeddings WHERE chunk_id NOT IN (SELECT id FROM mcp_file_chunks)"); err != nil {
 		return errors.Wrap(err, "cleanup embeddings")
 	}
+	// system_owner-checked: orphan cleanup; mcp_file_chunks already filtered by system_owner above
 	if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_file_chunk_bm25 WHERE chunk_id NOT IN (SELECT id FROM mcp_file_chunks)"); err != nil {
 		return errors.Wrap(err, "cleanup bm25")
 	}

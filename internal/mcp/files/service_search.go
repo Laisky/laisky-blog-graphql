@@ -341,6 +341,7 @@ func searchFallbackSnippet(content, query string, maxBytes int) (int64, int64, s
 // logEmptySearchDiagnostics emits DEBUG diagnostics for empty search results.
 func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash, project, pathPrefix string, lexicalErr, semanticErr error) {
 	chunkCount := s.countRowsForSearch(ctx, "mcp_file_chunks c", apiKeyHash, project, pathPrefix)
+	// system_owner-checked: countRowsForSearch appends `c.system_owner = ?` to the WHERE clause for both call sites
 	embeddingCount := s.countRowsForSearch(ctx, "mcp_file_chunk_embeddings e JOIN mcp_file_chunks c ON c.id = e.chunk_id", apiKeyHash, project, pathPrefix)
 	pendingJobs := s.countPendingIndexJobs(ctx, apiKeyHash, project)
 

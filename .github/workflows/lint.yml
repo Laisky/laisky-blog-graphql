@@ -34,5 +34,7 @@ jobs:
       - run: go vet
       - name: Enforce v1 pure-Go invariant (proposal §0)
         run: ./.scripts/check_pure_go.sh
+      - name: Enforce §3.7 system_owner predicate (proposal)
+        run: ./.scripts/check_system_owner.sh
       - run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
       - run: go test -bench ./...

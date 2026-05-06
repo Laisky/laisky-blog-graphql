@@ -132,9 +132,11 @@ a runtime dependency (§1.4):
 
 ### 1.3 Goal
 
-Refactor the memory backend behind a **plugin contract** so different engines can be plugged
-in per-tenant or per-project without changing the public MCP tool schemas. Ship two plugins on
-day one:
+Refactor the memory backend behind a **plugin contract** so different engines can be selected
+per call (via the optional `plugin` argument on every `file_*` tool, see §2.4.1) or globally
+(via `settings.mcp.tools.memory.default_plugin`) without changing the public MCP tool schemas.
+There is no per-tenant, per-API-key, or per-project routing layer (§2.4). Ship two plugins
+on day one:
 
 - **`rag_plugin`** — the existing Postgres + pgvector + BM25 + rerank stack, behavior-preserving.
 - **`pageindex_plugin`** — a new vectorless, tree-based engine. Pure-Go reimplementation of
@@ -184,8 +186,12 @@ design choices below; they are recorded here so future readers can audit the ass
   not the constrained one. §2.6 spells out the indexer.
 - **Memory backends behind a narrow tool surface is the norm** (Mem0: `add/search/update/delete`
   with 19 vector backends + 2 graph backends; Letta, Zep, LangGraph Memory, Anthropic memory
-  tool follow the same shape). Per-tenant plugin selection is routed in the host *before*
-  tool dispatch — the backend never sees tenant identity except as opaque scope IDs.
+  tool follow the same shape). In those systems, per-tenant plugin selection is routed in
+  the host *before* tool dispatch and the backend never sees tenant identity except as
+  opaque scope IDs. We deliberately keep our routing surface narrower than that industry
+  pattern (§2.4): the only caller-controlled selector is the per-call `plugin` argument,
+  with `default_plugin` as the global fallback — no per-tenant, per-API-key, or per-project
+  routing layer.
 - **Reserved prefixes inside a user-visible FS namespace are an acknowledged anti-pattern**
   at scale (AWS S3 multi-tenant guidance; documented prefix/RLS leakage modes). The fix is a
   separate **system namespace** the user API cannot address — enforced in the data path, not
@@ -531,10 +537,12 @@ Two non-obvious consequences of letting `userFS` handle steps 1 of write/delete/
   [service_versions.go](../../internal/mcp/files/service_versions.go)) — apply uniformly.
   No reimplementation needed in `pageindex_plugin`.
 - **`rag_plugin`'s indexing pipeline (chunks/embeddings/BM25) also runs on these writes**
-  unless explicitly disabled per-project. That's wasteful — the user picked PageIndex *because*
-  they didn't want chunked search. Solution: a new `Capabilities`-driven flag
-  `userFS.WriteOpts{ SkipRAGIndex bool }`. When `pageindex_plugin` writes, it sets
-  `SkipRAGIndex=true`; the index worker simply does not enqueue jobs for those rows. A nullable
+  unless the writing plugin opts out. That would be wasteful for a `pageindex_plugin` write
+  — the agent picked PageIndex *because* it didn't want chunked search. Solution: a new
+  `Capabilities`-driven flag `userFS.WriteOpts{ SkipRAGIndex bool }`. When
+  `pageindex_plugin` writes, it sets `SkipRAGIndex=true`; the index worker simply does not
+  enqueue jobs for those rows. The opt-out is decided per write call by the plugin layer,
+  not by any per-project setting. A nullable
   `mcp_files.skip_rag_index BOOL` column carries the bit. (`rag_plugin`'s wrapper always
   passes `SkipRAGIndex=false`.)
 
@@ -1009,7 +1017,8 @@ already weighed it — and which mitigations to reach for *before* reaching for 
 | "Local inference (Ollama, vLLM, llama.cpp) is the future"       | "We need a Python or cgo bridge to drive them."                                                                                        | Out-of-scope for v1 per §0. Most local-inference servers expose an OpenAI-compatible HTTP API; reach them via `base_url` if so. cgo / subprocess / Python remain forbidden under v1. |
 
 **Operational rule.** When any of these pressures arrives, the response is *port the
-behavior into Go*, *add a per-tenant knob*, or *scope it out of v1* — never *introduce
+behavior into Go*, *add a per-call settings knob* (consistent with §2.4 — there are no
+per-tenant or per-project knobs), or *scope it out of v1* — never *introduce
 an external runtime*. A patch that adds `os/exec.Command`, `cgo`, `requirements.txt`,
 or a new container image to support the pageindex plugin is automatically a v2
 proposal, not a v1 review. The frontmatter `forbidden_under_v1` list is the audit

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -18,11 +19,35 @@ import (
 
 // Stats summarizes one Index call.
 type Stats struct {
+	mu           sync.Mutex
 	LLMCalls     int
 	InputTokens  int
 	OutputTokens int
 	Cached       int
 	Wallclock    time.Duration
+}
+
+// addLLMCall accumulates one LLM-call's accounting under the stats lock so
+// concurrent callers (verify, fix, expand) cannot race.
+func (s *Stats) addLLMCall(in, out int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.LLMCalls++
+	s.InputTokens += in
+	s.OutputTokens += out
+	s.mu.Unlock()
+}
+
+// addCached increments the cached counter atomically.
+func (s *Stats) addCached() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.Cached++
+	s.mu.Unlock()
 }
 
 // IndexOptions tweak per-call indexing behavior.
@@ -139,7 +164,7 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 		req.PromptHash = HashRequest(req)
 	}
 	if cached, ok, err := idx.cache.Get(req.PromptHash); err == nil && ok {
-		stats.Cached++
+		stats.addCached()
 		return cached, nil
 	}
 	if idx.sem != nil {
@@ -152,9 +177,7 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 	if err != nil {
 		return nil, err
 	}
-	stats.LLMCalls++
-	stats.InputTokens += resp.Usage.InputTokens
-	stats.OutputTokens += resp.Usage.OutputTokens
+	stats.addLLMCall(resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	if budget != nil {
 		budget.Take(int64(resp.Usage.TotalTokens))
 	}

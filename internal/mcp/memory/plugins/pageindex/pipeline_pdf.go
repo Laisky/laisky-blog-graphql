@@ -42,11 +42,27 @@ func (idx *Indexer) runPDF(ctx context.Context, data []byte, rep *Reporter, stat
 	rootNodes := assembleTree(flat, pageCount)
 
 	if idx.cfg.Algo.GenerateNodeSummary {
-		rep.Report(Progress{Phase: "pdf:summarize", Percent: 85})
+		rep.Report(Progress{Phase: "pdf:summarize", Percent: 75})
 		if err := idx.summarizeNodes(ctx, rootNodes, pages, budget, stats); err != nil {
 			return nil, err
 		}
 	}
+
+	// Phase 7: title-appearance verification + targeted fix.
+	rep.Report(Progress{Phase: "pdf:verify", Percent: 80})
+	tmpTree := &Tree{Structure: rootNodes}
+	if err := idx.verifyAndFix(ctx, tmpTree, pages, budget, stats); err != nil {
+		return nil, errors.Wrap(err, "verify and fix")
+	}
+
+	// Phase 8: bounded recursive expansion of oversized leaf nodes.
+	rep.Report(Progress{Phase: "pdf:expand", Percent: 88})
+	if err := idx.expandLargeNodes(ctx, rootNodes, pages, 0, budget, stats); err != nil {
+		return nil, errors.Wrap(err, "expand large nodes")
+	}
+	// Re-stamp node IDs so newly inserted children get stable identifiers.
+	assignNodeIDs(rootNodes, 0)
+
 	docDescription := ""
 	if idx.cfg.Algo.GenerateDocDescription {
 		rep.Report(Progress{Phase: "pdf:doc-description", Percent: 95})
