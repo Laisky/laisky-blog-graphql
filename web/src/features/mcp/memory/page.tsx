@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useApiKey } from '@/lib/api-key-context';
 
@@ -48,8 +49,6 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 const inputLabelClass = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
-const selectClass =
-  'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 const defaultMemoryProject = 'default';
 const defaultMemorySessionID = 'default';
 const defaultMemoryPlugin: MemoryPlugin = 'rag';
@@ -344,16 +343,20 @@ export function MemoryPage() {
             <label htmlFor="memory-plugin" className={inputLabelClass}>
               Memory Plugin
             </label>
-            <select
-              id="memory-plugin"
-              className={selectClass}
+            <Select
               value={memoryPlugin}
-              onChange={(event) => setMemoryPlugin(normalizeMemoryPlugin(event.target.value))}
+              onValueChange={(value) => setMemoryPlugin(normalizeMemoryPlugin(value))}
+              disabled={isToolConsoleLocked}
             >
-              <option value="rag">RAG</option>
-              <option value="pageindex">pageindex</option>
-              <option value="auto">auto (server default)</option>
-            </select>
+              <SelectTrigger id="memory-plugin" aria-label="Memory plugin">
+                <SelectValue placeholder="Select a memory plugin" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rag">RAG</SelectItem>
+                <SelectItem value="pageindex">pageindex</SelectItem>
+                <SelectItem value="auto">auto (server default)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <label htmlFor="memory-project" className={inputLabelClass}>
