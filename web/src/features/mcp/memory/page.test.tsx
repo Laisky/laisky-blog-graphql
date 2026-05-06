@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useApiKey } from '@/lib/api-key-context';
 
@@ -9,6 +9,11 @@ import { MemoryPage } from './page';
 vi.mock('@/lib/api-key-context', () => ({
   useApiKey: vi.fn(),
 }));
+
+beforeEach(() => {
+  window.localStorage.clear();
+  vi.clearAllMocks();
+});
 
 /**
  * mockApiKeyState configures the API key hook for a specific console-locking status.
@@ -49,5 +54,39 @@ describe('MemoryPage tool console gating', () => {
 
     expect(screen.getByLabelText(/^Project$/i)).toBeEnabled();
     expect(screen.getByRole('button', { name: /run memory_before_turn/i })).toBeEnabled();
+  });
+
+  it('defaults memory plugin to rag', () => {
+    mockApiKeyState('valid');
+
+    render(<MemoryPage />);
+
+    expect(screen.getByLabelText(/^Memory Plugin$/i)).toHaveValue('rag');
+  });
+
+  it('restores the persisted memory plugin selection from localStorage', () => {
+    window.localStorage.setItem(
+      'mcp.memory.inputs.v1',
+      JSON.stringify({
+        memoryPlugin: 'pageindex',
+        project: 'demo-project',
+        sessionId: 'session-1',
+        userId: 'user-1',
+        turnId: 'turn-1',
+        maxInputTok: 120000,
+        baseInstructions: '',
+        currentInputText: '[]',
+        inputItemsText: '[]',
+        outputItemsText: '[]',
+        listPath: '',
+        listDepth: 8,
+        listLimit: 200,
+      })
+    );
+    mockApiKeyState('valid');
+
+    render(<MemoryPage />);
+
+    expect(screen.getByLabelText(/^Memory Plugin$/i)).toHaveValue('pageindex');
   });
 });

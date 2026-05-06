@@ -10,6 +10,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -17,7 +18,7 @@ import (
 type Service struct {
 	db          *sql.DB
 	isPostgres  bool
-	fileService *files.Service
+	fileService mcpplugin.Plugin
 	settings    Settings
 	logger      logSDK.Logger
 	clock       func() time.Time
@@ -38,7 +39,7 @@ func chooseExecutor(tx *sql.Tx, db *sql.DB) sqlExecutor {
 }
 
 // NewService creates a memory lifecycle service.
-func NewService(db *sql.DB, fileService *files.Service, settings Settings, logger logSDK.Logger, clock func() time.Time) (*Service, error) {
+func NewService(db *sql.DB, fileService mcpplugin.Plugin, settings Settings, logger logSDK.Logger, clock func() time.Time) (*Service, error) {
 	if db == nil {
 		return nil, errors.WithStack(NewError(ErrCodeInternal, "sql db is required", false))
 	}

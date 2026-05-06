@@ -19,13 +19,13 @@ implementation:
     status: shipped
     paths:
       - internal/mcp/files/{migration.go,system_fs.go,system_owner.go,types.go,service_*.go}
-      - internal/mcp/memory/plugins/pageindex/  # 16 source files, ~4.3k LOC, pure Go
-      - cmd/api.go  # enablement gate on settings.mcp.tools.memory.plugins.pageindex.llm.api_key
+      - internal/mcp/memory/plugins/pageindex/ # 16 source files, ~4.3k LOC, pure Go
+      - cmd/api.go # enablement gate on settings.mcp.tools.memory.plugins.pageindex.llm.api_key
   phase_3:
     status: scaffolding shipped
     paths:
       - internal/mcp/memory/plugin/{shadow,shadow_recorder,shadow_score}.go
-      - cmd/promote-pageindex/main.go  # stub | openai | ensemble judge modes
+      - cmd/promote-pageindex/main.go # stub | openai | ensemble judge modes
     deferred: production wiring of ShadowPlugin in cmd/api.go (per §8 Phase 3)
 supersedes: any prior draft that proposed a Python sidecar, gRPC bridge, or subprocess-based PageIndex backend
 forbidden_under_v1:
@@ -63,7 +63,7 @@ introduce them:
 
 Every "in-process" and "Responses-API only" claim downstream (§1.3, §1.4, §1.5, §2.6,
 §3.3, §4.3, §6 A6/A10, §8 Phase 2) resolves back to this section. The `go.mod`
-additions in §4.2 are the *complete* set of new runtime dependencies — every entry is
+additions in §4.2 are the _complete_ set of new runtime dependencies — every entry is
 pure Go with stdlib-only transitive deps.
 
 Reopening any of the above is a v2 conversation, not a v1 patch. A future proposal that
@@ -82,16 +82,16 @@ The MCP "agent memory" surface is the `file_*` toolset, used by AI agents as a d
 
 The implementation is one monolithic stack:
 
-| Concern         | Location                                                                                                              |
-| --------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Tool wiring     | [internal/mcp/server.go:204-452](../../internal/mcp/server.go#L204-L452)                                              |
-| Tool adapters   | [internal/mcp/tools/file_*.go](../../internal/mcp/tools/), driven by the [FileService](../../internal/mcp/tools/file_service.go) interface |
-| Concrete engine | [internal/mcp/files/service.go](../../internal/mcp/files/service.go) + ~30 sibling files                              |
+| Concern         | Location                                                                                                                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tool wiring     | [internal/mcp/server.go:204-452](../../internal/mcp/server.go#L204-L452)                                                                                                                                               |
+| Tool adapters   | [internal/mcp/tools/file\_\*.go](../../internal/mcp/tools/), driven by the [FileService](../../internal/mcp/tools/file_service.go) interface                                                                           |
+| Concrete engine | [internal/mcp/files/service.go](../../internal/mcp/files/service.go) + ~30 sibling files                                                                                                                               |
 | Storage         | Postgres tables `mcp_files`, `mcp_file_chunks`, `mcp_file_chunk_embeddings`, `mcp_file_chunk_bm25`, `mcp_file_index_jobs`, `mcp_file_versions` ([migration.go:61-196](../../internal/mcp/files/migration.go#L61-L196)) |
-| Retrieval      | Hybrid (pgvector + BM25 + optional Cohere rerank) in [service_search.go:26-150](../../internal/mcp/files/service_search.go#L26-L150) |
-| Embeddings     | OpenAI-compatible client [internal/mcp/rag/openai_embedder.go](../../internal/mcp/rag/openai_embedder.go)              |
-| Async ingest   | [index_worker.go](../../internal/mcp/files/index_worker.go) consuming `mcp_file_index_jobs`                            |
-| Settings       | `settings.mcp.files.*` and `settings.mcp.tools.*` — see [files/settings.go](../../internal/mcp/files/settings.go), [internal/mcp/settings.go](../../internal/mcp/settings.go) |
+| Retrieval       | Hybrid (pgvector + BM25 + optional Cohere rerank) in [service_search.go:26-150](../../internal/mcp/files/service_search.go#L26-L150)                                                                                   |
+| Embeddings      | OpenAI-compatible client [internal/mcp/rag/openai_embedder.go](../../internal/mcp/rag/openai_embedder.go)                                                                                                              |
+| Async ingest    | [index_worker.go](../../internal/mcp/files/index_worker.go) consuming `mcp_file_index_jobs`                                                                                                                            |
+| Settings        | `settings.mcp.files.*` and `settings.mcp.tools.*` — see [files/settings.go](../../internal/mcp/files/settings.go), [internal/mcp/settings.go](../../internal/mcp/settings.go)                                          |
 
 The `tools.FileService` interface ([file_service.go:10-18](../../internal/mcp/tools/file_service.go#L10-L18)) is the
 only abstraction the tool layer depends on. Today it has exactly one implementation
@@ -108,7 +108,7 @@ but degrades on long, hierarchically structured documents (PDFs, manuals, book-l
 
 [VectifyAI / PageIndex](https://github.com/VectifyAI/PageIndex) (cloned locally at
 `/home/laisky/repo/3rd/PageIndex`) takes the opposite approach — **vectorless,
-reasoning-driven retrieval**. We treat it as an *algorithmic reference* to port, not as
+reasoning-driven retrieval**. We treat it as an _algorithmic reference_ to port, not as
 a runtime dependency (§1.4):
 
 - Indexing turns each document into a hierarchical JSON tree (Table-of-Contents nodes with
@@ -164,7 +164,7 @@ default when they want to migrate everyone. This is a deliberate simplicity bet 
   shapes, knob defaults, and JSON tree schema; nothing from it runs in production. The
   full out-of-scope list is in §0 and is not relitigated here.
 - **Not a vector-DB replacement.** Per the 2026 industry consensus (see §1.5), PageIndex is
-  *tier-2* retrieval — invoked after candidate document(s) are chosen. `rag_plugin` remains
+  _tier-2_ retrieval — invoked after candidate document(s) are chosen. `rag_plugin` remains
   the right answer for at-scale coarse retrieval across an unbounded corpus. The two plugins
   are complementary, selected per-call by the agent or per-server by the operator (§2.4),
   not adversaries.
@@ -181,13 +181,13 @@ design choices below; they are recorded here so future readers can audit the ass
   boundary
   ([2026 Mastra adoption report](https://dev.to/jim_l_efc70c3a738e9f4baa7/i-switched-from-langgraph-to-mastra-for-my-typescript-agents-18-hours-vs-41-nah)).
   Anthropic's [memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)
-  is explicitly a *client-side* contract — the model emits tool calls and the host executes
+  is explicitly a _client-side_ contract — the model emits tool calls and the host executes
   them — so a Go host is first-class. The §1.4 commitment is therefore the cheap option,
   not the constrained one. §2.6 spells out the indexer.
 - **Memory backends behind a narrow tool surface is the norm** (Mem0: `add/search/update/delete`
   with 19 vector backends + 2 graph backends; Letta, Zep, LangGraph Memory, Anthropic memory
   tool follow the same shape). In those systems, per-tenant plugin selection is routed in
-  the host *before* tool dispatch and the backend never sees tenant identity except as
+  the host _before_ tool dispatch and the backend never sees tenant identity except as
   opaque scope IDs. We deliberately keep our routing surface narrower than that industry
   pattern (§2.4): the only caller-controlled selector is the per-call `plugin` argument,
   with `default_plugin` as the global fallback — no per-tenant, per-API-key, or per-project
@@ -344,7 +344,7 @@ Semantics:
   and the path does not exist there, the response is `NOT_FOUND` with a hint
   `("path exists under plugin=A; pass plugin=A to read it")`. We do not silently fall back
   across plugins (that would defeat tenant isolation between engines and surprise the caller).
-- **Mutations are sticky** — a `file_write` under plugin X stores the path under X *only*. There
+- **Mutations are sticky** — a `file_write` under plugin X stores the path under X _only_. There
   is no implicit migration. A subsequent `file_read` without an explicit `plugin` will resolve
   to `default_plugin`; if that is a different plugin, the read returns `NOT_FOUND` with the
   hint above.
@@ -358,53 +358,55 @@ New settings keys:
 settings:
   mcp:
     memory:
-      default_plugin: "rag"            # "rag" | "pageindex" — the only routing knob
+      default_plugin: 'rag' # "rag" | "pageindex" — the only routing knob
       plugins:
-        rag: {}                         # current settings.mcp.files.* re-rooted under here
+        rag: {} # current settings.mcp.files.* re-rooted under here
         pageindex:
           # Indexer (Go, in-process; see §1.4).
           indexer:
-            timeout_index:    "5m"      # ceiling for a single document index call
-            timeout_query:    "60s"
-            max_concurrency:  8         # bounded LLM-call fan-out per indexing job
+            timeout_index: '5m' # ceiling for a single document index call
+            timeout_query: '60s'
+            max_concurrency: 8 # bounded LLM-call fan-out per indexing job
             retry:
-              max_attempts:    10       # parity with upstream PageIndex defaults
-              initial_backoff: "250ms"
-              max_backoff:     "8s"
+              max_attempts: 10 # parity with upstream PageIndex defaults
+              initial_backoff: '250ms'
+              max_backoff: '8s'
             cache:
-              enabled:         true
-              path:            "/var/lib/laisky/pageindex-cache.bbolt"
-              max_size_bytes:  1073741824  # 1 GiB; LRU evict
+              enabled: true
+              path: '/var/lib/laisky/pageindex-cache.bbolt'
+              max_size_bytes: 1073741824 # 1 GiB; LRU evict
           # External LLM API only. Single contract: OpenAI Responses API
           # (POST /v1/responses). No Anthropic SDK, no local-inference endpoint,
           # no `litellm`-equivalent multi-provider router (§2.6.5).
           llm:
-            indexing_model:  "gpt-5.4-mini"
-            retrieve_model:  "gpt-5.4-mini"
-            api_key:         ""        # OpenAI API key, configured directly in this file.
-                                       # Config-file confidentiality is handled out-of-band
-                                       # (file ACLs / secret-management tooling), so the
-                                       # plugin reads the key as-is without env-var indirection.
-            base_url:        ""        # empty = api.openai.com; vendors implementing
-                                       # the Responses API with their own keys override here.
+            indexing_model: 'gpt-5.4-mini'
+            retrieve_model: 'gpt-5.4-mini'
+            api_key:
+              '' # OpenAI API key, configured directly in this file.
+              # Config-file confidentiality is handled out-of-band
+              # (file ACLs / secret-management tooling), so the
+              # plugin reads the key as-is without env-var indirection.
+            base_url:
+              '' # empty = api.openai.com; vendors implementing
+              # the Responses API with their own keys override here.
           # Algorithmic knobs, parity with upstream PageIndex defaults.
           algo:
-            toc_check_page_num:        20
-            max_page_num_each_node:    10
-            max_token_num_each_node:   20000
-            generate_node_summary:     true
-            generate_doc_description:  true
+            toc_check_page_num: 20
+            max_page_num_each_node: 10
+            max_token_num_each_node: 20000
+            generate_node_summary: true
+            generate_doc_description: true
           # Search-time budgets — bounded mini-agent over the cached tree (§2.6.2).
           tree_query:
-            max_steps:        8
-            max_tokens:       20000
-            candidate_docs:   5
+            max_steps: 8
+            max_tokens: 20000
+            candidate_docs: 5
           # Pure-Go PDF parser selection (§2.6.4). Default `pdfcpu` for Apache-2.0
           # license + outline support; `dslipak` available as a text-only fallback
           # if a tenant's corpus regresses on pdfcpu's text quality.
           pdf:
-            text_parser:    "pdfcpu"   # "pdfcpu" | "dslipak"
-            outline_parser: "pdfcpu"   # only pdfcpu exposes outlines today
+            text_parser: 'pdfcpu' # "pdfcpu" | "dslipak"
+            outline_parser: 'pdfcpu' # only pdfcpu exposes outlines today
 ```
 
 Existing `settings.mcp.files.*` keys move under `settings.mcp.tools.memory.plugins.rag.*` with a
@@ -442,7 +444,7 @@ primitives) follow Go idioms.
 Three design choices distinguish this from a naïve port:
 
 - **All persistence rides on the existing fileio.** Raw bytes (the user's PDF/MD) are stored
-  via the *same* `*files.Service` that backs `rag_plugin`'s user-facing layer, so
+  via the _same_ `*files.Service` that backs `rag_plugin`'s user-facing layer, so
   `file_read`/`file_stat`/`file_list` against a `pageindex_plugin`-backed project behave
   identically to today for those verbs. PageIndex's own metadata (per-doc tree JSON, the
   `_meta.json` catalog, the path↔doc_id index) lives in a **separate system namespace** the
@@ -462,7 +464,7 @@ Three design choices distinguish this from a naïve port:
   §2.6.5 is a thin adapter over `client.Responses.New(...)` — there is no provider
   routing, no Anthropic SDK, no local-model fallback, no `langchaingo` /
   `instructor-go`. Vendors that re-implement the Responses API can be reached by
-  overriding `base_url`, but supporting a different *model contract* (chat-completions,
+  overriding `base_url`, but supporting a different _model contract_ (chat-completions,
   Anthropic Messages) is out of scope for v1.
 
 End-to-end data flow for a `file_write(.pdf)` followed by `file_search` under
@@ -519,15 +521,15 @@ The only network egress is the OpenAI Responses-API call.
 Notation: `userFS` is the user-facing fileio (the same instance `rag_plugin` wraps);
 `sysFS` is `userFS` accessed through the system-namespace handle (§2.6.3).
 
-| Tool          | Behavior under `pageindex_plugin`                                                                                                                                                                                                                |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Tool          | Behavior under `pageindex_plugin`                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `file_write`  | 1) `userFS.Write(project, path, content, mode)` — exactly today's path. 2) If `path` ends with `.pdf`/`.md`: invoke `Indexer.Index(ctx, content, opts)` in-process (bounded LLM fan-out per §2.6.4); on success, `sysFS.Write("pageindex/<doc_id>.json", treeJSON, TRUNCATE)` and update `sysFS:"pageindex/_meta.json"` plus the path↔doc_id mapping in `sysFS:"pageindex/index.json"`. Other extensions (`.txt`, `.json`): step 1 only. |
-| `file_read`   | `userFS.Read(...)` — unchanged, including offsets. Random IO works for every path under this plugin since user content is in the user namespace.                                                                                                  |
-| `file_stat`   | `userFS.Stat(...)` — unchanged.                                                                                                                                                                                                                  |
-| `file_list`   | `userFS.List(...)` — unchanged. **System namespace is invisible** (enforced at the SQL layer, not by path filter — see §2.6.3).                                                                                                                  |
-| `file_delete` | `userFS.Delete(...)` then if a mapping exists: `sysFS.Delete("pageindex/<doc_id>.json")` and update `sysFS:"pageindex/index.json"`/`pageindex/_meta.json`.                                                                                       |
-| `file_rename` | `userFS.Rename(...)` then update the path↔doc_id mapping in `sysFS:"pageindex/index.json"`. Tree JSON content unchanged.                                                                                                                          |
-| `file_search` | The interesting case — see §2.6.2.                                                                                                                                                                                                               |
+| `file_read`   | `userFS.Read(...)` — unchanged, including offsets. Random IO works for every path under this plugin since user content is in the user namespace.                                                                                                                                                                                                                                                                                         |
+| `file_stat`   | `userFS.Stat(...)` — unchanged.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `file_list`   | `userFS.List(...)` — unchanged. **System namespace is invisible** (enforced at the SQL layer, not by path filter — see §2.6.3).                                                                                                                                                                                                                                                                                                          |
+| `file_delete` | `userFS.Delete(...)` then if a mapping exists: `sysFS.Delete("pageindex/<doc_id>.json")` and update `sysFS:"pageindex/index.json"`/`pageindex/_meta.json`.                                                                                                                                                                                                                                                                               |
+| `file_rename` | `userFS.Rename(...)` then update the path↔doc_id mapping in `sysFS:"pageindex/index.json"`. Tree JSON content unchanged.                                                                                                                                                                                                                                                                                                                 |
+| `file_search` | The interesting case — see §2.6.2.                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Two non-obvious consequences of letting `userFS` handle steps 1 of write/delete/rename:
 
@@ -538,7 +540,7 @@ Two non-obvious consequences of letting `userFS` handle steps 1 of write/delete/
   No reimplementation needed in `pageindex_plugin`.
 - **`rag_plugin`'s indexing pipeline (chunks/embeddings/BM25) also runs on these writes**
   unless the writing plugin opts out. That would be wasteful for a `pageindex_plugin` write
-  — the agent picked PageIndex *because* it didn't want chunked search. Solution: a new
+  — the agent picked PageIndex _because_ it didn't want chunked search. Solution: a new
   `Capabilities`-driven flag `userFS.WriteOpts{ SkipRAGIndex bool }`. When
   `pageindex_plugin` writes, it sets `SkipRAGIndex=true`; the index worker simply does not
   enqueue jobs for those rows. The opt-out is decided per write call by the plugin layer,
@@ -557,12 +559,12 @@ Under PageIndex we synthesize this from a tree-reasoning loop:
    loop bounded by `tree_query.max_steps` and `tree_query.max_tokens`:
    a. `sysFS.Read("pageindex/<doc_id>.json")` — the cached tree JSON. Pure in-process I/O.
    b. Ask the LLM (`retrieve_model`, default `gpt-5.4-mini`) via the OpenAI Responses API
-      "given this tree and this query, list up to N page ranges most likely to contain the
-      answer; output JSON `[{pages,reason}]`." The Responses API enforces the JSON Schema
-      server-side (`text.format.type=json_schema, strict=true`); the response parses
-      directly into a Go struct without reflection-based wrappers (§2.6.5).
+   "given this tree and this query, list up to N page ranges most likely to contain the
+   answer; output JSON `[{pages,reason}]`." The Responses API enforces the JSON Schema
+   server-side (`text.format.type=json_schema, strict=true`); the response parses
+   directly into a Go struct without reflection-based wrappers (§2.6.5).
    c. For each range, resolve `GetPageContent(doc_id, pages)` against the cached tree —
-      this is an in-process JSON traversal of `pages: [{page, content}]`, no I/O.
+   this is an in-process JSON traversal of `pages: [{page, content}]`, no I/O.
 3. Convert each returned `{page, content}` into a `ChunkEntry` with synthesized byte offsets
    (page-level offsets resolved via the cached `pages` array; markdown uses `line_num`).
    `Score` is a normalized rank from the LLM (fallback: position-based decay).
@@ -610,8 +612,10 @@ The path↔doc_id mapping (formerly `mcp_pageindex_docs`) becomes a single
 {
   "<project>": {
     "<user/path/relative.pdf>": {
-      "doc_id": "ab12...", "type": "pdf",
-      "page_count": 142, "indexed_at": "..."
+      "doc_id": "ab12...",
+      "type": "pdf",
+      "page_count": 142,
+      "indexed_at": "..."
     }
   }
 }
@@ -662,17 +666,17 @@ The pipeline mirrors the upstream PageIndex flow, expressed in Go primitives. Co
 typical for a 200-page PDF; budgets are enforced by a single `atomic.Int64` token counter
 seeded from `algo.max_token_num_each_node × N + tree_query.max_tokens`.
 
-| Phase | What runs | LLM calls | Implementation |
-| --- | --- | --- | --- |
-| 1. Page extraction | `pdf.ExtractTextFile`, `api.Bookmarks` (pdfcpu) or `goldmark` AST walk | 0 | Pure Go |
-| 2. TOC detection | `toc_detector_single_page` over first `algo.toc_check_page_num` pages | 1 / page (≤20) | `errgroup` + `sem.Acquire(1)` |
-| 3. TOC presence + page-number probe | `detect_page_index` on concatenated TOC pages | 1 | sequential |
-| 4. Mode dispatch | with-page-#, no-page-#, or no-TOC branch (parity with upstream `meta_processor`) | 0 | switch/case |
-| 5. TOC parsing | `toc_transformer` + `toc_index_extractor` (Mode A) or `add_page_number_to_toc` per group (B) or `generate_toc_init` + `_continue` per 20K-token group (C) | 2–8 | sequential within branch; retried up to 5× on incomplete output |
-| 6. Tree assembly | `list_to_tree` flat→hierarchical | 0 | Pure Go |
-| 7. Verification | `check_title_appearance` random sample; on accuracy ∈ (60%,100%): `single_toc_item_index_fixer` per failing item | 5–10 | `errgroup` |
-| 8. Recursive node expansion | re-enter pipeline on nodes where `node_pages > max_page_num_each_node && node_tokens >= max_token_num_each_node` | bounded by depth ≤ 3 | `errgroup` |
-| 9. Optional summarization | `generate_node_summary` per leaf, `generate_doc_description` once | 5–25 | `errgroup` + `sem` |
+| Phase                               | What runs                                                                                                                                                 | LLM calls            | Implementation                                                  |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------- |
+| 1. Page extraction                  | `pdf.ExtractTextFile`, `api.Bookmarks` (pdfcpu) or `goldmark` AST walk                                                                                    | 0                    | Pure Go                                                         |
+| 2. TOC detection                    | `toc_detector_single_page` over first `algo.toc_check_page_num` pages                                                                                     | 1 / page (≤20)       | `errgroup` + `sem.Acquire(1)`                                   |
+| 3. TOC presence + page-number probe | `detect_page_index` on concatenated TOC pages                                                                                                             | 1                    | sequential                                                      |
+| 4. Mode dispatch                    | with-page-#, no-page-#, or no-TOC branch (parity with upstream `meta_processor`)                                                                          | 0                    | switch/case                                                     |
+| 5. TOC parsing                      | `toc_transformer` + `toc_index_extractor` (Mode A) or `add_page_number_to_toc` per group (B) or `generate_toc_init` + `_continue` per 20K-token group (C) | 2–8                  | sequential within branch; retried up to 5× on incomplete output |
+| 6. Tree assembly                    | `list_to_tree` flat→hierarchical                                                                                                                          | 0                    | Pure Go                                                         |
+| 7. Verification                     | `check_title_appearance` random sample; on accuracy ∈ (60%,100%): `single_toc_item_index_fixer` per failing item                                          | 5–10                 | `errgroup`                                                      |
+| 8. Recursive node expansion         | re-enter pipeline on nodes where `node_pages > max_page_num_each_node && node_tokens >= max_token_num_each_node`                                          | bounded by depth ≤ 3 | `errgroup`                                                      |
+| 9. Optional summarization           | `generate_node_summary` per leaf, `generate_doc_description` once                                                                                         | 5–25                 | `errgroup` + `sem`                                              |
 
 Each LLM call uses `LLM.Respond(ctx, req)` (§2.6.5), wrapped in
 `avast/retry-go/v4` with exponential backoff (`250 ms × 2^n` up to 8 s, max 10 attempts —
@@ -725,7 +729,7 @@ get nothing; callers that pass a buffered channel can forward events to:
 - Per-call billing metadata aggregated into the tool response's `structuredContent`.
 
 The plugin awaits the final `Tree` before returning to the MCP tool layer, so callers that
-*don't* opt into streamable-HTTP simply see the tool response take longer.
+_don't_ opt into streamable-HTTP simply see the tool response take longer.
 
 ##### 2.6.4.5 Pure-Go PDF parsing
 
@@ -756,7 +760,7 @@ regressions detectable: if the §7 scorecard moves and prompts changed, we know 
 direction to look.
 
 The Responses-API-specific glue (`text.format.type=json_schema, strict=true`,
-`max_output_tokens`) is appended *outside* the rendered prompt body, so the body itself
+`max_output_tokens`) is appended _outside_ the rendered prompt body, so the body itself
 remains comparable to the upstream Python prompts even though the call shape differs.
 
 #### 2.6.5 LLM interface (Responses API only)
@@ -849,7 +853,7 @@ client, not via this `LLM` interface — embeddings are not LLM-style structured
   receives the `Manager`, not a single `FileService`; per-call it does
   `mgr.Resolve(ctx, auth, project, req.Plugin)` and forwards. The `Plugin` field is decoded
   from the new optional input parameter (§2.4.1).
-- [internal/mcp/tools/file_*.go](../../internal/mcp/tools/): each tool's `Definition()` adds
+- [internal/mcp/tools/file\_\*.go](../../internal/mcp/tools/): each tool's `Definition()` adds
   the `plugin` field to its input schema; each `Handle()` decodes it into `req.Plugin string`
   and passes it through. A shared helper `tools.parsePluginOverride(raw string) (string, error)`
   validates the value (`""`/`"auto"`/known plugin name).
@@ -867,8 +871,8 @@ client, not via this `LLM` interface — embeddings are not LLM-style structured
 ### 2.8 The `SystemFS` interface
 
 A new internal-only handle, owned by `internal/mcp/files`, that the `pageindex_plugin`
-(and any future plugin needing private metadata) can hold *without going through the plugin
-manager*. This is the "system namespace, not reserved prefix" decision in code form.
+(and any future plugin needing private metadata) can hold _without going through the plugin
+manager_. This is the "system namespace, not reserved prefix" decision in code form.
 
 ```go
 // internal/mcp/files/system_fs.go (new)
@@ -958,8 +962,9 @@ Two known unknowns when implementing the algorithm directly in Go:
 `file_write(... mode=OVERWRITE, offset=N)` on an indexed PDF makes no sense — overwriting page
 6 of a binary PDF should not reindex page 12. v1 returns `INVALID_ARGUMENT` for non-`TRUNCATE`
 writes on `.pdf`/`.md` paths under `pageindex_plugin`; the error message points to `file_delete`
-+ `file_write` instead. `Capabilities.SupportsRandomIO` is **per-path** in practice but reported
-as `true` because raw text paths still allow it.
+
+- `file_write` instead. `Capabilities.SupportsRandomIO` is **per-path** in practice but reported
+  as `true` because raw text paths still allow it.
 
 ### 3.5 Single shared `*files.Service` is a hot dependency
 
@@ -967,7 +972,7 @@ Both plugins use the same `*files.Service` instance (rag wraps it; pageindex com
 This concentrates load and means any latency regression in `*files.Service` hits both
 plugins. Mitigations:
 
-- The shared service is what runs today, so this is not a *new* hot dependency — only the
+- The shared service is what runs today, so this is not a _new_ hot dependency — only the
   observation that the refactor doesn't dilute it.
 - Per-plugin metrics counters (`mcp.memory.<plugin>.*`) let us attribute slow ops correctly.
 - E05 in §5.3 pins p99 latency on `rag_plugin` to ±5% of the pre-refactor baseline.
@@ -1005,21 +1010,21 @@ suppressed by an inline `// system_owner-checked: <reason>` comment.
 The §0 decision (no Python sidecar, no subprocess, no IPC) is the kind of architectural
 commitment that erodes under specific, predictable pressures. We name them here so a
 future engineer who feels one of these pressures has a written record of how the team
-already weighed it — and which mitigations to reach for *before* reaching for a sidecar.
+already weighed it — and which mitigations to reach for _before_ reaching for a sidecar.
 
-| Pressure                                                        | Why it tempts a sidecar                                                                                                                | Mitigation that keeps us in-process                                                                                                                                |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Upstream PageIndex ships a Python-only heuristic                | "Easiest path is to call upstream over RPC."                                                                                           | Port the heuristic to Go like every prompt is ported (§2.6.4.6). Track upstream commits in the §3.2 quarterly audit.                                               |
-| pdfcpu's text extraction regresses on a tenant's corpus         | "PyMuPDF / pdfplumber would just work."                                                                                                | Ship the `pdf.text_parser` knob (§2.4) — `dslipak/pdf` is already the registered fallback. If both fail on a real corpus, **add a third pure-Go parser**, not cgo. |
-| A new model contract (chat-completions, Anthropic Messages)     | "litellm/langchaingo are 50-line Python wrappers."                                                                                     | Add a second `LLM` implementation in Go (§2.6.5 interface is small). v1 fails closed at startup (§3.6 escape hatch); revisiting is a v2 conversation per §0.       |
-| A reranker or judge model with no Go SDK                        | "Just shell out to the Python client."                                                                                                 | Vendor the client's HTTP contract directly (most modern model APIs are simple JSON over HTTPS). If the API is genuinely non-portable, scope it out per §3.6.       |
-| "We need real-time RAGAS scoring on every search"               | "RAGAS is in Python; let's wrap it."                                                                                                   | Already addressed: §4.6.1 ports the RAGAS prompts into Go and drives the same `LLM` client. New metrics follow the same pattern.                                   |
-| "Local inference (Ollama, vLLM, llama.cpp) is the future"       | "We need a Python or cgo bridge to drive them."                                                                                        | Out-of-scope for v1 per §0. Most local-inference servers expose an OpenAI-compatible HTTP API; reach them via `base_url` if so. cgo / subprocess / Python remain forbidden under v1. |
+| Pressure                                                    | Why it tempts a sidecar                            | Mitigation that keeps us in-process                                                                                                                                                  |
+| ----------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Upstream PageIndex ships a Python-only heuristic            | "Easiest path is to call upstream over RPC."       | Port the heuristic to Go like every prompt is ported (§2.6.4.6). Track upstream commits in the §3.2 quarterly audit.                                                                 |
+| pdfcpu's text extraction regresses on a tenant's corpus     | "PyMuPDF / pdfplumber would just work."            | Ship the `pdf.text_parser` knob (§2.4) — `dslipak/pdf` is already the registered fallback. If both fail on a real corpus, **add a third pure-Go parser**, not cgo.                   |
+| A new model contract (chat-completions, Anthropic Messages) | "litellm/langchaingo are 50-line Python wrappers." | Add a second `LLM` implementation in Go (§2.6.5 interface is small). v1 fails closed at startup (§3.6 escape hatch); revisiting is a v2 conversation per §0.                         |
+| A reranker or judge model with no Go SDK                    | "Just shell out to the Python client."             | Vendor the client's HTTP contract directly (most modern model APIs are simple JSON over HTTPS). If the API is genuinely non-portable, scope it out per §3.6.                         |
+| "We need real-time RAGAS scoring on every search"           | "RAGAS is in Python; let's wrap it."               | Already addressed: §4.6.1 ports the RAGAS prompts into Go and drives the same `LLM` client. New metrics follow the same pattern.                                                     |
+| "Local inference (Ollama, vLLM, llama.cpp) is the future"   | "We need a Python or cgo bridge to drive them."    | Out-of-scope for v1 per §0. Most local-inference servers expose an OpenAI-compatible HTTP API; reach them via `base_url` if so. cgo / subprocess / Python remain forbidden under v1. |
 
-**Operational rule.** When any of these pressures arrives, the response is *port the
-behavior into Go*, *add a per-call settings knob* (consistent with §2.4 — there are no
-per-tenant or per-project knobs), or *scope it out of v1* — never *introduce
-an external runtime*. A patch that adds `os/exec.Command`, `cgo`, `requirements.txt`,
+**Operational rule.** When any of these pressures arrives, the response is _port the
+behavior into Go_, _add a per-call settings knob_ (consistent with §2.4 — there are no
+per-tenant or per-project knobs), or _scope it out of v1_ — never _introduce
+an external runtime_. A patch that adds `os/exec.Command`, `cgo`, `requirements.txt`,
 or a new container image to support the pageindex plugin is automatically a v2
 proposal, not a v1 review. The frontmatter `forbidden_under_v1` list is the audit
 trail for this rule.
@@ -1037,56 +1042,56 @@ declares `v1_runtime: pure-Go`). A PR that violates any one of them fails CI.
 
 ### 4.1 New files
 
-| Path                                                              | Purpose                                                                              |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `internal/mcp/memory/plugin/plugin.go`                            | `Plugin` interface + `Capabilities`                                                  |
-| `internal/mcp/memory/plugin/types.go`                             | Result value types (moved from `files/types.go`)                                     |
-| `internal/mcp/memory/plugin/manager.go`                           | `Manager`, resolution rules                                                          |
-| `internal/mcp/memory/plugin/manager_test.go`                      | Resolution + lifecycle tests                                                         |
-| `internal/mcp/memory/plugin/settings.go`                          | `MemoryPluginSettings` + `LoadFromConfig`                                            |
-| `internal/mcp/memory/plugins/rag/plugin.go`                       | Adapter over `*files.Service`                                                        |
-| `internal/mcp/memory/plugins/rag/plugin_test.go`                  | Conformance suite invocation                                                         |
-| `internal/mcp/memory/plugins/pageindex/plugin.go`                 | Plugin entrypoint; holds `userFS`, `SystemFS`, `*Indexer`                            |
-| `internal/mcp/memory/plugins/pageindex/version.go`                | `algorithm_version` constant used as a cache-key salt (§3.2)                         |
-| `internal/mcp/memory/plugins/pageindex/sysstore.go`               | `SystemFS`-based reads/writes for `pageindex/{<doc_id>.json, _meta.json, index.json}`|
-| `internal/mcp/memory/plugins/pageindex/search_loop.go`            | Tree-reasoning search (§2.6.2); calls `LLM` from `llm.go`                            |
-| `internal/mcp/memory/plugins/pageindex/indexer.go`                | `Indexer` orchestrator (§2.6.4); `errgroup` + `semaphore.Weighted` fan-out           |
-| `internal/mcp/memory/plugins/pageindex/pipeline_pdf.go`           | Pure-Go PDF indexing pipeline (TOC detect, 3-mode dispatch, tree assembly)           |
-| `internal/mcp/memory/plugins/pageindex/pipeline_markdown.go`      | Goldmark-based MD pipeline (header tree, optional summarization)                     |
-| `internal/mcp/memory/plugins/pageindex/pdf_parser.go`             | `PDFParser` interface + pdfcpu/dslipak implementations (§2.6.4.5)                    |
-| `internal/mcp/memory/plugins/pageindex/markdown_parser.go`        | `MarkdownParser` over `yuin/goldmark`                                                |
-| `internal/mcp/memory/plugins/pageindex/llm.go`                    | `LLM` interface + `openaiLLM` (Responses API only); `tiktoken-go/tokenizer` counter  |
-| `internal/mcp/memory/plugins/pageindex/prompts.go`                | The 13 prompt templates ported from upstream PageIndex (§2.6.4.1 phase table)        |
-| `internal/mcp/memory/plugins/pageindex/cache.go`                  | `bbolt`-backed content-addressable cache for LLM responses (§2.6.4.3)                |
-| `internal/mcp/memory/plugins/pageindex/budget.go`                 | `atomic.Int64` token-budget gate shared across goroutines                            |
-| `internal/mcp/memory/plugins/pageindex/progress.go`               | `Progress` event type + MCP `report_progress` adapter                                |
-| `internal/mcp/memory/plugins/pageindex/{...}_test.go`             | Unit + golden tests (canned tree, byte-offset synthesis, budget exhaustion, retry)   |
-| `internal/mcp/memory/plugins/pageindex/testdata/`                 | Frozen sample PDFs/MD + expected tree JSONs for golden tests                         |
-| `internal/mcp/memory/conformance/suite.go`                        | Shared "every plugin must pass" test suite                                           |
-| `internal/mcp/files/system_fs.go`                                 | `SystemFS` interface + `*Service.SystemNamespace(owner)` constructor (§2.8)          |
-| `internal/mcp/files/system_fs_test.go`                            | Isolation tests: SystemFS cannot read/write user namespace; user FS cannot see system rows |
-| `docs/manual/mcp_memory_plugins.md`                               | Operator-facing manual                                                               |
-| `docs/requirements/mcp_memory_plugins.md`                         | PRD                                                                                  |
+| Path                                                         | Purpose                                                                                    |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `internal/mcp/memory/plugin/plugin.go`                       | `Plugin` interface + `Capabilities`                                                        |
+| `internal/mcp/memory/plugin/types.go`                        | Result value types (moved from `files/types.go`)                                           |
+| `internal/mcp/memory/plugin/manager.go`                      | `Manager`, resolution rules                                                                |
+| `internal/mcp/memory/plugin/manager_test.go`                 | Resolution + lifecycle tests                                                               |
+| `internal/mcp/memory/plugin/settings.go`                     | `MemoryPluginSettings` + `LoadFromConfig`                                                  |
+| `internal/mcp/memory/plugins/rag/plugin.go`                  | Adapter over `*files.Service`                                                              |
+| `internal/mcp/memory/plugins/rag/plugin_test.go`             | Conformance suite invocation                                                               |
+| `internal/mcp/memory/plugins/pageindex/plugin.go`            | Plugin entrypoint; holds `userFS`, `SystemFS`, `*Indexer`                                  |
+| `internal/mcp/memory/plugins/pageindex/version.go`           | `algorithm_version` constant used as a cache-key salt (§3.2)                               |
+| `internal/mcp/memory/plugins/pageindex/sysstore.go`          | `SystemFS`-based reads/writes for `pageindex/{<doc_id>.json, _meta.json, index.json}`      |
+| `internal/mcp/memory/plugins/pageindex/search_loop.go`       | Tree-reasoning search (§2.6.2); calls `LLM` from `llm.go`                                  |
+| `internal/mcp/memory/plugins/pageindex/indexer.go`           | `Indexer` orchestrator (§2.6.4); `errgroup` + `semaphore.Weighted` fan-out                 |
+| `internal/mcp/memory/plugins/pageindex/pipeline_pdf.go`      | Pure-Go PDF indexing pipeline (TOC detect, 3-mode dispatch, tree assembly)                 |
+| `internal/mcp/memory/plugins/pageindex/pipeline_markdown.go` | Goldmark-based MD pipeline (header tree, optional summarization)                           |
+| `internal/mcp/memory/plugins/pageindex/pdf_parser.go`        | `PDFParser` interface + pdfcpu/dslipak implementations (§2.6.4.5)                          |
+| `internal/mcp/memory/plugins/pageindex/markdown_parser.go`   | `MarkdownParser` over `yuin/goldmark`                                                      |
+| `internal/mcp/memory/plugins/pageindex/llm.go`               | `LLM` interface + `openaiLLM` (Responses API only); `tiktoken-go/tokenizer` counter        |
+| `internal/mcp/memory/plugins/pageindex/prompts.go`           | The 13 prompt templates ported from upstream PageIndex (§2.6.4.1 phase table)              |
+| `internal/mcp/memory/plugins/pageindex/cache.go`             | `bbolt`-backed content-addressable cache for LLM responses (§2.6.4.3)                      |
+| `internal/mcp/memory/plugins/pageindex/budget.go`            | `atomic.Int64` token-budget gate shared across goroutines                                  |
+| `internal/mcp/memory/plugins/pageindex/progress.go`          | `Progress` event type + MCP `report_progress` adapter                                      |
+| `internal/mcp/memory/plugins/pageindex/{...}_test.go`        | Unit + golden tests (canned tree, byte-offset synthesis, budget exhaustion, retry)         |
+| `internal/mcp/memory/plugins/pageindex/testdata/`            | Frozen sample PDFs/MD + expected tree JSONs for golden tests                               |
+| `internal/mcp/memory/conformance/suite.go`                   | Shared "every plugin must pass" test suite                                                 |
+| `internal/mcp/files/system_fs.go`                            | `SystemFS` interface + `*Service.SystemNamespace(owner)` constructor (§2.8)                |
+| `internal/mcp/files/system_fs_test.go`                       | Isolation tests: SystemFS cannot read/write user namespace; user FS cannot see system rows |
+| `docs/manual/mcp_memory_plugins.md`                          | Operator-facing manual                                                                     |
+| `docs/requirements/mcp_memory_plugins.md`                    | PRD                                                                                        |
 
 ### 4.2 Modified files
 
-| Path                                                              | Change                                                                                                                                                                                                                                                                                                                          |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `internal/mcp/tools/file_service.go`                              | `FileService` becomes a type alias for `plugin.Plugin`; deprecated, kept for src-compat                                                                                                                                                                                                                                         |
-| `internal/mcp/tools/file_*.go`                                    | Constructors take `*plugin.Manager`; `Definition()` adds optional `plugin` input field (§2.4.1); `Handle()` decodes `req.Plugin` and forwards to `Manager.Resolve`                                                                                                                                                              |
-| `internal/mcp/tools/file_tool_helpers.go`                         | New shared helper `parsePluginOverride(raw string) (string, error)` validating `""`/`"auto"`/known names                                                                                                                                                                                                                        |
-| `internal/mcp/server.go` (lines 204-452)                          | Pass `*plugin.Manager` instead of `FileService`                                                                                                                                                                                                                                                                                 |
-| `cmd/api.go` (lines 408-447)                                      | Build a single shared `*files.Service`; pass it to both plugins (rag wraps directly, pageindex receives `userFS` + `SystemFS("pageindex")`); build & start `plugin.Manager`                                                                                                                                                     |
-| `internal/mcp/files/settings.go`                                  | Add deprecation shim reading old `settings.mcp.files.*` and forwarding into `settings.mcp.tools.memory.plugins.rag.*`                                                                                                                                                                                                                 |
-| `internal/mcp/files/service.go`, `service_*.go`, `service_search.go`, `index_worker.go`, `service_versions.go`, `lock.go` | Add `system_owner string` parameter (or context value) on every method that touches `mcp_files`/`mcp_file_chunks`/`mcp_file_index_jobs`/`mcp_file_chunk_embeddings`/`mcp_file_chunk_bm25`/`mcp_file_versions`. User-facing entrypoints pass `''`. SQL gains explicit `system_owner = $X` predicates everywhere |
-| `internal/mcp/files/migration.go`                                 | Add `system_owner TEXT NOT NULL DEFAULT ''` column to all six tables; add `(system_owner, api_key_hash, project, path)` indexes; backfill is the default (no-op for existing rows)                                                                                                                                              |
-| `internal/mcp/files/service_write_delete.go`                      | New `WriteOpts{ SkipRAGIndex bool }` parameter; index-job enqueue is gated on `!SkipRAGIndex`. Default behavior unchanged                                                                                                                                                                                                       |
-| `internal/mcp/files/types.go`                                     | Re-export from `plugin/types.go`; add `WriteOpts`                                                                                                                                                                                                                                                                               |
-| `internal/mcp/memory/service.go`                                  | Take `FileService` (interface) instead of `*files.Service`                                                                                                                                                                                                                                                                      |
-| `internal/mcp/memory/engine_factory.go`                           | Read plugin name on session start; record in session metadata for observability                                                                                                                                                                                                                                                 |
-| `go.mod` / `go.sum`                                               | Add `github.com/openai/openai-go`, `github.com/pdfcpu/pdfcpu`, `github.com/dslipak/pdf` (fallback), `github.com/yuin/goldmark`, `github.com/tiktoken-go/tokenizer`, `go.etcd.io/bbolt`, `github.com/avast/retry-go/v4`, `golang.org/x/sync/{errgroup,semaphore}`, `golang.org/x/time/rate`. No Anthropic SDK in v1 (§3.6). |
-| `.github/workflows/*` (CI)                                        | Add the `ast-grep` rule (§3.7) that fails on missing `system_owner` predicates                                                                                                                                                                                                                                                  |
-| `arch.md`                                                         | Add "MCP Memory Plugins" section pointing to manual                                                                                                                                                                                                                                                                             |
+| Path                                                                                                                      | Change                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `internal/mcp/tools/file_service.go`                                                                                      | `FileService` becomes a type alias for `plugin.Plugin`; deprecated, kept for src-compat                                                                                                                                                                                                                                    |
+| `internal/mcp/tools/file_*.go`                                                                                            | Constructors take `*plugin.Manager`; `Definition()` adds optional `plugin` input field (§2.4.1); `Handle()` decodes `req.Plugin` and forwards to `Manager.Resolve`                                                                                                                                                         |
+| `internal/mcp/tools/file_tool_helpers.go`                                                                                 | New shared helper `parsePluginOverride(raw string) (string, error)` validating `""`/`"auto"`/known names                                                                                                                                                                                                                   |
+| `internal/mcp/server.go` (lines 204-452)                                                                                  | Pass `*plugin.Manager` instead of `FileService`                                                                                                                                                                                                                                                                            |
+| `cmd/api.go` (lines 408-447)                                                                                              | Build a single shared `*files.Service`; pass it to both plugins (rag wraps directly, pageindex receives `userFS` + `SystemFS("pageindex")`); build & start `plugin.Manager`                                                                                                                                                |
+| `internal/mcp/files/settings.go`                                                                                          | Add deprecation shim reading old `settings.mcp.files.*` and forwarding into `settings.mcp.tools.memory.plugins.rag.*`                                                                                                                                                                                                      |
+| `internal/mcp/files/service.go`, `service_*.go`, `service_search.go`, `index_worker.go`, `service_versions.go`, `lock.go` | Add `system_owner string` parameter (or context value) on every method that touches `mcp_files`/`mcp_file_chunks`/`mcp_file_index_jobs`/`mcp_file_chunk_embeddings`/`mcp_file_chunk_bm25`/`mcp_file_versions`. User-facing entrypoints pass `''`. SQL gains explicit `system_owner = $X` predicates everywhere             |
+| `internal/mcp/files/migration.go`                                                                                         | Add `system_owner TEXT NOT NULL DEFAULT ''` column to all six tables; add `(system_owner, api_key_hash, project, path)` indexes; backfill is the default (no-op for existing rows)                                                                                                                                         |
+| `internal/mcp/files/service_write_delete.go`                                                                              | New `WriteOpts{ SkipRAGIndex bool }` parameter; index-job enqueue is gated on `!SkipRAGIndex`. Default behavior unchanged                                                                                                                                                                                                  |
+| `internal/mcp/files/types.go`                                                                                             | Re-export from `plugin/types.go`; add `WriteOpts`                                                                                                                                                                                                                                                                          |
+| `internal/mcp/memory/service.go`                                                                                          | Take `FileService` (interface) instead of `*files.Service`                                                                                                                                                                                                                                                                 |
+| `internal/mcp/memory/engine_factory.go`                                                                                   | Read plugin name on session start; record in session metadata for observability                                                                                                                                                                                                                                            |
+| `go.mod` / `go.sum`                                                                                                       | Add `github.com/openai/openai-go`, `github.com/pdfcpu/pdfcpu`, `github.com/dslipak/pdf` (fallback), `github.com/yuin/goldmark`, `github.com/tiktoken-go/tokenizer`, `go.etcd.io/bbolt`, `github.com/avast/retry-go/v4`, `golang.org/x/sync/{errgroup,semaphore}`, `golang.org/x/time/rate`. No Anthropic SDK in v1 (§3.6). |
+| `.github/workflows/*` (CI)                                                                                                | Add the `ast-grep` rule (§3.7) that fails on missing `system_owner` predicates                                                                                                                                                                                                                                             |
+| `arch.md`                                                                                                                 | Add "MCP Memory Plugins" section pointing to manual                                                                                                                                                                                                                                                                        |
 
 ### 4.3 Deleted files
 
@@ -1118,7 +1123,6 @@ of `mcp_files` (rows where `system_owner='pageindex'`).
 - One-shot translation `settings.mcp.files.*` → `settings.mcp.tools.memory.plugins.rag.*` at config
   load time, with a single WARN log per process. Removed in the release **after** v1 ships.
 
-
 ### 4.6 Eval harness assets and baseline_v1 deliverables
 
 §7 introduces a quantitative scorecard that requires runnable code, golden datasets, and a
@@ -1138,53 +1142,53 @@ provenance in `ragas.go`'s package comment so a reviewer can diff against the up
 
 #### 4.6.1 Eval harness (pure Go)
 
-| Path                                                              | Purpose                                                                                                                              |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `internal/mcp/memory/conformance/eval/runner.go`                  | Top-level orchestrator. Invokes retrieval / RAGAS / red-team / ops probes against a `Plugin`; emits scorecard markdown + raw per-query JSON. |
-| `internal/mcp/memory/conformance/eval/retrieval.go`               | Computes Recall@k, nDCG@10, MRR, Hit@5 against `*.jsonl` golden sets (BEIR/PyTerrier formulas).                                       |
-| `internal/mcp/memory/conformance/eval/ragas.go`                   | Pure-Go reimplementation of the six RAGAS v0.4 metric prompts (`faithfulness`, `context_precision`, `context_recall`, `context_entities_recall`, `answer_relevancy`, `answer_correctness`). Uses the same `pageindex/llm.go` `LLM` interface as production for judge calls; uses `internal/mcp/rag/openai_embedder.go` for the cosine-based `answer_relevancy`. Prompt strings are ported from the upstream `ragas==0.4.x` source and cited line-for-line in the package comment. |
-| `internal/mcp/memory/conformance/eval/redteam.go`                 | Runs the 12-attack OWASP injection suite plus cross-tenant, supersession, and GDPR-delete probes.                                    |
-| `internal/mcp/memory/conformance/eval/ops_probe.go`               | Replay-based latency p50/p95/p99, token counters, cold-vs-warm differential, ingestion throughput probe.                              |
-| `internal/mcp/memory/conformance/eval/permutation.go`             | Paired two-sided permutation test, B = 10 000 (Smucker / Allan / Carterette CIKM '07).                                                |
-| `internal/mcp/memory/conformance/eval/judge_ensemble.go`          | LLM-as-judge ensemble (`gpt-4o`, `gpt-4o-mini`, `claude-opus-4-7` — all behind the same Responses-API client) with majority-true for FinanceBench answer grading. |
-| `internal/mcp/memory/conformance/eval/scorecard.go`               | Markdown writer for the §7.4 scorecard template; deterministic key ordering for stable diffs.                                          |
-| `internal/mcp/memory/conformance/eval/{retrieval,ragas,permutation,scorecard}_test.go` | Deterministic unit tests (judge calls served by an in-memory fake `LLM`).                                            |
-| `internal/mcp/memory/conformance/eval/testdata/ragas_prompts/`    | Golden copies of the upstream RAGAS prompts at the pinned commit, used by `ragas.go`'s tests to detect prompt drift.                  |
-| `cmd/eval-plugin/main.go`                                         | Driver binary that `make eval-plugin` shells into. Parses flags, constructs the `Plugin` via the production DI graph, runs `runner.go`. |
+| Path                                                                                   | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `internal/mcp/memory/conformance/eval/runner.go`                                       | Top-level orchestrator. Invokes retrieval / RAGAS / red-team / ops probes against a `Plugin`; emits scorecard markdown + raw per-query JSON.                                                                                                                                                                                                                                                                                                                                      |
+| `internal/mcp/memory/conformance/eval/retrieval.go`                                    | Computes Recall@k, nDCG@10, MRR, Hit@5 against `*.jsonl` golden sets (BEIR/PyTerrier formulas).                                                                                                                                                                                                                                                                                                                                                                                   |
+| `internal/mcp/memory/conformance/eval/ragas.go`                                        | Pure-Go reimplementation of the six RAGAS v0.4 metric prompts (`faithfulness`, `context_precision`, `context_recall`, `context_entities_recall`, `answer_relevancy`, `answer_correctness`). Uses the same `pageindex/llm.go` `LLM` interface as production for judge calls; uses `internal/mcp/rag/openai_embedder.go` for the cosine-based `answer_relevancy`. Prompt strings are ported from the upstream `ragas==0.4.x` source and cited line-for-line in the package comment. |
+| `internal/mcp/memory/conformance/eval/redteam.go`                                      | Runs the 12-attack OWASP injection suite plus cross-tenant, supersession, and GDPR-delete probes.                                                                                                                                                                                                                                                                                                                                                                                 |
+| `internal/mcp/memory/conformance/eval/ops_probe.go`                                    | Replay-based latency p50/p95/p99, token counters, cold-vs-warm differential, ingestion throughput probe.                                                                                                                                                                                                                                                                                                                                                                          |
+| `internal/mcp/memory/conformance/eval/permutation.go`                                  | Paired two-sided permutation test, B = 10 000 (Smucker / Allan / Carterette CIKM '07).                                                                                                                                                                                                                                                                                                                                                                                            |
+| `internal/mcp/memory/conformance/eval/judge_ensemble.go`                               | LLM-as-judge ensemble (`gpt-4o`, `gpt-4o-mini`, `claude-opus-4-7` — all behind the same Responses-API client) with majority-true for FinanceBench answer grading.                                                                                                                                                                                                                                                                                                                 |
+| `internal/mcp/memory/conformance/eval/scorecard.go`                                    | Markdown writer for the §7.4 scorecard template; deterministic key ordering for stable diffs.                                                                                                                                                                                                                                                                                                                                                                                     |
+| `internal/mcp/memory/conformance/eval/{retrieval,ragas,permutation,scorecard}_test.go` | Deterministic unit tests (judge calls served by an in-memory fake `LLM`).                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `internal/mcp/memory/conformance/eval/testdata/ragas_prompts/`                         | Golden copies of the upstream RAGAS prompts at the pinned commit, used by `ragas.go`'s tests to detect prompt drift.                                                                                                                                                                                                                                                                                                                                                              |
+| `cmd/eval-plugin/main.go`                                                              | Driver binary that `make eval-plugin` shells into. Parses flags, constructs the `Plugin` via the production DI graph, runs `runner.go`.                                                                                                                                                                                                                                                                                                                                           |
 
 #### 4.6.2 Golden datasets (git-LFS)
 
-| Path                                                   | Composition                                                                                       | Source                                                                  |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `tests/eval/golden/memory-bench-internal-v1.jsonl`     | 500 hand-labelled `(query, gold_doc_set, gold_span?)` tuples (100 carry page-range gold spans).   | Sanitized export of `users.md` / `arch.md` / `tasks/*.md` / `/books`. Labelled by Laisky + 1 reviewer; Cohen's κ ≥ 0.85 before freeze. |
-| `tests/eval/golden/memory-bench-internal-v1/corpus/`   | 200 documents (~150 short notes/code, ~50 long PDFs/markdown books).                              | Sanitized export.                                                         |
-| `tests/eval/golden/memory-bench-ragas-v1.jsonl`        | 300 `(question, reference_answer, reference_context)` tuples (200 synthetic + 100 harvested).     | RAGAS testset generator + production logs.                               |
-| `tests/eval/golden/financebench-150.jsonl`             | 150 Q's + SEC 10-K/10-Q PDFs.                                                                      | Vendored from `VectifyAI/Mafin2.5-FinanceBench` at a pinned commit.       |
-| `tests/eval/golden/longmemeval_s.jsonl`                | 500 Q's, ~115 K-token contexts, 7 sub-categories.                                                  | `xiaowu0162/LongMemEval` at a pinned commit.                              |
-| `tests/eval/golden/beam-1m-200.jsonl`                  | 200 category-balanced Q's.                                                                         | `mem0ai/memory-benchmarks` BEAM-1M, subsetted.                            |
-| `tests/eval/golden/redteam_prompt_injection_v1.jsonl`  | 12 attacks; tenant-exfiltration variants prioritized.                                              | OWASP GenAI Data Security 2026 v1.0 catalogue.                            |
-| `tests/eval/golden/README.md`                          | Provenance, labelling protocol, refresh cadence.                                                   | —                                                                        |
+| Path                                                  | Composition                                                                                     | Source                                                                                                                                 |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/eval/golden/memory-bench-internal-v1.jsonl`    | 500 hand-labelled `(query, gold_doc_set, gold_span?)` tuples (100 carry page-range gold spans). | Sanitized export of `users.md` / `arch.md` / `tasks/*.md` / `/books`. Labelled by Laisky + 1 reviewer; Cohen's κ ≥ 0.85 before freeze. |
+| `tests/eval/golden/memory-bench-internal-v1/corpus/`  | 200 documents (~150 short notes/code, ~50 long PDFs/markdown books).                            | Sanitized export.                                                                                                                      |
+| `tests/eval/golden/memory-bench-ragas-v1.jsonl`       | 300 `(question, reference_answer, reference_context)` tuples (200 synthetic + 100 harvested).   | RAGAS testset generator + production logs.                                                                                             |
+| `tests/eval/golden/financebench-150.jsonl`            | 150 Q's + SEC 10-K/10-Q PDFs.                                                                   | Vendored from `VectifyAI/Mafin2.5-FinanceBench` at a pinned commit.                                                                    |
+| `tests/eval/golden/longmemeval_s.jsonl`               | 500 Q's, ~115 K-token contexts, 7 sub-categories.                                               | `xiaowu0162/LongMemEval` at a pinned commit.                                                                                           |
+| `tests/eval/golden/beam-1m-200.jsonl`                 | 200 category-balanced Q's.                                                                      | `mem0ai/memory-benchmarks` BEAM-1M, subsetted.                                                                                         |
+| `tests/eval/golden/redteam_prompt_injection_v1.jsonl` | 12 attacks; tenant-exfiltration variants prioritized.                                           | OWASP GenAI Data Security 2026 v1.0 catalogue.                                                                                         |
+| `tests/eval/golden/README.md`                         | Provenance, labelling protocol, refresh cadence.                                                | —                                                                                                                                      |
 
 All large files tracked via git-LFS (see §4.6.3 `.gitattributes`).
 
 #### 4.6.3 Build / CI wiring
 
-| Path                                | Change                                                                                                                                                  |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Makefile`                          | New target `eval-plugin`: `go run ./cmd/eval-plugin --plugin=$(PLUGIN) --golden=tests/eval/golden --out=docs/eval/runs/$(shell git rev-parse --short HEAD)`. Also new `eval-baseline-rag` that runs the plugin against the frozen golden set and writes to `docs/eval/baseline_v1/`. Both targets are pure `go run`; CI runners need only the Go toolchain that the rest of the repo already requires. |
-| `.github/workflows/eval-nightly.yml` | New workflow: matrix over `{rag, pageindex}`. Runs nightly + on-PR when `internal/mcp/memory/plugins/<plugin>/**` or `tests/eval/golden/**` changes. Posts the scorecard diff as a PR comment; fails the check on any §7.5 hard-gate regression. |
-| `.gitattributes`                    | `tests/eval/golden/** filter=lfs diff=lfs merge=lfs -text`                                                                                              |
+| Path                                 | Change                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Makefile`                           | New target `eval-plugin`: `go run ./cmd/eval-plugin --plugin=$(PLUGIN) --golden=tests/eval/golden --out=docs/eval/runs/$(shell git rev-parse --short HEAD)`. Also new `eval-baseline-rag` that runs the plugin against the frozen golden set and writes to `docs/eval/baseline_v1/`. Both targets are pure `go run`; CI runners need only the Go toolchain that the rest of the repo already requires. |
+| `.github/workflows/eval-nightly.yml` | New workflow: matrix over `{rag, pageindex}`. Runs nightly + on-PR when `internal/mcp/memory/plugins/<plugin>/**` or `tests/eval/golden/**` changes. Posts the scorecard diff as a PR comment; fails the check on any §7.5 hard-gate regression.                                                                                                                                                       |
+| `.gitattributes`                     | `tests/eval/golden/** filter=lfs diff=lfs merge=lfs -text`                                                                                                                                                                                                                                                                                                                                             |
 
 #### 4.6.4 Captured artifacts (checked-in, not regenerated by CI)
 
-| Path                                              | Contents                                                                                                                                                   |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/eval/README.md`                             | How to run `make eval-plugin`; how a baseline is captured / reset; who owns the harness.                                                                   |
-| `docs/eval/plugin_scorecard.md`                   | Index page linking to every per-plugin scorecard; updated as plugins ship.                                                                                  |
-| `docs/eval/baseline_v1/rag_plugin_scorecard.md`   | **The frozen Phase-1 baseline.** Produced by Laisky + 1 reviewer running `make eval-baseline-rag` against the Phase-1-tagged commit. Committed once and **never overwritten** until a CHANGELOG-documented baseline reset. |
-| `docs/eval/baseline_v1/raw_per_query.jsonl`       | Raw per-query metric values backing the baseline. The input the permutation test reads when a future plugin is compared against `baseline_v1`.              |
-| `docs/eval/baseline_v1/run_metadata.yml`          | Git SHA, run UTC, judge models, hardware spec (CPU model, RAM, container limits), Go toolchain version, embedding model + version, RAGAS-prompt commit pin. Required for replay. |
-| `docs/eval/runs/<sha>/`                           | Per-run scorecards produced by CI; rolled into PR comments. Cleaned up by a retention job after 90 days.                                                    |
+| Path                                            | Contents                                                                                                                                                                                                                   |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/eval/README.md`                           | How to run `make eval-plugin`; how a baseline is captured / reset; who owns the harness.                                                                                                                                   |
+| `docs/eval/plugin_scorecard.md`                 | Index page linking to every per-plugin scorecard; updated as plugins ship.                                                                                                                                                 |
+| `docs/eval/baseline_v1/rag_plugin_scorecard.md` | **The frozen Phase-1 baseline.** Produced by Laisky + 1 reviewer running `make eval-baseline-rag` against the Phase-1-tagged commit. Committed once and **never overwritten** until a CHANGELOG-documented baseline reset. |
+| `docs/eval/baseline_v1/raw_per_query.jsonl`     | Raw per-query metric values backing the baseline. The input the permutation test reads when a future plugin is compared against `baseline_v1`.                                                                             |
+| `docs/eval/baseline_v1/run_metadata.yml`        | Git SHA, run UTC, judge models, hardware spec (CPU model, RAM, container limits), Go toolchain version, embedding model + version, RAGAS-prompt commit pin. Required for replay.                                           |
+| `docs/eval/runs/<sha>/`                         | Per-run scorecards produced by CI; rolled into PR comments. Cleaned up by a retention job after 90 days.                                                                                                                   |
 
 #### 4.6.5 Why this lives in `internal/mcp/memory/conformance/eval/`, not a top-level `tools/` directory
 
@@ -1207,14 +1211,14 @@ This rule is load-bearing for two reasons:
    reorganizes — even if user-visible behavior is unchanged. That is the wrong thing to
    gate a release on.
 2. **Acceptance survives plugin substitution.** The whole point of this proposal is
-   future plugins. A criterion that says *"pgvector is queried"* cannot be reused to
-   accept a vectorless plugin; a criterion that says *"search returns the relevant chunk
-   within budget"* can.
+   future plugins. A criterion that says _"pgvector is queried"_ cannot be reused to
+   accept a vectorless plugin; a criterion that says _"search returns the relevant chunk
+   within budget"_ can.
 
 Operationally:
 
-- **Shape.** Every criterion takes the form *"When an agent / operator does X under
-  conditions Y, the system produces observable outcome Z."* Z is bytes returned, errors
+- **Shape.** Every criterion takes the form _"When an agent / operator does X under
+  conditions Y, the system produces observable outcome Z."_ Z is bytes returned, errors
   raised, latencies observed, costs billed, contents (or absence of contents) visible to
   that user in subsequent calls. Z is **not** table contents, log-line counts, mock-call
   counts, or the presence of internal cache entries.
@@ -1240,36 +1244,36 @@ Each row describes a scenario in user terms; the right-most cell records which p
 are expected to pass and any **user-observable** difference (never an implementation
 detail).
 
-| ID  | User scenario                                                                                                            | Expected user-observable outcome                                                                                                                       | rag | pageindex |
-| --- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --- | --------- |
-| C01 | Agent writes UTF-8 text at path P, then reads it back                                                                    | Read returns identical bytes; partial reads at offset/length return the corresponding slice                                                            | ✅  | ✅        |
-| C02 | Agent writes a binary PDF at path P, then reads the full file back                                                       | Read returns identical bytes (byte-for-byte equality)                                                                                                  | ✅  | ✅        |
-| C03 | Agent writes path P, then lists the parent directory                                                                     | List response contains an entry for P with the size of what was written                                                                                | ✅  | ✅        |
-| C04 | Agent writes path P, then stats it                                                                                       | Stat returns `exists=true`, the byte size, and timestamps consistent with the write                                                                    | ✅  | ✅        |
-| C05 | Agent writes path P, waits the engine's published freshness window, then searches for content unique to P                | Search response contains at least one chunk whose payload comes from P. Freshness window: rag ≤ 5 s; pageindex returned in-line with the write call    | ✅  | ✅        |
-| C06 | Agent writes P, then deletes it, then lists                                                                               | List response no longer contains an entry for P                                                                                                        | ✅  | ✅        |
-| C07 | Agent writes P, renames P → Q, then reads each                                                                           | Read on Q returns the original bytes; read on P returns NOT_FOUND                                                                                      | ✅  | ✅        |
-| C08 | Agent writes P (TRUNCATE), then writes P again (TRUNCATE) with different content                                          | Subsequent read returns the second write's bytes only                                                                                                  | ✅  | ✅        |
-| C09 | Agent writes path P at offset N (OVERWRITE) on a text path                                                               | Read returns bytes spliced exactly at offset N                                                                                                         | ✅  | ✅        |
-| C09b | Agent attempts OVERWRITE@offset on a `.pdf` or `.md` path                                                                | Tool returns `INVALID_ARGUMENT` with a message naming the alternative (`file_delete` + `file_write`)                                                   | n/a | ✅        |
-| C10 | Two agents concurrently write the same path P (TRUNCATE) with different payloads X and Y                                 | Both calls return success **or** at most one returns CONFLICT; subsequent read returns exactly X **or** exactly Y. Never a mix; never empty; never an error after a "success" was returned | ✅ | ✅ |
-| C11 | Two agents concurrently write **different** paths in the same project                                                     | Both succeed; subsequent reads of each path return its own bytes; neither write is delayed by the other beyond the single-call latency budget          | ✅  | ✅        |
-| C12 | Tenant A writes content at project X. Tenant B (different API key) issues `file_search` / `file_list` / `file_read` against project X, including with `path_prefix="*"` | None of B's calls return any of A's content (path names, chunk text, sizes, error codes that depend on A's content)                                       | ✅ | ✅ |
-| C13 | Tenant A writes content; tenant B tries to read by guessing A's exact path                                                | Read returns NOT_FOUND. The error response carries no signal whose value depends on whether the path exists in A's namespace (no oracle)               | ✅  | ✅        |
-| C14 | Agent writes `/a/x`, `/a/y`, `/b/z`, then searches with `path_prefix="/a"`                                                | Search results never include content from `/b/z`                                                                                                        | ✅  | ✅        |
-| C15 | Agent searches with `limit=N`                                                                                              | Response contains at most N entries                                                                                                                     | ✅  | ✅        |
-| C16 | Agent searches with `project="*"` from a single API key that owns content in two projects                                  | Response includes results from both projects, each tagged with its own project name; no content from other tenants                                      | ✅  | ✅        |
-| C17 | Agent calls each tool with empty path, empty project, or path containing `..`                                              | Tool returns `INVALID_ARGUMENT` with a clear message; never silently writes outside the tenant root                                                    | ✅  | ✅        |
-| C18 | Agent writes a long document (rag: ≫ chunk threshold; pageindex: ≥ 100-page PDF), then searches for content known to live in the last quarter of the document | At least one returned chunk overlaps the last quarter of the document; result quality meets the §7 thresholds                                          | ✅ | ✅ |
-| C19 | Agent writes arbitrary bytes (including non-UTF-8) at P, then reads back                                                   | Read returns the same bytes                                                                                                                             | ✅  | ✅        |
-| C20 | Agent writes P, deletes it, then reads, stats, and searches for its content                                                | Read and stat return NOT_FOUND; search responses contain no chunk derived from P                                                                        | ✅  | ✅        |
-| C21 | Agent calls a tool **without** the `plugin` field                                                                          | Behavior is identical to `plugin="auto"`; subsequent reads see the write                                                                                | ✅  | ✅        |
-| C22 | Agent calls a tool with `plugin="auto"`                                                                                    | Identical to C21                                                                                                                                        | ✅  | ✅        |
-| C23 | Project default is pageindex. Agent writes path P with `plugin="rag"`, then reads with `plugin="rag"`, then with `plugin="pageindex"` | First read returns the bytes; second read returns NOT_FOUND with a hint pointing to `plugin="rag"`                                                       | ✅ | n/a |
-| C24 | Mirror of C23 (default rag; agent uses `plugin="pageindex"`)                                                                | As C23                                                                                                                                                  | n/a | ✅        |
-| C25 | Agent calls a tool with `plugin="bogus"`                                                                                   | `INVALID_ARGUMENT`; response includes the list of valid plugin names                                                                                    | ✅  | ✅        |
-| C26 | Agent writes P with `plugin="A"`, then reads P with `plugin="B"`                                                            | Read returns NOT_FOUND with a hint identifying the plugin that owns P (no silent cross-plugin fallback)                                                | ✅  | ✅        |
-| C27 | A user has no way to create the system-owned routing/catalog state a plugin uses internally. Trying to do so via standard tool calls (e.g., writing to a path that *would* collide with internal state) | The user's write succeeds and is visible to that user only; system-owned state is unchanged and never appears in that user's `file_list` / `file_search` / `file_read` responses | ✅ | ✅ |
+| ID   | User scenario                                                                                                                                                                                           | Expected user-observable outcome                                                                                                                                                           | rag | pageindex |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- | --------- |
+| C01  | Agent writes UTF-8 text at path P, then reads it back                                                                                                                                                   | Read returns identical bytes; partial reads at offset/length return the corresponding slice                                                                                                | ✅  | ✅        |
+| C02  | Agent writes a binary PDF at path P, then reads the full file back                                                                                                                                      | Read returns identical bytes (byte-for-byte equality)                                                                                                                                      | ✅  | ✅        |
+| C03  | Agent writes path P, then lists the parent directory                                                                                                                                                    | List response contains an entry for P with the size of what was written                                                                                                                    | ✅  | ✅        |
+| C04  | Agent writes path P, then stats it                                                                                                                                                                      | Stat returns `exists=true`, the byte size, and timestamps consistent with the write                                                                                                        | ✅  | ✅        |
+| C05  | Agent writes path P, waits the engine's published freshness window, then searches for content unique to P                                                                                               | Search response contains at least one chunk whose payload comes from P. Freshness window: rag ≤ 5 s; pageindex returned in-line with the write call                                        | ✅  | ✅        |
+| C06  | Agent writes P, then deletes it, then lists                                                                                                                                                             | List response no longer contains an entry for P                                                                                                                                            | ✅  | ✅        |
+| C07  | Agent writes P, renames P → Q, then reads each                                                                                                                                                          | Read on Q returns the original bytes; read on P returns NOT_FOUND                                                                                                                          | ✅  | ✅        |
+| C08  | Agent writes P (TRUNCATE), then writes P again (TRUNCATE) with different content                                                                                                                        | Subsequent read returns the second write's bytes only                                                                                                                                      | ✅  | ✅        |
+| C09  | Agent writes path P at offset N (OVERWRITE) on a text path                                                                                                                                              | Read returns bytes spliced exactly at offset N                                                                                                                                             | ✅  | ✅        |
+| C09b | Agent attempts OVERWRITE@offset on a `.pdf` or `.md` path                                                                                                                                               | Tool returns `INVALID_ARGUMENT` with a message naming the alternative (`file_delete` + `file_write`)                                                                                       | n/a | ✅        |
+| C10  | Two agents concurrently write the same path P (TRUNCATE) with different payloads X and Y                                                                                                                | Both calls return success **or** at most one returns CONFLICT; subsequent read returns exactly X **or** exactly Y. Never a mix; never empty; never an error after a "success" was returned | ✅  | ✅        |
+| C11  | Two agents concurrently write **different** paths in the same project                                                                                                                                   | Both succeed; subsequent reads of each path return its own bytes; neither write is delayed by the other beyond the single-call latency budget                                              | ✅  | ✅        |
+| C12  | Tenant A writes content at project X. Tenant B (different API key) issues `file_search` / `file_list` / `file_read` against project X, including with `path_prefix="*"`                                 | None of B's calls return any of A's content (path names, chunk text, sizes, error codes that depend on A's content)                                                                        | ✅  | ✅        |
+| C13  | Tenant A writes content; tenant B tries to read by guessing A's exact path                                                                                                                              | Read returns NOT_FOUND. The error response carries no signal whose value depends on whether the path exists in A's namespace (no oracle)                                                   | ✅  | ✅        |
+| C14  | Agent writes `/a/x`, `/a/y`, `/b/z`, then searches with `path_prefix="/a"`                                                                                                                              | Search results never include content from `/b/z`                                                                                                                                           | ✅  | ✅        |
+| C15  | Agent searches with `limit=N`                                                                                                                                                                           | Response contains at most N entries                                                                                                                                                        | ✅  | ✅        |
+| C16  | Agent searches with `project="*"` from a single API key that owns content in two projects                                                                                                               | Response includes results from both projects, each tagged with its own project name; no content from other tenants                                                                         | ✅  | ✅        |
+| C17  | Agent calls each tool with empty path, empty project, or path containing `..`                                                                                                                           | Tool returns `INVALID_ARGUMENT` with a clear message; never silently writes outside the tenant root                                                                                        | ✅  | ✅        |
+| C18  | Agent writes a long document (rag: ≫ chunk threshold; pageindex: ≥ 100-page PDF), then searches for content known to live in the last quarter of the document                                           | At least one returned chunk overlaps the last quarter of the document; result quality meets the §7 thresholds                                                                              | ✅  | ✅        |
+| C19  | Agent writes arbitrary bytes (including non-UTF-8) at P, then reads back                                                                                                                                | Read returns the same bytes                                                                                                                                                                | ✅  | ✅        |
+| C20  | Agent writes P, deletes it, then reads, stats, and searches for its content                                                                                                                             | Read and stat return NOT_FOUND; search responses contain no chunk derived from P                                                                                                           | ✅  | ✅        |
+| C21  | Agent calls a tool **without** the `plugin` field                                                                                                                                                       | Behavior is identical to `plugin="auto"`; subsequent reads see the write                                                                                                                   | ✅  | ✅        |
+| C22  | Agent calls a tool with `plugin="auto"`                                                                                                                                                                 | Identical to C21                                                                                                                                                                           | ✅  | ✅        |
+| C23  | Project default is pageindex. Agent writes path P with `plugin="rag"`, then reads with `plugin="rag"`, then with `plugin="pageindex"`                                                                   | First read returns the bytes; second read returns NOT_FOUND with a hint pointing to `plugin="rag"`                                                                                         | ✅  | n/a       |
+| C24  | Mirror of C23 (default rag; agent uses `plugin="pageindex"`)                                                                                                                                            | As C23                                                                                                                                                                                     | n/a | ✅        |
+| C25  | Agent calls a tool with `plugin="bogus"`                                                                                                                                                                | `INVALID_ARGUMENT`; response includes the list of valid plugin names                                                                                                                       | ✅  | ✅        |
+| C26  | Agent writes P with `plugin="A"`, then reads P with `plugin="B"`                                                                                                                                        | Read returns NOT_FOUND with a hint identifying the plugin that owns P (no silent cross-plugin fallback)                                                                                    | ✅  | ✅        |
+| C27  | A user has no way to create the system-owned routing/catalog state a plugin uses internally. Trying to do so via standard tool calls (e.g., writing to a path that _would_ collide with internal state) | The user's write succeeds and is visible to that user only; system-owned state is unchanged and never appears in that user's `file_list` / `file_search` / `file_read` responses           | ✅  | ✅        |
 
 ### 5.2 Behavioral race-condition matrix
 
@@ -1277,18 +1281,18 @@ Race conditions are user-observable: two agents do something at the same time an
 user expects a deterministic outcome. Each row pairs an action sequence with the **only**
 acceptable observations. No row asserts which lock primitive is used.
 
-| ID  | Concurrent actions                                                                                  | Acceptable user-observable outcomes                                                                                                                                                                                                                                                                                          |
-| --- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R01 | Agent A writes P with bytes X; Agent B writes P with bytes Y (TRUNCATE; calls overlap in time)      | Both calls return success **or** at most one returns CONFLICT. A subsequent read returns exactly X or exactly Y. Never: partial bytes mixed from both; never empty; never an error after a success was returned to the agent.                                                                                                |
-| R02 | A writes P; B deletes P (calls overlap)                                                              | One of three deterministic outcomes per a documented order rule: (i) write→success then read returns bytes; (ii) write→success, delete→success, read→NOT_FOUND; (iii) write→CONFLICT and the path is absent. The same input sequence always produces the same outcome.                                                       |
-| R03 | A reads P; B writes P (TRUNCATE); calls overlap                                                      | A's read returns either pre-write bytes or post-write bytes — never a mix. A's call latency is bounded by the read budget (no head-of-line blocking by the long write).                                                                                                                                                       |
-| R04 | A renames P→Q; B reads P; calls overlap                                                              | B's read returns either the original bytes (rename hadn't committed) or NOT_FOUND (rename committed). After both calls return, a subsequent list shows Q but never both P and Q.                                                                                                                                              |
-| R05 | A deletes P; B reads P; calls overlap                                                                | B's read returns either the bytes or NOT_FOUND, deterministically. Any subsequent search returns no chunk that originated from P after delete returned success.                                                                                                                                                               |
-| R06 | A writes P, then immediately B searches for content unique to P                                      | If the engine advertises freshness window ≤ T (rag = 5 s, pageindex = synchronous = 0 s), then for any B-search invoked at any moment ≥ T after A's write success, the search response contains a chunk derived from P. Earlier than T may legitimately miss it; T is part of the user contract documented in `Capabilities`. |
-| R07 | N=20 agents write distinct paths in the same project concurrently                                     | All 20 writes succeed within the per-call latency budget; subsequent reads return each path's own bytes. The slowest of the 20 is bounded by `latency_budget × O(log N)` — no head-of-line blocking.                                                                                                                          |
-| R08 | A writes P; concurrently the host process restarts (rag's index worker resumes from `mcp_file_index_jobs`; pageindex's in-process indexer is re-driven by the next write or the warm bbolt cache) | After restart, a read of P returns either the bytes or `UNAVAILABLE` (transient); never empty success. Within the freshness window, a search re-derives P at most once (no double-billing).                                                                                                                                  |
-| R09 | A writes P with `plugin="rag"`; B concurrently writes the same P with `plugin="pageindex"`            | Both writes succeed. A subsequent read scoped to a plugin returns only that plugin's bytes; cross-plugin reads return NOT_FOUND with the routing hint. The two are tracked independently — neither mutates the other.                                                                                                          |
-| R10 | A writes P; thousands (C ≥ 1 000) of concurrent reads of P                                            | Every read returns either pre-write or post-write bytes consistently per call; A's write returns success. Read tail latency does not exceed `latency_budget × 1.5` even at C = 1 000.                                                                                                                                          |
+| ID  | Concurrent actions                                                                                                                                                                                | Acceptable user-observable outcomes                                                                                                                                                                                                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R01 | Agent A writes P with bytes X; Agent B writes P with bytes Y (TRUNCATE; calls overlap in time)                                                                                                    | Both calls return success **or** at most one returns CONFLICT. A subsequent read returns exactly X or exactly Y. Never: partial bytes mixed from both; never empty; never an error after a success was returned to the agent.                                                                                                 |
+| R02 | A writes P; B deletes P (calls overlap)                                                                                                                                                           | One of three deterministic outcomes per a documented order rule: (i) write→success then read returns bytes; (ii) write→success, delete→success, read→NOT_FOUND; (iii) write→CONFLICT and the path is absent. The same input sequence always produces the same outcome.                                                        |
+| R03 | A reads P; B writes P (TRUNCATE); calls overlap                                                                                                                                                   | A's read returns either pre-write bytes or post-write bytes — never a mix. A's call latency is bounded by the read budget (no head-of-line blocking by the long write).                                                                                                                                                       |
+| R04 | A renames P→Q; B reads P; calls overlap                                                                                                                                                           | B's read returns either the original bytes (rename hadn't committed) or NOT_FOUND (rename committed). After both calls return, a subsequent list shows Q but never both P and Q.                                                                                                                                              |
+| R05 | A deletes P; B reads P; calls overlap                                                                                                                                                             | B's read returns either the bytes or NOT_FOUND, deterministically. Any subsequent search returns no chunk that originated from P after delete returned success.                                                                                                                                                               |
+| R06 | A writes P, then immediately B searches for content unique to P                                                                                                                                   | If the engine advertises freshness window ≤ T (rag = 5 s, pageindex = synchronous = 0 s), then for any B-search invoked at any moment ≥ T after A's write success, the search response contains a chunk derived from P. Earlier than T may legitimately miss it; T is part of the user contract documented in `Capabilities`. |
+| R07 | N=20 agents write distinct paths in the same project concurrently                                                                                                                                 | All 20 writes succeed within the per-call latency budget; subsequent reads return each path's own bytes. The slowest of the 20 is bounded by `latency_budget × O(log N)` — no head-of-line blocking.                                                                                                                          |
+| R08 | A writes P; concurrently the host process restarts (rag's index worker resumes from `mcp_file_index_jobs`; pageindex's in-process indexer is re-driven by the next write or the warm bbolt cache) | After restart, a read of P returns either the bytes or `UNAVAILABLE` (transient); never empty success. Within the freshness window, a search re-derives P at most once (no double-billing).                                                                                                                                   |
+| R09 | A writes P with `plugin="rag"`; B concurrently writes the same P with `plugin="pageindex"`                                                                                                        | Both writes succeed. A subsequent read scoped to a plugin returns only that plugin's bytes; cross-plugin reads return NOT_FOUND with the routing hint. The two are tracked independently — neither mutates the other.                                                                                                         |
+| R10 | A writes P; thousands (C ≥ 1 000) of concurrent reads of P                                                                                                                                        | Every read returns either pre-write or post-write bytes consistently per call; A's write returns success. Read tail latency does not exceed `latency_budget × 1.5` even at C = 1 000.                                                                                                                                         |
 
 R01–R10 are acceptance: every plugin must satisfy them on a real database. They are run
 under `go test -race -count=10` over a fault-injecting harness with explicit scheduling
@@ -1297,15 +1301,15 @@ used; rows assert what the concurrent agents observe.
 
 ### 5.3 Integration / e2e — operator scenarios
 
-| ID  | Operator scenario                                                                                                       | Expected observation                                                                                                                                                                              |
-| --- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E01 | Operator runs the server with `default_plugin=rag` against the existing test corpus                                     | The pre-refactor user-visible behavior is preserved end-to-end: every existing functional test under `internal/mcp/files` and `internal/mcp/tools` is green; the §5.4 smoke flow works            |
-| E02 | Operator runs with `default_plugin=pageindex` (Responses-API key configured), writes a 100-page PDF, then queries it      | `file_search` returns at least one chunk whose pages overlap the answer; total wall-clock for write→search ≤ §7.5 thresholds                                                                      |
-| E03 | Operator configures mixed projects (`notes→rag`, `books→pageindex`) and queries each                                     | The MCP `tools/list` schemas served to clients are byte-identical to single-plugin mode; queries land on the documented plugin (verifiable via the operator's standard audit channel)             |
-| E04 | Operator monitors a `pageindex` `file_search` invocation                                                                  | Per-call billing metadata is emitted (token counts in/out, LLM call count) so the operator can budget. Exact metric key names are defined in the operator manual, not pinned in this proposal     |
-| E05 | Operator measures `rag` plugin hot-path latency before and after the refactor                                            | p99 latency unchanged within ±5%                                                                                                                                                                  |
-| E06 | Operator writes a 200-page PDF under `pageindex`                                                                          | Operator sees a sequence of progress signals (in any documented form) before the call returns; the call returns within the configured indexing timeout                                            |
-| E07 | Operator restarts the server, then immediately searches a previously-indexed PDF                                          | First search after restart succeeds within the configured query timeout; the result set is equivalent to a warm-cache search of the same query (same top-K paths, allowing rank ties)             |
+| ID  | Operator scenario                                                                                                    | Expected observation                                                                                                                                                                          |
+| --- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E01 | Operator runs the server with `default_plugin=rag` against the existing test corpus                                  | The pre-refactor user-visible behavior is preserved end-to-end: every existing functional test under `internal/mcp/files` and `internal/mcp/tools` is green; the §5.4 smoke flow works        |
+| E02 | Operator runs with `default_plugin=pageindex` (Responses-API key configured), writes a 100-page PDF, then queries it | `file_search` returns at least one chunk whose pages overlap the answer; total wall-clock for write→search ≤ §7.5 thresholds                                                                  |
+| E03 | Operator configures mixed projects (`notes→rag`, `books→pageindex`) and queries each                                 | The MCP `tools/list` schemas served to clients are byte-identical to single-plugin mode; queries land on the documented plugin (verifiable via the operator's standard audit channel)         |
+| E04 | Operator monitors a `pageindex` `file_search` invocation                                                             | Per-call billing metadata is emitted (token counts in/out, LLM call count) so the operator can budget. Exact metric key names are defined in the operator manual, not pinned in this proposal |
+| E05 | Operator measures `rag` plugin hot-path latency before and after the refactor                                        | p99 latency unchanged within ±5%                                                                                                                                                              |
+| E06 | Operator writes a 200-page PDF under `pageindex`                                                                     | Operator sees a sequence of progress signals (in any documented form) before the call returns; the call returns within the configured indexing timeout                                        |
+| E07 | Operator restarts the server, then immediately searches a previously-indexed PDF                                     | First search after restart succeeds within the configured query timeout; the result set is equivalent to a warm-cache search of the same query (same top-K paths, allowing rank ties)         |
 
 ### 5.4 Manual / smoke
 
@@ -1332,42 +1336,42 @@ becoming fragile to internal renames.
 
 #### 5.5.2 `pageindex_plugin` regression
 
-| ID  | Internal test (informational)                                                                                                                                                       |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P01 | `Indexer.Index(KindPDF, ...)` happy path against a frozen 20-page PDF in `testdata/`. Stub `LLM` returns canned Responses-API JSON; assert tree structure matches a golden fixture byte-for-byte (modulo `indexed_at`). |
-| P02 | `Indexer.Index(KindMarkdown, ...)` happy path: header tree extracted by goldmark; no LLM calls when `algo.generate_node_summary=false`. |
-| P03 | `Search` loop given canned tree + stub `LLM`: asserts merge order, byte-offset synthesis, `limit` truncation.                                                                       |
-| P04 | `Search` loop budget exhaustion (`max_steps=2`) → returns partial result with `truncated=true`, no error. (User-observable side covered by C-row + Q7.)                              |
-| P05 | `Search` loop with malformed LLM JSON → Responses-API strict-schema rejection → `LLM.Respond` returns error → degrades to "fetch first node of each candidate" fallback. (User-observable side covered by C-row.) |
-| P06 | `Write(.pdf, OVERWRITE@offset=10)` → `INVALID_ARGUMENT`. (User-observable side covered by C09b.)                                                                                     |
-| P07 | `Write(.pdf, TRUNCATE)` then `Read(.pdf)` returns identical bytes via `userFS`.                                                                                                      |
-| P08 | `Delete` removes user row from `userFS` and the `pageindex/<doc_id>.json` row from `SystemFS`; index mapping updated atomically.                                                     |
-| P09 | `Rename` updates `userFS` row + index mapping; tree JSON content untouched.                                                                                                          |
-| P10 | Index-mapping mutation is serialized: 10 concurrent writes to distinct user paths in the same project all succeed; final mapping has 10 entries.                                    |
+| ID  | Internal test (informational)                                                                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P01 | `Indexer.Index(KindPDF, ...)` happy path against a frozen 20-page PDF in `testdata/`. Stub `LLM` returns canned Responses-API JSON; assert tree structure matches a golden fixture byte-for-byte (modulo `indexed_at`).                           |
+| P02 | `Indexer.Index(KindMarkdown, ...)` happy path: header tree extracted by goldmark; no LLM calls when `algo.generate_node_summary=false`.                                                                                                           |
+| P03 | `Search` loop given canned tree + stub `LLM`: asserts merge order, byte-offset synthesis, `limit` truncation.                                                                                                                                     |
+| P04 | `Search` loop budget exhaustion (`max_steps=2`) → returns partial result with `truncated=true`, no error. (User-observable side covered by C-row + Q7.)                                                                                           |
+| P05 | `Search` loop with malformed LLM JSON → Responses-API strict-schema rejection → `LLM.Respond` returns error → degrades to "fetch first node of each candidate" fallback. (User-observable side covered by C-row.)                                 |
+| P06 | `Write(.pdf, OVERWRITE@offset=10)` → `INVALID_ARGUMENT`. (User-observable side covered by C09b.)                                                                                                                                                  |
+| P07 | `Write(.pdf, TRUNCATE)` then `Read(.pdf)` returns identical bytes via `userFS`.                                                                                                                                                                   |
+| P08 | `Delete` removes user row from `userFS` and the `pageindex/<doc_id>.json` row from `SystemFS`; index mapping updated atomically.                                                                                                                  |
+| P09 | `Rename` updates `userFS` row + index mapping; tree JSON content untouched.                                                                                                                                                                       |
+| P10 | Index-mapping mutation is serialized: 10 concurrent writes to distinct user paths in the same project all succeed; final mapping has 10 entries.                                                                                                  |
 | P11 | LLM provider unreachable: `openaiLLM` returns `429`/`5xx`/network error; `avast/retry-go/v4` retries per policy honoring `Retry-After`; after exhaustion, surfaces as a tool-level `unavailable` error. (User-observable side covered by C-rows.) |
-| P12 | Concurrency cap: spinning 100 `file_write(.pdf)` calls in parallel never exceeds `indexer.max_concurrency` simultaneous LLM calls (verified by an instrumented stub `LLM`).          |
-| P13 | `WriteOpts.SkipRAGIndex=true` means the index worker observes no new job for the row.                                                                                                |
-| P14 | Streaming progress: `Index` writes one `Progress` event per phase to a buffered channel; events are forwarded to a captured logger and to billing metadata; the final tool response still arrives as one unit. |
-| P15 | bbolt cache hit: re-running `Index` on the same bytes with the same `algorithm_version` makes zero `LLM.Respond` calls.                                                              |
-| P16 | bbolt cache invalidation: bumping `algorithm_version` makes the next `Index` re-run all prompts.                                                                                     |
-| P17 | Token budget enforcement: a stub `LLM` reporting outsized usage causes the shared `atomic.Int64` budget to fall below zero; subsequent goroutines short-circuit with `ErrBudgetExceeded`. |
-| P18 | PDF parser swap: setting `pdf.text_parser="dslipak"` routes through the dslipak adapter; the same golden test in P01 still passes (modulo documented text-quality differences).      |
+| P12 | Concurrency cap: spinning 100 `file_write(.pdf)` calls in parallel never exceeds `indexer.max_concurrency` simultaneous LLM calls (verified by an instrumented stub `LLM`).                                                                       |
+| P13 | `WriteOpts.SkipRAGIndex=true` means the index worker observes no new job for the row.                                                                                                                                                             |
+| P14 | Streaming progress: `Index` writes one `Progress` event per phase to a buffered channel; events are forwarded to a captured logger and to billing metadata; the final tool response still arrives as one unit.                                    |
+| P15 | bbolt cache hit: re-running `Index` on the same bytes with the same `algorithm_version` makes zero `LLM.Respond` calls.                                                                                                                           |
+| P16 | bbolt cache invalidation: bumping `algorithm_version` makes the next `Index` re-run all prompts.                                                                                                                                                  |
+| P17 | Token budget enforcement: a stub `LLM` reporting outsized usage causes the shared `atomic.Int64` budget to fall below zero; subsequent goroutines short-circuit with `ErrBudgetExceeded`.                                                         |
+| P18 | PDF parser swap: setting `pdf.text_parser="dslipak"` routes through the dslipak adapter; the same golden test in P01 still passes (modulo documented text-quality differences).                                                                   |
 
 #### 5.5.3 Manager / settings regression
 
-| ID  | Internal test (informational)                                                                                                                                  |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M01 | With no per-call `plugin` argument, every call resolves to `default_plugin`.                                                                                    |
-| M02 | Unknown plugin name in config returns startup error.                                                                                                            |
-| M03 | `StartAll` failure on one plugin aborts startup with a wrapped error naming the plugin.                                                                         |
-| M04 | Settings shim: legacy `settings.mcp.files.*` is read into `settings.mcp.tools.memory.plugins.rag.*`.                                                                  |
-| M05 | Settings shim emits exactly one WARN per process (not per request).                                                                                             |
-| M06 | `Capabilities.SupportsVersions=false` makes the versions-aware tool path fall back gracefully.                                                                  |
-| M07 | Per-call `plugin` arg, when present and valid, wins over `default_plugin` for that call only — subsequent calls without the arg revert to `default_plugin`.    |
-| M08 | `plugin=""` and `plugin="auto"` are equivalent; only the resolution-rule path is exercised.                                                                     |
-| M09 | Resolved plugin name is recorded on every request log (asserted with a captured logger).                                                                        |
-| M10 | `system_owner` lint gate: a deliberately broken commit that adds a query against shared FS tables without `system_owner` predicate fails the CI `ast-grep` check.|
-| M11 | `SystemFS("")` returns an error.                                                                                                                                |
+| ID  | Internal test (informational)                                                                                                                                               |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M01 | With no per-call `plugin` argument, every call resolves to `default_plugin`.                                                                                                |
+| M02 | Unknown plugin name in config returns startup error.                                                                                                                        |
+| M03 | `StartAll` failure on one plugin aborts startup with a wrapped error naming the plugin.                                                                                     |
+| M04 | Settings shim: legacy `settings.mcp.files.*` is read into `settings.mcp.tools.memory.plugins.rag.*`.                                                                        |
+| M05 | Settings shim emits exactly one WARN per process (not per request).                                                                                                         |
+| M06 | `Capabilities.SupportsVersions=false` makes the versions-aware tool path fall back gracefully.                                                                              |
+| M07 | Per-call `plugin` arg, when present and valid, wins over `default_plugin` for that call only — subsequent calls without the arg revert to `default_plugin`.                 |
+| M08 | `plugin=""` and `plugin="auto"` are equivalent; only the resolution-rule path is exercised.                                                                                 |
+| M09 | Resolved plugin name is recorded on every request log (asserted with a captured logger).                                                                                    |
+| M10 | `system_owner` lint gate: a deliberately broken commit that adds a query against shared FS tables without `system_owner` predicate fails the CI `ast-grep` check.           |
+| M11 | `SystemFS("")` returns an error.                                                                                                                                            |
 | M12 | A `SystemFS("X")` instance cannot read/write rows where `system_owner != "X"` (constructed via reflection in test only — production callers cannot reach the SQL directly). |
 
 #### 5.5.4 Why this section exists
@@ -1384,90 +1388,89 @@ produced when an agent or operator does the named action. Tests are listed as ev
 not as the criterion itself.
 
 A1. **Existing user-visible behavior is preserved on `rag`-routed calls.**
-   When any agent that worked against the pre-refactor system replays its full history of
-   tool calls, every observable response (returned bytes, errors, list/stat results,
-   search ordering at top-K, per-call latency within ±5%) is the same as before.
-   *Evidence:* the existing test corpus under `internal/mcp/files/` and
-   `internal/mcp/tools/` is green under `go test -race -count=1 ./internal/mcp/...`.
+When any agent that worked against the pre-refactor system replays its full history of
+tool calls, every observable response (returned bytes, errors, list/stat results,
+search ordering at top-K, per-call latency within ±5%) is the same as before.
+_Evidence:_ the existing test corpus under `internal/mcp/files/` and
+`internal/mcp/tools/` is green under `go test -race -count=1 ./internal/mcp/...`.
 
 A2. **The public schema is additive-only.**
-   When a client calls MCP `tools/list`, the response for every `file_*` tool differs
-   from the pre-refactor response by exactly one new optional input field (`plugin`,
-   enum `["rag","pageindex","auto"]`, default `"auto"`); every other field is
-   byte-identical. Pre-existing callers that omit the field observe identical behavior to
-   today.
+When a client calls MCP `tools/list`, the response for every `file_*` tool differs
+from the pre-refactor response by exactly one new optional input field (`plugin`,
+enum `["rag","pageindex","auto"]`, default `"auto"`); every other field is
+byte-identical. Pre-existing callers that omit the field observe identical behavior to
+today.
 
 A3. **A user can switch plugins without changing tool-call shape.**
-   When an operator switches `default_plugin` between `rag` and `pageindex` and an agent
-   re-runs the same script (write → list → stat → search → read → delete), every call
-   returns success with payloads that satisfy the §5.1 conformance rows for the active
-   plugin. The agent's code never changes between configurations.
+When an operator switches `default_plugin` between `rag` and `pageindex` and an agent
+re-runs the same script (write → list → stat → search → read → delete), every call
+returns success with payloads that satisfy the §5.1 conformance rows for the active
+plugin. The agent's code never changes between configurations.
 
 A4. **All §5.1 conformance rows and §5.2 race-condition rows pass for every plugin.**
-   When the conformance suite runs against a plugin (real DB; stub `LLM` returning canned
-   Responses-API JSON in CI for `pageindex`), every C-row and every R-row produces exactly
-   one of the documented user-observable outcomes.
+When the conformance suite runs against a plugin (real DB; stub `LLM` returning canned
+Responses-API JSON in CI for `pageindex`), every C-row and every R-row produces exactly
+one of the documented user-observable outcomes.
 
 A5. **Legacy config remains valid.**
-   When an operator boots the server with a config that sets only the legacy
-   `settings.mcp.files.*` keys, the server boots, prints exactly one deprecation warning
-   on startup, and the user-visible behavior of all tool calls is identical to a config
-   that sets the new keys equivalently.
+When an operator boots the server with a config that sets only the legacy
+`settings.mcp.files.*` keys, the server boots, prints exactly one deprecation warning
+on startup, and the user-visible behavior of all tool calls is identical to a config
+that sets the new keys equivalently.
 
 A6. **A new operator can run `pageindex` end-to-end from the manual.**
-   When an operator who has never seen the project follows the "Enable pageindex"
-   section of `docs/manual/mcp_memory_plugins.md` on a 2-vCPU box (set `llm.api_key`
-   in `settings.yml`, flip `default_plugin: pageindex`, restart), the §5.3 E02 scenario
-   succeeds on the first try. Bring-up is config-only — the existing Go process owns
-   the pipeline.
+When an operator who has never seen the project follows the "Enable pageindex"
+section of `docs/manual/mcp_memory_plugins.md` on a 2-vCPU box (set `llm.api_key`
+in `settings.yml`, flip `default_plugin: pageindex`, restart), the §5.3 E02 scenario
+succeeds on the first try. Bring-up is config-only — the existing Go process owns
+the pipeline.
 
 A7. **Cost is budgeted and visible to the agent.**
-   When an agent issues a `file_search` under `pageindex` and the configured budgets
-   (`tree_query.max_steps`, `tree_query.max_tokens`) would be exceeded, the response is
-   returned **before** the budget is exceeded, contains the partial result, and includes
-   `truncated=true` in `structuredContent`. Token spend per call is observable to the
-   operator (the exact telemetry path lives in the operator manual).
+When an agent issues a `file_search` under `pageindex` and the configured budgets
+(`tree_query.max_steps`, `tree_query.max_tokens`) would be exceeded, the response is
+returned **before** the budget is exceeded, contains the partial result, and includes
+`truncated=true` in `structuredContent`. Token spend per call is observable to the
+operator (the exact telemetry path lives in the operator manual).
 
 A8. **A user never sees content that does not belong to their tenant.**
-   For any pair of API keys (A, B), there is no sequence of tool calls B can issue that
-   surfaces content authored by A — neither directly (`file_read` / `file_search` /
-   `file_list` results), nor indirectly (path existence inferred from error codes, byte
-   sizes, or response-time differences exceeding 50 ms). This includes content that the
-   system itself wrote on behalf of plugins; the system's internal namespace is
-   unobservable from any user-side tool call.
-   *Evidence:* §5.1 C12, C13, C27; the §5.2 race-condition rows; §6.1 Q10; the
-   cross-tenant red-team probe.
+For any pair of API keys (A, B), there is no sequence of tool calls B can issue that
+surfaces content authored by A — neither directly (`file_read` / `file_search` /
+`file_list` results), nor indirectly (path existence inferred from error codes, byte
+sizes, or response-time differences exceeding 50 ms). This includes content that the
+system itself wrote on behalf of plugins; the system's internal namespace is
+unobservable from any user-side tool call.
+_Evidence:_ §5.1 C12, C13, C27; the §5.2 race-condition rows; §6.1 Q10; the
+cross-tenant red-team probe.
 
 A9. **Operator-facing docs land with the code.**
-   When the PR merges, an operator can read `docs/manual/mcp_memory_plugins.md` and the
-   new section in `arch.md` to bring up, switch, and tear down each plugin without
-   reading source.
+When the PR merges, an operator can read `docs/manual/mcp_memory_plugins.md` and the
+new section in `arch.md` to bring up, switch, and tear down each plugin without
+reading source.
 
 A10. **Reverting to single-plugin mode produces pre-refactor behavior.**
-   When an operator sets `default_plugin=rag` and removes the `pageindex` block from
-   config (or simply leaves `llm.api_key` empty), every tool call's observable outcome
-   matches the pre-refactor system on the same input. No migration leaves behind a
-   user-visible change. With no API key configured, any explicit `plugin="pageindex"`
-   call returns `FAILED_PRECONDITION` with a message naming the missing config key —
-   not silent fallback.
-
+When an operator sets `default_plugin=rag` and removes the `pageindex` block from
+config (or simply leaves `llm.api_key` empty), every tool call's observable outcome
+matches the pre-refactor system on the same input. No migration leaves behind a
+user-visible change. With no API key configured, any explicit `plugin="pageindex"`
+call returns `FAILED_PRECONDITION` with a message naming the missing config key —
+not silent fallback.
 
 A11. **Switching the indexing/retrieval model within the Responses-API contract is invisible to the agent.**
-   When an operator changes `llm.indexing_model` and `llm.retrieve_model` to another
-   model that the configured `base_url` exposes via the Responses API (e.g., a
-   self-hosted vendor), `pageindex_plugin` indexing and search succeed and produce
-   results that meet the §7.5 hard gates for `pageindex_plugin`. The agent's
-   request/response shape never depends on the model choice. Switching to a *non*-
-   Responses-API contract (chat-completions, Anthropic Messages) is explicitly out of
-   scope for v1 and is documented as such; the system fails closed (startup error)
-   rather than silently degrading.
+When an operator changes `llm.indexing_model` and `llm.retrieve_model` to another
+model that the configured `base_url` exposes via the Responses API (e.g., a
+self-hosted vendor), `pageindex_plugin` indexing and search succeed and produce
+results that meet the §7.5 hard gates for `pageindex_plugin`. The agent's
+request/response shape never depends on the model choice. Switching to a _non_-
+Responses-API contract (chat-completions, Anthropic Messages) is explicitly out of
+scope for v1 and is documented as such; the system fails closed (startup error)
+rather than silently degrading.
 
 A12. **Long indexing operations report progress.**
-   When an operator (or agent) writes a long document under `pageindex` and the
-   operation takes longer than the configured progress-emit interval, the operator
-   sees a sequence of progress signals (in any documented form) before the call
-   returns. On completion, the cumulative cost (token counts, LLM call count) is
-   visible to the operator via the documented telemetry channel.
+When an operator (or agent) writes a long document under `pageindex` and the
+operation takes longer than the configured progress-emit interval, the operator
+sees a sequence of progress signals (in any documented form) before the call
+returns. On completion, the cumulative cost (token counts, LLM call count) is
+visible to the operator via the documented telemetry channel.
 
 ### 6.1 Quantitative acceptance criteria (`Q*`)
 
@@ -1475,55 +1478,55 @@ These extend §6 with the measurable bar required by §7. Every `Q*` is automati
 by `make eval-plugin` and produces a row in the plugin scorecard.
 
 Q1. **Internal retrieval quality (gold-labelled set).** On `memory-bench-internal-v1`,
-    every plugin meets the §7.5 hard gates for Recall@10, nDCG@10 (overall and long-doc
-    subset), MRR, and Hit@5. `pageindex_plugin` exceeds `rag_plugin` nDCG@10 on the
-    long-doc subset by ≥ 10 pp with a paired permutation test p < 0.05, B = 10 000.
+every plugin meets the §7.5 hard gates for Recall@10, nDCG@10 (overall and long-doc
+subset), MRR, and Hit@5. `pageindex_plugin` exceeds `rag_plugin` nDCG@10 on the
+long-doc subset by ≥ 10 pp with a paired permutation test p < 0.05, B = 10 000.
 
 Q2. **End-to-end RAG quality (RAGAS v0.4).** On `memory-bench-ragas-v1`, every plugin
-    meets faithfulness ≥ 0.85, context_recall ≥ 0.80, answer_correctness ≥ 0.75. Watch
-    thresholds in §7.5 are enforced as PR-level review gates.
+meets faithfulness ≥ 0.85, context_recall ≥ 0.80, answer_correctness ≥ 0.75. Watch
+thresholds in §7.5 are enforced as PR-level review gates.
 
 Q3. **PageIndex parity on FinanceBench-150.** `pageindex_plugin` scores ≥ 95.0% on the
-    public 150-Q split using the vendored `Mafin2.5-FinanceBench` LLM-judge ensemble
-    (≤ 4 pp below VectifyAI's published 98.7%, accounting for our judge ensemble being
-    stricter than the original single-judge run).
+public 150-Q split using the vendored `Mafin2.5-FinanceBench` LLM-judge ensemble
+(≤ 4 pp below VectifyAI's published 98.7%, accounting for our judge ensemble being
+stricter than the original single-judge run).
 
 Q4. **LongMemEval_S accuracy.** `pageindex_plugin` ≥ 0.65, `rag_plugin` ≥ 0.55 on the
-    500-question set. Both report per-category scores (info-extraction, multi-session,
-    knowledge-update, temporal, abstention).
+500-question set. Both report per-category scores (info-extraction, multi-session,
+knowledge-update, temporal, abstention).
 
 Q5. **BEAM-1M (200-question subset).** Reported per-category. `pageindex_plugin` ≥ 0.55
-    overall; `rag_plugin` ≥ 0.40 overall; both ≥ 0.50 on `abstention` (we will not ship
-    a memory plugin that confidently makes things up).
+overall; `rag_plugin` ≥ 0.40 overall; both ≥ 0.50 on `abstention` (we will not ship
+a memory plugin that confidently makes things up).
 
 Q6. **Latency.** `rag_plugin`: `file_search` p95/p99 within ±5%/±10% of the captured
-    `baseline_v1`. `pageindex_plugin`: `file_search` p95 ≤ 8 000 ms, p99 ≤ 15 000 ms.
+`baseline_v1`. `pageindex_plugin`: `file_search` p95 ≤ 8 000 ms, p99 ≤ 15 000 ms.
 
 Q7. **Cost.** `pageindex_plugin`: mean tokens per `file_search` ≤ 12 000; $ per 1 000
-    `file_search` calls at the configured `retrieve_model` ≤ $4.00. `rag_plugin`:
-    $ per 1 000 calls ≤ $0.50 (no LLM in the hot path).
+`file_search` calls at the configured `retrieve_model` ≤ $4.00. `rag_plugin`:
+$ per 1 000 calls ≤ $0.50 (no LLM in the hot path).
 
 Q8. **Index throughput.** `rag_plugin` ≥ 1 500 text-pages/min/worker on the standard
-    2-vCPU/8 GiB worker; `pageindex_plugin` ≥ 50 PDF-pages/min/worker.
+2-vCPU/8 GiB worker; `pageindex_plugin` ≥ 50 PDF-pages/min/worker.
 
 Q9. **Adversarial — prompt-injection.** Both plugins block ≥ 11/12 attacks from the OWASP
-    GenAI Data Security 2026 v1.0 catalogue (cross-tenant exfiltration variants
-    prioritized).
+GenAI Data Security 2026 v1.0 catalogue (cross-tenant exfiltration variants
+prioritized).
 
 Q10. **Adversarial — cross-tenant.** **Zero** hits across 100 random cross-tenant
-    `file_search` probes; verified at chunk-fetch level, not just at response level.
+`file_search` probes; verified at chunk-fetch level, not just at response level.
 
 Q11. **Adversarial — supersession & GDPR delete.** ≥ 48/50 contradiction pairs return
-    the newer fact at query time. After `file_delete`, p95 time-to-unreachable on
-    `file_search` and `file_read` ≤ 1 000 ms; within 24 h the operator-visible
-    storage cost attributable to the deleted path returns to its pre-write baseline
-    (no residual recall, no residual storage). The user has no way to observe a
-    difference between "path was deleted" and "path was never written" beyond the
-    absence of contents.
+the newer fact at query time. After `file_delete`, p95 time-to-unreachable on
+`file_search` and `file_read` ≤ 1 000 ms; within 24 h the operator-visible
+storage cost attributable to the deleted path returns to its pre-write baseline
+(no residual recall, no residual storage). The user has no way to observe a
+difference between "path was deleted" and "path was never written" beyond the
+absence of contents.
 
 Q12. **Drift monitor.** Replaying `memory-bench-internal-v1` queries one week after the
-    baseline run regresses by ≤ 2 pp absolute on nDCG@10 for any plugin; > 1 pp triggers
-    a watch-level review.
+baseline run regresses by ≤ 2 pp absolute on nDCG@10 for any plugin; > 1 pp triggers
+a watch-level review.
 
 ## 7. Quantitative evaluation framework (2026 industrial standard)
 
@@ -1549,12 +1552,12 @@ check, not as a global quality claim.
 
 ### 7.2 The four axes
 
-| Axis                                | What it answers                                                      | Where the numbers come from                                       |
-| ----------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **R**etrieval quality               | "Does `file_search` return the right chunks?"                        | Internal gold-labelled set + BEIR-style retrieval metrics         |
-| **G**eneration quality (end-to-end) | "If an agent uses these chunks, are answers grounded and correct?"   | RAGAS v0.4 metrics on a synthetic + harvested QA set              |
-| **L**ong-doc / memory specifics     | "Does the plugin actually beat the alternative on long PDFs / multi-session memory?" | FinanceBench-150, LongMemEval_S, BEAM-1M (subset)                 |
-| **O**perational                     | "Can we afford to run it?"                                           | Internal latency / cost / throughput probes; OWASP-aligned red-team |
+| Axis                                | What it answers                                                                      | Where the numbers come from                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| **R**etrieval quality               | "Does `file_search` return the right chunks?"                                        | Internal gold-labelled set + BEIR-style retrieval metrics           |
+| **G**eneration quality (end-to-end) | "If an agent uses these chunks, are answers grounded and correct?"                   | RAGAS v0.4 metrics on a synthetic + harvested QA set                |
+| **L**ong-doc / memory specifics     | "Does the plugin actually beat the alternative on long PDFs / multi-session memory?" | FinanceBench-150, LongMemEval_S, BEAM-1M (subset)                   |
+| **O**perational                     | "Can we afford to run it?"                                                           | Internal latency / cost / throughput probes; OWASP-aligned red-team |
 
 ### 7.3 Datasets and metric definitions
 
@@ -1617,24 +1620,24 @@ check, not as a global quality claim.
 
 #### 7.3.4 Operational probes
 
-| Probe                                 | Method                                                                       | Where reported                  |
-| ------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------- |
-| `file_search` latency p50 / p95 / p99 | 2 000 replays of the harvested production query set against a warm process   | Grafana board + scorecard line  |
-| `file_write` index-completion latency | Time from `Write` ack to "searchable" (per-plugin synchronous vs. async)     | Grafana                          |
-| Tokens in/out per `file_search`       | Mean and p95 over the same 2 000-replay run                                  | Scorecard, billed per call      |
-| $ per 1 000 `file_search` calls       | Tokens × current model price (config-driven)                                 | Scorecard                        |
-| Index ingestion throughput            | Docs/hour and pages/hour on a 2-vCPU 8 GiB worker, 100-PDF corpus            | Scorecard                        |
-| Cold p95 vs. warm p95 differential    | First call after restart vs. 100th call in steady state                      | Scorecard                        |
+| Probe                                 | Method                                                                     | Where reported                 |
+| ------------------------------------- | -------------------------------------------------------------------------- | ------------------------------ |
+| `file_search` latency p50 / p95 / p99 | 2 000 replays of the harvested production query set against a warm process | Grafana board + scorecard line |
+| `file_write` index-completion latency | Time from `Write` ack to "searchable" (per-plugin synchronous vs. async)   | Grafana                        |
+| Tokens in/out per `file_search`       | Mean and p95 over the same 2 000-replay run                                | Scorecard, billed per call     |
+| $ per 1 000 `file_search` calls       | Tokens × current model price (config-driven)                               | Scorecard                      |
+| Index ingestion throughput            | Docs/hour and pages/hour on a 2-vCPU 8 GiB worker, 100-PDF corpus          | Scorecard                      |
+| Cold p95 vs. warm p95 differential    | First call after restart vs. 100th call in steady state                    | Scorecard                      |
 
 #### 7.3.5 Adversarial / red-team probes
 
-| Probe                                                                   | Pass criterion                                                                                                  |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Prompt-injection suite (12 attacks, OWASP GenAI 2026 v1.0 catalogue)    | Plugin must not exfiltrate cross-tenant content, must not return system-prompt content; ≥ 11/12 blocked         |
-| Cross-tenant retrieval probe                                            | 100 queries from tenant A targeting tenant B's known content via `path_prefix=*`; **0 hits** allowed             |
-| Contradiction / supersession                                            | 50 pairs `(write F1 at t1, write F2 at t2 contradicting F1)`; query at t3 must surface F2, not F1; ≥ 48/50 pass |
-| GDPR-delete recall                                                      | After `file_delete`, the path must be unreachable via `file_read` *and* `file_search` within 1 s p95            |
-| Embedding / index drift                                                 | Re-running last week's golden queries today must not regress > 2 pp absolute nDCG@10                            |
+| Probe                                                                | Pass criterion                                                                                                  |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Prompt-injection suite (12 attacks, OWASP GenAI 2026 v1.0 catalogue) | Plugin must not exfiltrate cross-tenant content, must not return system-prompt content; ≥ 11/12 blocked         |
+| Cross-tenant retrieval probe                                         | 100 queries from tenant A targeting tenant B's known content via `path_prefix=*`; **0 hits** allowed            |
+| Contradiction / supersession                                         | 50 pairs `(write F1 at t1, write F2 at t2 contradicting F1)`; query at t3 must surface F2, not F1; ≥ 48/50 pass |
+| GDPR-delete recall                                                   | After `file_delete`, the path must be unreachable via `file_read` _and_ `file_search` within 1 s p95            |
+| Embedding / index drift                                              | Re-running last week's golden queries today must not regress > 2 pp absolute nDCG@10                            |
 
 ### 7.4 The plugin scorecard (template)
 
@@ -1695,26 +1698,26 @@ each engine's design strengths. Two threshold classes:
 - **Hard gate** — blocks merge / phase promotion.
 - **Watch** — non-gating, but a regression beyond the listed delta triggers a PR review.
 
-| Metric                                | `rag_plugin` hard gate              | `pageindex_plugin` hard gate                                | Watch       |
-| ------------------------------------- | ----------------------------------- | ----------------------------------------------------------- | ----------- |
-| Internal Recall@10 (overall)          | ≥ baseline_v1 − 2 pp                | ≥ baseline_v1 − 5 pp on short corpus                        | any drop    |
-| Internal nDCG@10 (long-doc subset)    | ≥ baseline_v1                       | **≥ baseline_v1 + 10 pp** (this is the *point* of pageindex) | —          |
-| RAGAS faithfulness                    | ≥ 0.85                              | ≥ 0.85                                                      | < 0.90      |
-| RAGAS context_recall                  | ≥ 0.80                              | ≥ 0.80                                                      | < 0.85      |
-| RAGAS answer_correctness              | ≥ 0.75                              | ≥ 0.75                                                      | < 0.80      |
-| FinanceBench-150 accuracy             | ≥ 0.50 (acknowledged weak corpus)   | ≥ 0.95 (parity with VectifyAI − 4 pp)                       | —           |
-| LongMemEval_S accuracy                | ≥ 0.55                              | ≥ 0.65                                                      | < 0.70      |
-| BEAM-1M (200 subset)                  | ≥ 0.40                              | ≥ 0.55                                                      | —           |
-| `file_search` p95 latency             | ≤ baseline_v1 × 1.05                | ≤ 8 000 ms                                                  | > 5 000 ms  |
-| `file_search` p99 latency             | ≤ baseline_v1 × 1.10                | ≤ 15 000 ms                                                 | —           |
-| `file_write→searchable` p95           | ≤ 30 s (async)                      | ≤ 90 s (sync index)                                         | —           |
-| Mean tokens / `file_search`           | n/a (not LLM-bound)                 | ≤ 12 000 (Mem0-range upper)                                 | > 20 000    |
-| $ per 1 000 `file_search` @ default LLM | ≤ $0.50                            | ≤ $4.00                                                     | > $6.00     |
-| Index throughput (pages/min/worker)   | ≥ 1 500 (text)                      | ≥ 50 (PDF)                                                  | —           |
-| Cross-tenant hits                     | **0** (hard)                        | **0** (hard)                                                | —           |
-| Prompt-injection blocked              | ≥ 11/12                             | ≥ 11/12                                                     | —           |
-| GDPR-delete recall p95                | ≤ 1 000 ms                          | ≤ 1 000 ms                                                  | > 500 ms    |
-| Weekly drift on golden nDCG@10        | ≤ 2 pp                              | ≤ 2 pp                                                      | > 1 pp      |
+| Metric                                  | `rag_plugin` hard gate            | `pageindex_plugin` hard gate                                 | Watch      |
+| --------------------------------------- | --------------------------------- | ------------------------------------------------------------ | ---------- |
+| Internal Recall@10 (overall)            | ≥ baseline_v1 − 2 pp              | ≥ baseline_v1 − 5 pp on short corpus                         | any drop   |
+| Internal nDCG@10 (long-doc subset)      | ≥ baseline_v1                     | **≥ baseline_v1 + 10 pp** (this is the _point_ of pageindex) | —          |
+| RAGAS faithfulness                      | ≥ 0.85                            | ≥ 0.85                                                       | < 0.90     |
+| RAGAS context_recall                    | ≥ 0.80                            | ≥ 0.80                                                       | < 0.85     |
+| RAGAS answer_correctness                | ≥ 0.75                            | ≥ 0.75                                                       | < 0.80     |
+| FinanceBench-150 accuracy               | ≥ 0.50 (acknowledged weak corpus) | ≥ 0.95 (parity with VectifyAI − 4 pp)                        | —          |
+| LongMemEval_S accuracy                  | ≥ 0.55                            | ≥ 0.65                                                       | < 0.70     |
+| BEAM-1M (200 subset)                    | ≥ 0.40                            | ≥ 0.55                                                       | —          |
+| `file_search` p95 latency               | ≤ baseline_v1 × 1.05              | ≤ 8 000 ms                                                   | > 5 000 ms |
+| `file_search` p99 latency               | ≤ baseline_v1 × 1.10              | ≤ 15 000 ms                                                  | —          |
+| `file_write→searchable` p95             | ≤ 30 s (async)                    | ≤ 90 s (sync index)                                          | —          |
+| Mean tokens / `file_search`             | n/a (not LLM-bound)               | ≤ 12 000 (Mem0-range upper)                                  | > 20 000   |
+| $ per 1 000 `file_search` @ default LLM | ≤ $0.50                           | ≤ $4.00                                                      | > $6.00    |
+| Index throughput (pages/min/worker)     | ≥ 1 500 (text)                    | ≥ 50 (PDF)                                                   | —          |
+| Cross-tenant hits                       | **0** (hard)                      | **0** (hard)                                                 | —          |
+| Prompt-injection blocked                | ≥ 11/12                           | ≥ 11/12                                                      | —          |
+| GDPR-delete recall p95                  | ≤ 1 000 ms                        | ≤ 1 000 ms                                                   | > 500 ms   |
+| Weekly drift on golden nDCG@10          | ≤ 2 pp                            | ≤ 2 pp                                                       | > 1 pp     |
 
 `baseline_v1` = the scorecard captured at Phase-1 ship for `rag_plugin`. It is **not** a
 moving target; once captured it is frozen for the life of v1. A new baseline is only
@@ -1765,18 +1768,18 @@ significant improvement). Below 45%, file a bug.
 
 ### 7.9 Source benchmarks and references
 
-| Reference                                    | Used for                                                              | URL                                                                                                              |
-| -------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| VectifyAI / PageIndex README                 | Tree-indexing knobs; default LLMs                                     | https://github.com/VectifyAI/PageIndex                                                                            |
-| VectifyAI / Mafin2.5-FinanceBench            | FinanceBench-150 harness; published 98.7% baseline                    | https://github.com/VectifyAI/Mafin2.5-FinanceBench                                                                |
-| Patronus AI FinanceBench                     | Underlying SEC-filings dataset                                        | arXiv:2311.11944                                                                                                  |
-| Wu et al. — LongMemEval                      | Memory benchmark structure (S/M splits, 7 categories)                 | arXiv:2410.10813                                                                                                  |
-| Maharana et al. — LoCoMo                     | Conversation-memory benchmark                                         | arXiv:2402.17753                                                                                                  |
-| Mem0 memory-benchmarks (BEAM)                | Contradiction / abstention / preference axes                          | https://github.com/mem0ai/memory-benchmarks                                                                        |
-| RAGAS v0.4 docs                              | Faithfulness, context_*, answer_correctness formulas                  | https://docs.ragas.io/en/stable                                                                                    |
-| Smucker / Allan / Carterette CIKM '07        | Paired permutation test for IR significance                           | https://dl.acm.org/doi/10.1145/1321440.1321528                                                                     |
-| OWASP GenAI Data Security 2026 v1.0          | 12-attack prompt-injection catalogue; tenant-isolation expectations   | https://www.lotharschulz.info/wp-content/uploads/OWASP-GenAI-Data-Security-Risks-and-Mitigations-2026-v1.0.pdf    |
-| Long-document retrieval survey               | Page/section/multi-hop recall definitions                             | arXiv:2509.07759                                                                                                  |
+| Reference                             | Used for                                                            | URL                                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| VectifyAI / PageIndex README          | Tree-indexing knobs; default LLMs                                   | https://github.com/VectifyAI/PageIndex                                                                         |
+| VectifyAI / Mafin2.5-FinanceBench     | FinanceBench-150 harness; published 98.7% baseline                  | https://github.com/VectifyAI/Mafin2.5-FinanceBench                                                             |
+| Patronus AI FinanceBench              | Underlying SEC-filings dataset                                      | arXiv:2311.11944                                                                                               |
+| Wu et al. — LongMemEval               | Memory benchmark structure (S/M splits, 7 categories)               | arXiv:2410.10813                                                                                               |
+| Maharana et al. — LoCoMo              | Conversation-memory benchmark                                       | arXiv:2402.17753                                                                                               |
+| Mem0 memory-benchmarks (BEAM)         | Contradiction / abstention / preference axes                        | https://github.com/mem0ai/memory-benchmarks                                                                    |
+| RAGAS v0.4 docs                       | Faithfulness, context\_\*, answer_correctness formulas              | https://docs.ragas.io/en/stable                                                                                |
+| Smucker / Allan / Carterette CIKM '07 | Paired permutation test for IR significance                         | https://dl.acm.org/doi/10.1145/1321440.1321528                                                                 |
+| OWASP GenAI Data Security 2026 v1.0   | 12-attack prompt-injection catalogue; tenant-isolation expectations | https://www.lotharschulz.info/wp-content/uploads/OWASP-GenAI-Data-Security-Risks-and-Mitigations-2026-v1.0.pdf |
+| Long-document retrieval survey        | Page/section/multi-hop recall definitions                           | arXiv:2509.07759                                                                                               |
 
 ## 8. Rollout plan
 
@@ -1802,6 +1805,6 @@ significant improvement). Below 45%, file a bug.
    in staging only. Acceptance: A3, A4, A6, A7, A8, A11, **Q1–Q4, Q9–Q12** (full §7
    scorecard filled in for `pageindex_plugin` against the same golden sets).
 3. **Phase 3 — shadow replay promotion gate.**
-  Keep runtime routing simple: the optional per-call `plugin` field remains the only
-  caller-controlled selector, with `default_plugin` as the global fallback. Any future
-  shadow replay stays outside the request-routing contract unless separately approved.
+   Keep runtime routing simple: the optional per-call `plugin` field remains the only
+   caller-controlled selector, with `default_plugin` as the global fallback. Any future
+   shadow replay stays outside the request-routing contract unless separately approved.

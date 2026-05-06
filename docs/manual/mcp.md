@@ -43,18 +43,18 @@ Every tool requires a valid `Authorization: Bearer <token>` header. Tokens are a
 
 Enable the MCP endpoint when starting the API service. The tools are advertised automatically when their dependencies are available.
 
-| Feature            | Requirement                                                                                                                                                                                                                                                                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `web_search`       | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`.                                                                                                |
-| `ask_user`         | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM.                                                                                                                                                                                                          |
+| Feature            | Requirement                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web_search`       | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`.                                                                                                            |
+| `ask_user`         | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM.                                                                                                                                                                                                                      |
 | `get_user_request` | Same `settings.db.mcp.*` configuration. Stores directives in the `mcp_user_requests` table keyed by the caller’s token hash **and** `task_id`. Retention is controlled by `settings.mcp.tools.user_requests.retention_days` (default `30`) and pruned by a background worker every `settings.mcp.tools.user_requests.retention_sweep_seconds` (default `21600` / 6h). |
 
 If no tool dependencies are met the server skips MCP initialisation.
 
-| Feature            | Requirement                                                                                                                                                          |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `extract_key_info` | `settings.db.mcp.*` connection info, `settings.openai.embedding_model`, and `settings.mcp.tools.extract_key_info.enabled=true`. Requires pgvector-enabled PostgreSQL.      |
-| `mcp_pipe`         | No additional infrastructure dependencies. It is enabled/disabled via `settings.mcp.tools.mcp_pipe.enabled` and can call only tools that are enabled and configured. |
+| Feature            | Requirement                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extract_key_info` | `settings.db.mcp.*` connection info, `settings.openai.embedding_model`, and `settings.mcp.tools.extract_key_info.enabled=true`. Requires pgvector-enabled PostgreSQL. |
+| `mcp_pipe`         | No additional infrastructure dependencies. It is enabled/disabled via `settings.mcp.tools.mcp_pipe.enabled` and can call only tools that are enabled and configured.  |
 
 ## Authentication Model
 

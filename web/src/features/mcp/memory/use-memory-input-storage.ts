@@ -6,6 +6,7 @@ const memoryInputStorageKey = 'mcp.memory.inputs.v1';
  * MemoryPersistedInputs defines memory console form values persisted across refreshes.
  */
 export type MemoryPersistedInputs = {
+  memoryPlugin: string;
   project: string;
   sessionId: string;
   userId: string;
@@ -44,6 +45,7 @@ export function useMemoryInputDefaults(): Partial<MemoryPersistedInputs> {
  */
 export function usePersistMemoryInputs(inputs: MemoryPersistedInputs): void {
   const {
+    memoryPlugin,
     project,
     sessionId,
     userId,
@@ -64,6 +66,7 @@ export function usePersistMemoryInputs(inputs: MemoryPersistedInputs): void {
     }
 
     const payload: MemoryPersistedInputs = {
+      memoryPlugin,
       project,
       sessionId,
       userId,
@@ -80,6 +83,7 @@ export function usePersistMemoryInputs(inputs: MemoryPersistedInputs): void {
 
     window.localStorage.setItem(memoryInputStorageKey, JSON.stringify(payload));
   }, [
+    memoryPlugin,
     project,
     sessionId,
     userId,

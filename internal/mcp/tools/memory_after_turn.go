@@ -27,6 +27,7 @@ func (tool *MemoryAfterTurnTool) Definition() mcp.Tool {
 		"memory_after_turn",
 		mcp.WithDescription("Persist turn artifacts and update memory tiers after model response."),
 		mcp.WithString("project", mcp.Description("Target project namespace. Defaults to `default` when omitted.")),
+		fileToolPluginOption(),
 		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
 		mcp.WithString("turn_id", mcp.Description("Turn identifier. Auto-generated when omitted.")),
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
@@ -54,6 +55,7 @@ func (tool *MemoryAfterTurnTool) Definition() mcp.Tool {
 
 // Handle executes memory_after_turn.
 func (tool *MemoryAfterTurnTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = withFilePluginOverride(ctx, req)
 	auth, ok := memoryAuthFromContext(ctx)
 	if !ok {
 		return memoryToolErrorResult(mcpmemory.ErrCodePermissionDenied, "missing authorization", false), nil

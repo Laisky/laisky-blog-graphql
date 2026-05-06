@@ -2,15 +2,15 @@ package pageindex
 
 // Tree is the persisted PageIndex document structure.
 type Tree struct {
-	DocID           string  `json:"doc_id"`
-	DocName         string  `json:"doc_name,omitempty"`
-	DocDescription  string  `json:"doc_description,omitempty"`
-	Type            DocKind `json:"type"`
-	PageCount       int     `json:"page_count,omitempty"`
-	LineCount       int     `json:"line_count,omitempty"`
-	IndexedAt       string  `json:"indexed_at,omitempty"`
-	AlgorithmVer    string  `json:"algorithm_version"`
-	Structure       []*Node `json:"structure"`
+	DocID          string  `json:"doc_id"`
+	DocName        string  `json:"doc_name,omitempty"`
+	DocDescription string  `json:"doc_description,omitempty"`
+	Type           DocKind `json:"type"`
+	PageCount      int     `json:"page_count,omitempty"`
+	LineCount      int     `json:"line_count,omitempty"`
+	IndexedAt      string  `json:"indexed_at,omitempty"`
+	AlgorithmVer   string  `json:"algorithm_version"`
+	Structure      []*Node `json:"structure"`
 	// Pages caches per-page extracted text so retrieval can resolve page ranges
 	// without re-parsing the original bytes.
 	Pages []Page `json:"pages,omitempty"`

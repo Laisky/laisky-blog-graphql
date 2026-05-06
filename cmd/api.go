@@ -531,7 +531,7 @@ func runAPI() error {
 					logger.Warn("start file plugin manager", zap.Error(startErr))
 				}
 
-				memorySvc, memoryErr := mcpmemory.NewService(mcpDB.DB, fileSvc, memorySettings, logger.Named("mcp_memory"), nil)
+				memorySvc, memoryErr := mcpmemory.NewService(mcpDB.DB, fileManager, memorySettings, logger.Named("mcp_memory"), nil)
 				if memoryErr != nil {
 					logger.Warn("memory service unavailable", zap.Error(memoryErr))
 				} else {
@@ -582,6 +582,7 @@ func buildFileCredentialProtector(settings files.Settings) (*files.CredentialPro
 
 	return credential, nil
 }
+
 // configInt retrieves an integer configuration value using gconfig, falling back to def when missing or invalid.
 func configInt(key string, def int) int {
 	raw := gconfig.S.Get(key)

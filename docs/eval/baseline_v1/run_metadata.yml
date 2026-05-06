@@ -1,14 +1,13 @@
-harness_version: "v0.1.0"
-git_sha: "e6caab4"
-run_utc: "2026-05-06T04:02:46Z"
-judge_models: "none"
-embedding_model: "none"
-go_toolchain: "go1.26.2"
+harness_version: 'v0.1.0'
+git_sha: 'e6caab4'
+run_utc: '2026-05-06T04:02:46Z'
+judge_models: 'none'
+embedding_model: 'none'
+go_toolchain: 'go1.26.2'
 hardware:
   num_cpu: 16
-  hostname: "dev"
-  os: "linux"
-  arch: "amd64"
-golden_dir: "tests/eval/golden"
-golden_versions:
-  {}
+  hostname: 'dev'
+  os: 'linux'
+  arch: 'amd64'
+golden_dir: 'tests/eval/golden'
+golden_versions: {}

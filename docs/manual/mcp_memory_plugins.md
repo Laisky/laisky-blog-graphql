@@ -15,10 +15,10 @@ additive optional field.
 
 Plugins shipped today:
 
-| Plugin      | Status                       | Engine                                                                           |
-| ----------- | ---------------------------- | -------------------------------------------------------------------------------- |
-| `rag`       | Shipping (Phase 1)           | Existing Postgres + pgvector + BM25 + optional rerank stack                      |
-| `pageindex` | Shipping (Phase 2; gated)    | Tree-reasoning indexer + Responses-API LLM + bbolt cache; gated on `llm.api_key` |
+| Plugin      | Status                    | Engine                                                                           |
+| ----------- | ------------------------- | -------------------------------------------------------------------------------- |
+| `rag`       | Shipping (Phase 1)        | Existing Postgres + pgvector + BM25 + optional rerank stack                      |
+| `pageindex` | Shipping (Phase 2; gated) | Tree-reasoning indexer + Responses-API LLM + bbolt cache; gated on `llm.api_key` |
 
 See [Section 6](#6-pageindex-phase-2) for pageindex bring-up.
 
@@ -33,9 +33,9 @@ The plugin manager reads `settings.mcp.tools.memory.*`.
 settings:
   mcp:
     memory:
-      default_plugin: "rag"            # "rag" today; "pageindex" reserved (Phase 2)
+      default_plugin: 'rag' # "rag" today; "pageindex" reserved (Phase 2)
       plugins:
-        rag: {}                         # all current settings.mcp.files.* re-rooted under here
+        rag: {} # all current settings.mcp.files.* re-rooted under here
         # pageindex: see Section 6 — block is reserved, not used in Phase 1
 ```
 
@@ -79,13 +79,13 @@ If everyone needs to move, flip `default_plugin`.
 }
 ```
 
-| Value         | Meaning                                                                                                                                 |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| omitted       | Identical to `"auto"`.                                                                                                                  |
-| `"auto"`      | Resolve via `default_plugin`.                                                                                                           |
-| `"rag"`       | Pin this single invocation to `rag_plugin`.                                                                                             |
-| `"pageindex"` | Pin to `pageindex_plugin` (Phase 2; returns `FAILED_PRECONDITION` today if not enabled).                                                |
-| unknown name  | `INVALID_ARGUMENT`; response includes `available_plugins=[...]` in `structuredContent` so the caller can self-correct.                  |
+| Value         | Meaning                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| omitted       | Identical to `"auto"`.                                                                                                 |
+| `"auto"`      | Resolve via `default_plugin`.                                                                                          |
+| `"rag"`       | Pin this single invocation to `rag_plugin`.                                                                            |
+| `"pageindex"` | Pin to `pageindex_plugin` (Phase 2; returns `FAILED_PRECONDITION` today if not enabled).                               |
+| unknown name  | `INVALID_ARGUMENT`; response includes `available_plugins=[...]` in `structuredContent` so the caller can self-correct. |
 
 ### 3.2 Cross-plugin reads
 
@@ -104,16 +104,16 @@ is no implicit migration on write or read.
 Each plugin advertises a capability vector consumed by error hints and operator dashboards.
 The schema is unchanged across plugins — only the values differ.
 
-| Field              | `rag` value                                                              |
-| ------------------ | ------------------------------------------------------------------------ |
-| `SearchModes`      | `["hybrid", "semantic", "lexical"]`                                      |
-| `SupportsRandomIO` | `true`                                                                   |
-| `SupportsRename`   | `true`                                                                   |
-| `SupportsVersions` | `true` (rows in `mcp_file_versions`)                                     |
-| `MaxPayloadBytes`  | inherited from the existing `mcp_files` payload limits                   |
-| `AsyncIndexing`    | `true`                                                                   |
-| `FreshnessWindow`  | `5s` (search visibility lag after a successful `file_write`)             |
-| `Notes`            | "Hybrid pgvector + BM25 + optional rerank"                                |
+| Field              | `rag` value                                                  |
+| ------------------ | ------------------------------------------------------------ |
+| `SearchModes`      | `["hybrid", "semantic", "lexical"]`                          |
+| `SupportsRandomIO` | `true`                                                       |
+| `SupportsRename`   | `true`                                                       |
+| `SupportsVersions` | `true` (rows in `mcp_file_versions`)                         |
+| `MaxPayloadBytes`  | inherited from the existing `mcp_files` payload limits       |
+| `AsyncIndexing`    | `true`                                                       |
+| `FreshnessWindow`  | `5s` (search visibility lag after a successful `file_write`) |
+| `Notes`            | "Hybrid pgvector + BM25 + optional rerank"                   |
 
 The freshness window is part of the user contract documented for the conformance suite
 row C05/R06 in [the proposal §5.1 / §5.2](../proposals/mcp_memory_plugin_manager.md#51-conformance-suite--user-observable-scenarios).
@@ -173,26 +173,26 @@ hint described in [Section 9](#9-troubleshooting).
 settings:
   mcp:
     memory:
-      default_plugin: "rag"
+      default_plugin: 'rag'
       plugins:
         rag: {}
         pageindex:
           llm:
-            api_key: ""                # empty key keeps pageindex unregistered
-            base_url: ""               # empty = api.openai.com
-            indexing_model: "gpt-5.4-mini"
-            retrieve_model: "gpt-5.4-mini"
+            api_key: '' # empty key keeps pageindex unregistered
+            base_url: '' # empty = api.openai.com
+            indexing_model: 'gpt-5.4-mini'
+            retrieve_model: 'gpt-5.4-mini'
           indexer:
-            timeout_index: "5m"
-            timeout_query: "60s"
+            timeout_index: '5m'
+            timeout_query: '60s'
             max_concurrency: 8
             retry:
               max_attempts: 10
-              initial_backoff: "250ms"
-              max_backoff: "8s"
+              initial_backoff: '250ms'
+              max_backoff: '8s'
             cache:
               enabled: true
-              path: "/var/lib/laisky/pageindex-cache.bbolt"
+              path: '/var/lib/laisky/pageindex-cache.bbolt'
               max_size_bytes: 1073741824
           algo:
             toc_check_page_num: 20
@@ -205,8 +205,8 @@ settings:
             max_tokens: 20000
             candidate_docs: 5
           pdf:
-            text_parser: "pdfcpu"
-            outline_parser: "pdfcpu"
+            text_parser: 'pdfcpu'
+            outline_parser: 'pdfcpu'
 ```
 
 The full schema and the resolution semantics of an empty `llm.api_key` (silently
@@ -283,11 +283,11 @@ Operating semantics:
   [../../cmd/promote-pageindex/main.go](../../cmd/promote-pageindex/main.go) computes
   the win-rate over a captured period:
 
-  | Win-rate              | Decision                                                       |
-  | --------------------- | -------------------------------------------------------------- |
-  | ≥ 55% with p < 0.05   | Promote: flip `default_plugin` to `pageindex` for the project. |
-  | 45–55%                | Stay on `rag_plugin` (no statistically significant gain).       |
-  | < 45%                 | File a bug; pageindex regression.                               |
+  | Win-rate            | Decision                                                       |
+  | ------------------- | -------------------------------------------------------------- |
+  | ≥ 55% with p < 0.05 | Promote: flip `default_plugin` to `pageindex` for the project. |
+  | 45–55%              | Stay on `rag_plugin` (no statistically significant gain).      |
+  | < 45%               | File a bug; pageindex regression.                              |
 
   The statistical test is a paired two-sided permutation test, B = 10 000 shuffles,
   matching §7.6.
@@ -349,12 +349,12 @@ to the right plugin in dashboards.
 Tool-result `structuredContent` carries per-call billing fields used for cost attribution
 (proposal acceptance E04 and A7):
 
-| Field             | Plugin       | Notes                                                                         |
-| ----------------- | ------------ | ----------------------------------------------------------------------------- |
-| `tokens_in`       | `pageindex`  | LLM input tokens consumed by `file_search` (Phase 2).                         |
-| `tokens_out`      | `pageindex`  | LLM output tokens (Phase 2).                                                  |
-| `llm_calls`       | `pageindex`  | Number of LLM round-trips (Phase 2).                                          |
-| `truncated`       | `pageindex`  | `true` when a per-call budget capped the response (Phase 2).                  |
+| Field        | Plugin      | Notes                                                        |
+| ------------ | ----------- | ------------------------------------------------------------ |
+| `tokens_in`  | `pageindex` | LLM input tokens consumed by `file_search` (Phase 2).        |
+| `tokens_out` | `pageindex` | LLM output tokens (Phase 2).                                 |
+| `llm_calls`  | `pageindex` | Number of LLM round-trips (Phase 2).                         |
+| `truncated`  | `pageindex` | `true` when a per-call budget capped the response (Phase 2). |
 
 `rag_plugin` does not emit `tokens_*` or `llm_calls` because LLM calls are not in its
 hot path; embedding cost is reported through the existing embedder telemetry and is
@@ -364,13 +364,13 @@ The resolved plugin name is recorded on every request log entry regardless of pl
 
 ## 9. Troubleshooting
 
-| Symptom                                                                                  | Likely cause                                                                                            | Action                                                                                       |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Tool returns `INVALID_ARGUMENT` with `available_plugins=[...]`                            | Caller passed an unknown plugin name (typo, version mismatch, future plugin not yet shipped).            | Pass one of the listed names, or omit the field to use `default_plugin`.                     |
-| Tool returns `NOT_FOUND` with hint "path exists under plugin=A; pass plugin=A to read it" | Path was written via plugin A and the current call is pinned to plugin B (or vice versa).                | Re-issue the call with `plugin=A`. The manager does not silently cross plugins by design.    |
-| Tool returns `INVALID_ARGUMENT` for `plugin="pageindex"` with hint about `llm.api_key`     | `pageindex_plugin` is not registered because `settings.mcp.tools.memory.plugins.pageindex.llm.api_key` is empty. | Set the api_key (Section 6.1) and restart, or drop the `plugin` field to route via default. |
-| Single startup WARN about deprecated `settings.mcp.files.*`                               | Legacy-config shim translated old keys.                                                                  | Move keys to `settings.mcp.tools.memory.plugins.rag.*` before the shim is removed (post-Phase 3).  |
-| Two routing layers seem active                                                            | There is no second layer. The only inputs are the per-call `plugin` argument and `default_plugin`.       | Confirm by reading the request log entry's resolved-plugin field.                            |
+| Symptom                                                                                   | Likely cause                                                                                                     | Action                                                                                            |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Tool returns `INVALID_ARGUMENT` with `available_plugins=[...]`                            | Caller passed an unknown plugin name (typo, version mismatch, future plugin not yet shipped).                    | Pass one of the listed names, or omit the field to use `default_plugin`.                          |
+| Tool returns `NOT_FOUND` with hint "path exists under plugin=A; pass plugin=A to read it" | Path was written via plugin A and the current call is pinned to plugin B (or vice versa).                        | Re-issue the call with `plugin=A`. The manager does not silently cross plugins by design.         |
+| Tool returns `INVALID_ARGUMENT` for `plugin="pageindex"` with hint about `llm.api_key`    | `pageindex_plugin` is not registered because `settings.mcp.tools.memory.plugins.pageindex.llm.api_key` is empty. | Set the api_key (Section 6.1) and restart, or drop the `plugin` field to route via default.       |
+| Single startup WARN about deprecated `settings.mcp.files.*`                               | Legacy-config shim translated old keys.                                                                          | Move keys to `settings.mcp.tools.memory.plugins.rag.*` before the shim is removed (post-Phase 3). |
+| Two routing layers seem active                                                            | There is no second layer. The only inputs are the per-call `plugin` argument and `default_plugin`.               | Confirm by reading the request log entry's resolved-plugin field.                                 |
 
 ## 10. References
 

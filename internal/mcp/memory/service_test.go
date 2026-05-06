@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
+	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -208,8 +210,12 @@ func newTestMemoryService(t *testing.T) (*Service, *sql.DB) {
 	fileSettings.MaxPayloadBytes = 1_000_000
 	fileService, err := files.NewService(db, fileSettings, nil, nil, nil, nil, log.Logger.Named("memory_service_test_files"), nil, nil)
 	require.NoError(t, err)
+	ragPlugin, err := ragplugin.New(fileService)
+	require.NoError(t, err)
+	fileManager, err := mcpplugin.NewManager(mcpplugin.DefaultPluginRAG, ragPlugin)
+	require.NoError(t, err)
 
-	memoryService, err := NewService(db, fileService, LoadSettingsFromConfig(), log.Logger.Named("memory_service_test"), nil)
+	memoryService, err := NewService(db, fileManager, LoadSettingsFromConfig(), log.Logger.Named("memory_service_test"), nil)
 	require.NoError(t, err)
 
 	return memoryService, db

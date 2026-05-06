@@ -55,9 +55,9 @@ git lfs pull
 
 Required environment variables:
 
-| Variable          | Purpose                                                                                             | Required for                                  |
-| ----------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `OPENAI_API_KEY`  | Drives the LLM-judge calls (RAGAS metrics, FinanceBench ensemble) through the production client.    | Any run that exercises generation quality.    |
+| Variable         | Purpose                                                                                          | Required for                               |
+| ---------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| `OPENAI_API_KEY` | Drives the LLM-judge calls (RAGAS metrics, FinanceBench ensemble) through the production client. | Any run that exercises generation quality. |
 
 For deterministic local runs that do not need the LLM judge (retrieval-only smoke
 checks), the harness's unit tests use an in-memory fake `LLM`; see
@@ -65,14 +65,14 @@ checks), the harness's unit tests use an in-memory fake `LLM`; see
 
 ## 4. Outputs
 
-| Path                                                  | Contents                                                                                                                            |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/eval/runs/<sha>/<plugin>_plugin_scorecard.md`   | Per-PR scorecard. Retained 90 days, then garbage-collected.                                                                          |
-| `docs/eval/runs/<sha>/raw_per_query.jsonl`            | Per-query metric values backing the scorecard. Retained 90 days.                                                                     |
-| `docs/eval/runs/<sha>/run_metadata.yml`               | Git SHA, run UTC, judge models, hardware spec, Go toolchain, embedding model, golden dataset hashes. Required for replay.            |
-| `docs/eval/baseline_v1/rag_plugin_scorecard.md`       | Frozen Phase-1 baseline. Committed once; never overwritten without a baseline reset (Section 5).                                     |
-| `docs/eval/baseline_v1/raw_per_query.jsonl`           | Frozen raw metric values backing the baseline. Input to the permutation test when a future plugin is compared against `baseline_v1`. |
-| `docs/eval/baseline_v1/run_metadata.yml`              | Git SHA, run UTC, judge models, hardware spec, Go toolchain, embedding model, RAGAS-prompt commit pin. Required for replay.          |
+| Path                                                | Contents                                                                                                                             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `docs/eval/runs/<sha>/<plugin>_plugin_scorecard.md` | Per-PR scorecard. Retained 90 days, then garbage-collected.                                                                          |
+| `docs/eval/runs/<sha>/raw_per_query.jsonl`          | Per-query metric values backing the scorecard. Retained 90 days.                                                                     |
+| `docs/eval/runs/<sha>/run_metadata.yml`             | Git SHA, run UTC, judge models, hardware spec, Go toolchain, embedding model, golden dataset hashes. Required for replay.            |
+| `docs/eval/baseline_v1/rag_plugin_scorecard.md`     | Frozen Phase-1 baseline. Committed once; never overwritten without a baseline reset (Section 5).                                     |
+| `docs/eval/baseline_v1/raw_per_query.jsonl`         | Frozen raw metric values backing the baseline. Input to the permutation test when a future plugin is compared against `baseline_v1`. |
+| `docs/eval/baseline_v1/run_metadata.yml`            | Git SHA, run UTC, judge models, hardware spec, Go toolchain, embedding model, RAGAS-prompt commit pin. Required for replay.          |
 
 ## 5. Baseline workflow
 
@@ -136,11 +136,11 @@ OPENAI_API_KEY=sk-... \
 
 Required inputs:
 
-| Input                     | Notes                                                                                 |
-| ------------------------- | ------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`          | Drives indexing + retrieval LLM calls. Without it the plugin is unregistered (§6.1).   |
+| Input                     | Notes                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`          | Drives indexing + retrieval LLM calls. Without it the plugin is unregistered (§6.1).          |
 | Writable bbolt cache path | `settings.mcp.tools.memory.plugins.pageindex.indexer.cache.path`; default `/var/lib/laisky/`. |
-| `tests/eval/golden/`      | LFS-backed datasets. Until they land, every retrieval/RAGAS/public cell renders `n/a`. |
+| `tests/eval/golden/`      | LFS-backed datasets. Until they land, every retrieval/RAGAS/public cell renders `n/a`.        |
 
 Driver status: as of this wave, `cmd/eval-plugin` accepts `--plugin=pageindex` only
 once the production DI graph wires a real plugin construction (the rag path uses a

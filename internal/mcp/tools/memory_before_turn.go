@@ -30,6 +30,7 @@ func (tool *MemoryBeforeTurnTool) Definition() mcp.Tool {
 		"memory_before_turn",
 		mcp.WithDescription("Prepare model input with recalled memory context for the current turn."),
 		mcp.WithString("project", mcp.Description("Target project namespace. Defaults to `default` when omitted.")),
+		fileToolPluginOption(),
 		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
 		mcp.WithString("turn_id", mcp.Description("Turn identifier. Auto-generated when omitted.")),
 		mcp.WithString("user_id", mcp.Description("Optional user identifier.")),
@@ -55,6 +56,7 @@ func (tool *MemoryBeforeTurnTool) Definition() mcp.Tool {
 
 // Handle executes memory_before_turn.
 func (tool *MemoryBeforeTurnTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = withFilePluginOverride(ctx, req)
 	auth, ok := memoryAuthFromContext(ctx)
 	if !ok {
 		return memoryToolErrorResult(mcpmemory.ErrCodePermissionDenied, "missing authorization", false), nil

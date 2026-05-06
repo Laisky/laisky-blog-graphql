@@ -27,6 +27,7 @@ func (tool *MemoryListDirWithAbstractTool) Definition() mcp.Tool {
 		"memory_list_dir_with_abstract",
 		mcp.WithDescription("List memory directories and include abstract/overview metadata."),
 		mcp.WithString("project", mcp.Description("Target project namespace. Defaults to `default` when omitted.")),
+		fileToolPluginOption(),
 		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
 		mcp.WithString("path", mcp.Description("Directory path relative to session root.")),
 		mcp.WithNumber("depth", mcp.Description("Directory traversal depth. Defaults to 8 when omitted.")),
@@ -38,6 +39,7 @@ func (tool *MemoryListDirWithAbstractTool) Definition() mcp.Tool {
 
 // Handle executes memory_list_dir_with_abstract.
 func (tool *MemoryListDirWithAbstractTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = withFilePluginOverride(ctx, req)
 	auth, ok := memoryAuthFromContext(ctx)
 	if !ok {
 		return memoryToolErrorResult(mcpmemory.ErrCodePermissionDenied, "missing authorization", false), nil

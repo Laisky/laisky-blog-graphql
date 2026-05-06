@@ -37,7 +37,7 @@ func (conformanceFixture) NewProject(t *testing.T) string {
 	t.Helper()
 	return "conf-" + t.Name()
 }
-func (conformanceFixture) HasStorage() bool { return false }
+func (conformanceFixture) HasStorage() bool   { return false }
 func (conformanceFixture) Cleanup(*testing.T) {}
 
 // conformanceStubPlugin is a contract-shaped stand-in that does not depend on

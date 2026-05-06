@@ -112,7 +112,7 @@ func (e *ResolveError) Error() string {
 	}
 
 	return fmt.Sprintf("plugin %q is not available; available plugins: %s", e.Requested, strings.Join(e.Available, ", "))
-	}
+}
 
 // AsResolveError unwraps a plugin resolution error from an error chain.
 func AsResolveError(err error) (*ResolveError, bool) {

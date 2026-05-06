@@ -9,10 +9,11 @@ proposal at [../proposals/mcp_memory_plugin_manager.md](../proposals/mcp_memory_
 Refactor the memory backend behind a **plugin contract** so different engines can be
 plugged in without changing the public MCP tool schemas. Phase 1 ships exactly one
 plugin (`rag_plugin`, behavior-preserving over the existing Postgres + pgvector + BM25
-+ rerank stack) and the manager that fronts it. A `Manager` selects the active plugin
-at request scope using two inputs only: an optional per-call `plugin` argument on the
-tool input and a single global `default_plugin` setting. There is no per-project,
-per-API-key, or per-tenant override layer.
+
+- rerank stack) and the manager that fronts it. A `Manager` selects the active plugin
+  at request scope using two inputs only: an optional per-call `plugin` argument on the
+  tool input and a single global `default_plugin` setting. There is no per-project,
+  per-API-key, or per-tenant override layer.
 
 ## 2. Non-goals
 
@@ -27,17 +28,17 @@ per-API-key, or per-tenant override layer.
 
 ## 3. User stories
 
-| ID  | Actor      | Story                                                                                                    |
-| --- | ---------- | -------------------------------------------------------------------------------------------------------- |
-| U1  | Agent      | Write a path without specifying a plugin and have it stored under the operator-configured default.       |
-| U2  | Agent      | Read or search a path it just wrote with no extra arguments and observe the same content.                |
-| U3  | Agent      | Pin a single call to a named plugin via the optional `plugin` argument and bypass the default.           |
-| U4  | Agent      | Receive a clear `INVALID_ARGUMENT` with the list of valid plugin names when it passes a typo.            |
-| U5  | Agent      | Receive a `NOT_FOUND` with a routing hint when it reads a path under the wrong plugin.                   |
-| U6  | Operator   | Switch the global default plugin via config and restart, without changing tool schemas or call shape.    |
-| U7  | Operator   | Continue running pre-refactor configs (`settings.mcp.files.*`) for one minor with a single startup WARN. |
-| U8  | Operator   | Observe per-plugin call volume, latency, and (Phase 2) cost via `mcp.memory.<plugin>.*` metric prefix.   |
-| U9  | Reviewer   | Read a frozen `baseline_v1` scorecard and reproduce it locally with a documented Make target.            |
+| ID  | Actor    | Story                                                                                                    |
+| --- | -------- | -------------------------------------------------------------------------------------------------------- |
+| U1  | Agent    | Write a path without specifying a plugin and have it stored under the operator-configured default.       |
+| U2  | Agent    | Read or search a path it just wrote with no extra arguments and observe the same content.                |
+| U3  | Agent    | Pin a single call to a named plugin via the optional `plugin` argument and bypass the default.           |
+| U4  | Agent    | Receive a clear `INVALID_ARGUMENT` with the list of valid plugin names when it passes a typo.            |
+| U5  | Agent    | Receive a `NOT_FOUND` with a routing hint when it reads a path under the wrong plugin.                   |
+| U6  | Operator | Switch the global default plugin via config and restart, without changing tool schemas or call shape.    |
+| U7  | Operator | Continue running pre-refactor configs (`settings.mcp.files.*`) for one minor with a single startup WARN. |
+| U8  | Operator | Observe per-plugin call volume, latency, and (Phase 2) cost via `mcp.memory.<plugin>.*` metric prefix.   |
+| U9  | Reviewer | Read a frozen `baseline_v1` scorecard and reproduce it locally with a documented Make target.            |
 
 ## 4. Functional requirements
 
@@ -46,62 +47,62 @@ Each `FR-*` lists its mapped acceptance criterion from
 
 - **FR-1 — Plugin contract.** A `Plugin` interface in `internal/mcp/memory/plugin/`
   exposes `Name()`, `Capabilities()`, the seven `file_*` operations, and `Start`/`Stop`
-  lifecycle hooks. Result types are shared across plugins. *Acceptance:* A4.
+  lifecycle hooks. Result types are shared across plugins. _Acceptance:_ A4.
 - **FR-2 — Plugin manager.** A `Manager` registers plugins by name, holds the configured
   default, and resolves a `Plugin` per call from `(per-call override, default)`. Auth
-  and project are accepted for logging only. *Acceptance:* A3, A4.
+  and project are accepted for logging only. _Acceptance:_ A3, A4.
 - **FR-3 — `rag_plugin`.** A package `internal/mcp/memory/plugins/rag` wraps the existing
-  `*files.Service` without behavior change. *Acceptance:* A1.
+  `*files.Service` without behavior change. _Acceptance:_ A1.
 - **FR-4 — Optional `plugin` argument.** Every `file_*` tool input gains an optional
   `plugin` field (enum `["rag", "pageindex", "auto"]`, default `"auto"`). Other input
-  fields are byte-identical to the prior schema. *Acceptance:* A2.
+  fields are byte-identical to the prior schema. _Acceptance:_ A2.
 - **FR-5 — Routing rules.** Resolution order is per-call argument → `default_plugin` →
-  `"rag"`. No per-project / per-API-key / per-tenant override map. *Acceptance:* A3.
+  `"rag"`. No per-project / per-API-key / per-tenant override map. _Acceptance:_ A3.
 - **FR-6 — Unknown plugin name.** Returns `INVALID_ARGUMENT` with
-  `available_plugins=[...]` in `structuredContent`. *Acceptance:* A4.
+  `available_plugins=[...]` in `structuredContent`. _Acceptance:_ A4.
 - **FR-7 — Cross-plugin reads.** `file_read` / `file_stat` / `file_list` / `file_search`
   pinned to plugin B against a path written under plugin A return `NOT_FOUND` with a
   hint identifying plugin A. The manager never silently falls back across plugins.
-  *Acceptance:* A4, A8.
+  _Acceptance:_ A4, A8.
 - **FR-8 — Sticky mutations.** A `file_write` under plugin X stores the path under X
-  only. There is no implicit migration. *Acceptance:* A4.
+  only. There is no implicit migration. _Acceptance:_ A4.
 - **FR-9 — Resolved-plugin observability.** Every request log entry records the resolved
-  plugin name. Per-plugin metrics use the prefix `mcp.memory.<plugin>.*`. *Acceptance:*
+  plugin name. Per-plugin metrics use the prefix `mcp.memory.<plugin>.*`. _Acceptance:_
   A9, plus E04 from §5.3.
 - **FR-10 — Default routing knob.** `settings.mcp.tools.memory.default_plugin` selects the
-  default plugin (Phase 1: only `"rag"` accepted at runtime). *Acceptance:* A3.
+  default plugin (Phase 1: only `"rag"` accepted at runtime). _Acceptance:_ A3.
 - **FR-11 — Legacy-config shim.** `settings.mcp.files.*` is translated into
   `settings.mcp.tools.memory.plugins.rag.*` at config load time, with exactly one WARN line
-  per process. The shim is removed in the next minor after Phase 3. *Acceptance:* A5.
+  per process. The shim is removed in the next minor after Phase 3. _Acceptance:_ A5.
 - **FR-12 — Reverting to single-plugin mode.** Setting `default_plugin=rag` and removing
   any non-rag plugin block from config produces pre-refactor behavior on every input.
-  *Acceptance:* A10.
+  _Acceptance:_ A10.
 - **FR-13 — Eval harness shipping with Phase 1.** `make eval-plugin PLUGIN=rag` and
   `make eval-baseline-rag` run the §7.3 suite end-to-end via `go run`, with no external
-  language runtime. *Acceptance:* A9 (docs), Q1, Q2, Q5–Q8 (`rag_plugin` slice), Q10–Q12.
+  language runtime. _Acceptance:_ A9 (docs), Q1, Q2, Q5–Q8 (`rag_plugin` slice), Q10–Q12.
 - **FR-14 — Frozen Phase-1 baseline.** `docs/eval/baseline_v1/rag_plugin_scorecard.md`,
   `raw_per_query.jsonl`, and `run_metadata.yml` land in the same PR as the Phase 1 code
-  and are not overwritten without a `CHANGELOG.md` entry. *Acceptance:* A9; gates Q1–Q12.
+  and are not overwritten without a `CHANGELOG.md` entry. _Acceptance:_ A9; gates Q1–Q12.
 
 ## 5. Quality requirements
 
 Each `Q*` mirrors the proposal §6.1 ID; the threshold column is the §7.5 hard gate
 applicable to `rag_plugin` in Phase 1.
 
-| ID   | Metric                                              | `rag_plugin` hard gate                |
-| ---- | --------------------------------------------------- | ------------------------------------- |
-| Q1   | Internal Recall@10 / nDCG@10 / MRR / Hit@5          | ≥ baseline_v1 − 2 pp on overall; long-doc nDCG@10 ≥ baseline_v1 |
-| Q2   | RAGAS faithfulness / context_recall / answer_correctness | ≥ 0.85 / ≥ 0.80 / ≥ 0.75            |
-| Q3   | FinanceBench-150 accuracy                           | ≥ 0.50 (acknowledged weak corpus)     |
-| Q4   | LongMemEval_S accuracy                              | ≥ 0.55                                |
-| Q5   | BEAM-1M (200 subset) overall and abstention         | ≥ 0.40 overall, ≥ 0.50 abstention     |
-| Q6   | `file_search` p95 / p99 latency                     | ≤ baseline_v1 × 1.05 / × 1.10         |
-| Q7   | $ per 1 000 `file_search` calls                     | ≤ $0.50                               |
-| Q8   | Index throughput                                    | ≥ 1 500 text-pages/min/worker         |
-| Q9   | Prompt-injection blocked (12-attack catalogue)       | ≥ 11/12                               |
-| Q10  | Cross-tenant retrieval probe                        | **0** hits across 100 probes          |
-| Q11  | Supersession + GDPR-delete recall                   | ≥ 48/50; p95 time-to-unreachable ≤ 1 000 ms |
-| Q12  | Weekly drift on golden nDCG@10                      | ≤ 2 pp absolute                       |
+| ID  | Metric                                                   | `rag_plugin` hard gate                                          |
+| --- | -------------------------------------------------------- | --------------------------------------------------------------- |
+| Q1  | Internal Recall@10 / nDCG@10 / MRR / Hit@5               | ≥ baseline_v1 − 2 pp on overall; long-doc nDCG@10 ≥ baseline_v1 |
+| Q2  | RAGAS faithfulness / context_recall / answer_correctness | ≥ 0.85 / ≥ 0.80 / ≥ 0.75                                        |
+| Q3  | FinanceBench-150 accuracy                                | ≥ 0.50 (acknowledged weak corpus)                               |
+| Q4  | LongMemEval_S accuracy                                   | ≥ 0.55                                                          |
+| Q5  | BEAM-1M (200 subset) overall and abstention              | ≥ 0.40 overall, ≥ 0.50 abstention                               |
+| Q6  | `file_search` p95 / p99 latency                          | ≤ baseline_v1 × 1.05 / × 1.10                                   |
+| Q7  | $ per 1 000 `file_search` calls                          | ≤ $0.50                                                         |
+| Q8  | Index throughput                                         | ≥ 1 500 text-pages/min/worker                                   |
+| Q9  | Prompt-injection blocked (12-attack catalogue)           | ≥ 11/12                                                         |
+| Q10 | Cross-tenant retrieval probe                             | **0** hits across 100 probes                                    |
+| Q11 | Supersession + GDPR-delete recall                        | ≥ 48/50; p95 time-to-unreachable ≤ 1 000 ms                     |
+| Q12 | Weekly drift on golden nDCG@10                           | ≤ 2 pp absolute                                                 |
 
 `baseline_v1` is the scorecard captured at Phase-1 ship for `rag_plugin`. It is frozen
 for the life of v1; a new baseline is only adopted on a deliberate scorecard reset
@@ -141,23 +142,23 @@ the implementation is present and at least one test or audit asserts the observa
 contract; "pending" means the bar requires a dataset or wiring step that has not
 landed yet (named explicitly).
 
-| Criterion | Coverage                                                                                                                | Status                                                                |
-| --------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| A3        | Manager resolves `default_plugin` between `rag` and `pageindex` without changing tool-call shape.                       | verified — manager_test.go + integration smoke                        |
-| A4        | Plugin contract (seven `file_*` ops + `Name`/`Capabilities`/`Start`/`Stop`) implemented for `pageindex_plugin`.          | verified — internal tests P01–P18 + conformance suite                 |
-| A6        | Operator can bring `pageindex` up end-to-end from `docs/manual/mcp_memory_plugins.md` §6.1.                              | verified — manual covers config, cache, restart, smoke                |
-| A7        | `tokens_in` / `tokens_out` / `llm_calls` / `truncated` emitted on `pageindex` `file_search` `structuredContent`.         | verified — billing fields wired in indexer + search loop              |
-| A8        | Cross-tenant + system-namespace isolation: `system_owner='pageindex'` rows unreachable from any user-side tool call.    | verified — `internal/mcp/files/` predicate audit + tests              |
-| A11       | Switching `llm.indexing_model` / `llm.retrieve_model` within the Responses-API contract is invisible to the agent.       | verified — Responses-API client config-only; LLM unit tests           |
-| A12       | Long indexing reports progress through the `Progress` channel + `Reporter`.                                              | verified — internal test P14                                          |
-| Q1        | Internal Recall@10 / nDCG@10 / MRR / Hit@5 on `memory-bench-internal-v1`.                                                | pending: requires `memory-bench-internal-v1` LFS ingest               |
-| Q2        | RAGAS faithfulness / context_recall / answer_correctness on `memory-bench-ragas-v1`.                                     | pending: requires `memory-bench-ragas-v1` LFS ingest + judge wiring   |
-| Q3        | FinanceBench-150 accuracy via Mafin2.5 ensemble.                                                                          | pending: requires `financebench-150` LFS ingest                       |
-| Q4        | LongMemEval_S accuracy.                                                                                                   | pending: requires `longmemeval_s` LFS ingest                          |
-| Q9        | Prompt-injection blocked from OWASP GenAI 2026 v1.0 12-attack catalogue.                                                  | pending: 12-attack stubs ship in harness; full golden set required    |
-| Q10       | Cross-tenant retrieval probe across 100 random pairs.                                                                     | pending: harness ships probe scaffold; full golden set required       |
-| Q11       | Supersession + GDPR-delete recall.                                                                                        | pending: harness ships pair scaffold; full golden set required        |
-| Q12       | Weekly drift on golden nDCG@10.                                                                                           | pending: drift compare requires baseline_v1 + week-N replay datasets  |
+| Criterion | Coverage                                                                                                             | Status                                                               |
+| --------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| A3        | Manager resolves `default_plugin` between `rag` and `pageindex` without changing tool-call shape.                    | verified — manager_test.go + integration smoke                       |
+| A4        | Plugin contract (seven `file_*` ops + `Name`/`Capabilities`/`Start`/`Stop`) implemented for `pageindex_plugin`.      | verified — internal tests P01–P18 + conformance suite                |
+| A6        | Operator can bring `pageindex` up end-to-end from `docs/manual/mcp_memory_plugins.md` §6.1.                          | verified — manual covers config, cache, restart, smoke               |
+| A7        | `tokens_in` / `tokens_out` / `llm_calls` / `truncated` emitted on `pageindex` `file_search` `structuredContent`.     | verified — billing fields wired in indexer + search loop             |
+| A8        | Cross-tenant + system-namespace isolation: `system_owner='pageindex'` rows unreachable from any user-side tool call. | verified — `internal/mcp/files/` predicate audit + tests             |
+| A11       | Switching `llm.indexing_model` / `llm.retrieve_model` within the Responses-API contract is invisible to the agent.   | verified — Responses-API client config-only; LLM unit tests          |
+| A12       | Long indexing reports progress through the `Progress` channel + `Reporter`.                                          | verified — internal test P14                                         |
+| Q1        | Internal Recall@10 / nDCG@10 / MRR / Hit@5 on `memory-bench-internal-v1`.                                            | pending: requires `memory-bench-internal-v1` LFS ingest              |
+| Q2        | RAGAS faithfulness / context_recall / answer_correctness on `memory-bench-ragas-v1`.                                 | pending: requires `memory-bench-ragas-v1` LFS ingest + judge wiring  |
+| Q3        | FinanceBench-150 accuracy via Mafin2.5 ensemble.                                                                     | pending: requires `financebench-150` LFS ingest                      |
+| Q4        | LongMemEval_S accuracy.                                                                                              | pending: requires `longmemeval_s` LFS ingest                         |
+| Q9        | Prompt-injection blocked from OWASP GenAI 2026 v1.0 12-attack catalogue.                                             | pending: 12-attack stubs ship in harness; full golden set required   |
+| Q10       | Cross-tenant retrieval probe across 100 random pairs.                                                                | pending: harness ships probe scaffold; full golden set required      |
+| Q11       | Supersession + GDPR-delete recall.                                                                                   | pending: harness ships pair scaffold; full golden set required       |
+| Q12       | Weekly drift on golden nDCG@10.                                                                                      | pending: drift compare requires baseline_v1 + week-N replay datasets |
 
 A1, A2, A5, A9, A10 are unchanged from Phase 1; the Phase-1 acceptance still holds.
 

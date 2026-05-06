@@ -40,14 +40,27 @@ type ListDirPayload = {
   summaries: ListDirSummary[];
 };
 
+type MemoryPlugin = 'rag' | 'pageindex' | 'auto';
+
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'medium',
 });
 
 const inputLabelClass = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
+const selectClass =
+  'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 const defaultMemoryProject = 'default';
 const defaultMemorySessionID = 'default';
+const defaultMemoryPlugin: MemoryPlugin = 'rag';
+
+function normalizeMemoryPlugin(value: string | undefined): MemoryPlugin {
+  if (value === 'pageindex' || value === 'auto' || value === 'rag') {
+    return value;
+  }
+
+  return defaultMemoryPlugin;
+}
 
 function generateClientTurnID(): string {
   const now = Date.now();
@@ -139,6 +152,7 @@ export function MemoryPage() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
   const persistedInputs = useMemoryInputDefaults();
 
+  const [memoryPlugin, setMemoryPlugin] = useState<MemoryPlugin>(normalizeMemoryPlugin(persistedInputs.memoryPlugin));
   const [project, setProject] = useState((persistedInputs.project ?? '').trim() || defaultMemoryProject);
   const [sessionId, setSessionId] = useState((persistedInputs.sessionId ?? '').trim() || defaultMemorySessionID);
   const [userId, setUserId] = useState(persistedInputs.userId ?? '');
@@ -178,6 +192,7 @@ export function MemoryPage() {
   const [isListing, setIsListing] = useState(false);
 
   usePersistMemoryInputs({
+    memoryPlugin,
     project,
     sessionId,
     userId,
@@ -212,6 +227,7 @@ export function MemoryPage() {
 
     try {
       const payload = await callTool<BeforeTurnPayload>('memory_before_turn', {
+        plugin: memoryPlugin,
         project: project.trim() || undefined,
         session_id: sessionId.trim() || undefined,
         user_id: userId || undefined,
@@ -237,6 +253,7 @@ export function MemoryPage() {
 
     try {
       const payload = await callTool<MaintenancePayload>('memory_after_turn', {
+        plugin: memoryPlugin,
         project: project.trim() || undefined,
         session_id: sessionId.trim() || undefined,
         user_id: userId || undefined,
@@ -264,6 +281,7 @@ export function MemoryPage() {
 
     try {
       const payload = await callTool<MaintenancePayload>('memory_run_maintenance', {
+        plugin: memoryPlugin,
         project: project.trim() || undefined,
         session_id: sessionId.trim() || undefined,
       });
@@ -283,6 +301,7 @@ export function MemoryPage() {
 
     try {
       const payload = await callTool<ListDirPayload>('memory_list_dir_with_abstract', {
+        plugin: memoryPlugin,
         project: project.trim() || undefined,
         session_id: sessionId.trim() || undefined,
         path: listPath || undefined,
@@ -320,7 +339,22 @@ export function MemoryPage() {
           <CardTitle className="text-xl">Session Context</CardTitle>
           <CardDescription>Optional identifiers with client/server defaults.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="space-y-1">
+            <label htmlFor="memory-plugin" className={inputLabelClass}>
+              Memory Plugin
+            </label>
+            <select
+              id="memory-plugin"
+              className={selectClass}
+              value={memoryPlugin}
+              onChange={(event) => setMemoryPlugin(normalizeMemoryPlugin(event.target.value))}
+            >
+              <option value="rag">RAG</option>
+              <option value="pageindex">pageindex</option>
+              <option value="auto">auto (server default)</option>
+            </select>
+          </div>
           <div className="space-y-1">
             <label htmlFor="memory-project" className={inputLabelClass}>
               Project

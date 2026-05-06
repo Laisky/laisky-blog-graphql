@@ -1376,14 +1376,7 @@ export function FileIOPage() {
                         }
                       }
                     }}
-                    disabled={
-                      !selectedPath ||
-                      selectedIsDirectory ||
-                      isLoadingVersions ||
-                      isSavingFile ||
-                      isRestoring ||
-                      isReading
-                    }
+                    disabled={!selectedPath || selectedIsDirectory || isLoadingVersions || isSavingFile || isRestoring || isReading}
                     className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <option value="current">Current</option>
@@ -1400,14 +1393,7 @@ export function FileIOPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => void restoreVersion()}
-                  disabled={
-                    selectedVersionId === null ||
-                    !selectedPath ||
-                    selectedIsDirectory ||
-                    isSavingFile ||
-                    isRestoring ||
-                    isReading
-                  }
+                  disabled={selectedVersionId === null || !selectedPath || selectedIsDirectory || isSavingFile || isRestoring || isReading}
                 >
                   {isRestoring ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}
                   Restore as latest

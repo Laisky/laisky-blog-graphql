@@ -24,16 +24,16 @@ type BillingExtractor func(files.SearchResult) Billing
 
 // OpsReport carries the latency and billing rollup for a search-replay run.
 type OpsReport struct {
-	NumQueries        int     `json:"n"`
-	P50LatencyMS      int64   `json:"p50_latency_ms"`
-	P95LatencyMS      int64   `json:"p95_latency_ms"`
-	P99LatencyMS      int64   `json:"p99_latency_ms"`
-	MeanLatencyMS     float64 `json:"mean_latency_ms"`
-	MeanInputTokens   float64 `json:"mean_input_tokens"`
-	MeanOutputTokens  float64 `json:"mean_output_tokens"`
-	MeanTotalTokens   float64 `json:"mean_total_tokens"`
-	MeanUSDPerSearch  float64 `json:"mean_usd_per_search"`
-	UsdPer1KSearches  float64 `json:"usd_per_1k_searches"`
+	NumQueries       int     `json:"n"`
+	P50LatencyMS     int64   `json:"p50_latency_ms"`
+	P95LatencyMS     int64   `json:"p95_latency_ms"`
+	P99LatencyMS     int64   `json:"p99_latency_ms"`
+	MeanLatencyMS    float64 `json:"mean_latency_ms"`
+	MeanInputTokens  float64 `json:"mean_input_tokens"`
+	MeanOutputTokens float64 `json:"mean_output_tokens"`
+	MeanTotalTokens  float64 `json:"mean_total_tokens"`
+	MeanUSDPerSearch float64 `json:"mean_usd_per_search"`
+	UsdPer1KSearches float64 `json:"usd_per_1k_searches"`
 }
 
 // IngestionReport summarizes write→searchable latency.
@@ -47,22 +47,22 @@ type IngestionReport struct {
 
 // DifferentialReport reports cold (1st call) vs warm (Nth call) latencies.
 type DifferentialReport struct {
-	ColdMS int64 `json:"cold_ms"`
-	WarmMS int64 `json:"warm_ms"`
+	ColdMS  int64 `json:"cold_ms"`
+	WarmMS  int64 `json:"warm_ms"`
 	DeltaMS int64 `json:"delta_ms"`
 }
 
 // OpsDoc is one ingestion-probe doc.
 type OpsDoc struct {
-	Project     string
-	Path        string
-	Auth        files.AuthContext
-	Content     string
-	Pages       int
-	Query       string
-	Confirm     func(files.SearchResult) bool
-	MaxWait     time.Duration
-	PollEvery   time.Duration
+	Project   string
+	Path      string
+	Auth      files.AuthContext
+	Content   string
+	Pages     int
+	Query     string
+	Confirm   func(files.SearchResult) bool
+	MaxWait   time.Duration
+	PollEvery time.Duration
 }
 
 // RunOpsProbe replays each query `replays` times against `Search` and returns

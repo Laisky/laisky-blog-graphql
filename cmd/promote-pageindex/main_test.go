@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	plugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 )
 
 func TestStubJudgeAlwaysPicksA(t *testing.T) {

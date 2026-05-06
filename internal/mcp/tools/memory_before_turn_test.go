@@ -14,6 +14,8 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
+	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -193,8 +195,12 @@ func newTestToolMemoryService(t *testing.T) *mcpmemory.Service {
 
 	fileService, err := files.NewService(db, fileSettings, nil, nil, nil, nil, log.Logger.Named("memory_before_turn_tool_test_files"), nil, nil)
 	require.NoError(t, err)
+	ragPlugin, err := ragplugin.New(fileService)
+	require.NoError(t, err)
+	fileManager, err := mcpplugin.NewManager(mcpplugin.DefaultPluginRAG, ragPlugin)
+	require.NoError(t, err)
 
-	memoryService, err := mcpmemory.NewService(db, fileService, mcpmemory.LoadSettingsFromConfig(), log.Logger.Named("memory_before_turn_tool_test"), nil)
+	memoryService, err := mcpmemory.NewService(db, fileManager, mcpmemory.LoadSettingsFromConfig(), log.Logger.Named("memory_before_turn_tool_test"), nil)
 	require.NoError(t, err)
 
 	return memoryService

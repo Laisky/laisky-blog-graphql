@@ -278,16 +278,16 @@ func (NoopLLM) CountTokens(_ context.Context, _ Request) (int, error) { return 0
 
 // StubLLM is a deterministic test LLM keyed by PromptHash.
 type StubLLM struct {
-	mu       sync.Mutex
+	mu        sync.Mutex
 	Responses map[[32]byte]*Response
 	// Default is returned when no PromptHash matches.
 	Default *Response
 	// Calls counts every Respond invocation (test instrumentation).
 	Calls int
 	// InFlight tracks current concurrent calls (P12 verification).
-	InFlight     int
-	MaxInFlight  int
-	OnRespond    func(req Request)
+	InFlight    int
+	MaxInFlight int
+	OnRespond   func(req Request)
 }
 
 // NewStubLLM constructs an empty StubLLM.

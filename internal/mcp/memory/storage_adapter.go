@@ -9,16 +9,17 @@ import (
 	memorystorage "github.com/Laisky/go-utils/v6/agents/memory/storage"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
 
 // storageAdapter adapts internal FileIO service to memory storage engine API.
 type storageAdapter struct {
-	fileService *files.Service
+	fileService mcpplugin.Plugin
 	auth        files.AuthContext
 }
 
 // newStorageAdapter constructs a memory storage adapter for one authenticated request context.
-func newStorageAdapter(fileService *files.Service, auth files.AuthContext) (*storageAdapter, error) {
+func newStorageAdapter(fileService mcpplugin.Plugin, auth files.AuthContext) (*storageAdapter, error) {
 	if fileService == nil {
 		return nil, errors.WithStack(NewError(ErrCodeInternal, "file service is required", false))
 	}

@@ -9,20 +9,21 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
 
 // PluginDeps gathers the runtime collaborators the plugin needs.
 type PluginDeps struct {
-	UserFS   *files.Service
-	SystemFS files.SystemFS
-	Settings Settings
-	LLM      LLM
+	UserFS    *files.Service
+	SystemFS  files.SystemFS
+	Settings  Settings
+	LLM       LLM
 	Tokenizer Tokenizer
-	PDF      PDFParser
-	Cache    Cache
-	Logger   logSDK.Logger
+	PDF       PDFParser
+	Cache     Cache
+	Logger    logSDK.Logger
 }
 
 // Plugin satisfies mcpplugin.Plugin for long-document tree-reasoning memory.

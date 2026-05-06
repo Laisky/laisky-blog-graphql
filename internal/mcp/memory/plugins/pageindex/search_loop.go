@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 )
 
@@ -25,9 +26,9 @@ type SearchEngine interface {
 
 // Searcher carries the dependencies the plugin's Search method needs.
 type Searcher struct {
-	llm   LLM
-	store *SysStore
-	cfg   Settings
+	llm    LLM
+	store  *SysStore
+	cfg    Settings
 	engine SearchEngine
 }
 
@@ -162,8 +163,8 @@ func parsePickRangesResponse(raw string) ([]PageRange, error) {
 	}
 	var wrapper struct {
 		Ranges []struct {
-			Start int    `json:"start"`
-			End   int    `json:"end"`
+			Start  int    `json:"start"`
+			End    int    `json:"end"`
 			Reason string `json:"reason"`
 		} `json:"ranges"`
 	}

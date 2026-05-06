@@ -222,8 +222,8 @@ func TestCrossPluginSkipsSinglePlugin(t *testing.T) {
 // scenarios skip when no MultiPluginFixture is provided.
 type singleFixture struct{}
 
-func (singleFixture) Plugin() mcpplugin.Plugin                   { return nil }
+func (singleFixture) Plugin() mcpplugin.Plugin                        { return nil }
 func (singleFixture) NewAuthContext(*testing.T) mcpplugin.AuthContext { return mcpplugin.AuthContext{} }
-func (singleFixture) NewProject(*testing.T) string               { return "p" }
-func (singleFixture) HasStorage() bool                           { return true }
-func (singleFixture) Cleanup(*testing.T)                         {}
+func (singleFixture) NewProject(*testing.T) string                    { return "p" }
+func (singleFixture) HasStorage() bool                                { return true }
+func (singleFixture) Cleanup(*testing.T)                              {}

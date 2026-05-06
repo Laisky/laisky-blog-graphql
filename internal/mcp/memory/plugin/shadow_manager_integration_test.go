@@ -14,11 +14,11 @@ import (
 // of a ShadowPlugin: it counts Write calls so the integration test can assert
 // the wrapper dual-wrote to both live and shadow.
 type stubPlugin struct {
-	name        string
-	writeCount  int32
-	startCount  int32
-	stopCount   int32
-	stopErr     error
+	name       string
+	writeCount int32
+	startCount int32
+	stopCount  int32
+	stopErr    error
 }
 
 func (s *stubPlugin) Name() string               { return s.name }

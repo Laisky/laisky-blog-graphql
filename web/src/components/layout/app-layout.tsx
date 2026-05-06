@@ -95,7 +95,11 @@ export function AppLayout() {
       <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur">
         <div className="container mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2 md:gap-4 md:px-6 md:py-4">
           <div className="flex shrink-0 items-center gap-1.5 text-base font-semibold tracking-tight text-foreground md:gap-2 md:text-lg">
-            <Link to="/" className="flex shrink-0 items-center text-foreground transition-colors hover:text-primary" aria-label="Go to overview">
+            <Link
+              to="/"
+              className="flex shrink-0 items-center text-foreground transition-colors hover:text-primary"
+              aria-label="Go to overview"
+            >
               <Cpu className="h-5 w-5 text-primary" />
             </Link>
             <span className="hidden sm:inline">

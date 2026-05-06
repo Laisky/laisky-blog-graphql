@@ -13,6 +13,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
 
 const (
@@ -161,10 +162,18 @@ func buildCurrentInputTextItem(text string) map[string]any {
 
 // memoryToolErrorResult builds structured tool errors for memory tools.
 func memoryToolErrorResult(code mcpmemory.ErrorCode, message string, retryable bool) *mcp.CallToolResult {
+	return memoryToolErrorResultWithExtras(code, message, retryable, nil)
+}
+
+// memoryToolErrorResultWithExtras builds structured tool errors for memory tools with additional metadata.
+func memoryToolErrorResultWithExtras(code mcpmemory.ErrorCode, message string, retryable bool, extras map[string]any) *mcp.CallToolResult {
 	payload := map[string]any{
 		"code":      string(code),
 		"message":   message,
 		"retryable": retryable,
+	}
+	for key, value := range extras {
+		payload[key] = value
 	}
 	result, err := mcp.NewToolResultJSON(payload)
 	if err != nil {
@@ -178,6 +187,18 @@ func memoryToolErrorResult(code mcpmemory.ErrorCode, message string, retryable b
 func memoryToolErrorFromErr(err error) *mcp.CallToolResult {
 	if err == nil {
 		return nil
+	}
+	if resolveErr, ok := mcpplugin.AsResolveError(err); ok {
+		message := resolveErr.Error()
+		if resolveErr.Requested == mcpplugin.DefaultPluginPageIndex && !containsString(resolveErr.Available, mcpplugin.DefaultPluginPageIndex) {
+			message = message + "; settings.mcp.tools.memory.plugins.pageindex.llm.api_key is required"
+		}
+		return memoryToolErrorResultWithExtras(
+			mcpmemory.ErrCodeInvalidArgument,
+			message,
+			false,
+			map[string]any{"available_plugins": resolveErr.Available},
+		)
 	}
 	typed, ok := mcpmemory.AsError(err)
 	if ok {

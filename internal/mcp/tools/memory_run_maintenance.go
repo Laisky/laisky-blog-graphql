@@ -27,6 +27,7 @@ func (tool *MemoryRunMaintenanceTool) Definition() mcp.Tool {
 		"memory_run_maintenance",
 		mcp.WithDescription("Run compaction, retention sweep, and summary refresh for one memory session."),
 		mcp.WithString("project", mcp.Description("Target project namespace. Defaults to `default` when omitted.")),
+		fileToolPluginOption(),
 		mcp.WithString("session_id", mcp.Description("Session identifier. Defaults to `default` when omitted.")),
 		mcp.WithReadOnlyHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
@@ -35,6 +36,7 @@ func (tool *MemoryRunMaintenanceTool) Definition() mcp.Tool {
 
 // Handle executes memory_run_maintenance.
 func (tool *MemoryRunMaintenanceTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = withFilePluginOverride(ctx, req)
 	auth, ok := memoryAuthFromContext(ctx)
 	if !ok {
 		return memoryToolErrorResult(mcpmemory.ErrCodePermissionDenied, "missing authorization", false), nil

@@ -532,7 +532,7 @@ func (s *Service) deleteIndexRows(ctx context.Context, apiKeyHash, project, path
 }
 
 // deleteIndexRowsTx deletes index rows for a file within a transaction. The index
-// worker only operates against user-namespace rows (system_owner=''), so the
+// worker only operates against user-namespace rows (system_owner=”), so the
 // scoped deletes below are explicit about that.
 func (s *Service) deleteIndexRowsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
 	if _, err := tx.ExecContext(ctx,

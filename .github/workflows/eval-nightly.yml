@@ -3,13 +3,13 @@ name: eval-nightly
 
 on:
   schedule:
-    - cron: "0 4 * * *"
+    - cron: '0 4 * * *'
   pull_request:
     paths:
-      - "internal/mcp/memory/plugins/**"
-      - "tests/eval/golden/**"
-      - "internal/mcp/memory/conformance/eval/**"
-      - "cmd/eval-plugin/**"
+      - 'internal/mcp/memory/plugins/**'
+      - 'tests/eval/golden/**'
+      - 'internal/mcp/memory/conformance/eval/**'
+      - 'cmd/eval-plugin/**'
   workflow_dispatch:
 
 jobs:
