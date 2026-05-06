@@ -10,6 +10,7 @@ import (
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -46,10 +47,18 @@ func fileToolLoggerFromContext(ctx context.Context) logSDK.Logger {
 
 // fileToolErrorResult builds a structured MCP error response for file tools.
 func fileToolErrorResult(code files.ErrorCode, message string, retryable bool) *mcp.CallToolResult {
+	return fileToolErrorResultWithExtras(code, message, retryable, nil)
+}
+
+// fileToolErrorResultWithExtras builds a structured MCP error response with extra fields.
+func fileToolErrorResultWithExtras(code files.ErrorCode, message string, retryable bool, extras map[string]any) *mcp.CallToolResult {
 	payload := map[string]any{
 		"code":      string(code),
 		"message":   message,
 		"retryable": retryable,
+	}
+	for key, value := range extras {
+		payload[key] = value
 	}
 	result, err := mcp.NewToolResultJSON(payload)
 	if err != nil {
@@ -64,10 +73,48 @@ func fileToolErrorFromErr(err error) *mcp.CallToolResult {
 	if err == nil {
 		return nil
 	}
+	if resolveErr, ok := mcpplugin.AsResolveError(err); ok {
+		message := resolveErr.Error()
+		if resolveErr.Requested == mcpplugin.DefaultPluginPageIndex && !containsString(resolveErr.Available, mcpplugin.DefaultPluginPageIndex) {
+			// A10: surface the missing config key so an operator can self-diagnose
+			// when pageindex was requested but never registered at startup.
+			message = message + "; settings.mcp.tools.memory.plugins.pageindex.llm.api_key is required"
+		}
+		return fileToolErrorResultWithExtras(
+			files.ErrCodeInvalidArgument,
+			message,
+			false,
+			map[string]any{"available_plugins": resolveErr.Available},
+		)
+	}
 	if typed, ok := files.AsError(err); ok {
 		return fileToolErrorResult(typed.Code, typed.Message, typed.Retryable)
 	}
 	return fileToolErrorResult(files.ErrCodeSearchBackend, "internal error", true)
+}
+
+func containsString(values []string, target string) bool {
+	for _, v := range values {
+		if v == target {
+			return true
+		}
+	}
+	return false
+}
+
+// fileToolPluginOption adds the additive per-call plugin routing argument.
+func fileToolPluginOption() mcp.ToolOption {
+	return mcp.WithString(
+		"plugin",
+		mcp.Description("Memory backend to use for this call. Use auto or omit the field to follow the server default."),
+		mcp.Enum(mcpplugin.DefaultPluginRAG, mcpplugin.DefaultPluginPageIndex, mcpplugin.DefaultPluginAuto),
+		mcp.DefaultString(mcpplugin.DefaultPluginAuto),
+	)
+}
+
+// withFilePluginOverride stores the per-call plugin selection in context for manager routing.
+func withFilePluginOverride(ctx context.Context, req mcp.CallToolRequest) context.Context {
+	return mcpplugin.WithOverride(ctx, readStringArg(req, "plugin"))
 }
 
 // isFileErrorCode reports whether an error chain contains the specified file error code.

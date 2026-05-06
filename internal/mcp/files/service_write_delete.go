@@ -11,6 +11,13 @@ import (
 
 // Write applies content updates to a file path.
 func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, content, encoding string, offset int64, mode WriteMode) (WriteResult, error) {
+	return s.WriteWith(ctx, auth, project, path, content, encoding, offset, mode, WriteOpts{})
+}
+
+// WriteWith applies content using the supplied WriteOpts (proposal §2.6.1, §4.2).
+// The plain Write entry point delegates here with a zero-valued opts to preserve
+// existing behavior.
+func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path, content, encoding string, offset int64, mode WriteMode, opts WriteOpts) (WriteResult, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return WriteResult{}, errors.WithStack(err)
 	}
@@ -44,9 +51,13 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 		return WriteResult{}, errors.WithStack(err)
 	}
 
+	if opts.SystemOwner != "" {
+		ctx = contextWithSystemOwner(ctx, opts.SystemOwner)
+	}
+
 	var bytesWritten int64
 	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
-		n, err := s.writeWithinTx(ctx, tx, auth, project, path, []byte(content), mode, offset, payloadBytes)
+		n, err := s.writeWithinTx(ctx, tx, auth, project, path, []byte(content), mode, offset, payloadBytes, opts)
 		if err != nil {
 			return err
 		}
@@ -72,7 +83,13 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 	mode WriteMode,
 	offset int64,
 	bytesWritten int64,
+	opts WriteOpts,
 ) (int64, error) {
+	owner := systemOwnerFromContext(ctx)
+	if opts.SystemOwner != "" {
+		owner = opts.SystemOwner
+	}
+
 	if err := s.ensureNoDescendantFile(ctx, tx, auth.APIKeyHash, project, path); err != nil {
 		return 0, err
 	}
@@ -113,8 +130,8 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 
 	if errors.Is(findErr, sql.ErrNoRows) {
 		if _, err := tx.ExecContext(ctx,
-			rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL)`, s.isPostgres),
+			rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, system_owner, skip_rag_index)
+				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL, ?, ?)`, s.isPostgres),
 			auth.APIKeyHash,
 			project,
 			path,
@@ -122,6 +139,8 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 			newSize,
 			createdAt,
 			now,
+			owner,
+			opts.SkipRAGIndex,
 		); err != nil {
 			return 0, errors.Wrap(err, "create file")
 		}
@@ -130,11 +149,13 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 			return 0, err
 		}
 		if _, err := tx.ExecContext(ctx,
-			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL WHERE id = ?`, s.isPostgres),
+			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
 			newContent,
 			newSize,
 			now,
+			opts.SkipRAGIndex,
 			existing.ID,
+			owner,
 		); err != nil {
 			return 0, errors.Wrap(err, "update file")
 		}
@@ -143,23 +164,30 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		}
 	}
 
-	if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-		APIKeyHash:    auth.APIKeyHash,
-		Project:       project,
-		FilePath:      path,
-		Operation:     "UPSERT",
-		FileUpdatedAt: &now,
-		Status:        "pending",
-		RetryCount:    0,
-		AvailableAt:   now,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}); err != nil {
-		return 0, errors.Wrap(err, "enqueue index job")
+	// Index-job enqueue is gated on user-namespace writes that did not opt out.
+	// System-owner writes never enqueue: their content is consumed by the owning
+	// plugin directly, not by the rag index worker.
+	if owner == "" && !opts.SkipRAGIndex {
+		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+			APIKeyHash:    auth.APIKeyHash,
+			Project:       project,
+			FilePath:      path,
+			Operation:     "UPSERT",
+			FileUpdatedAt: &now,
+			Status:        "pending",
+			RetryCount:    0,
+			AvailableAt:   now,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}); err != nil {
+			return 0, errors.Wrap(err, "enqueue index job")
+		}
 	}
 
-	if err := s.storeCredentialEnvelope(ctx, auth, project, path, now); err != nil {
-		return 0, err
+	if owner == "" {
+		if err := s.storeCredentialEnvelope(ctx, auth, project, path, now); err != nil {
+			return 0, err
+		}
 	}
 
 	return bytesWritten, nil
@@ -180,6 +208,7 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		return DeleteResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "root directory cannot be deleted", false))
 	}
 
+	owner := systemOwnerFromContext(ctx)
 	var deletedCount int
 	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
 		now := s.clock()
@@ -201,10 +230,10 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 			}
 		}
 
-		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
-		inClause, inArgs := buildInClause(paths, s.isPostgres, 5)
-		args := make([]any, 0, 4+len(inArgs))
-		args = append(args, now, now, auth.APIKeyHash, project)
+		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+		inClause, inArgs := buildInClause(paths, s.isPostgres, 6)
+		args := make([]any, 0, 5+len(inArgs))
+		args = append(args, now, now, auth.APIKeyHash, project, owner)
 		args = append(args, inArgs...)
 		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
 			return errors.Wrap(err, "soft delete files")
@@ -216,20 +245,22 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 			}
 		}
 
-		for _, p := range paths {
-			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-				APIKeyHash:    auth.APIKeyHash,
-				Project:       project,
-				FilePath:      p,
-				Operation:     "DELETE",
-				FileUpdatedAt: &now,
-				Status:        "pending",
-				RetryCount:    0,
-				AvailableAt:   now,
-				CreatedAt:     now,
-				UpdatedAt:     now,
-			}); err != nil {
-				return errors.Wrap(err, "enqueue delete job")
+		if owner == "" {
+			for _, p := range paths {
+				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+					APIKeyHash:    auth.APIKeyHash,
+					Project:       project,
+					FilePath:      p,
+					Operation:     "DELETE",
+					FileUpdatedAt: &now,
+					Status:        "pending",
+					RetryCount:    0,
+					AvailableAt:   now,
+					CreatedAt:     now,
+					UpdatedAt:     now,
+				}); err != nil {
+					return errors.Wrap(err, "enqueue delete job")
+				}
 			}
 		}
 
@@ -274,13 +305,15 @@ func applyWriteModeBytes(existing, incoming []byte, offset int64, mode WriteMode
 
 // ensureNoDescendantFile validates that the target path has no child files.
 func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
+	owner := systemOwnerFromContext(ctx)
 	prefix := buildPathPrefix(path)
 	var count int64
 	if err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 		apiKeyHash,
 		project,
 		prefix,
+		owner,
 	).Scan(&count); err != nil {
 		return errors.Wrap(err, "check descendant files")
 	}
@@ -292,15 +325,16 @@ func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKey
 
 // ensureNoParentFile validates that no parent segment is an existing file.
 func (s *Service) ensureNoParentFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
+	owner := systemOwnerFromContext(ctx)
 	parents := parentPaths(path)
 	if len(parents) == 0 {
 		return nil
 	}
 	var count int64
-	inClause, inArgs := buildInClause(parents, s.isPostgres, 3)
-	query := rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
-	args := make([]any, 0, 2+len(inArgs))
-	args = append(args, apiKeyHash, project)
+	inClause, inArgs := buildInClause(parents, s.isPostgres, 4)
+	query := rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+	args := make([]any, 0, 3+len(inArgs))
+	args = append(args, apiKeyHash, project, owner)
 	args = append(args, inArgs...)
 	if err := tx.QueryRowContext(ctx, strings.Replace(query, "%s", inClause, 1), args...).Scan(&count); err != nil {
 		return errors.Wrap(err, "check parent files")
@@ -331,11 +365,13 @@ func parentPaths(path string) []string {
 // ensureProjectQuota enforces project storage limits.
 
 func (s *Service) ensureProjectQuota(ctx context.Context, tx *sql.Tx, apiKeyHash, project string, newSize int64, existing *File) error {
+	owner := systemOwnerFromContext(ctx)
 	var total int64
 	if err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT COALESCE(SUM(size), 0) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE`, s.isPostgres),
+		rebindSQL(`SELECT COALESCE(SUM(size), 0) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 		apiKeyHash,
 		project,
+		owner,
 	).Scan(&total); err != nil {
 		return errors.Wrap(err, "sum project size")
 	}
@@ -350,16 +386,18 @@ func (s *Service) ensureProjectQuota(ctx context.Context, tx *sql.Tx, apiKeyHash
 
 // resolveDeleteTargets determines which file paths should be deleted.
 func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string, recursive bool) ([]string, error) {
+	owner := systemOwnerFromContext(ctx)
 	if path == "" {
 		return s.listAllFilePaths(ctx, tx, apiKeyHash, project)
 	}
 
 	var foundPath string
 	err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE LIMIT 1`, s.isPostgres),
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ? LIMIT 1`, s.isPostgres),
 		apiKeyHash,
 		project,
 		path,
+		owner,
 	).Scan(&foundPath)
 	if err == nil {
 		return []string{foundPath}, nil
@@ -383,12 +421,14 @@ func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHa
 
 // listDescendantPaths returns all active descendant file paths for a directory.
 func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) ([]string, error) {
+	owner := systemOwnerFromContext(ctx)
 	prefix := buildPathPrefix(path)
 	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 		apiKeyHash,
 		project,
 		prefix,
+		owner,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query descendant paths")
@@ -411,10 +451,12 @@ func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHas
 
 // listAllFilePaths returns all active file paths in a project.
 func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project string) ([]string, error) {
+	owner := systemOwnerFromContext(ctx)
 	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE`, s.isPostgres),
+		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 		apiKeyHash,
 		project,
+		owner,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query project paths")
@@ -437,9 +479,10 @@ func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 
 // insertIndexJobTx inserts one index queue job in the current transaction.
 func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) error {
+	owner := systemOwnerFromContext(ctx)
 	_, err := tx.ExecContext(ctx,
-		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
+		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, system_owner)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
 		job.APIKeyHash,
 		job.Project,
 		job.FilePath,
@@ -450,6 +493,7 @@ func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileInde
 		job.AvailableAt,
 		job.CreatedAt,
 		job.UpdatedAt,
+		owner,
 	)
 	if err != nil {
 		return errors.Wrap(err, "insert index job")
@@ -462,12 +506,13 @@ func (s *Service) loadFilesForSnapshotTx(ctx context.Context, tx *sql.Tx, apiKey
 	if len(paths) == 0 {
 		return nil, nil
 	}
-	inClause, inArgs := buildInClause(paths, s.isPostgres, 3)
+	owner := systemOwnerFromContext(ctx)
+	inClause, inArgs := buildInClause(paths, s.isPostgres, 4)
 	query := rebindSQL(`SELECT id, path, content, size FROM mcp_files
-		WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)
+		WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)
 		ORDER BY path ASC`, s.isPostgres)
-	args := make([]any, 0, 2+len(inArgs))
-	args = append(args, apiKeyHash, project)
+	args := make([]any, 0, 3+len(inArgs))
+	args = append(args, apiKeyHash, project, owner)
 	args = append(args, inArgs...)
 	rows, err := tx.QueryContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
 	if err != nil {
@@ -491,15 +536,17 @@ func (s *Service) loadFilesForSnapshotTx(ctx context.Context, tx *sql.Tx, apiKey
 
 // findActiveFileTx loads one non-deleted file row in a transaction by path.
 func (s *Service) findActiveFileTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (*File, error) {
+	owner := systemOwnerFromContext(ctx)
 	var file File
 	err := tx.QueryRowContext(ctx,
 		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at
 		FROM mcp_files
-		WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE
+		WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
 		LIMIT 1`, s.isPostgres),
 		apiKeyHash,
 		project,
 		path,
+		owner,
 	).Scan(
 		&file.ID,
 		&file.APIKeyHash,

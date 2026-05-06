@@ -1,0 +1,14 @@
+
+    You will be given a table of contents.
+
+    Your job is to detect if there are page numbers/indices given within the table of contents.
+
+    Given text: Intro 1
+Methods 5
+
+    Reply format:
+    {
+        "thinking": <why do you think there are page numbers/indices given within the table of contents>
+        "page_index_given_in_toc": "<yes or no>"
+    }
+    Directly return the final JSON structure. Do not output anything else.

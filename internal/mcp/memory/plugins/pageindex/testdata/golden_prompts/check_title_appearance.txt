@@ -1,0 +1,15 @@
+
+    Your job is to check if the given section appears or starts in the given page_text.
+
+    Note: do fuzzy matching, ignore any space inconsistency in the page_text.
+
+    The given section title is Chapter 1.
+    The given page_text is Page text body.
+
+    Reply format:
+    {
+
+        "thinking": <why do you think the section appears or starts in the page_text>
+        "answer": "yes or no" (yes if the section appears or starts in the page_text, no otherwise)
+    }
+    Directly return the final JSON structure. Do not output anything else.

@@ -49,28 +49,28 @@ type HeuristicSettings struct {
 
 // LoadSettingsFromConfig loads memory settings with safe defaults.
 func LoadSettingsFromConfig() Settings {
-	timeoutMS := intFromConfig("settings.mcp.memory.heuristic.timeout_ms", defaultHeuristicTimeoutMS)
+	timeoutMS := intFromConfig("settings.mcp.tools.memory.heuristic.timeout_ms", defaultHeuristicTimeoutMS)
 	if timeoutMS <= 0 {
 		timeoutMS = defaultHeuristicTimeoutMS
 	}
 
 	return Settings{
-		RecentContextItems:     intFromConfig("settings.mcp.memory.recent_context_items", defaultRecentContextItems),
-		RecallFactsLimit:       intFromConfig("settings.mcp.memory.recall_facts_limit", defaultRecallFactsLimit),
-		SearchLimit:            intFromConfig("settings.mcp.memory.search_limit", defaultSearchLimit),
-		CompactThreshold:       floatFromConfig("settings.mcp.memory.compact_threshold", defaultCompactThreshold),
-		L1RetentionDays:        intFromConfig("settings.mcp.memory.l1_retention_days", defaultL1RetentionDays),
-		L2RetentionDays:        intFromConfig("settings.mcp.memory.l2_retention_days", defaultL2RetentionDays),
-		CompactionMinAge:       time.Duration(intFromConfig("settings.mcp.memory.compaction_min_age_hours", defaultCompactionMinAgeHours)) * time.Hour,
-		SummaryRefreshInterval: time.Duration(intFromConfig("settings.mcp.memory.summary_refresh_interval_minutes", defaultSummaryRefreshMinutes)) * time.Minute,
-		MaxProcessedTurns:      intFromConfig("settings.mcp.memory.max_processed_turns", defaultMaxProcessedTurns),
-		SessionLockTimeout:     time.Duration(intFromConfig("settings.mcp.memory.session_lock_timeout_ms", defaultSessionLockTimeoutMS)) * time.Millisecond,
+		RecentContextItems:     intFromConfig("settings.mcp.tools.memory.recent_context_items", defaultRecentContextItems),
+		RecallFactsLimit:       intFromConfig("settings.mcp.tools.memory.recall_facts_limit", defaultRecallFactsLimit),
+		SearchLimit:            intFromConfig("settings.mcp.tools.memory.search_limit", defaultSearchLimit),
+		CompactThreshold:       floatFromConfig("settings.mcp.tools.memory.compact_threshold", defaultCompactThreshold),
+		L1RetentionDays:        intFromConfig("settings.mcp.tools.memory.l1_retention_days", defaultL1RetentionDays),
+		L2RetentionDays:        intFromConfig("settings.mcp.tools.memory.l2_retention_days", defaultL2RetentionDays),
+		CompactionMinAge:       time.Duration(intFromConfig("settings.mcp.tools.memory.compaction_min_age_hours", defaultCompactionMinAgeHours)) * time.Hour,
+		SummaryRefreshInterval: time.Duration(intFromConfig("settings.mcp.tools.memory.summary_refresh_interval_minutes", defaultSummaryRefreshMinutes)) * time.Minute,
+		MaxProcessedTurns:      intFromConfig("settings.mcp.tools.memory.max_processed_turns", defaultMaxProcessedTurns),
+		SessionLockTimeout:     time.Duration(intFromConfig("settings.mcp.tools.memory.session_lock_timeout_ms", defaultSessionLockTimeoutMS)) * time.Millisecond,
 		Heuristic: HeuristicSettings{
-			Enabled:         boolFromConfig("settings.mcp.memory.heuristic.enabled", false),
-			Model:           stringFromConfig("settings.mcp.memory.heuristic.model", defaultHeuristicModel),
-			BaseURL:         stringFromConfig("settings.mcp.memory.heuristic.base_url", "https://oneapi.laisky.com"),
+			Enabled:         boolFromConfig("settings.mcp.tools.memory.heuristic.enabled", false),
+			Model:           stringFromConfig("settings.mcp.tools.memory.heuristic.model", defaultHeuristicModel),
+			BaseURL:         stringFromConfig("settings.mcp.tools.memory.heuristic.base_url", "https://oneapi.laisky.com"),
 			Timeout:         time.Duration(timeoutMS) * time.Millisecond,
-			MaxOutputTokens: intFromConfig("settings.mcp.memory.heuristic.max_output_tokens", defaultHeuristicMaxOutputTokens),
+			MaxOutputTokens: intFromConfig("settings.mcp.tools.memory.heuristic.max_output_tokens", defaultHeuristicMaxOutputTokens),
 		},
 	}
 }

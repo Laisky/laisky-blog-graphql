@@ -256,7 +256,7 @@ func (h *filesHTTPHandler) writeFileError(w http.ResponseWriter, logger logSDK.L
 			status = http.StatusUnauthorized
 		case ErrCodeAlreadyExists, ErrCodeNotEmpty:
 			status = http.StatusConflict
-		case ErrCodeIsDirectory, ErrCodeNotDirectory, ErrCodeInvalidPath, ErrCodeInvalidOffset, ErrCodeInvalidQuery:
+		case ErrCodeIsDirectory, ErrCodeNotDirectory, ErrCodeInvalidArgument, ErrCodeInvalidPath, ErrCodeInvalidOffset, ErrCodeInvalidQuery:
 			status = http.StatusBadRequest
 		case ErrCodePayloadTooLarge:
 			status = http.StatusRequestEntityTooLarge

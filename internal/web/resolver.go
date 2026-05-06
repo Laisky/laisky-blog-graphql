@@ -10,6 +10,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
+	mcptools "github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	arweave "github.com/Laisky/laisky-blog-graphql/internal/web/arweave/controller"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
@@ -39,6 +40,7 @@ type ResolverArgs struct {
 	UserRequestService *userrequests.Service
 	UserRequestImages  *userrequests.ImageManager
 	FilesService       *files.Service
+	MCPFileService     mcptools.FileService
 	MemoryService      *mcpmemory.Service
 	RAGService         *rag.Service
 	RAGSettings        rag.Settings

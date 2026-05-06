@@ -1,18 +1,9 @@
+// Strategy A (proposal §4.2): FileService is a deprecation alias of mcpplugin.Plugin.
+// Callers should depend on mcpplugin.Plugin or *mcpplugin.Manager directly. Kept as a
+// source-compat alias for one minor version.
 package tools
 
-import (
-	"context"
+import mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-)
-
-// FileService exposes file operations for MCP tools.
-type FileService interface {
-	Stat(context.Context, files.AuthContext, string, string) (files.StatResult, error)
-	Read(context.Context, files.AuthContext, string, string, int64, int64) (files.ReadResult, error)
-	Write(context.Context, files.AuthContext, string, string, string, string, int64, files.WriteMode) (files.WriteResult, error)
-	Delete(context.Context, files.AuthContext, string, string, bool) (files.DeleteResult, error)
-	Rename(context.Context, files.AuthContext, string, string, string, bool) (files.RenameResult, error)
-	List(context.Context, files.AuthContext, string, string, int, int) (files.ListResult, error)
-	Search(context.Context, files.AuthContext, string, string, string, int) (files.SearchResult, error)
-}
+// Deprecated: use mcpplugin.Plugin or *mcpplugin.Manager directly.
+type FileService = mcpplugin.Plugin

@@ -24,13 +24,13 @@ type Settings struct {
 // LoadSettingsFromConfig reads the shared configuration and returns a sanitized Settings instance.
 func LoadSettingsFromConfig() Settings {
 	cfg := Settings{
-		Enabled:          gconfig.S.GetBool("settings.mcp.extract_key_info.enabled"),
-		TopKDefault:      intFromConfig("settings.mcp.extract_key_info.top_k_default", 5),
-		TopKLimit:        intFromConfig("settings.mcp.extract_key_info.top_k_limit", 20),
-		MaxMaterialsSize: intFromConfig("settings.mcp.extract_key_info.max_materials_size", 10_000_000),
-		MaxChunkChars:    intFromConfig("settings.mcp.extract_key_info.max_chunk_chars", 500),
-		SemanticWeight:   floatFromConfig("settings.mcp.extract_key_info.semantic_weight", 0.65),
-		LexicalWeight:    floatFromConfig("settings.mcp.extract_key_info.lexical_weight", 0.35),
+		Enabled:          gconfig.S.GetBool("settings.mcp.tools.extract_key_info.enabled"),
+		TopKDefault:      intFromConfig("settings.mcp.tools.extract_key_info.top_k_default", 5),
+		TopKLimit:        intFromConfig("settings.mcp.tools.extract_key_info.top_k_limit", 20),
+		MaxMaterialsSize: intFromConfig("settings.mcp.tools.extract_key_info.max_materials_size", 10_000_000),
+		MaxChunkChars:    intFromConfig("settings.mcp.tools.extract_key_info.max_chunk_chars", 500),
+		SemanticWeight:   floatFromConfig("settings.mcp.tools.extract_key_info.semantic_weight", 0.65),
+		LexicalWeight:    floatFromConfig("settings.mcp.tools.extract_key_info.lexical_weight", 0.35),
 		EmbeddingModel:   strings.TrimSpace(gconfig.S.GetString("settings.openai.embedding_model")),
 		OpenAIBaseURL:    strings.TrimSpace(gconfig.S.GetString("settings.openai.base_url")),
 	}

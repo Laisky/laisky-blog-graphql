@@ -33,6 +33,7 @@ func (t *FileWriteTool) Definition() mcp.Tool {
 		mcp.WithString("content_encoding", mcp.Description("Content encoding; must be utf-8.")),
 		mcp.WithNumber("offset", mcp.Description("Byte offset for overwrite mode.")),
 		mcp.WithString("mode", mcp.Description("Write mode: APPEND, OVERWRITE, or TRUNCATE.")),
+		fileToolPluginOption(),
 		mcp.WithIdempotentHintAnnotation(false),
 	)
 }
@@ -55,6 +56,7 @@ func (t *FileWriteTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 	modeRaw := strings.ToUpper(readStringArg(req, "mode"))
 	mode := files.WriteMode(modeRaw)
 	offset := readInt64Arg(req, "offset")
+	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Write(ctx, auth, project, path, content, encoding, offset, mode)
 		if svcErr != nil {

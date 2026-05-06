@@ -1,43 +1,75 @@
 ---
 title: MCP memory plugin manager (rag_plugin + pageindex_plugin)
-status: draft
+status: accepted
 owner: mcp team
 created: 2026-05-05
 updated: 2026-05-06
-v1_runtime: pure-Go, in-process; no Python sidecar, no cgo, no external binary (see §1.4)
+v1_runtime: pure-Go, in-process; pure-Go go.mod additions only, no cgo, no external binary, no Python sidecar (see §0)
+runtime_egress: only HTTPS to OpenAI's Responses API
+implementation:
+  phase_1:
+    status: shipped
+    paths:
+      - internal/mcp/memory/plugin/{plugin,manager,settings,types}.go
+      - internal/mcp/memory/plugins/rag/plugin.go
+      - internal/mcp/memory/conformance/{suite.go,eval/}
+      - cmd/eval-plugin/main.go
+      - docs/eval/baseline_v1/
+  phase_2:
+    status: shipped
+    paths:
+      - internal/mcp/files/{migration.go,system_fs.go,system_owner.go,types.go,service_*.go}
+      - internal/mcp/memory/plugins/pageindex/  # 16 source files, ~4.3k LOC, pure Go
+      - cmd/api.go  # enablement gate on settings.mcp.tools.memory.plugins.pageindex.llm.api_key
+  phase_3:
+    status: scaffolding shipped
+    paths:
+      - internal/mcp/memory/plugin/{shadow,shadow_recorder,shadow_score}.go
+      - cmd/promote-pageindex/main.go  # stub | openai | ensemble judge modes
+    deferred: production wiring of ShadowPlugin in cmd/api.go (per §8 Phase 3)
+supersedes: any prior draft that proposed a Python sidecar, gRPC bridge, or subprocess-based PageIndex backend
+forbidden_under_v1:
+  - third_party/pageindex_sidecar/ (proto + Python server.py + requirements.txt + Dockerfile)
+  - any cgo-bound PDF / tokenizer / inference library
+  - any subprocess, Unix-domain socket, TCP IPC, or proto-generated stubs
 ---
 
 # MCP Memory Plugin Manager — Change Manual
 
 ## 0. Decision (v1 runtime)
 
-**v1 ships pure-Go, in-process. There is no Python sidecar in any phase of v1.**
+**v1 is pure Go, in-process. There is no Python sidecar, no subprocess, and no
+cross-language IPC at runtime.** The PageIndex algorithm is reimplemented in Go and
+runs inside the existing MCP server process. The only network call the plugin makes
+is HTTPS to OpenAI's Responses API. This decision is final for v1; an earlier draft
+that proposed a `third_party/pageindex_sidecar/` (proto + Python `server.py` +
+`requirements.txt` + Dockerfile) is **superseded** by this document and must not be
+reintroduced under v1.
 
-The PageIndex algorithm is reimplemented in Go and runs in the existing MCP server
-process. The only network call the plugin makes is HTTPS to OpenAI's Responses API. The
-following are explicitly out of scope for v1, and the build will not link against any
-artifact that introduces them:
+Out of scope for v1, with the build refusing to link against any artifact that would
+introduce them:
 
-- No Python runtime, no Python sidecar, no `pip` dependency, no `requirements.txt`
-  shipped in the deploy artifact.
+- No external language runtime, no `pip` dependency, no `requirements.txt` shipped in
+  the deploy artifact, no `package.json`, no JVM, no Ruby — nothing outside the Go
+  toolchain.
 - No cgo. No `llama.cpp`, no ONNX runtime, no native PDF binding.
 - No subprocess, no Unix-domain or TCP IPC socket, no proto-generated stubs, no extra
   container in the Compose / k8s manifest.
-- No "fallback to Python" mode and no compile-time flag that re-enables one. There is
-  no `if buildtag.python` in the codebase.
-- No vendored upstream Python at runtime: `/home/laisky/repo/3rd/PageIndex` is consulted
+- No fallback path that re-introduces an external runtime, no compile-time flag that
+  enables one, no `if buildtag.<lang>` in the codebase.
+- No vendored upstream code at runtime: `/home/laisky/repo/3rd/PageIndex` is consulted
   as an algorithmic reference (prompt shapes, knob defaults, JSON tree schema) only —
   it is never imported, executed, or shipped.
 
-Every "in-process," "no sidecar," and "Responses-API only" claim downstream
-(§1.3, §1.4, §1.5, §2.6, §3.3, §4.3, §6 A6/A10, §8 Phase 2) resolves back to this
-section. The `go.mod` additions in §4.2 are the *complete* set of new runtime
-dependencies — every entry is pure Go with stdlib-only transitive deps.
+Every "in-process" and "Responses-API only" claim downstream (§1.3, §1.4, §1.5, §2.6,
+§3.3, §4.3, §6 A6/A10, §8 Phase 2) resolves back to this section. The `go.mod`
+additions in §4.2 are the *complete* set of new runtime dependencies — every entry is
+pure Go with stdlib-only transitive deps.
 
-Reopening the Python-sidecar option is a v2 conversation, not a v1 patch. If a future
-reader wants the sidecar path, the corresponding proposal must (a) supersede this
-document, not amend it, and (b) re-derive its own §3 risk analysis from scratch — the
-risks listed below are sized for an in-process Go implementation and do not transfer.
+Reopening any of the above is a v2 conversation, not a v1 patch. A future proposal that
+argues for an external runtime must (a) supersede this document, not amend it, and (b)
+re-derive its own §3 risk analysis from scratch — the risks listed below are sized for
+an in-process Go implementation and do not transfer.
 
 ## 1. Background
 
@@ -100,9 +132,11 @@ a runtime dependency (§1.4):
 
 ### 1.3 Goal
 
-Refactor the memory backend behind a **plugin contract** so different engines can be plugged
-in per-tenant or per-project without changing the public MCP tool schemas. Ship two plugins on
-day one:
+Refactor the memory backend behind a **plugin contract** so different engines can be selected
+per call (via the optional `plugin` argument on every `file_*` tool, see §2.4.1) or globally
+(via `settings.mcp.tools.memory.default_plugin`) without changing the public MCP tool schemas.
+There is no per-tenant, per-API-key, or per-project routing layer (§2.4). Ship two plugins
+on day one:
 
 - **`rag_plugin`** — the existing Postgres + pgvector + BM25 + rerank stack, behavior-preserving.
 - **`pageindex_plugin`** — a new vectorless, tree-based engine. Pure-Go reimplementation of
@@ -125,11 +159,10 @@ default when they want to migrate everyone. This is a deliberate simplicity bet 
 - No automatic migration of existing tenant data into PageIndex format. New plugin starts empty
   and is opt-in.
 - **v1 is pure Go, in-process.** The PageIndex algorithm is reimplemented in Go (see §2.6,
-  §3.3). No Python runtime, no sidecar, no cgo, no external binary, no IPC boundary on the
-  same host. The upstream Python repo at `/home/laisky/repo/3rd/PageIndex` is an
-  **algorithmic reference** — we cite its prompt shapes, knob defaults, and JSON tree
-  schema, but no Python code runs in production. This is the canonical statement; later
-  sections do not relitigate it.
+  §3.3). Only HTTPS to OpenAI's Responses API leaves the process. Upstream
+  `/home/laisky/repo/3rd/PageIndex` is an **algorithmic reference** — we cite its prompt
+  shapes, knob defaults, and JSON tree schema; nothing from it runs in production. The
+  full out-of-scope list is in §0 and is not relitigated here.
 - **Not a vector-DB replacement.** Per the 2026 industry consensus (see §1.5), PageIndex is
   *tier-2* retrieval — invoked after candidate document(s) are chosen. `rag_plugin` remains
   the right answer for at-scale coarse retrieval across an unbounded corpus. The two plugins
@@ -153,8 +186,12 @@ design choices below; they are recorded here so future readers can audit the ass
   not the constrained one. §2.6 spells out the indexer.
 - **Memory backends behind a narrow tool surface is the norm** (Mem0: `add/search/update/delete`
   with 19 vector backends + 2 graph backends; Letta, Zep, LangGraph Memory, Anthropic memory
-  tool follow the same shape). Per-tenant plugin selection is routed in the host *before*
-  tool dispatch — the backend never sees tenant identity except as opaque scope IDs.
+  tool follow the same shape). In those systems, per-tenant plugin selection is routed in
+  the host *before* tool dispatch and the backend never sees tenant identity except as
+  opaque scope IDs. We deliberately keep our routing surface narrower than that industry
+  pattern (§2.4): the only caller-controlled selector is the per-call `plugin` argument,
+  with `default_plugin` as the global fallback — no per-tenant, per-API-key, or per-project
+  routing layer.
 - **Reserved prefixes inside a user-visible FS namespace are an acknowledged anti-pattern**
   at scale (AWS S3 multi-tenant guidance; documented prefix/RLS leakage modes). The fix is a
   separate **system namespace** the user API cannot address — enforced in the data path, not
@@ -238,7 +275,7 @@ identical, so callers see uniform behavior.
 // internal/mcp/memory/plugin/manager.go (new)
 type Manager struct {
     plugins       map[string]Plugin    // by Name()
-    defaultPlugin Plugin               // settings.mcp.memory.default_plugin
+    defaultPlugin Plugin               // settings.mcp.tools.memory.default_plugin
 }
 
 // override is the per-call argument from §2.4.1. Empty or "auto" means "use the default".
@@ -254,7 +291,7 @@ func (m *Manager) ForName(name string) (Plugin, error)  // for tests + admin too
 Resolution order (first match wins):
 
 1. **Per-call argument** — optional `plugin` field on every `file_*` tool input (see §2.4.1).
-2. **Default** (`settings.mcp.memory.default_plugin`, fallback `"rag"`).
+2. **Default** (`settings.mcp.tools.memory.default_plugin`, fallback `"rag"`).
 
 That is the entire decision tree. There is **no** per-project routing table, **no**
 per-API-key routing table, and **no** per-tenant override map. An earlier draft proposed
@@ -370,7 +407,7 @@ settings:
             outline_parser: "pdfcpu"   # only pdfcpu exposes outlines today
 ```
 
-Existing `settings.mcp.files.*` keys move under `settings.mcp.memory.plugins.rag.*` with a
+Existing `settings.mcp.files.*` keys move under `settings.mcp.tools.memory.plugins.rag.*` with a
 deprecation shim that reads the old keys for one minor version and logs a one-time WARN.
 
 ### 2.5 `rag_plugin` — wrapping the existing engine
@@ -500,10 +537,12 @@ Two non-obvious consequences of letting `userFS` handle steps 1 of write/delete/
   [service_versions.go](../../internal/mcp/files/service_versions.go)) — apply uniformly.
   No reimplementation needed in `pageindex_plugin`.
 - **`rag_plugin`'s indexing pipeline (chunks/embeddings/BM25) also runs on these writes**
-  unless explicitly disabled per-project. That's wasteful — the user picked PageIndex *because*
-  they didn't want chunked search. Solution: a new `Capabilities`-driven flag
-  `userFS.WriteOpts{ SkipRAGIndex bool }`. When `pageindex_plugin` writes, it sets
-  `SkipRAGIndex=true`; the index worker simply does not enqueue jobs for those rows. A nullable
+  unless the writing plugin opts out. That would be wasteful for a `pageindex_plugin` write
+  — the agent picked PageIndex *because* it didn't want chunked search. Solution: a new
+  `Capabilities`-driven flag `userFS.WriteOpts{ SkipRAGIndex bool }`. When
+  `pageindex_plugin` writes, it sets `SkipRAGIndex=true`; the index worker simply does not
+  enqueue jobs for those rows. The opt-out is decided per write call by the plugin layer,
+  not by any per-project setting. A nullable
   `mcp_files.skip_rag_index BOOL` column carries the bit. (`rag_plugin`'s wrapper always
   passes `SkipRAGIndex=false`.)
 
@@ -893,9 +932,9 @@ invalidation handle.
 ### 3.2 Algorithmic drift from upstream PageIndex
 
 We own the algorithm in Go. There is no pinned upstream commit and no runtime dependency on
-the Python library. The risk inverts: when VectifyAI ships an algorithmic improvement (a
+the upstream library. The risk inverts: when VectifyAI ships an algorithmic improvement (a
 new TOC-mode heuristic, a better verification prompt), we have to port it deliberately —
-no `pip install --upgrade` path. Mitigation: a tagged `algorithm_version` constant
+no automatic-upgrade path. Mitigation: a tagged `algorithm_version` constant
 (`internal/mcp/memory/plugins/pageindex/version.go`) in the cache key (§2.6.4.3) plus a
 quarterly audit task that diffs upstream commits since the last port and decides each.
 
@@ -961,6 +1000,39 @@ must enforce that no query against `mcp_files` (and friends) lacks an explicit
 the `mcp_*` tables doesn't include `system_owner` in its WHERE clause. False positives are
 suppressed by an inline `// system_owner-checked: <reason>` comment.
 
+### 3.8 Sidecar-regression pressure (and how to resist it)
+
+The §0 decision (no Python sidecar, no subprocess, no IPC) is the kind of architectural
+commitment that erodes under specific, predictable pressures. We name them here so a
+future engineer who feels one of these pressures has a written record of how the team
+already weighed it — and which mitigations to reach for *before* reaching for a sidecar.
+
+| Pressure                                                        | Why it tempts a sidecar                                                                                                                | Mitigation that keeps us in-process                                                                                                                                |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Upstream PageIndex ships a Python-only heuristic                | "Easiest path is to call upstream over RPC."                                                                                           | Port the heuristic to Go like every prompt is ported (§2.6.4.6). Track upstream commits in the §3.2 quarterly audit.                                               |
+| pdfcpu's text extraction regresses on a tenant's corpus         | "PyMuPDF / pdfplumber would just work."                                                                                                | Ship the `pdf.text_parser` knob (§2.4) — `dslipak/pdf` is already the registered fallback. If both fail on a real corpus, **add a third pure-Go parser**, not cgo. |
+| A new model contract (chat-completions, Anthropic Messages)     | "litellm/langchaingo are 50-line Python wrappers."                                                                                     | Add a second `LLM` implementation in Go (§2.6.5 interface is small). v1 fails closed at startup (§3.6 escape hatch); revisiting is a v2 conversation per §0.       |
+| A reranker or judge model with no Go SDK                        | "Just shell out to the Python client."                                                                                                 | Vendor the client's HTTP contract directly (most modern model APIs are simple JSON over HTTPS). If the API is genuinely non-portable, scope it out per §3.6.       |
+| "We need real-time RAGAS scoring on every search"               | "RAGAS is in Python; let's wrap it."                                                                                                   | Already addressed: §4.6.1 ports the RAGAS prompts into Go and drives the same `LLM` client. New metrics follow the same pattern.                                   |
+| "Local inference (Ollama, vLLM, llama.cpp) is the future"       | "We need a Python or cgo bridge to drive them."                                                                                        | Out-of-scope for v1 per §0. Most local-inference servers expose an OpenAI-compatible HTTP API; reach them via `base_url` if so. cgo / subprocess / Python remain forbidden under v1. |
+
+**Operational rule.** When any of these pressures arrives, the response is *port the
+behavior into Go*, *add a per-call settings knob* (consistent with §2.4 — there are no
+per-tenant or per-project knobs), or *scope it out of v1* — never *introduce
+an external runtime*. A patch that adds `os/exec.Command`, `cgo`, `requirements.txt`,
+or a new container image to support the pageindex plugin is automatically a v2
+proposal, not a v1 review. The frontmatter `forbidden_under_v1` list is the audit
+trail for this rule.
+
+**CI enforcement.** The operational rule is mechanically enforced by
+[.scripts/check_pure_go.sh](../../.scripts/check_pure_go.sh), invoked via
+`make lint-pure-go` and as a step in the lint CI workflow. The script asserts nine
+invariants matching the `forbidden_under_v1` list (no `third_party/pageindex_sidecar/`,
+no `requirements.txt`, no Python under `internal/`, no PageIndex `.proto` stubs, no
+cgo / `os/exec` / IPC bring-up inside the pageindex plugin, no missing pageindex
+package, no missing wiring in `cmd/api.go`, and the proposal frontmatter still
+declares `v1_runtime: pure-Go`). A PR that violates any one of them fails CI.
+
 ## 4. Change list (file-by-file)
 
 ### 4.1 New files
@@ -1005,7 +1077,7 @@ suppressed by an inline `// system_owner-checked: <reason>` comment.
 | `internal/mcp/tools/file_tool_helpers.go`                         | New shared helper `parsePluginOverride(raw string) (string, error)` validating `""`/`"auto"`/known names                                                                                                                                                                                                                        |
 | `internal/mcp/server.go` (lines 204-452)                          | Pass `*plugin.Manager` instead of `FileService`                                                                                                                                                                                                                                                                                 |
 | `cmd/api.go` (lines 408-447)                                      | Build a single shared `*files.Service`; pass it to both plugins (rag wraps directly, pageindex receives `userFS` + `SystemFS("pageindex")`); build & start `plugin.Manager`                                                                                                                                                     |
-| `internal/mcp/files/settings.go`                                  | Add deprecation shim reading old `settings.mcp.files.*` and forwarding into `settings.mcp.memory.plugins.rag.*`                                                                                                                                                                                                                 |
+| `internal/mcp/files/settings.go`                                  | Add deprecation shim reading old `settings.mcp.files.*` and forwarding into `settings.mcp.tools.memory.plugins.rag.*`                                                                                                                                                                                                                 |
 | `internal/mcp/files/service.go`, `service_*.go`, `service_search.go`, `index_worker.go`, `service_versions.go`, `lock.go` | Add `system_owner string` parameter (or context value) on every method that touches `mcp_files`/`mcp_file_chunks`/`mcp_file_index_jobs`/`mcp_file_chunk_embeddings`/`mcp_file_chunk_bm25`/`mcp_file_versions`. User-facing entrypoints pass `''`. SQL gains explicit `system_owner = $X` predicates everywhere |
 | `internal/mcp/files/migration.go`                                 | Add `system_owner TEXT NOT NULL DEFAULT ''` column to all six tables; add `(system_owner, api_key_hash, project, path)` indexes; backfill is the default (no-op for existing rows)                                                                                                                                              |
 | `internal/mcp/files/service_write_delete.go`                      | New `WriteOpts{ SkipRAGIndex bool }` parameter; index-job enqueue is gated on `!SkipRAGIndex`. Default behavior unchanged                                                                                                                                                                                                       |
@@ -1043,8 +1115,84 @@ of `mcp_files` (rows where `system_owner='pageindex'`).
 
 ### 4.5 Settings migrations
 
-- One-shot translation `settings.mcp.files.*` → `settings.mcp.memory.plugins.rag.*` at config
+- One-shot translation `settings.mcp.files.*` → `settings.mcp.tools.memory.plugins.rag.*` at config
   load time, with a single WARN log per process. Removed in the release **after** v1 ships.
+
+
+### 4.6 Eval harness assets and baseline_v1 deliverables
+
+§7 introduces a quantitative scorecard that requires runnable code, golden datasets, and a
+captured `baseline_v1` artifact. **None of this exists in the repository today.** All of
+it lands in **Phase 1 alongside `rag_plugin`** so that the baseline can be captured before
+any work on `pageindex_plugin` begins. Without these items §7 is aspirational; with them
+it is reproducible by anyone who can clone the repo.
+
+The eval harness inherits the §0 pure-Go constraint: **no external runtime, no `pip`,
+no `requirements.txt`, no subprocess invocation, no extra container image.** The
+RAGAS v0.4 metrics are LLM-judge prompts; we reimplement them in Go and drive the
+judge through the same `LLM` Responses-API interface that production uses
+(`pageindex/llm.go`). The numbers stay comparable to upstream RAGAS because the
+prompts are prompt-faithful ports of the upstream templates; we cite the prompt
+provenance in `ragas.go`'s package comment so a reviewer can diff against the upstream
+`ragas==0.4.x` source.
+
+#### 4.6.1 Eval harness (pure Go)
+
+| Path                                                              | Purpose                                                                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `internal/mcp/memory/conformance/eval/runner.go`                  | Top-level orchestrator. Invokes retrieval / RAGAS / red-team / ops probes against a `Plugin`; emits scorecard markdown + raw per-query JSON. |
+| `internal/mcp/memory/conformance/eval/retrieval.go`               | Computes Recall@k, nDCG@10, MRR, Hit@5 against `*.jsonl` golden sets (BEIR/PyTerrier formulas).                                       |
+| `internal/mcp/memory/conformance/eval/ragas.go`                   | Pure-Go reimplementation of the six RAGAS v0.4 metric prompts (`faithfulness`, `context_precision`, `context_recall`, `context_entities_recall`, `answer_relevancy`, `answer_correctness`). Uses the same `pageindex/llm.go` `LLM` interface as production for judge calls; uses `internal/mcp/rag/openai_embedder.go` for the cosine-based `answer_relevancy`. Prompt strings are ported from the upstream `ragas==0.4.x` source and cited line-for-line in the package comment. |
+| `internal/mcp/memory/conformance/eval/redteam.go`                 | Runs the 12-attack OWASP injection suite plus cross-tenant, supersession, and GDPR-delete probes.                                    |
+| `internal/mcp/memory/conformance/eval/ops_probe.go`               | Replay-based latency p50/p95/p99, token counters, cold-vs-warm differential, ingestion throughput probe.                              |
+| `internal/mcp/memory/conformance/eval/permutation.go`             | Paired two-sided permutation test, B = 10 000 (Smucker / Allan / Carterette CIKM '07).                                                |
+| `internal/mcp/memory/conformance/eval/judge_ensemble.go`          | LLM-as-judge ensemble (`gpt-4o`, `gpt-4o-mini`, `claude-opus-4-7` — all behind the same Responses-API client) with majority-true for FinanceBench answer grading. |
+| `internal/mcp/memory/conformance/eval/scorecard.go`               | Markdown writer for the §7.4 scorecard template; deterministic key ordering for stable diffs.                                          |
+| `internal/mcp/memory/conformance/eval/{retrieval,ragas,permutation,scorecard}_test.go` | Deterministic unit tests (judge calls served by an in-memory fake `LLM`).                                            |
+| `internal/mcp/memory/conformance/eval/testdata/ragas_prompts/`    | Golden copies of the upstream RAGAS prompts at the pinned commit, used by `ragas.go`'s tests to detect prompt drift.                  |
+| `cmd/eval-plugin/main.go`                                         | Driver binary that `make eval-plugin` shells into. Parses flags, constructs the `Plugin` via the production DI graph, runs `runner.go`. |
+
+#### 4.6.2 Golden datasets (git-LFS)
+
+| Path                                                   | Composition                                                                                       | Source                                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `tests/eval/golden/memory-bench-internal-v1.jsonl`     | 500 hand-labelled `(query, gold_doc_set, gold_span?)` tuples (100 carry page-range gold spans).   | Sanitized export of `users.md` / `arch.md` / `tasks/*.md` / `/books`. Labelled by Laisky + 1 reviewer; Cohen's κ ≥ 0.85 before freeze. |
+| `tests/eval/golden/memory-bench-internal-v1/corpus/`   | 200 documents (~150 short notes/code, ~50 long PDFs/markdown books).                              | Sanitized export.                                                         |
+| `tests/eval/golden/memory-bench-ragas-v1.jsonl`        | 300 `(question, reference_answer, reference_context)` tuples (200 synthetic + 100 harvested).     | RAGAS testset generator + production logs.                               |
+| `tests/eval/golden/financebench-150.jsonl`             | 150 Q's + SEC 10-K/10-Q PDFs.                                                                      | Vendored from `VectifyAI/Mafin2.5-FinanceBench` at a pinned commit.       |
+| `tests/eval/golden/longmemeval_s.jsonl`                | 500 Q's, ~115 K-token contexts, 7 sub-categories.                                                  | `xiaowu0162/LongMemEval` at a pinned commit.                              |
+| `tests/eval/golden/beam-1m-200.jsonl`                  | 200 category-balanced Q's.                                                                         | `mem0ai/memory-benchmarks` BEAM-1M, subsetted.                            |
+| `tests/eval/golden/redteam_prompt_injection_v1.jsonl`  | 12 attacks; tenant-exfiltration variants prioritized.                                              | OWASP GenAI Data Security 2026 v1.0 catalogue.                            |
+| `tests/eval/golden/README.md`                          | Provenance, labelling protocol, refresh cadence.                                                   | —                                                                        |
+
+All large files tracked via git-LFS (see §4.6.3 `.gitattributes`).
+
+#### 4.6.3 Build / CI wiring
+
+| Path                                | Change                                                                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Makefile`                          | New target `eval-plugin`: `go run ./cmd/eval-plugin --plugin=$(PLUGIN) --golden=tests/eval/golden --out=docs/eval/runs/$(shell git rev-parse --short HEAD)`. Also new `eval-baseline-rag` that runs the plugin against the frozen golden set and writes to `docs/eval/baseline_v1/`. Both targets are pure `go run`; CI runners need only the Go toolchain that the rest of the repo already requires. |
+| `.github/workflows/eval-nightly.yml` | New workflow: matrix over `{rag, pageindex}`. Runs nightly + on-PR when `internal/mcp/memory/plugins/<plugin>/**` or `tests/eval/golden/**` changes. Posts the scorecard diff as a PR comment; fails the check on any §7.5 hard-gate regression. |
+| `.gitattributes`                    | `tests/eval/golden/** filter=lfs diff=lfs merge=lfs -text`                                                                                              |
+
+#### 4.6.4 Captured artifacts (checked-in, not regenerated by CI)
+
+| Path                                              | Contents                                                                                                                                                   |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/eval/README.md`                             | How to run `make eval-plugin`; how a baseline is captured / reset; who owns the harness.                                                                   |
+| `docs/eval/plugin_scorecard.md`                   | Index page linking to every per-plugin scorecard; updated as plugins ship.                                                                                  |
+| `docs/eval/baseline_v1/rag_plugin_scorecard.md`   | **The frozen Phase-1 baseline.** Produced by Laisky + 1 reviewer running `make eval-baseline-rag` against the Phase-1-tagged commit. Committed once and **never overwritten** until a CHANGELOG-documented baseline reset. |
+| `docs/eval/baseline_v1/raw_per_query.jsonl`       | Raw per-query metric values backing the baseline. The input the permutation test reads when a future plugin is compared against `baseline_v1`.              |
+| `docs/eval/baseline_v1/run_metadata.yml`          | Git SHA, run UTC, judge models, hardware spec (CPU model, RAM, container limits), Go toolchain version, embedding model + version, RAGAS-prompt commit pin. Required for replay. |
+| `docs/eval/runs/<sha>/`                           | Per-run scorecards produced by CI; rolled into PR comments. Cleaned up by a retention job after 90 days.                                                    |
+
+#### 4.6.5 Why this lives in `internal/mcp/memory/conformance/eval/`, not a top-level `tools/` directory
+
+The harness composes against the same `plugin.Plugin` interface that production uses. By
+sitting next to the conformance suite (§5.1) it shares fixtures and tenant-isolation
+helpers, and there is exactly one entry point any plugin author has to look at. A future
+plugin author copies an existing plugin's `make eval-plugin PLUGIN=<their_name>`
+invocation and the suite runs unchanged.
 
 ## 5. Test matrix
 
@@ -1212,7 +1360,7 @@ becoming fragile to internal renames.
 | M01 | With no per-call `plugin` argument, every call resolves to `default_plugin`.                                                                                    |
 | M02 | Unknown plugin name in config returns startup error.                                                                                                            |
 | M03 | `StartAll` failure on one plugin aborts startup with a wrapped error naming the plugin.                                                                         |
-| M04 | Settings shim: legacy `settings.mcp.files.*` is read into `settings.mcp.memory.plugins.rag.*`.                                                                  |
+| M04 | Settings shim: legacy `settings.mcp.files.*` is read into `settings.mcp.tools.memory.plugins.rag.*`.                                                                  |
 | M05 | Settings shim emits exactly one WARN per process (not per request).                                                                                             |
 | M06 | `Capabilities.SupportsVersions=false` makes the versions-aware tool path fall back gracefully.                                                                  |
 | M07 | Per-call `plugin` arg, when present and valid, wins over `default_plugin` for that call only — subsequent calls without the arg revert to `default_plugin`.    |
@@ -1424,10 +1572,16 @@ check, not as a global quality claim.
   subset uses page-range overlap as relevance, per the long-document-retrieval survey
   arXiv:2509.07759).
 
-#### 7.3.2 End-to-end generation quality (RAGAS v0.4)
+#### 7.3.2 End-to-end generation quality (RAGAS v0.4 metrics)
 
-- **Harness:** `ragas==0.4.x`, judge `gpt-4o-mini`, embedding `text-embedding-3-small`
-  (matching upstream defaults so our numbers are comparable).
+- **Harness:** pure-Go reimplementation in `internal/mcp/memory/conformance/eval/ragas.go`
+  (per §0). The six metric prompts are line-for-line ports of the upstream
+  `ragas==0.4.x` source at a pinned commit; the reference prompts live as golden
+  fixtures under `internal/mcp/memory/conformance/eval/testdata/ragas_prompts/` and a
+  unit test fails on prompt drift. Judge model `gpt-4o-mini`, embedding model
+  `text-embedding-3-small` — both invoked through the same Responses-API `LLM` and
+  embedder clients production already uses, so numbers stay comparable to upstream
+  RAGAS published results.
 - **Question set (`memory-bench-ragas-v1`):** 200 synthetic + 100 production-harvested
   `(question, reference_answer, reference_context)` tuples per plugin domain.
 - **Metrics tracked:** `faithfulness`, `context_precision`, `context_recall`,
@@ -1626,19 +1780,28 @@ significant improvement). Below 45%, file a bug.
 
 ## 8. Rollout plan
 
-1. **Phase 1 — refactor under feature flag (no new behavior).**
-   Land `plugin.Plugin` + `plugin.Manager` + `rag_plugin` only. `default_plugin=rag`. Ship,
-   bake for one release. Acceptance: A1, A2, A5, **plus the §7 baseline scorecard for
-   `rag_plugin` is captured and published as the v1 reference point**.
+1. **Phase 1 — refactor + harness + baseline (no new plugin behavior).**
+   Land in one PR series, all pure Go (per §0):
+   - `plugin.Plugin`, `plugin.Manager`, and `rag_plugin` (per §2.1–§2.5).
+   - The §4.6 eval harness: Go runner, Go-native RAGAS metrics in
+     `conformance/eval/ragas.go`, golden datasets via LFS, `make eval-plugin` and
+     `make eval-baseline-rag` targets, the nightly CI workflow. **No external runtime
+     anywhere in the harness or its CI runner image** — the eval pipeline is
+     `go run ./cmd/eval-plugin` end-to-end, on the same Go toolchain the rest of the
+     repo already requires.
+   - Run `make eval-baseline-rag` against the Phase-1 tag and **commit the resulting
+     `docs/eval/baseline_v1/{rag_plugin_scorecard.md, raw_per_query.jsonl, run_metadata.yml}`
+     to the same PR.** This is the frozen reference point §7.5 thresholds depend on.
+   - `default_plugin=rag`. Ship and bake for one release.
+   - Acceptance: A1, A2, A5, **plus `docs/eval/baseline_v1/rag_plugin_scorecard.md` is
+     present in the merged PR with every metric in the §7.4 template filled in**.
 2. **Phase 2 — pageindex indexer (off by default).**
    Land `pageindex_plugin` with the Go `Indexer` (§2.6.4) and the Responses-API `LLM`
    (§2.6.5). No new processes, no new container images, no new deploy artifact — the
    plugin links into the existing binary. Default config does not enable it. Run E02/E03
    in staging only. Acceptance: A3, A4, A6, A7, A8, A11, **Q1–Q4, Q9–Q12** (full §7
    scorecard filled in for `pageindex_plugin` against the same golden sets).
-3. **Phase 3 — opt-in for selected projects.**
-   Enable `pageindex_plugin` for projects shipping long-form documents (`books`,
-   `datasheets`, `manuals`). Watch billing and latency metrics. Promotion gate:
-   shadow-replay win-rate per §7.8 across two weeks of production traffic.
-4. **Phase 4 — remove deprecation shim.**
-   In the next minor after Phase 3 stabilizes, delete the `settings.mcp.files.*` shim.
+3. **Phase 3 — shadow replay promotion gate.**
+  Keep runtime routing simple: the optional per-call `plugin` field remains the only
+  caller-controlled selector, with `default_plugin` as the global fallback. Any future
+  shadow replay stays outside the request-routing contract unless separately approved.

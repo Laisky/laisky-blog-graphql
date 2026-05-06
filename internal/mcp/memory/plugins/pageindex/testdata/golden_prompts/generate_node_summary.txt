@@ -1,0 +1,6 @@
+You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
+
+    Partial Document Text: Sample text body
+
+    Directly return the description, do not include any other text.
+    

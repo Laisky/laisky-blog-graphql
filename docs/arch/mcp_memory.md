@@ -355,58 +355,58 @@ settings:
 
 The following keys are optional. If omitted, server uses safe defaults.
 
-1. `settings.mcp.memory.recent_context_items` (default: `30`)
+1. `settings.mcp.tools.memory.recent_context_items` (default: `30`)
 
 - Number of recent context items retained in runtime prompt assembly.
 - Larger value improves continuity but increases token cost.
 
-2. `settings.mcp.memory.recall_facts_limit` (default: `20`)
+2. `settings.mcp.tools.memory.recall_facts_limit` (default: `20`)
 
 - Max number of memory facts recalled into each turn.
 - Prevents prompt bloat while keeping useful long-term memory.
 
-3. `settings.mcp.memory.search_limit` (default: `5`)
+3. `settings.mcp.tools.memory.search_limit` (default: `5`)
 
 - Max number of storage search chunks used for memory recall.
 - Keeps latency and prompt size stable.
 
-4. `settings.mcp.memory.compact_threshold` (default: `0.8`)
+4. `settings.mcp.tools.memory.compact_threshold` (default: `0.8`)
 
 - Triggers context compaction when estimated tokens exceed this fraction of `max_input_tok`.
 - `0.8` is conservative and avoids hard context-window failures.
 
-5. `settings.mcp.memory.l1_retention_days` (default: `1`)
+5. `settings.mcp.tools.memory.l1_retention_days` (default: `1`)
 
 - Retention for short-lived daily facts.
 - Auto-expired in UTC.
 
-6. `settings.mcp.memory.l2_retention_days` (default: `7`)
+6. `settings.mcp.tools.memory.l2_retention_days` (default: `7`)
 
 - Retention for medium-lived weekly facts.
 - Auto-expired in UTC.
 
-7. `settings.mcp.memory.compaction_min_age_hours` (default: `24`)
+7. `settings.mcp.tools.memory.compaction_min_age_hours` (default: `24`)
 
 - Minimum shard age before raw-event archive compaction.
 - Reduces churn and avoids over-frequent archive writes.
 
-8. `settings.mcp.memory.summary_refresh_interval_minutes` (default: `60`)
+8. `settings.mcp.tools.memory.summary_refresh_interval_minutes` (default: `60`)
 
 - Minimum interval for summary refresh operations.
 - Balances freshness and write pressure.
 
-9. `settings.mcp.memory.max_processed_turns` (default: `1024`)
+9. `settings.mcp.tools.memory.max_processed_turns` (default: `1024`)
 
 - Max in-meta processed turn IDs retained for idempotency history.
 - Bounded to avoid metadata growth.
 
-10. `settings.mcp.memory.heuristic.enabled` (default: `false`)
+10. `settings.mcp.tools.memory.heuristic.enabled` (default: `false`)
 
 - Enables LLM-assisted fact extraction and merge.
 - Default disabled to reduce external dependency, cost, and operational complexity.
 
-11. `settings.mcp.memory.heuristic.model` (default: `openai/gpt-oss-120b`)
-12. `settings.mcp.memory.heuristic.base_url` (default: empty)
+11. `settings.mcp.tools.memory.heuristic.model` (default: `openai/gpt-oss-120b`)
+12. `settings.mcp.tools.memory.heuristic.base_url` (default: empty)
 
 - Must be an **absolute URL** with scheme and host (for example, `https://api.openai.com` or `https://api.openai.com/v1`).
 - Do **not** use domain-only values (for example, `api.openai.com`), because requests require a URL with protocol.
@@ -419,8 +419,8 @@ The following keys are optional. If omitted, server uses safe defaults.
   - Explicit endpoint: `https://oneapi.example.com/v1/responses`
 - Avoid query-string or fragment in this field; keep it as clean base endpoint.
 
-13. `settings.mcp.memory.heuristic.timeout_ms` (default: `12000`)
-14. `settings.mcp.memory.heuristic.max_output_tokens` (default: `800`)
+13. `settings.mcp.tools.memory.heuristic.timeout_ms` (default: `12000`)
+14. `settings.mcp.tools.memory.heuristic.max_output_tokens` (default: `800`)
 
 - Applied only when heuristic is enabled and credentials are configured.
 
@@ -627,3 +627,53 @@ Implemented in this repository:
 - `internal/mcp/memory/service_test.go`
 - `internal/mcp/log_redaction_test.go`
 - `internal/mcp/server_test.go`
+
+## MCP Memory Plugins (Phase 1)
+
+Phase 1 introduces a plugin contract behind the `file_*` toolset so future engines
+can be added without changing the public MCP tool schemas. The contract lives at
+`internal/mcp/memory/plugin/` and exposes `Plugin` (the seven `file_*` operations
+plus `Name` / `Capabilities` / `Start` / `Stop`), `Capabilities` (search modes,
+random-IO and rename support, version support, async-indexing flag, freshness
+window), and `Manager`. The `Manager` resolves a plugin per call from two inputs
+only: an optional per-call `plugin` argument on the tool input and a global
+`settings.mcp.tools.memory.default_plugin` setting. There is no per-project, per-API-key,
+or per-tenant override map.
+
+`rag_plugin` (`internal/mcp/memory/plugins/rag/`) is the only Phase 1 backend; it
+wraps the existing `*files.Service` without behavior change. Per-call `plugin`
+overrides land via an additive optional field on the tool input schema; cross-plugin
+reads return `NOT_FOUND` with a routing hint, never silent fallback. Operator
+guidance is in [../manual/mcp_memory_plugins.md](../manual/mcp_memory_plugins.md);
+the PRD is at [../requirements/mcp_memory_plugins.md](../requirements/mcp_memory_plugins.md);
+the full design (`pageindex_plugin`, `SystemFS`, eval harness, rollout phases) is in
+[../proposals/mcp_memory_plugin_manager.md](../proposals/mcp_memory_plugin_manager.md).
+
+## MCP Memory Plugins (Phase 2 / Phase 3)
+
+`pageindex_plugin` lives at `internal/mcp/memory/plugins/pageindex/`. The package
+splits responsibilities across `indexer.go` (orchestrator + budget + retry +
+progress channel), `pipeline_pdf.go` and `pipeline_markdown.go` (per-format
+extraction + node generation), `prompts.go` (the 13 ported PageIndex prompts +
+golden fixtures in `prompts_golden_test.go`), `cache.go` (bbolt-backed response
+cache keyed by content hash + model), `llm.go` (Responses-API client with retry),
+`search_loop.go` (tree-reasoning search with `tree_query.*` budget), and `tree.go`
+(node serialization and traversal). `settings.go` carries the YAML defaults with
+exact key paths under `settings.mcp.tools.memory.plugins.pageindex.*`.
+
+The Phase-2 foundation threads `system_owner` through `internal/mcp/files/`. A
+non-empty `system_owner` opts a row out of the user namespace; the column is
+covered by the existing predicate audits referenced in [`docs/proposals/mcp_memory_plugin_manager.md` §2.8](../proposals/mcp_memory_plugin_manager.md#28-the-systemfs-interface).
+`SystemFS` is the read/write handle each Phase-2-aware plugin obtains at startup
+(no project, no API-key auth scope); pageindex uses it for tree JSON. The
+companion `WriteOpts.SkipRAGIndex` write option suppresses pgvector + BM25
+indexing for system rows so they do not pollute user search.
+
+Phase-3 shadow-replay scaffolding lives at
+[`../../internal/mcp/memory/plugin/shadow.go`](../../internal/mcp/memory/plugin/shadow.go)
+(`ShadowPlugin` wrapper) and its companion `shadow_recorder.go` / `shadow_score.go`.
+Production wiring remains deferred; runtime plugin selection is still done only by the
+optional per-call `plugin` argument and the global `settings.mcp.tools.memory.default_plugin`
+fallback. The promotion-gate analyzer is a separate
+binary at [`../../cmd/promote-pageindex/main.go`](../../cmd/promote-pageindex/main.go)
+that consumes the JSONL recorder output and emits the §7.8 win-rate verdict.

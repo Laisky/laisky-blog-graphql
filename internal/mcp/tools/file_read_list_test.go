@@ -10,6 +10,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
 
 type readListStubService struct {
@@ -59,6 +60,20 @@ func (s *readListStubService) List(_ context.Context, _ files.AuthContext, _ str
 func (s *readListStubService) Search(context.Context, files.AuthContext, string, string, string, int) (files.SearchResult, error) {
 	return files.SearchResult{}, nil
 }
+
+// Name reports the rag plugin identity for plugin.Plugin compatibility in tests.
+func (s *readListStubService) Name() string { return mcpplugin.DefaultPluginRAG }
+
+// Capabilities returns stub capabilities for plugin.Plugin compatibility in tests.
+func (s *readListStubService) Capabilities() mcpplugin.Capabilities {
+	return mcpplugin.Capabilities{}
+}
+
+// Start is a no-op for plugin.Plugin compatibility in tests.
+func (s *readListStubService) Start(context.Context) error { return nil }
+
+// Stop is a no-op for plugin.Plugin compatibility in tests.
+func (s *readListStubService) Stop(context.Context) error { return nil }
 
 // TestFileReadDefaultLength verifies missing length defaults to -1.
 func TestFileReadDefaultLength(t *testing.T) {

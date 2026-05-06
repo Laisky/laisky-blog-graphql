@@ -27,6 +27,9 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
+	pageindexplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
+	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
@@ -274,6 +277,8 @@ func runAPI() error {
 	mcpStart := time.Now()
 	ragSettings := rag.LoadSettingsFromConfig()
 	args.RAGSettings = ragSettings
+	filePluginSettings := mcpplugin.LoadSettingsFromConfig()
+	shadowSettings := mcpplugin.LoadShadowSettingsFromConfig()
 	if mcpDB != nil {
 		var (
 			askSvc  *askuser.Service
@@ -394,6 +399,10 @@ func runAPI() error {
 			}
 		}
 
+		if files.LegacyConfigConfigured() {
+			logger.Warn("settings.mcp.files.* is deprecated; use settings.mcp.tools.memory.plugins.rag.*")
+		}
+
 		filesSettings := files.LoadSettingsFromConfig()
 		if mcpDB != nil {
 			memorySettings := mcpmemory.LoadSettingsFromConfig()
@@ -413,8 +422,113 @@ func runAPI() error {
 				logger.Warn("file service unavailable", zap.Error(err))
 			} else {
 				args.FilesService = fileSvc
-				if startErr := fileSvc.StartIndexWorkers(ctx); startErr != nil {
-					logger.Warn("start file index workers", zap.Error(startErr))
+
+				ragFilePlugin, pluginErr := ragplugin.New(fileSvc)
+				if pluginErr != nil {
+					return errors.Wrap(pluginErr, "new rag file plugin")
+				}
+
+				piSettings := pageindexplugin.LoadSettings()
+				plugins := []mcpplugin.Plugin{ragFilePlugin}
+				if piSettings.Enabled() {
+					sysFS, sysErr := fileSvc.SystemNamespace("pageindex")
+					if sysErr != nil {
+						return errors.Wrap(sysErr, "build pageindex system namespace")
+					}
+					piTok, tokErr := pageindexplugin.NewTokenizer(piSettings.LLM.IndexingModel)
+					if tokErr != nil {
+						return errors.Wrap(tokErr, "build pageindex tokenizer")
+					}
+					piLLM, llmErr := pageindexplugin.NewOpenAILLM(pageindexplugin.LLMConfig{
+						APIKey:    piSettings.LLM.APIKey,
+						BaseURL:   piSettings.LLM.BaseURL,
+						Model:     piSettings.LLM.IndexingModel,
+						Tokenizer: piTok,
+						Logger:    logger.Named("pageindex_llm"),
+					})
+					if llmErr != nil {
+						return errors.Wrap(llmErr, "build pageindex llm client")
+					}
+					piPlugin, piErr := pageindexplugin.New(pageindexplugin.PluginDeps{
+						UserFS:    fileSvc,
+						SystemFS:  sysFS,
+						Settings:  piSettings,
+						LLM:       piLLM,
+						Tokenizer: piTok,
+						Logger:    logger.Named("pageindex"),
+					})
+					if piErr != nil {
+						return errors.Wrap(piErr, "new pageindex plugin")
+					}
+					plugins = append(plugins, piPlugin)
+				} else {
+					logger.Debug("pageindex plugin disabled (settings.mcp.tools.memory.plugins.pageindex.llm.api_key is empty)")
+				}
+
+				if shadowSettings.Enabled {
+					if err := shadowSettings.Validate(); err != nil {
+						return errors.Wrap(err, "shadow settings invalid")
+					}
+
+					var livePlugin, shadowPlugin mcpplugin.Plugin
+					for _, p := range plugins {
+						switch mcpplugin.NormalizeName(p.Name()) {
+						case shadowSettings.LivePlugin:
+							livePlugin = p
+						case shadowSettings.ShadowPlugin:
+							shadowPlugin = p
+						}
+					}
+					if livePlugin == nil {
+						return errors.Errorf("shadow live plugin %q is not registered", shadowSettings.LivePlugin)
+					}
+					if shadowPlugin == nil {
+						return errors.Errorf("shadow shadow plugin %q is not registered", shadowSettings.ShadowPlugin)
+					}
+
+					recorder, recErr := mcpplugin.NewJSONLRecorder(shadowSettings.RecorderPath)
+					if recErr != nil {
+						return errors.Wrap(recErr, "open shadow recorder")
+					}
+
+					wrapper, wrapErr := mcpplugin.NewShadowPlugin(mcpplugin.ShadowConfig{
+						Name:        shadowSettings.LivePlugin,
+						Live:        livePlugin,
+						Shadow:      shadowPlugin,
+						Recorder:    recorder,
+						Logger:      logger.Named("mcp_memory_shadow"),
+						Concurrency: int64(shadowSettings.Concurrency),
+						OpTimeout:   shadowSettings.OpTimeout,
+						DrainGrace:  shadowSettings.DrainGrace,
+					})
+					if wrapErr != nil {
+						if closeErr := recorder.Close(); closeErr != nil {
+							logger.Warn("close shadow recorder after wrap failure", zap.Error(closeErr))
+						}
+						return errors.Wrap(wrapErr, "build shadow wrapper")
+					}
+
+					for i, p := range plugins {
+						if mcpplugin.NormalizeName(p.Name()) == shadowSettings.LivePlugin {
+							plugins[i] = wrapper
+							break
+						}
+					}
+					logger.Info("mcp memory shadow plugin enabled",
+						zap.String("live", shadowSettings.LivePlugin),
+						zap.String("shadow", shadowSettings.ShadowPlugin),
+						zap.String("recorder_path", shadowSettings.RecorderPath),
+					)
+				}
+
+				fileManager, managerErr := mcpplugin.NewManager(filePluginSettings.DefaultPlugin, plugins...)
+				if managerErr != nil {
+					return errors.Wrap(managerErr, "new mcp file plugin manager")
+				}
+				args.MCPFileService = fileManager
+
+				if startErr := fileManager.StartAll(ctx); startErr != nil {
+					logger.Warn("start file plugin manager", zap.Error(startErr))
 				}
 
 				memorySvc, memoryErr := mcpmemory.NewService(mcpDB.DB, fileSvc, memorySettings, logger.Named("mcp_memory"), nil)
@@ -468,7 +582,6 @@ func buildFileCredentialProtector(settings files.Settings) (*files.CredentialPro
 
 	return credential, nil
 }
-
 // configInt retrieves an integer configuration value using gconfig, falling back to def when missing or invalid.
 func configInt(key string, def int) int {
 	raw := gconfig.S.Get(key)

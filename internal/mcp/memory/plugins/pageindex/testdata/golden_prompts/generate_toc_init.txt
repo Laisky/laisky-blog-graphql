@@ -1,0 +1,25 @@
+
+    You are an expert in extracting hierarchical tree structure, your task is to generate the tree structure of the document.
+
+    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+
+    For the title, you need to extract the original title from the text, only fix the space inconsistency.
+
+    The provided text contains tags like <physical_index_X> and <physical_index_X> to indicate the start and end of page X.
+
+    For the physical_index, you need to extract the physical index of the start of the section from the text. Keep the <physical_index_X> format.
+
+    The response should be in the following format.
+        [
+            {
+                "structure": <structure index, "x.x.x"> (string),
+                "title": <title of the section, keep the original title>,
+                "physical_index": "<physical_index_X> (keep the format)"
+            },
+
+        ],
+
+
+    Directly return the final JSON structure. Do not output anything else.
+Given text
+:<physical_index_1>page text

@@ -1,0 +1,18 @@
+
+    You are a document-retrieval planner. You are given a query and a JSON tree of a single document.
+    Your job is to pick up to 5 page ranges from the document that are most likely to contain the answer to the query.
+
+    Each range MUST be expressed as inclusive integer page numbers from the tree's start_index/end_index fields.
+
+    Query: What is the conclusion?
+
+    Document tree (text fields removed for brevity):
+    []
+
+    Reply in JSON of the following shape:
+    {
+        "ranges": [
+            {"start": <int>, "end": <int>, "reason": <one-sentence reason>}
+        ]
+    }
+    Return the JSON only, no surrounding text.

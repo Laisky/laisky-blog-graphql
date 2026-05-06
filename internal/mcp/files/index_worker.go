@@ -112,8 +112,11 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 		return nil, errors.Wrap(err, "begin claim jobs transaction")
 	}
 
-	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? ORDER BY id ASC LIMIT ?"
-	args := []any{"pending", now, batch}
+	// Index workers only process user-namespace jobs. System-owner writes never
+	// enqueue, but we filter defensively so a future bug cannot leak system rows
+	// into the chunking/embedding pipeline.
+	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? AND system_owner = ? ORDER BY id ASC LIMIT ?"
+	args := []any{"pending", now, "", batch}
 	if svc.isPostgres {
 		query += " FOR UPDATE SKIP LOCKED"
 	}
@@ -166,10 +169,10 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 	for _, job := range jobs {
 		ids = append(ids, job.ID)
 	}
-	inClause, inArgs := buildInClauseInt64(ids, svc.isPostgres, 3)
-	updateQuery := rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id IN (%s)`, svc.isPostgres)
-	updateArgs := make([]any, 0, 2+len(inArgs))
-	updateArgs = append(updateArgs, "processing", now)
+	inClause, inArgs := buildInClauseInt64(ids, svc.isPostgres, 4)
+	updateQuery := rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE system_owner = ? AND id IN (%s)`, svc.isPostgres)
+	updateArgs := make([]any, 0, 3+len(inArgs))
+	updateArgs = append(updateArgs, "processing", now, "")
 	updateArgs = append(updateArgs, inArgs...)
 	if _, err = tx.ExecContext(ctx, strings.Replace(updateQuery, "%s", inClause, 1), updateArgs...); err != nil {
 		_ = tx.Rollback()
@@ -216,12 +219,13 @@ func (w *IndexWorker) handleJobError(ctx context.Context, job FileIndexJob, err 
 	_, execErr := svc.db.ExecContext(ctx,
 		rebindSQL(`UPDATE mcp_file_index_jobs
 		SET status = ?, retry_count = ?, available_at = ?, updated_at = ?
-		WHERE id = ?`, svc.isPostgres),
+		WHERE id = ? AND system_owner = ?`, svc.isPostgres),
 		"pending",
 		job.RetryCount+1,
 		next,
 		svc.clock(),
 		job.ID,
+		"",
 	)
 	return execErr
 }
@@ -231,10 +235,11 @@ func (w *IndexWorker) markJobFailed(ctx context.Context, job FileIndexJob, err e
 	svc := w.svc
 	w.logger.Warn("index job failed", zap.Error(err), zap.Int64("job_id", job.ID))
 	_, execErr := svc.db.ExecContext(ctx,
-		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id = ?`, svc.isPostgres),
+		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id = ? AND system_owner = ?`, svc.isPostgres),
 		"failed",
 		svc.clock(),
 		job.ID,
+		"",
 	)
 	return execErr
 }
@@ -243,10 +248,11 @@ func (w *IndexWorker) markJobFailed(ctx context.Context, job FileIndexJob, err e
 func (w *IndexWorker) markJobDone(ctx context.Context, job FileIndexJob) error {
 	svc := w.svc
 	_, err := svc.db.ExecContext(ctx,
-		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id = ?`, svc.isPostgres),
+		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ? WHERE id = ? AND system_owner = ?`, svc.isPostgres),
 		"done",
 		svc.clock(),
 		job.ID,
+		"",
 	)
 	return err
 }
@@ -386,8 +392,8 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 
 	for i, ch := range chunks {
 		hash := sha256.Sum256([]byte(ch.Content))
-		insertChunkQuery := rebindSQL(`INSERT INTO mcp_file_chunks (apikey_hash, project, file_path, chunk_index, start_byte, end_byte, chunk_content, content_hash, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres)
+		insertChunkQuery := rebindSQL(`INSERT INTO mcp_file_chunks (apikey_hash, project, file_path, chunk_index, start_byte, end_byte, chunk_content, content_hash, created_at, updated_at, system_owner)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres)
 		var chunkID int64
 		if s.isPostgres {
 			if err = tx.QueryRowContext(ctx, insertChunkQuery+" RETURNING id",
@@ -401,6 +407,7 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 				hex.EncodeToString(hash[:]),
 				now,
 				now,
+				"",
 			).Scan(&chunkID); err != nil {
 				_ = tx.Rollback()
 				return errors.Wrap(err, "insert chunk")
@@ -417,6 +424,7 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 				hex.EncodeToString(hash[:]),
 				now,
 				now,
+				"",
 			)
 			if execErr != nil {
 				_ = tx.Rollback()
@@ -456,12 +464,13 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 func (s *Service) insertEmbedding(ctx context.Context, tx *sql.Tx, chunkID int64, vector pgvector.Vector, now time.Time) error {
 	if s.isPostgres {
 		_, err := tx.ExecContext(ctx,
-			rebindSQL(`INSERT INTO mcp_file_chunk_embeddings (chunk_id, embedding, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, s.isPostgres),
+			rebindSQL(`INSERT INTO mcp_file_chunk_embeddings (chunk_id, embedding, model, created_at, updated_at, system_owner) VALUES (?, ?, ?, ?, ?, ?)`, s.isPostgres),
 			chunkID,
 			vector,
 			s.settings.EmbeddingModel,
 			now,
 			now,
+			"",
 		)
 		return err
 	}
@@ -471,12 +480,13 @@ func (s *Service) insertEmbedding(ctx context.Context, tx *sql.Tx, chunkID int64
 		return errors.Wrap(err, "marshal embedding")
 	}
 	_, err = tx.ExecContext(ctx,
-		rebindSQL("INSERT INTO mcp_file_chunk_embeddings (chunk_id, embedding, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", s.isPostgres),
+		rebindSQL("INSERT INTO mcp_file_chunk_embeddings (chunk_id, embedding, model, created_at, updated_at, system_owner) VALUES (?, ?, ?, ?, ?, ?)", s.isPostgres),
 		chunkID,
 		string(payload),
 		s.settings.EmbeddingModel,
 		now,
 		now,
+		"",
 	)
 	return err
 }
@@ -493,13 +503,14 @@ func (s *Service) insertBM25(ctx context.Context, tx *sql.Tx, chunkID int64, con
 		return errors.Wrap(err, "marshal tokens")
 	}
 	_, execErr := tx.ExecContext(ctx,
-		rebindSQL(`INSERT INTO mcp_file_chunk_bm25 (chunk_id, tokens, token_count, tokenizer, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, s.isPostgres),
+		rebindSQL(`INSERT INTO mcp_file_chunk_bm25 (chunk_id, tokens, token_count, tokenizer, created_at, updated_at, system_owner) VALUES (?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
 		chunkID,
 		payload,
 		len(tokens),
 		"simple",
 		now,
 		now,
+		"",
 	)
 	return execErr
 }
@@ -520,19 +531,27 @@ func (s *Service) deleteIndexRows(ctx context.Context, apiKeyHash, project, path
 	return nil
 }
 
-// deleteIndexRowsTx deletes index rows for a file within a transaction.
+// deleteIndexRowsTx deletes index rows for a file within a transaction. The index
+// worker only operates against user-namespace rows (system_owner=''), so the
+// scoped deletes below are explicit about that.
 func (s *Service) deleteIndexRowsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
 	if _, err := tx.ExecContext(ctx,
-		rebindSQL(`DELETE FROM mcp_file_chunks WHERE apikey_hash = ? AND project = ? AND file_path = ?`, s.isPostgres),
+		rebindSQL(`DELETE FROM mcp_file_chunks WHERE apikey_hash = ? AND project = ? AND file_path = ? AND system_owner = ?`, s.isPostgres),
 		apiKeyHash,
 		project,
 		path,
+		"",
 	); err != nil {
 		return errors.Wrap(err, "delete chunks")
 	}
+	// The orphan cleanups below are keyed by chunk_id (a primary-key reference),
+	// so the system_owner predicate on mcp_file_chunks above is sufficient to keep
+	// system rows out of scope.
+	// system_owner-checked: orphan cleanup; mcp_file_chunks already filtered by system_owner above
 	if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_file_chunk_embeddings WHERE chunk_id NOT IN (SELECT id FROM mcp_file_chunks)"); err != nil {
 		return errors.Wrap(err, "cleanup embeddings")
 	}
+	// system_owner-checked: orphan cleanup; mcp_file_chunks already filtered by system_owner above
 	if _, err := tx.ExecContext(ctx, "DELETE FROM mcp_file_chunk_bm25 WHERE chunk_id NOT IN (SELECT id FROM mcp_file_chunks)"); err != nil {
 		return errors.Wrap(err, "cleanup bm25")
 	}

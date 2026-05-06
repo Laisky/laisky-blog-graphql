@@ -47,13 +47,13 @@ Enable the MCP endpoint when starting the API service. The tools are advertised 
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `web_search`       | Enable at least one engine under `settings.websearch.engines.*` (for example set `settings.websearch.engines.google.enabled` to `true` along with `api_key` and `cx`). Billing is performed against the token owner via `oneapi.CheckUserExternalBilling`.                                                                                                |
 | `ask_user`         | PostgreSQL connection info under `settings.db.mcp` (`addr`, `db`, `user`, `pwd`). The service runs database migrations automatically using GORM.                                                                                                                                                                                                          |
-| `get_user_request` | Same `settings.db.mcp.*` configuration. Stores directives in the `mcp_user_requests` table keyed by the caller’s token hash **and** `task_id`. Retention is controlled by `settings.mcp.user_requests.retention_days` (default `30`) and pruned by a background worker every `settings.mcp.user_requests.retention_sweep_seconds` (default `21600` / 6h). |
+| `get_user_request` | Same `settings.db.mcp.*` configuration. Stores directives in the `mcp_user_requests` table keyed by the caller’s token hash **and** `task_id`. Retention is controlled by `settings.mcp.tools.user_requests.retention_days` (default `30`) and pruned by a background worker every `settings.mcp.tools.user_requests.retention_sweep_seconds` (default `21600` / 6h). |
 
 If no tool dependencies are met the server skips MCP initialisation.
 
 | Feature            | Requirement                                                                                                                                                          |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `extract_key_info` | `settings.db.mcp.*` connection info, `settings.openai.embedding_model`, and `settings.mcp.extract_key_info.enabled=true`. Requires pgvector-enabled PostgreSQL.      |
+| `extract_key_info` | `settings.db.mcp.*` connection info, `settings.openai.embedding_model`, and `settings.mcp.tools.extract_key_info.enabled=true`. Requires pgvector-enabled PostgreSQL.      |
 | `mcp_pipe`         | No additional infrastructure dependencies. It is enabled/disabled via `settings.mcp.tools.mcp_pipe.enabled` and can call only tools that are enabled and configured. |
 
 ## Authentication Model
@@ -210,7 +210,7 @@ The console stores the API key locally (browser `localStorage`) so it can resume
   - `materials` (string, required) — source text to analyse.
   - `top_k` (int, optional) — number of contexts to return (default `5`, max `20`).
 - **Behaviour:**
-  1. Validates payload size (`settings.mcp.extract_key_info.max_materials_size`).
+  1. Validates payload size (`settings.mcp.tools.extract_key_info.max_materials_size`).
   2. Bills the caller via `oneapi.CheckUserExternalBilling` using `PriceExtractKeyInfo`.
   3. Derives `user_id` (hashed token) and `task_id` (prefix before `@`) from the Authorization header.
   4. Splits `materials` into paragraphs (<1500 chars), cleans whitespace, and tokenises for BM25-style scoring.
@@ -383,7 +383,7 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 
 `get_user_request` supports image attachments alongside the usual text directives. Submitted attachments ride along with the directive, get normalized server-side, and are surfaced to the AI agent via the MCP response as a combination of inline `ImageContent` (for small images) and `resource_link` blocks (for every image).
 
-- **Enabling the feature**: set `settings.mcp.user_requests.images.enabled: true` and fill in the `minio` subsection with endpoint/bucket/credentials. When disabled (the default) the feature is invisible: the compose UI hides the image controls, multipart POSTs return `415 feature_disabled`, and MCP responses stay byte-identical to the pure-text shape.
+- **Enabling the feature**: set `settings.mcp.tools.user_requests.images.enabled: true` and fill in the `minio` subsection with endpoint/bucket/credentials. When disabled (the default) the feature is invisible: the compose UI hides the image controls, multipart POSTs return `415 feature_disabled`, and MCP responses stay byte-identical to the pure-text shape.
 - **Attachment intake**: callers either POST `multipart/form-data` with `content`, `task_id`, `images` file parts, and `image_urls` text parts, or keep the JSON variant and provide `image_urls` there. Up to 5 attachments per request (files and URLs combined), 20 MiB raw cap per attachment, 100 MiB per-user quota across live objects.
 - **Accepted formats**: `image/jpeg`, `image/png`, `image/webp`, `image/bmp`, `image/tiff`, and the first frame of `image/gif`. `image/svg+xml` and `image/heic` are rejected (`unsupported_mime`). Every stored object is re-encoded as PNG after decode -> orientation fix -> resize to a 1536-pixel longest edge.
 - **Storage & expiry**: images live in MinIO keyed by SHA256 under the configured prefix. A bucket-level lifecycle rule expires objects after 7 days; the same SHA from the same user dedupes and refreshes the TTL. A DB-side GC hourly reaps expired metadata rows.

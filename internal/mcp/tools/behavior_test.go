@@ -12,6 +12,7 @@ import (
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
@@ -119,6 +120,20 @@ func (m *behaviorFileService) Search(_ context.Context, _ files.AuthContext, pro
 	m.lastPath = query
 	return m.searchResult, m.searchErr
 }
+
+// Name reports the rag plugin identity for plugin.Plugin compatibility in tests.
+func (m *behaviorFileService) Name() string { return mcpplugin.DefaultPluginRAG }
+
+// Capabilities returns stub capabilities for plugin.Plugin compatibility in tests.
+func (m *behaviorFileService) Capabilities() mcpplugin.Capabilities {
+	return mcpplugin.Capabilities{}
+}
+
+// Start is a no-op for plugin.Plugin compatibility in tests.
+func (m *behaviorFileService) Start(context.Context) error { return nil }
+
+// Stop is a no-op for plugin.Plugin compatibility in tests.
+func (m *behaviorFileService) Stop(context.Context) error { return nil }
 
 // ---------------------------------------------------------------------------
 // Tool construction nil guard tests

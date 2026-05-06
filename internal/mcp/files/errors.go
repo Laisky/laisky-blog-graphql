@@ -14,6 +14,7 @@ const (
 	ErrCodeAlreadyExists    ErrorCode = "ALREADY_EXISTS"
 	ErrCodeIsDirectory      ErrorCode = "IS_DIRECTORY"
 	ErrCodeNotDirectory     ErrorCode = "NOT_DIRECTORY"
+	ErrCodeInvalidArgument  ErrorCode = "INVALID_ARGUMENT"
 	ErrCodeInvalidPath      ErrorCode = "INVALID_PATH"
 	ErrCodeInvalidOffset    ErrorCode = "INVALID_OFFSET"
 	ErrCodeInvalidQuery     ErrorCode = "INVALID_QUERY"

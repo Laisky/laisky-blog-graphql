@@ -210,9 +210,10 @@ func (s *Service) searchFallbackFromRawFiles(ctx context.Context, apiKeyHash, pr
 		return nil, nil
 	}
 
+	owner := systemOwnerFromContext(ctx)
 	crossProject := project == ProjectWildcard
-	args := []any{apiKeyHash}
-	statement := "SELECT path, content, size, project FROM mcp_files WHERE apikey_hash = ? AND deleted = FALSE"
+	args := []any{apiKeyHash, owner}
+	statement := "SELECT path, content, size, project FROM mcp_files WHERE apikey_hash = ? AND system_owner = ? AND deleted = FALSE"
 	if !crossProject {
 		statement += " AND project = ?"
 		args = append(args, project)
@@ -340,6 +341,7 @@ func searchFallbackSnippet(content, query string, maxBytes int) (int64, int64, s
 // logEmptySearchDiagnostics emits DEBUG diagnostics for empty search results.
 func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash, project, pathPrefix string, lexicalErr, semanticErr error) {
 	chunkCount := s.countRowsForSearch(ctx, "mcp_file_chunks c", apiKeyHash, project, pathPrefix)
+	// system_owner-checked: countRowsForSearch appends `c.system_owner = ?` to the WHERE clause for both call sites
 	embeddingCount := s.countRowsForSearch(ctx, "mcp_file_chunk_embeddings e JOIN mcp_file_chunks c ON c.id = e.chunk_id", apiKeyHash, project, pathPrefix)
 	pendingJobs := s.countPendingIndexJobs(ctx, apiKeyHash, project)
 
@@ -359,8 +361,9 @@ func (s *Service) logEmptySearchDiagnostics(ctx context.Context, apiKeyHash, pro
 
 // countRowsForSearch counts indexed rows by tenant/project with optional path prefix filtering.
 func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, project, pathPrefix string) int64 {
-	where := "c.apikey_hash = ?"
-	args := []any{apiKeyHash}
+	owner := systemOwnerFromContext(ctx)
+	where := "c.apikey_hash = ? AND c.system_owner = ?"
+	args := []any{apiKeyHash, owner}
 	if project != ProjectWildcard {
 		where += " AND c.project = ?"
 		args = append(args, project)
@@ -380,8 +383,9 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, pr
 
 // countPendingIndexJobs returns pending or processing index jobs for diagnostics.
 func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash, project string) int64 {
-	args := []any{apiKeyHash}
-	statement := "SELECT COUNT(1) FROM mcp_file_index_jobs WHERE apikey_hash = ?"
+	owner := systemOwnerFromContext(ctx)
+	args := []any{apiKeyHash, owner}
+	statement := "SELECT COUNT(1) FROM mcp_file_index_jobs WHERE apikey_hash = ? AND system_owner = ?"
 	if project != ProjectWildcard {
 		statement += " AND project = ?"
 		args = append(args, project)
@@ -409,12 +413,13 @@ func (s *Service) fetchSemanticCandidates(ctx context.Context, apiKeyHash, proje
 
 // fetchSemanticCandidatesPostgres performs vector distance search via pgvector.
 func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHash, project, pathPrefix string, queryVec pgvector.Vector, limit int) ([]searchCandidate, error) {
-	args := []any{queryVec, apiKeyHash}
+	owner := systemOwnerFromContext(ctx)
+	args := []any{queryVec, apiKeyHash, owner}
 	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, c.chunk_content, f.size, e.embedding <-> ? AS distance
 		FROM mcp_file_chunk_embeddings e
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
-		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
-		WHERE c.apikey_hash = ?`
+		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
 		query += " AND c.project = ?"
 		args = append(args, project)
@@ -515,12 +520,13 @@ func (s *Service) fetchLexicalCandidates(ctx context.Context, apiKeyHash, projec
 
 // fetchLexicalCandidatesPostgres uses tsvector ranking to score candidates.
 func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash, project, pathPrefix, query string, limit int) ([]searchCandidate, error) {
-	args := []any{query, apiKeyHash}
+	owner := systemOwnerFromContext(ctx)
+	args := []any{query, apiKeyHash, owner}
 	statement := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, c.chunk_content, f.size,
 		ts_rank_cd(to_tsvector('simple', c.chunk_content), plainto_tsquery('simple', ?)) AS score
 		FROM mcp_file_chunks c
-		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
-		WHERE c.apikey_hash = ?`
+		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
 		statement += " AND c.project = ?"
 		args = append(args, project)
@@ -676,11 +682,12 @@ func (s *Service) updateLastServed(ctx context.Context, chunkIDs []int64) error 
 	if len(chunkIDs) == 0 {
 		return nil
 	}
+	owner := systemOwnerFromContext(ctx)
 	now := s.clock()
-	inClause, inArgs := buildInClauseInt64(chunkIDs, s.isPostgres, 2)
-	query := rebindSQL(`UPDATE mcp_file_chunks SET last_served_at = ? WHERE id IN (%s)`, s.isPostgres)
-	args := make([]any, 0, 1+len(inArgs))
-	args = append(args, now)
+	inClause, inArgs := buildInClauseInt64(chunkIDs, s.isPostgres, 3)
+	query := rebindSQL(`UPDATE mcp_file_chunks SET last_served_at = ? WHERE system_owner = ? AND id IN (%s)`, s.isPostgres)
+	args := make([]any, 0, 2+len(inArgs))
+	args = append(args, now, owner)
 	args = append(args, inArgs...)
 	_, err := s.db.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
 	return err
@@ -699,12 +706,13 @@ type chunkEmbeddingRow struct {
 
 // fetchChunkEmbeddings loads chunks and embeddings for in-memory similarity.
 func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project, pathPrefix string) ([]chunkEmbeddingRow, error) {
-	args := []any{apiKeyHash}
+	owner := systemOwnerFromContext(ctx)
+	args := []any{apiKeyHash, owner}
 	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content, e.embedding
 		FROM mcp_file_chunk_embeddings e
 		JOIN mcp_file_chunks c ON c.id = e.chunk_id
-		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
-		WHERE c.apikey_hash = ?`
+		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
 		query += " AND c.project = ?"
 		args = append(args, project)
@@ -778,11 +786,12 @@ type chunkRow struct {
 }
 
 func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathPrefix string) ([]chunkRow, error) {
-	args := []any{apiKeyHash}
+	owner := systemOwnerFromContext(ctx)
+	args := []any{apiKeyHash, owner}
 	query := `SELECT c.id, c.project, c.file_path, c.start_byte, c.end_byte, f.size, c.chunk_content
 		FROM mcp_file_chunks c
-		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE
-		WHERE c.apikey_hash = ?`
+		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
+		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
 		query += " AND c.project = ?"
 		args = append(args, project)

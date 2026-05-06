@@ -89,19 +89,19 @@ func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 			"mcp": map[string]any{
 				"tools": map[string]any{
 					"file_io": map[string]any{"enabled": true},
-				},
-				"extract_key_info": map[string]any{
-					"enabled":            true,
-					"top_k_default":      5,
-					"top_k_limit":        20,
-					"max_materials_size": 100000,
-					"max_chunk_chars":    1500,
-					"semantic_weight":    0.65,
-					"lexical_weight":     0.35,
-				},
-				"user_requests": map[string]any{
-					"retention_days":          30,
-					"retention_sweep_seconds": 3600,
+					"extract_key_info": map[string]any{
+						"enabled":            true,
+						"top_k_default":      5,
+						"top_k_limit":        20,
+						"max_materials_size": 100000,
+						"max_chunk_chars":    1500,
+						"semantic_weight":    0.65,
+						"lexical_weight":     0.35,
+					},
+					"user_requests": map[string]any{
+						"retention_days":          30,
+						"retention_sweep_seconds": 3600,
+					},
 				},
 				"files": map[string]any{
 					"allow_root_wipe":       false,
@@ -175,14 +175,46 @@ func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL verifies domain-only heuristic base URL fails validation.
-func TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL(t *testing.T) {
+// TestValidateStartupConfigWithGetterValidNewRAGPluginConfig verifies the new rag plugin path is accepted.
+func TestValidateStartupConfigWithGetterValidNewRAGPluginConfig(t *testing.T) {
 	cfg := map[string]any{
 		"settings": map[string]any{
 			"mcp": map[string]any{
-				"memory": map[string]any{
-					"heuristic": map[string]any{
-						"base_url": "oneapi.laisky.com",
+				"tools": map[string]any{
+					"memory": map[string]any{
+						"default_plugin": "rag",
+						"plugins": map[string]any{
+							"rag": map[string]any{
+								"list_limit_default": 10,
+								"list_limit_max":     20,
+								"search": map[string]any{
+									"limit_default": 5,
+									"limit_max":     10,
+								},
+								"security": map[string]any{
+									"credential_cache_prefix":      "mcp:files:cred",
+									"credential_cache_ttl_seconds": 300,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.NoError(t, err)
+}
+
+// TestValidateStartupConfigWithGetterInvalidDefaultPlugin verifies invalid plugin defaults fail fast.
+func TestValidateStartupConfigWithGetterInvalidDefaultPlugin(t *testing.T) {
+	cfg := map[string]any{
+		"settings": map[string]any{
+			"mcp": map[string]any{
+				"tools": map[string]any{
+					"memory": map[string]any{
+						"default_plugin": "bogus",
 					},
 				},
 			},
@@ -191,7 +223,28 @@ func TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL(t *testing
 
 	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "settings.mcp.memory.heuristic.base_url")
+	require.Contains(t, err.Error(), "settings.mcp.tools.memory.default_plugin")
+}
+
+// TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL verifies domain-only heuristic base URL fails validation.
+func TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL(t *testing.T) {
+	cfg := map[string]any{
+		"settings": map[string]any{
+			"mcp": map[string]any{
+				"tools": map[string]any{
+					"memory": map[string]any{
+						"heuristic": map[string]any{
+							"base_url": "oneapi.laisky.com",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "settings.mcp.tools.memory.heuristic.base_url")
 }
 
 // TestValidateStartupConfigWithGetterValidMemoryHeuristicBaseURL verifies absolute heuristic base URL passes validation.
@@ -199,9 +252,11 @@ func TestValidateStartupConfigWithGetterValidMemoryHeuristicBaseURL(t *testing.T
 	cfg := map[string]any{
 		"settings": map[string]any{
 			"mcp": map[string]any{
-				"memory": map[string]any{
-					"heuristic": map[string]any{
-						"base_url": "https://oneapi.laisky.com/v1",
+				"tools": map[string]any{
+					"memory": map[string]any{
+						"heuristic": map[string]any{
+							"base_url": "https://oneapi.laisky.com/v1",
+						},
 					},
 				},
 			},

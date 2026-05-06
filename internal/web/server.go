@@ -184,14 +184,14 @@ func RunServer(addr string, resolver *Resolver) {
 		resolver.args.AskUserService != nil ||
 		resolver.args.UserRequestService != nil ||
 		resolver.args.RAGService != nil ||
-		resolver.args.FilesService != nil) {
+		resolver.args.MCPFileService != nil) {
 		mcpServer, err := mcp.NewServer(
 			resolver.args.WebSearchProvider,
 			resolver.args.AskUserService,
 			resolver.args.UserRequestService,
 			resolver.args.RAGService,
 			resolver.args.RAGSettings,
-			resolver.args.FilesService,
+			resolver.args.MCPFileService,
 			resolver.args.MemoryService,
 			resolver.args.Rdb,
 			resolver.args.CallLogService,

@@ -30,6 +30,7 @@ func (t *FileSearchTool) Definition() mcp.Tool {
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query string.")),
 		mcp.WithString("path_prefix", mcp.Description("Optional path prefix filter.")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of chunks to return.")),
+		fileToolPluginOption(),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
@@ -47,6 +48,7 @@ func (t *FileSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 	pathPrefix := readStringArg(req, "path_prefix")
 	limit := readIntArg(req, "limit")
+	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Search(ctx, auth, project, query, pathPrefix, limit)
 		if svcErr != nil {

@@ -1,0 +1,15 @@
+
+    You are given a section title and several pages of a document, your job is to find the physical index of the start page of the section in the partial document.
+
+    The provided pages contains tags like <physical_index_X> and <physical_index_X> to indicate the physical location of the page X.
+
+    Reply in a JSON format:
+    {
+        "thinking": <explain which page, started and closed by <physical_index_X>, contains the start of this section>,
+        "physical_index": "<physical_index_X>" (keep the format)
+    }
+    Directly return the final JSON structure. Do not output anything else.
+Section Title:
+Methods
+Document pages:
+<physical_index_5>methods<physical_index_5>

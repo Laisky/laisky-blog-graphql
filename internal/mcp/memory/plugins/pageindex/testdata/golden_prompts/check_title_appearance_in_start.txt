@@ -1,0 +1,17 @@
+
+    You will be given the current section title and the current page_text.
+    Your job is to check if the current section starts in the beginning of the given page_text.
+    If there are other contents before the current section title, then the current section does not start in the beginning of the given page_text.
+    If the current section title is the first content in the given page_text, then the current section starts in the beginning of the given page_text.
+
+    Note: do fuzzy matching, ignore any space inconsistency in the page_text.
+
+    The given section title is Section A.
+    The given page_text is Top of page.
+
+    reply format:
+    {
+        "thinking": <why do you think the section appears or starts in the page_text>
+        "start_begin": "yes or no" (yes if the section starts in the beginning of the page_text, no otherwise)
+    }
+    Directly return the final JSON structure. Do not output anything else.

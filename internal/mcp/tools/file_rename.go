@@ -30,6 +30,7 @@ func (t *FileRenameTool) Definition() mcp.Tool {
 		mcp.WithString("from_path", mcp.Required(), mcp.Description("Source file or directory path.")),
 		mcp.WithString("to_path", mcp.Required(), mcp.Description("Destination file or directory path.")),
 		mcp.WithBoolean("overwrite", mcp.Description("When true, replace an existing destination file for file moves.")),
+		fileToolPluginOption(),
 		mcp.WithIdempotentHintAnnotation(false),
 	)
 }
@@ -49,6 +50,7 @@ func (t *FileRenameTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	overwrite := readBoolArg(req, "overwrite")
+	ctx = withFilePluginOverride(ctx, req)
 
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Rename(ctx, auth, project, fromPath, toPath, overwrite)
