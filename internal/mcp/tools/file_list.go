@@ -31,6 +31,7 @@ func (t *FileListTool) Definition() mcp.Tool {
 		mcp.WithString("path", mcp.Description("Directory path; empty string means project root.")),
 		mcp.WithNumber("depth", mcp.Description("Depth of traversal; 0 lists the path itself.")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of entries to return.")),
+		fileToolPluginOption(),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
@@ -48,6 +49,7 @@ func (t *FileListTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	path := normalizeFileListPath(rawPath)
 	depth := readIntArgWithDefault(req, "depth", 1)
 	limit := readIntArg(req, "limit")
+	ctx = withFilePluginOverride(ctx, req)
 	logger.Debug("file_list request parsed",
 		zap.String("path_raw", rawPath),
 		zap.String("path_normalized", path),

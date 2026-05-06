@@ -30,6 +30,7 @@ func (t *FileReadTool) Definition() mcp.Tool {
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path to read.")),
 		mcp.WithNumber("offset", mcp.Description("Byte offset to start reading from.")),
 		mcp.WithNumber("length", mcp.Description("Number of bytes to read; -1 reads to EOF.")),
+		fileToolPluginOption(),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
@@ -47,6 +48,7 @@ func (t *FileReadTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 	offset := readInt64Arg(req, "offset")
 	length := readInt64ArgWithDefault(req, "length", -1)
+	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Read(ctx, auth, project, path, offset, length)
 		if svcErr != nil {

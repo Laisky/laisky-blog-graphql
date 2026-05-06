@@ -29,6 +29,7 @@ func (t *FileDeleteTool) Definition() mcp.Tool {
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Description("File or directory path; empty string means project root.")),
 		mcp.WithBoolean("recursive", mcp.Description("Delete descendants when target is a directory.")),
+		fileToolPluginOption(),
 		mcp.WithIdempotentHintAnnotation(false),
 	)
 }
@@ -41,6 +42,7 @@ func (t *FileDeleteTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 	path := readStringArg(req, "path")
 	recursive := readBoolArg(req, "recursive")
+	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Delete(ctx, auth, project, path, recursive)
 		if svcErr != nil {

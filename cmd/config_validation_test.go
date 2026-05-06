@@ -175,6 +175,53 @@ func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestValidateStartupConfigWithGetterValidNewRAGPluginConfig verifies the new rag plugin path is accepted.
+func TestValidateStartupConfigWithGetterValidNewRAGPluginConfig(t *testing.T) {
+	cfg := map[string]any{
+		"settings": map[string]any{
+			"mcp": map[string]any{
+				"memory": map[string]any{
+					"default_plugin": "rag",
+					"plugins": map[string]any{
+						"rag": map[string]any{
+							"list_limit_default": 10,
+							"list_limit_max":     20,
+							"search": map[string]any{
+								"limit_default": 5,
+								"limit_max":     10,
+							},
+							"security": map[string]any{
+								"credential_cache_prefix":      "mcp:files:cred",
+								"credential_cache_ttl_seconds": 300,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.NoError(t, err)
+}
+
+// TestValidateStartupConfigWithGetterInvalidDefaultPlugin verifies invalid plugin defaults fail fast.
+func TestValidateStartupConfigWithGetterInvalidDefaultPlugin(t *testing.T) {
+	cfg := map[string]any{
+		"settings": map[string]any{
+			"mcp": map[string]any{
+				"memory": map[string]any{
+					"default_plugin": "bogus",
+				},
+			},
+		},
+	}
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "settings.mcp.memory.default_plugin")
+}
+
 // TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL verifies domain-only heuristic base URL fails validation.
 func TestValidateStartupConfigWithGetterInvalidMemoryHeuristicBaseURL(t *testing.T) {
 	cfg := map[string]any{

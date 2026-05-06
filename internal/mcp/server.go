@@ -18,7 +18,6 @@ import (
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
@@ -134,7 +133,7 @@ func NewServer(
 	userRequestService *userrequests.Service,
 	ragService *rag.Service,
 	ragSettings rag.Settings,
-	fileService *files.Service,
+	fileService tools.FileService,
 	memoryService *mcpmemory.Service,
 	rdb *rlibs.DB,
 	callLogger callRecorder,

@@ -18,6 +18,11 @@ var (
 	errUnsupportedType = errors.New("unsupported type")
 )
 
+const (
+	legacyFilesConfigPrefix = "settings.mcp.files"
+	ragFilesConfigPrefix    = "settings.mcp.memory.plugins.rag"
+)
+
 // Settings captures runtime configuration for FileIO features.
 type Settings struct {
 	AllowRootWipe    bool
@@ -85,43 +90,43 @@ func (s SecuritySettings) KEKs() map[uint16]string {
 // LoadSettingsFromConfig reads configuration and applies safe defaults.
 func LoadSettingsFromConfig() Settings {
 	settings := Settings{
-		AllowRootWipe:    gconfig.S.GetBool("settings.mcp.files.allow_root_wipe"),
-		MaxPayloadBytes:  int64FromConfig("settings.mcp.files.max_payload_bytes", 2_000_000),
-		MaxFileBytes:     int64FromConfig("settings.mcp.files.max_file_bytes", 10_000_000),
-		MaxProjectBytes:  int64FromConfig("settings.mcp.files.max_project_bytes", 100_000_000),
-		ListLimitDefault: intFromConfig("settings.mcp.files.list_limit_default", 256),
-		ListLimitMax:     intFromConfig("settings.mcp.files.list_limit_max", 1024),
-		LockTimeout:      time.Duration(intFromConfig("settings.mcp.files.lock_timeout_ms", 3000)) * time.Millisecond,
-		DeleteRetention:  time.Duration(intFromConfig("settings.mcp.files.delete_retention_days", 30)) * 24 * time.Hour,
+		AllowRootWipe:    gconfig.S.GetBool(configKeyWithFallback(ragFilesConfigKey("allow_root_wipe"), legacyFilesConfigKey("allow_root_wipe"))),
+		MaxPayloadBytes:  int64FromConfig(configKeyWithFallback(ragFilesConfigKey("max_payload_bytes"), legacyFilesConfigKey("max_payload_bytes")), 2_000_000),
+		MaxFileBytes:     int64FromConfig(configKeyWithFallback(ragFilesConfigKey("max_file_bytes"), legacyFilesConfigKey("max_file_bytes")), 10_000_000),
+		MaxProjectBytes:  int64FromConfig(configKeyWithFallback(ragFilesConfigKey("max_project_bytes"), legacyFilesConfigKey("max_project_bytes")), 100_000_000),
+		ListLimitDefault: intFromConfig(configKeyWithFallback(ragFilesConfigKey("list_limit_default"), legacyFilesConfigKey("list_limit_default")), 256),
+		ListLimitMax:     intFromConfig(configKeyWithFallback(ragFilesConfigKey("list_limit_max"), legacyFilesConfigKey("list_limit_max")), 1024),
+		LockTimeout:      time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("lock_timeout_ms"), legacyFilesConfigKey("lock_timeout_ms")), 3000)) * time.Millisecond,
+		DeleteRetention:  time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("delete_retention_days"), legacyFilesConfigKey("delete_retention_days")), 30)) * 24 * time.Hour,
 		EmbeddingModel:   strings.TrimSpace(gconfig.S.GetString("settings.openai.embedding_model")),
 		EmbeddingBaseURL: strings.TrimSpace(gconfig.S.GetString("settings.openai.base_url")),
 		Search: SearchSettings{
-			Enabled:           boolFromConfig("settings.mcp.files.search.enabled", true),
-			LimitDefault:      intFromConfig("settings.mcp.files.search.limit_default", 20),
-			LimitMax:          intFromConfig("settings.mcp.files.search.limit_max", 20),
-			VectorCandidates:  intFromConfig("settings.mcp.files.search.vector_candidates", 100),
-			LexicalCandidates: intFromConfig("settings.mcp.files.search.bm25_candidates", 100),
-			RerankModel:       strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.search.rerank.model")),
-			RerankEndpoint:    strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.search.rerank.endpoint")),
-			RerankTimeout:     time.Duration(intFromConfig("settings.mcp.files.search.rerank.timeout_ms", 6000)) * time.Millisecond,
-			SemanticWeight:    floatFromConfig("settings.mcp.files.search.fallback.semantic_weight", 0.65),
-			LexicalWeight:     floatFromConfig("settings.mcp.files.search.fallback.lexical_weight", 0.35),
+			Enabled:           boolFromConfig(configKeyWithFallback(ragFilesConfigKey("search.enabled"), legacyFilesConfigKey("search.enabled")), true),
+			LimitDefault:      intFromConfig(configKeyWithFallback(ragFilesConfigKey("search.limit_default"), legacyFilesConfigKey("search.limit_default")), 20),
+			LimitMax:          intFromConfig(configKeyWithFallback(ragFilesConfigKey("search.limit_max"), legacyFilesConfigKey("search.limit_max")), 20),
+			VectorCandidates:  intFromConfig(configKeyWithFallback(ragFilesConfigKey("search.vector_candidates"), legacyFilesConfigKey("search.vector_candidates")), 100),
+			LexicalCandidates: intFromConfig(configKeyWithFallback(ragFilesConfigKey("search.bm25_candidates"), legacyFilesConfigKey("search.bm25_candidates")), 100),
+			RerankModel:       strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("search.rerank.model"), legacyFilesConfigKey("search.rerank.model")))),
+			RerankEndpoint:    strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("search.rerank.endpoint"), legacyFilesConfigKey("search.rerank.endpoint")))),
+			RerankTimeout:     time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("search.rerank.timeout_ms"), legacyFilesConfigKey("search.rerank.timeout_ms")), 6000)) * time.Millisecond,
+			SemanticWeight:    floatFromConfig(configKeyWithFallback(ragFilesConfigKey("search.fallback.semantic_weight"), legacyFilesConfigKey("search.fallback.semantic_weight")), 0.65),
+			LexicalWeight:     floatFromConfig(configKeyWithFallback(ragFilesConfigKey("search.fallback.lexical_weight"), legacyFilesConfigKey("search.fallback.lexical_weight")), 0.35),
 		},
 		Index: IndexSettings{
-			Workers:        intFromConfig("settings.mcp.files.index.workers", 2),
-			BatchSize:      intFromConfig("settings.mcp.files.index.batch_size", 20),
-			RetryMax:       intFromConfig("settings.mcp.files.index.retry_max", 5),
-			RetryBackoff:   time.Duration(intFromConfig("settings.mcp.files.index.retry_backoff_ms", 1000)) * time.Millisecond,
-			ChunkBytes:     intFromConfig("settings.mcp.files.index.chunk_bytes", 500),
-			SummaryModel:   strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.index.summary.model")),
-			SummaryBaseURL: strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.index.summary.base_url")),
-			SummaryTimeout: time.Duration(intFromConfig("settings.mcp.files.index.summary.timeout_ms", 8000)) * time.Millisecond,
-			FreshnessSLO:   time.Duration(intFromConfig("settings.mcp.files.index.slo_p95_seconds", 30)) * time.Second,
+			Workers:        intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.workers"), legacyFilesConfigKey("index.workers")), 2),
+			BatchSize:      intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.batch_size"), legacyFilesConfigKey("index.batch_size")), 20),
+			RetryMax:       intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.retry_max"), legacyFilesConfigKey("index.retry_max")), 5),
+			RetryBackoff:   time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.retry_backoff_ms"), legacyFilesConfigKey("index.retry_backoff_ms")), 1000)) * time.Millisecond,
+			ChunkBytes:     intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.chunk_bytes"), legacyFilesConfigKey("index.chunk_bytes")), 500),
+			SummaryModel:   strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("index.summary.model"), legacyFilesConfigKey("index.summary.model")))),
+			SummaryBaseURL: strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("index.summary.base_url"), legacyFilesConfigKey("index.summary.base_url")))),
+			SummaryTimeout: time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.summary.timeout_ms"), legacyFilesConfigKey("index.summary.timeout_ms")), 8000)) * time.Millisecond,
+			FreshnessSLO:   time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.slo_p95_seconds"), legacyFilesConfigKey("index.slo_p95_seconds")), 30)) * time.Second,
 		},
 		Security: SecuritySettings{
-			EncryptionKEKs:        uint16StringMapFromConfig("settings.mcp.files.security.encryption_keks"),
-			CredentialCachePrefix: strings.TrimSpace(gconfig.S.GetString("settings.mcp.files.security.credential_cache_prefix")),
-			CredentialCacheTTL:    time.Duration(intFromConfig("settings.mcp.files.security.credential_cache_ttl_seconds", 300)) * time.Second,
+			EncryptionKEKs:        uint16StringMapFromConfig(configKeyWithFallback(ragFilesConfigKey("security.encryption_keks"), legacyFilesConfigKey("security.encryption_keks"))),
+			CredentialCachePrefix: strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("security.credential_cache_prefix"), legacyFilesConfigKey("security.credential_cache_prefix")))),
+			CredentialCacheTTL:    time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("security.credential_cache_ttl_seconds"), legacyFilesConfigKey("security.credential_cache_ttl_seconds")), 300)) * time.Second,
 		},
 	}
 
@@ -218,6 +223,47 @@ func LoadSettingsFromConfig() Settings {
 	}
 
 	return settings
+}
+
+// LegacyConfigConfigured reports whether the deprecated settings.mcp.files.* tree is present.
+func LegacyConfigConfigured() bool {
+	return hasConfigValue(legacyFilesConfigPrefix)
+}
+
+// configKeyWithFallback returns the primary key when configured, else the fallback key.
+func configKeyWithFallback(primary, fallback string) string {
+	if hasConfigValue(primary) {
+		return primary
+	}
+
+	return fallback
+}
+
+// hasConfigValue reports whether a config key is explicitly set.
+func hasConfigValue(key string) bool {
+	if strings.TrimSpace(key) == "" {
+		return false
+	}
+
+	return gconfig.S.Get(key) != nil
+}
+
+// ragFilesConfigKey builds a key under the new rag plugin config subtree.
+func ragFilesConfigKey(suffix string) string {
+	if suffix == "" {
+		return ragFilesConfigPrefix
+	}
+
+	return ragFilesConfigPrefix + "." + suffix
+}
+
+// legacyFilesConfigKey builds a key under the deprecated files config subtree.
+func legacyFilesConfigKey(suffix string) string {
+	if suffix == "" {
+		return legacyFilesConfigPrefix
+	}
+
+	return legacyFilesConfigPrefix + "." + suffix
 }
 
 // uint16StringMapFromConfig reads map-like configuration into a uint16-string map.

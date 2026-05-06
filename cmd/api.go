@@ -27,6 +27,8 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
+	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/internal/web"
@@ -274,6 +276,7 @@ func runAPI() error {
 	mcpStart := time.Now()
 	ragSettings := rag.LoadSettingsFromConfig()
 	args.RAGSettings = ragSettings
+	filePluginSettings := mcpplugin.LoadSettingsFromConfig()
 	if mcpDB != nil {
 		var (
 			askSvc  *askuser.Service
@@ -394,6 +397,10 @@ func runAPI() error {
 			}
 		}
 
+		if files.LegacyConfigConfigured() {
+			logger.Warn("settings.mcp.files.* is deprecated; use settings.mcp.memory.plugins.rag.*")
+		}
+
 		filesSettings := files.LoadSettingsFromConfig()
 		if mcpDB != nil {
 			memorySettings := mcpmemory.LoadSettingsFromConfig()
@@ -413,8 +420,20 @@ func runAPI() error {
 				logger.Warn("file service unavailable", zap.Error(err))
 			} else {
 				args.FilesService = fileSvc
-				if startErr := fileSvc.StartIndexWorkers(ctx); startErr != nil {
-					logger.Warn("start file index workers", zap.Error(startErr))
+
+				ragFilePlugin, pluginErr := ragplugin.New(fileSvc)
+				if pluginErr != nil {
+					return errors.Wrap(pluginErr, "new rag file plugin")
+				}
+
+				fileManager, managerErr := mcpplugin.NewManager(filePluginSettings.DefaultPlugin, ragFilePlugin)
+				if managerErr != nil {
+					return errors.Wrap(managerErr, "new mcp file plugin manager")
+				}
+				args.MCPFileService = fileManager
+
+				if startErr := fileManager.StartAll(ctx); startErr != nil {
+					logger.Warn("start file plugin manager", zap.Error(startErr))
 				}
 
 				memorySvc, memoryErr := mcpmemory.NewService(mcpDB.DB, fileSvc, memorySettings, logger.Named("mcp_memory"), nil)

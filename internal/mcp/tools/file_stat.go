@@ -28,6 +28,7 @@ func (t *FileStatTool) Definition() mcp.Tool {
 		mcp.WithDescription("Return metadata (size, timestamps, permissions) for a file or directory path. Use this to inspect file properties without reading content."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Description("File path; empty string means project root.")),
+		fileToolPluginOption(),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
 	)
@@ -40,6 +41,7 @@ func (t *FileStatTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	path := readStringArg(req, "path")
+	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Stat(ctx, auth, project, path)
 		if svcErr != nil {

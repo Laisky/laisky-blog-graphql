@@ -91,6 +91,7 @@ func validateMCPMemoryConfig(get configGetter, errs *[]string) {
 	validateOptionalURL(get, "settings.mcp.memory.heuristic.base_url", errs)
 	validateOptionalIntMin(get, "settings.mcp.memory.heuristic.timeout_ms", 1, errs)
 	validateOptionalIntMin(get, "settings.mcp.memory.heuristic.max_output_tokens", 1, errs)
+	validateOptionalStringOneOf(get, "settings.mcp.memory.default_plugin", []string{"rag", "pageindex"}, errs)
 }
 
 // validateRAGConfig validates extract_key_info configuration.
@@ -115,40 +116,47 @@ func validateUserRequestsConfig(get configGetter, errs *[]string) {
 // validateFileIOConfig validates FileIO-related configuration.
 // It accepts a getter and an error collector pointer and appends validation errors.
 func validateFileIOConfig(get configGetter, errs *[]string) {
-	validateOptionalBool(get, "settings.mcp.files.allow_root_wipe", errs)
-	validateOptionalInt64Min(get, "settings.mcp.files.max_payload_bytes", 1, errs)
-	validateOptionalInt64Min(get, "settings.mcp.files.max_file_bytes", 1, errs)
-	validateOptionalInt64Min(get, "settings.mcp.files.max_project_bytes", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.list_limit_default", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.list_limit_max", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.lock_timeout_ms", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.delete_retention_days", 1, errs)
+	validateFileIOConfigAtPrefix(get, "settings.mcp.files", errs)
+	validateFileIOConfigAtPrefix(get, "settings.mcp.memory.plugins.rag", errs)
+	validateFileIOSecurityKEKs(get, "settings.mcp.files", errs)
+	validateFileIOSecurityKEKs(get, "settings.mcp.memory.plugins.rag", errs)
+	validateFileIOLimitRelations(get, "settings.mcp.files", errs)
+	validateFileIOLimitRelations(get, "settings.mcp.memory.plugins.rag", errs)
+}
 
-	validateOptionalBool(get, "settings.mcp.files.search.enabled", errs)
-	validateOptionalIntMin(get, "settings.mcp.files.search.limit_default", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.search.limit_max", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.search.vector_candidates", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.search.bm25_candidates", 1, errs)
-	validateOptionalFloatPositive(get, "settings.mcp.files.search.fallback.semantic_weight", errs)
-	validateOptionalFloatPositive(get, "settings.mcp.files.search.fallback.lexical_weight", errs)
-	validateOptionalIntMin(get, "settings.mcp.files.search.rerank.timeout_ms", 1, errs)
-	validateOptionalURL(get, "settings.mcp.files.search.rerank.endpoint", errs)
+// validateFileIOConfigAtPrefix validates one file plugin config subtree.
+func validateFileIOConfigAtPrefix(get configGetter, prefix string, errs *[]string) {
+	validateOptionalBool(get, joinConfigKey(prefix, "allow_root_wipe"), errs)
+	validateOptionalInt64Min(get, joinConfigKey(prefix, "max_payload_bytes"), 1, errs)
+	validateOptionalInt64Min(get, joinConfigKey(prefix, "max_file_bytes"), 1, errs)
+	validateOptionalInt64Min(get, joinConfigKey(prefix, "max_project_bytes"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "list_limit_default"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "list_limit_max"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "lock_timeout_ms"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "delete_retention_days"), 1, errs)
 
-	validateOptionalIntMin(get, "settings.mcp.files.index.workers", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.index.batch_size", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.index.chunk_bytes", 1, errs)
-	validateOptionalStringNonEmpty(get, "settings.mcp.files.index.summary.model", errs)
-	validateOptionalURL(get, "settings.mcp.files.index.summary.base_url", errs)
-	validateOptionalIntMin(get, "settings.mcp.files.index.summary.timeout_ms", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.index.retry_backoff_ms", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.index.slo_p95_seconds", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.files.index.retry_max", 0, errs)
+	validateOptionalBool(get, joinConfigKey(prefix, "search.enabled"), errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "search.limit_default"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "search.limit_max"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "search.vector_candidates"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "search.bm25_candidates"), 1, errs)
+	validateOptionalFloatPositive(get, joinConfigKey(prefix, "search.fallback.semantic_weight"), errs)
+	validateOptionalFloatPositive(get, joinConfigKey(prefix, "search.fallback.lexical_weight"), errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "search.rerank.timeout_ms"), 1, errs)
+	validateOptionalURL(get, joinConfigKey(prefix, "search.rerank.endpoint"), errs)
 
-	validateOptionalIntMin(get, "settings.mcp.files.security.credential_cache_ttl_seconds", 1, errs)
-	validateOptionalStringNonEmpty(get, "settings.mcp.files.security.credential_cache_prefix", errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "index.workers"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "index.batch_size"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "index.chunk_bytes"), 1, errs)
+	validateOptionalStringNonEmpty(get, joinConfigKey(prefix, "index.summary.model"), errs)
+	validateOptionalURL(get, joinConfigKey(prefix, "index.summary.base_url"), errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "index.summary.timeout_ms"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "index.retry_backoff_ms"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "index.slo_p95_seconds"), 1, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "index.retry_max"), 0, errs)
 
-	validateFileIOSecurityKEKs(get, errs)
-	validateFileIOLimitRelations(get, errs)
+	validateOptionalIntMin(get, joinConfigKey(prefix, "security.credential_cache_ttl_seconds"), 1, errs)
+	validateOptionalStringNonEmpty(get, joinConfigKey(prefix, "security.credential_cache_prefix"), errs)
 }
 
 // validateWebsearchConfig validates web search engine configuration.
@@ -282,58 +290,97 @@ func validateOpenAIConfig(get configGetter, errs *[]string) {
 
 // validateFileIOSecurityKEKs validates encryption_keks constraints for FileIO security settings.
 // It accepts a getter and an error collector pointer and appends validation errors.
-func validateFileIOSecurityKEKs(get configGetter, errs *[]string) {
-	raw := get("settings.mcp.files.security.encryption_keks")
+func validateFileIOSecurityKEKs(get configGetter, prefix string, errs *[]string) {
+	raw := get(joinConfigKey(prefix, "security.encryption_keks"))
 	if raw == nil {
 		return
 	}
 
 	keks := toStringMap(raw)
 	if keks == nil {
-		appendValidationErrorf(errs, "settings.mcp.files.security.encryption_keks must be an object")
+		appendValidationErrorf(errs, "%s must be an object", joinConfigKey(prefix, "security.encryption_keks"))
 		return
 	}
 
 	for rawID, rawSecret := range keks {
 		if _, parseErr := strconv.ParseUint(strings.TrimSpace(rawID), 10, 16); parseErr != nil {
-			appendValidationErrorf(errs, "settings.mcp.files.security.encryption_keks.%s must use a uint16 key id", rawID)
+			appendValidationErrorf(errs, "%s.%s must use a uint16 key id", joinConfigKey(prefix, "security.encryption_keks"), rawID)
 			continue
 		}
 
 		secret, parseErr := parseStrictString(rawSecret)
 		if parseErr != nil {
-			appendValidationErrorf(errs, "settings.mcp.files.security.encryption_keks.%s must be a string", rawID)
+			appendValidationErrorf(errs, "%s.%s must be a string", joinConfigKey(prefix, "security.encryption_keks"), rawID)
 			continue
 		}
 
 		if len(strings.TrimSpace(secret)) <= 16 {
-			appendValidationErrorf(errs, "settings.mcp.files.security.encryption_keks.%s must be longer than 16 characters", rawID)
+			appendValidationErrorf(errs, "%s.%s must be longer than 16 characters", joinConfigKey(prefix, "security.encryption_keks"), rawID)
 		}
 	}
 }
 
 // validateFileIOLimitRelations validates relational constraints across FileIO limit values.
 // It accepts a getter and an error collector pointer and appends validation errors.
-func validateFileIOLimitRelations(get configGetter, errs *[]string) {
-	listDefaultRaw := get("settings.mcp.files.list_limit_default")
-	listMaxRaw := get("settings.mcp.files.list_limit_max")
+func validateFileIOLimitRelations(get configGetter, prefix string, errs *[]string) {
+	listDefaultKey := joinConfigKey(prefix, "list_limit_default")
+	listMaxKey := joinConfigKey(prefix, "list_limit_max")
+	listDefaultRaw := get(listDefaultKey)
+	listMaxRaw := get(listMaxKey)
 	if listDefaultRaw != nil && listMaxRaw != nil {
 		listDefault, defaultErr := parseStrictInt(listDefaultRaw)
 		listMax, maxErr := parseStrictInt(listMaxRaw)
 		if defaultErr == nil && maxErr == nil && listDefault > listMax {
-			appendValidationErrorf(errs, "settings.mcp.files.list_limit_default must be <= settings.mcp.files.list_limit_max")
+			appendValidationErrorf(errs, "%s must be <= %s", listDefaultKey, listMaxKey)
 		}
 	}
 
-	searchDefaultRaw := get("settings.mcp.files.search.limit_default")
-	searchMaxRaw := get("settings.mcp.files.search.limit_max")
+	searchDefaultKey := joinConfigKey(prefix, "search.limit_default")
+	searchMaxKey := joinConfigKey(prefix, "search.limit_max")
+	searchDefaultRaw := get(searchDefaultKey)
+	searchMaxRaw := get(searchMaxKey)
 	if searchDefaultRaw != nil && searchMaxRaw != nil {
 		searchDefault, defaultErr := parseStrictInt(searchDefaultRaw)
 		searchMax, maxErr := parseStrictInt(searchMaxRaw)
 		if defaultErr == nil && maxErr == nil && searchDefault > searchMax {
-			appendValidationErrorf(errs, "settings.mcp.files.search.limit_default must be <= settings.mcp.files.search.limit_max")
+			appendValidationErrorf(errs, "%s must be <= %s", searchDefaultKey, searchMaxKey)
 		}
 	}
+}
+
+// validateOptionalStringOneOf validates an optionally configured string enum.
+func validateOptionalStringOneOf(get configGetter, key string, allowed []string, errs *[]string) {
+	raw := get(key)
+	if raw == nil {
+		return
+	}
+
+	value, parseErr := parseStrictString(raw)
+	if parseErr != nil {
+		appendValidationErrorf(errs, "%s must be a string", key)
+		return
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	for _, candidate := range allowed {
+		if normalized == candidate {
+			return
+		}
+	}
+
+	appendValidationErrorf(errs, "%s must be one of [%s]", key, strings.Join(allowed, ", "))
+}
+
+// joinConfigKey joins a dotted config prefix and suffix.
+func joinConfigKey(prefix, suffix string) string {
+	if prefix == "" {
+		return suffix
+	}
+	if suffix == "" {
+		return prefix
+	}
+
+	return prefix + "." + suffix
 }
 
 // validateOptionalBool validates an optionally configured boolean key.
