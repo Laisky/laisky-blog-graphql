@@ -1,0 +1,14 @@
+
+    Your job is to detect if there is a table of content provided in the given text.
+
+    Given text: Table of Contents
+Intro 1
+
+    return the following JSON format:
+    {
+        "thinking": <why do you think there is a table of content in the given text>
+        "toc_detected": "<yes or no>",
+    }
+
+    Directly return the final JSON structure. Do not output anything else.
+    Please note: abstract,summary, notation list, figure list, table list, etc. are not table of contents.

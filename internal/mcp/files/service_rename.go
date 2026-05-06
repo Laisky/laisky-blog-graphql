@@ -42,6 +42,7 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 		return RenameResult{MovedCount: 0}, nil
 	}
 
+	owner := systemOwnerFromContext(ctx)
 	movedCount := 0
 	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
 		sourceFiles, sourceIsDirectory, err := s.resolveRenameSources(ctx, tx, auth.APIKeyHash, project, fromPath)
@@ -69,10 +70,10 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 		}
 
 		if len(overwritePaths) > 0 {
-			inClause, inArgs := buildInClause(overwritePaths, s.isPostgres, 5)
-			query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
-			args := make([]any, 0, 4+len(inArgs))
-			args = append(args, now, now, auth.APIKeyHash, project)
+			inClause, inArgs := buildInClause(overwritePaths, s.isPostgres, 6)
+			query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+			args := make([]any, 0, 5+len(inArgs))
+			args = append(args, now, now, auth.APIKeyHash, project, owner)
 			args = append(args, inArgs...)
 			if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
 				return errors.Wrap(err, "soft delete overwritten destination files")
@@ -81,73 +82,79 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 
 		for _, mapping := range mappings {
 			if _, err := tx.ExecContext(ctx,
-				rebindSQL(`UPDATE mcp_files SET path = ?, updated_at = ? WHERE id = ?`, s.isPostgres),
+				rebindSQL(`UPDATE mcp_files SET path = ?, updated_at = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
 				mapping.NewPath,
 				now,
 				mapping.ID,
+				owner,
 			); err != nil {
 				return errors.Wrap(err, "apply rename path remap")
 			}
 
 			if _, err := tx.ExecContext(ctx,
-				rebindSQL(`UPDATE mcp_file_versions SET path = ? WHERE apikey_hash = ? AND project = ? AND path = ?`, s.isPostgres),
+				rebindSQL(`UPDATE mcp_file_versions SET path = ? WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?`, s.isPostgres),
 				mapping.NewPath,
 				auth.APIKeyHash,
 				project,
 				mapping.OldPath,
+				owner,
 			); err != nil {
 				return errors.Wrap(err, "apply rename version path remap")
 			}
 
-			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-				APIKeyHash:    auth.APIKeyHash,
-				Project:       project,
-				FilePath:      mapping.OldPath,
-				Operation:     "DELETE",
-				FileUpdatedAt: &now,
-				Status:        "pending",
-				RetryCount:    0,
-				AvailableAt:   now,
-				CreatedAt:     now,
-				UpdatedAt:     now,
-			}); err != nil {
-				return errors.Wrap(err, "enqueue rename delete job")
-			}
+			if owner == "" {
+				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+					APIKeyHash:    auth.APIKeyHash,
+					Project:       project,
+					FilePath:      mapping.OldPath,
+					Operation:     "DELETE",
+					FileUpdatedAt: &now,
+					Status:        "pending",
+					RetryCount:    0,
+					AvailableAt:   now,
+					CreatedAt:     now,
+					UpdatedAt:     now,
+				}); err != nil {
+					return errors.Wrap(err, "enqueue rename delete job")
+				}
 
-			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-				APIKeyHash:    auth.APIKeyHash,
-				Project:       project,
-				FilePath:      mapping.NewPath,
-				Operation:     "UPSERT",
-				FileUpdatedAt: &now,
-				Status:        "pending",
-				RetryCount:    0,
-				AvailableAt:   now,
-				CreatedAt:     now,
-				UpdatedAt:     now,
-			}); err != nil {
-				return errors.Wrap(err, "enqueue rename upsert job")
-			}
+				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+					APIKeyHash:    auth.APIKeyHash,
+					Project:       project,
+					FilePath:      mapping.NewPath,
+					Operation:     "UPSERT",
+					FileUpdatedAt: &now,
+					Status:        "pending",
+					RetryCount:    0,
+					AvailableAt:   now,
+					CreatedAt:     now,
+					UpdatedAt:     now,
+				}); err != nil {
+					return errors.Wrap(err, "enqueue rename upsert job")
+				}
 
-			if err := s.storeCredentialEnvelope(ctx, auth, project, mapping.NewPath, now); err != nil {
-				return err
+				if err := s.storeCredentialEnvelope(ctx, auth, project, mapping.NewPath, now); err != nil {
+					return err
+				}
 			}
 		}
 
-		for _, overwrittenPath := range overwritePaths {
-			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-				APIKeyHash:    auth.APIKeyHash,
-				Project:       project,
-				FilePath:      overwrittenPath,
-				Operation:     "DELETE",
-				FileUpdatedAt: &now,
-				Status:        "pending",
-				RetryCount:    0,
-				AvailableAt:   now,
-				CreatedAt:     now,
-				UpdatedAt:     now,
-			}); err != nil {
-				return errors.Wrap(err, "enqueue overwrite delete job")
+		if owner == "" {
+			for _, overwrittenPath := range overwritePaths {
+				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+					APIKeyHash:    auth.APIKeyHash,
+					Project:       project,
+					FilePath:      overwrittenPath,
+					Operation:     "DELETE",
+					FileUpdatedAt: &now,
+					Status:        "pending",
+					RetryCount:    0,
+					AvailableAt:   now,
+					CreatedAt:     now,
+					UpdatedAt:     now,
+				}); err != nil {
+					return errors.Wrap(err, "enqueue overwrite delete job")
+				}
 			}
 		}
 
@@ -164,12 +171,14 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 // resolveRenameSources resolves source files for a file or directory rename.
 
 func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHash, project, fromPath string) ([]renameSourceFile, bool, error) {
+	owner := systemOwnerFromContext(ctx)
 	var exact renameSourceFile
 	err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE LIMIT 1`, s.isPostgres),
+		rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ? LIMIT 1`, s.isPostgres),
 		apiKeyHash,
 		project,
 		fromPath,
+		owner,
 	).Scan(&exact.ID, &exact.Path)
 	if err == nil {
 		return []renameSourceFile{exact}, false, nil
@@ -180,10 +189,11 @@ func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHa
 
 	prefix := buildPathPrefix(fromPath)
 	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE ORDER BY path ASC`, s.isPostgres),
+		rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ? ORDER BY path ASC`, s.isPostgres),
 		apiKeyHash,
 		project,
 		prefix,
+		owner,
 	)
 	if err != nil {
 		return nil, false, errors.Wrap(err, "query rename source descendants")
@@ -248,13 +258,15 @@ func (s *Service) validateRenameDestinations(
 		destinationPaths = append(destinationPaths, mapping.NewPath)
 	}
 
+	owner := systemOwnerFromContext(ctx)
 	if !sourceIsDirectory {
 		var descendantCount int64
 		if err := tx.QueryRowContext(ctx,
-			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 			apiKeyHash,
 			project,
 			buildPathPrefix(toPath),
+			owner,
 		).Scan(&descendantCount); err != nil {
 			return nil, errors.Wrap(err, "check destination descendants")
 		}
@@ -266,10 +278,11 @@ func (s *Service) validateRenameDestinations(
 	if sourceIsDirectory {
 		var destinationRootFileCount int64
 		if err := tx.QueryRowContext(ctx,
-			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE`, s.isPostgres),
+			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 			apiKeyHash,
 			project,
 			toPath,
+			owner,
 		).Scan(&destinationRootFileCount); err != nil {
 			return nil, errors.Wrap(err, "check destination root collision")
 		}
@@ -278,10 +291,10 @@ func (s *Service) validateRenameDestinations(
 		}
 	}
 
-	inClause, inArgs := buildInClause(destinationPaths, s.isPostgres, 3)
-	query := rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND path IN (%s)`, s.isPostgres)
-	args := make([]any, 0, 2+len(inArgs))
-	args = append(args, apiKeyHash, project)
+	inClause, inArgs := buildInClause(destinationPaths, s.isPostgres, 4)
+	query := rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+	args := make([]any, 0, 3+len(inArgs))
+	args = append(args, apiKeyHash, project, owner)
 	args = append(args, inArgs...)
 	rows, err := tx.QueryContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
 	if err != nil {

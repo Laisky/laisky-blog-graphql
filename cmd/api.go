@@ -28,6 +28,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
+	pageindexplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
 	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
@@ -426,7 +427,44 @@ func runAPI() error {
 					return errors.Wrap(pluginErr, "new rag file plugin")
 				}
 
-				fileManager, managerErr := mcpplugin.NewManager(filePluginSettings.DefaultPlugin, ragFilePlugin)
+				piSettings := pageindexplugin.LoadSettings()
+				plugins := []mcpplugin.Plugin{ragFilePlugin}
+				if piSettings.Enabled() {
+					sysFS, sysErr := fileSvc.SystemNamespace("pageindex")
+					if sysErr != nil {
+						return errors.Wrap(sysErr, "build pageindex system namespace")
+					}
+					piTok, tokErr := pageindexplugin.NewTokenizer(piSettings.LLM.IndexingModel)
+					if tokErr != nil {
+						return errors.Wrap(tokErr, "build pageindex tokenizer")
+					}
+					piLLM, llmErr := pageindexplugin.NewOpenAILLM(pageindexplugin.LLMConfig{
+						APIKey:    piSettings.LLM.APIKey,
+						BaseURL:   piSettings.LLM.BaseURL,
+						Model:     piSettings.LLM.IndexingModel,
+						Tokenizer: piTok,
+						Logger:    logger.Named("pageindex_llm"),
+					})
+					if llmErr != nil {
+						return errors.Wrap(llmErr, "build pageindex llm client")
+					}
+					piPlugin, piErr := pageindexplugin.New(pageindexplugin.PluginDeps{
+						UserFS:    fileSvc,
+						SystemFS:  sysFS,
+						Settings:  piSettings,
+						LLM:       piLLM,
+						Tokenizer: piTok,
+						Logger:    logger.Named("pageindex"),
+					})
+					if piErr != nil {
+						return errors.Wrap(piErr, "new pageindex plugin")
+					}
+					plugins = append(plugins, piPlugin)
+				} else {
+					logger.Debug("pageindex plugin disabled (settings.mcp.memory.plugins.pageindex.llm.api_key is empty)")
+				}
+
+				fileManager, managerErr := mcpplugin.NewManager(filePluginSettings.DefaultPlugin, plugins...)
 				if managerErr != nil {
 					return errors.Wrap(managerErr, "new mcp file plugin manager")
 				}

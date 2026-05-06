@@ -7,10 +7,27 @@ package conformance
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
+
+// errIsNotFound reports whether err carries a typed NOT_FOUND code or a
+// plaintext message that any plugin author would treat as missing-file.
+// Conformance scenarios accept either form so plugins are not forced into
+// using a specific error type.
+func errIsNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if files.IsCode(err, files.ErrCodeNotFound) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "not_found")
+}
 
 // Fixture is implemented by every plugin that wants to run the suite.
 type Fixture interface {
@@ -19,6 +36,24 @@ type Fixture interface {
 	NewProject(t *testing.T) string
 	HasStorage() bool
 	Cleanup(t *testing.T)
+}
+
+// MultiPluginFixture is implemented by fixtures that expose more than one
+// plugin so the suite can exercise the cross-plugin scenarios C23/C24/C26 and
+// the cross-plugin race R09. Single-plugin fixtures should embed only
+// Fixture and set Options.SkipCrossPlugin = true.
+type MultiPluginFixture interface {
+	Fixture
+	// SecondaryPlugin returns the "other" plugin used in cross-plugin
+	// scenarios. It must be different from Plugin() and registered in the
+	// manager returned by Manager().
+	SecondaryPlugin() mcpplugin.Plugin
+	// DefaultPluginName returns the manager-configured default plugin
+	// name; affects whether C23 or C24 expects pageindex / rag as default.
+	DefaultPluginName() string
+	// Manager returns the plugin manager that the conformance scenarios
+	// use to resolve per-call plugin overrides.
+	Manager() *mcpplugin.Manager
 }
 
 // Options control which scenario families a fixture wants to run.
@@ -249,7 +284,11 @@ func runC23(t *testing.T, fx Fixture, opts Options) {
 	if opts.SkipCrossPlugin {
 		t.Skip("cross-plugin scenario skipped per options")
 	}
-	requireStorage(t, fx)
+	multi, ok := fx.(MultiPluginFixture)
+	if !ok {
+		t.Skip("requires MultiPluginFixture")
+	}
+	runCrossPluginIsolation(t, multi, mcpplugin.DefaultPluginRAG, mcpplugin.DefaultPluginPageIndex, "C23")
 }
 
 // runC24 — Mirror of C23 with default rag and explicit pageindex.
@@ -257,7 +296,11 @@ func runC24(t *testing.T, fx Fixture, opts Options) {
 	if opts.SkipCrossPlugin {
 		t.Skip("cross-plugin scenario skipped per options")
 	}
-	requireStorage(t, fx)
+	multi, ok := fx.(MultiPluginFixture)
+	if !ok {
+		t.Skip("requires MultiPluginFixture")
+	}
+	runCrossPluginIsolation(t, multi, mcpplugin.DefaultPluginPageIndex, mcpplugin.DefaultPluginRAG, "C24")
 }
 
 // runC25 — Tool call with plugin="bogus"; INVALID_ARGUMENT names valid plugins.
@@ -291,7 +334,74 @@ func runC26(t *testing.T, fx Fixture, opts Options) {
 	if opts.SkipCrossPlugin {
 		t.Skip("cross-plugin scenario skipped per options")
 	}
-	t.Skip("C26 requires a multi-plugin manager fixture; single-plugin fixture cannot exercise it")
+	multi, ok := fx.(MultiPluginFixture)
+	if !ok {
+		t.Skip("requires MultiPluginFixture")
+	}
+	runCrossPluginIsolation(t, multi, multi.Plugin().Name(), multi.SecondaryPlugin().Name(), "C26")
+}
+
+// runCrossPluginIsolation is the shared body for C23/C24/C26: write under
+// pluginA, then assert read under pluginA returns those bytes and read under
+// pluginB returns NOT_FOUND with a hint identifying pluginA as the owner.
+func runCrossPluginIsolation(t *testing.T, fx MultiPluginFixture, pluginA, pluginB, label string) {
+	if fx.Plugin() == nil || fx.SecondaryPlugin() == nil {
+		t.Skipf("%s: fixture missing primary or secondary plugin", label)
+	}
+	manager := fx.Manager()
+	if manager == nil {
+		t.Skipf("%s: fixture missing manager", label)
+	}
+	if pluginA == pluginB {
+		t.Skipf("%s: pluginA and pluginB must differ", label)
+	}
+
+	auth := fx.NewAuthContext(t)
+	project := fx.NewProject(t)
+	path := "/cross-plugin-" + label + ".txt"
+	payload := "bytes-owned-by-" + pluginA
+
+	ctxA := mcpplugin.WithOverride(context.Background(), pluginA)
+	pA, err := manager.Resolve(ctxA, auth, project, pluginA)
+	if err != nil {
+		t.Fatalf("%s: resolve pluginA=%q: %v", label, pluginA, err)
+	}
+	if _, err := pA.Write(ctxA, auth, project, path, payload, "utf-8", 0, mcpplugin.WriteModeTruncate); err != nil {
+		t.Fatalf("%s: write under pluginA=%q: %v", label, pluginA, err)
+	}
+
+	// Read under pluginA must return the bytes.
+	readA, err := pA.Read(ctxA, auth, project, path, 0, -1)
+	if err != nil {
+		t.Fatalf("%s: read under pluginA=%q: %v", label, pluginA, err)
+	}
+	if readA.Content == "" || !strings.Contains(readA.Content, payload) {
+		t.Errorf("%s: read under pluginA returned %q, want bytes containing %q", label, readA.Content, payload)
+	}
+
+	// Read under pluginB must return NOT_FOUND with a hint identifying pluginA.
+	ctxB := mcpplugin.WithOverride(context.Background(), pluginB)
+	pB, err := manager.Resolve(ctxB, auth, project, pluginB)
+	if err != nil {
+		t.Fatalf("%s: resolve pluginB=%q: %v", label, pluginB, err)
+	}
+	_, readErr := pB.Read(ctxB, auth, project, path, 0, -1)
+	if readErr == nil {
+		t.Fatalf("%s: read under pluginB=%q must return NOT_FOUND, got nil", label, pluginB)
+	}
+	// Either a typed files.Error with NOT_FOUND or a generic error mentioning the owner.
+	if typed, ok := mcpplugin.AsResolveError(readErr); ok {
+		// Resolution-side error — should never happen for a registered plugin.
+		t.Fatalf("%s: unexpected ResolveError from registered pluginB=%q: %v", label, pluginB, typed)
+	}
+	if !errIsNotFound(readErr) {
+		t.Errorf("%s: read under pluginB=%q expected NOT_FOUND, got %v", label, pluginB, readErr)
+	}
+	if !strings.Contains(readErr.Error(), pluginA) {
+		// The proposal requires the error message hint name the owner. Fail
+		// loudly so plugin authors keep the routing hint user-visible.
+		t.Errorf("%s: read under pluginB=%q expected hint mentioning owner %q, got %v", label, pluginB, pluginA, readErr)
+	}
 }
 
 // runC27 — Users cannot create or observe system-owned routing/catalog state.
@@ -366,7 +476,59 @@ func runR09(t *testing.T, fx Fixture, opts Options) {
 	if opts.SkipConcurrency || opts.SkipCrossPlugin {
 		t.Skip("cross-plugin/concurrency scenario skipped per options")
 	}
-	requireStorage(t, fx)
+	multi, ok := fx.(MultiPluginFixture)
+	if !ok {
+		t.Skip("requires MultiPluginFixture")
+	}
+	manager := multi.Manager()
+	if manager == nil || multi.Plugin() == nil || multi.SecondaryPlugin() == nil {
+		t.Skip("R09: fixture incomplete")
+	}
+
+	auth := multi.NewAuthContext(t)
+	project := multi.NewProject(t)
+	path := "/cross-plugin-R09.txt"
+	pA := multi.Plugin()
+	pB := multi.SecondaryPlugin()
+	payloadA := "rag-bytes"
+	payloadB := "pageindex-bytes"
+
+	ctxA := mcpplugin.WithOverride(context.Background(), pA.Name())
+	ctxB := mcpplugin.WithOverride(context.Background(), pB.Name())
+
+	var wg sync.WaitGroup
+	var errA, errB error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, errA = pA.Write(ctxA, auth, project, path, payloadA, "utf-8", 0, mcpplugin.WriteModeTruncate)
+	}()
+	go func() {
+		defer wg.Done()
+		_, errB = pB.Write(ctxB, auth, project, path, payloadB, "utf-8", 0, mcpplugin.WriteModeTruncate)
+	}()
+	wg.Wait()
+
+	if errA != nil {
+		t.Errorf("R09: write under pluginA=%q: %v", pA.Name(), errA)
+	}
+	if errB != nil {
+		t.Errorf("R09: write under pluginB=%q: %v", pB.Name(), errB)
+	}
+
+	// Each plugin must see its own bytes.
+	readA, errA := pA.Read(ctxA, auth, project, path, 0, -1)
+	if errA != nil {
+		t.Errorf("R09: read under pluginA=%q: %v", pA.Name(), errA)
+	} else if !strings.Contains(readA.Content, payloadA) {
+		t.Errorf("R09: pluginA=%q read=%q want bytes containing %q", pA.Name(), readA.Content, payloadA)
+	}
+	readB, errB := pB.Read(ctxB, auth, project, path, 0, -1)
+	if errB != nil {
+		t.Errorf("R09: read under pluginB=%q: %v", pB.Name(), errB)
+	} else if !strings.Contains(readB.Content, payloadB) {
+		t.Errorf("R09: pluginB=%q read=%q want bytes containing %q", pB.Name(), readB.Content, payloadB)
+	}
 }
 
 // runR10 — Thousands of concurrent reads stay within latency_budget × 1.5.

@@ -67,8 +67,9 @@ checks), the harness's unit tests use an in-memory fake `LLM`; see
 
 | Path                                                  | Contents                                                                                                                            |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/eval/runs/<sha>/<plugin>_scorecard.md`          | Per-PR scorecard. Retained 90 days, then garbage-collected.                                                                          |
-| `docs/eval/runs/<sha>/<plugin>_raw_per_query.jsonl`   | Per-query metric values backing the scorecard. Retained 90 days.                                                                     |
+| `docs/eval/runs/<sha>/<plugin>_plugin_scorecard.md`   | Per-PR scorecard. Retained 90 days, then garbage-collected.                                                                          |
+| `docs/eval/runs/<sha>/raw_per_query.jsonl`            | Per-query metric values backing the scorecard. Retained 90 days.                                                                     |
+| `docs/eval/runs/<sha>/run_metadata.yml`               | Git SHA, run UTC, judge models, hardware spec, Go toolchain, embedding model, golden dataset hashes. Required for replay.            |
 | `docs/eval/baseline_v1/rag_plugin_scorecard.md`       | Frozen Phase-1 baseline. Committed once; never overwritten without a baseline reset (Section 5).                                     |
 | `docs/eval/baseline_v1/raw_per_query.jsonl`           | Frozen raw metric values backing the baseline. Input to the permutation test when a future plugin is compared against `baseline_v1`. |
 | `docs/eval/baseline_v1/run_metadata.yml`              | Git SHA, run UTC, judge models, hardware spec, Go toolchain, embedding model, RAGAS-prompt commit pin. Required for replay.          |
@@ -119,6 +120,34 @@ production uses; no harness-side change is required. If the new plugin needs a f
 (canned LLM responses, deterministic embeddings), drop it under
 `internal/mcp/memory/conformance/eval/testdata/<plugin>/` and reference it from the
 plugin's own driver in `cmd/eval-plugin/main.go`.
+
+## 7.1 Pageindex evaluation
+
+`pageindex_plugin` ships in Phase 2 and is gated on `OPENAI_API_KEY` (the production
+client also reads `OPENAI_BASE_URL` if a non-default endpoint is required). When the
+key is configured and the bbolt cache parent directory is writable, drive the
+harness with:
+
+```bash
+OPENAI_API_KEY=sk-... \
+  go run ./cmd/eval-plugin --plugin=pageindex --suites=redteam \
+    --out=docs/eval/baseline_v1
+```
+
+Required inputs:
+
+| Input                     | Notes                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`          | Drives indexing + retrieval LLM calls. Without it the plugin is unregistered (§6.1).   |
+| Writable bbolt cache path | `settings.mcp.memory.plugins.pageindex.indexer.cache.path`; default `/var/lib/laisky/`. |
+| `tests/eval/golden/`      | LFS-backed datasets. Until they land, every retrieval/RAGAS/public cell renders `n/a`. |
+
+Driver status: as of this wave, `cmd/eval-plugin` accepts `--plugin=pageindex` only
+once the production DI graph wires a real plugin construction (the rag path uses a
+stub for the same reason). The Phase-2 placeholder scorecard at
+[baseline_v1/pageindex_plugin_scorecard.md](baseline_v1/pageindex_plugin_scorecard.md)
+holds the row until then. The full enablement story is in the manual at
+[../manual/mcp_memory_plugins.md §6](../manual/mcp_memory_plugins.md#6-pageindex-phase-2).
 
 ## 8. References
 

@@ -1,19 +1,50 @@
 ---
 title: MCP memory plugin manager (rag_plugin + pageindex_plugin)
-status: draft
+status: accepted
 owner: mcp team
 created: 2026-05-05
 updated: 2026-05-06
-v1_runtime: pure-Go, in-process; pure-Go go.mod additions only, no cgo, no external binary (see §0)
+v1_runtime: pure-Go, in-process; pure-Go go.mod additions only, no cgo, no external binary, no Python sidecar (see §0)
+runtime_egress: only HTTPS to OpenAI's Responses API
+implementation:
+  phase_1:
+    status: shipped
+    paths:
+      - internal/mcp/memory/plugin/{plugin,manager,settings,types}.go
+      - internal/mcp/memory/plugins/rag/plugin.go
+      - internal/mcp/memory/conformance/{suite.go,eval/}
+      - cmd/eval-plugin/main.go
+      - docs/eval/baseline_v1/
+  phase_2:
+    status: shipped
+    paths:
+      - internal/mcp/files/{migration.go,system_fs.go,system_owner.go,types.go,service_*.go}
+      - internal/mcp/memory/plugins/pageindex/  # 16 source files, ~4.3k LOC, pure Go
+      - cmd/api.go  # enablement gate on settings.mcp.memory.plugins.pageindex.llm.api_key
+  phase_3:
+    status: scaffolding shipped
+    paths:
+      - internal/mcp/memory/plugin/{shadow,shadow_recorder,shadow_score}.go
+      - cmd/promote-pageindex/main.go  # stub | openai | ensemble judge modes
+    deferred: production wiring of ShadowPlugin in cmd/api.go (per §8 Phase 3)
+supersedes: any prior draft that proposed a Python sidecar, gRPC bridge, or subprocess-based PageIndex backend
+forbidden_under_v1:
+  - third_party/pageindex_sidecar/ (proto + Python server.py + requirements.txt + Dockerfile)
+  - any cgo-bound PDF / tokenizer / inference library
+  - any subprocess, Unix-domain socket, TCP IPC, or proto-generated stubs
 ---
 
 # MCP Memory Plugin Manager — Change Manual
 
 ## 0. Decision (v1 runtime)
 
-**v1 is pure Go, in-process.** The PageIndex algorithm is reimplemented in Go and runs
-in the existing MCP server process. The only network call the plugin makes is HTTPS to
-OpenAI's Responses API.
+**v1 is pure Go, in-process. There is no Python sidecar, no subprocess, and no
+cross-language IPC at runtime.** The PageIndex algorithm is reimplemented in Go and
+runs inside the existing MCP server process. The only network call the plugin makes
+is HTTPS to OpenAI's Responses API. This decision is final for v1; an earlier draft
+that proposed a `third_party/pageindex_sidecar/` (proto + Python `server.py` +
+`requirements.txt` + Dockerfile) is **superseded** by this document and must not be
+reintroduced under v1.
 
 Out of scope for v1, with the build refusing to link against any artifact that would
 introduce them:
@@ -960,6 +991,38 @@ must enforce that no query against `mcp_files` (and friends) lacks an explicit
 (per the local-search-tool preference) that fails CI if a `Query`/`QueryRow`/`Exec` against
 the `mcp_*` tables doesn't include `system_owner` in its WHERE clause. False positives are
 suppressed by an inline `// system_owner-checked: <reason>` comment.
+
+### 3.8 Sidecar-regression pressure (and how to resist it)
+
+The §0 decision (no Python sidecar, no subprocess, no IPC) is the kind of architectural
+commitment that erodes under specific, predictable pressures. We name them here so a
+future engineer who feels one of these pressures has a written record of how the team
+already weighed it — and which mitigations to reach for *before* reaching for a sidecar.
+
+| Pressure                                                        | Why it tempts a sidecar                                                                                                                | Mitigation that keeps us in-process                                                                                                                                |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Upstream PageIndex ships a Python-only heuristic                | "Easiest path is to call upstream over RPC."                                                                                           | Port the heuristic to Go like every prompt is ported (§2.6.4.6). Track upstream commits in the §3.2 quarterly audit.                                               |
+| pdfcpu's text extraction regresses on a tenant's corpus         | "PyMuPDF / pdfplumber would just work."                                                                                                | Ship the `pdf.text_parser` knob (§2.4) — `dslipak/pdf` is already the registered fallback. If both fail on a real corpus, **add a third pure-Go parser**, not cgo. |
+| A new model contract (chat-completions, Anthropic Messages)     | "litellm/langchaingo are 50-line Python wrappers."                                                                                     | Add a second `LLM` implementation in Go (§2.6.5 interface is small). v1 fails closed at startup (§3.6 escape hatch); revisiting is a v2 conversation per §0.       |
+| A reranker or judge model with no Go SDK                        | "Just shell out to the Python client."                                                                                                 | Vendor the client's HTTP contract directly (most modern model APIs are simple JSON over HTTPS). If the API is genuinely non-portable, scope it out per §3.6.       |
+| "We need real-time RAGAS scoring on every search"               | "RAGAS is in Python; let's wrap it."                                                                                                   | Already addressed: §4.6.1 ports the RAGAS prompts into Go and drives the same `LLM` client. New metrics follow the same pattern.                                   |
+| "Local inference (Ollama, vLLM, llama.cpp) is the future"       | "We need a Python or cgo bridge to drive them."                                                                                        | Out-of-scope for v1 per §0. Most local-inference servers expose an OpenAI-compatible HTTP API; reach them via `base_url` if so. cgo / subprocess / Python remain forbidden under v1. |
+
+**Operational rule.** When any of these pressures arrives, the response is *port the
+behavior into Go*, *add a per-tenant knob*, or *scope it out of v1* — never *introduce
+an external runtime*. A patch that adds `os/exec.Command`, `cgo`, `requirements.txt`,
+or a new container image to support the pageindex plugin is automatically a v2
+proposal, not a v1 review. The frontmatter `forbidden_under_v1` list is the audit
+trail for this rule.
+
+**CI enforcement.** The operational rule is mechanically enforced by
+[.scripts/check_pure_go.sh](../../.scripts/check_pure_go.sh), invoked via
+`make lint-pure-go` and as a step in the lint CI workflow. The script asserts nine
+invariants matching the `forbidden_under_v1` list (no `third_party/pageindex_sidecar/`,
+no `requirements.txt`, no Python under `internal/`, no PageIndex `.proto` stubs, no
+cgo / `os/exec` / IPC bring-up inside the pageindex plugin, no missing pageindex
+package, no missing wiring in `cmd/api.go`, and the proposal frontmatter still
+declares `v1_runtime: pure-Go`). A PR that violates any one of them fails CI.
 
 ## 4. Change list (file-by-file)
 

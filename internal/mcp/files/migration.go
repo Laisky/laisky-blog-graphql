@@ -11,6 +11,17 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
+// systemOwnerTables enumerates every mcp_files-family table that carries a
+// system_owner column under proposal §2.6.3.
+var systemOwnerTables = []string{
+	"mcp_files",
+	"mcp_file_chunks",
+	"mcp_file_chunk_embeddings",
+	"mcp_file_chunk_bm25",
+	"mcp_file_index_jobs",
+	"mcp_file_versions",
+}
+
 // RunMigrations ensures FileIO tables and indexes exist.
 func RunMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) error {
 	if db == nil {
@@ -35,6 +46,14 @@ func RunMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) error 
 		}
 	}
 
+	if err := applySystemOwnerColumns(ctx, db, isPostgres); err != nil {
+		return errors.WithStack(err)
+	}
+
+	if err := applySkipRAGIndexColumn(ctx, db, isPostgres); err != nil {
+		return errors.WithStack(err)
+	}
+
 	statements := []string{}
 	if isPostgres {
 		statements = []string{
@@ -53,8 +72,104 @@ func RunMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) error 
 		}
 	}
 
+	for _, stmt := range systemOwnerIndexStatements() {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return errors.Wrap(err, "create system_owner index")
+		}
+	}
+
 	logger.Debug("mcp files migrations completed")
 	return nil
+}
+
+// applySystemOwnerColumns adds the system_owner column on every mcp_files-family
+// table. The migration is idempotent across Postgres and SQLite per §3.7.
+func applySystemOwnerColumns(ctx context.Context, db *sql.DB, isPostgres bool) error {
+	for _, table := range systemOwnerTables {
+		if isPostgres {
+			stmt := `ALTER TABLE ` + table + ` ADD COLUMN IF NOT EXISTS system_owner TEXT NOT NULL DEFAULT ''`
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return errors.Wrapf(err, "add system_owner column on %s", table)
+			}
+			continue
+		}
+		if err := applyAddColumnIfMissing(ctx, db, table, "system_owner",
+			`ALTER TABLE `+table+` ADD COLUMN system_owner TEXT NOT NULL DEFAULT ''`); err != nil {
+			return errors.Wrapf(err, "add system_owner column on %s", table)
+		}
+	}
+	return nil
+}
+
+// applySkipRAGIndexColumn adds mcp_files.skip_rag_index to honor WriteOpts.SkipRAGIndex
+// per §2.6.1. The flag is denormalized only on mcp_files; index workers consult it
+// before enqueuing jobs.
+func applySkipRAGIndexColumn(ctx context.Context, db *sql.DB, isPostgres bool) error {
+	if isPostgres {
+		stmt := `ALTER TABLE mcp_files ADD COLUMN IF NOT EXISTS skip_rag_index BOOLEAN NOT NULL DEFAULT FALSE`
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return errors.Wrap(err, "add skip_rag_index column on mcp_files")
+		}
+		return nil
+	}
+	return applyAddColumnIfMissing(ctx, db, "mcp_files", "skip_rag_index",
+		`ALTER TABLE mcp_files ADD COLUMN skip_rag_index BOOLEAN NOT NULL DEFAULT 0`)
+}
+
+// applyAddColumnIfMissing emulates ADD COLUMN IF NOT EXISTS for SQLite, which lacked
+// native support before 3.35. We probe PRAGMA table_info first and only run the ALTER
+// when the column is absent, so the migration is safe to re-run.
+func applyAddColumnIfMissing(ctx context.Context, db *sql.DB, table, column, ddl string) error {
+	exists, err := sqliteColumnExists(ctx, db, table, column)
+	if err != nil {
+		return errors.Wrapf(err, "probe %s.%s", table, column)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, ddl); err != nil {
+		return errors.Wrapf(err, "add column %s.%s", table, column)
+	}
+	return nil
+}
+
+// sqliteColumnExists returns true when PRAGMA table_info reports the column.
+func sqliteColumnExists(ctx context.Context, db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return false, errors.Wrap(err, "pragma table_info")
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			ctype   string
+			notnull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, errors.Wrap(err, "scan pragma row")
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, errors.WithStack(rows.Err())
+}
+
+// systemOwnerIndexStatements returns the supporting indexes for system_owner predicates.
+// Indexes are intentionally identical across SQLite and Postgres: SQLite ignores the
+// trailing column ordering hints we don't include here, and both engines benefit from
+// (system_owner, apikey_hash, project, path).
+func systemOwnerIndexStatements() []string {
+	return []string{
+		`CREATE INDEX IF NOT EXISTS mcp_files_system_owner_idx ON mcp_files (system_owner, apikey_hash, project, path)`,
+		`CREATE INDEX IF NOT EXISTS mcp_file_chunks_system_owner_idx ON mcp_file_chunks (system_owner, apikey_hash, project, file_path)`,
+		`CREATE INDEX IF NOT EXISTS mcp_file_index_jobs_system_owner_idx ON mcp_file_index_jobs (system_owner, status, available_at)`,
+		`CREATE INDEX IF NOT EXISTS mcp_file_versions_system_owner_idx ON mcp_file_versions (system_owner, apikey_hash, project, path, created_at DESC)`,
+	}
 }
 
 // migrationTableStatements returns CREATE TABLE statements for supported databases.

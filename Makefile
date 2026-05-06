@@ -25,6 +25,11 @@ lint:
 	go vet ./...
 	golangci-lint run -c .golangci.lint.yml
 	govulncheck ./...
+	$(MAKE) lint-pure-go
+
+.PHONY: lint-pure-go
+lint-pure-go:
+	./.scripts/check_pure_go.sh
 
 .PHONY: build
 build:
@@ -41,3 +46,19 @@ dev:
 .PHONY: format
 format:
 	npx prettier --write .
+
+.PHONY: eval-plugin
+eval-plugin:
+	@if [ -z "$(PLUGIN)" ]; then echo "PLUGIN required, e.g. make eval-plugin PLUGIN=rag"; exit 2; fi
+	go run ./cmd/eval-plugin \
+		--plugin=$(PLUGIN) \
+		--golden=tests/eval/golden \
+		--git-sha=$$(git rev-parse --short HEAD)
+
+.PHONY: eval-baseline-rag
+eval-baseline-rag:
+	go run ./cmd/eval-plugin \
+		--plugin=rag \
+		--golden=tests/eval/golden \
+		--baseline \
+		--git-sha=$$(git rev-parse --short HEAD)

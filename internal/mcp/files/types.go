@@ -94,3 +94,12 @@ type ListResult struct {
 type SearchResult struct {
 	Chunks []ChunkEntry
 }
+
+// WriteOpts modulates non-default Write behavior. Zero value preserves today's behavior.
+type WriteOpts struct {
+	// SkipRAGIndex suppresses index-job enqueue for this write so the row never
+	// flows through the RAG chunking/embedding pipeline.
+	SkipRAGIndex bool
+	// SystemOwner is populated by SystemFS only; user paths leave it empty.
+	SystemOwner string
+}

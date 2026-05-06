@@ -1,0 +1,21 @@
+
+    You are given a table of contents, You job is to transform the whole table of content into a JSON format included table_of_contents.
+
+    structure is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+
+    The response should be in the following JSON format:
+    {
+    table_of_contents: [
+        {
+            "structure": <structure index, "x.x.x" or None> (string),
+            "title": <title of the section>,
+            "page": <page number or None>,
+        },
+        ...
+        ],
+    }
+    You should transform the full table of contents in one go.
+    Directly return the final JSON structure, do not output anything else.
+ Given table of contents
+:1 Intro
+2 Methods

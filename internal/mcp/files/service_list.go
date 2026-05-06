@@ -123,14 +123,16 @@ func (s *Service) listSelfEntry(ctx context.Context, apiKeyHash, project, path s
 
 // listDescendants builds file and directory entries under a prefix.
 func (s *Service) listDescendants(ctx context.Context, apiKeyHash, project, path string, depth int) ([]FileEntry, error) {
+	owner := systemOwnerFromContext(ctx)
 	prefix := buildPathPrefix(path)
 	rows, err := s.db.QueryContext(ctx,
 		rebindSQL(`SELECT path, size, created_at, updated_at
 		FROM mcp_files
-		WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+		WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 		apiKeyHash,
 		project,
 		prefix,
+		owner,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query descendant files")

@@ -13,13 +13,14 @@ plugin per call from two inputs: an optional `plugin` field on the tool input an
 global `default_plugin` setting. The public tool schemas are unchanged apart from that one
 additive optional field.
 
-Plugins shipped today (Phase 1):
+Plugins shipped today:
 
-| Plugin | Status   | Engine                                                      |
-| ------ | -------- | ----------------------------------------------------------- |
-| `rag`  | Shipping | Existing Postgres + pgvector + BM25 + optional rerank stack |
+| Plugin      | Status                       | Engine                                                                           |
+| ----------- | ---------------------------- | -------------------------------------------------------------------------------- |
+| `rag`       | Shipping (Phase 1)           | Existing Postgres + pgvector + BM25 + optional rerank stack                      |
+| `pageindex` | Shipping (Phase 2; gated)    | Tree-reasoning indexer + Responses-API LLM + bbolt cache; gated on `llm.api_key` |
 
-`pageindex` is not shipped in Phase 1. See [Section 6](#6-pageindex-phase-2).
+See [Section 6](#6-pageindex-phase-2) for pageindex bring-up.
 
 Background and the full design rationale live in
 [../proposals/mcp_memory_plugin_manager.md](../proposals/mcp_memory_plugin_manager.md).
@@ -151,34 +152,163 @@ A1, A2, A3, A5, A9 cover Phase 1; the remainder track Phases 2–4.
 
 ## 6. Pageindex (Phase 2)
 
-`pageindex_plugin` is **not shipped in Phase 1.** The Phase 1 binary does not contain the
-indexer, the Responses-API LLM client, the tree search loop, or the `SystemFS`
-persistence layer. Explicit `plugin="pageindex"` calls today return
-`FAILED_PRECONDITION` with a message naming the missing plugin (acceptance A10).
+`pageindex_plugin` ships in Phase 2. The runtime (indexer, Responses-API LLM client,
+tree search loop, bbolt response cache, and `SystemFS`-backed persistence) links into
+the existing binary; there is no new process or container. The plugin is gated on
+`llm.api_key`: the manager constructs and registers it only when the key is non-empty.
+With an empty key the plugin is silently skipped and a single debug log line is
+emitted at startup; explicit `plugin="pageindex"` calls then return `INVALID_ARGUMENT`
+with `available_plugins=[...]` and a hint that names the missing
+`settings.mcp.memory.plugins.pageindex.llm.api_key` key (acceptance A10).
 
-When Phase 2 ships, enabling it will require a config block of the shape below; the
-keys are reserved and operators may stage the values in a separate file ahead of the
-release. **Do not uncomment or paste this block into a Phase 1 deploy** — it has no
-effect today and the validator may evolve before Phase 2.
+### 6.1 Enabling pageindex
+
+Set `settings.mcp.memory.plugins.pageindex.*`. Defaults are sourced from
+[../../internal/mcp/memory/plugins/pageindex/settings.go](../../internal/mcp/memory/plugins/pageindex/settings.go).
+With `default_plugin: rag` and an empty `pageindex.llm.api_key`, the manager registers
+only `rag_plugin`; explicit `plugin="pageindex"` calls then surface the missing-key
+hint described in [Section 9](#9-troubleshooting).
 
 ```yaml
-# RESERVED FOR PHASE 2 — has no effect in Phase 1.
 settings:
   mcp:
     memory:
+      default_plugin: "rag"
       plugins:
+        rag: {}
         pageindex:
           llm:
-            api_key: ""        # required at Phase 2; empty key disables the plugin
-            base_url: ""       # empty = api.openai.com
+            api_key: ""                # empty key keeps pageindex unregistered
+            base_url: ""               # empty = api.openai.com
             indexing_model: "gpt-5.4-mini"
             retrieve_model: "gpt-5.4-mini"
-          # indexer / algo / tree_query / pdf knobs ship with Phase 2.
+          indexer:
+            timeout_index: "5m"
+            timeout_query: "60s"
+            max_concurrency: 8
+            retry:
+              max_attempts: 10
+              initial_backoff: "250ms"
+              max_backoff: "8s"
+            cache:
+              enabled: true
+              path: "/var/lib/laisky/pageindex-cache.bbolt"
+              max_size_bytes: 1073741824
+          algo:
+            toc_check_page_num: 20
+            max_page_num_each_node: 10
+            max_token_num_each_node: 20000
+            generate_node_summary: true
+            generate_doc_description: true
+          tree_query:
+            max_steps: 8
+            max_tokens: 20000
+            candidate_docs: 5
+          pdf:
+            text_parser: "pdfcpu"
+            outline_parser: "pdfcpu"
 ```
 
-The full reserved schema and the resolution semantics of an empty `llm.api_key` (silently
+The full schema and the resolution semantics of an empty `llm.api_key` (silently
 unregistered vs. fail-fast on present-but-empty) are specified in
 [../proposals/mcp_memory_plugin_manager.md#24-settings--resolution-rules](../proposals/mcp_memory_plugin_manager.md#24-settings--resolution-rules).
+
+### 6.2 Bring-up checklist
+
+1. Provision the bbolt cache parent directory (default `/var/lib/laisky/`); the
+   process user must have write permission. The plugin opens the file lazily on the
+   first indexing call and never deletes it.
+2. Set `llm.api_key`. Restart. The startup log names `pageindex` in the registered
+   plugin list.
+3. To route a single call through pageindex, pass `plugin="pageindex"` on any `file_*`
+   tool. To route by default, set `default_plugin: "pageindex"`.
+
+### 6.3 System namespace
+
+Pageindex persists tree JSON (one row per indexed document) in `mcp_files` rows owned
+by the system namespace under `system_owner='pageindex'`. These rows are unobservable
+to user-facing tool calls regardless of API key (acceptance A8); the namespace is
+read/written only through the `SystemFS` handle the plugin obtains at startup. The
+`WriteOpts.SkipRAGIndex` write option suppresses pgvector / BM25 indexing for these
+system rows.
+
+### 6.4 Per-call billing metadata
+
+Tool-result `structuredContent` for `pageindex`-routed `file_search` carries
+`tokens_in`, `tokens_out`, `llm_calls`, and `truncated` per [Section 8.2](#82-per-call-billing-metadata).
+Phase 2 indexing is **synchronous**: a `file_write` of a fresh document blocks the
+caller until the tree is built (subject to `indexer.timeout_index`). Search loops the
+tree-reasoning prompt over the configured `tree_query.candidate_docs` and may issue
+1–3 LLM calls per candidate; budget caps in `tree_query.max_steps` and `max_tokens`
+are enforced before the budget is exceeded (the response carries `truncated=true`).
+
+### 6.5 Watch items
+
+Per the wave-B implementation:
+
+- **PDF text extraction.** `pdfcpu` v0.12.0's pure-Go API does not expose plain-text
+  extraction; pageindex routes text through `dslipak/pdf` for both parser modes
+  while keeping `pdfcpu` for outline parsing. Operators with text-quality regressions
+  on multi-column or heavily-figured PDFs should expect a corpus-comparison row in
+  the §7 scorecard once datasets land.
+- **Recursive node expansion.** Proposal §2.6.4.1 phase 8 (recursive subtree expansion
+  for nodes that exceed `algo.max_token_num_each_node`) is **not yet wired**. Large
+  PDFs (> 200 pages) may produce flatter trees than upstream PageIndex. Tracked as a
+  v1.0.1 follow-up.
+- **Verification + fixer prompts.** Phase 7 (LLM-emitted-tree validation + auto-fix)
+  prompts are ported into [../../internal/mcp/memory/plugins/pageindex/prompts.go](../../internal/mcp/memory/plugins/pageindex/prompts.go)
+  but are **not yet wired** into the indexing pipeline; the LLM-emitted tree is
+  accepted as authoritative.
+
+## 6.6 Phase 3: Shadow replay (preview)
+
+The shadow-replay scaffolding lands in Phase 2 but is **not wired into the server**
+in this release. Production wiring is deferred per proposal §8 Phase 3 (opt-in for
+selected projects after the `rag_plugin` baseline is captured); `cmd/api.go` does not
+construct a `ShadowPlugin` today.
+
+The wrapper lives at [../../internal/mcp/memory/plugin/shadow.go](../../internal/mcp/memory/plugin/shadow.go).
+Operating semantics:
+
+- **Live first, shadow fire-and-forget.** Mutations (`file_write`, `file_delete`,
+  `file_rename`) call live first; on success the same operation is dispatched to
+  shadow on a bounded goroutine pool. The user only ever sees live's response. A
+  shadow failure is logged but never alters or delays the live path.
+- **Search dual-read.** Both plugins answer; the live result is returned, the shadow
+  result is captured for offline scoring.
+- **Recorder output.** Each pair appends one JSONL record to the operator-chosen
+  recorder path; no fixed location — the operator picks it on `Recorder` construction.
+- **Promotion gate.** Per proposal §7.8, the analyzer at
+  [../../cmd/promote-pageindex/main.go](../../cmd/promote-pageindex/main.go) computes
+  the win-rate over a captured period:
+
+  | Win-rate              | Decision                                                       |
+  | --------------------- | -------------------------------------------------------------- |
+  | ≥ 55% with p < 0.05   | Promote: flip `default_plugin` to `pageindex` for the project. |
+  | 45–55%                | Stay on `rag_plugin` (no statistically significant gain).       |
+  | < 45%                 | File a bug; pageindex regression.                               |
+
+  The statistical test is a paired two-sided permutation test, B = 10 000 shuffles,
+  matching §7.6.
+
+### 6.6.1 Real-judge mode
+
+The driver ships a `--judge=stub` mode for wiring smoke tests and two real
+modes that call the OpenAI Responses API. Secrets are read from the
+environment only — `OPENAI_API_KEY` is required; there is no `--api-key` flag.
+
+```bash
+OPENAI_API_KEY=sk-... go run ./cmd/promote-pageindex \
+    --records=/var/log/mcp/shadow.jsonl \
+    --judge=ensemble \
+    --judge-model=gpt-5.4-mini \
+    --judge-base-url=https://api.openai.com   # optional
+```
+
+`--judge=openai` runs a single model. `--judge=ensemble` runs the primary
+model alongside `gpt-4o-mini` in parallel and majority-votes (split → TIE) per
+§7.8 position-bias mitigation. The driver echoes only the SHA-256 prefix of
+the API key to stderr.
 
 ## 7. Eval harness
 
@@ -237,7 +367,7 @@ The resolved plugin name is recorded on every request log entry regardless of pl
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Tool returns `INVALID_ARGUMENT` with `available_plugins=[...]`                            | Caller passed an unknown plugin name (typo, version mismatch, future plugin not yet shipped).            | Pass one of the listed names, or omit the field to use `default_plugin`.                     |
 | Tool returns `NOT_FOUND` with hint "path exists under plugin=A; pass plugin=A to read it" | Path was written via plugin A and the current call is pinned to plugin B (or vice versa).                | Re-issue the call with `plugin=A`. The manager does not silently cross plugins by design.    |
-| Tool returns `FAILED_PRECONDITION` for `plugin="pageindex"`                                | `pageindex_plugin` is not enabled (Phase 1; or Phase 2 with empty `llm.api_key`).                        | Either drop the `plugin` field (route via default) or wait for Phase 2 / configure the key.  |
+| Tool returns `INVALID_ARGUMENT` for `plugin="pageindex"` with hint about `llm.api_key`     | `pageindex_plugin` is not registered because `settings.mcp.memory.plugins.pageindex.llm.api_key` is empty. | Set the api_key (Section 6.1) and restart, or drop the `plugin` field to route via default. |
 | Single startup WARN about deprecated `settings.mcp.files.*`                               | Legacy-config shim translated old keys.                                                                  | Move keys to `settings.mcp.memory.plugins.rag.*` before the shim is removed (post-Phase 3).  |
 | Two routing layers seem active                                                            | There is no second layer. The only inputs are the per-call `plugin` argument and `default_plugin`.       | Confirm by reading the request log entry's resolved-plugin field.                            |
 

@@ -1,0 +1,90 @@
+# Phase 1 ships rag only; pageindex is added to the matrix when Phase 2 lands.
+name: eval-nightly
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  pull_request:
+    paths:
+      - "internal/mcp/memory/plugins/**"
+      - "tests/eval/golden/**"
+      - "internal/mcp/memory/conformance/eval/**"
+      - "cmd/eval-plugin/**"
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Phase 2 expands this to [rag, pageindex].
+        plugin: [rag]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run eval harness
+        id: eval
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+        run: |
+          set -o pipefail
+          mkdir -p docs/eval/runs
+          make eval-plugin PLUGIN=${{ matrix.plugin }} | tee eval-output.txt
+
+      - name: Upload scorecard artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-${{ matrix.plugin }}-${{ github.sha }}
+          path: docs/eval/runs/**
+          if-no-files-found: warn
+
+      - name: Compose PR comment
+        if: github.event_name == 'pull_request' && env.OPENAI_API_KEY != ''
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const plugin = '${{ matrix.plugin }}';
+            const baselinePath = path.join(
+              'docs', 'eval', 'baseline_v1', `${plugin}_plugin_scorecard.md`,
+            );
+            let baseline = '_baseline_v1 not yet committed_';
+            if (fs.existsSync(baselinePath)) {
+              baseline = fs.readFileSync(baselinePath, 'utf8');
+            }
+            const runOutput = fs.existsSync('eval-output.txt')
+              ? fs.readFileSync('eval-output.txt', 'utf8')
+              : '_no eval output captured_';
+            const body = [
+              `### eval-nightly :: ${plugin}`,
+              '',
+              '<details><summary>Run output</summary>',
+              '',
+              '```',
+              runOutput.slice(0, 6000),
+              '```',
+              '</details>',
+              '',
+              '<details><summary>baseline_v1 scorecard</summary>',
+              '',
+              '```',
+              baseline.slice(0, 6000),
+              '```',
+              '</details>',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });

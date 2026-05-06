@@ -74,9 +74,15 @@ func fileToolErrorFromErr(err error) *mcp.CallToolResult {
 		return nil
 	}
 	if resolveErr, ok := mcpplugin.AsResolveError(err); ok {
+		message := resolveErr.Error()
+		if resolveErr.Requested == mcpplugin.DefaultPluginPageIndex && !containsString(resolveErr.Available, mcpplugin.DefaultPluginPageIndex) {
+			// A10: surface the missing config key so an operator can self-diagnose
+			// when pageindex was requested but never registered at startup.
+			message = message + "; settings.mcp.memory.plugins.pageindex.llm.api_key is required"
+		}
 		return fileToolErrorResultWithExtras(
 			files.ErrCodeInvalidArgument,
-			resolveErr.Error(),
+			message,
 			false,
 			map[string]any{"available_plugins": resolveErr.Available},
 		)
@@ -85,6 +91,15 @@ func fileToolErrorFromErr(err error) *mcp.CallToolResult {
 		return fileToolErrorResult(typed.Code, typed.Message, typed.Retryable)
 	}
 	return fileToolErrorResult(files.ErrCodeSearchBackend, "internal error", true)
+}
+
+func containsString(values []string, target string) bool {
+	for _, v := range values {
+		if v == target {
+			return true
+		}
+	}
+	return false
 }
 
 // fileToolPluginOption adds the additive per-call plugin routing argument.

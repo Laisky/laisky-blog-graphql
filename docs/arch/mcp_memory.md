@@ -649,3 +649,31 @@ the PRD is at [../requirements/mcp_memory_plugins.md](../requirements/mcp_memory
 the full design (`pageindex_plugin`, `SystemFS`, eval harness, rollout phases) is in
 [../proposals/mcp_memory_plugin_manager.md](../proposals/mcp_memory_plugin_manager.md).
 
+## MCP Memory Plugins (Phase 2 / Phase 3)
+
+`pageindex_plugin` lives at `internal/mcp/memory/plugins/pageindex/`. The package
+splits responsibilities across `indexer.go` (orchestrator + budget + retry +
+progress channel), `pipeline_pdf.go` and `pipeline_markdown.go` (per-format
+extraction + node generation), `prompts.go` (the 13 ported PageIndex prompts +
+golden fixtures in `prompts_golden_test.go`), `cache.go` (bbolt-backed response
+cache keyed by content hash + model), `llm.go` (Responses-API client with retry),
+`search_loop.go` (tree-reasoning search with `tree_query.*` budget), and `tree.go`
+(node serialization and traversal). `settings.go` carries the YAML defaults with
+exact key paths under `settings.mcp.memory.plugins.pageindex.*`.
+
+The Phase-2 foundation threads `system_owner` through `internal/mcp/files/`. A
+non-empty `system_owner` opts a row out of the user namespace; the column is
+covered by the existing predicate audits referenced in [`docs/proposals/mcp_memory_plugin_manager.md` §2.8](../proposals/mcp_memory_plugin_manager.md#28-the-systemfs-interface).
+`SystemFS` is the read/write handle each Phase-2-aware plugin obtains at startup
+(no project, no API-key auth scope); pageindex uses it for tree JSON. The
+companion `WriteOpts.SkipRAGIndex` write option suppresses pgvector + BM25
+indexing for system rows so they do not pollute user search.
+
+Phase-3 shadow-replay scaffolding lives at
+[`../../internal/mcp/memory/plugin/shadow.go`](../../internal/mcp/memory/plugin/shadow.go)
+(`ShadowPlugin` wrapper) and its companion `shadow_recorder.go` / `shadow_score.go`.
+Production wiring is **deferred per proposal §8 Phase 3** — `cmd/api.go` does not
+construct a `ShadowPlugin` today. The promotion-gate analyzer is a separate
+binary at [`../../cmd/promote-pageindex/main.go`](../../cmd/promote-pageindex/main.go)
+that consumes the JSONL recorder output and emits the §7.8 win-rate verdict.
+

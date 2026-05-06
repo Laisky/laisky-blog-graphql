@@ -132,6 +132,35 @@ Tracked in [../proposals/mcp_memory_plugin_manager.md#3-risks--open-questions](.
 - §3.6 LLM provider lock-in (Phase 2).
 - §3.7 `mcp_files.system_owner` migration on a populated cluster (Phase 2).
 
+## 7.1 Phase 2 acceptance status
+
+The Phase 2 wave-B drop lands the `pageindex_plugin` runtime, the foundation
+`system_owner` schema, and the shadow-replay scaffolding. The table maps each
+in-scope acceptance criterion to its current verification state. "verified" means
+the implementation is present and at least one test or audit asserts the observable
+contract; "pending" means the bar requires a dataset or wiring step that has not
+landed yet (named explicitly).
+
+| Criterion | Coverage                                                                                                                | Status                                                                |
+| --------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| A3        | Manager resolves `default_plugin` between `rag` and `pageindex` without changing tool-call shape.                       | verified — manager_test.go + integration smoke                        |
+| A4        | Plugin contract (seven `file_*` ops + `Name`/`Capabilities`/`Start`/`Stop`) implemented for `pageindex_plugin`.          | verified — internal tests P01–P18 + conformance suite                 |
+| A6        | Operator can bring `pageindex` up end-to-end from `docs/manual/mcp_memory_plugins.md` §6.1.                              | verified — manual covers config, cache, restart, smoke                |
+| A7        | `tokens_in` / `tokens_out` / `llm_calls` / `truncated` emitted on `pageindex` `file_search` `structuredContent`.         | verified — billing fields wired in indexer + search loop              |
+| A8        | Cross-tenant + system-namespace isolation: `system_owner='pageindex'` rows unreachable from any user-side tool call.    | verified — `internal/mcp/files/` predicate audit + tests              |
+| A11       | Switching `llm.indexing_model` / `llm.retrieve_model` within the Responses-API contract is invisible to the agent.       | verified — Responses-API client config-only; LLM unit tests           |
+| A12       | Long indexing reports progress through the `Progress` channel + `Reporter`.                                              | verified — internal test P14                                          |
+| Q1        | Internal Recall@10 / nDCG@10 / MRR / Hit@5 on `memory-bench-internal-v1`.                                                | pending: requires `memory-bench-internal-v1` LFS ingest               |
+| Q2        | RAGAS faithfulness / context_recall / answer_correctness on `memory-bench-ragas-v1`.                                     | pending: requires `memory-bench-ragas-v1` LFS ingest + judge wiring   |
+| Q3        | FinanceBench-150 accuracy via Mafin2.5 ensemble.                                                                          | pending: requires `financebench-150` LFS ingest                       |
+| Q4        | LongMemEval_S accuracy.                                                                                                   | pending: requires `longmemeval_s` LFS ingest                          |
+| Q9        | Prompt-injection blocked from OWASP GenAI 2026 v1.0 12-attack catalogue.                                                  | pending: 12-attack stubs ship in harness; full golden set required    |
+| Q10       | Cross-tenant retrieval probe across 100 random pairs.                                                                     | pending: harness ships probe scaffold; full golden set required       |
+| Q11       | Supersession + GDPR-delete recall.                                                                                        | pending: harness ships pair scaffold; full golden set required        |
+| Q12       | Weekly drift on golden nDCG@10.                                                                                           | pending: drift compare requires baseline_v1 + week-N replay datasets  |
+
+A1, A2, A5, A9, A10 are unchanged from Phase 1; the Phase-1 acceptance still holds.
+
 ## 8. References
 
 - Design proposal — [../proposals/mcp_memory_plugin_manager.md](../proposals/mcp_memory_plugin_manager.md)

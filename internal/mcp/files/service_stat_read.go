@@ -114,15 +114,17 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 
 // findActiveFile loads a non-deleted file row by path.
 func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path string) (*File, error) {
+	owner := systemOwnerFromContext(ctx)
 	var file File
 	err := s.db.QueryRowContext(ctx,
 		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at
 			FROM mcp_files
-			WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE
+			WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
 			LIMIT 1`, s.isPostgres),
 		apiKeyHash,
 		project,
 		path,
+		owner,
 	).Scan(
 		&file.ID,
 		&file.APIKeyHash,
@@ -149,13 +151,15 @@ func (s *Service) directoryExists(ctx context.Context, apiKeyHash, project, path
 
 // findDirectoryUpdatedAt returns the latest update time for descendants, if any.
 func (s *Service) findDirectoryUpdatedAt(ctx context.Context, apiKeyHash, project, path string) (time.Time, bool, error) {
+	owner := systemOwnerFromContext(ctx)
 	prefix := buildPathPrefix(path)
 	var rawValue any
 	err := s.db.QueryRowContext(ctx,
-		rebindSQL(`SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE`, s.isPostgres),
+		rebindSQL(`SELECT MAX(updated_at) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
 		apiKeyHash,
 		project,
 		prefix,
+		owner,
 	).Scan(&rawValue)
 	if err != nil {
 		return time.Time{}, false, errors.Wrap(err, "query directory updated_at")
