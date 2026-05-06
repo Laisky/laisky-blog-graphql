@@ -139,7 +139,7 @@ Required inputs:
 | Input                     | Notes                                                                                 |
 | ------------------------- | ------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY`          | Drives indexing + retrieval LLM calls. Without it the plugin is unregistered (§6.1).   |
-| Writable bbolt cache path | `settings.mcp.memory.plugins.pageindex.indexer.cache.path`; default `/var/lib/laisky/`. |
+| Writable bbolt cache path | `settings.mcp.tools.memory.plugins.pageindex.indexer.cache.path`; default `/var/lib/laisky/`. |
 | `tests/eval/golden/`      | LFS-backed datasets. Until they land, every retrieval/RAGAS/public cell renders `n/a`. |
 
 Driver status: as of this wave, `cmd/eval-plugin` accepts `--plugin=pageindex` only

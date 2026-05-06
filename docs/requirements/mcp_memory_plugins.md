@@ -68,10 +68,10 @@ Each `FR-*` lists its mapped acceptance criterion from
 - **FR-9 — Resolved-plugin observability.** Every request log entry records the resolved
   plugin name. Per-plugin metrics use the prefix `mcp.memory.<plugin>.*`. *Acceptance:*
   A9, plus E04 from §5.3.
-- **FR-10 — Default routing knob.** `settings.mcp.memory.default_plugin` selects the
+- **FR-10 — Default routing knob.** `settings.mcp.tools.memory.default_plugin` selects the
   default plugin (Phase 1: only `"rag"` accepted at runtime). *Acceptance:* A3.
 - **FR-11 — Legacy-config shim.** `settings.mcp.files.*` is translated into
-  `settings.mcp.memory.plugins.rag.*` at config load time, with exactly one WARN line
+  `settings.mcp.tools.memory.plugins.rag.*` at config load time, with exactly one WARN line
   per process. The shim is removed in the next minor after Phase 3. *Acceptance:* A5.
 - **FR-12 — Reverting to single-plugin mode.** Setting `default_plugin=rag` and removing
   any non-rag plugin block from config produces pre-refactor behavior on every input.

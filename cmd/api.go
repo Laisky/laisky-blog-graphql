@@ -399,7 +399,7 @@ func runAPI() error {
 		}
 
 		if files.LegacyConfigConfigured() {
-			logger.Warn("settings.mcp.files.* is deprecated; use settings.mcp.memory.plugins.rag.*")
+			logger.Warn("settings.mcp.files.* is deprecated; use settings.mcp.tools.memory.plugins.rag.*")
 		}
 
 		filesSettings := files.LoadSettingsFromConfig()
@@ -461,7 +461,7 @@ func runAPI() error {
 					}
 					plugins = append(plugins, piPlugin)
 				} else {
-					logger.Debug("pageindex plugin disabled (settings.mcp.memory.plugins.pageindex.llm.api_key is empty)")
+					logger.Debug("pageindex plugin disabled (settings.mcp.tools.memory.plugins.pageindex.llm.api_key is empty)")
 				}
 
 				fileManager, managerErr := mcpplugin.NewManager(filePluginSettings.DefaultPlugin, plugins...)

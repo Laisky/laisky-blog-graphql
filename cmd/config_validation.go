@@ -76,52 +76,52 @@ func validateMCPToolsConfig(get configGetter, errs *[]string) {
 // validateMCPMemoryConfig validates MCP-native memory settings.
 // It accepts a getter and an error collector pointer and appends validation errors.
 func validateMCPMemoryConfig(get configGetter, errs *[]string) {
-	validateOptionalIntMin(get, "settings.mcp.memory.recent_context_items", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.recall_facts_limit", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.search_limit", 1, errs)
-	validateOptionalFloatRange(get, "settings.mcp.memory.compact_threshold", 0, 1, false, false, errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.l1_retention_days", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.l2_retention_days", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.compaction_min_age_hours", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.summary_refresh_interval_minutes", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.max_processed_turns", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.recent_context_items", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.recall_facts_limit", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.search_limit", 1, errs)
+	validateOptionalFloatRange(get, "settings.mcp.tools.memory.compact_threshold", 0, 1, false, false, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.l1_retention_days", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.l2_retention_days", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.compaction_min_age_hours", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.summary_refresh_interval_minutes", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.max_processed_turns", 1, errs)
 
-	validateOptionalBool(get, "settings.mcp.memory.heuristic.enabled", errs)
-	validateOptionalStringNonEmpty(get, "settings.mcp.memory.heuristic.model", errs)
-	validateOptionalURL(get, "settings.mcp.memory.heuristic.base_url", errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.heuristic.timeout_ms", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.memory.heuristic.max_output_tokens", 1, errs)
-	validateOptionalStringOneOf(get, "settings.mcp.memory.default_plugin", []string{"rag", "pageindex"}, errs)
+	validateOptionalBool(get, "settings.mcp.tools.memory.heuristic.enabled", errs)
+	validateOptionalStringNonEmpty(get, "settings.mcp.tools.memory.heuristic.model", errs)
+	validateOptionalURL(get, "settings.mcp.tools.memory.heuristic.base_url", errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.heuristic.timeout_ms", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.memory.heuristic.max_output_tokens", 1, errs)
+	validateOptionalStringOneOf(get, "settings.mcp.tools.memory.default_plugin", []string{"rag", "pageindex"}, errs)
 }
 
 // validateRAGConfig validates extract_key_info configuration.
 // It accepts a getter and an error collector pointer and appends validation errors.
 func validateRAGConfig(get configGetter, errs *[]string) {
-	validateOptionalBool(get, "settings.mcp.extract_key_info.enabled", errs)
-	validateOptionalIntMin(get, "settings.mcp.extract_key_info.top_k_default", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.extract_key_info.top_k_limit", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.extract_key_info.max_materials_size", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.extract_key_info.max_chunk_chars", 201, errs)
-	validateOptionalFloatPositive(get, "settings.mcp.extract_key_info.semantic_weight", errs)
-	validateOptionalFloatPositive(get, "settings.mcp.extract_key_info.lexical_weight", errs)
+	validateOptionalBool(get, "settings.mcp.tools.extract_key_info.enabled", errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.extract_key_info.top_k_default", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.extract_key_info.top_k_limit", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.extract_key_info.max_materials_size", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.extract_key_info.max_chunk_chars", 201, errs)
+	validateOptionalFloatPositive(get, "settings.mcp.tools.extract_key_info.semantic_weight", errs)
+	validateOptionalFloatPositive(get, "settings.mcp.tools.extract_key_info.lexical_weight", errs)
 }
 
 // validateUserRequestsConfig validates get_user_request retention configuration.
 // It accepts a getter and an error collector pointer and appends validation errors.
 func validateUserRequestsConfig(get configGetter, errs *[]string) {
-	validateOptionalIntMin(get, "settings.mcp.user_requests.retention_days", 1, errs)
-	validateOptionalIntMin(get, "settings.mcp.user_requests.retention_sweep_seconds", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.user_requests.retention_days", 1, errs)
+	validateOptionalIntMin(get, "settings.mcp.tools.user_requests.retention_sweep_seconds", 1, errs)
 }
 
 // validateFileIOConfig validates FileIO-related configuration.
 // It accepts a getter and an error collector pointer and appends validation errors.
 func validateFileIOConfig(get configGetter, errs *[]string) {
 	validateFileIOConfigAtPrefix(get, "settings.mcp.files", errs)
-	validateFileIOConfigAtPrefix(get, "settings.mcp.memory.plugins.rag", errs)
+	validateFileIOConfigAtPrefix(get, "settings.mcp.tools.memory.plugins.rag", errs)
 	validateFileIOSecurityKEKs(get, "settings.mcp.files", errs)
-	validateFileIOSecurityKEKs(get, "settings.mcp.memory.plugins.rag", errs)
+	validateFileIOSecurityKEKs(get, "settings.mcp.tools.memory.plugins.rag", errs)
 	validateFileIOLimitRelations(get, "settings.mcp.files", errs)
-	validateFileIOLimitRelations(get, "settings.mcp.memory.plugins.rag", errs)
+	validateFileIOLimitRelations(get, "settings.mcp.tools.memory.plugins.rag", errs)
 }
 
 // validateFileIOConfigAtPrefix validates one file plugin config subtree.

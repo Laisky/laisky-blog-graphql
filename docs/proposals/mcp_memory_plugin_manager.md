@@ -20,7 +20,7 @@ implementation:
     paths:
       - internal/mcp/files/{migration.go,system_fs.go,system_owner.go,types.go,service_*.go}
       - internal/mcp/memory/plugins/pageindex/  # 16 source files, ~4.3k LOC, pure Go
-      - cmd/api.go  # enablement gate on settings.mcp.memory.plugins.pageindex.llm.api_key
+      - cmd/api.go  # enablement gate on settings.mcp.tools.memory.plugins.pageindex.llm.api_key
   phase_3:
     status: scaffolding shipped
     paths:
@@ -269,7 +269,7 @@ identical, so callers see uniform behavior.
 // internal/mcp/memory/plugin/manager.go (new)
 type Manager struct {
     plugins       map[string]Plugin    // by Name()
-    defaultPlugin Plugin               // settings.mcp.memory.default_plugin
+    defaultPlugin Plugin               // settings.mcp.tools.memory.default_plugin
 }
 
 // override is the per-call argument from §2.4.1. Empty or "auto" means "use the default".
@@ -285,7 +285,7 @@ func (m *Manager) ForName(name string) (Plugin, error)  // for tests + admin too
 Resolution order (first match wins):
 
 1. **Per-call argument** — optional `plugin` field on every `file_*` tool input (see §2.4.1).
-2. **Default** (`settings.mcp.memory.default_plugin`, fallback `"rag"`).
+2. **Default** (`settings.mcp.tools.memory.default_plugin`, fallback `"rag"`).
 
 That is the entire decision tree. There is **no** per-project routing table, **no**
 per-API-key routing table, and **no** per-tenant override map. An earlier draft proposed
@@ -401,7 +401,7 @@ settings:
             outline_parser: "pdfcpu"   # only pdfcpu exposes outlines today
 ```
 
-Existing `settings.mcp.files.*` keys move under `settings.mcp.memory.plugins.rag.*` with a
+Existing `settings.mcp.files.*` keys move under `settings.mcp.tools.memory.plugins.rag.*` with a
 deprecation shim that reads the old keys for one minor version and logs a one-time WARN.
 
 ### 2.5 `rag_plugin` — wrapping the existing engine
@@ -1068,7 +1068,7 @@ declares `v1_runtime: pure-Go`). A PR that violates any one of them fails CI.
 | `internal/mcp/tools/file_tool_helpers.go`                         | New shared helper `parsePluginOverride(raw string) (string, error)` validating `""`/`"auto"`/known names                                                                                                                                                                                                                        |
 | `internal/mcp/server.go` (lines 204-452)                          | Pass `*plugin.Manager` instead of `FileService`                                                                                                                                                                                                                                                                                 |
 | `cmd/api.go` (lines 408-447)                                      | Build a single shared `*files.Service`; pass it to both plugins (rag wraps directly, pageindex receives `userFS` + `SystemFS("pageindex")`); build & start `plugin.Manager`                                                                                                                                                     |
-| `internal/mcp/files/settings.go`                                  | Add deprecation shim reading old `settings.mcp.files.*` and forwarding into `settings.mcp.memory.plugins.rag.*`                                                                                                                                                                                                                 |
+| `internal/mcp/files/settings.go`                                  | Add deprecation shim reading old `settings.mcp.files.*` and forwarding into `settings.mcp.tools.memory.plugins.rag.*`                                                                                                                                                                                                                 |
 | `internal/mcp/files/service.go`, `service_*.go`, `service_search.go`, `index_worker.go`, `service_versions.go`, `lock.go` | Add `system_owner string` parameter (or context value) on every method that touches `mcp_files`/`mcp_file_chunks`/`mcp_file_index_jobs`/`mcp_file_chunk_embeddings`/`mcp_file_chunk_bm25`/`mcp_file_versions`. User-facing entrypoints pass `''`. SQL gains explicit `system_owner = $X` predicates everywhere |
 | `internal/mcp/files/migration.go`                                 | Add `system_owner TEXT NOT NULL DEFAULT ''` column to all six tables; add `(system_owner, api_key_hash, project, path)` indexes; backfill is the default (no-op for existing rows)                                                                                                                                              |
 | `internal/mcp/files/service_write_delete.go`                      | New `WriteOpts{ SkipRAGIndex bool }` parameter; index-job enqueue is gated on `!SkipRAGIndex`. Default behavior unchanged                                                                                                                                                                                                       |
@@ -1106,7 +1106,7 @@ of `mcp_files` (rows where `system_owner='pageindex'`).
 
 ### 4.5 Settings migrations
 
-- One-shot translation `settings.mcp.files.*` → `settings.mcp.memory.plugins.rag.*` at config
+- One-shot translation `settings.mcp.files.*` → `settings.mcp.tools.memory.plugins.rag.*` at config
   load time, with a single WARN log per process. Removed in the release **after** v1 ships.
 
 
@@ -1351,7 +1351,7 @@ becoming fragile to internal renames.
 | M01 | With no per-call `plugin` argument, every call resolves to `default_plugin`.                                                                                    |
 | M02 | Unknown plugin name in config returns startup error.                                                                                                            |
 | M03 | `StartAll` failure on one plugin aborts startup with a wrapped error naming the plugin.                                                                         |
-| M04 | Settings shim: legacy `settings.mcp.files.*` is read into `settings.mcp.memory.plugins.rag.*`.                                                                  |
+| M04 | Settings shim: legacy `settings.mcp.files.*` is read into `settings.mcp.tools.memory.plugins.rag.*`.                                                                  |
 | M05 | Settings shim emits exactly one WARN per process (not per request).                                                                                             |
 | M06 | `Capabilities.SupportsVersions=false` makes the versions-aware tool path fall back gracefully.                                                                  |
 | M07 | Per-call `plugin` arg, when present and valid, wins over `default_plugin` for that call only — subsequent calls without the arg revert to `default_plugin`.    |

@@ -74,7 +74,7 @@ type Settings struct {
 	PDF       PDFSettings
 }
 
-const settingsPrefix = "settings.mcp.memory.plugins.pageindex"
+const settingsPrefix = "settings.mcp.tools.memory.plugins.pageindex"
 
 // LoadSettings reads the pageindex block from gconfig.S, applying every documented
 // default exactly as written in the proposal §1.4 / §2.6 / §2.7 contract. The

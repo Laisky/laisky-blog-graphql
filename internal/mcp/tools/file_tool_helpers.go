@@ -78,7 +78,7 @@ func fileToolErrorFromErr(err error) *mcp.CallToolResult {
 		if resolveErr.Requested == mcpplugin.DefaultPluginPageIndex && !containsString(resolveErr.Available, mcpplugin.DefaultPluginPageIndex) {
 			// A10: surface the missing config key so an operator can self-diagnose
 			// when pageindex was requested but never registered at startup.
-			message = message + "; settings.mcp.memory.plugins.pageindex.llm.api_key is required"
+			message = message + "; settings.mcp.tools.memory.plugins.pageindex.llm.api_key is required"
 		}
 		return fileToolErrorResultWithExtras(
 			files.ErrCodeInvalidArgument,

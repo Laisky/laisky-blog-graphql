@@ -13,7 +13,7 @@ type Settings struct {
 
 // LoadSettingsFromConfig reads the MCP memory plugin manager settings.
 func LoadSettingsFromConfig() Settings {
-	defaultPlugin := NormalizeName(strings.TrimSpace(gconfig.S.GetString("settings.mcp.memory.default_plugin")))
+	defaultPlugin := NormalizeName(strings.TrimSpace(gconfig.S.GetString("settings.mcp.tools.memory.default_plugin")))
 	if defaultPlugin == "" {
 		defaultPlugin = DefaultPluginRAG
 	}

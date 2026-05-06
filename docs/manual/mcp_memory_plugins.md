@@ -27,7 +27,7 @@ Background and the full design rationale live in
 
 ## 2. Configuration
 
-The plugin manager reads `settings.mcp.memory.*`.
+The plugin manager reads `settings.mcp.tools.memory.*`.
 
 ```yaml
 settings:
@@ -39,14 +39,14 @@ settings:
         # pageindex: see Section 6 — block is reserved, not used in Phase 1
 ```
 
-`settings.mcp.memory.plugins.rag.*` carries the keys that previously lived under
+`settings.mcp.tools.memory.plugins.rag.*` carries the keys that previously lived under
 `settings.mcp.files.*` (chunking, embedder, BM25, rerank, async indexing, version
 retention). Field semantics are unchanged; only the YAML location moved.
 
 ### 2.1 Legacy configuration shim
 
 Operators running pre-refactor configs can keep using `settings.mcp.files.*`. At config
-load time the server translates any legacy keys into `settings.mcp.memory.plugins.rag.*`
+load time the server translates any legacy keys into `settings.mcp.tools.memory.plugins.rag.*`
 and emits exactly **one** WARN line per process announcing the deprecation. The shim is
 **removed in the next minor release after Phase 3**. Migrate at your earliest convenience
 by moving the keys to their new location; equivalent settings produce identical observable
@@ -60,7 +60,7 @@ wins. The shim only fills holes; it never overrides.
 Resolution order (first match wins):
 
 1. **Per-call argument** — every memory-surface tool gains an optional `plugin` field.
-2. **Default** — `settings.mcp.memory.default_plugin`, fallback `"rag"`.
+2. **Default** — `settings.mcp.tools.memory.default_plugin`, fallback `"rag"`.
 
 There is no per-project, per-API-key, or per-tenant override map. If a class of project
 needs a non-default plugin, teach the agent to pass `plugin=<name>` for those projects.
@@ -122,7 +122,7 @@ row C05/R06 in [the proposal §5.1 / §5.2](../proposals/mcp_memory_plugin_manag
 
 ### 5.1 Bring-up checklist
 
-1. Confirm `settings.mcp.memory.default_plugin` is set (defaults to `"rag"` if absent).
+1. Confirm `settings.mcp.tools.memory.default_plugin` is set (defaults to `"rag"` if absent).
 2. Confirm legacy `settings.mcp.files.*` keys are either migrated or relied on intentionally
    (a single startup WARN means the shim is active).
 3. Restart the MCP server. The manager constructs `rag_plugin` and starts it; failure to
@@ -134,7 +134,7 @@ row C05/R06 in [the proposal §5.1 / §5.2](../proposals/mcp_memory_plugin_manag
 
 ### 5.2 Switching the default
 
-1. Update `settings.mcp.memory.default_plugin` to the new plugin name. Today only `"rag"`
+1. Update `settings.mcp.tools.memory.default_plugin` to the new plugin name. Today only `"rag"`
    is valid.
 2. Restart the server. The change is config-reload, no migration required.
 3. Replay the smoke script. Existing data written under the prior default remains pinned
@@ -159,11 +159,11 @@ the existing binary; there is no new process or container. The plugin is gated o
 With an empty key the plugin is silently skipped and a single debug log line is
 emitted at startup; explicit `plugin="pageindex"` calls then return `INVALID_ARGUMENT`
 with `available_plugins=[...]` and a hint that names the missing
-`settings.mcp.memory.plugins.pageindex.llm.api_key` key (acceptance A10).
+`settings.mcp.tools.memory.plugins.pageindex.llm.api_key` key (acceptance A10).
 
 ### 6.1 Enabling pageindex
 
-Set `settings.mcp.memory.plugins.pageindex.*`. Defaults are sourced from
+Set `settings.mcp.tools.memory.plugins.pageindex.*`. Defaults are sourced from
 [../../internal/mcp/memory/plugins/pageindex/settings.go](../../internal/mcp/memory/plugins/pageindex/settings.go).
 With `default_plugin: rag` and an empty `pageindex.llm.api_key`, the manager registers
 only `rag_plugin`; explicit `plugin="pageindex"` calls then surface the missing-key
@@ -265,7 +265,7 @@ Per the wave-B implementation:
 The shadow-replay scaffolding exists for offline evaluation and future promotion work,
 but it is not part of the runtime routing contract. Runtime selection remains simple:
 the caller may pass the optional `plugin` field on each `file_*` request, otherwise the
-server uses `settings.mcp.memory.default_plugin` and defaults to `rag`.
+server uses `settings.mcp.tools.memory.default_plugin` and defaults to `rag`.
 
 The wrapper lives at [../../internal/mcp/memory/plugin/shadow.go](../../internal/mcp/memory/plugin/shadow.go).
 Operating semantics:
@@ -368,8 +368,8 @@ The resolved plugin name is recorded on every request log entry regardless of pl
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Tool returns `INVALID_ARGUMENT` with `available_plugins=[...]`                            | Caller passed an unknown plugin name (typo, version mismatch, future plugin not yet shipped).            | Pass one of the listed names, or omit the field to use `default_plugin`.                     |
 | Tool returns `NOT_FOUND` with hint "path exists under plugin=A; pass plugin=A to read it" | Path was written via plugin A and the current call is pinned to plugin B (or vice versa).                | Re-issue the call with `plugin=A`. The manager does not silently cross plugins by design.    |
-| Tool returns `INVALID_ARGUMENT` for `plugin="pageindex"` with hint about `llm.api_key`     | `pageindex_plugin` is not registered because `settings.mcp.memory.plugins.pageindex.llm.api_key` is empty. | Set the api_key (Section 6.1) and restart, or drop the `plugin` field to route via default. |
-| Single startup WARN about deprecated `settings.mcp.files.*`                               | Legacy-config shim translated old keys.                                                                  | Move keys to `settings.mcp.memory.plugins.rag.*` before the shim is removed (post-Phase 3).  |
+| Tool returns `INVALID_ARGUMENT` for `plugin="pageindex"` with hint about `llm.api_key`     | `pageindex_plugin` is not registered because `settings.mcp.tools.memory.plugins.pageindex.llm.api_key` is empty. | Set the api_key (Section 6.1) and restart, or drop the `plugin` field to route via default. |
+| Single startup WARN about deprecated `settings.mcp.files.*`                               | Legacy-config shim translated old keys.                                                                  | Move keys to `settings.mcp.tools.memory.plugins.rag.*` before the shim is removed (post-Phase 3).  |
 | Two routing layers seem active                                                            | There is no second layer. The only inputs are the per-call `plugin` argument and `default_plugin`.       | Confirm by reading the request log entry's resolved-plugin field.                            |
 
 ## 10. References

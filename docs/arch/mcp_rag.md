@@ -38,8 +38,8 @@
 - **Settings:**
   - `settings.openai.base_url`: Override for the embeddings API base.
   - `settings.openai.embedding_model`: Embeddings model identifier (for example `text-embedding-3-small`).
-  - `settings.mcp.extract_key_info.enabled`: Feature flag for tool registration.
-  - `settings.mcp.extract_key_info.top_k_default`: Default `topK` when omitted by the caller.
+  - `settings.mcp.tools.extract_key_info.enabled`: Feature flag for tool registration.
+  - `settings.mcp.tools.extract_key_info.top_k_default`: Default `topK` when omitted by the caller.
   - `settings.db.mcp.*`: PostgreSQL connection parameters shared with other MCP features.
 - **Secrets:**
   - Bearer token supplied via `Authorization: Bearer <identity>@<token>`; the raw token doubles as the OpenAI API key.
@@ -125,7 +125,7 @@ CREATE INDEX idx_mcp_rag_chunks_metadata
 
 ## Text Preprocessing Workflow
 
-- Segment `materials` into paragraphs using blank lines; fall back to sentence-level splits when a paragraph exceeds `settings.mcp.extract_key_info.max_chunk_chars` (recommended 1500).
+- Segment `materials` into paragraphs using blank lines; fall back to sentence-level splits when a paragraph exceeds `settings.mcp.tools.extract_key_info.max_chunk_chars` (recommended 1500).
 - Normalise whitespace, strip control characters, and store both original and cleaned text versions.
 - Deduplicate chunks by hashing `cleaned_text` plus `user_id` plus `task_id`; skip existing entries.
 - Persist documents, chunks, embeddings, and BM25 tokens inside a single transaction to ensure atomic ingestion.

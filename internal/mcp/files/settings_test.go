@@ -12,7 +12,7 @@ func TestLoadSettingsFromConfigPrefersNewRAGPath(t *testing.T) {
 	t.Parallel()
 
 	legacyListLimitKey := "settings.mcp.files.list_limit_default"
-	newListLimitKey := "settings.mcp.memory.plugins.rag.list_limit_default"
+	newListLimitKey := "settings.mcp.tools.memory.plugins.rag.list_limit_default"
 	oldLegacy := gconfig.Shared.Get(legacyListLimitKey)
 	oldNew := gconfig.Shared.Get(newListLimitKey)
 	defer func() {

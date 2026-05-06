@@ -127,8 +127,8 @@ type ImageSettings struct {
 // LoadSettingsFromConfig populates Settings from the shared configuration
 // with the defaults documented on each field.
 func LoadSettingsFromConfig() Settings {
-	retentionDays := intFromConfig("settings.mcp.user_requests.retention_days", DefaultRetentionDays)
-	intervalSeconds := intFromConfig("settings.mcp.user_requests.retention_sweep_seconds", int(DefaultRetentionSweepInterval/time.Second))
+	retentionDays := intFromConfig("settings.mcp.tools.user_requests.retention_days", DefaultRetentionDays)
+	intervalSeconds := intFromConfig("settings.mcp.tools.user_requests.retention_sweep_seconds", int(DefaultRetentionSweepInterval/time.Second))
 	return Settings{
 		RetentionDays:          retentionDays,
 		RetentionSweepInterval: time.Duration(intervalSeconds) * time.Second,
@@ -136,26 +136,26 @@ func LoadSettingsFromConfig() Settings {
 	}
 }
 
-// loadImageSettings reads the mcp.user_requests.images.* config keys using
+// loadImageSettings reads the mcp.tools.user_requests.images.* config keys using
 // the Default* constants as fallbacks.
 func loadImageSettings() ImageSettings {
 	return ImageSettings{
-		Enabled:            boolFromConfig("settings.mcp.user_requests.images.enabled", false),
-		Bucket:             stringFromConfig("settings.mcp.user_requests.images.minio.bucket", ""),
-		Prefix:             strings.Trim(stringFromConfig("settings.mcp.user_requests.images.minio.prefix", DefaultImageMinIOPrefix), "/"),
-		Endpoint:           stringFromConfig("settings.mcp.user_requests.images.minio.endpoint", DefaultImageMinIOEndpoint),
-		AccessKey:          stringFromConfig("settings.mcp.user_requests.images.minio.access_key", ""),
-		SecretKey:          stringFromConfig("settings.mcp.user_requests.images.minio.secret_key", ""),
-		UseSSL:             boolFromConfig("settings.mcp.user_requests.images.minio.use_ssl", DefaultImageMinIOUseSSL),
-		PerUserQuotaBytes:  int64FromConfig("settings.mcp.user_requests.images.per_user_quota_bytes", DefaultImagePerUserQuotaBytes),
-		PerImageMaxBytes:   int64FromConfig("settings.mcp.user_requests.images.per_image_max_bytes", DefaultImagePerImageMaxBytes),
-		MaxPerRequest:      intFromConfig("settings.mcp.user_requests.images.max_per_request", DefaultImageMaxPerRequest),
-		ObjectTTLDays:      intFromConfig("settings.mcp.user_requests.images.object_ttl_days", DefaultImageObjectTTLDays),
-		PresignTTL:         time.Duration(intFromConfig("settings.mcp.user_requests.images.presign_ttl_minutes", DefaultImagePresignTTLMinutes)) * time.Minute,
-		GCSweepInterval:    time.Duration(intFromConfig("settings.mcp.user_requests.images.gc_sweep_seconds", int(DefaultImageGCSweepInterval/time.Second))) * time.Second,
-		URLAllowHTTP:       boolFromConfig("settings.mcp.user_requests.images.url_fetch.allow_http", DefaultImageURLAllowHTTP),
-		URLMaxRedirects:    intFromConfig("settings.mcp.user_requests.images.url_fetch.max_redirects", DefaultImageURLMaxRedirects),
-		URLTotalTimeout:    time.Duration(intFromConfig("settings.mcp.user_requests.images.url_fetch.total_timeout_seconds", DefaultImageURLTotalTimeoutSeconds)) * time.Second,
+		Enabled:            boolFromConfig("settings.mcp.tools.user_requests.images.enabled", false),
+		Bucket:             stringFromConfig("settings.mcp.tools.user_requests.images.minio.bucket", ""),
+		Prefix:             strings.Trim(stringFromConfig("settings.mcp.tools.user_requests.images.minio.prefix", DefaultImageMinIOPrefix), "/"),
+		Endpoint:           stringFromConfig("settings.mcp.tools.user_requests.images.minio.endpoint", DefaultImageMinIOEndpoint),
+		AccessKey:          stringFromConfig("settings.mcp.tools.user_requests.images.minio.access_key", ""),
+		SecretKey:          stringFromConfig("settings.mcp.tools.user_requests.images.minio.secret_key", ""),
+		UseSSL:             boolFromConfig("settings.mcp.tools.user_requests.images.minio.use_ssl", DefaultImageMinIOUseSSL),
+		PerUserQuotaBytes:  int64FromConfig("settings.mcp.tools.user_requests.images.per_user_quota_bytes", DefaultImagePerUserQuotaBytes),
+		PerImageMaxBytes:   int64FromConfig("settings.mcp.tools.user_requests.images.per_image_max_bytes", DefaultImagePerImageMaxBytes),
+		MaxPerRequest:      intFromConfig("settings.mcp.tools.user_requests.images.max_per_request", DefaultImageMaxPerRequest),
+		ObjectTTLDays:      intFromConfig("settings.mcp.tools.user_requests.images.object_ttl_days", DefaultImageObjectTTLDays),
+		PresignTTL:         time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.presign_ttl_minutes", DefaultImagePresignTTLMinutes)) * time.Minute,
+		GCSweepInterval:    time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.gc_sweep_seconds", int(DefaultImageGCSweepInterval/time.Second))) * time.Second,
+		URLAllowHTTP:       boolFromConfig("settings.mcp.tools.user_requests.images.url_fetch.allow_http", DefaultImageURLAllowHTTP),
+		URLMaxRedirects:    intFromConfig("settings.mcp.tools.user_requests.images.url_fetch.max_redirects", DefaultImageURLMaxRedirects),
+		URLTotalTimeout:    time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.url_fetch.total_timeout_seconds", DefaultImageURLTotalTimeoutSeconds)) * time.Second,
 		ContentTypeDefault: defaultStoredImageContentType,
 	}
 }

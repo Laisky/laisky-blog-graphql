@@ -20,7 +20,7 @@ var (
 
 const (
 	legacyFilesConfigPrefix = "settings.mcp.files"
-	ragFilesConfigPrefix    = "settings.mcp.memory.plugins.rag"
+	ragFilesConfigPrefix    = "settings.mcp.tools.memory.plugins.rag"
 )
 
 // Settings captures runtime configuration for FileIO features.
