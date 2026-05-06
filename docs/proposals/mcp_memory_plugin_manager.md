@@ -3,11 +3,41 @@ title: MCP memory plugin manager (rag_plugin + pageindex_plugin)
 status: draft
 owner: mcp team
 created: 2026-05-05
-updated: 2026-05-05
-revision: r2 — fileio-backed pageindex; gRPC sidecar; system namespace
+updated: 2026-05-06
+v1_runtime: pure-Go, in-process; no Python sidecar, no cgo, no external binary (see §1.4)
 ---
 
 # MCP Memory Plugin Manager — Change Manual
+
+## 0. Decision (v1 runtime)
+
+**v1 ships pure-Go, in-process. There is no Python sidecar in any phase of v1.**
+
+The PageIndex algorithm is reimplemented in Go and runs in the existing MCP server
+process. The only network call the plugin makes is HTTPS to OpenAI's Responses API. The
+following are explicitly out of scope for v1, and the build will not link against any
+artifact that introduces them:
+
+- No Python runtime, no Python sidecar, no `pip` dependency, no `requirements.txt`
+  shipped in the deploy artifact.
+- No cgo. No `llama.cpp`, no ONNX runtime, no native PDF binding.
+- No subprocess, no Unix-domain or TCP IPC socket, no proto-generated stubs, no extra
+  container in the Compose / k8s manifest.
+- No "fallback to Python" mode and no compile-time flag that re-enables one. There is
+  no `if buildtag.python` in the codebase.
+- No vendored upstream Python at runtime: `/home/laisky/repo/3rd/PageIndex` is consulted
+  as an algorithmic reference (prompt shapes, knob defaults, JSON tree schema) only —
+  it is never imported, executed, or shipped.
+
+Every "in-process," "no sidecar," and "Responses-API only" claim downstream
+(§1.3, §1.4, §1.5, §2.6, §3.3, §4.3, §6 A6/A10, §8 Phase 2) resolves back to this
+section. The `go.mod` additions in §4.2 are the *complete* set of new runtime
+dependencies — every entry is pure Go with stdlib-only transitive deps.
+
+Reopening the Python-sidecar option is a v2 conversation, not a v1 patch. If a future
+reader wants the sidecar path, the corresponding proposal must (a) supersede this
+document, not amend it, and (b) re-derive its own §3 risk analysis from scratch — the
+risks listed below are sized for an in-process Go implementation and do not transfer.
 
 ## 1. Background
 
@@ -46,19 +76,27 @@ but degrades on long, hierarchically structured documents (PDFs, manuals, book-l
 
 [VectifyAI / PageIndex](https://github.com/VectifyAI/PageIndex) (cloned locally at
 `/home/laisky/repo/3rd/PageIndex`) takes the opposite approach — **vectorless,
-reasoning-driven retrieval**:
+reasoning-driven retrieval**. We treat it as an *algorithmic reference* to port, not as
+a runtime dependency (§1.4):
 
 - Indexing turns each document into a hierarchical JSON tree (Table-of-Contents nodes with
   `node_id`, `title`, `start_index`/`end_index`, LLM summary). Knobs:
   `toc_check_page_num=20`, `max_page_num_each_node=10`, `max_token_num_each_node=20000`.
+  Our Go port preserves these knob names and defaults bit-for-bit (§2.4) so any future
+  scorecard comparison against upstream is meaningful.
 - Retrieval exposes three primitives — `get_document`, `get_document_structure`,
   `get_page_content(pages="5-7,12")` — to an LLM agent that traverses the tree.
-- Persistence is plain JSON in a `workspace/{doc_id}.json` plus a `_meta.json` catalog.
-  No vector DB, no embeddings (`grep -r 'embedding\|pgvector\|chroma\|faiss\|pinecone'` in
-  the clone returns nothing).
-- Dependencies (`requirements.txt`): `litellm==1.83.7`, `pymupdf==1.26.4`, `PyPDF2==3.0.1`,
-  `python-dotenv==1.2.2`, `pyyaml==6.0.2`. Default models `gpt-4o-2024-11-20` for indexing,
-  `retrieve_model` for queries.
+- Persistence is plain JSON. Upstream uses a workspace dir (`workspace/{doc_id}.json` +
+  `_meta.json`); we keep the JSON shape but persist via `SystemFS` (§2.6.3) instead of a
+  separate filesystem tree — no `workspace_root` to provision.
+- No vector DB, no embeddings. Confirmed via
+  `grep -r 'embedding\|pgvector\|chroma\|faiss\|pinecone'` in the upstream clone (returns
+  nothing).
+- v1 takes nothing from the upstream runtime — only its prompt shapes, knob defaults, and
+  JSON tree schema. The Go-side dependency set is catalogued in §2.6.4 (`pdfcpu`/`dslipak`
+  for PDF parsing, `yuin/goldmark` for markdown, `openai-go` for the Responses API, no
+  equivalent needed for upstream config-loader libraries — Go config goes through the
+  existing `settings.yml` machinery).
 
 ### 1.3 Goal
 
@@ -67,10 +105,15 @@ in per-tenant or per-project without changing the public MCP tool schemas. Ship 
 day one:
 
 - **`rag_plugin`** — the existing Postgres + pgvector + BM25 + rerank stack, behavior-preserving.
-- **`pageindex_plugin`** — a new vectorless, tree-based engine wrapping PageIndex.
+- **`pageindex_plugin`** — a new vectorless, tree-based engine. Pure-Go reimplementation of
+  the PageIndex algorithm; upstream `VectifyAI/PageIndex` is the algorithmic reference, not a
+  runtime dependency. See §1.4 for the v1 dependency boundary.
 
-A `PluginManager` selects the active plugin at request scope using settings (default global,
-per-project override, per-API-key override).
+A `PluginManager` selects the active plugin at request scope using two inputs only: an
+optional per-call `plugin` argument on the tool input (§2.4.1) and a single global
+`default_plugin` setting. There is no per-project, per-API-key, or per-tenant override
+layer — agents pin a backend per call when they need to, and operators flip the global
+default when they want to migrate everyone. This is a deliberate simplicity bet (§2.4).
 
 ### 1.4 Non-goals
 
@@ -81,21 +124,33 @@ per-project override, per-API-key override).
   via `FileService` and need no work beyond compile-time fixes.
 - No automatic migration of existing tenant data into PageIndex format. New plugin starts empty
   and is opt-in.
-- No reimplementation of the PageIndex algorithm in pure Go (see §3.3 — out of scope for v1).
+- **v1 is pure Go, in-process.** The PageIndex algorithm is reimplemented in Go (see §2.6,
+  §3.3). No Python runtime, no sidecar, no cgo, no external binary, no IPC boundary on the
+  same host. The upstream Python repo at `/home/laisky/repo/3rd/PageIndex` is an
+  **algorithmic reference** — we cite its prompt shapes, knob defaults, and JSON tree
+  schema, but no Python code runs in production. This is the canonical statement; later
+  sections do not relitigate it.
 - **Not a vector-DB replacement.** Per the 2026 industry consensus (see §1.5), PageIndex is
   *tier-2* retrieval — invoked after candidate document(s) are chosen. `rag_plugin` remains
   the right answer for at-scale coarse retrieval across an unbounded corpus. The two plugins
-  are complementary, selected per-project per the resolution rules in §2.4, not adversaries.
+  are complementary, selected per-call by the agent or per-server by the operator (§2.4),
+  not adversaries.
 
 ### 1.5 Industry context (2026 sanity check)
 
-Three observations from a 2026 survey of agent-memory and vectorless-RAG systems shape the
-design choices below; they are recorded here so future readers can audit the assumptions:
+Four observations from a 2026 survey of agent-memory and vectorless-RAG systems shape the
+design choices below; they are recorded here so future readers can audit the assumptions.
 
-- **Stateless Python sidecar with gRPC server-streaming is the prevailing 2026 pattern**
-  (Ray Serve, BentoML, Modal). Cgo / `go-python` is explicitly avoided. Long-running indexing
-  benefits from streaming progress events; bare HTTP+SSE is being displaced by gRPC streaming
-  in service-mesh stacks. The design in §2.6 reflects this.
+- **Pure-Go in-process LLM orchestration is production-proven; v1 commits to it.**
+  ByteDance's [Eino](https://github.com/cloudwego/eino) runs in Doubao and TikTok
+  recommendation traffic as a pure-Go agent framework. On the TS/Node side, teams report
+  end-to-end p95 dropping from ~2 450 ms to ~1 240 ms purely by removing the Python
+  boundary
+  ([2026 Mastra adoption report](https://dev.to/jim_l_efc70c3a738e9f4baa7/i-switched-from-langgraph-to-mastra-for-my-typescript-agents-18-hours-vs-41-nah)).
+  Anthropic's [memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)
+  is explicitly a *client-side* contract — the model emits tool calls and the host executes
+  them — so a Go host is first-class. The §1.4 commitment is therefore the cheap option,
+  not the constrained one. §2.6 spells out the indexer.
 - **Memory backends behind a narrow tool surface is the norm** (Mem0: `add/search/update/delete`
   with 19 vector backends + 2 graph backends; Letta, Zep, LangGraph Memory, Anthropic memory
   tool follow the same shape). Per-tenant plugin selection is routed in the host *before*
@@ -104,6 +159,17 @@ design choices below; they are recorded here so future readers can audit the ass
   at scale (AWS S3 multi-tenant guidance; documented prefix/RLS leakage modes). The fix is a
   separate **system namespace** the user API cannot address — enforced in the data path, not
   by convention. §2.6.3 uses this pattern for plugin-internal artifacts (tree JSON, catalog).
+- **OpenAI's `/v1/responses` (Responses API) is the single LLM contract.** The provider-native
+  Responses API ships strict JSON-Schema structured output, server-side conversation state,
+  and incremental streaming in one endpoint. We deliberately scope v1 to **external API
+  only**, **Responses-API format only**: no `litellm`-equivalent abstraction, no local-
+  inference engines, no Anthropic SDK, no reflection-based wrappers (`instructor-go`,
+  `langchaingo`). The official [openai-go](https://github.com/openai/openai-go) SDK is the
+  one runtime LLM dependency; the indexing model is `gpt-5.4-mini` and the (rag-side)
+  embedding model is `text-embedding-3-small` (configurable, but those are the only
+  defaults validated in CI). Vendors that implement the Responses API with their own keys
+  work by overriding `base_url` only — adding a new model contract (chat-completions,
+  Anthropic Messages, etc.) is explicitly out of scope for v1. §2.6.5 builds on this.
 
 ## 2. Design
 
@@ -149,12 +215,16 @@ Different plugins legitimately differ. Each plugin reports:
 
 ```go
 type Capabilities struct {
-    SearchModes       []SearchMode  // {"hybrid","semantic","lexical","tree-reasoning"}
-    SupportsRandomIO  bool          // false for pageindex (offset/length read into a tree node)
+    SearchModes       []SearchMode  // rag: {"hybrid","semantic","lexical"}; pageindex: {"tree-reasoning"}
+    SupportsRandomIO  bool          // both: true — pageindex routes raw reads through userFS (§2.6.1).
+                                    //   The .pdf/.md OVERWRITE@offset rejection in §3.4 is a per-path
+                                    //   refinement surfaced via INVALID_ARGUMENT, not a capability flip.
     SupportsRename    bool
-    SupportsVersions  bool          // rag_plugin: true (mcp_file_versions); pageindex_plugin: false in v1
+    SupportsVersions  bool          // rag: true (mcp_file_versions); pageindex: false in v1
     MaxPayloadBytes   int64
-    AsyncIndexing     bool          // rag_plugin: true; pageindex_plugin: false (sync, LLM-bound)
+    AsyncIndexing     bool          // rag: true; pageindex: false — indexing is sync, LLM-bound,
+                                    //   in-process. The freshness window in C05 is 0 s for pageindex.
+    FreshnessWindow   time.Duration // documented end of the C05/R06 contract (rag: 5 s; pageindex: 0)
     Notes             string
 }
 ```
@@ -167,12 +237,12 @@ identical, so callers see uniform behavior.
 ```go
 // internal/mcp/memory/plugin/manager.go (new)
 type Manager struct {
-    plugins map[string]Plugin    // by Name()
-    rules   ResolutionRules      // see §2.4
-    fallback Plugin
+    plugins       map[string]Plugin    // by Name()
+    defaultPlugin Plugin               // settings.mcp.memory.default_plugin
 }
 
-// override is the per-call argument from §2.4.1. Empty or "auto" means "use rules".
+// override is the per-call argument from §2.4.1. Empty or "auto" means "use the default".
+// auth and project are accepted for logging/metrics but do not influence the resolution.
 func (m *Manager) Resolve(ctx context.Context, auth AuthContext, project, override string) (Plugin, error)
 func (m *Manager) StartAll(ctx context.Context) error
 func (m *Manager) StopAll(ctx context.Context)  error
@@ -184,9 +254,28 @@ func (m *Manager) ForName(name string) (Plugin, error)  // for tests + admin too
 Resolution order (first match wins):
 
 1. **Per-call argument** — optional `plugin` field on every `file_*` tool input (see §2.4.1).
-2. Per-API-key override (`settings.mcp.memory.plugin_overrides.api_key_hash[<hash>]`)
-3. Per-project override (`settings.mcp.memory.plugin_overrides.project[<project>]`)
-4. Default (`settings.mcp.memory.default_plugin`, fallback `"rag"`)
+2. **Default** (`settings.mcp.memory.default_plugin`, fallback `"rag"`).
+
+That is the entire decision tree. There is **no** per-project routing table, **no**
+per-API-key routing table, and **no** per-tenant override map. An earlier draft proposed
+a `plugin_overrides.{project,api_key_hash}` block; it was removed because:
+
+- The per-call `plugin` argument already covers every use case the override map covered
+  (an agent that knows a doc lives in PageIndex passes `plugin="pageindex"`; an operator
+  that wants a class of project on PageIndex teaches the agent to do that, or flips the
+  global `default_plugin`).
+- Two routing layers (override map + per-call) is two layers of debugging when an agent
+  asks "why did my call go to plugin X?" — the answer is now always "either you passed
+  `plugin=X` or the operator set `default_plugin=X`," nothing else.
+- A routing map keyed on `api_key_hash` is config-as-database — the key set churns with
+  the tenant set, the YAML grows unbounded, and there is no schema to validate it. If we
+  ever need per-tenant routing, it belongs in a real datastore with admin tooling, not in
+  `settings.yml`.
+
+Operators who want a class of project on a non-default plugin set the agent's prompt to
+emit `plugin="pageindex"` for those projects (the natural place for that policy — the
+agent already knows which project it is writing to). Operators who want everyone moved
+flip `default_plugin`.
 
 #### 2.4.1 Per-call `plugin` argument
 
@@ -206,12 +295,12 @@ Every memory-surface tool (`file_stat`, `file_read`, `file_write`, `file_delete`
 
 Semantics:
 
-- **Omitted or `"auto"`** — fall through to rules 2–4. **Today's default ⇒ `rag_plugin`.** Existing
-  callers see no change.
-- **Explicit name** (`"rag"` / `"pageindex"`) — bypass all config-level routing for this single
-  invocation. Useful for: agents that know which backend a doc lives in; A/B comparison of the
-  two engines on the same query; force-routing a `file_write` of a long PDF into PageIndex even
-  if the project default is RAG.
+- **Omitted or `"auto"`** — fall through to `default_plugin`. **Today's default ⇒
+  `rag_plugin`.** Existing callers see no change.
+- **Explicit name** (`"rag"` / `"pageindex"`) — pin this single invocation to that
+  backend regardless of `default_plugin`. Useful for: agents that know which backend a
+  doc lives in; A/B comparison of the two engines on the same query; force-routing a
+  `file_write` of a long PDF into PageIndex even when the server default is RAG.
 - **Unknown name** — return `INVALID_ARGUMENT` with `available_plugins=[...]` in
   `structuredContent` so the caller can self-correct.
 - **Cross-plugin reads** — if a path was written via plugin A but the call specifies plugin B
@@ -220,7 +309,7 @@ Semantics:
   across plugins (that would defeat tenant isolation between engines and surprise the caller).
 - **Mutations are sticky** — a `file_write` under plugin X stores the path under X *only*. There
   is no implicit migration. A subsequent `file_read` without an explicit `plugin` will resolve
-  per the rules; if that resolves to a different plugin, the read returns `NOT_FOUND` with the
+  to `default_plugin`; if that is a different plugin, the read returns `NOT_FOUND` with the
   hint above.
 
 The field is forwarded by the tool adapter into `Manager.Resolve(ctx, auth, project, override)`
@@ -232,39 +321,53 @@ New settings keys:
 settings:
   mcp:
     memory:
-      default_plugin: "rag"            # "rag" | "pageindex"
-      plugin_overrides:
-        project:
-          books:    "pageindex"
-          datasheet:"pageindex"
-        api_key_hash: {}
+      default_plugin: "rag"            # "rag" | "pageindex" — the only routing knob
       plugins:
         rag: {}                         # current settings.mcp.files.* re-rooted under here
         pageindex:
-          backend: "grpc_sidecar"       # "grpc_sidecar" (prod) | "subprocess" (dev only)
-          grpc_sidecar:
-            target:           "unix:///run/laisky/pageindex.sock"
-            tls:              false
-            timeout_index:    "5m"
+          # Indexer (Go, in-process; see §1.4).
+          indexer:
+            timeout_index:    "5m"      # ceiling for a single document index call
             timeout_query:    "60s"
+            max_concurrency:  8         # bounded LLM-call fan-out per indexing job
             retry:
-              max_attempts:    3
+              max_attempts:    10       # parity with upstream PageIndex defaults
               initial_backoff: "250ms"
-          subprocess:
-            python:        "/opt/laisky/pageindex/.venv/bin/python"
-            entrypoint:    "pageindex_sidecar.server"   # serves on a private UDS
-            timeout_index: "5m"
-            timeout_query: "60s"
-          # LLM is provider-agnostic via litellm-style URLs; no provider hard-coded in code.
+              max_backoff:     "8s"
+            cache:
+              enabled:         true
+              path:            "/var/lib/laisky/pageindex-cache.bbolt"
+              max_size_bytes:  1073741824  # 1 GiB; LRU evict
+          # External LLM API only. Single contract: OpenAI Responses API
+          # (POST /v1/responses). No Anthropic SDK, no local-inference endpoint,
+          # no `litellm`-equivalent multi-provider router (§2.6.5).
           llm:
-            indexing_model:  "openai/gpt-4o-2024-11-20"
-            retrieve_model:  "openai/gpt-4o-2024-11-20"
-            api_key_env:     "OPENAI_API_KEY"
-            base_url:        ""        # empty = provider default
+            indexing_model:  "gpt-5.4-mini"
+            retrieve_model:  "gpt-5.4-mini"
+            api_key:         ""        # OpenAI API key, configured directly in this file.
+                                       # Config-file confidentiality is handled out-of-band
+                                       # (file ACLs / secret-management tooling), so the
+                                       # plugin reads the key as-is without env-var indirection.
+            base_url:        ""        # empty = api.openai.com; vendors implementing
+                                       # the Responses API with their own keys override here.
+          # Algorithmic knobs, parity with upstream PageIndex defaults.
+          algo:
+            toc_check_page_num:        20
+            max_page_num_each_node:    10
+            max_token_num_each_node:   20000
+            generate_node_summary:     true
+            generate_doc_description:  true
+          # Search-time budgets — bounded mini-agent over the cached tree (§2.6.2).
           tree_query:
             max_steps:        8
             max_tokens:       20000
             candidate_docs:   5
+          # Pure-Go PDF parser selection (§2.6.4). Default `pdfcpu` for Apache-2.0
+          # license + outline support; `dslipak` available as a text-only fallback
+          # if a tenant's corpus regresses on pdfcpu's text quality.
+          pdf:
+            text_parser:    "pdfcpu"   # "pdfcpu" | "dslipak"
+            outline_parser: "pdfcpu"   # only pdfcpu exposes outlines today
 ```
 
 Existing `settings.mcp.files.*` keys move under `settings.mcp.memory.plugins.rag.*` with a
@@ -289,28 +392,90 @@ is ~150 lines of glue.
 
 ### 2.6 `pageindex_plugin` — new engine
 
-Located at `internal/mcp/memory/plugins/pageindex`. PageIndex is Python-only; we do not
-reimplement its LLM-driven indexing in Go (cost/quality risk too high for v1).
+Located at `internal/mcp/memory/plugins/pageindex`. The PageIndex algorithm — TOC
+detection → tree extraction → recursive node refinement → optional summarization — is
+reimplemented in Go and runs in-process per §1.4.
 
-Two design choices distinguish this from a naïve port:
+The upstream Python repo at `/home/laisky/repo/3rd/PageIndex` is the **algorithmic
+reference**: we cite it for prompt shapes, knob defaults
+(`toc_check_page_num=20`, `max_page_num_each_node=10`, `max_token_num_each_node=20000`),
+and the JSON tree schema. Implementation details (file layout, retry strategy, concurrency
+primitives) follow Go idioms.
+
+Three design choices distinguish this from a naïve port:
 
 - **All persistence rides on the existing fileio.** Raw bytes (the user's PDF/MD) are stored
   via the *same* `*files.Service` that backs `rag_plugin`'s user-facing layer, so
   `file_read`/`file_stat`/`file_list` against a `pageindex_plugin`-backed project behave
   identically to today for those verbs. PageIndex's own metadata (per-doc tree JSON, the
   `_meta.json` catalog, the path↔doc_id index) lives in a **separate system namespace** the
-  user API cannot address (see §2.6.3). Net effect vs. r1 of this proposal: no
-  `workspace_root` directory, no new `mcp_pageindex_docs` table, no new on-disk layout.
-- **The Python sidecar is stateless and speaks gRPC.** The sidecar never touches disk: the
-  Go plugin pulls raw bytes from fileio, streams them to the sidecar over gRPC, receives the
-  indexed JSON tree back, then persists it via fileio in the system namespace. This matches
-  the 2026 reference pattern (Ray Serve / BentoML / Modal: stateless inference + external
-  state) and avoids cgo entirely.
+  user API cannot address (see §2.6.3). No `workspace_root` directory, no new
+  `mcp_pageindex_docs` table, no new on-disk layout.
+- **Indexing runs in-process with bounded fan-out.** A single `Indexer.Index(ctx, doc)`
+  call drives the whole pipeline: page extraction (pure-Go PDF parser, §2.6.4), TOC
+  detection / tree construction / verification / summarization (LLM calls fanned out via
+  `golang.org/x/sync/errgroup` + `golang.org/x/sync/semaphore`, capped at
+  `indexer.max_concurrency`), and returns a `*Tree` ready to persist via `SystemFS`.
+  Progress is published on an in-process buffered `chan Progress`, surfaced to MCP
+  callers via `report_progress` notifications when the request uses the streamable-HTTP
+  transport (MCP 1.25.1+).
+- **LLM access is via the OpenAI Responses API only.** A single dependency
+  (`github.com/openai/openai-go`) handles indexing prompts and the retrieval-time
+  mini-agent. Default indexing/retrieve model: `gpt-5.4-mini`. The `LLM` interface in
+  §2.6.5 is a thin adapter over `client.Responses.New(...)` — there is no provider
+  routing, no Anthropic SDK, no local-model fallback, no `langchaingo` /
+  `instructor-go`. Vendors that re-implement the Responses API can be reached by
+  overriding `base_url`, but supporting a different *model contract* (chat-completions,
+  Anthropic Messages) is out of scope for v1.
 
-The single backend is `grpc_sidecar`. A `subprocess` fallback (one-shot
-`python -m pageindex.cli` per call, JSON over stdin/stdout, no streaming) is retained
-purely for **dev/test ergonomics** when the sidecar isn't running; it is not a production
-path.
+End-to-end data flow for a `file_write(.pdf)` followed by `file_search` under
+`pageindex_plugin`:
+
+```
+                 MCP request
+                      |
+                      v
+              +--------------+
+              | tool adapter |
+              +------+-------+
+                     |
+                     v
+        +------------------------+
+        |  plugin.Manager        |
+        |  Resolve(...)→pageindex|
+        +------------+-----------+
+                     |
+                     v
+        +------------------------+
+        | pageindex.Plugin       |
+        |  userFS sysFS indexer  |
+        +------+----------+------+
+               |          |
+       write   |          | search
+               v          v
+       +-------+--+   +---+----------+
+       | userFS   |   | sysFS.Read   |
+       | (mcp_*)  |   |  tree JSON   |
+       +-----+----+   +---+----------+
+             |            |
+             v            v
+       +-----+----+   +---+--------+
+       | Indexer  |   | search_loop|
+       |  Index() |   |  → LLM →   |
+       |  errgroup|   |  GetPageContent (in-mem)
+       |  + sem   |   +---+--------+
+       +-----+----+       |
+             |            v
+       openai-go      synthesized
+       Responses API  ChunkEntry[]
+       (gpt-5.4-mini)
+             |
+             v
+       sysFS.Write tree JSON
+       sysFS.Write index.json (path↔doc_id)
+```
+
+The only network egress is the OpenAI Responses-API call.
 
 #### 2.6.1 Mapping `FileService` → PageIndex (fileio-backed)
 
@@ -319,7 +484,7 @@ Notation: `userFS` is the user-facing fileio (the same instance `rag_plugin` wra
 
 | Tool          | Behavior under `pageindex_plugin`                                                                                                                                                                                                                |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `file_write`  | 1) `userFS.Write(project, path, content, mode)` — exactly today's path. 2) If `path` ends with `.pdf`/`.md`: stream content to sidecar via `IndexDocument` gRPC; on final tree, `sysFS.Write("pageindex/<doc_id>.json", treeJSON, TRUNCATE)` and update `sysFS:"pageindex/_meta.json"` plus the path↔doc_id mapping in `sysFS:"pageindex/index.json"`. Other extensions (`.txt`, `.json`): step 1 only. |
+| `file_write`  | 1) `userFS.Write(project, path, content, mode)` — exactly today's path. 2) If `path` ends with `.pdf`/`.md`: invoke `Indexer.Index(ctx, content, opts)` in-process (bounded LLM fan-out per §2.6.4); on success, `sysFS.Write("pageindex/<doc_id>.json", treeJSON, TRUNCATE)` and update `sysFS:"pageindex/_meta.json"` plus the path↔doc_id mapping in `sysFS:"pageindex/index.json"`. Other extensions (`.txt`, `.json`): step 1 only. |
 | `file_read`   | `userFS.Read(...)` — unchanged, including offsets. Random IO works for every path under this plugin since user content is in the user namespace.                                                                                                  |
 | `file_stat`   | `userFS.Stat(...)` — unchanged.                                                                                                                                                                                                                  |
 | `file_list`   | `userFS.List(...)` — unchanged. **System namespace is invisible** (enforced at the SQL layer, not by path filter — see §2.6.3).                                                                                                                  |
@@ -351,23 +516,24 @@ Under PageIndex we synthesize this from a tree-reasoning loop:
    `(api_key_hash, project)` scope; filter by `path_prefix`.
 2. For each candidate (capped by `tree_query.candidate_docs`), run an internal mini-agent
    loop bounded by `tree_query.max_steps` and `tree_query.max_tokens`:
-   a. `sysFS.Read("pageindex/<doc_id>.json")` — the cached tree JSON. No sidecar call needed.
-   b. Ask the LLM (`retrieve_model`) "given this tree and this query, list up to N page ranges
-      most likely to contain the answer; output JSON `[{pages,reason}]`."
-   c. For each range, call the sidecar's `GetPageContent(doc_id, pages)` — content is in the
-      cached tree JSON, so this is in-process JSON traversal, not a network round-trip in v1.
+   a. `sysFS.Read("pageindex/<doc_id>.json")` — the cached tree JSON. Pure in-process I/O.
+   b. Ask the LLM (`retrieve_model`, default `gpt-5.4-mini`) via the OpenAI Responses API
+      "given this tree and this query, list up to N page ranges most likely to contain the
+      answer; output JSON `[{pages,reason}]`." The Responses API enforces the JSON Schema
+      server-side (`text.format.type=json_schema, strict=true`); the response parses
+      directly into a Go struct without reflection-based wrappers (§2.6.5).
+   c. For each range, resolve `GetPageContent(doc_id, pages)` against the cached tree —
+      this is an in-process JSON traversal of `pages: [{page, content}]`, no I/O.
 3. Convert each returned `{page, content}` into a `ChunkEntry` with synthesized byte offsets
    (page-level offsets resolved via the cached `pages` array; markdown uses `line_num`).
    `Score` is a normalized rank from the LLM (fallback: position-based decay).
 4. Merge and sort across docs; truncate to `limit`.
 
 This loop is fully encapsulated inside the plugin — the MCP tool schema is unchanged. Cost
-and latency are bounded by the budgets above; budgets are exposed as settings and emitted as
-billing metadata (`mcp.memory.pageindex.tokens_in`, `tokens_out`, `llm_calls`).
-
-The LLM client used in step 2.b is **provider-agnostic** behind a small interface
-(`retrieve.LLM`) so a project can pin OpenAI / Anthropic / a local model without changing
-the sidecar contract. Defaults sit in settings (§2.4); no provider is hard-coded in code.
+and latency are bounded by the budgets above; budgets are tracked by an `atomic.Int64`
+counter shared across the goroutines spawned for the candidate-doc fan-out, exposed as
+settings, and emitted as billing metadata (`mcp.memory.pageindex.tokens_in`, `tokens_out`,
+`llm_calls`).
 
 #### 2.6.3 Persistence layout (system namespace, fileio-backed)
 
@@ -418,62 +584,200 @@ the same lock briefly but never corrupt the file. For high-mutation projects (~ 
 indexing writes — far above expected) we would shard `index.json` into
 `pageindex/index/<bucket>.json`; the v1 design defers that until measurements demand it.
 
-#### 2.6.4 Sidecar contract & packaging
+#### 2.6.4 Indexer
 
-The sidecar is a **stateless gRPC service** (Python, FastAPI dropped). All disk I/O lives on
-the Go side; the sidecar receives bytes and returns parsed structures.
+The indexer is a Go package, not a service. It is a single object the plugin holds:
 
-```protobuf
-// third_party/pageindex_sidecar/proto/pageindex.proto
-syntax = "proto3";
-package pageindex.v1;
+```go
+// internal/mcp/memory/plugins/pageindex/indexer.go (new)
+package pageindex
 
-service PageIndex {
-  // Streaming: client streams Chunk frames of file bytes; server streams progress
-  // events (tree-extraction phases, token spend, partial sub-trees) and finally
-  // a single FinalTree.
-  rpc IndexDocument(stream IndexRequest) returns (stream IndexEvent);
-
-  // Pure functions over an already-indexed tree (the Go plugin holds the JSON; the
-  // sidecar provides the canonical traversal/serialization to keep parity with
-  // upstream PageIndex semantics).
-  rpc GetDocumentStructure(GetStructureRequest) returns (StructureResponse);
-  rpc GetPageContent      (GetPageRequest)      returns (PageContentResponse);
-
-  rpc Healthz(google.protobuf.Empty) returns (HealthResponse);
+type Indexer struct {
+    llm    LLM           // §2.6.5 — Responses-API only
+    pdf    PDFParser     // pdfcpu by default (§2.6.4.1)
+    md     MarkdownParser // yuin/goldmark
+    tok    Tokenizer     // tiktoken-go/tokenizer (BPE embedded at build time)
+    cache  Cache         // bbolt; key = SHA-256 of (model, prompt, schema)
+    sem    *semaphore.Weighted
+    cfg    Settings
+    metric Reporter      // tokens_in/out, llm_calls, phase timings
 }
 
-message IndexRequest {
-  oneof body {
-    IndexHeader header = 1;   // sent first: doc_type, doc_name, model, knobs
-    Chunk       chunk  = 2;   // ≤ 1 MiB per frame
-  }
-}
-message IndexEvent {
-  oneof event {
-    Progress  progress  = 1;  // {phase, percent, tokens_in, tokens_out}
-    Tree      partial   = 2;  // optional incremental tree
-    FinalTree final     = 3;  // exactly once at the end
-    Error     error     = 4;
-  }
+func (idx *Indexer) Index(
+    ctx context.Context,
+    docKind Kind,         // KindPDF | KindMarkdown
+    bytes  []byte,
+    opts   IndexOptions,
+    progress chan<- Progress, // optional; nil = silent
+) (*Tree, *Stats, error)
+
+func (idx *Indexer) GetPageContent(tree *Tree, ranges []PageRange) ([]Chunk, error) // pure, no I/O
+func (idx *Indexer) GetDocumentStructure(tree *Tree) StructureView                  // pure, no I/O
+```
+
+The indexer is a Go object owned by the plugin; liveness is the Go process's own.
+
+##### 2.6.4.1 Pipeline
+
+The pipeline mirrors the upstream PageIndex flow, expressed in Go primitives. Counts are
+typical for a 200-page PDF; budgets are enforced by a single `atomic.Int64` token counter
+seeded from `algo.max_token_num_each_node × N + tree_query.max_tokens`.
+
+| Phase | What runs | LLM calls | Implementation |
+| --- | --- | --- | --- |
+| 1. Page extraction | `pdf.ExtractTextFile`, `api.Bookmarks` (pdfcpu) or `goldmark` AST walk | 0 | Pure Go |
+| 2. TOC detection | `toc_detector_single_page` over first `algo.toc_check_page_num` pages | 1 / page (≤20) | `errgroup` + `sem.Acquire(1)` |
+| 3. TOC presence + page-number probe | `detect_page_index` on concatenated TOC pages | 1 | sequential |
+| 4. Mode dispatch | with-page-#, no-page-#, or no-TOC branch (parity with upstream `meta_processor`) | 0 | switch/case |
+| 5. TOC parsing | `toc_transformer` + `toc_index_extractor` (Mode A) or `add_page_number_to_toc` per group (B) or `generate_toc_init` + `_continue` per 20K-token group (C) | 2–8 | sequential within branch; retried up to 5× on incomplete output |
+| 6. Tree assembly | `list_to_tree` flat→hierarchical | 0 | Pure Go |
+| 7. Verification | `check_title_appearance` random sample; on accuracy ∈ (60%,100%): `single_toc_item_index_fixer` per failing item | 5–10 | `errgroup` |
+| 8. Recursive node expansion | re-enter pipeline on nodes where `node_pages > max_page_num_each_node && node_tokens >= max_token_num_each_node` | bounded by depth ≤ 3 | `errgroup` |
+| 9. Optional summarization | `generate_node_summary` per leaf, `generate_doc_description` once | 5–25 | `errgroup` + `sem` |
+
+Each LLM call uses `LLM.Respond(ctx, req)` (§2.6.5), wrapped in
+`avast/retry-go/v4` with exponential backoff (`250 ms × 2^n` up to 8 s, max 10 attempts —
+parity with upstream's retry budget). Cancellation: `context.Context` propagates from the
+MCP request through `errgroup.WithContext`; sibling LLM calls cancel on first error.
+
+##### 2.6.4.2 Concurrency
+
+```go
+func (idx *Indexer) verifyTOC(ctx context.Context, tree *Tree) error {
+    g, gctx := errgroup.WithContext(ctx)
+    for _, node := range tree.Sample(idx.cfg.VerifySampleN) {
+        node := node
+        if err := idx.sem.Acquire(gctx, 1); err != nil { return err }
+        g.Go(func() error {
+            defer idx.sem.Release(1)
+            if idx.budget.Load() <= 0 { return ErrBudgetExceeded }
+            ok, used, err := idx.checkTitleAppearance(gctx, node)
+            idx.budget.Add(-int64(used))
+            if err != nil { return err }
+            if !ok { node.MarkForFix() }
+            return nil
+        })
+    }
+    return g.Wait()
 }
 ```
 
-Operational profile:
+`indexer.max_concurrency` (default 8) sizes `idx.sem`. The same primitive carries through
+node summarization and recursive expansion — there is no goroutine-per-node explosion.
 
-- Listens on `unix:/run/laisky/pageindex.sock` by default (lower latency than TCP for the
-  sidecar-on-same-host case), TCP `127.0.0.1:18901` available for separate-host deploys.
-- Health: `Healthz` returns `OK` once the LLM client is initialized; readiness probe wraps it.
-- Packaged in `third_party/pageindex_sidecar/` with `server.py`, `requirements.txt`
-  (pinned PageIndex commit + `grpcio`, `grpcio-tools`, `litellm`), and a **Debian**-based
-  `Dockerfile` (per memory: never Alpine).
-- Go plugin uses `grpc-go` with retry policy `{maxAttempts: 3, initialBackoff: 250ms}` for
-  `UNAVAILABLE`. Streamed `IndexEvent.progress` is forwarded to a structured logger and to
-  per-call billing metadata; clients still see the result as a single tool response (the
-  plugin awaits `FinalTree` before returning).
-- For dev: a `subprocess` mode launches the sidecar inline as a Python child process listening
-  on a private UDS, so contributors don't need a separate Compose file. This is the only
-  retained vestige of the old "subprocess vs. http" choice.
+##### 2.6.4.3 Caching
+
+Every LLM call's `(model, prompt, schema, params)` tuple is hashed to a 32-byte key; the
+response (raw bytes + token usage) is stored in a local `bbolt` database under
+`indexer.cache.path`. A re-index of the same PDF (same algorithm version) hits the cache
+for every prompt. Cache size is bounded by `indexer.cache.max_size_bytes` with LRU
+eviction; the cache is keyed by an algorithm-version constant so a prompt-template change
+implicitly invalidates old entries.
+
+##### 2.6.4.4 Progress
+
+`Index` writes one `Progress{phase, percent, tokens_in, tokens_out, llm_calls}` event per
+phase transition and on every `errgroup` member completion. Callers that pass `progress=nil`
+get nothing; callers that pass a buffered channel can forward events to:
+
+- The MCP `report_progress` notification (streamable-HTTP transport, MCP 1.25.1+) — the
+  default path for a client that opted into progress.
+- A `zap.Logger` field — the always-on path.
+- Per-call billing metadata aggregated into the tool response's `structuredContent`.
+
+The plugin awaits the final `Tree` before returning to the MCP tool layer, so callers that
+*don't* opt into streamable-HTTP simply see the tool response take longer.
+
+##### 2.6.4.5 Pure-Go PDF parsing
+
+`PDFParser` is satisfied by [pdfcpu](https://github.com/pdfcpu/pdfcpu) (Apache-2.0, 8.6k
+stars, active May 2026). `api.ExtractTextFile` returns per-page text; `api.Bookmarks`
+returns the recursive `Bookmark{Title, PageFrom, Children}` outline tree (maps directly
+onto the upstream `structure: [...]` shape); `api.PageCountFile` and `api.PDFInfo` cover
+metadata. License is commercial-safe; pinned to a tagged release (no master tracking).
+
+A second implementation, [`dslipak/pdf`](https://pkg.go.dev/github.com/dslipak/pdf),
+is registered as a fallback for tenants whose corpus regresses on pdfcpu's text quality;
+the choice is per-plugin-instance via `pdf.text_parser` and is invisible to MCP callers.
+**[UniDoc / unipdf](https://unidoc.io) is rejected** — its AGPL clause triggers on
+network use, which would force AGPL onto the entire MCP server.
+
+`MarkdownParser` is [`yuin/goldmark`](https://github.com/yuin/goldmark) — still the 2026
+default with no challenger, CommonMark-compliant, no cgo, deps stdlib-only.
+
+##### 2.6.4.6 Prompt invariance vs. upstream
+
+`prompts.go` carries the 13 prompt templates ported from upstream PageIndex
+(`page_index.py` + `utils.py`). Each template is a Go `text/template` string with the
+same body as upstream — only the variables and the surrounding output-schema directive
+change. A `golden_prompts_test.go` golden-fixture test asserts that the rendered prompt
+for canned inputs is byte-identical to a frozen reference (regenerated only when a port
+of an upstream improvement is intentional). This makes upstream-vs-port quality
+regressions detectable: if the §7 scorecard moves and prompts changed, we know which
+direction to look.
+
+The Responses-API-specific glue (`text.format.type=json_schema, strict=true`,
+`max_output_tokens`) is appended *outside* the rendered prompt body, so the body itself
+remains comparable to the upstream Python prompts even though the call shape differs.
+
+#### 2.6.5 LLM interface (Responses API only)
+
+```go
+// internal/mcp/memory/plugins/pageindex/llm.go (new)
+package pageindex
+
+// LLM is the single contract used by both indexing prompts (§2.6.4.1) and the
+// retrieval mini-agent (§2.6.2). It wraps OpenAI's Responses API only.
+type LLM interface {
+    // Respond performs a single Responses-API call and returns the parsed result.
+    // The schema is enforced server-side via text.format.type=json_schema,strict=true.
+    Respond(ctx context.Context, req Request) (*Response, error)
+
+    // CountTokens uses the embedded BPE (tiktoken-go/tokenizer) to estimate prompt
+    // cost before the call. Counts every InputItem in req.Input under req.Model.
+    CountTokens(ctx context.Context, req Request) (int, error)
+}
+
+// InputItem mirrors one entry in the Responses-API "input" array. We use the
+// minimal {role, content} shape; tool-use items can be added later if needed.
+type InputItem struct {
+    Role    string // "system" | "user" | "assistant"
+    Content string // textual content; the openai-go SDK splits it into content parts
+}
+
+type Request struct {
+    Model        string          // e.g., "gpt-5.4-mini"
+    Input        []InputItem
+    Schema       json.RawMessage // JSON Schema; nil = free-form text
+    MaxOutTokens int
+    Temperature  float32
+    PromptHash   [32]byte        // SHA-256 of (Model, Input, Schema, params) for the bbolt cache (§2.6.4.3)
+}
+
+type Response struct {
+    Output json.RawMessage // schema-validated JSON when Request.Schema != nil
+    Text   string          // textual fallback when Request.Schema == nil
+    Usage  Usage           // {InputTokens, OutputTokens, TotalTokens}
+}
+
+type Usage struct{ InputTokens, OutputTokens, TotalTokens int }
+```
+
+The single concrete implementation is `openaiLLM`, a ~80-line wrapper over
+`github.com/openai/openai-go`'s `Responses.New`. There is no Anthropic implementation in
+v1, no chat-completions adapter, no `langchaingo`/`instructor-go` shim. Vendors that
+re-implement the Responses API at a different host are reachable via `base_url`; that's
+the entire portability story.
+
+Token counting uses [`github.com/tiktoken-go/tokenizer`](https://github.com/tiktoken-go/tokenizer)
+(BPE vocabularies embedded at build time — no runtime download, no `/tmp` cache, no cgo).
+Rate limiting is a per-key `golang.org/x/time/rate.Limiter`; retry policy is
+`avast/retry-go/v4` honoring `Retry-After`. Both are wrapped inside `openaiLLM`, so the
+MCP-side caller never sees them.
+
+The rag plugin's embedding pathway, when it needs an OpenAI embeddings call, defaults to
+`text-embedding-3-small` and goes through the same `openai-go` SDK (separate `Embeddings`
+client, not via this `LLM` interface — embeddings are not LLM-style structured calls).
 
 ### 2.7 Wiring changes
 
@@ -483,6 +787,25 @@ Operational profile:
   - The single `*files.Service` instance is built once and **shared** by both plugins:
     `rag_plugin` wraps it directly; `pageindex_plugin` receives it as `userFS` and a
     `SystemFS` handle scoped to `system_owner="pageindex"`.
+  - **Pageindex enablement gate.** `pageindex_plugin` is constructed only if its config
+    block is present **and** `llm.api_key` is a non-empty string at startup. If the block
+    is present but `llm.api_key` is empty, `MustBuild` fails fast with a startup error
+    naming the missing config key. If the block is absent entirely, `pageindex_plugin`
+    is silently not registered — explicit `plugin="pageindex"` calls then return
+    `FAILED_PRECONDITION` per A10.
+  - **Pageindex sub-construction.** Inside the manager, building `pageindex_plugin`
+    threads the following one-time singletons:
+    1. `openaiLLM` — built from `llm.{indexing_model,retrieve_model,api_key,base_url}`
+       wrapped in `golang.org/x/time/rate.Limiter` (keyed by `sha256(llm.api_key)` so log
+       lines and metric labels never carry the raw key) and `avast/retry-go/v4`.
+    2. `tiktoken-go/tokenizer` (singleton) — selected for the configured `indexing_model`
+       at startup; embedded BPEs mean no network call during init.
+    3. `bbolt.DB` — opened at `indexer.cache.path`, single shared DB across goroutines
+       (bbolt does its own MVCC).
+    4. `semaphore.NewWeighted(indexer.max_concurrency)` — a single instance shared by
+       every concurrent `Indexer.Index` and `Search` call.
+    5. `Indexer{llm,pdf,md,tok,cache,sem,cfg}` — the orchestrator, constructed last so
+       `Plugin{userFS,sysFS,indexer,cfg}` is just a struct literal at the end.
 - [internal/mcp/server.go:204-452](../../internal/mcp/server.go#L204-L452): each `file_*` tool
   receives the `Manager`, not a single `FileService`; per-call it does
   `mgr.Resolve(ctx, auth, project, req.Plugin)` and forwards. The `Plugin` field is decoded
@@ -540,10 +863,10 @@ The pageindex plugin obtains a `SystemFS` once at construction:
 ```go
 // internal/mcp/memory/plugins/pageindex/plugin.go
 type Plugin struct {
-    userFS *files.Service
-    sysFS  files.SystemFS   // bound to "pageindex"
-    grpc   PageIndexClient  // gRPC sidecar client
-    cfg    Settings
+    userFS  *files.Service
+    sysFS   files.SystemFS   // bound to "pageindex"
+    indexer *Indexer         // in-process Go indexer (§2.6.4)
+    cfg     Settings
 }
 ```
 
@@ -555,21 +878,41 @@ the `SystemFS` it holds has its own SQL scoping that cannot land back in the use
 ### 3.1 Cost
 
 PageIndex query is LLM-bound. A typical search over a 200-page doc is 1× structure call
-(small, cached) + 1 LLM "pick ranges" + 1–3 `get_page_content` reads + answer composition
-upstream. We **must** cap with `tree_query.max_steps` and emit per-call token billing so
-operators can see the bill before it surprises them.
+(small, cached) + 1 LLM "pick ranges" + 1–3 `get_page_content` reads (in-process JSON
+traversal, no LLM) + answer composition upstream. We **must** cap with
+`tree_query.max_steps` and `tree_query.max_tokens` and emit per-call token billing so
+operators can see the bill before it surprises them. The `atomic.Int64` budget gate
+(§2.6.4.2) is shared across the goroutines spawned for candidate-doc fan-out, so
+concurrent search work cannot collectively over-spend a single call's budget.
 
-### 3.2 PageIndex API stability
+Indexing cost is one-shot: an N-page PDF is ~8–30 LLM calls per §2.6.4.1 pipeline
+(typical 200-page PDF: ~25 calls). The bbolt cache (§2.6.4.3) makes any subsequent
+re-index of the same bytes free, and bumping `algorithm_version` is the explicit
+invalidation handle.
 
-Pinning to PageIndex commit X (recorded in `third_party/pageindex_sidecar/requirements.txt`).
-The library exposes a tiny surface (`index`, `get_document`, `get_document_structure`,
-`get_page_content`); upstream churn risk is low.
+### 3.2 Algorithmic drift from upstream PageIndex
 
-### 3.3 Pure-Go future
+We own the algorithm in Go. There is no pinned upstream commit and no runtime dependency on
+the Python library. The risk inverts: when VectifyAI ships an algorithmic improvement (a
+new TOC-mode heuristic, a better verification prompt), we have to port it deliberately —
+no `pip install --upgrade` path. Mitigation: a tagged `algorithm_version` constant
+(`internal/mcp/memory/plugins/pageindex/version.go`) in the cache key (§2.6.4.3) plus a
+quarterly audit task that diffs upstream commits since the last port and decides each.
 
-A pure-Go reimplementation is attractive (fewer moving parts, no Python sidecar) but the
-indexing path is genuinely LLM-driven. Defer to v2 once the sidecar's metric volume lets us
-size the LLM contract.
+### 3.3 Hardening the Go implementation
+
+Two known unknowns when implementing the algorithm directly in Go:
+
+- **PDF text extraction parity.** Upstream's text-extraction baseline runs on a
+  C-extension PDF library that we are not pulling into the build. `pdfcpu`'s pure-Go
+  extractor is good for prose-heavy PDFs but lags on multi-column / table-heavy
+  layouts. Mitigation: ship the configurable `pdf.text_parser` knob (§2.4), add a
+  corpus-comparison row to the §7 scorecard, and treat any > 5 pp regression on the
+  long-doc subset of `memory-bench-internal-v1` as a release-blocker.
+- **Tokenizer parity.** `tiktoken-go/tokenizer` carries embedded BPEs; the budget enforced
+  by `tree_query.max_tokens` matches OpenAI's billing tokenizer to within rounding. We
+  reconcile post-call against the `usage` block returned by the Responses API, so any
+  mismatch surfaces as a metric, not as a silent over-spend.
 
 ### 3.4 Rename / random-IO mismatch
 
@@ -590,16 +933,24 @@ plugins. Mitigations:
 - Per-plugin metrics counters (`mcp.memory.<plugin>.*`) let us attribute slow ops correctly.
 - E05 in §5.3 pins p99 latency on `rag_plugin` to ±5% of the pre-refactor baseline.
 
-### 3.6 LLM provider lock-in
+### 3.6 LLM provider lock-in (deliberate, scoped)
 
-PageIndex upstream defaults to OpenAI prompts and chat-template assumptions; some prompts
-contain GPT-isms that other models render less reliably. Mitigations:
+v1 is **deliberately scoped** to the OpenAI Responses API contract (§2.6.5). Indexing and
+retrieval prompts are tuned for `gpt-5.4-mini` and not validated against any other model
+in CI. This is a tradeoff:
 
-- Sidecar uses litellm for transport (already a PageIndex dependency), so OpenAI / Anthropic /
-  local OSS endpoints all work.
-- The `tree_query` prompt that drives candidate-range selection lives **on the Go side** in
-  the plugin, not in the sidecar — so we own the prompt that costs us tokens. The sidecar's
-  prompts (tree extraction) remain whatever PageIndex ships, pinned to a commit.
+- **What we lose:** seamless drop-in of Anthropic, Gemini, or chat-completions-only
+  vendors. Any of those would require a second `LLM` implementation and re-tuning the
+  PageIndex prompts (some upstream prompts contain GPT-isms that other models render less
+  reliably).
+- **What we gain:** zero abstraction tax. There is no `litellm`-equivalent router, no
+  reflection wrapper, no "lowest common denominator" feature set. The Responses API
+  ships strict JSON-Schema, server-side conversation state, and streaming in one
+  endpoint — features a multi-provider abstraction has to either expose unevenly or
+  hide entirely.
+- **Escape hatch:** vendors that re-implement the Responses API (its surface is narrow
+  enough that this is becoming common) work via `base_url` only. A different model
+  contract is not available in v1; revisit if a real demand surfaces.
 
 ### 3.7 `mcp_files.system_owner` migration on a populated cluster
 
@@ -623,21 +974,25 @@ suppressed by an inline `// system_owner-checked: <reason>` comment.
 | `internal/mcp/memory/plugin/settings.go`                          | `MemoryPluginSettings` + `LoadFromConfig`                                            |
 | `internal/mcp/memory/plugins/rag/plugin.go`                       | Adapter over `*files.Service`                                                        |
 | `internal/mcp/memory/plugins/rag/plugin_test.go`                  | Conformance suite invocation                                                         |
-| `internal/mcp/memory/plugins/pageindex/plugin.go`                 | Plugin entrypoint; holds `userFS`, `SystemFS`, gRPC client                           |
-| `internal/mcp/memory/plugins/pageindex/grpc_backend.go`           | gRPC client wrapping the sidecar (default backend)                                   |
-| `internal/mcp/memory/plugins/pageindex/subprocess_backend.go`     | Dev-mode: spawn local sidecar over UDS; same gRPC stub as production                 |
+| `internal/mcp/memory/plugins/pageindex/plugin.go`                 | Plugin entrypoint; holds `userFS`, `SystemFS`, `*Indexer`                            |
+| `internal/mcp/memory/plugins/pageindex/version.go`                | `algorithm_version` constant used as a cache-key salt (§3.2)                         |
 | `internal/mcp/memory/plugins/pageindex/sysstore.go`               | `SystemFS`-based reads/writes for `pageindex/{<doc_id>.json, _meta.json, index.json}`|
-| `internal/mcp/memory/plugins/pageindex/search_loop.go`            | Tree-reasoning search (§2.6.2) + provider-agnostic `retrieve.LLM`                    |
-| `internal/mcp/memory/plugins/pageindex/{...}_test.go`             | Unit + golden tests (canned tree, byte-offset synthesis, budget exhaustion)          |
+| `internal/mcp/memory/plugins/pageindex/search_loop.go`            | Tree-reasoning search (§2.6.2); calls `LLM` from `llm.go`                            |
+| `internal/mcp/memory/plugins/pageindex/indexer.go`                | `Indexer` orchestrator (§2.6.4); `errgroup` + `semaphore.Weighted` fan-out           |
+| `internal/mcp/memory/plugins/pageindex/pipeline_pdf.go`           | Pure-Go PDF indexing pipeline (TOC detect, 3-mode dispatch, tree assembly)           |
+| `internal/mcp/memory/plugins/pageindex/pipeline_markdown.go`      | Goldmark-based MD pipeline (header tree, optional summarization)                     |
+| `internal/mcp/memory/plugins/pageindex/pdf_parser.go`             | `PDFParser` interface + pdfcpu/dslipak implementations (§2.6.4.5)                    |
+| `internal/mcp/memory/plugins/pageindex/markdown_parser.go`        | `MarkdownParser` over `yuin/goldmark`                                                |
+| `internal/mcp/memory/plugins/pageindex/llm.go`                    | `LLM` interface + `openaiLLM` (Responses API only); `tiktoken-go/tokenizer` counter  |
+| `internal/mcp/memory/plugins/pageindex/prompts.go`                | The 13 prompt templates ported from upstream PageIndex (§2.6.4.1 phase table)        |
+| `internal/mcp/memory/plugins/pageindex/cache.go`                  | `bbolt`-backed content-addressable cache for LLM responses (§2.6.4.3)                |
+| `internal/mcp/memory/plugins/pageindex/budget.go`                 | `atomic.Int64` token-budget gate shared across goroutines                            |
+| `internal/mcp/memory/plugins/pageindex/progress.go`               | `Progress` event type + MCP `report_progress` adapter                                |
+| `internal/mcp/memory/plugins/pageindex/{...}_test.go`             | Unit + golden tests (canned tree, byte-offset synthesis, budget exhaustion, retry)   |
+| `internal/mcp/memory/plugins/pageindex/testdata/`                 | Frozen sample PDFs/MD + expected tree JSONs for golden tests                         |
 | `internal/mcp/memory/conformance/suite.go`                        | Shared "every plugin must pass" test suite                                           |
 | `internal/mcp/files/system_fs.go`                                 | `SystemFS` interface + `*Service.SystemNamespace(owner)` constructor (§2.8)          |
 | `internal/mcp/files/system_fs_test.go`                            | Isolation tests: SystemFS cannot read/write user namespace; user FS cannot see system rows |
-| `third_party/pageindex_sidecar/proto/pageindex.proto`             | gRPC contract (§2.6.4)                                                               |
-| `third_party/pageindex_sidecar/server.py`                         | Stateless gRPC server wrapping `PageIndexClient`                                     |
-| `third_party/pageindex_sidecar/requirements.txt`                  | Pinned deps (PageIndex commit, `grpcio`, `grpcio-tools`, `litellm`)                  |
-| `third_party/pageindex_sidecar/Dockerfile`                        | Debian-based image                                                                   |
-| `third_party/pageindex_sidecar/README.md`                         | Operator docs (Compose, UDS path, healthz)                                           |
-| `internal/mcp/memory/plugins/pageindex/proto/pageindex_grpc.pb.go`| Generated stubs (committed; regen via `make proto`)                                  |
 | `docs/manual/mcp_memory_plugins.md`                               | Operator-facing manual                                                               |
 | `docs/requirements/mcp_memory_plugins.md`                         | PRD                                                                                  |
 
@@ -657,7 +1012,7 @@ suppressed by an inline `// system_owner-checked: <reason>` comment.
 | `internal/mcp/files/types.go`                                     | Re-export from `plugin/types.go`; add `WriteOpts`                                                                                                                                                                                                                                                                               |
 | `internal/mcp/memory/service.go`                                  | Take `FileService` (interface) instead of `*files.Service`                                                                                                                                                                                                                                                                      |
 | `internal/mcp/memory/engine_factory.go`                           | Read plugin name on session start; record in session metadata for observability                                                                                                                                                                                                                                                 |
-| `Makefile` (or equivalent)                                        | New `proto` target running `protoc` against `third_party/pageindex_sidecar/proto/`                                                                                                                                                                                                                                              |
+| `go.mod` / `go.sum`                                               | Add `github.com/openai/openai-go`, `github.com/pdfcpu/pdfcpu`, `github.com/dslipak/pdf` (fallback), `github.com/yuin/goldmark`, `github.com/tiktoken-go/tokenizer`, `go.etcd.io/bbolt`, `github.com/avast/retry-go/v4`, `golang.org/x/sync/{errgroup,semaphore}`, `golang.org/x/time/rate`. No Anthropic SDK in v1 (§3.6). |
 | `.github/workflows/*` (CI)                                        | Add the `ast-grep` rule (§3.7) that fails on missing `system_owner` predicates                                                                                                                                                                                                                                                  |
 | `arch.md`                                                         | Add "MCP Memory Plugins" section pointing to manual                                                                                                                                                                                                                                                                             |
 
@@ -690,8 +1045,6 @@ of `mcp_files` (rows where `system_owner='pageindex'`).
 
 - One-shot translation `settings.mcp.files.*` → `settings.mcp.memory.plugins.rag.*` at config
   load time, with a single WARN log per process. Removed in the release **after** v1 ships.
-- Old r1 keys (`workspace_root`, `http_sidecar.*`) are not in any released config; if they
-  appear in a config file we error at startup pointing to §2.4 in this proposal.
 
 ## 5. Test matrix
 
@@ -785,7 +1138,7 @@ acceptable observations. No row asserts which lock primitive is used.
 | R05 | A deletes P; B reads P; calls overlap                                                                | B's read returns either the bytes or NOT_FOUND, deterministically. Any subsequent search returns no chunk that originated from P after delete returned success.                                                                                                                                                               |
 | R06 | A writes P, then immediately B searches for content unique to P                                      | If the engine advertises freshness window ≤ T (rag = 5 s, pageindex = synchronous = 0 s), then for any B-search invoked at any moment ≥ T after A's write success, the search response contains a chunk derived from P. Earlier than T may legitimately miss it; T is part of the user contract documented in `Capabilities`. |
 | R07 | N=20 agents write distinct paths in the same project concurrently                                     | All 20 writes succeed within the per-call latency budget; subsequent reads return each path's own bytes. The slowest of the 20 is bounded by `latency_budget × O(log N)` — no head-of-line blocking.                                                                                                                          |
-| R08 | A writes P; concurrently the engine's index worker / sidecar restarts                                 | After restart, a read of P returns either the bytes or `UNAVAILABLE` (transient); never empty success. Within the freshness window, a search re-derives P at most once (no double-billing).                                                                                                                                  |
+| R08 | A writes P; concurrently the host process restarts (rag's index worker resumes from `mcp_file_index_jobs`; pageindex's in-process indexer is re-driven by the next write or the warm bbolt cache) | After restart, a read of P returns either the bytes or `UNAVAILABLE` (transient); never empty success. Within the freshness window, a search re-derives P at most once (no double-billing).                                                                                                                                  |
 | R09 | A writes P with `plugin="rag"`; B concurrently writes the same P with `plugin="pageindex"`            | Both writes succeed. A subsequent read scoped to a plugin returns only that plugin's bytes; cross-plugin reads return NOT_FOUND with the routing hint. The two are tracked independently — neither mutates the other.                                                                                                          |
 | R10 | A writes P; thousands (C ≥ 1 000) of concurrent reads of P                                            | Every read returns either pre-write or post-write bytes consistently per call; A's write returns success. Read tail latency does not exceed `latency_budget × 1.5` even at C = 1 000.                                                                                                                                          |
 
@@ -799,7 +1152,7 @@ used; rows assert what the concurrent agents observe.
 | ID  | Operator scenario                                                                                                       | Expected observation                                                                                                                                                                              |
 | --- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | E01 | Operator runs the server with `default_plugin=rag` against the existing test corpus                                     | The pre-refactor user-visible behavior is preserved end-to-end: every existing functional test under `internal/mcp/files` and `internal/mcp/tools` is green; the §5.4 smoke flow works            |
-| E02 | Operator runs with `default_plugin=pageindex` and the sidecar up, writes a 100-page PDF, then queries it                 | `file_search` returns at least one chunk whose pages overlap the answer; total wall-clock for write→search ≤ §7.5 thresholds                                                                      |
+| E02 | Operator runs with `default_plugin=pageindex` (Responses-API key configured), writes a 100-page PDF, then queries it      | `file_search` returns at least one chunk whose pages overlap the answer; total wall-clock for write→search ≤ §7.5 thresholds                                                                      |
 | E03 | Operator configures mixed projects (`notes→rag`, `books→pageindex`) and queries each                                     | The MCP `tools/list` schemas served to clients are byte-identical to single-plugin mode; queries land on the documented plugin (verifiable via the operator's standard audit channel)             |
 | E04 | Operator monitors a `pageindex` `file_search` invocation                                                                  | Per-call billing metadata is emitted (token counts in/out, LLM call count) so the operator can budget. Exact metric key names are defined in the operator manual, not pinned in this proposal     |
 | E05 | Operator measures `rag` plugin hot-path latency before and after the refactor                                            | p99 latency unchanged within ±5%                                                                                                                                                                  |
@@ -833,32 +1186,36 @@ becoming fragile to internal renames.
 
 | ID  | Internal test (informational)                                                                                                                                                       |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P01 | `grpc_backend` happy path: in-process `bufconn` gRPC server returns a canned `IndexEvent.FinalTree`. Asserts streamed `Chunk` frames match input bytes byte-for-byte.               |
-| P02 | `subprocess_backend` happy path: fake Python script speaks the same gRPC contract over a UDS — captures the inbound stream, asserts shape.                                          |
-| P03 | `Search` loop given canned tree + canned `GetPageContent`: asserts merge order, byte-offset synthesis, `limit` truncation.                                                          |
+| P01 | `Indexer.Index(KindPDF, ...)` happy path against a frozen 20-page PDF in `testdata/`. Stub `LLM` returns canned Responses-API JSON; assert tree structure matches a golden fixture byte-for-byte (modulo `indexed_at`). |
+| P02 | `Indexer.Index(KindMarkdown, ...)` happy path: header tree extracted by goldmark; no LLM calls when `algo.generate_node_summary=false`. |
+| P03 | `Search` loop given canned tree + stub `LLM`: asserts merge order, byte-offset synthesis, `limit` truncation.                                                                       |
 | P04 | `Search` loop budget exhaustion (`max_steps=2`) → returns partial result with `truncated=true`, no error. (User-observable side covered by C-row + Q7.)                              |
-| P05 | `Search` loop with malformed LLM JSON → degrades to "fetch first node of each candidate" fallback. (User-observable side covered by C-row.)                                          |
+| P05 | `Search` loop with malformed LLM JSON → Responses-API strict-schema rejection → `LLM.Respond` returns error → degrades to "fetch first node of each candidate" fallback. (User-observable side covered by C-row.) |
 | P06 | `Write(.pdf, OVERWRITE@offset=10)` → `INVALID_ARGUMENT`. (User-observable side covered by C09b.)                                                                                     |
 | P07 | `Write(.pdf, TRUNCATE)` then `Read(.pdf)` returns identical bytes via `userFS`.                                                                                                      |
 | P08 | `Delete` removes user row from `userFS` and the `pageindex/<doc_id>.json` row from `SystemFS`; index mapping updated atomically.                                                     |
 | P09 | `Rename` updates `userFS` row + index mapping; tree JSON content untouched.                                                                                                          |
 | P10 | Index-mapping mutation is serialized: 10 concurrent writes to distinct user paths in the same project all succeed; final mapping has 10 entries.                                    |
-| P11 | Sidecar unreachable → `UNAVAILABLE` from gRPC, retried per policy, then surfaces as a tool-level `unavailable` error. (User-observable side covered by C-rows.)                      |
-| P12 | LLM-provider switch: setting `llm.indexing_model="anthropic/claude-..."` routes through litellm; no OpenAI client is instantiated.                                                   |
+| P11 | LLM provider unreachable: `openaiLLM` returns `429`/`5xx`/network error; `avast/retry-go/v4` retries per policy honoring `Retry-After`; after exhaustion, surfaces as a tool-level `unavailable` error. (User-observable side covered by C-rows.) |
+| P12 | Concurrency cap: spinning 100 `file_write(.pdf)` calls in parallel never exceeds `indexer.max_concurrency` simultaneous LLM calls (verified by an instrumented stub `LLM`).          |
 | P13 | `WriteOpts.SkipRAGIndex=true` means the index worker observes no new job for the row.                                                                                                |
-| P14 | Streaming progress: index events are forwarded to a captured logger and to billing metadata; the final tool response still arrives as one unit.                                      |
+| P14 | Streaming progress: `Index` writes one `Progress` event per phase to a buffered channel; events are forwarded to a captured logger and to billing metadata; the final tool response still arrives as one unit. |
+| P15 | bbolt cache hit: re-running `Index` on the same bytes with the same `algorithm_version` makes zero `LLM.Respond` calls.                                                              |
+| P16 | bbolt cache invalidation: bumping `algorithm_version` makes the next `Index` re-run all prompts.                                                                                     |
+| P17 | Token budget enforcement: a stub `LLM` reporting outsized usage causes the shared `atomic.Int64` budget to fall below zero; subsequent goroutines short-circuit with `ErrBudgetExceeded`. |
+| P18 | PDF parser swap: setting `pdf.text_parser="dslipak"` routes through the dslipak adapter; the same golden test in P01 still passes (modulo documented text-quality differences).      |
 
 #### 5.5.3 Manager / settings regression
 
 | ID  | Internal test (informational)                                                                                                                                  |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M01 | API-key override beats project override beats default.                                                                                                          |
+| M01 | With no per-call `plugin` argument, every call resolves to `default_plugin`.                                                                                    |
 | M02 | Unknown plugin name in config returns startup error.                                                                                                            |
 | M03 | `StartAll` failure on one plugin aborts startup with a wrapped error naming the plugin.                                                                         |
 | M04 | Settings shim: legacy `settings.mcp.files.*` is read into `settings.mcp.memory.plugins.rag.*`.                                                                  |
 | M05 | Settings shim emits exactly one WARN per process (not per request).                                                                                             |
 | M06 | `Capabilities.SupportsVersions=false` makes the versions-aware tool path fall back gracefully.                                                                  |
-| M07 | Per-call `plugin` arg beats API-key override beats project override beats default.                                                                              |
+| M07 | Per-call `plugin` arg, when present and valid, wins over `default_plugin` for that call only — subsequent calls without the arg revert to `default_plugin`.    |
 | M08 | `plugin=""` and `plugin="auto"` are equivalent; only the resolution-rule path is exercised.                                                                     |
 | M09 | Resolved plugin name is recorded on every request log (asserted with a captured logger).                                                                        |
 | M10 | `system_owner` lint gate: a deliberately broken commit that adds a query against shared FS tables without `system_owner` predicate fails the CI `ast-grep` check.|
@@ -899,9 +1256,9 @@ A3. **A user can switch plugins without changing tool-call shape.**
    plugin. The agent's code never changes between configurations.
 
 A4. **All §5.1 conformance rows and §5.2 race-condition rows pass for every plugin.**
-   When the conformance suite runs against a plugin (real DB; faked sidecar in CI for
-   `pageindex`), every C-row and every R-row produces exactly one of the documented
-   user-observable outcomes.
+   When the conformance suite runs against a plugin (real DB; stub `LLM` returning canned
+   Responses-API JSON in CI for `pageindex`), every C-row and every R-row produces exactly
+   one of the documented user-observable outcomes.
 
 A5. **Legacy config remains valid.**
    When an operator boots the server with a config that sets only the legacy
@@ -910,9 +1267,11 @@ A5. **Legacy config remains valid.**
    that sets the new keys equivalently.
 
 A6. **A new operator can run `pageindex` end-to-end from the manual.**
-   When an operator who has never seen the project follows the steps in
-   `third_party/pageindex_sidecar/README.md` on a 2-vCPU box, the readiness probe is
-   green within 30 s and the §5.3 E02 scenario succeeds on the first try.
+   When an operator who has never seen the project follows the "Enable pageindex"
+   section of `docs/manual/mcp_memory_plugins.md` on a 2-vCPU box (set `llm.api_key`
+   in `settings.yml`, flip `default_plugin: pageindex`, restart), the §5.3 E02 scenario
+   succeeds on the first try. Bring-up is config-only — the existing Go process owns
+   the pipeline.
 
 A7. **Cost is budgeted and visible to the agent.**
    When an agent issues a `file_search` under `pageindex` and the configured budgets
@@ -938,17 +1297,22 @@ A9. **Operator-facing docs land with the code.**
 
 A10. **Reverting to single-plugin mode produces pre-refactor behavior.**
    When an operator sets `default_plugin=rag` and removes the `pageindex` block from
-   config (or leaves the sidecar offline), every tool call's observable outcome matches
-   the pre-refactor system on the same input. No migration leaves behind a user-visible
-   change.
+   config (or simply leaves `llm.api_key` empty), every tool call's observable outcome
+   matches the pre-refactor system on the same input. No migration leaves behind a
+   user-visible change. With no API key configured, any explicit `plugin="pageindex"`
+   call returns `FAILED_PRECONDITION` with a message naming the missing config key —
+   not silent fallback.
 
 
-A11. **Choice of LLM provider is invisible to the agent.**
-   When an operator configures the indexing/retrieval LLM to a non-OpenAI provider
-   (e.g., `llm.indexing_model="anthropic/claude-..."`), `pageindex_plugin` indexing and
-   search succeed and produce results of comparable quality (within the §7.5 watch
-   thresholds). The agent's request/response shape never depends on the provider
-   choice.
+A11. **Switching the indexing/retrieval model within the Responses-API contract is invisible to the agent.**
+   When an operator changes `llm.indexing_model` and `llm.retrieve_model` to another
+   model that the configured `base_url` exposes via the Responses API (e.g., a
+   self-hosted vendor), `pageindex_plugin` indexing and search succeed and produce
+   results that meet the §7.5 hard gates for `pageindex_plugin`. The agent's
+   request/response shape never depends on the model choice. Switching to a *non*-
+   Responses-API contract (chat-completions, Anthropic Messages) is explicitly out of
+   scope for v1 and is documented as such; the system fails closed (startup error)
+   rather than silently degrading.
 
 A12. **Long indexing operations report progress.**
    When an operator (or agent) writes a long document under `pageindex` and the
@@ -1266,10 +1630,12 @@ significant improvement). Below 45%, file a bug.
    Land `plugin.Plugin` + `plugin.Manager` + `rag_plugin` only. `default_plugin=rag`. Ship,
    bake for one release. Acceptance: A1, A2, A5, **plus the §7 baseline scorecard for
    `rag_plugin` is captured and published as the v1 reference point**.
-2. **Phase 2 — pageindex sidecar (off by default).**
-   Land `pageindex_plugin` + sidecar. Default config does not enable it. Run E02/E03 in
-   staging only. Acceptance: A3, A4, A6, A7, A8, **Q1–Q4, Q9–Q12** (full §7 scorecard
-   filled in for `pageindex_plugin` against the same golden sets).
+2. **Phase 2 — pageindex indexer (off by default).**
+   Land `pageindex_plugin` with the Go `Indexer` (§2.6.4) and the Responses-API `LLM`
+   (§2.6.5). No new processes, no new container images, no new deploy artifact — the
+   plugin links into the existing binary. Default config does not enable it. Run E02/E03
+   in staging only. Acceptance: A3, A4, A6, A7, A8, A11, **Q1–Q4, Q9–Q12** (full §7
+   scorecard filled in for `pageindex_plugin` against the same golden sets).
 3. **Phase 3 — opt-in for selected projects.**
    Enable `pageindex_plugin` for projects shipping long-form documents (`books`,
    `datasheets`, `manuals`). Watch billing and latency metrics. Promotion gate:

@@ -58,3 +58,4 @@ docs/example/config/settings-laisky.yml
 /errlog
 .github/instructions/laisky.instructions.md
 patch
+/.claude/
