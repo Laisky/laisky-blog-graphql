@@ -140,13 +140,20 @@ func (s *ShadowPlugin) Stop(ctx context.Context) error {
 	}
 	s.shutdownOnce.Do(func() { close(s.shutdown) })
 
+	var firstErr error
 	if err := s.shadow.Stop(ctx); err != nil {
 		s.logger.Warn("shadow plugin stop failed", zap.String("plugin", s.shadow.Name()), zap.Error(err))
 	}
 	if err := s.live.Stop(ctx); err != nil {
-		return errors.Wrap(err, "stop live plugin")
+		firstErr = errors.Wrap(err, "stop live plugin")
 	}
-	return nil
+	if err := s.rec.Close(); err != nil {
+		if firstErr != nil {
+			return errors.Wrapf(firstErr, "close recorder: %v", err)
+		}
+		firstErr = errors.Wrap(err, "close recorder")
+	}
+	return firstErr
 }
 
 // Stat forwards to live; reads are not part of §7.8 scoring.

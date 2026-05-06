@@ -260,12 +260,12 @@ Per the wave-B implementation:
   but are **not yet wired** into the indexing pipeline; the LLM-emitted tree is
   accepted as authoritative.
 
-## 6.6 Phase 3: Shadow replay (preview)
+## 6.6 Phase 3: Shadow replay (deferred)
 
-The shadow-replay scaffolding lands in Phase 2 but is **not wired into the server**
-in this release. Production wiring is deferred per proposal §8 Phase 3 (opt-in for
-selected projects after the `rag_plugin` baseline is captured); `cmd/api.go` does not
-construct a `ShadowPlugin` today.
+The shadow-replay scaffolding exists for offline evaluation and future promotion work,
+but it is not part of the runtime routing contract. Runtime selection remains simple:
+the caller may pass the optional `plugin` field on each `file_*` request, otherwise the
+server uses `settings.mcp.memory.default_plugin` and defaults to `rag`.
 
 The wrapper lives at [../../internal/mcp/memory/plugin/shadow.go](../../internal/mcp/memory/plugin/shadow.go).
 Operating semantics:
@@ -277,7 +277,8 @@ Operating semantics:
 - **Search dual-read.** Both plugins answer; the live result is returned, the shadow
   result is captured for offline scoring.
 - **Recorder output.** Each pair appends one JSONL record to the operator-chosen
-  recorder path; no fixed location — the operator picks it on `Recorder` construction.
+  recorder path; no fixed runtime config path is required because the server does not
+  auto-enable shadow replay.
 - **Promotion gate.** Per proposal §7.8, the analyzer at
   [../../cmd/promote-pageindex/main.go](../../cmd/promote-pageindex/main.go) computes
   the win-rate over a captured period:

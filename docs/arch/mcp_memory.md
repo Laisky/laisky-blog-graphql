@@ -672,8 +672,8 @@ indexing for system rows so they do not pollute user search.
 Phase-3 shadow-replay scaffolding lives at
 [`../../internal/mcp/memory/plugin/shadow.go`](../../internal/mcp/memory/plugin/shadow.go)
 (`ShadowPlugin` wrapper) and its companion `shadow_recorder.go` / `shadow_score.go`.
-Production wiring is **deferred per proposal §8 Phase 3** — `cmd/api.go` does not
-construct a `ShadowPlugin` today. The promotion-gate analyzer is a separate
+Production wiring remains deferred; runtime plugin selection is still done only by the
+optional per-call `plugin` argument and the global `settings.mcp.memory.default_plugin`
+fallback. The promotion-gate analyzer is a separate
 binary at [`../../cmd/promote-pageindex/main.go`](../../cmd/promote-pageindex/main.go)
 that consumes the JSONL recorder output and emits the §7.8 win-rate verdict.
-

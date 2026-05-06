@@ -47,17 +47,34 @@ type shadowFakePlugin struct {
 	stopErr  error
 }
 
+type closeTrackingRecorder struct {
+	closed int32
+}
+
+func (c *closeTrackingRecorder) RecordSearch(SearchRecord) error     { return nil }
+func (c *closeTrackingRecorder) RecordMutation(MutationRecord) error { return nil }
+func (c *closeTrackingRecorder) Close() error {
+	atomic.StoreInt32(&c.closed, 1)
+	return nil
+}
+
 func newFake(name string) *shadowFakePlugin {
 	return &shadowFakePlugin{name: name, startCh: make(chan struct{}, 1), stopCh: make(chan struct{}, 1)}
 }
 
-func (p *shadowFakePlugin) Name() string                                                                                                                                                  { return p.name }
-func (p *shadowFakePlugin) Capabilities() Capabilities                                                                                                                                    { return p.caps }
-func (p *shadowFakePlugin) Start(context.Context) error                                                                                                                                   { p.startCh <- struct{}{}; return p.startErr }
-func (p *shadowFakePlugin) Stop(context.Context) error                                                                                                                                    { p.stopCh <- struct{}{}; return p.stopErr }
-func (p *shadowFakePlugin) Stat(context.Context, files.AuthContext, string, string) (files.StatResult, error)                                                                            { return p.statResp, nil }
-func (p *shadowFakePlugin) Read(context.Context, files.AuthContext, string, string, int64, int64) (files.ReadResult, error)                                                              { return p.readResp, nil }
-func (p *shadowFakePlugin) List(context.Context, files.AuthContext, string, string, int, int) (files.ListResult, error)                                                                  { return p.listResp, nil }
+func (p *shadowFakePlugin) Name() string                { return p.name }
+func (p *shadowFakePlugin) Capabilities() Capabilities  { return p.caps }
+func (p *shadowFakePlugin) Start(context.Context) error { p.startCh <- struct{}{}; return p.startErr }
+func (p *shadowFakePlugin) Stop(context.Context) error  { p.stopCh <- struct{}{}; return p.stopErr }
+func (p *shadowFakePlugin) Stat(context.Context, files.AuthContext, string, string) (files.StatResult, error) {
+	return p.statResp, nil
+}
+func (p *shadowFakePlugin) Read(context.Context, files.AuthContext, string, string, int64, int64) (files.ReadResult, error) {
+	return p.readResp, nil
+}
+func (p *shadowFakePlugin) List(context.Context, files.AuthContext, string, string, int, int) (files.ListResult, error) {
+	return p.listResp, nil
+}
 func (p *shadowFakePlugin) Write(context.Context, files.AuthContext, string, string, string, string, int64, files.WriteMode) (files.WriteResult, error) {
 	atomic.AddInt32(&p.writeCount, 1)
 	return p.writeRes, p.writeErr
@@ -207,6 +224,22 @@ func TestShadowPluginStartLogsShadowFailure(t *testing.T) {
 	wrap, _ := newShadowFromFakes(t, live, shadow)
 	require.NoError(t, wrap.Start(context.Background()))
 	require.NoError(t, wrap.Stop(context.Background()))
+}
+
+// TestShadowPluginStopClosesRecorder verifies production recorder state is
+// flushed on wrapper shutdown.
+func TestShadowPluginStopClosesRecorder(t *testing.T) {
+	t.Parallel()
+
+	recorder := &closeTrackingRecorder{}
+	wrap, err := NewShadowPlugin(ShadowConfig{
+		Live:     newFake("live"),
+		Shadow:   newFake("shadow"),
+		Recorder: recorder,
+	})
+	require.NoError(t, err)
+	require.NoError(t, wrap.Stop(context.Background()))
+	require.Equal(t, int32(1), atomic.LoadInt32(&recorder.closed))
 }
 
 // stubJudge always returns the configured Winner.

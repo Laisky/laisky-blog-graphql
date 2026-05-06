@@ -525,7 +525,6 @@ func buildFileCredentialProtector(settings files.Settings) (*files.CredentialPro
 
 	return credential, nil
 }
-
 // configInt retrieves an integer configuration value using gconfig, falling back to def when missing or invalid.
 func configInt(key string, def int) int {
 	raw := gconfig.S.Get(key)
