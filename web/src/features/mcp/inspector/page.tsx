@@ -4,6 +4,8 @@ import { useLocation } from 'react-router-dom';
 
 import { useApiKey } from '@/lib/api-key-context';
 
+import { resolveMcpEndpoint } from '../shared/auth';
+
 const inspectorScriptModules = import.meta.glob<string>(
   '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.js',
   { eager: true, import: 'default', query: '?url' }
@@ -12,7 +14,6 @@ const inspectorStyleModules = import.meta.glob<string>(
   '../../../../node_modules/@modelcontextprotocol/inspector-client/dist/assets/index-*.css',
   { eager: true, import: 'default', query: '?url' }
 );
-const DEFAULT_ENDPOINT_PATH = (import.meta.env.VITE_MCP_ENDPOINT_PATH as string | undefined) || '/mcp';
 
 type CustomHeader = {
   enabled: boolean;
@@ -41,7 +42,7 @@ export function InspectorPage() {
 
   useEffect(() => {
     const endpointParam = params.get('endpoint');
-    const endpointUrl = endpointParam ? endpointParam : new URL(DEFAULT_ENDPOINT_PATH, window.location.origin).toString();
+    const endpointUrl = endpointParam ? endpointParam : resolveDefaultEndpointUrl();
     setEndpointDisplay(endpointUrl);
 
     setError(null);
@@ -117,6 +118,18 @@ export function InspectorPage() {
 function pickFirstAssetUrl(modules: Record<string, string>): string | undefined {
   const assets = Object.values(modules);
   return assets.length > 0 ? assets[0] : undefined;
+}
+
+function resolveDefaultEndpointUrl(): string {
+  const resolved = resolveMcpEndpoint();
+  if (/^https?:\/\//i.test(resolved)) {
+    return resolved.replace(/\/+$/, '') || resolved;
+  }
+  if (typeof window === 'undefined') {
+    return resolved;
+  }
+  const absolute = new URL(resolved, window.location.origin).toString();
+  return absolute.replace(/\/+$/, '');
 }
 
 function buildInspectorDocument(scriptUrl: string, styleUrl: string): string {
