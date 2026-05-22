@@ -27,6 +27,10 @@ func NewMutationResolver(uploadDao *telegramDao.Upload) *MutationResolver {
 }
 
 func (r *MutationResolver) ArweaveUpload(ctx context.Context, fileB64 string, contentType *string) (*dto.UploadResponse, error) {
+	if r == nil || r.uploadDao == nil {
+		return nil, errors.Errorf("arweave upload disabled: telegram upload service not initialized")
+	}
+
 	logger := gmw.GetLogger(ctx)
 
 	authMethod := "jwt"

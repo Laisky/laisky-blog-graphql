@@ -17,6 +17,7 @@ import (
 	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
 	general "github.com/Laisky/laisky-blog-graphql/internal/web/general/controller"
 	telegram "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
+	telegramDao "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	twitter "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/controller"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
@@ -26,6 +27,10 @@ import (
 // Resolver resolver
 type Resolver struct {
 	args ResolverArgs
+
+	queryResolver    *queryResolver
+	mutationResolver *mutationResolver
+	telegramCtl      *telegram.Telegram
 }
 
 type ResolverArgs struct {
@@ -47,18 +52,29 @@ type ResolverArgs struct {
 	MCPToolsSettings   mcp.ToolsSettings
 }
 
-// NewResolver new resolver
+// NewResolver new resolver. All sub-resolvers are eagerly built once so that
+// Query()/Mutation() are cheap and a missing optional dependency (e.g. the
+// Telegram service failed to start) surfaces at startup instead of panicking
+// inside per-request resolver dispatch.
 func NewResolver(args ResolverArgs) *Resolver {
 	if args.Rdb != nil {
 		general.ConfigureTaskStore(args.Rdb)
 	}
-	return &Resolver{
-		args: args,
+	r := &Resolver{args: args}
+	// Fall back to a stub Telegram controller (with a nil service) when
+	// telegram init failed, so the TelegramAlertType/TelegramMonitorUser
+	// resolver-getters do not nil-deref. The underlying resolver methods
+	// guard against a nil service and return errors instead of panicking.
+	r.telegramCtl = args.TelegramCtl
+	if r.telegramCtl == nil {
+		r.telegramCtl = telegram.NewTelegram(context.Background(), nil)
 	}
+	r.queryResolver = r.buildQueryResolver()
+	r.mutationResolver = r.buildMutationResolver()
+	return r
 }
 
-// Query query resolver
-func (r *Resolver) Query() QueryResolver {
+func (r *Resolver) buildQueryResolver() *queryResolver {
 	return &queryResolver{
 		twitterQuery: twitterQuery{
 			QueryResolver: twitter.QueryResolver{},
@@ -75,8 +91,15 @@ func (r *Resolver) Query() QueryResolver {
 	}
 }
 
-// Mutation mutation resolver
-func (r *Resolver) Mutation() MutationResolver {
+func (r *Resolver) buildMutationResolver() *mutationResolver {
+	// Arweave uploads ride on the Telegram service's UploadDao, so the
+	// arweave mutation resolver can only be wired when TelegramSvc is
+	// available. A nil dao here is fine: the resolver method guards it
+	// and returns a clean error instead of panicking.
+	var uploadDao *telegramDao.Upload
+	if r.args.TelegramSvc != nil {
+		uploadDao = r.args.TelegramSvc.UploadDao
+	}
 	return &mutationResolver{
 		blogMutation: blogMutation{
 			MutationResolver: blog.NewMutationResolver(r.args.BlogSvc),
@@ -88,7 +111,7 @@ func (r *Resolver) Mutation() MutationResolver {
 			MutationResolver: &general.MutationResolver{},
 		},
 		arweaveMutation: arweaveMutation{
-			MutationResolver: arweave.NewMutationResolver(r.args.TelegramSvc.UploadDao),
+			MutationResolver: arweave.NewMutationResolver(uploadDao),
 		},
 		webSearchMutation: webSearchMutation{
 			MutationResolver: search.NewMutationResolver(
@@ -99,6 +122,12 @@ func (r *Resolver) Mutation() MutationResolver {
 		},
 	}
 }
+
+// Query query resolver
+func (r *Resolver) Query() QueryResolver { return r.queryResolver }
+
+// Mutation mutation resolver
+func (r *Resolver) Mutation() MutationResolver { return r.mutationResolver }
 
 // twitter
 
@@ -137,10 +166,10 @@ func (r *Resolver) WebSearchResult() WebSearchResultResolver {
 // telegram
 
 func (r *Resolver) TelegramAlertType() TelegramAlertTypeResolver {
-	return r.args.TelegramCtl.TelegramAlertTypeResolver
+	return r.telegramCtl.TelegramAlertTypeResolver
 }
 func (r *Resolver) TelegramMonitorUser() TelegramMonitorUserResolver {
-	return r.args.TelegramCtl.TelegramMonitorUserResolver
+	return r.telegramCtl.TelegramMonitorUserResolver
 }
 
 // general

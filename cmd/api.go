@@ -12,6 +12,7 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
+	gutils "github.com/Laisky/go-utils/v6"
 	gcmd "github.com/Laisky/go-utils/v6/cmd"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
@@ -208,6 +209,7 @@ func runAPI() error {
 
 	// Setup telegram service
 	telegramStart := time.Now()
+	telegramTaskRequested := gutils.Contains(gconfig.Shared.GetStringSlice("tasks"), "telegram")
 	if monitorDB != nil && telegramDB != nil {
 		var botToken = gconfig.Shared.GetString("settings.telegram.token")
 		if os.Getenv("TELEGRAM_BOT_TOKEN") != "" {
@@ -224,11 +226,20 @@ func runAPI() error {
 			gconfig.Shared.GetString("settings.telegram.api"),
 		)
 		if err != nil {
-			logger.Error("new telegram service", zap.Error(err))
+			if telegramTaskRequested {
+				return errors.Wrap(err, "new telegram service (required because 'telegram' task is enabled)")
+			}
+			logger.Error("new telegram service (continuing because 'telegram' task is not in -t tasks)",
+				zap.Error(err))
+			args.TelegramSvc = nil
 		} else {
 			args.TelegramCtl = telegramCtl.NewTelegram(ctx, args.TelegramSvc)
 		}
 	} else {
+		if telegramTaskRequested {
+			return errors.Errorf("telegram task requested but databases unavailable (monitor_nil=%v, telegram_nil=%v)",
+				monitorDB == nil, telegramDB == nil)
+		}
 		logger.Warn("telegram service skipped due to missing database connections",
 			zap.Bool("monitor_nil", monitorDB == nil),
 			zap.Bool("telegram_nil", telegramDB == nil))

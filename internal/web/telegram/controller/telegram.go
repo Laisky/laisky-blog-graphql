@@ -17,6 +17,14 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
+// errTelegramServiceUnavailable is the base sentinel returned by resolver
+// methods when the telegram service failed to initialize (e.g. tb.NewBot
+// rejected the token or required databases were unreachable). Without this
+// guard the resolver dereferences a nil service interface and panics for
+// every request. Callers should wrap it with errors.WithStack so the stack
+// reflects the actual return site rather than this var declaration.
+var errTelegramServiceUnavailable = errors.New("telegram service not initialized")
+
 // AlertTypeResolver alert type resolver
 type AlertTypeResolver struct {
 	svc service.Interface
@@ -87,6 +95,9 @@ func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 	page *models.Pagination,
 	name string) ([]*model.MonitorUsers, error) {
+	if r == nil || r.svc == nil {
+		return nil, errors.WithStack(errTelegramServiceUnavailable)
+	}
 	cfg := &dto.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
@@ -97,6 +108,9 @@ func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 	page *models.Pagination,
 	name string) ([]*model.AlertTypes, error) {
+	if r == nil || r.svc == nil {
+		return nil, errors.WithStack(errTelegramServiceUnavailable)
+	}
 	cfg := &dto.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
@@ -129,6 +143,9 @@ func (t *UserResolver) TelegramID(ctx context.Context,
 func (t *UserResolver) SubAlerts(ctx context.Context,
 	obj *model.MonitorUsers,
 ) ([]*model.AlertTypes, error) {
+	if t == nil || t.svc == nil {
+		return nil, errors.WithStack(errTelegramServiceUnavailable)
+	}
 	return t.svc.LoadAlertTypesByUser(ctx, obj)
 }
 
@@ -150,6 +167,9 @@ func (t *AlertTypeResolver) ModifiedAt(ctx context.Context,
 func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 	obj *model.AlertTypes,
 ) ([]*model.MonitorUsers, error) {
+	if t == nil || t.svc == nil {
+		return nil, errors.WithStack(errTelegramServiceUnavailable)
+	}
 	return t.svc.LoadUsersByAlertType(ctx, obj)
 }
 
@@ -161,6 +181,9 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	typeArg string,
 	token string,
 	msg string) (*model.AlertTypes, error) {
+	if r == nil || r.svc == nil {
+		return nil, errors.WithStack(errTelegramServiceUnavailable)
+	}
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_alert")
 	if !telegramRatelimiter.Allow(typeArg) { //nolint:contextcheck // Allow is a rate-limiter check that does not need request context
 		// logger.Warn("deny by throttle", zap.String("type", typeArg))
