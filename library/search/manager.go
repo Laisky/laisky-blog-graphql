@@ -56,7 +56,7 @@ func WithLogger(logger logSDK.Logger) ManagerOption {
 	}
 }
 
-// WithRand supplies a deterministic random generator, primarily for testing.
+// WithRand supplies a deterministic random generator for initial round-robin offsets.
 func WithRand(r *rand.Rand) ManagerOption {
 	return func(m *Manager) {
 		if r != nil {
@@ -89,13 +89,14 @@ type Manager struct {
 	maxRetries  int
 	maxDistinct int
 	rand        *rand.Rand
-	randMu      sync.Mutex
+	nextByTier  []int
+	selectorMu  sync.Mutex
 	logger      logSDK.Logger
 }
 
 // NewManager constructs a Manager with the provided priority tiers.
 // Each inner slice represents a tier where engines share equal priority.
-// Engines within a tier are attempted in random order.
+// Engines within a tier are attempted in round-robin order.
 func NewManager(tiers [][]Engine, opts ...ManagerOption) (*Manager, error) {
 	filtered := make([][]Engine, 0, len(tiers))
 	totalEngines := 0
@@ -131,6 +132,7 @@ func NewManager(tiers [][]Engine, opts ...ManagerOption) (*Manager, error) {
 	for _, opt := range opts {
 		opt(manager)
 	}
+	manager.initializeRoundRobinOffsets()
 
 	return manager, nil
 }
@@ -173,7 +175,7 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 	var failureDetails []string
 
 	for tierIdx, tier := range m.tiers {
-		engines := m.shuffleEngines(tier)
+		engines := m.roundRobinEngines(tierIdx, tier)
 		for _, engine := range engines {
 			if attempts >= allowedAttempts {
 				break
@@ -196,31 +198,32 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 			}
 
 			items, err := engine.Search(ctx, trimmed)
-			if err == nil {
+			if err != nil {
+				failureDetails = append(failureDetails, fmt.Sprintf("%s: %v", engine.Name(), err))
 				if tierLogger != nil {
-					tierLogger.Info("search manager succeeded",
+					tierLogger.Warn("search engine failed",
 						zap.String("engine", engine.Name()),
-						zap.String("engine_type", engine.Type()),
 						zap.Int("tier", tierIdx),
 						zap.Int("attempt", attempts),
+						zap.Error(err),
 					)
 				}
-				return &SearchOutput{
-					Items:      items,
-					EngineName: engine.Name(),
-					EngineType: engine.Type(),
-				}, nil
+				continue
 			}
 
-			failureDetails = append(failureDetails, fmt.Sprintf("%s: %v", engine.Name(), err))
 			if tierLogger != nil {
-				tierLogger.Warn("search engine failed",
+				tierLogger.Info("search manager succeeded",
 					zap.String("engine", engine.Name()),
+					zap.String("engine_type", engine.Type()),
 					zap.Int("tier", tierIdx),
 					zap.Int("attempt", attempts),
-					zap.Error(err),
 				)
 			}
+			return &SearchOutput{
+				Items:      items,
+				EngineName: engine.Name(),
+				EngineType: engine.Type(),
+			}, nil
 		}
 		if attempts >= allowedAttempts {
 			break
@@ -235,21 +238,40 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 	return nil, errors.New(message)
 }
 
-func (m *Manager) shuffleEngines(tier []Engine) []Engine {
-	// shuffleEngines returns a randomly permuted copy of the tier to balance
-	// load across peers that share the same priority level.
-	if len(tier) <= 1 {
-		return tier
+// initializeRoundRobinOffsets seeds each tier cursor before searches begin.
+// It accepts no parameters and returns no values.
+func (m *Manager) initializeRoundRobinOffsets() {
+	m.nextByTier = make([]int, len(m.tiers))
+	for tierIdx, tier := range m.tiers {
+		if len(tier) <= 1 {
+			continue
+		}
+		m.nextByTier[tierIdx] = m.rand.Intn(len(tier))
+	}
+}
+
+// roundRobinEngines returns a rotated copy of tier and advances that tier's cursor.
+// The tierIdx parameter selects which cursor to advance, and tier supplies the engines to order.
+// The returned slice is safe for the caller to iterate without mutating manager state.
+func (m *Manager) roundRobinEngines(tierIdx int, tier []Engine) []Engine {
+	if len(tier) == 0 {
+		return nil
 	}
 
-	cloned := make([]Engine, len(tier))
-	copy(cloned, tier)
+	m.selectorMu.Lock()
+	defer m.selectorMu.Unlock()
 
-	m.randMu.Lock()
-	m.rand.Shuffle(len(cloned), func(i, j int) {
-		cloned[i], cloned[j] = cloned[j], cloned[i]
-	})
-	m.randMu.Unlock()
+	if tierIdx < 0 || tierIdx >= len(m.nextByTier) {
+		cloned := make([]Engine, len(tier))
+		copy(cloned, tier)
+		return cloned
+	}
 
-	return cloned
+	start := m.nextByTier[tierIdx] % len(tier)
+	m.nextByTier[tierIdx] = (start + 1) % len(tier)
+
+	ordered := make([]Engine, 0, len(tier))
+	ordered = append(ordered, tier[start:]...)
+	ordered = append(ordered, tier[:start]...)
+	return ordered
 }

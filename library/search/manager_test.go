@@ -53,6 +53,29 @@ func TestManagerSearchReturnsFirstSuccess(t *testing.T) {
 	require.Equal(t, 0, fallback.calls)
 }
 
+// TestManagerBalancesEqualPriorityEngines verifies equal-priority engines receive evenly rotated searches.
+// The t parameter controls the test lifecycle, and the function returns no values.
+func TestManagerBalancesEqualPriorityEngines(t *testing.T) {
+	engines := []*testEngine{
+		{name: "serp-1", items: []SearchResultItem{{URL: "https://one.example"}}},
+		{name: "serp-2", items: []SearchResultItem{{URL: "https://two.example"}}},
+		{name: "serp-3", items: []SearchResultItem{{URL: "https://three.example"}}},
+	}
+
+	manager, err := NewManager([][]Engine{{engines[0], engines[1], engines[2]}})
+	require.NoError(t, err)
+
+	for range 9 {
+		result, err := manager.Search(context.Background(), "golang")
+		require.NoError(t, err)
+		require.NotEmpty(t, result.Items)
+	}
+
+	require.Equal(t, 3, engines[0].calls)
+	require.Equal(t, 3, engines[1].calls)
+	require.Equal(t, 3, engines[2].calls)
+}
+
 func TestManagerSearchFallsBackAcrossTiers(t *testing.T) {
 	primary := &testEngine{name: "primary", err: errors.New("outage")}
 	secondary := &testEngine{
