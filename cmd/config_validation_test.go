@@ -75,6 +75,48 @@ func TestValidateStartupConfigWithGetterInvalidWebsearchEngine(t *testing.T) {
 	require.Contains(t, err.Error(), "settings.websearch.engines.my_google.cx")
 }
 
+// TestValidateStartupConfigWithGetterValidFirecrawlEngine verifies an enabled firecrawl engine passes validation.
+func TestValidateStartupConfigWithGetterValidFirecrawlEngine(t *testing.T) {
+	cfg := map[string]any{
+		"settings": map[string]any{
+			"websearch": map[string]any{
+				"engines": map[string]any{
+					"firecrawl": map[string]any{
+						"type":     "firecrawl",
+						"enabled":  true,
+						"priority": 1,
+						"api_key":  "fc-secret",
+						"limit":    10,
+					},
+				},
+			},
+		},
+	}
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.NoError(t, err)
+}
+
+// TestValidateStartupConfigWithGetterInvalidFirecrawlEngine verifies an enabled firecrawl engine missing api_key fails validation.
+func TestValidateStartupConfigWithGetterInvalidFirecrawlEngine(t *testing.T) {
+	cfg := map[string]any{
+		"settings": map[string]any{
+			"websearch": map[string]any{
+				"engines": map[string]any{
+					"firecrawl": map[string]any{
+						"type":    "firecrawl",
+						"enabled": true,
+					},
+				},
+			},
+		},
+	}
+
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "settings.websearch.engines.firecrawl.api_key")
+}
+
 // TestValidateStartupConfigWithGetterValidConfig verifies valid explicit configuration passes validation.
 func TestValidateStartupConfigWithGetterValidConfig(t *testing.T) {
 	cfg := map[string]any{

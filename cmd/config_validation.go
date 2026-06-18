@@ -224,6 +224,8 @@ func validateWebsearchConfig(get configGetter, errs *[]string) {
 			validateRequiredStringInMap(errs, engineCfg, prefix+".cx")
 		case "serp_google":
 			validateRequiredStringInMap(errs, engineCfg, prefix+".api_key")
+		case "firecrawl":
+			validateRequiredStringInMap(errs, engineCfg, prefix+".api_key")
 		default:
 			appendValidationErrorf(errs, "settings.websearch.engines.%s.type has unknown value %q", engineName, engineType)
 		}
