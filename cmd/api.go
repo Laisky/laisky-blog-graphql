@@ -48,6 +48,7 @@ import (
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
+	"github.com/Laisky/laisky-blog-graphql/library/search/firecrawl"
 	"github.com/Laisky/laisky-blog-graphql/library/search/google"
 	"github.com/Laisky/laisky-blog-graphql/library/search/serpgoogle"
 )
@@ -710,6 +711,16 @@ func instantiateSearchEngine(name, engineType string, cfg map[string]any) (searc
 			return nil, errors.New("missing api_key")
 		}
 		return serpgoogle.NewSearchEngine(apiKey, serpgoogle.WithName(name)), nil
+	case "firecrawl":
+		apiKey := stringFromValue(cfg["api_key"])
+		if apiKey == "" {
+			return nil, errors.New("missing api_key")
+		}
+		opts := []firecrawl.Option{firecrawl.WithName(name)}
+		if limit := intFromValue(cfg["limit"], 0); limit > 0 {
+			opts = append(opts, firecrawl.WithLimit(limit))
+		}
+		return firecrawl.NewSearchEngine(apiKey, opts...), nil
 	default:
 		return nil, nil //nolint:nilnil // unknown engine type is not an error
 	}

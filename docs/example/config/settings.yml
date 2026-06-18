@@ -165,11 +165,17 @@ settings:
     max_retry: 3 # default: 3
     engines:
       my_google: # engine name (unique identifier)
-        type: google # required: engine type (google, serp_google)
+        type: google # required: engine type (google, serp_google, firecrawl)
         enabled: true # default: false
         priority: 1 # lower numbers indicate higher priority; default is 1
         api_key: YOUR_GOOGLE_API_KEY
         cx: YOUR_PROGRAMMABLE_SEARCH_ENGINE_ID
+      my_firecrawl: # https://docs.firecrawl.dev/api-reference/endpoint/search
+        type: firecrawl
+        enabled: true
+        priority: 2
+        api_key: YOUR_FIRECRAWL_API_KEY
+        limit: 10 # optional: number of web results to request (1-100); default is 10
       my_serp_1: # you can configure multiple engines of the same type
         type: serp_google
         enabled: true
