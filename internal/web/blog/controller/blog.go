@@ -331,6 +331,9 @@ func (r *UserResolver) ID(ctx context.Context,
 func (r *MutationResolver) UserLogin(ctx context.Context,
 	account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error) {
 	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+		if errors.Is(err, model.ErrTurnstileRequired) {
+			return nil, errors.WithStack(model.ErrTurnstileRequired)
+		}
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
 
@@ -359,6 +362,9 @@ func (r *MutationResolver) UserRegister(ctx context.Context,
 		return nil, err
 	}
 	if err := validateTurnstileTokenForRegister(ctx, turnstileToken); err != nil {
+		if errors.Is(err, model.ErrTurnstileRequired) {
+			return nil, errors.WithStack(model.ErrTurnstileRequired)
+		}
 		return nil, errors.Wrap(err, "validate turnstile token")
 	}
 	_, err := r.svc.UserRegister(ctx, account, password, displayName)
@@ -437,19 +443,35 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 		return nil, errors.Wrap(err, "validate input length")
 	}
 
+	clientKey := resolveAuthClientKey(ctx)
+	tracker := getAuthChallengeTracker()
+
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
+		tracker.recordFailure(clientKey)
 		return nil, maskLoginError(err)
 	}
 
 	code := ""
 	if totpCode != nil {
-		code = *totpCode
+		code = strings.TrimSpace(*totpCode)
 	}
+
+	// The password is verified at this point. When the account has TOTP enabled
+	// but no code was supplied, ask the client to prompt for it as a second
+	// step. This branch is only reachable after a correct password, so it does
+	// not disclose TOTP status to callers that have not authenticated. It is not
+	// a failed attempt, so it does not count toward the risk failure counter.
+	if user.TOTPEnabled && code == "" {
+		return nil, errors.WithStack(model.ErrTOTPRequired)
+	}
+
 	if err = r.svc.ValidateTOTPCode(ctx, user, code); err != nil {
+		tracker.recordFailure(clientKey)
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
 
+	tracker.recordSuccess(clientKey)
 	return r.newLoginResponse(ctx, user)
 }
 

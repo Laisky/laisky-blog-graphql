@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { ArrowRight, Github, KeyRound, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
 import { buildRedirectUrlWithToken, parseRedirectTarget } from '@/lib/sso-redirect';
+import { resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
 
 export {
   buildRedirectUrlWithToken,
@@ -105,6 +106,10 @@ interface SsoPasskeyLoginResponse {
 
 export interface SsoLoginPageProps {
   turnstileSiteKey?: string;
+  // githubOAuthEnabled controls whether the "Continue with GitHub" button is shown.
+  // It defaults to false so the button stays hidden until the backend confirms
+  // GitHub OAuth is configured, avoiding a dead button that only errors on click.
+  githubOAuthEnabled?: boolean;
 }
 
 interface TurnstileRenderOptions {
@@ -130,12 +135,42 @@ declare global {
 export interface SsoSubmitState {
   mode: 'login' | 'register';
   hasRedirectTarget: boolean;
+  // redirectRequested is true when the URL carried a redirect_to parameter. When a
+  // redirect was requested it must resolve to a valid target before login can
+  // proceed; when it was omitted the user is signing in directly to their profile.
+  redirectRequested?: boolean;
   account: string;
   password: string;
   displayName: string;
   isSubmitting: boolean;
   isTurnstileEnabled: boolean;
   turnstileToken: string;
+  // totpRequired becomes true only after the backend asks for a second step,
+  // at which point a TOTP code must be supplied before the form can submit.
+  totpRequired?: boolean;
+  totpCode?: string;
+}
+
+// TOTP_REQUIRED_TOKEN is the stable signal the backend returns (as the GraphQL
+// error message) after a correct password when the account has TOTP enabled but
+// no code was provided. See model.ErrTOTPRequired on the server.
+const TOTP_REQUIRED_TOKEN = 'totp_required';
+
+// isTotpRequiredError reports whether a login error asks for a TOTP code as a
+// second step rather than signalling invalid credentials.
+export function isTotpRequiredError(message: string): boolean {
+  return message.trim().toLowerCase().includes(TOTP_REQUIRED_TOKEN);
+}
+
+// TURNSTILE_REQUIRED_TOKEN is the stable signal the backend returns once a client
+// trips the risk thresholds (frequent requests or repeated failures) and must
+// solve a Turnstile challenge. See model.ErrTurnstileRequired on the server.
+const TURNSTILE_REQUIRED_TOKEN = 'turnstile_required';
+
+// isTurnstileRequiredError reports whether an auth error is asking the client to
+// complete a Turnstile challenge rather than signalling a hard failure.
+export function isTurnstileRequiredError(message: string): boolean {
+  return message.trim().toLowerCase().includes(TURNSTILE_REQUIRED_TOKEN);
 }
 
 export interface SsoGithubStartState {
@@ -149,7 +184,10 @@ export function isTurnstileEnabled(siteKey: string | undefined): boolean {
 }
 
 export function canSubmitSsoLogin(state: SsoSubmitState): boolean {
-  if (state.mode === 'login' && !state.hasRedirectTarget) {
+  // A login only needs a redirect target when one was explicitly requested. Without
+  // a redirect_to the user is signing in directly and will land on their profile,
+  // so an invalid/absent target must not block that case.
+  if (state.mode === 'login' && state.redirectRequested && !state.hasRedirectTarget) {
     return false;
   }
 
@@ -162,6 +200,10 @@ export function canSubmitSsoLogin(state: SsoSubmitState): boolean {
   }
 
   if (state.mode === 'register' && state.displayName.trim().length === 0) {
+    return false;
+  }
+
+  if (state.mode === 'login' && state.totpRequired && (state.totpCode ?? '').trim().length === 0) {
     return false;
   }
 
@@ -253,9 +295,14 @@ export function loadTurnstileScript(documentRef: Document): Promise<TurnstileAPI
 export function SsoLoginPage(props: SsoLoginPageProps) {
   const resolvedTurnstileSiteKey = (props.turnstileSiteKey ?? '').trim();
   const turnstileEnabled = isTurnstileEnabled(resolvedTurnstileSiteKey);
+  const githubOAuthEnabled = props.githubOAuthEnabled ?? false;
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const redirectParam = searchParams.get('redirect_to');
+  const hasRedirectParam = (redirectParam ?? '').trim().length > 0;
   const origin = window.location.origin;
+  const profilePath = resolveSiblingSsoPath(location.pathname, 'profile');
 
   const redirectTarget = useMemo(() => {
     return parseRedirectTarget(redirectParam, origin);
@@ -266,33 +313,43 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
+  const [totpRequired, setTotpRequired] = useState(false);
   const [status, setStatus] = useState<StatusState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGithubSubmitting, setIsGithubSubmitting] = useState(false);
   const [isPasskeySubmitting, setIsPasskeySubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileMessage, setTurnstileMessage] = useState<string | null>(null);
+  // turnstileChallengeActive turns true only after the backend demands a challenge
+  // for this client. Turnstile is configured site-wide but hidden until then, so
+  // low-risk users never see it.
+  const [turnstileChallengeActive, setTurnstileChallengeActive] = useState(false);
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIDRef = useRef<string | null>(null);
+
+  const turnstileChallengeRequired = turnstileEnabled && turnstileChallengeActive;
 
   const canSubmit = canSubmitSsoLogin({
     mode,
     hasRedirectTarget: Boolean(redirectTarget.url),
+    redirectRequested: hasRedirectParam,
     account,
     password,
     displayName,
     isSubmitting,
-    isTurnstileEnabled: turnstileEnabled,
+    isTurnstileEnabled: turnstileChallengeRequired,
     turnstileToken,
+    totpRequired,
+    totpCode,
   });
   const canStartGithub = canStartGithubOAuth({
     isSubmitting: isSubmitting || isGithubSubmitting || isPasskeySubmitting,
-    isTurnstileEnabled: turnstileEnabled,
+    isTurnstileEnabled: turnstileChallengeRequired,
     turnstileToken,
   });
   const canStartPasskey = canStartGithubOAuth({
     isSubmitting: isSubmitting || isGithubSubmitting || isPasskeySubmitting,
-    isTurnstileEnabled: turnstileEnabled,
+    isTurnstileEnabled: turnstileChallengeRequired,
     turnstileToken,
   });
 
@@ -306,7 +363,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
   };
 
   useEffect(() => {
-    if (!turnstileEnabled) {
+    if (!turnstileChallengeRequired) {
       setTurnstileToken('');
       setTurnstileMessage(null);
       return;
@@ -361,7 +418,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       }
       turnstileWidgetIDRef.current = null;
     };
-  }, [resolvedTurnstileSiteKey, turnstileEnabled]);
+  }, [resolvedTurnstileSiteKey, turnstileChallengeRequired]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -369,8 +426,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       return;
     }
 
-    if (mode === 'login' && !redirectTarget.url) {
-      setStatus({ tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' });
+    // Only a requested-but-invalid redirect target blocks login. When no redirect_to
+    // was provided the user is signing in directly and will be sent to their profile.
+    if (mode === 'login' && hasRedirectParam && !redirectTarget.url) {
+      setStatus({ tone: 'error', message: redirectTarget.error ?? 'Invalid redirect_to parameter.' });
       return;
     }
 
@@ -384,7 +443,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       return;
     }
 
-    if (turnstileEnabled && !turnstileToken) {
+    if (turnstileChallengeRequired && !turnstileToken) {
       setStatus({ tone: 'error', message: 'Please complete the security verification challenge.' });
       return;
     }
@@ -398,12 +457,12 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
           account,
           password,
           displayName,
-          turnstileToken: turnstileEnabled ? turnstileToken : null,
+          turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
         });
         setStatus({ tone: 'success', message: data.UserRegister?.msg ?? 'Registration complete. You can sign in now.' });
         setMode('login');
         setPassword('');
-        if (turnstileEnabled) {
+        if (turnstileChallengeRequired) {
           resetTurnstile();
           setTurnstileMessage('Please complete the security verification again.');
         }
@@ -414,7 +473,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         account,
         password,
         totpCode: totpCode.trim() ? totpCode : null,
-        turnstileToken: turnstileEnabled ? turnstileToken : null,
+        turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
       });
 
       const token = data.UserLogin?.token;
@@ -422,21 +481,47 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         throw new Error('Login succeeded but no token was returned.');
       }
 
-      const target = redirectTarget.url;
-      if (!target) {
-        throw new Error('Missing redirect target.');
+      if (redirectTarget.url) {
+        const redirectUrl = buildRedirectUrlWithToken(redirectTarget.url, token);
+        setStatus({ tone: 'success', message: 'Login successful. Redirecting...' });
+        window.location.assign(redirectUrl);
+        return;
       }
 
-      const redirectUrl = buildRedirectUrlWithToken(target, token);
-      setStatus({ tone: 'success', message: 'Login successful. Redirecting...' });
-      window.location.assign(redirectUrl);
+      // No redirect target: this is a direct SSO sign-in. Persist the session token
+      // so the profile page can authenticate its GraphQL calls, then navigate there.
+      storeSsoToken(token);
+      setStatus({ tone: 'success', message: 'Login successful. Opening your profile...' });
+      navigate(profilePath);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed. Please try again.';
-      setStatus({ tone: 'error', message });
-      if (turnstileEnabled) {
+
+      // The client tripped the risk thresholds and must solve a Turnstile
+      // challenge. Reveal the widget and prompt to complete it, then retry.
+      if (isTurnstileRequiredError(message)) {
+        setTurnstileChallengeActive(true);
+        resetTurnstile();
+        setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+        return;
+      }
+
+      // Any token supplied this attempt was consumed; refresh it before the next.
+      if (turnstileChallengeRequired) {
         resetTurnstile();
         setTurnstileMessage('Please complete the security verification again.');
       }
+
+      // The backend accepted the password but the account has TOTP enabled and
+      // no code was supplied. Reveal the TOTP field and prompt for a second step
+      // instead of surfacing this as a login failure.
+      if (mode === 'login' && isTotpRequiredError(message)) {
+        setTotpRequired(true);
+        setTotpCode('');
+        setStatus({ tone: 'info', message: 'Enter the 6-digit code from your authenticator app to continue.' });
+        return;
+      }
+
+      setStatus({ tone: 'error', message });
     } finally {
       setIsSubmitting(false);
     }
@@ -452,7 +537,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       return;
     }
 
-    if (turnstileEnabled && !turnstileToken) {
+    if (turnstileChallengeRequired && !turnstileToken) {
       setStatus({ tone: 'error', message: 'Please complete the security verification challenge.' });
       return;
     }
@@ -462,7 +547,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     try {
       const data = await fetchGraphQL<SsoGithubOAuthStartResponse>('', USER_GITHUB_OAUTH_START_MUTATION, {
         redirectTo: redirectTarget.url ? redirectTarget.url.toString() : null,
-        turnstileToken: turnstileEnabled ? turnstileToken : null,
+        turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
       });
       const authorizeURL = data.UserGithubOAuthStart?.authorize_url;
       if (!authorizeURL) {
@@ -471,8 +556,14 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       window.location.assign(authorizeURL);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start GitHub sign in.';
+      if (isTurnstileRequiredError(message)) {
+        setTurnstileChallengeActive(true);
+        resetTurnstile();
+        setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+        return;
+      }
       setStatus({ tone: 'error', message });
-      if (turnstileEnabled) {
+      if (turnstileChallengeRequired) {
         resetTurnstile();
         setTurnstileMessage('Please complete the security verification again.');
       }
@@ -491,7 +582,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       return;
     }
 
-    if (turnstileEnabled && !turnstileToken) {
+    if (turnstileChallengeRequired && !turnstileToken) {
       setStatus({ tone: 'error', message: 'Please complete the security verification challenge.' });
       return;
     }
@@ -501,7 +592,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     try {
       const start = await fetchGraphQL<SsoPasskeyStartResponse>('', USER_PASSKEY_LOGIN_START_MUTATION, {
         redirectTo: redirectTarget.url ? redirectTarget.url.toString() : null,
-        turnstileToken: turnstileEnabled ? turnstileToken : null,
+        turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
       });
       const credentialJSON = await getPasskeyCredentialJSON(start.UserStartPasskeyLogin.options_json);
       const finish = await fetchGraphQL<SsoPasskeyLoginResponse>('', USER_PASSKEY_LOGIN_FINISH_MUTATION, {
@@ -517,8 +608,14 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       window.location.assign(buildRedirectUrlWithToken(target, token));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Passkey login failed.';
+      if (isTurnstileRequiredError(message)) {
+        setTurnstileChallengeActive(true);
+        resetTurnstile();
+        setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+        return;
+      }
       setStatus({ tone: 'error', message });
-      if (turnstileEnabled) {
+      if (turnstileChallengeRequired) {
         resetTurnstile();
         setTurnstileMessage('Please complete the security verification again.');
       }
@@ -532,8 +629,16 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       ? { tone: 'info', message: 'Registration mode ready.' }
       : redirectTarget.url
         ? { tone: 'info', message: 'Redirect destination ready.' }
-        : { tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' };
-  const redirectBanner = { status: redirectStatus, subtext: mode === 'register' ? account || 'New account' : redirectTarget.display };
+        : hasRedirectParam
+          ? { tone: 'error', message: redirectTarget.error ?? 'Invalid redirect_to parameter.' }
+          : { tone: 'info', message: 'Sign in to manage your profile.' };
+  const redirectSubtext =
+    mode === 'register'
+      ? account || 'New account'
+      : redirectTarget.url || hasRedirectParam
+        ? redirectTarget.display
+        : 'Profile access';
+  const redirectBanner = { status: redirectStatus, subtext: redirectSubtext };
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground transition-colors">
@@ -564,29 +669,39 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <button
                 type="button"
                 className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'login' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setMode('login')}
+                onClick={() => {
+                  setMode('login');
+                  setTotpRequired(false);
+                  setTotpCode('');
+                }}
               >
                 Sign in
               </button>
               <button
                 type="button"
                 className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'register' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setMode('register')}
+                onClick={() => {
+                  setMode('register');
+                  setTotpRequired(false);
+                  setTotpCode('');
+                }}
               >
                 Register
               </button>
             </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
-              disabled={!canStartGithub}
-              onClick={handleGithubOAuth}
-            >
-              <Github className="mr-2 h-4 w-4" />
-              {isGithubSubmitting ? 'Opening GitHub...' : 'Continue with GitHub'}
-            </Button>
+            {githubOAuthEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+                disabled={!canStartGithub}
+                onClick={handleGithubOAuth}
+              >
+                <Github className="mr-2 h-4 w-4" />
+                {isGithubSubmitting ? 'Opening GitHub...' : 'Continue with GitHub'}
+              </Button>
+            )}
 
             <Button
               type="button"
@@ -610,7 +725,13 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   autoComplete="username"
                   placeholder="USER_IDENTIFIER"
                   value={account}
-                  onChange={(event) => setAccount(event.target.value)}
+                  onChange={(event) => {
+                    setAccount(event.target.value);
+                    // Changing the account invalidates the pending TOTP step; a
+                    // different account may not have TOTP enabled at all.
+                    setTotpRequired(false);
+                    setTotpCode('');
+                  }}
                   className="h-12 font-mono transition-colors"
                 />
               </div>
@@ -651,7 +772,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 />
               </div>
 
-              {mode === 'login' && (
+              {mode === 'login' && totpRequired && (
                 <div className="space-y-2">
                   <label htmlFor="sso-totp" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
                     TOTP Code
@@ -662,6 +783,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     placeholder="000000"
+                    autoFocus
                     value={totpCode}
                     onChange={(event) => setTotpCode(event.target.value)}
                     className="h-12 font-mono transition-colors"
@@ -669,7 +791,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 </div>
               )}
 
-              {turnstileEnabled && (
+              {turnstileChallengeRequired && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">Security Check</label>
                   <div
@@ -685,7 +807,15 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
                 disabled={!canSubmit}
               >
-                {isSubmitting ? (mode === 'login' ? 'Authenticating...' : 'Creating...') : mode === 'login' ? 'Login' : 'Create Account'}
+                {isSubmitting
+                  ? mode === 'login'
+                    ? 'Authenticating...'
+                    : 'Creating...'
+                  : mode === 'login'
+                    ? totpRequired
+                      ? 'Verify'
+                      : 'Login'
+                    : 'Create Account'}
                 {!isSubmitting && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>
             </form>

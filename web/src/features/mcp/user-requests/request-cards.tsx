@@ -33,7 +33,6 @@ function RequestImageThumbnails({ images }: { images?: UserRequestImage[] }) {
           title={`${img.mime} \u2022 ${img.width}x${img.height}`}
         >
           {img.url ? (
-            // eslint-disable-next-line jsx-a11y/img-redundant-alt
             <img src={img.url} alt={`Request image ${img.sha256.slice(0, 8)}`} className="h-full w-full object-cover" />
           ) : (
             <span className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">expired</span>

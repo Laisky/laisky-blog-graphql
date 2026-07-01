@@ -1,6 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import '@testing-library/jest-dom/vitest';
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { describe, expect, it, vi } from 'vitest';
 
-import { buildRedirectUrlWithToken, canStartGithubOAuth, canSubmitSsoLogin, isTurnstileEnabled, parseRedirectTarget } from './sso-login';
+import {
+  buildRedirectUrlWithToken,
+  canStartGithubOAuth,
+  canSubmitSsoLogin,
+  isTotpRequiredError,
+  isTurnstileEnabled,
+  isTurnstileRequiredError,
+  parseRedirectTarget,
+  SsoLoginPage,
+} from './sso-login';
+
+// ThemeToggle depends on ThemeProvider context; stub it so the page renders standalone.
+vi.mock('@/components/theme/theme-toggle', () => ({
+  ThemeToggle: () => <div>Theme toggle</div>,
+}));
 
 const origin = 'https://console.laisky.com';
 
@@ -86,11 +103,12 @@ describe('isTurnstileEnabled', () => {
 });
 
 describe('canSubmitSsoLogin', () => {
-  it('requires redirect target and credentials', () => {
+  it('blocks sign-in when a requested redirect target is invalid', () => {
     expect(
       canSubmitSsoLogin({
         mode: 'login',
         hasRedirectTarget: false,
+        redirectRequested: true,
         account: 'alice',
         password: 'secret',
         displayName: '',
@@ -99,6 +117,22 @@ describe('canSubmitSsoLogin', () => {
         turnstileToken: '',
       })
     ).toBe(false);
+  });
+
+  it('allows direct profile sign-in when no redirect target is requested', () => {
+    expect(
+      canSubmitSsoLogin({
+        mode: 'login',
+        hasRedirectTarget: false,
+        redirectRequested: false,
+        account: 'alice',
+        password: 'secret',
+        displayName: '',
+        isSubmitting: false,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+      })
+    ).toBe(true);
   });
 
   it('requires turnstile token when turnstile is enabled', () => {
@@ -160,6 +194,110 @@ describe('canSubmitSsoLogin', () => {
       })
     ).toBe(false);
   });
+
+  it('blocks submit while a TOTP code is required but empty', () => {
+    expect(
+      canSubmitSsoLogin({
+        mode: 'login',
+        hasRedirectTarget: true,
+        account: 'alice',
+        password: 'secret',
+        displayName: '',
+        isSubmitting: false,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+        totpRequired: true,
+        totpCode: '   ',
+      })
+    ).toBe(false);
+  });
+
+  it('allows submit once the required TOTP code is entered', () => {
+    expect(
+      canSubmitSsoLogin({
+        mode: 'login',
+        hasRedirectTarget: true,
+        account: 'alice',
+        password: 'secret',
+        displayName: '',
+        isSubmitting: false,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+        totpRequired: true,
+        totpCode: '123456',
+      })
+    ).toBe(true);
+  });
+});
+
+describe('isTotpRequiredError', () => {
+  it('detects the backend totp_required signal', () => {
+    expect(isTotpRequiredError('totp_required')).toBe(true);
+    expect(isTotpRequiredError('  TOTP_REQUIRED  ')).toBe(true);
+    expect(isTotpRequiredError('graphql: totp_required')).toBe(true);
+  });
+
+  it('ignores unrelated login errors', () => {
+    expect(isTotpRequiredError('invalid credentials')).toBe(false);
+    expect(isTotpRequiredError('login failed')).toBe(false);
+    expect(isTotpRequiredError('')).toBe(false);
+  });
+});
+
+describe('isTurnstileRequiredError', () => {
+  it('detects the backend turnstile_required signal', () => {
+    expect(isTurnstileRequiredError('turnstile_required')).toBe(true);
+    expect(isTurnstileRequiredError('  TURNSTILE_REQUIRED  ')).toBe(true);
+    expect(isTurnstileRequiredError('login: turnstile_required')).toBe(true);
+  });
+
+  it('ignores unrelated auth errors', () => {
+    expect(isTurnstileRequiredError('invalid credentials')).toBe(false);
+    expect(isTurnstileRequiredError('totp_required')).toBe(false);
+    expect(isTurnstileRequiredError('')).toBe(false);
+  });
+});
+
+describe('canSubmitSsoLogin turnstile gating', () => {
+  const baseState = {
+    mode: 'login' as const,
+    hasRedirectTarget: true,
+    redirectRequested: true,
+    account: 'alice',
+    password: 'secret',
+    displayName: '',
+    isSubmitting: false,
+  };
+
+  it('does not require a turnstile token until a challenge is active', () => {
+    expect(
+      canSubmitSsoLogin({
+        ...baseState,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+      })
+    ).toBe(true);
+  });
+
+  it('blocks submit while an active challenge has no token', () => {
+    expect(
+      canSubmitSsoLogin({
+        ...baseState,
+        isTurnstileEnabled: true,
+        turnstileToken: '',
+      })
+    ).toBe(false);
+  });
+
+  it('allows submit once the active challenge is solved', () => {
+    expect(
+      canSubmitSsoLogin({
+        ...baseState,
+        isTurnstileEnabled: true,
+        turnstileToken: 'token',
+      })
+    ).toBe(true);
+  });
 });
 
 describe('canStartGithubOAuth', () => {
@@ -191,5 +329,33 @@ describe('canStartGithubOAuth', () => {
         turnstileToken: 'turnstile-token',
       })
     ).toBe(true);
+  });
+});
+
+describe('SsoLoginPage GitHub option visibility', () => {
+  const renderLoginPage = (githubOAuthEnabled: boolean | undefined) =>
+    render(
+      <MemoryRouter initialEntries={['/sso/login']}>
+        <SsoLoginPage githubOAuthEnabled={githubOAuthEnabled} />
+      </MemoryRouter>
+    );
+
+  const githubButton = () => screen.queryByRole('button', { name: /continue with github/i });
+
+  it('hides the GitHub button when GitHub OAuth is not configured', () => {
+    renderLoginPage(false);
+    expect(githubButton()).not.toBeInTheDocument();
+    // Passkey and password sign-in stay available regardless of GitHub config.
+    expect(screen.getByRole('button', { name: /sign in with passkey/i })).toBeInTheDocument();
+  });
+
+  it('hides the GitHub button when the flag is omitted', () => {
+    renderLoginPage(undefined);
+    expect(githubButton()).not.toBeInTheDocument();
+  });
+
+  it('shows the GitHub button when GitHub OAuth is configured', () => {
+    renderLoginPage(true);
+    expect(githubButton()).toBeInTheDocument();
   });
 });

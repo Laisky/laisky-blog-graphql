@@ -32,6 +32,10 @@ export interface RuntimeConfig {
   publicBasePath?: string;
   tools?: ToolsConfig;
   site?: RuntimeSiteConfig;
+  // githubOAuthEnabled reports whether the backend has GitHub OAuth credentials
+  // configured. The SSO login page hides the GitHub sign-in option when this is
+  // false so users never trigger a "github oauth client is not configured" error.
+  githubOAuthEnabled?: boolean;
 }
 
 // Default tools config with all tools enabled

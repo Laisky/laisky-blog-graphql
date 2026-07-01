@@ -82,7 +82,6 @@ function AttachmentTile({
       title={attachment.errorMessage ?? attachment.label}
     >
       {src ? (
-        // eslint-disable-next-line jsx-a11y/img-redundant-alt
         <img src={src} alt={`Attached image ${attachment.label}`} className="h-full w-full object-cover" />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-xs font-medium text-muted-foreground">

@@ -413,6 +413,18 @@ func TestClassifyGraphQLClientError(t *testing.T) {
 			expectedReason: "throttled_request",
 		},
 		{
+			name:           "totp required prompt is client-side",
+			errMsg:         "totp_required",
+			expectedClient: true,
+			expectedReason: "totp_required",
+		},
+		{
+			name:           "turnstile challenge prompt is client-side",
+			errMsg:         "login: turnstile_required",
+			expectedClient: true,
+			expectedReason: "turnstile_required",
+		},
+		{
 			name:           "missing post by name is client-side",
 			errMsg:         "cannot find post by name `history`",
 			expectedClient: true,

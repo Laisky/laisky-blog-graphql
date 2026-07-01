@@ -13,6 +13,8 @@ import (
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
 
 const (
@@ -56,6 +58,12 @@ func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, 
 		return nil
 	}
 
+	// Record the attempt up front so request frequency is tracked even when the
+	// client ultimately skips the challenge.
+	clientKey := resolveAuthClientKey(ctx)
+	tracker := getAuthChallengeTracker()
+	tracker.recordAttempt(clientKey)
+
 	token := ""
 	if turnstileToken != nil {
 		token = strings.TrimSpace(*turnstileToken)
@@ -65,8 +73,14 @@ func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, 
 		return errors.Wrap(err, "validate turnstile token length")
 	}
 
+	// Low-risk clients proceed without a challenge; any token they happen to send
+	// is ignored so a stale one cannot block them.
+	if !tracker.challengeRequired(clientKey) {
+		return nil
+	}
+
 	if token == "" {
-		return errors.Errorf("turnstile token is required for %s", action)
+		return errors.Wrap(model.ErrTurnstileRequired, action)
 	}
 
 	if err := verifyTurnstileToken(ctx, secret, token, resolveTurnstileClientIP(ctx)); err != nil {

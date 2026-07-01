@@ -30,6 +30,9 @@ const (
 	githubOAuthProvider          = "github"
 	githubOAuthStateTTL          = 10 * time.Minute
 	githubOAuthHTTPTimeout       = 8 * time.Second
+
+	githubOAuthClientIDConfigKey     = "settings.web.github_oauth.client_id"
+	githubOAuthClientSecretConfigKey = "settings.web.github_oauth.client_secret"
 )
 
 var githubOAuthHTTPClient = &http.Client{
@@ -69,6 +72,9 @@ func (r *MutationResolver) UserGithubOAuthStart(ctx context.Context,
 	turnstileToken *string,
 ) (*models.GithubOAuthStartResponse, error) {
 	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+		if errors.Is(err, model.ErrTurnstileRequired) {
+			return nil, errors.WithStack(model.ErrTurnstileRequired)
+		}
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
 
@@ -162,11 +168,20 @@ func loadGitHubOAuthSettings(ctx context.Context) (*githubOAuthSettings, error) 
 	return loadGitHubOAuthSettingsWithRedirect(ctx, redirectURL)
 }
 
+// IsGithubOAuthConfigured reports whether GitHub OAuth sign-in is available.
+// It returns true only when both the client ID and client secret are configured,
+// letting the frontend hide the GitHub option when the administrator has not set it up.
+func IsGithubOAuthConfigured() bool {
+	clientID := strings.TrimSpace(gconfig.Shared.GetString(githubOAuthClientIDConfigKey))
+	clientSecret := strings.TrimSpace(gconfig.Shared.GetString(githubOAuthClientSecretConfigKey))
+	return clientID != "" && clientSecret != ""
+}
+
 // loadGitHubOAuthSettingsWithRedirect loads OAuth settings with a specific callback URL.
 // It accepts a context and callback URL, returning a configured GitHub OAuth client.
 func loadGitHubOAuthSettingsWithRedirect(_ context.Context, redirectURL string) (*githubOAuthSettings, error) {
-	clientID := strings.TrimSpace(gconfig.Shared.GetString("settings.web.github_oauth.client_id"))
-	clientSecret := strings.TrimSpace(gconfig.Shared.GetString("settings.web.github_oauth.client_secret"))
+	clientID := strings.TrimSpace(gconfig.Shared.GetString(githubOAuthClientIDConfigKey))
+	clientSecret := strings.TrimSpace(gconfig.Shared.GetString(githubOAuthClientSecretConfigKey))
 	if clientID == "" || clientSecret == "" {
 		return nil, errors.New("github oauth client is not configured")
 	}

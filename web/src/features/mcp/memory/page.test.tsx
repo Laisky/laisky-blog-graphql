@@ -61,7 +61,10 @@ describe('MemoryPage tool console gating', () => {
 
     render(<MemoryPage />);
 
-    expect(screen.getByLabelText(/^Memory Plugin$/i)).toHaveValue('rag');
+    // The memory plugin control is a Radix Select whose trigger renders the
+    // selected item's label, so assert on the displayed text rather than a
+    // native form value.
+    expect(screen.getByLabelText(/^Memory plugin$/i)).toHaveTextContent(/^RAG$/);
   });
 
   it('restores the persisted memory plugin selection from localStorage', () => {
@@ -87,6 +90,6 @@ describe('MemoryPage tool console gating', () => {
 
     render(<MemoryPage />);
 
-    expect(screen.getByLabelText(/^Memory Plugin$/i)).toHaveValue('pageindex');
+    expect(screen.getByLabelText(/^Memory plugin$/i)).toHaveTextContent(/^pageindex$/);
   });
 });

@@ -1,6 +1,7 @@
-import { KeyRound, Lock, RefreshCcw, ShieldCheck, ShieldPlus, UserRound } from 'lucide-react';
+/* eslint-disable react-refresh/only-export-components */
+import { KeyRound, Lock, LogOut, RefreshCcw, ShieldCheck, ShieldPlus, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { createPasskeyCredentialJSON } from '@/lib/passkey';
+import { clearSsoToken, consumeSsoTokenFromLocation, resolveSiblingSsoPath } from '@/lib/sso-session';
 
 const USER_PROFILE_QUERY = `
   query SsoProfile {
@@ -149,6 +151,11 @@ export function canSubmitTotpCode(code: string): boolean {
 }
 
 export function SsoProfilePage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const loginPath = resolveSiblingSsoPath(location.pathname, 'login');
+  const [token, setToken] = useState('');
+  const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<SsoProfile | null>(null);
   const [status, setStatus] = useState<StatusState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -160,11 +167,11 @@ export function SsoProfilePage() {
   const [passkeyLabel, setPasskeyLabel] = useState('My passkey');
   const [isPasskeyRegistering, setIsPasskeyRegistering] = useState(false);
 
-  const loadProfile = async () => {
+  const loadProfile = async (authToken: string) => {
     setIsLoading(true);
     setStatus(null);
     try {
-      const data = await fetchGraphQL<ProfileResponse>('', USER_PROFILE_QUERY);
+      const data = await fetchGraphQL<ProfileResponse>(authToken, USER_PROFILE_QUERY);
       setProfile(data.UserProfile);
     } catch (error) {
       setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Failed to load profile.' });
@@ -174,8 +181,26 @@ export function SsoProfilePage() {
   };
 
   useEffect(() => {
-    void loadProfile();
+    // Callback logins (GitHub, passkey, and cross-app redirects) hand the freshly
+    // minted JWT to this page via the sso_token query parameter, while a direct
+    // password sign-in stores it before navigating here. Capture whichever is
+    // present so every GraphQL call below can authenticate via the Bearer header.
+    const sessionToken = consumeSsoTokenFromLocation();
+    setToken(sessionToken);
+    setAuthReady(true);
+    if (sessionToken) {
+      void loadProfile(sessionToken);
+    } else {
+      setIsLoading(false);
+    }
   }, []);
+
+  const handleSignOut = () => {
+    clearSsoToken();
+    setToken('');
+    setProfile(null);
+    navigate(loginPath);
+  };
 
   const updateProfile = (next: SsoProfile | undefined, message: string) => {
     if (next) {
@@ -192,7 +217,7 @@ export function SsoProfilePage() {
     }
 
     try {
-      const data = await fetchGraphQL<ProfileMutationResponse>('', CHANGE_PASSWORD_MUTATION, { currentPassword, newPassword });
+      const data = await fetchGraphQL<ProfileMutationResponse>(token, CHANGE_PASSWORD_MUTATION, { currentPassword, newPassword });
       setCurrentPassword('');
       setNewPassword('');
       updateProfile(data.UserChangePassword, 'Password updated.');
@@ -203,7 +228,7 @@ export function SsoProfilePage() {
 
   const handleStartTotp = async () => {
     try {
-      const data = await fetchGraphQL<TotpSetupResponse>('', START_TOTP_MUTATION);
+      const data = await fetchGraphQL<TotpSetupResponse>(token, START_TOTP_MUTATION);
       setTotpSetup(data.UserStartTOTPSetup);
       setStatus({ tone: 'info', message: 'TOTP setup started.' });
     } catch (error) {
@@ -219,7 +244,7 @@ export function SsoProfilePage() {
     }
 
     try {
-      const data = await fetchGraphQL<ProfileMutationResponse>('', CONFIRM_TOTP_MUTATION, { code: totpCode });
+      const data = await fetchGraphQL<ProfileMutationResponse>(token, CONFIRM_TOTP_MUTATION, { code: totpCode });
       setTotpCode('');
       setTotpSetup(null);
       updateProfile(data.UserConfirmTOTPSetup, 'TOTP enabled.');
@@ -236,7 +261,7 @@ export function SsoProfilePage() {
     }
 
     try {
-      const data = await fetchGraphQL<ProfileMutationResponse>('', DISABLE_TOTP_MUTATION, { currentPassword: disablePassword });
+      const data = await fetchGraphQL<ProfileMutationResponse>(token, DISABLE_TOTP_MUTATION, { currentPassword: disablePassword });
       setDisablePassword('');
       updateProfile(data.UserDisableTOTP, 'TOTP disabled.');
     } catch (error) {
@@ -255,9 +280,9 @@ export function SsoProfilePage() {
     setIsPasskeyRegistering(true);
     setStatus({ tone: 'info', message: 'Waiting for passkey...' });
     try {
-      const start = await fetchGraphQL<PasskeyStartResponse>('', START_PASSKEY_REGISTRATION_MUTATION, { label });
+      const start = await fetchGraphQL<PasskeyStartResponse>(token, START_PASSKEY_REGISTRATION_MUTATION, { label });
       const credentialJSON = await createPasskeyCredentialJSON(start.UserStartPasskeyRegistration.options_json);
-      const finish = await fetchGraphQL<ProfileMutationResponse>('', FINISH_PASSKEY_REGISTRATION_MUTATION, {
+      const finish = await fetchGraphQL<ProfileMutationResponse>(token, FINISH_PASSKEY_REGISTRATION_MUTATION, {
         label,
         session: start.UserStartPasskeyRegistration.session,
         credentialJSON,
@@ -282,10 +307,37 @@ export function SsoProfilePage() {
               <LaiskyLink className="text-primary underline-offset-4 hover:underline">Laisky</LaiskyLink> SSO
             </span>
           </Link>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            {token && (
+              <Button type="button" variant="outline" size="sm" className="gap-2" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </Button>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
+      {authReady && !token ? (
+        <main className="mx-auto flex max-w-md flex-col gap-6 px-4 py-16">
+          {status && <StatusBanner status={status} />}
+          <Card>
+            <CardHeader className="border-b border-border/50">
+              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <UserRound className="h-4 w-4" />
+                Profile
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-6">
+              <StatusBanner status={{ tone: 'info', message: 'Please sign in to view and manage your account.' }} />
+              <Button type="button" className="w-full" onClick={() => navigate(loginPath)}>
+                Go to sign in
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+      ) : (
       <main className="mx-auto grid max-w-5xl gap-6 px-4 py-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <section className="space-y-6">
           {status && <StatusBanner status={status} />}
@@ -310,7 +362,7 @@ export function SsoProfilePage() {
               ) : (
                 <StatusBanner status={{ tone: 'error', message: 'Profile unavailable.' }} />
               )}
-              <Button type="button" variant="outline" className="w-full gap-2" onClick={() => void loadProfile()}>
+              <Button type="button" variant="outline" className="w-full gap-2" onClick={() => void loadProfile(token)}>
                 <RefreshCcw className="h-4 w-4" />
                 Refresh
               </Button>
@@ -423,6 +475,7 @@ export function SsoProfilePage() {
           </Card>
         </section>
       </main>
+      )}
     </div>
   );
 }

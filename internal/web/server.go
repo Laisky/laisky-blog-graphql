@@ -26,6 +26,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
+	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -451,10 +452,11 @@ func RunServer(addr string, resolver *Resolver) {
 		)
 
 		ctx.JSON(http.StatusOK, gin.H{
-			"urlPrefix":      prefix.internal,
-			"publicBasePath": siteConfig.PublicBasePath,
-			"site":           siteConfig,
-			"tools":          toolsConfig,
+			"urlPrefix":          prefix.internal,
+			"publicBasePath":     siteConfig.PublicBasePath,
+			"site":               siteConfig,
+			"tools":              toolsConfig,
+			"githubOAuthEnabled": blog.IsGithubOAuthConfigured(),
 		})
 	}
 
@@ -718,6 +720,14 @@ func classifyGraphQLClientError(errMsg string) (isClientSideErr bool, reason str
 
 	if strings.Contains(lowerMsg, "deny by throttle") {
 		return true, "throttled_request"
+	}
+
+	if strings.Contains(lowerMsg, "totp_required") {
+		return true, "totp_required"
+	}
+
+	if strings.Contains(lowerMsg, "turnstile_required") {
+		return true, "turnstile_required"
 	}
 
 	if strings.Contains(lowerMsg, "cannot find post by name") {

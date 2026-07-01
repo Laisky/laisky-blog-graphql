@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { Github, Lock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';

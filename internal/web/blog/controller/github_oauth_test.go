@@ -52,6 +52,37 @@ func TestGitHubOAuthStateRejectsTampering(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestIsGithubOAuthConfigured verifies the configured check requires both credentials.
+func TestIsGithubOAuthConfigured(t *testing.T) {
+	originalID := gconfig.Shared.GetString(githubOAuthClientIDConfigKey)
+	originalSecret := gconfig.Shared.GetString(githubOAuthClientSecretConfigKey)
+	t.Cleanup(func() {
+		gconfig.Shared.Set(githubOAuthClientIDConfigKey, originalID)
+		gconfig.Shared.Set(githubOAuthClientSecretConfigKey, originalSecret)
+	})
+
+	gconfig.Shared.Set(githubOAuthClientIDConfigKey, "")
+	gconfig.Shared.Set(githubOAuthClientSecretConfigKey, "")
+	require.False(t, IsGithubOAuthConfigured())
+
+	gconfig.Shared.Set(githubOAuthClientIDConfigKey, "client-id")
+	gconfig.Shared.Set(githubOAuthClientSecretConfigKey, "")
+	require.False(t, IsGithubOAuthConfigured())
+
+	gconfig.Shared.Set(githubOAuthClientIDConfigKey, "")
+	gconfig.Shared.Set(githubOAuthClientSecretConfigKey, "client-secret")
+	require.False(t, IsGithubOAuthConfigured())
+
+	// Whitespace-only values must not count as configured.
+	gconfig.Shared.Set(githubOAuthClientIDConfigKey, "   ")
+	gconfig.Shared.Set(githubOAuthClientSecretConfigKey, "   ")
+	require.False(t, IsGithubOAuthConfigured())
+
+	gconfig.Shared.Set(githubOAuthClientIDConfigKey, "client-id")
+	gconfig.Shared.Set(githubOAuthClientSecretConfigKey, "client-secret")
+	require.True(t, IsGithubOAuthConfigured())
+}
+
 // TestIsAllowedSSORedirectURL verifies redirect target allow-list behavior.
 func TestIsAllowedSSORedirectURL(t *testing.T) {
 	require.True(t, isAllowedSSORedirectURL(mustParseURL(t, "https://app.laisky.com/callback")))

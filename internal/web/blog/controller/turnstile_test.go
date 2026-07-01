@@ -3,9 +3,13 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
 
 // TestNormalizeTurnstileHost verifies host normalization removes ports and normalizes case.
@@ -66,60 +70,60 @@ func TestResolveTurnstileSecretGlobalFallback(t *testing.T) {
 	require.Equal(t, "global-secret", resolveTurnstileSecretForLogin("sso.laisky.com"))
 }
 
-// TestValidateTurnstileTokenForLoginMissingToken verifies missing token is rejected when turnstile is enabled.
-func TestValidateTurnstileTokenForLoginMissingToken(t *testing.T) {
+// setTurnstileEnabledSite configures a Turnstile-enabled default site for the test.
+func setTurnstileEnabledSite(t *testing.T) {
+	t.Helper()
+
 	originalSites := gconfig.Shared.GetStringMap("settings.web.sites")
 	t.Cleanup(func() {
 		gconfig.Shared.Set("settings.web.sites", originalSites)
 	})
 
-	sites := map[string]any{
+	gconfig.Shared.Set("settings.web.sites", map[string]any{
 		"sso": map[string]any{
 			"default":              true,
 			"turnstile_secret_key": "sso-secret",
 		},
-	}
-	gconfig.Shared.Set("settings.web.sites", sites)
+	})
+}
+
+// TestValidateTurnstileTokenSkippedForLowRiskLogin verifies a low-risk client is
+// not challenged even when Turnstile is configured.
+func TestValidateTurnstileTokenSkippedForLowRiskLogin(t *testing.T) {
+	setTurnstileEnabledSite(t)
+	withAuthChallengeTracker(t, newAuthChallengeTracker(time.Minute, 5, 15*time.Minute, 3, 100))
+
+	require.NoError(t, validateTurnstileTokenForLogin(context.Background(), nil))
+}
+
+// TestValidateTurnstileTokenRequiredForHighRiskLogin verifies a suspicious client
+// is asked to solve a challenge when no token is supplied.
+func TestValidateTurnstileTokenRequiredForHighRiskLogin(t *testing.T) {
+	setTurnstileEnabledSite(t)
+	withAuthChallengeTracker(t, highRiskTrackerForUnknown())
 
 	err := validateTurnstileTokenForLogin(context.Background(), nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "turnstile token is required")
+	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
 }
 
-// TestValidateTurnstileTokenForRegisterMissingToken verifies registration is rejected when Turnstile is enabled.
-func TestValidateTurnstileTokenForRegisterMissingToken(t *testing.T) {
-	originalSites := gconfig.Shared.GetStringMap("settings.web.sites")
-	t.Cleanup(func() {
-		gconfig.Shared.Set("settings.web.sites", originalSites)
-	})
-
-	sites := map[string]any{
-		"sso": map[string]any{
-			"default":              true,
-			"turnstile_secret_key": "sso-secret",
-		},
-	}
-	gconfig.Shared.Set("settings.web.sites", sites)
+// TestValidateTurnstileTokenRequiredForHighRiskRegister verifies registration by a
+// suspicious client is gated behind a challenge.
+func TestValidateTurnstileTokenRequiredForHighRiskRegister(t *testing.T) {
+	setTurnstileEnabledSite(t)
+	withAuthChallengeTracker(t, highRiskTrackerForUnknown())
 
 	err := validateTurnstileTokenForRegister(context.Background(), nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "turnstile token is required for register")
+	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
 }
 
-// TestBlogLoginRejectedWhenTurnstileEnabled verifies the legacy login path cannot bypass Turnstile.
-func TestBlogLoginRejectedWhenTurnstileEnabled(t *testing.T) {
-	originalSites := gconfig.Shared.GetStringMap("settings.web.sites")
-	t.Cleanup(func() {
-		gconfig.Shared.Set("settings.web.sites", originalSites)
-	})
-
-	sites := map[string]any{
-		"sso": map[string]any{
-			"default":              true,
-			"turnstile_secret_key": "sso-secret",
-		},
-	}
-	gconfig.Shared.Set("settings.web.sites", sites)
+// TestBlogLoginRejectedForHighRiskClient verifies the legacy login path enforces
+// the challenge for suspicious clients (masked as invalid credentials since the
+// legacy client cannot render a widget).
+func TestBlogLoginRejectedForHighRiskClient(t *testing.T) {
+	setTurnstileEnabledSite(t)
+	withAuthChallengeTracker(t, highRiskTrackerForUnknown())
 
 	_, err := (&MutationResolver{}).BlogLogin(context.Background(), "user@example.com", "password")
 	require.Error(t, err)
