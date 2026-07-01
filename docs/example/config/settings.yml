@@ -144,6 +144,14 @@ settings:
   web:
     url_prefix: /mcp # internal mount path on the Go server
     public_url_prefix: / # set to '/' to hide the prefix in generated links
+    github_oauth:
+      client_id: YOUR_GITHUB_OAUTH_CLIENT_ID
+      client_secret: YOUR_GITHUB_OAUTH_CLIENT_SECRET
+      redirect_url: https://sso.laisky.com/github/callback
+    webauthn:
+      origin: https://sso.laisky.com
+      rp_id: sso.laisky.com
+      rp_display_name: Laisky SSO
     sites:
       mcp:
         host: mcp.laisky.com

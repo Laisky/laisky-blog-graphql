@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { ArrowRight, Lock } from 'lucide-react';
+import { ArrowRight, Github, KeyRound, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
@@ -10,11 +10,60 @@ import { Input } from '@/components/ui/input';
 import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
+import { getPasskeyCredentialJSON } from '@/lib/passkey';
+import { buildRedirectUrlWithToken, parseRedirectTarget } from '@/lib/sso-redirect';
+
+export {
+  buildRedirectUrlWithToken,
+  isAllowedLaiskyDomain,
+  isAllowedRedirectHost,
+  isAllowedRedirectProtocol,
+  isInternalIPAddress,
+  isInternalIPv4Address,
+  isInternalIPv6Address,
+  normalizeHostname,
+  parseIPv4Address,
+  parseRedirectTarget,
+} from '@/lib/sso-redirect';
 
 const USER_LOGIN_MUTATION = `
-  mutation SsoLogin($account: String!, $password: String!, $turnstileToken: String) {
-    UserLogin(account: $account, password: $password, turnstile_token: $turnstileToken) {
+  mutation SsoLogin($account: String!, $password: String!, $turnstileToken: String, $totpCode: String) {
+    UserLogin(account: $account, password: $password, turnstile_token: $turnstileToken, totp_code: $totpCode) {
       token
+    }
+  }
+`;
+
+const USER_REGISTER_MUTATION = `
+  mutation SsoRegister($account: String!, $password: String!, $displayName: String!, $turnstileToken: String) {
+    UserRegister(account: $account, password: $password, display_name: $displayName, captcha: "", turnstile_token: $turnstileToken) {
+      msg
+    }
+  }
+`;
+
+const USER_GITHUB_OAUTH_START_MUTATION = `
+  mutation StartGithubOAuth($redirectTo: String, $turnstileToken: String) {
+    UserGithubOAuthStart(redirect_to: $redirectTo, turnstile_token: $turnstileToken) {
+      authorize_url
+    }
+  }
+`;
+
+const USER_PASSKEY_LOGIN_START_MUTATION = `
+  mutation StartPasskeyLogin($redirectTo: String, $turnstileToken: String) {
+    UserStartPasskeyLogin(redirect_to: $redirectTo, turnstile_token: $turnstileToken) {
+      options_json
+      session
+    }
+  }
+`;
+
+const USER_PASSKEY_LOGIN_FINISH_MUTATION = `
+  mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
+    UserFinishPasskeyLogin(session: $session, credential_json: $credentialJSON) {
+      token
+      redirect_to
     }
   }
 `;
@@ -25,6 +74,32 @@ const TURNSTILE_SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api
 interface SsoLoginResponse {
   UserLogin: {
     token: string;
+  };
+}
+
+interface SsoRegisterResponse {
+  UserRegister: {
+    msg: string;
+  };
+}
+
+interface SsoGithubOAuthStartResponse {
+  UserGithubOAuthStart: {
+    authorize_url: string;
+  };
+}
+
+interface SsoPasskeyStartResponse {
+  UserStartPasskeyLogin: {
+    options_json: string;
+    session: string;
+  };
+}
+
+interface SsoPasskeyLoginResponse {
+  UserFinishPasskeyLogin: {
+    token: string;
+    redirect_to: string;
   };
 }
 
@@ -53,9 +128,17 @@ declare global {
 }
 
 export interface SsoSubmitState {
+  mode: 'login' | 'register';
   hasRedirectTarget: boolean;
   account: string;
   password: string;
+  displayName: string;
+  isSubmitting: boolean;
+  isTurnstileEnabled: boolean;
+  turnstileToken: string;
+}
+
+export interface SsoGithubStartState {
   isSubmitting: boolean;
   isTurnstileEnabled: boolean;
   turnstileToken: string;
@@ -66,11 +149,31 @@ export function isTurnstileEnabled(siteKey: string | undefined): boolean {
 }
 
 export function canSubmitSsoLogin(state: SsoSubmitState): boolean {
-  if (!state.hasRedirectTarget || state.isSubmitting) {
+  if (state.mode === 'login' && !state.hasRedirectTarget) {
+    return false;
+  }
+
+  if (state.isSubmitting) {
     return false;
   }
 
   if (state.account.trim().length === 0 || state.password.trim().length === 0) {
+    return false;
+  }
+
+  if (state.mode === 'register' && state.displayName.trim().length === 0) {
+    return false;
+  }
+
+  if (state.isTurnstileEnabled && state.turnstileToken.trim().length === 0) {
+    return false;
+  }
+
+  return true;
+}
+
+export function canStartGithubOAuth(state: SsoGithubStartState): boolean {
+  if (state.isSubmitting) {
     return false;
   }
 
@@ -147,170 +250,6 @@ export function loadTurnstileScript(documentRef: Document): Promise<TurnstileAPI
   });
 }
 
-export interface RedirectTarget {
-  url: URL | null;
-  display: string;
-  error?: string;
-}
-
-export function parseRedirectTarget(rawValue: string | null, origin: string): RedirectTarget {
-  const raw = (rawValue ?? '').trim();
-  if (!raw) {
-    return {
-      url: null,
-      display: 'Not provided',
-      error: 'Missing redirect_to parameter. Provide a redirect target to continue.',
-    };
-  }
-
-  const baseOrigin = origin && origin !== 'null' ? origin : 'http://localhost';
-
-  let parsed: URL;
-  try {
-    parsed = new URL(raw, baseOrigin);
-  } catch {
-    return {
-      url: null,
-      display: raw,
-      error: 'Invalid redirect_to URL. Please provide a valid URL or path.',
-    };
-  }
-
-  if (!isAllowedRedirectProtocol(parsed)) {
-    return {
-      url: null,
-      display: parsed.toString(),
-      error: 'Unsupported redirect protocol. Only http and https are allowed.',
-    };
-  }
-
-  if (!isAllowedRedirectHost(parsed)) {
-    return {
-      url: null,
-      display: parsed.toString(),
-      error: 'Unsupported redirect host. Only *.laisky.com domains or internal IPs are allowed.',
-    };
-  }
-
-  return {
-    url: parsed,
-    display: parsed.toString(),
-  };
-}
-
-export function isAllowedRedirectProtocol(target: URL): boolean {
-  const protocol = target.protocol.toLowerCase();
-  return protocol === 'http:' || protocol === 'https:';
-}
-
-export function isAllowedRedirectHost(target: URL): boolean {
-  const hostname = normalizeHostname(target.hostname);
-  return isAllowedLaiskyDomain(hostname) || isInternalIPAddress(hostname);
-}
-
-export function normalizeHostname(hostname: string): string {
-  const trimmed = hostname.trim().toLowerCase();
-  return trimmed.endsWith('.') ? trimmed.slice(0, -1) : trimmed;
-}
-
-export function isAllowedLaiskyDomain(hostname: string): boolean {
-  return hostname === 'laisky.com' || hostname.endsWith('.laisky.com');
-}
-
-export function isInternalIPAddress(hostname: string): boolean {
-  const ipv4 = parseIPv4Address(hostname);
-  if (ipv4) {
-    return isInternalIPv4Address(ipv4);
-  }
-
-  if (hostname.includes(':')) {
-    return isInternalIPv6Address(hostname);
-  }
-
-  return false;
-}
-
-export function parseIPv4Address(hostname: string): [number, number, number, number] | null {
-  const parts = hostname.split('.');
-  if (parts.length !== 4) {
-    return null;
-  }
-
-  const octets: number[] = [];
-  for (const part of parts) {
-    if (!/^\d+$/.test(part)) {
-      return null;
-    }
-    const value = Number(part);
-    if (Number.isNaN(value) || value < 0 || value > 255) {
-      return null;
-    }
-    octets.push(value);
-  }
-
-  return [octets[0], octets[1], octets[2], octets[3]];
-}
-
-export function isInternalIPv4Address(octets: [number, number, number, number]): boolean {
-  const [first, second] = octets;
-  if (first === 10) {
-    return true;
-  }
-  if (first === 172 && second >= 16 && second <= 31) {
-    return true;
-  }
-  if (first === 192 && second === 168) {
-    return true;
-  }
-  if (first === 127) {
-    return true;
-  }
-  // 100.64.0.0/10 (Carrier-Grade NAT)
-  if (first === 100 && second >= 64 && second <= 127) {
-    return true;
-  }
-  return false;
-}
-
-export function isInternalIPv6Address(hostname: string): boolean {
-  let normalized = hostname.toLowerCase();
-
-  // Strip brackets if present (e.g., [fd00::1] -> fd00::1)
-  if (normalized.startsWith('[') && normalized.endsWith(']')) {
-    normalized = normalized.slice(1, -1);
-  }
-
-  if (normalized === '::1') {
-    return true;
-  }
-
-  if (normalized.includes('.')) {
-    const ipv4Part = normalized.slice(normalized.lastIndexOf(':') + 1);
-    const ipv4 = parseIPv4Address(ipv4Part);
-    if (ipv4) {
-      return isInternalIPv4Address(ipv4);
-    }
-  }
-
-  const firstHextet = normalized.split(':').find((part) => part.length > 0);
-  if (!firstHextet) {
-    return false;
-  }
-
-  const value = Number.parseInt(firstHextet, 16);
-  if (Number.isNaN(value)) {
-    return false;
-  }
-
-  return (value & 0xfe00) === 0xfc00;
-}
-
-export function buildRedirectUrlWithToken(target: URL, token: string): string {
-  const next = new URL(target.toString());
-  next.searchParams.set('sso_token', token);
-  return next.toString();
-}
-
 export function SsoLoginPage(props: SsoLoginPageProps) {
   const resolvedTurnstileSiteKey = (props.turnstileSiteKey ?? '').trim();
   const turnstileEnabled = isTurnstileEnabled(resolvedTurnstileSiteKey);
@@ -322,20 +261,37 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     return parseRedirectTarget(redirectParam, origin);
   }, [origin, redirectParam]);
 
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [account, setAccount] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
   const [status, setStatus] = useState<StatusState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGithubSubmitting, setIsGithubSubmitting] = useState(false);
+  const [isPasskeySubmitting, setIsPasskeySubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileMessage, setTurnstileMessage] = useState<string | null>(null);
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIDRef = useRef<string | null>(null);
 
   const canSubmit = canSubmitSsoLogin({
+    mode,
     hasRedirectTarget: Boolean(redirectTarget.url),
     account,
     password,
+    displayName,
     isSubmitting,
+    isTurnstileEnabled: turnstileEnabled,
+    turnstileToken,
+  });
+  const canStartGithub = canStartGithubOAuth({
+    isSubmitting: isSubmitting || isGithubSubmitting || isPasskeySubmitting,
+    isTurnstileEnabled: turnstileEnabled,
+    turnstileToken,
+  });
+  const canStartPasskey = canStartGithubOAuth({
+    isSubmitting: isSubmitting || isGithubSubmitting || isPasskeySubmitting,
     isTurnstileEnabled: turnstileEnabled,
     turnstileToken,
   });
@@ -413,7 +369,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       return;
     }
 
-    if (!redirectTarget.url) {
+    if (mode === 'login' && !redirectTarget.url) {
       setStatus({ tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' });
       return;
     }
@@ -423,18 +379,41 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       return;
     }
 
+    if (mode === 'register' && !displayName) {
+      setStatus({ tone: 'error', message: 'Please enter your display name.' });
+      return;
+    }
+
     if (turnstileEnabled && !turnstileToken) {
       setStatus({ tone: 'error', message: 'Please complete the security verification challenge.' });
       return;
     }
 
     setIsSubmitting(true);
-    setStatus({ tone: 'info', message: 'Authenticating...' });
+    setStatus({ tone: 'info', message: mode === 'login' ? 'Authenticating...' : 'Creating account...' });
 
     try {
+      if (mode === 'register') {
+        const data = await fetchGraphQL<SsoRegisterResponse>('', USER_REGISTER_MUTATION, {
+          account,
+          password,
+          displayName,
+          turnstileToken: turnstileEnabled ? turnstileToken : null,
+        });
+        setStatus({ tone: 'success', message: data.UserRegister?.msg ?? 'Registration complete. You can sign in now.' });
+        setMode('login');
+        setPassword('');
+        if (turnstileEnabled) {
+          resetTurnstile();
+          setTurnstileMessage('Please complete the security verification again.');
+        }
+        return;
+      }
+
       const data = await fetchGraphQL<SsoLoginResponse>('', USER_LOGIN_MUTATION, {
         account,
         password,
+        totpCode: totpCode.trim() ? totpCode : null,
         turnstileToken: turnstileEnabled ? turnstileToken : null,
       });
 
@@ -443,7 +422,12 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         throw new Error('Login succeeded but no token was returned.');
       }
 
-      const redirectUrl = buildRedirectUrlWithToken(redirectTarget.url, token);
+      const target = redirectTarget.url;
+      if (!target) {
+        throw new Error('Missing redirect target.');
+      }
+
+      const redirectUrl = buildRedirectUrlWithToken(target, token);
       setStatus({ tone: 'success', message: 'Login successful. Redirecting...' });
       window.location.assign(redirectUrl);
     } catch (error) {
@@ -458,10 +442,98 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     }
   };
 
-  const redirectStatus: StatusState = redirectTarget.url
-    ? { tone: 'info', message: 'Redirect destination ready.' }
-    : { tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' };
-  const redirectBanner = { status: redirectStatus, subtext: redirectTarget.display };
+  const handleGithubOAuth = async () => {
+    if (isSubmitting || isGithubSubmitting) {
+      return;
+    }
+
+    if (redirectParam && !redirectTarget.url) {
+      setStatus({ tone: 'error', message: redirectTarget.error ?? 'Invalid redirect_to parameter.' });
+      return;
+    }
+
+    if (turnstileEnabled && !turnstileToken) {
+      setStatus({ tone: 'error', message: 'Please complete the security verification challenge.' });
+      return;
+    }
+
+    setIsGithubSubmitting(true);
+    setStatus({ tone: 'info', message: 'Opening GitHub...' });
+    try {
+      const data = await fetchGraphQL<SsoGithubOAuthStartResponse>('', USER_GITHUB_OAUTH_START_MUTATION, {
+        redirectTo: redirectTarget.url ? redirectTarget.url.toString() : null,
+        turnstileToken: turnstileEnabled ? turnstileToken : null,
+      });
+      const authorizeURL = data.UserGithubOAuthStart?.authorize_url;
+      if (!authorizeURL) {
+        throw new Error('GitHub authorization URL was not returned.');
+      }
+      window.location.assign(authorizeURL);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to start GitHub sign in.';
+      setStatus({ tone: 'error', message });
+      if (turnstileEnabled) {
+        resetTurnstile();
+        setTurnstileMessage('Please complete the security verification again.');
+      }
+    } finally {
+      setIsGithubSubmitting(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    if (isSubmitting || isGithubSubmitting || isPasskeySubmitting) {
+      return;
+    }
+
+    if (redirectParam && !redirectTarget.url) {
+      setStatus({ tone: 'error', message: redirectTarget.error ?? 'Invalid redirect_to parameter.' });
+      return;
+    }
+
+    if (turnstileEnabled && !turnstileToken) {
+      setStatus({ tone: 'error', message: 'Please complete the security verification challenge.' });
+      return;
+    }
+
+    setIsPasskeySubmitting(true);
+    setStatus({ tone: 'info', message: 'Waiting for passkey...' });
+    try {
+      const start = await fetchGraphQL<SsoPasskeyStartResponse>('', USER_PASSKEY_LOGIN_START_MUTATION, {
+        redirectTo: redirectTarget.url ? redirectTarget.url.toString() : null,
+        turnstileToken: turnstileEnabled ? turnstileToken : null,
+      });
+      const credentialJSON = await getPasskeyCredentialJSON(start.UserStartPasskeyLogin.options_json);
+      const finish = await fetchGraphQL<SsoPasskeyLoginResponse>('', USER_PASSKEY_LOGIN_FINISH_MUTATION, {
+        session: start.UserStartPasskeyLogin.session,
+        credentialJSON,
+      });
+      const token = finish.UserFinishPasskeyLogin?.token;
+      if (!token) {
+        throw new Error('Passkey login succeeded but no token was returned.');
+      }
+      const target = new URL(finish.UserFinishPasskeyLogin.redirect_to || '/profile', window.location.origin);
+      setStatus({ tone: 'success', message: 'Passkey accepted. Redirecting...' });
+      window.location.assign(buildRedirectUrlWithToken(target, token));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Passkey login failed.';
+      setStatus({ tone: 'error', message });
+      if (turnstileEnabled) {
+        resetTurnstile();
+        setTurnstileMessage('Please complete the security verification again.');
+      }
+    } finally {
+      setIsPasskeySubmitting(false);
+    }
+  };
+
+  const redirectStatus: StatusState =
+    mode === 'register'
+      ? { tone: 'info', message: 'Registration mode ready.' }
+      : redirectTarget.url
+        ? { tone: 'info', message: 'Redirect destination ready.' }
+        : { tone: 'error', message: redirectTarget.error ?? 'Missing redirect_to parameter.' };
+  const redirectBanner = { status: redirectStatus, subtext: mode === 'register' ? account || 'New account' : redirectTarget.display };
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground transition-colors">
@@ -488,6 +560,45 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
           <CardContent className="space-y-6 pt-6">
             {status && <StatusBanner status={status} />}
 
+            <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
+              <button
+                type="button"
+                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'login' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setMode('login')}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'register' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setMode('register')}
+              >
+                Register
+              </button>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+              disabled={!canStartGithub}
+              onClick={handleGithubOAuth}
+            >
+              <Github className="mr-2 h-4 w-4" />
+              {isGithubSubmitting ? 'Opening GitHub...' : 'Continue with GitHub'}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
+              disabled={!canStartPasskey}
+              onClick={handlePasskeyLogin}
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              {isPasskeySubmitting ? 'Waiting for Passkey...' : 'Sign in with Passkey'}
+            </Button>
+
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <label htmlFor="sso-account" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
@@ -503,6 +614,26 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   className="h-12 font-mono transition-colors"
                 />
               </div>
+
+              {mode === 'register' && (
+                <div className="space-y-2">
+                  <label
+                    htmlFor="sso-display-name"
+                    className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1"
+                  >
+                    Display Name
+                  </label>
+                  <Input
+                    id="sso-display-name"
+                    name="displayName"
+                    autoComplete="name"
+                    placeholder="Alice"
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    className="h-12 transition-colors"
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label htmlFor="sso-password" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
@@ -520,6 +651,24 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 />
               </div>
 
+              {mode === 'login' && (
+                <div className="space-y-2">
+                  <label htmlFor="sso-totp" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
+                    TOTP Code
+                  </label>
+                  <Input
+                    id="sso-totp"
+                    name="totp"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="000000"
+                    value={totpCode}
+                    onChange={(event) => setTotpCode(event.target.value)}
+                    className="h-12 font-mono transition-colors"
+                  />
+                </div>
+              )}
+
               {turnstileEnabled && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">Security Check</label>
@@ -536,7 +685,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 className="w-full h-12 font-bold uppercase tracking-widest font-mono transition-[color,background-color,transform] active:scale-95"
                 disabled={!canSubmit}
               >
-                {isSubmitting ? 'Authenticating...' : 'Login'}
+                {isSubmitting ? (mode === 'login' ? 'Authenticating...' : 'Creating...') : mode === 'login' ? 'Login' : 'Create Account'}
                 {!isSubmitting && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>
             </form>

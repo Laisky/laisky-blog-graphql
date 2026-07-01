@@ -14,9 +14,6 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
-	gqlparser "github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
-
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
 	dto1 "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
@@ -26,6 +23,8 @@ import (
 	model1 "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
+	gqlparser "github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // region    ************************** generated!.gotpl **************************
@@ -176,6 +175,16 @@ type ComplexityRoot struct {
 		Name         func(childComplexity int) int
 	}
 
+	GithubOAuthLoginResponse struct {
+		RedirectTo func(childComplexity int) int
+		Token      func(childComplexity int) int
+		User       func(childComplexity int) int
+	}
+
+	GithubOAuthStartResponse struct {
+		AuthorizeURL func(childComplexity int) int
+	}
+
 	Lock struct {
 		ExpiresAt func(childComplexity int) int
 		Name      func(childComplexity int) int
@@ -183,30 +192,51 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		AcquireLock               func(childComplexity int, lockName string, durationSec int, isRenewal *bool) int
-		ArweaveUpload             func(childComplexity int, fileB64 string, contentType *string) int
-		BlogAmendPost             func(childComplexity int, post models.NewBlogPost, language models.Language) int
-		BlogApproveComment        func(childComplexity int, commentID string) int
-		BlogCreateComment         func(childComplexity int, postName string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) int
-		BlogCreatePost            func(childComplexity int, post models.NewBlogPost, language models.Language) int
-		BlogDeleteComment         func(childComplexity int, commentID string) int
-		BlogLogin                 func(childComplexity int, account string, password string) int
-		BlogToggleCommentLike     func(childComplexity int, commentID string) int
-		CreateGeneralToken        func(childComplexity int, username string, durationSec int) int
-		GeneralAddHTMLCrawlerTask func(childComplexity int, url string) int
-		GeneralAddLLMStormTask    func(childComplexity int, prompt string, apiKey string) int
-		TelegramMonitorAlert      func(childComplexity int, typeArg string, token string, msg string) int
-		UserActive                func(childComplexity int, token string) int
-		UserLogin                 func(childComplexity int, account string, password string, turnstileToken *string) int
-		UserRegister              func(childComplexity int, account string, password string, displayName string, captcha string) int
-		UserResendActiveEmail     func(childComplexity int, account string) int
-		WebFetch                  func(childComplexity int, url string) int
-		WebSearch                 func(childComplexity int, query string) int
+		AcquireLock                   func(childComplexity int, lockName string, durationSec int, isRenewal *bool) int
+		ArweaveUpload                 func(childComplexity int, fileB64 string, contentType *string) int
+		BlogAmendPost                 func(childComplexity int, post models.NewBlogPost, language models.Language) int
+		BlogApproveComment            func(childComplexity int, commentID string) int
+		BlogCreateComment             func(childComplexity int, postName string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) int
+		BlogCreatePost                func(childComplexity int, post models.NewBlogPost, language models.Language) int
+		BlogDeleteComment             func(childComplexity int, commentID string) int
+		BlogLogin                     func(childComplexity int, account string, password string) int
+		BlogToggleCommentLike         func(childComplexity int, commentID string) int
+		CreateGeneralToken            func(childComplexity int, username string, durationSec int) int
+		GeneralAddHTMLCrawlerTask     func(childComplexity int, url string) int
+		GeneralAddLLMStormTask        func(childComplexity int, prompt string, apiKey string) int
+		TelegramMonitorAlert          func(childComplexity int, typeArg string, token string, msg string) int
+		UserActive                    func(childComplexity int, token string) int
+		UserChangePassword            func(childComplexity int, currentPassword string, newPassword string) int
+		UserConfirmTOTPSetup          func(childComplexity int, code string) int
+		UserDisableTotp               func(childComplexity int, currentPassword string) int
+		UserFinishPasskeyLogin        func(childComplexity int, session string, credentialJSON string) int
+		UserFinishPasskeyRegistration func(childComplexity int, label string, session string, credentialJSON string) int
+		UserGithubOAuthLogin          func(childComplexity int, code string, state string) int
+		UserGithubOAuthStart          func(childComplexity int, redirectTo *string, turnstileToken *string) int
+		UserLogin                     func(childComplexity int, account string, password string, turnstileToken *string, totpCode *string) int
+		UserRegister                  func(childComplexity int, account string, password string, displayName string, captcha string, turnstileToken *string) int
+		UserResendActiveEmail         func(childComplexity int, account string) int
+		UserStartPasskeyLogin         func(childComplexity int, redirectTo *string, turnstileToken *string) int
+		UserStartPasskeyRegistration  func(childComplexity int, label string) int
+		UserStartTOTPSetup            func(childComplexity int) int
+		WebFetch                      func(childComplexity int, url string) int
+		WebSearch                     func(childComplexity int, query string) int
 	}
 
 	OneapiQuota struct {
 		RemainQuota func(childComplexity int) int
 		UsedQuota   func(childComplexity int) int
+	}
+
+	PasskeyLoginResponse struct {
+		RedirectTo func(childComplexity int) int
+		Token      func(childComplexity int) int
+		User       func(childComplexity int) int
+	}
+
+	PasskeyStartResponse struct {
+		OptionsJSON func(childComplexity int) int
+		Session     func(childComplexity int) int
 	}
 
 	PostInfo struct {
@@ -232,8 +262,19 @@ type ComplexityRoot struct {
 		TelegramMonitorUsers         func(childComplexity int, page *models.Pagination, name string) int
 		TwitterStatues               func(childComplexity int, page *models.Pagination, tweetID string, username string, viewerID string, sort *models.Sort, topic string, regexp string) int
 		TwitterThreads               func(childComplexity int, tweetID string) int
+		UserProfile                  func(childComplexity int) int
 		ValidateOneapiAPIKey         func(childComplexity int, apiKey string) int
 		WhoAmI                       func(childComplexity int) int
+	}
+
+	SsoProfile struct {
+		Account         func(childComplexity int) int
+		AuthMethods     func(childComplexity int) int
+		GithubBound     func(childComplexity int) int
+		PasskeyCount    func(childComplexity int) int
+		PasswordEnabled func(childComplexity int) int
+		TotpEnabled     func(childComplexity int) int
+		User            func(childComplexity int) int
 	}
 
 	TelegramAlertType struct {
@@ -251,6 +292,11 @@ type ComplexityRoot struct {
 		Name       func(childComplexity int) int
 		SubAlerts  func(childComplexity int) int
 		TelegramID func(childComplexity int) int
+	}
+
+	TotpSetupResponse struct {
+		ProvisioningURI func(childComplexity int) int
+		Secret          func(childComplexity int) int
 	}
 
 	Tweet struct {
@@ -357,10 +403,20 @@ type MutationResolver interface {
 	BlogApproveComment(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogDeleteComment(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error)
-	UserLogin(ctx context.Context, account string, password string, turnstileToken *string) (*models.BlogLoginResponse, error)
-	UserRegister(ctx context.Context, account string, password string, displayName string, captcha string) (*models.UserRegisterResponse, error)
+	UserLogin(ctx context.Context, account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error)
+	UserRegister(ctx context.Context, account string, password string, displayName string, captcha string, turnstileToken *string) (*models.UserRegisterResponse, error)
+	UserGithubOAuthStart(ctx context.Context, redirectTo *string, turnstileToken *string) (*models.GithubOAuthStartResponse, error)
+	UserGithubOAuthLogin(ctx context.Context, code string, state string) (*models.GithubOAuthLoginResponse, error)
+	UserStartPasskeyRegistration(ctx context.Context, label string) (*models.PasskeyStartResponse, error)
+	UserFinishPasskeyRegistration(ctx context.Context, label string, session string, credentialJSON string) (*models.SsoProfile, error)
+	UserStartPasskeyLogin(ctx context.Context, redirectTo *string, turnstileToken *string) (*models.PasskeyStartResponse, error)
+	UserFinishPasskeyLogin(ctx context.Context, session string, credentialJSON string) (*models.PasskeyLoginResponse, error)
 	UserActive(ctx context.Context, token string) (*models.UserActiveResponse, error)
 	UserResendActiveEmail(ctx context.Context, account string) (*models.UserResendActiveEmailResponse, error)
+	UserChangePassword(ctx context.Context, currentPassword string, newPassword string) (*models.SsoProfile, error)
+	UserStartTOTPSetup(ctx context.Context) (*models.TotpSetupResponse, error)
+	UserConfirmTOTPSetup(ctx context.Context, code string) (*models.SsoProfile, error)
+	UserDisableTotp(ctx context.Context, currentPassword string) (*models.SsoProfile, error)
 	BlogAmendPost(ctx context.Context, post models.NewBlogPost, language models.Language) (*model.Post, error)
 	ArweaveUpload(ctx context.Context, fileB64 string, contentType *string) (*dto.UploadResponse, error)
 	WebSearch(ctx context.Context, query string) (*search.SearchResult, error)
@@ -374,6 +430,7 @@ type MutationResolver interface {
 type QueryResolver interface {
 	Hello(ctx context.Context) (string, error)
 	WhoAmI(ctx context.Context) (*model.User, error)
+	UserProfile(ctx context.Context) (*models.SsoProfile, error)
 	TwitterStatues(ctx context.Context, page *models.Pagination, tweetID string, username string, viewerID string, sort *models.Sort, topic string, regexp string) ([]*model1.Tweet, error)
 	TwitterThreads(ctx context.Context, tweetID string) ([]*model1.Tweet, error)
 	BlogPosts(ctx context.Context, page *models.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language models.Language) ([]*model.Post, error)
@@ -896,6 +953,32 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.GeneralUser.Name(childComplexity), true
 
+	case "GithubOAuthLoginResponse.redirect_to":
+		if e.complexity.GithubOAuthLoginResponse.RedirectTo == nil {
+			break
+		}
+
+		return e.complexity.GithubOAuthLoginResponse.RedirectTo(childComplexity), true
+	case "GithubOAuthLoginResponse.token":
+		if e.complexity.GithubOAuthLoginResponse.Token == nil {
+			break
+		}
+
+		return e.complexity.GithubOAuthLoginResponse.Token(childComplexity), true
+	case "GithubOAuthLoginResponse.user":
+		if e.complexity.GithubOAuthLoginResponse.User == nil {
+			break
+		}
+
+		return e.complexity.GithubOAuthLoginResponse.User(childComplexity), true
+
+	case "GithubOAuthStartResponse.authorize_url":
+		if e.complexity.GithubOAuthStartResponse.AuthorizeURL == nil {
+			break
+		}
+
+		return e.complexity.GithubOAuthStartResponse.AuthorizeURL(childComplexity), true
+
 	case "Lock.expires_at":
 		if e.complexity.Lock.ExpiresAt == nil {
 			break
@@ -1069,6 +1152,83 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserActive(childComplexity, args["token"].(string)), true
+	case "Mutation.UserChangePassword":
+		if e.complexity.Mutation.UserChangePassword == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserChangePassword_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserChangePassword(childComplexity, args["current_password"].(string), args["new_password"].(string)), true
+	case "Mutation.UserConfirmTOTPSetup":
+		if e.complexity.Mutation.UserConfirmTOTPSetup == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserConfirmTOTPSetup_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserConfirmTOTPSetup(childComplexity, args["code"].(string)), true
+	case "Mutation.UserDisableTOTP":
+		if e.complexity.Mutation.UserDisableTotp == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserDisableTOTP_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserDisableTotp(childComplexity, args["current_password"].(string)), true
+	case "Mutation.UserFinishPasskeyLogin":
+		if e.complexity.Mutation.UserFinishPasskeyLogin == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserFinishPasskeyLogin_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserFinishPasskeyLogin(childComplexity, args["session"].(string), args["credential_json"].(string)), true
+	case "Mutation.UserFinishPasskeyRegistration":
+		if e.complexity.Mutation.UserFinishPasskeyRegistration == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserFinishPasskeyRegistration_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserFinishPasskeyRegistration(childComplexity, args["label"].(string), args["session"].(string), args["credential_json"].(string)), true
+	case "Mutation.UserGithubOAuthLogin":
+		if e.complexity.Mutation.UserGithubOAuthLogin == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserGithubOAuthLogin_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserGithubOAuthLogin(childComplexity, args["code"].(string), args["state"].(string)), true
+	case "Mutation.UserGithubOAuthStart":
+		if e.complexity.Mutation.UserGithubOAuthStart == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserGithubOAuthStart_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserGithubOAuthStart(childComplexity, args["redirect_to"].(*string), args["turnstile_token"].(*string)), true
 	case "Mutation.UserLogin":
 		if e.complexity.Mutation.UserLogin == nil {
 			break
@@ -1079,7 +1239,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.UserLogin(childComplexity, args["account"].(string), args["password"].(string), args["turnstile_token"].(*string)), true
+		return e.complexity.Mutation.UserLogin(childComplexity, args["account"].(string), args["password"].(string), args["turnstile_token"].(*string), args["totp_code"].(*string)), true
 	case "Mutation.UserRegister":
 		if e.complexity.Mutation.UserRegister == nil {
 			break
@@ -1090,7 +1250,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.UserRegister(childComplexity, args["account"].(string), args["password"].(string), args["display_name"].(string), args["captcha"].(string)), true
+		return e.complexity.Mutation.UserRegister(childComplexity, args["account"].(string), args["password"].(string), args["display_name"].(string), args["captcha"].(string), args["turnstile_token"].(*string)), true
 	case "Mutation.UserResendActiveEmail":
 		if e.complexity.Mutation.UserResendActiveEmail == nil {
 			break
@@ -1102,6 +1262,34 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserResendActiveEmail(childComplexity, args["account"].(string)), true
+	case "Mutation.UserStartPasskeyLogin":
+		if e.complexity.Mutation.UserStartPasskeyLogin == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserStartPasskeyLogin_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserStartPasskeyLogin(childComplexity, args["redirect_to"].(*string), args["turnstile_token"].(*string)), true
+	case "Mutation.UserStartPasskeyRegistration":
+		if e.complexity.Mutation.UserStartPasskeyRegistration == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserStartPasskeyRegistration_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserStartPasskeyRegistration(childComplexity, args["label"].(string)), true
+	case "Mutation.UserStartTOTPSetup":
+		if e.complexity.Mutation.UserStartTOTPSetup == nil {
+			break
+		}
+
+		return e.complexity.Mutation.UserStartTOTPSetup(childComplexity), true
 	case "Mutation.WebFetch":
 		if e.complexity.Mutation.WebFetch == nil {
 			break
@@ -1137,6 +1325,38 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.OneapiQuota.UsedQuota(childComplexity), true
+
+	case "PasskeyLoginResponse.redirect_to":
+		if e.complexity.PasskeyLoginResponse.RedirectTo == nil {
+			break
+		}
+
+		return e.complexity.PasskeyLoginResponse.RedirectTo(childComplexity), true
+	case "PasskeyLoginResponse.token":
+		if e.complexity.PasskeyLoginResponse.Token == nil {
+			break
+		}
+
+		return e.complexity.PasskeyLoginResponse.Token(childComplexity), true
+	case "PasskeyLoginResponse.user":
+		if e.complexity.PasskeyLoginResponse.User == nil {
+			break
+		}
+
+		return e.complexity.PasskeyLoginResponse.User(childComplexity), true
+
+	case "PasskeyStartResponse.options_json":
+		if e.complexity.PasskeyStartResponse.OptionsJSON == nil {
+			break
+		}
+
+		return e.complexity.PasskeyStartResponse.OptionsJSON(childComplexity), true
+	case "PasskeyStartResponse.session":
+		if e.complexity.PasskeyStartResponse.Session == nil {
+			break
+		}
+
+		return e.complexity.PasskeyStartResponse.Session(childComplexity), true
 
 	case "PostInfo.total":
 		if e.complexity.PostInfo.Total == nil {
@@ -1318,6 +1538,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.TwitterThreads(childComplexity, args["tweet_id"].(string)), true
+	case "Query.UserProfile":
+		if e.complexity.Query.UserProfile == nil {
+			break
+		}
+
+		return e.complexity.Query.UserProfile(childComplexity), true
 	case "Query.ValidateOneapiApiKey":
 		if e.complexity.Query.ValidateOneapiAPIKey == nil {
 			break
@@ -1335,6 +1561,49 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.WhoAmI(childComplexity), true
+
+	case "SsoProfile.account":
+		if e.complexity.SsoProfile.Account == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.Account(childComplexity), true
+	case "SsoProfile.auth_methods":
+		if e.complexity.SsoProfile.AuthMethods == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.AuthMethods(childComplexity), true
+	case "SsoProfile.github_bound":
+		if e.complexity.SsoProfile.GithubBound == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.GithubBound(childComplexity), true
+	case "SsoProfile.passkey_count":
+		if e.complexity.SsoProfile.PasskeyCount == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.PasskeyCount(childComplexity), true
+	case "SsoProfile.password_enabled":
+		if e.complexity.SsoProfile.PasswordEnabled == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.PasswordEnabled(childComplexity), true
+	case "SsoProfile.totp_enabled":
+		if e.complexity.SsoProfile.TotpEnabled == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.TotpEnabled(childComplexity), true
+	case "SsoProfile.user":
+		if e.complexity.SsoProfile.User == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.User(childComplexity), true
 
 	case "TelegramAlertType.created_at":
 		if e.complexity.TelegramAlertType.CreatedAt == nil {
@@ -1403,6 +1672,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.TelegramMonitorUser.TelegramID(childComplexity), true
+
+	case "TotpSetupResponse.provisioning_uri":
+		if e.complexity.TotpSetupResponse.ProvisioningURI == nil {
+			break
+		}
+
+		return e.complexity.TotpSetupResponse.ProvisioningURI(childComplexity), true
+	case "TotpSetupResponse.secret":
+		if e.complexity.TotpSetupResponse.Secret == nil {
+			break
+		}
+
+		return e.complexity.TotpSetupResponse.Secret(childComplexity), true
 
 	case "Tweet.created_at":
 		if e.complexity.Tweet.CreatedAt == nil {
@@ -1984,6 +2266,113 @@ func (ec *executionContext) field_Mutation_UserActive_args(ctx context.Context, 
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_UserChangePassword_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "current_password", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["current_password"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "new_password", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["new_password"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserConfirmTOTPSetup_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "code", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["code"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserDisableTOTP_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "current_password", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["current_password"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserFinishPasskeyLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "session", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["session"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "credential_json", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["credential_json"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserFinishPasskeyRegistration_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "label", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["label"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "session", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["session"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "credential_json", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["credential_json"] = arg2
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserGithubOAuthLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "code", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["code"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "state", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["state"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserGithubOAuthStart_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "redirect_to", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["redirect_to"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "turnstile_token", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["turnstile_token"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_UserLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -2002,6 +2391,11 @@ func (ec *executionContext) field_Mutation_UserLogin_args(ctx context.Context, r
 		return nil, err
 	}
 	args["turnstile_token"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "totp_code", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["totp_code"] = arg3
 	return args, nil
 }
 
@@ -2028,6 +2422,11 @@ func (ec *executionContext) field_Mutation_UserRegister_args(ctx context.Context
 		return nil, err
 	}
 	args["captcha"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "turnstile_token", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["turnstile_token"] = arg4
 	return args, nil
 }
 
@@ -2039,6 +2438,33 @@ func (ec *executionContext) field_Mutation_UserResendActiveEmail_args(ctx contex
 		return nil, err
 	}
 	args["account"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserStartPasskeyLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "redirect_to", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["redirect_to"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "turnstile_token", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["turnstile_token"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserStartPasskeyRegistration_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "label", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["label"] = arg0
 	return args, nil
 }
 
@@ -4725,6 +5151,128 @@ func (ec *executionContext) fieldContext_GeneralUser_lock_prefixes(_ context.Con
 	return fc, nil
 }
 
+func (ec *executionContext) _GithubOAuthLoginResponse_user(ctx context.Context, field graphql.CollectedField, obj *models.GithubOAuthLoginResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GithubOAuthLoginResponse_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GithubOAuthLoginResponse_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GithubOAuthLoginResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_BlogUser_id(ctx, field)
+			case "username":
+				return ec.fieldContext_BlogUser_username(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type BlogUser", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GithubOAuthLoginResponse_token(ctx context.Context, field graphql.CollectedField, obj *models.GithubOAuthLoginResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GithubOAuthLoginResponse_token,
+		func(ctx context.Context) (any, error) {
+			return obj.Token, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GithubOAuthLoginResponse_token(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GithubOAuthLoginResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GithubOAuthLoginResponse_redirect_to(ctx context.Context, field graphql.CollectedField, obj *models.GithubOAuthLoginResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GithubOAuthLoginResponse_redirect_to,
+		func(ctx context.Context) (any, error) {
+			return obj.RedirectTo, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GithubOAuthLoginResponse_redirect_to(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GithubOAuthLoginResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _GithubOAuthStartResponse_authorize_url(ctx context.Context, field graphql.CollectedField, obj *models.GithubOAuthStartResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_GithubOAuthStartResponse_authorize_url,
+		func(ctx context.Context) (any, error) {
+			return obj.AuthorizeURL, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_GithubOAuthStartResponse_authorize_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GithubOAuthStartResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Lock_name(ctx context.Context, field graphql.CollectedField, obj *model2.Lock) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5208,7 +5756,7 @@ func (ec *executionContext) _Mutation_UserLogin(ctx context.Context, field graph
 		ec.fieldContext_Mutation_UserLogin,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.Mutation().UserLogin(ctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["turnstile_token"].(*string))
+			return ec.resolvers.Mutation().UserLogin(ctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["turnstile_token"].(*string), fc.Args["totp_code"].(*string))
 		},
 		nil,
 		ec.marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse,
@@ -5255,7 +5803,7 @@ func (ec *executionContext) _Mutation_UserRegister(ctx context.Context, field gr
 		ec.fieldContext_Mutation_UserRegister,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.Mutation().UserRegister(ctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["display_name"].(string), fc.Args["captcha"].(string))
+			return ec.resolvers.Mutation().UserRegister(ctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["display_name"].(string), fc.Args["captcha"].(string), fc.Args["turnstile_token"].(*string))
 		},
 		nil,
 		ec.marshalNUserRegisterResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserRegisterResponse,
@@ -5286,6 +5834,300 @@ func (ec *executionContext) fieldContext_Mutation_UserRegister(ctx context.Conte
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_UserRegister_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserGithubOAuthStart(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserGithubOAuthStart,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserGithubOAuthStart(ctx, fc.Args["redirect_to"].(*string), fc.Args["turnstile_token"].(*string))
+		},
+		nil,
+		ec.marshalNGithubOAuthStartResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthStartResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserGithubOAuthStart(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "authorize_url":
+				return ec.fieldContext_GithubOAuthStartResponse_authorize_url(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type GithubOAuthStartResponse", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserGithubOAuthStart_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserGithubOAuthLogin(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserGithubOAuthLogin,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserGithubOAuthLogin(ctx, fc.Args["code"].(string), fc.Args["state"].(string))
+		},
+		nil,
+		ec.marshalNGithubOAuthLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthLoginResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserGithubOAuthLogin(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_GithubOAuthLoginResponse_user(ctx, field)
+			case "token":
+				return ec.fieldContext_GithubOAuthLoginResponse_token(ctx, field)
+			case "redirect_to":
+				return ec.fieldContext_GithubOAuthLoginResponse_redirect_to(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type GithubOAuthLoginResponse", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserGithubOAuthLogin_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserStartPasskeyRegistration(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserStartPasskeyRegistration,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserStartPasskeyRegistration(ctx, fc.Args["label"].(string))
+		},
+		nil,
+		ec.marshalNPasskeyStartResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyStartResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserStartPasskeyRegistration(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "options_json":
+				return ec.fieldContext_PasskeyStartResponse_options_json(ctx, field)
+			case "session":
+				return ec.fieldContext_PasskeyStartResponse_session(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PasskeyStartResponse", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserStartPasskeyRegistration_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserFinishPasskeyRegistration(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserFinishPasskeyRegistration,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserFinishPasskeyRegistration(ctx, fc.Args["label"].(string), fc.Args["session"].(string), fc.Args["credential_json"].(string))
+		},
+		nil,
+		ec.marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserFinishPasskeyRegistration(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "account":
+				return ec.fieldContext_SsoProfile_account(ctx, field)
+			case "auth_methods":
+				return ec.fieldContext_SsoProfile_auth_methods(ctx, field)
+			case "password_enabled":
+				return ec.fieldContext_SsoProfile_password_enabled(ctx, field)
+			case "totp_enabled":
+				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
+			case "passkey_count":
+				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "github_bound":
+				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SsoProfile", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserFinishPasskeyRegistration_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserStartPasskeyLogin(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserStartPasskeyLogin,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserStartPasskeyLogin(ctx, fc.Args["redirect_to"].(*string), fc.Args["turnstile_token"].(*string))
+		},
+		nil,
+		ec.marshalNPasskeyStartResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyStartResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserStartPasskeyLogin(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "options_json":
+				return ec.fieldContext_PasskeyStartResponse_options_json(ctx, field)
+			case "session":
+				return ec.fieldContext_PasskeyStartResponse_session(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PasskeyStartResponse", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserStartPasskeyLogin_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserFinishPasskeyLogin(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserFinishPasskeyLogin,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserFinishPasskeyLogin(ctx, fc.Args["session"].(string), fc.Args["credential_json"].(string))
+		},
+		nil,
+		ec.marshalNPasskeyLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyLoginResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserFinishPasskeyLogin(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_PasskeyLoginResponse_user(ctx, field)
+			case "token":
+				return ec.fieldContext_PasskeyLoginResponse_token(ctx, field)
+			case "redirect_to":
+				return ec.fieldContext_PasskeyLoginResponse_redirect_to(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PasskeyLoginResponse", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserFinishPasskeyLogin_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -5378,6 +6220,212 @@ func (ec *executionContext) fieldContext_Mutation_UserResendActiveEmail(ctx cont
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_UserResendActiveEmail_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserChangePassword(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserChangePassword,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserChangePassword(ctx, fc.Args["current_password"].(string), fc.Args["new_password"].(string))
+		},
+		nil,
+		ec.marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserChangePassword(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "account":
+				return ec.fieldContext_SsoProfile_account(ctx, field)
+			case "auth_methods":
+				return ec.fieldContext_SsoProfile_auth_methods(ctx, field)
+			case "password_enabled":
+				return ec.fieldContext_SsoProfile_password_enabled(ctx, field)
+			case "totp_enabled":
+				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
+			case "passkey_count":
+				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "github_bound":
+				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SsoProfile", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserChangePassword_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserStartTOTPSetup(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserStartTOTPSetup,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Mutation().UserStartTOTPSetup(ctx)
+		},
+		nil,
+		ec.marshalNTotpSetupResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐTotpSetupResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserStartTOTPSetup(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "secret":
+				return ec.fieldContext_TotpSetupResponse_secret(ctx, field)
+			case "provisioning_uri":
+				return ec.fieldContext_TotpSetupResponse_provisioning_uri(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type TotpSetupResponse", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserConfirmTOTPSetup(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserConfirmTOTPSetup,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserConfirmTOTPSetup(ctx, fc.Args["code"].(string))
+		},
+		nil,
+		ec.marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserConfirmTOTPSetup(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "account":
+				return ec.fieldContext_SsoProfile_account(ctx, field)
+			case "auth_methods":
+				return ec.fieldContext_SsoProfile_auth_methods(ctx, field)
+			case "password_enabled":
+				return ec.fieldContext_SsoProfile_password_enabled(ctx, field)
+			case "totp_enabled":
+				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
+			case "passkey_count":
+				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "github_bound":
+				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SsoProfile", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserConfirmTOTPSetup_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserDisableTOTP(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserDisableTOTP,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserDisableTotp(ctx, fc.Args["current_password"].(string))
+		},
+		nil,
+		ec.marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserDisableTOTP(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "account":
+				return ec.fieldContext_SsoProfile_account(ctx, field)
+			case "auth_methods":
+				return ec.fieldContext_SsoProfile_auth_methods(ctx, field)
+			case "password_enabled":
+				return ec.fieldContext_SsoProfile_password_enabled(ctx, field)
+			case "totp_enabled":
+				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
+			case "passkey_count":
+				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "github_bound":
+				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SsoProfile", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserDisableTOTP_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -5879,6 +6927,157 @@ func (ec *executionContext) fieldContext_OneapiQuota_used_quota(_ context.Contex
 	return fc, nil
 }
 
+func (ec *executionContext) _PasskeyLoginResponse_user(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyLoginResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PasskeyLoginResponse_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PasskeyLoginResponse_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PasskeyLoginResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_BlogUser_id(ctx, field)
+			case "username":
+				return ec.fieldContext_BlogUser_username(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type BlogUser", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PasskeyLoginResponse_token(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyLoginResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PasskeyLoginResponse_token,
+		func(ctx context.Context) (any, error) {
+			return obj.Token, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PasskeyLoginResponse_token(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PasskeyLoginResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PasskeyLoginResponse_redirect_to(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyLoginResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PasskeyLoginResponse_redirect_to,
+		func(ctx context.Context) (any, error) {
+			return obj.RedirectTo, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PasskeyLoginResponse_redirect_to(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PasskeyLoginResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PasskeyStartResponse_options_json(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyStartResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PasskeyStartResponse_options_json,
+		func(ctx context.Context) (any, error) {
+			return obj.OptionsJSON, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PasskeyStartResponse_options_json(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PasskeyStartResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PasskeyStartResponse_session(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyStartResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PasskeyStartResponse_session,
+		func(ctx context.Context) (any, error) {
+			return obj.Session, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PasskeyStartResponse_session(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PasskeyStartResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _PostInfo_total(ctx context.Context, field graphql.CollectedField, obj *dto1.PostInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5967,6 +7166,51 @@ func (ec *executionContext) fieldContext_Query_WhoAmI(_ context.Context, field g
 				return ec.fieldContext_BlogUser_username(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BlogUser", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_UserProfile(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_UserProfile,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Query().UserProfile(ctx)
+		},
+		nil,
+		ec.marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_UserProfile(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "account":
+				return ec.fieldContext_SsoProfile_account(ctx, field)
+			case "auth_methods":
+				return ec.fieldContext_SsoProfile_auth_methods(ctx, field)
+			case "password_enabled":
+				return ec.fieldContext_SsoProfile_password_enabled(ctx, field)
+			case "totp_enabled":
+				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
+			case "passkey_count":
+				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "github_bound":
+				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SsoProfile", field.Name)
 		},
 	}
 	return fc, nil
@@ -7024,6 +8268,215 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 	return fc, nil
 }
 
+func (ec *executionContext) _SsoProfile_user(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_BlogUser_id(ctx, field)
+			case "username":
+				return ec.fieldContext_BlogUser_username(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type BlogUser", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SsoProfile_account(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_account,
+		func(ctx context.Context) (any, error) {
+			return obj.Account, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_account(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SsoProfile_auth_methods(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_auth_methods,
+		func(ctx context.Context) (any, error) {
+			return obj.AuthMethods, nil
+		},
+		nil,
+		ec.marshalNString2ᚕstringᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_auth_methods(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SsoProfile_password_enabled(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_password_enabled,
+		func(ctx context.Context) (any, error) {
+			return obj.PasswordEnabled, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_password_enabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SsoProfile_totp_enabled(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_totp_enabled,
+		func(ctx context.Context) (any, error) {
+			return obj.TotpEnabled, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_totp_enabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SsoProfile_passkey_count(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_passkey_count,
+		func(ctx context.Context) (any, error) {
+			return obj.PasskeyCount, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_passkey_count(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SsoProfile_github_bound(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_github_bound,
+		func(ctx context.Context) (any, error) {
+			return obj.GithubBound, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_github_bound(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _TelegramAlertType_id(ctx context.Context, field graphql.CollectedField, obj *model3.AlertTypes) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -7364,6 +8817,64 @@ func (ec *executionContext) fieldContext_TelegramMonitorUser_sub_alerts(_ contex
 				return ec.fieldContext_TelegramAlertType_sub_users(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type TelegramAlertType", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TotpSetupResponse_secret(ctx context.Context, field graphql.CollectedField, obj *models.TotpSetupResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TotpSetupResponse_secret,
+		func(ctx context.Context) (any, error) {
+			return obj.Secret, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_TotpSetupResponse_secret(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TotpSetupResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TotpSetupResponse_provisioning_uri(ctx context.Context, field graphql.CollectedField, obj *models.TotpSetupResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_TotpSetupResponse_provisioning_uri,
+		func(ctx context.Context) (any, error) {
+			return obj.ProvisioningURI, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_TotpSetupResponse_provisioning_uri(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TotpSetupResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -11435,6 +12946,94 @@ func (ec *executionContext) _GeneralUser(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var githubOAuthLoginResponseImplementors = []string{"GithubOAuthLoginResponse"}
+
+func (ec *executionContext) _GithubOAuthLoginResponse(ctx context.Context, sel ast.SelectionSet, obj *models.GithubOAuthLoginResponse) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, githubOAuthLoginResponseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("GithubOAuthLoginResponse")
+		case "user":
+			out.Values[i] = ec._GithubOAuthLoginResponse_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "token":
+			out.Values[i] = ec._GithubOAuthLoginResponse_token(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "redirect_to":
+			out.Values[i] = ec._GithubOAuthLoginResponse_redirect_to(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var githubOAuthStartResponseImplementors = []string{"GithubOAuthStartResponse"}
+
+func (ec *executionContext) _GithubOAuthStartResponse(ctx context.Context, sel ast.SelectionSet, obj *models.GithubOAuthStartResponse) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, githubOAuthStartResponseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("GithubOAuthStartResponse")
+		case "authorize_url":
+			out.Values[i] = ec._GithubOAuthStartResponse_authorize_url(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var lockImplementors = []string{"Lock"}
 
 func (ec *executionContext) _Lock(ctx context.Context, sel ast.SelectionSet, obj *model2.Lock) graphql.Marshaler {
@@ -11590,6 +13189,48 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "UserGithubOAuthStart":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserGithubOAuthStart(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserGithubOAuthLogin":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserGithubOAuthLogin(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserStartPasskeyRegistration":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserStartPasskeyRegistration(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserFinishPasskeyRegistration":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserFinishPasskeyRegistration(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserStartPasskeyLogin":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserStartPasskeyLogin(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserFinishPasskeyLogin":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserFinishPasskeyLogin(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "UserActive":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_UserActive(ctx, field)
@@ -11600,6 +13241,34 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "UserResendActiveEmail":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_UserResendActiveEmail(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserChangePassword":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserChangePassword(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserStartTOTPSetup":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserStartTOTPSetup(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserConfirmTOTPSetup":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserConfirmTOTPSetup(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserDisableTOTP":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserDisableTOTP(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -11734,6 +13403,99 @@ func (ec *executionContext) _OneapiQuota(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var passkeyLoginResponseImplementors = []string{"PasskeyLoginResponse"}
+
+func (ec *executionContext) _PasskeyLoginResponse(ctx context.Context, sel ast.SelectionSet, obj *models.PasskeyLoginResponse) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, passkeyLoginResponseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PasskeyLoginResponse")
+		case "user":
+			out.Values[i] = ec._PasskeyLoginResponse_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "token":
+			out.Values[i] = ec._PasskeyLoginResponse_token(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "redirect_to":
+			out.Values[i] = ec._PasskeyLoginResponse_redirect_to(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var passkeyStartResponseImplementors = []string{"PasskeyStartResponse"}
+
+func (ec *executionContext) _PasskeyStartResponse(ctx context.Context, sel ast.SelectionSet, obj *models.PasskeyStartResponse) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, passkeyStartResponseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PasskeyStartResponse")
+		case "options_json":
+			out.Values[i] = ec._PasskeyStartResponse_options_json(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "session":
+			out.Values[i] = ec._PasskeyStartResponse_session(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var postInfoImplementors = []string{"PostInfo"}
 
 func (ec *executionContext) _PostInfo(ctx context.Context, sel ast.SelectionSet, obj *dto1.PostInfo) graphql.Marshaler {
@@ -11824,6 +13586,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_WhoAmI(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "UserProfile":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_UserProfile(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -12260,6 +14044,75 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 	return out
 }
 
+var ssoProfileImplementors = []string{"SsoProfile"}
+
+func (ec *executionContext) _SsoProfile(ctx context.Context, sel ast.SelectionSet, obj *models.SsoProfile) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, ssoProfileImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SsoProfile")
+		case "user":
+			out.Values[i] = ec._SsoProfile_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "account":
+			out.Values[i] = ec._SsoProfile_account(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "auth_methods":
+			out.Values[i] = ec._SsoProfile_auth_methods(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "password_enabled":
+			out.Values[i] = ec._SsoProfile_password_enabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totp_enabled":
+			out.Values[i] = ec._SsoProfile_totp_enabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "passkey_count":
+			out.Values[i] = ec._SsoProfile_passkey_count(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "github_bound":
+			out.Values[i] = ec._SsoProfile_github_bound(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var telegramAlertTypeImplementors = []string{"TelegramAlertType"}
 
 func (ec *executionContext) _TelegramAlertType(ctx context.Context, sel ast.SelectionSet, obj *model3.AlertTypes) graphql.Marshaler {
@@ -12639,6 +14492,50 @@ func (ec *executionContext) _TelegramMonitorUser(ctx context.Context, sel ast.Se
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var totpSetupResponseImplementors = []string{"TotpSetupResponse"}
+
+func (ec *executionContext) _TotpSetupResponse(ctx context.Context, sel ast.SelectionSet, obj *models.TotpSetupResponse) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, totpSetupResponseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("TotpSetupResponse")
+		case "secret":
+			out.Values[i] = ec._TotpSetupResponse_secret(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "provisioning_uri":
+			out.Values[i] = ec._TotpSetupResponse_provisioning_uri(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -14178,6 +16075,34 @@ func (ec *executionContext) marshalNGeneralUser2ᚕᚖgithubᚗcomᚋLaiskyᚋla
 	return ret
 }
 
+func (ec *executionContext) marshalNGithubOAuthLoginResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthLoginResponse(ctx context.Context, sel ast.SelectionSet, v models.GithubOAuthLoginResponse) graphql.Marshaler {
+	return ec._GithubOAuthLoginResponse(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNGithubOAuthLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthLoginResponse(ctx context.Context, sel ast.SelectionSet, v *models.GithubOAuthLoginResponse) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._GithubOAuthLoginResponse(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNGithubOAuthStartResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthStartResponse(ctx context.Context, sel ast.SelectionSet, v models.GithubOAuthStartResponse) graphql.Marshaler {
+	return ec._GithubOAuthStartResponse(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNGithubOAuthStartResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthStartResponse(ctx context.Context, sel ast.SelectionSet, v *models.GithubOAuthStartResponse) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._GithubOAuthStartResponse(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
 	res, err := graphql.UnmarshalInt(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -14296,6 +16221,34 @@ func (ec *executionContext) marshalNOneapiQuota2ᚖgithubᚗcomᚋLaiskyᚋlaisk
 	return ec._OneapiQuota(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNPasskeyLoginResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyLoginResponse(ctx context.Context, sel ast.SelectionSet, v models.PasskeyLoginResponse) graphql.Marshaler {
+	return ec._PasskeyLoginResponse(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPasskeyLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyLoginResponse(ctx context.Context, sel ast.SelectionSet, v *models.PasskeyLoginResponse) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PasskeyLoginResponse(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPasskeyStartResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyStartResponse(ctx context.Context, sel ast.SelectionSet, v models.PasskeyStartResponse) graphql.Marshaler {
+	return ec._PasskeyStartResponse(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPasskeyStartResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyStartResponse(ctx context.Context, sel ast.SelectionSet, v *models.PasskeyStartResponse) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PasskeyStartResponse(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNPostInfo2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v dto1.PostInfo) graphql.Marshaler {
 	return ec._PostInfo(ctx, sel, &v)
 }
@@ -14318,6 +16271,20 @@ func (ec *executionContext) unmarshalNSortOrder2githubᚗcomᚋLaiskyᚋlaisky�
 
 func (ec *executionContext) marshalNSortOrder2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSortOrder(ctx context.Context, sel ast.SelectionSet, v models.SortOrder) graphql.Marshaler {
 	return v
+}
+
+func (ec *executionContext) marshalNSsoProfile2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile(ctx context.Context, sel ast.SelectionSet, v models.SsoProfile) graphql.Marshaler {
+	return ec._SsoProfile(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile(ctx context.Context, sel ast.SelectionSet, v *models.SsoProfile) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SsoProfile(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
@@ -14454,6 +16421,20 @@ func (ec *executionContext) marshalNTelegramMonitorUser2ᚕᚖgithubᚗcomᚋLai
 	wg.Wait()
 
 	return ret
+}
+
+func (ec *executionContext) marshalNTotpSetupResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐTotpSetupResponse(ctx context.Context, sel ast.SelectionSet, v models.TotpSetupResponse) graphql.Marshaler {
+	return ec._TotpSetupResponse(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNTotpSetupResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐTotpSetupResponse(ctx context.Context, sel ast.SelectionSet, v *models.TotpSetupResponse) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._TotpSetupResponse(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNTweet2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtwitterᚋmodelᚐTweet(ctx context.Context, sel ast.SelectionSet, v []*model1.Tweet) graphql.Marshaler {

@@ -37,6 +37,20 @@ type turnstileVerifyResult struct {
 // Parameters: ctx carries request context and metadata, turnstileToken is the optional token from the client.
 // Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
 func validateTurnstileTokenForLogin(ctx context.Context, turnstileToken *string) error {
+	return validateTurnstileTokenForAuth(ctx, turnstileToken, "login")
+}
+
+// validateTurnstileTokenForRegister validates Turnstile token before allowing SSO registration.
+// Parameters: ctx carries request context and metadata, turnstileToken is the optional token from the client.
+// Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
+func validateTurnstileTokenForRegister(ctx context.Context, turnstileToken *string) error {
+	return validateTurnstileTokenForAuth(ctx, turnstileToken, "register")
+}
+
+// validateTurnstileTokenForAuth validates Turnstile token for an authentication action.
+// Parameters: ctx carries request context, turnstileToken is the optional token, and action names the auth flow.
+// Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
+func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, action string) error {
 	secret := resolveTurnstileSecretForLogin(resolveTurnstileRequestHost(ctx))
 	if secret == "" {
 		return nil
@@ -52,7 +66,7 @@ func validateTurnstileTokenForLogin(ctx context.Context, turnstileToken *string)
 	}
 
 	if token == "" {
-		return errors.New("turnstile token is required")
+		return errors.Errorf("turnstile token is required for %s", action)
 	}
 
 	if err := verifyTurnstileToken(ctx, secret, token, resolveTurnstileClientIP(ctx)); err != nil {
@@ -233,15 +247,15 @@ func normalizeTurnstileHost(rawHost string) string {
 	}
 
 	host, _, err := net.SplitHostPort(trimmed)
-	if err == nil {
-		return strings.TrimSuffix(strings.ToLower(host), ".")
+	if err != nil {
+		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
+			withoutBrackets := strings.TrimPrefix(trimmed, "[")
+			withoutBrackets = strings.TrimSuffix(withoutBrackets, "]")
+			return strings.TrimSuffix(strings.ToLower(withoutBrackets), ".")
+		}
+
+		return trimmed
 	}
 
-	if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
-		withoutBrackets := strings.TrimPrefix(trimmed, "[")
-		withoutBrackets = strings.TrimSuffix(withoutBrackets, "]")
-		return strings.TrimSuffix(strings.ToLower(withoutBrackets), ".")
-	}
-
-	return trimmed
+	return strings.TrimSuffix(strings.ToLower(host), ".")
 }

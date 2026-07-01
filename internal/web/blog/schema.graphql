@@ -76,6 +76,42 @@ type UserRegisterResponse {
   msg: String!
 }
 
+type SsoProfile {
+  user: BlogUser!
+  account: String!
+  auth_methods: [String!]!
+  password_enabled: Boolean!
+  totp_enabled: Boolean!
+  passkey_count: Int!
+  github_bound: Boolean!
+}
+
+type TotpSetupResponse {
+  secret: String!
+  provisioning_uri: String!
+}
+
+type GithubOAuthStartResponse {
+  authorize_url: String!
+}
+
+type GithubOAuthLoginResponse {
+  user: BlogUser!
+  token: String!
+  redirect_to: String!
+}
+
+type PasskeyStartResponse {
+  options_json: String!
+  session: String!
+}
+
+type PasskeyLoginResponse {
+  user: BlogUser!
+  token: String!
+  redirect_to: String!
+}
+
 type UserActiveResponse {
   user: BlogUser!
   token: String!

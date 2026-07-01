@@ -40,6 +40,7 @@ type WebFetchResult {
 type Query {
   Hello: String!
   WhoAmI: BlogUser!
+  UserProfile: SsoProfile!
 
   # -------------------------------------
   # twitter
@@ -115,10 +116,20 @@ type Mutation {
   # login
   # Deprecated: use UserLogin instead
   BlogLogin(account: String!, password: String!): BlogLoginResponse!
-  UserLogin(account: String!, password: String!, turnstile_token: String): BlogLoginResponse!
-  UserRegister(account: String!, password: String!, display_name: String!, captcha: String!): UserRegisterResponse!
+  UserLogin(account: String!, password: String!, turnstile_token: String, totp_code: String): BlogLoginResponse!
+  UserRegister(account: String!, password: String!, display_name: String!, captcha: String!, turnstile_token: String): UserRegisterResponse!
+  UserGithubOAuthStart(redirect_to: String, turnstile_token: String): GithubOAuthStartResponse!
+  UserGithubOAuthLogin(code: String!, state: String!): GithubOAuthLoginResponse!
+  UserStartPasskeyRegistration(label: String!): PasskeyStartResponse!
+  UserFinishPasskeyRegistration(label: String!, session: String!, credential_json: String!): SsoProfile!
+  UserStartPasskeyLogin(redirect_to: String, turnstile_token: String): PasskeyStartResponse!
+  UserFinishPasskeyLogin(session: String!, credential_json: String!): PasskeyLoginResponse!
   UserActive(token: String!): UserActiveResponse!
   UserResendActiveEmail(account: String!): UserResendActiveEmailResponse!
+  UserChangePassword(current_password: String!, new_password: String!): SsoProfile!
+  UserStartTOTPSetup: TotpSetupResponse!
+  UserConfirmTOTPSetup(code: String!): SsoProfile!
+  UserDisableTOTP(current_password: String!): SsoProfile!
 
   # update blog post
   BlogAmendPost(

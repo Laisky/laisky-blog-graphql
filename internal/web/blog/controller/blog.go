@@ -326,21 +326,21 @@ func (r *UserResolver) ID(ctx context.Context,
 // mutations
 // =====================================
 
-// UserLogin login user
+// UserLogin authenticates a user through the SSO login flow.
+// It accepts credentials, an optional Turnstile token, and an optional TOTP code, returning a JWT response.
 func (r *MutationResolver) UserLogin(ctx context.Context,
-	account string, password string, turnstileToken *string) (*models.BlogLoginResponse, error) {
-	logger := ginMw.GetLogger(ctx).Named("user_login")
+	account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error) {
 	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
-		logger.Warn("turnstile verification failed", zap.Error(err))
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
 
-	return r.BlogLogin(ctx, account, password)
+	return r.loginWithPassword(ctx, account, password, totpCode)
 }
 
-// UserRegister register user
+// UserRegister registers a user with an email account and password.
+// It accepts account details, a legacy captcha value, and an optional Turnstile token, returning an instruction message.
 func (r *MutationResolver) UserRegister(ctx context.Context,
-	account string, password string, displayName string, captcha string) (
+	account string, password string, displayName string, captcha string, turnstileToken *string) (
 	*models.UserRegisterResponse, error) {
 	logger := ginMw.GetLogger(ctx).Named("user_register")
 	if err := validateInputLength(100, account, password, displayName); err != nil {
@@ -349,16 +349,17 @@ func (r *MutationResolver) UserRegister(ctx context.Context,
 			zap.Int("password_len", utf8.RuneCountInString(password)),
 			zap.Int("display_name_len", utf8.RuneCountInString(displayName)),
 			zap.Int("captcha_len", utf8.RuneCountInString(captcha)),
-			zap.Error(err),
 		)
 		return nil, err
 	}
 	if err := validateInputLength(500, captcha); err != nil {
 		logger.Debug("user register captcha validation failed",
 			zap.Int("captcha_len", utf8.RuneCountInString(captcha)),
-			zap.Error(err),
 		)
 		return nil, err
+	}
+	if err := validateTurnstileTokenForRegister(ctx, turnstileToken); err != nil {
+		return nil, errors.Wrap(err, "validate turnstile token")
 	}
 	_, err := r.svc.UserRegister(ctx, account, password, displayName)
 	if err != nil {
@@ -366,7 +367,7 @@ func (r *MutationResolver) UserRegister(ctx context.Context,
 	}
 
 	return &models.UserRegisterResponse{
-		Msg: fmt.Sprintf("check your email `%s` to activate your account", html.EscapeString(account)),
+		Msg: fmt.Sprintf("account `%s` created; you can sign in now", html.EscapeString(account)),
 	}, nil
 }
 
@@ -407,30 +408,54 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 		newpost.Type.String())
 }
 
-// BlogLogin authenticates a user with the provided account and password.
-// It accepts a context, account, and password, returning the login response or an error.
+// BlogLogin authenticates legacy clients with the provided account and password.
+// It accepts a context, account, and password, returning the login response unless Turnstile requires the newer SSO flow.
 func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
+) (resp *models.BlogLoginResponse, err error) {
+	if err := validateTurnstileTokenForLogin(ctx, nil); err != nil {
+		return nil, maskLoginError(model.ErrInvalidCredentials)
+	}
+
+	return r.loginWithPassword(ctx, account, password, nil)
+}
+
+// loginWithPassword authenticates a user with password and optional TOTP code.
+// It accepts credentials and returns a signed JWT response when authentication succeeds.
+func (r *MutationResolver) loginWithPassword(ctx context.Context,
+	account string,
+	password string,
+	totpCode *string,
 ) (resp *models.BlogLoginResponse, err error) {
 	logger := ginMw.GetLogger(ctx).Named("blog_login")
 	if err := validateInputLength(100, account, password); err != nil {
 		logger.Debug("blog login validation failed",
 			zap.Int("account_len", utf8.RuneCountInString(account)),
 			zap.Int("password_len", utf8.RuneCountInString(password)),
-			zap.Error(err),
 		)
 		return nil, errors.Wrap(err, "validate input length")
 	}
 
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
-		if !errors.Is(err, model.ErrInvalidCredentials) {
-			logger.Error("blog login failed", zap.Error(err))
-		}
 		return nil, maskLoginError(err)
 	}
 
+	code := ""
+	if totpCode != nil {
+		code = *totpCode
+	}
+	if err = r.svc.ValidateTOTPCode(ctx, user, code); err != nil {
+		return nil, maskLoginError(model.ErrInvalidCredentials)
+	}
+
+	return r.newLoginResponse(ctx, user)
+}
+
+// newLoginResponse signs an SSO JWT for a validated user.
+// It accepts a context and user, returning the GraphQL login response.
+func (r *MutationResolver) newLoginResponse(ctx context.Context, user *model.User) (*models.BlogLoginResponse, error) {
 	uc := &jwt.UserClaims{
 		RegisteredClaims: jwtLib.RegisteredClaims{
 			ID:        gutils.UUID7(),
@@ -443,12 +468,11 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 		DisplayName: user.Username,
 	}
 
-	var token string
-	if token, err = auth.Instance.SetAuthHeader(ctx,
+	token, signErr := auth.Instance.SetAuthHeader(ctx,
 		ginMw.WithSetAuthHeaderClaim(uc),
-	); err != nil {
-		logger.Error("try to set cookie got error", zap.Error(err))
-		return nil, errors.Wrap(err, "try to set cookies got error")
+	)
+	if signErr != nil {
+		return nil, errors.Wrap(signErr, "try to set cookies got error")
 	}
 
 	return &models.BlogLoginResponse{

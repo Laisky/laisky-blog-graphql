@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildRedirectUrlWithToken, canSubmitSsoLogin, isTurnstileEnabled, parseRedirectTarget } from './sso-login';
+import { buildRedirectUrlWithToken, canStartGithubOAuth, canSubmitSsoLogin, isTurnstileEnabled, parseRedirectTarget } from './sso-login';
 
 const origin = 'https://console.laisky.com';
 
@@ -89,9 +89,11 @@ describe('canSubmitSsoLogin', () => {
   it('requires redirect target and credentials', () => {
     expect(
       canSubmitSsoLogin({
+        mode: 'login',
         hasRedirectTarget: false,
         account: 'alice',
         password: 'secret',
+        displayName: '',
         isSubmitting: false,
         isTurnstileEnabled: false,
         turnstileToken: '',
@@ -102,9 +104,11 @@ describe('canSubmitSsoLogin', () => {
   it('requires turnstile token when turnstile is enabled', () => {
     expect(
       canSubmitSsoLogin({
+        mode: 'login',
         hasRedirectTarget: true,
         account: 'alice',
         password: 'secret',
+        displayName: '',
         isSubmitting: false,
         isTurnstileEnabled: true,
         turnstileToken: '',
@@ -115,12 +119,76 @@ describe('canSubmitSsoLogin', () => {
   it('allows submit when all fields are ready', () => {
     expect(
       canSubmitSsoLogin({
+        mode: 'login',
         hasRedirectTarget: true,
         account: 'alice',
         password: 'secret',
+        displayName: '',
         isSubmitting: false,
         isTurnstileEnabled: true,
         turnstileToken: 'token',
+      })
+    ).toBe(true);
+  });
+
+  it('allows registration without redirect target when required fields are ready', () => {
+    expect(
+      canSubmitSsoLogin({
+        mode: 'register',
+        hasRedirectTarget: false,
+        account: 'alice@example.com',
+        password: 'secret',
+        displayName: 'Alice',
+        isSubmitting: false,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+      })
+    ).toBe(true);
+  });
+
+  it('requires display name for registration', () => {
+    expect(
+      canSubmitSsoLogin({
+        mode: 'register',
+        hasRedirectTarget: false,
+        account: 'alice@example.com',
+        password: 'secret',
+        displayName: '',
+        isSubmitting: false,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('canStartGithubOAuth', () => {
+  it('requires turnstile token when turnstile is enabled', () => {
+    expect(
+      canStartGithubOAuth({
+        isSubmitting: false,
+        isTurnstileEnabled: true,
+        turnstileToken: '',
+      })
+    ).toBe(false);
+  });
+
+  it('disables while a request is already submitting', () => {
+    expect(
+      canStartGithubOAuth({
+        isSubmitting: true,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+      })
+    ).toBe(false);
+  });
+
+  it('allows start when security requirements are ready', () => {
+    expect(
+      canStartGithubOAuth({
+        isSubmitting: false,
+        isTurnstileEnabled: true,
+        turnstileToken: 'turnstile-token',
       })
     ).toBe(true);
   });

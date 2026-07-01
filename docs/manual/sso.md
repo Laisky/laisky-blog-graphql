@@ -1,138 +1,139 @@
-# SSO Integration Manual
+# SSO Manual
 
-This manual is for engineering teams integrating Laisky SSO into their own systems.
-It focuses on integration contracts and implementation details needed by consumers.
+This manual covers Laisky SSO integration for client applications and operational configuration for the SSO service.
 
 ## Menu
 
-- [SSO Integration Manual](#sso-integration-manual)
-  - [Menu](#menu)
-  - [Who Should Read This](#who-should-read-this)
-  - [Integration Overview](#integration-overview)
-  - [Quick Start (Recommended Flow)](#quick-start-recommended-flow)
-  - [Protocol Contract](#protocol-contract)
-    - [1. Login Entry URL](#1-login-entry-url)
-    - [2. `redirect_to` Validation Rules](#2-redirect_to-validation-rules)
-    - [3. Callback Contract](#3-callback-contract)
+- [SSO Manual](#sso-manual)
+  - [Audience](#audience)
+  - [User Capabilities](#user-capabilities)
+  - [Client Integration Flow](#client-integration-flow)
+  - [Login Entry URL](#login-entry-url)
+  - [`redirect_to` Validation Rules](#redirect_to-validation-rules)
+  - [Callback Contract](#callback-contract)
   - [JWT Token Specification](#jwt-token-specification)
-    - [Token Format](#token-format)
-    - [Claim Definitions](#claim-definitions)
-    - [Decoded Token Example](#decoded-token-example)
   - [Token Validation](#token-validation)
-    - [Option A (Recommended): Validate via GraphQL `WhoAmI`](#option-a-recommended-validate-via-graphql-whoami)
-    - [Option B (Optional): Local JWT Verification](#option-b-optional-local-jwt-verification)
-  - [Reference Integration Implementation](#reference-integration-implementation)
+  - [Account and Profile Flows](#account-and-profile-flows)
+  - [Admin Configuration](#admin-configuration)
+  - [GraphQL API Reference](#graphql-api-reference)
+  - [Security Notes](#security-notes)
   - [Common Failure Cases](#common-failure-cases)
-  - [Security Checklist](#security-checklist)
   - [Go-Live Checklist](#go-live-checklist)
 
-## Who Should Read This
+## Audience
 
-- Teams integrating login with Laisky SSO.
+- Product teams integrating login with Laisky SSO.
 - Backend engineers implementing callback and session exchange.
-- Frontend engineers implementing "Login with SSO" redirect.
+- Frontend engineers implementing SSO redirects.
+- Operators configuring SSO login methods, GitHub OAuth, WebAuthn passkeys, and Cloudflare Turnstile.
 
-This manual is intentionally consumer-focused and does not cover SSO operator/admin configuration.
+## User Capabilities
 
-## Integration Overview
+The SSO service supports these account and authentication flows:
 
-Laisky SSO provides a hosted login page. After user authentication, SSO redirects back to your callback URL with `sso_token` appended in the query string.
+- Email account registration with password.
+- GitHub-backed registration and login through GitHub OAuth.
+- Password login with optional TOTP verification.
+- Discoverable passkey login.
+- Profile page for:
+  - Reviewing account and enabled authentication methods.
+  - Changing password.
+  - Binding and disabling TOTP.
+  - Registering passkeys.
 
-- GraphQL endpoint (for token introspection): `/query`
-- Callback token parameter: `sso_token`
+GitHub user authentication is implemented with GitHub OAuth authorization-code flow. GitHub Actions OIDC is not used for end-user login.
 
-## Quick Start (Recommended Flow)
+## Client Integration Flow
 
-1. Your app redirects the user to:
+1. Your application redirects the browser to the SSO login page with a validated callback URL in `redirect_to`.
+2. The user signs in with one of the enabled methods:
+   - Password, plus TOTP when the user has TOTP enabled.
+   - Passkey.
+   - GitHub.
+3. SSO redirects the browser to your callback URL with `sso_token=<JWT>`.
+4. Your backend validates `sso_token`.
+5. Your backend creates its own local session and redirects the browser to a clean URL without `sso_token`.
+
+## Login Entry URL
+
+Standalone SSO site:
 
 ```text
 https://sso.laisky.com/?redirect_to={URL_ENCODED_CALLBACK_URL}
 ```
 
-2. User completes login on the SSO page.
-3. SSO redirects the browser to your callback URL with `sso_token=<JWT>`.
-4. Your backend validates `sso_token` (recommended: call `WhoAmI`).
-5. Your backend creates your own session and redirects to a clean URL (without `sso_token`).
+MCP-mounted SSO route:
 
-## Protocol Contract
+```text
+https://mcp.laisky.com/sso/login?redirect_to={URL_ENCODED_CALLBACK_URL}
+```
 
-### 1. Login Entry URL
-
-Use this pattern:
+Example:
 
 ```text
 https://sso.laisky.com/?redirect_to=https%3A%2F%2Fapp.laisky.com%2Fauth%2Fsso%2Fcallback%3Fstate%3Dabc123
 ```
 
-`redirect_to` should be your backend callback endpoint, with your own anti-CSRF `state` included.
+`redirect_to` should point to your backend callback endpoint and should include your own anti-CSRF `state`.
 
-### 2. `redirect_to` Validation Rules
+## `redirect_to` Validation Rules
 
-The SSO login page accepts only:
+The SSO frontend and backend accept only these redirect targets:
 
-- Protocol: `http`, `https`
+- Protocol: `http` or `https`.
 - Host:
-  - `laisky.com` and subdomains (`*.laisky.com`)
+  - `laisky.com`.
+  - Any `*.laisky.com` subdomain.
   - Internal IP ranges:
-    - IPv4: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `100.64.0.0/10`
-    - IPv6: `::1`, `fc00::/7`
+    - IPv4: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `100.64.0.0/10`.
+    - IPv6: `::1`, `fc00::/7`.
 
-If your callback host is outside this policy, contact the SSO team before release.
+If your callback host is outside this policy, update the allow-list in code before release.
 
-### 3. Callback Contract
+## Callback Contract
 
-After successful login, browser is redirected to your `redirect_to` URL with query parameter `sso_token=<JWT>` appended.
+After successful login, SSO redirects to `redirect_to` and appends:
 
-Behavior details:
+```text
+sso_token=<JWT>
+```
 
-- Existing query parameters in `redirect_to` are preserved (for example `state`).
-- `sso_token` is added; if `sso_token` already exists, it is overwritten by the new token.
+Behavior:
+
+- Existing query parameters are preserved.
+- Existing `sso_token` is overwritten.
+- GitHub and passkey login use a signed server state/session before redirecting, so the callback target is not trusted from the browser at finish time.
 
 Your callback endpoint should:
 
-1. Validate `state`.
+1. Validate your own `state`.
 2. Read `sso_token`.
 3. Validate `sso_token`.
-4. Create your own session (recommended: secure HttpOnly cookie).
-5. Redirect to a clean URL and remove `sso_token` from browser address.
+4. Create your own session, preferably with an HttpOnly secure cookie.
+5. Redirect to a clean URL without `sso_token`.
 
 ## JWT Token Specification
 
-### Token Format
+`sso_token` is a standard JWT.
 
-`sso_token` is a standard JWT:
+- Signing algorithm: `HS256`.
+- Issuer: `laisky-sso`.
+- Current TTL: about 90 days (`3 * 30 * 24h`).
+- Server time is UTC.
 
-```text
-base64url(header).base64url(payload).base64url(signature)
-```
-
-- Signing algorithm: `HS256`
-- Current token TTL: about 90 days (`3 * 30 * 24h`)
-
-### Claim Definitions
+Claims:
 
 | Claim          | Type   | Required | Description                                      |
 | -------------- | ------ | -------- | ------------------------------------------------ |
-| `iss`          | string | yes      | Token issuer. Current value: `laisky-sso`.       |
-| `sub`          | string | yes      | User ID in hex string format (MongoDB ObjectID). |
-| `iat`          | number | yes      | Issued-at time (Unix seconds, UTC).              |
-| `exp`          | number | yes      | Expiration time (Unix seconds, UTC).             |
-| `jti`          | string | yes      | Token ID (UUIDv7 string).                        |
-| `username`     | string | yes      | User account/login identifier.                   |
+| `iss`          | string | yes      | Token issuer. Current value is `laisky-sso`.     |
+| `sub`          | string | yes      | User ID in MongoDB ObjectID hex format.          |
+| `iat`          | number | yes      | Issued-at time in Unix seconds, UTC.             |
+| `exp`          | number | yes      | Expiration time in Unix seconds, UTC.            |
+| `jti`          | string | yes      | Token ID.                                        |
+| `username`     | string | yes      | User account identifier.                         |
 | `display_name` | string | yes      | User display name.                               |
 
-### Decoded Token Example
-
-Header:
-
-```json
-{
-  "alg": "HS256",
-  "typ": "JWT"
-}
-```
-
-Payload:
+Decoded payload example:
 
 ```json
 {
@@ -148,14 +149,12 @@ Payload:
 
 ## Token Validation
 
-### Option A (Recommended): Validate via GraphQL `WhoAmI`
+### Recommended: GraphQL `WhoAmI`
 
-Send token as Bearer token to SSO GraphQL endpoint:
+Send the token as a Bearer token to the SSO GraphQL endpoint:
 
 - Endpoint: `https://sso.laisky.com/query`
 - Header: `Authorization: Bearer <sso_token>`
-
-Query:
 
 ```graphql
 query {
@@ -175,60 +174,365 @@ curl -X POST 'https://sso.laisky.com/query' \
   -d '{"query":"query { WhoAmI { id username } }"}'
 ```
 
-If successful, treat token as valid and map the returned user into your local account/session model.
+If successful, treat the token as valid and map the returned user to your local session model.
 
-### Option B (Optional): Local JWT Verification
+### Optional: Local JWT Verification
 
-Use this only when your team is explicitly allowed to use the shared SSO signing secret.
+Use local verification only when your team is explicitly allowed to use the shared SSO signing secret.
 
-Minimum validation rules:
+Minimum checks:
 
-1. Verify JWT signature with `HS256`.
+1. Verify the `HS256` signature.
 2. Verify `exp` and `iat`.
-3. Verify `iss == laisky-sso`.
-4. Verify `sub` is a valid expected user ID format.
+3. Verify `iss == "laisky-sso"`.
+4. Verify `sub` has the expected user ID format.
 
-## Reference Integration Implementation
+## Account and Profile Flows
 
-```ts
-// 1) Build login URL
-const state = randomString();
-const callback = `https://app.laisky.com/auth/sso/callback?state=${encodeURIComponent(state)}`;
-const loginURL = `https://sso.laisky.com/?redirect_to=${encodeURIComponent(callback)}`;
+### Email Registration
 
-// 2) Redirect user to loginURL
-window.location.assign(loginURL);
+Users can register from the SSO login page with:
 
-// 3) Callback handler (backend)
-// - validate state
-// - read sso_token
-// - call SSO /query WhoAmI with Authorization: Bearer <sso_token>
-// - create local session
-// - redirect to clean page (remove sso_token from URL)
+- Account email.
+- Display name.
+- Password.
+
+New email registrations are active immediately and can sign in after registration succeeds.
+
+### GitHub Registration and Login
+
+Users can select GitHub from the SSO login page.
+
+Server flow:
+
+1. `UserGithubOAuthStart` validates Turnstile when configured, validates `redirect_to`, signs state, and returns GitHub `authorize_url`.
+2. GitHub redirects back to `/github/callback`.
+3. `UserGithubOAuthLogin` verifies signed state, exchanges the code, loads the verified GitHub email, and finds or creates the local user.
+4. SSO issues `sso_token` and redirects to the original validated target.
+
+The server stores the GitHub provider subject and verified email. It does not store GitHub access tokens.
+
+### Password and TOTP Login
+
+Users can sign in with account and password.
+
+If TOTP is enabled on the account, the login must include a valid TOTP code. A password-only attempt for a TOTP-enabled user is rejected.
+
+### Passkey Login
+
+Users can select passkey login from the SSO login page.
+
+The server uses discoverable WebAuthn credentials:
+
+1. `UserStartPasskeyLogin` validates Turnstile when configured and returns browser credential request options plus a signed session.
+2. The browser calls `navigator.credentials.get`.
+3. `UserFinishPasskeyLogin` verifies the signed session and WebAuthn assertion, updates the credential counter, and returns `sso_token`.
+
+### Profile Page
+
+Standalone SSO profile route:
+
+```text
+https://sso.laisky.com/profile
 ```
+
+MCP-mounted SSO profile route:
+
+```text
+https://mcp.laisky.com/sso/profile
+```
+
+Profile supports:
+
+- Password change.
+- TOTP enrollment and disable.
+- Passkey registration.
+- Viewing whether GitHub is bound and how many passkeys are registered.
+
+## Admin Configuration
+
+### Site Routing and Branding
+
+Configure SSO as a site under `settings.web.sites`.
+
+```yaml
+settings:
+  web:
+    sites:
+      sso:
+        host: sso.laisky.com
+        title: Laisky SSO
+        favicon: https://s3.laisky.com/uploads/2025/12/sso_icon.png
+        theme: sso
+        router: sso
+        public_base_path: /
+```
+
+Use `router: sso` for the standalone SSO experience. The MCP router can still expose `/sso/login`, `/sso/profile`, and `/sso/github/callback`.
+
+### GitHub OAuth
+
+Configure a GitHub OAuth App with callback URL:
+
+```text
+https://sso.laisky.com/github/callback
+```
+
+Configuration:
+
+```yaml
+settings:
+  web:
+    github_oauth:
+      client_id: YOUR_GITHUB_OAUTH_CLIENT_ID
+      client_secret: YOUR_GITHUB_OAUTH_CLIENT_SECRET
+      redirect_url: https://sso.laisky.com/github/callback
+```
+
+The server requests `read:user` and `user:email` scopes so it can load a verified email address.
+
+### WebAuthn Passkeys
+
+Passkeys require a stable relying-party origin and ID. The server derives these from the request by default.
+
+Optional explicit configuration:
+
+```yaml
+settings:
+  web:
+    webauthn:
+      origin: https://sso.laisky.com
+      rp_id: sso.laisky.com
+      rp_display_name: Laisky SSO
+```
+
+Use explicit values in production when the service is behind a proxy or when the incoming request host does not exactly match the public SSO origin.
+
+### Cloudflare Turnstile
+
+Turnstile is optional. If a matching secret key is configured, SSO registration and login flows require a valid Turnstile token.
+
+Per-site configuration:
+
+```yaml
+settings:
+  web:
+    sites:
+      sso:
+        host: sso.laisky.com
+        router: sso
+        turnstile_site_key: YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY
+        turnstile_secret_key: YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY
+```
+
+Global fallback:
+
+```yaml
+settings:
+  web:
+    turnstile:
+      secret_key: YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY
+```
+
+Turnstile is enforced on:
+
+- Email registration.
+- Password login through `UserLogin`.
+- GitHub OAuth start through `UserGithubOAuthStart`.
+- Passkey login start through `UserStartPasskeyLogin`.
+
+The deprecated `BlogLogin` mutation cannot carry a Turnstile token. When Turnstile is configured, that legacy path fails closed and clients must use `UserLogin`.
+
+## GraphQL API Reference
+
+### Queries
+
+```graphql
+query {
+  WhoAmI {
+    id
+    username
+  }
+}
+```
+
+```graphql
+query {
+  UserProfile {
+    account
+    auth_methods
+    password_enabled
+    totp_enabled
+    passkey_count
+    github_bound
+    user {
+      id
+      username
+    }
+  }
+}
+```
+
+### Email Registration
+
+```graphql
+mutation Register($account: String!, $password: String!, $displayName: String!, $turnstileToken: String) {
+  UserRegister(
+    account: $account
+    password: $password
+    display_name: $displayName
+    captcha: ""
+    turnstile_token: $turnstileToken
+  ) {
+    msg
+  }
+}
+```
+
+### Password Login
+
+```graphql
+mutation Login($account: String!, $password: String!, $turnstileToken: String, $totpCode: String) {
+  UserLogin(
+    account: $account
+    password: $password
+    turnstile_token: $turnstileToken
+    totp_code: $totpCode
+  ) {
+    token
+    user {
+      id
+      username
+    }
+  }
+}
+```
+
+### GitHub OAuth
+
+```graphql
+mutation StartGithub($redirectTo: String, $turnstileToken: String) {
+  UserGithubOAuthStart(redirect_to: $redirectTo, turnstile_token: $turnstileToken) {
+    authorize_url
+  }
+}
+```
+
+```graphql
+mutation FinishGithub($code: String!, $state: String!) {
+  UserGithubOAuthLogin(code: $code, state: $state) {
+    token
+    redirect_to
+    user {
+      id
+      username
+    }
+  }
+}
+```
+
+### TOTP
+
+```graphql
+mutation {
+  UserStartTOTPSetup {
+    secret
+    provisioning_uri
+  }
+}
+```
+
+```graphql
+mutation ConfirmTOTP($code: String!) {
+  UserConfirmTOTPSetup(code: $code) {
+    totp_enabled
+  }
+}
+```
+
+```graphql
+mutation DisableTOTP($currentPassword: String!) {
+  UserDisableTOTP(current_password: $currentPassword) {
+    totp_enabled
+  }
+}
+```
+
+### Passkeys
+
+```graphql
+mutation StartPasskeyRegistration($label: String!) {
+  UserStartPasskeyRegistration(label: $label) {
+    options_json
+    session
+  }
+}
+```
+
+```graphql
+mutation FinishPasskeyRegistration($label: String!, $session: String!, $credentialJSON: String!) {
+  UserFinishPasskeyRegistration(
+    label: $label
+    session: $session
+    credential_json: $credentialJSON
+  ) {
+    passkey_count
+  }
+}
+```
+
+```graphql
+mutation StartPasskeyLogin($redirectTo: String, $turnstileToken: String) {
+  UserStartPasskeyLogin(redirect_to: $redirectTo, turnstile_token: $turnstileToken) {
+    options_json
+    session
+  }
+}
+```
+
+```graphql
+mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
+  UserFinishPasskeyLogin(session: $session, credential_json: $credentialJSON) {
+    token
+    redirect_to
+    user {
+      id
+      username
+    }
+  }
+}
+```
+
+## Security Notes
+
+1. Always use HTTPS in production.
+2. Always validate your own `state` in callback handlers.
+3. Treat `sso_token` as a credential and never log full token values.
+4. Remove `sso_token` from URLs immediately after callback processing.
+5. Use HttpOnly, Secure, SameSite cookies for local application sessions.
+6. Keep GitHub OAuth client secrets and Turnstile secret keys out of frontend bundles.
+7. Passkey sessions and GitHub OAuth states are signed by the server and expire after a short window.
+8. Store passkey credential records as sensitive data; avoid exposing credential JSON in logs or APIs.
 
 ## Common Failure Cases
 
-1. `Missing redirect_to parameter`: your login URL did not include `redirect_to`.
-2. `Unsupported redirect protocol`: your callback URL is not `http` or `https`.
-3. `Unsupported redirect host`: your callback host is not under `*.laisky.com` and not an allowed internal IP.
-4. `Unauthorized` from `WhoAmI`: token is missing, malformed, expired, or invalid, or Authorization header is not `Bearer <token>`.
-5. Callback loops or fails after success: `state` mismatch, or callback handler did not persist local session before redirect.
-
-## Security Checklist
-
-1. Always use HTTPS in production.
-2. Always validate `state` to prevent CSRF/login mix-up attacks.
-3. Treat `sso_token` as a credential; never log full token values.
-4. Process token server-side whenever possible.
-5. Remove `sso_token` from URL immediately after callback processing.
-6. Use short-lived local session cookies with `HttpOnly`, `Secure`, and `SameSite`.
+1. `Missing redirect_to parameter`: the password login redirect flow needs a callback target.
+2. `Unsupported redirect protocol`: callback URL is not `http` or `https`.
+3. `Unsupported redirect host`: callback host is outside the SSO allow-list.
+4. `turnstile token is required`: Turnstile is configured but the client did not provide a token.
+5. GitHub login returns no verified email: the GitHub account has no verified email visible through the granted scopes.
+6. Passkey registration fails on HTTP: WebAuthn requires a secure context, except for browser-supported local development cases.
+7. `WhoAmI` returns unauthorized: token is missing, malformed, expired, or not sent as `Authorization: Bearer <token>`.
+8. Callback loops after success: local callback did not persist a session before removing `sso_token`.
 
 ## Go-Live Checklist
 
-1. Callback URL is finalized and tested end-to-end.
-2. Callback URL passes `redirect_to` validation policy.
-3. Backend callback validates token using `WhoAmI` or approved local verification.
-4. `state` anti-CSRF logic is implemented and tested.
-5. URL cleanup after callback is implemented.
-6. Monitoring and logs do not expose full JWT values.
+1. SSO site routing and public base path are configured.
+2. Callback URL passes `redirect_to` validation.
+3. Callback handler validates `state`.
+4. Callback handler validates `sso_token` with `WhoAmI` or approved local verification.
+5. Callback handler removes `sso_token` from the browser URL.
+6. GitHub OAuth callback URL exactly matches the deployed SSO callback route.
+7. WebAuthn `origin` and `rp_id` are stable for the deployed hostname.
+8. Turnstile site key and secret key are configured together when Turnstile is required.
+9. Logs and monitoring do not expose JWTs, OAuth codes, Turnstile tokens, TOTP secrets, passwords, or passkey credential JSON.

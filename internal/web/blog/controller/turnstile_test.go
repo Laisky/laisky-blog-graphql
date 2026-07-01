@@ -85,3 +85,43 @@ func TestValidateTurnstileTokenForLoginMissingToken(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "turnstile token is required")
 }
+
+// TestValidateTurnstileTokenForRegisterMissingToken verifies registration is rejected when Turnstile is enabled.
+func TestValidateTurnstileTokenForRegisterMissingToken(t *testing.T) {
+	originalSites := gconfig.Shared.GetStringMap("settings.web.sites")
+	t.Cleanup(func() {
+		gconfig.Shared.Set("settings.web.sites", originalSites)
+	})
+
+	sites := map[string]any{
+		"sso": map[string]any{
+			"default":              true,
+			"turnstile_secret_key": "sso-secret",
+		},
+	}
+	gconfig.Shared.Set("settings.web.sites", sites)
+
+	err := validateTurnstileTokenForRegister(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "turnstile token is required for register")
+}
+
+// TestBlogLoginRejectedWhenTurnstileEnabled verifies the legacy login path cannot bypass Turnstile.
+func TestBlogLoginRejectedWhenTurnstileEnabled(t *testing.T) {
+	originalSites := gconfig.Shared.GetStringMap("settings.web.sites")
+	t.Cleanup(func() {
+		gconfig.Shared.Set("settings.web.sites", originalSites)
+	})
+
+	sites := map[string]any{
+		"sso": map[string]any{
+			"default":              true,
+			"turnstile_secret_key": "sso-secret",
+		},
+	}
+	gconfig.Shared.Set("settings.web.sites", sites)
+
+	_, err := (&MutationResolver{}).BlogLogin(context.Background(), "user@example.com", "password")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid credentials")
+}

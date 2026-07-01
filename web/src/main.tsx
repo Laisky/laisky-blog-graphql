@@ -19,7 +19,9 @@ import { applySiteBranding } from '@/lib/site-branding';
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
 import { HomePage } from '@/pages/home';
 import { NotFoundPage } from '@/pages/not-found';
+import { SsoGithubCallbackPage } from '@/pages/sso-github-callback';
 import { SsoLoginPage } from '@/pages/sso-login';
+import { SsoProfilePage } from '@/pages/sso-profile';
 import './index.css';
 
 type RouterKind = 'mcp' | 'sso';
@@ -72,6 +74,8 @@ bootstrap().catch((error) => {
 function buildMcpRoutes(turnstileSiteKey: string | undefined) {
   return [
     { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
+    { path: '/sso/github/callback', element: <SsoGithubCallbackPage /> },
+    { path: '/sso/profile', element: <SsoProfilePage /> },
     {
       path: '/',
       element: <AppLayout />,
@@ -101,6 +105,8 @@ function buildSsoRoutes(turnstileSiteKey: string | undefined) {
   return [
     { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
     { path: '/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} /> },
+    { path: '/github/callback', element: <SsoGithubCallbackPage /> },
+    { path: '/profile', element: <SsoProfilePage /> },
     { path: '*', element: <NotFoundPage /> },
   ];
 }

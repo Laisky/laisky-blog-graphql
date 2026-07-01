@@ -60,6 +60,16 @@ type GeneralUser struct {
 	LockPrefixes []string `json:"lock_prefixes"`
 }
 
+type GithubOAuthLoginResponse struct {
+	User       *model.User `json:"user"`
+	Token      string      `json:"token"`
+	RedirectTo string      `json:"redirect_to"`
+}
+
+type GithubOAuthStartResponse struct {
+	AuthorizeURL string `json:"authorize_url"`
+}
+
 type Mutation struct {
 }
 
@@ -82,12 +92,38 @@ type Pagination struct {
 	Size int `json:"size"`
 }
 
+type PasskeyLoginResponse struct {
+	User       *model.User `json:"user"`
+	Token      string      `json:"token"`
+	RedirectTo string      `json:"redirect_to"`
+}
+
+type PasskeyStartResponse struct {
+	OptionsJSON string `json:"options_json"`
+	Session     string `json:"session"`
+}
+
 type Query struct {
 }
 
 type Sort struct {
 	SortBy string    `json:"sort_by"`
 	Order  SortOrder `json:"order"`
+}
+
+type SsoProfile struct {
+	User            *model.User `json:"user"`
+	Account         string      `json:"account"`
+	AuthMethods     []string    `json:"auth_methods"`
+	PasswordEnabled bool        `json:"password_enabled"`
+	TotpEnabled     bool        `json:"totp_enabled"`
+	PasskeyCount    int         `json:"passkey_count"`
+	GithubBound     bool        `json:"github_bound"`
+}
+
+type TotpSetupResponse struct {
+	Secret          string `json:"secret"`
+	ProvisioningURI string `json:"provisioning_uri"`
 }
 
 type UserActiveResponse struct {
