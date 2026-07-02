@@ -123,15 +123,15 @@ Your callback endpoint should:
 
 Claims:
 
-| Claim          | Type   | Required | Description                                      |
-| -------------- | ------ | -------- | ------------------------------------------------ |
-| `iss`          | string | yes      | Token issuer. Current value is `laisky-sso`.     |
-| `sub`          | string | yes      | User ID in MongoDB ObjectID hex format.          |
-| `iat`          | number | yes      | Issued-at time in Unix seconds, UTC.             |
-| `exp`          | number | yes      | Expiration time in Unix seconds, UTC.            |
-| `jti`          | string | yes      | Token ID.                                        |
-| `username`     | string | yes      | User account identifier.                         |
-| `display_name` | string | yes      | User display name.                               |
+| Claim          | Type   | Required | Description                                  |
+| -------------- | ------ | -------- | -------------------------------------------- |
+| `iss`          | string | yes      | Token issuer. Current value is `laisky-sso`. |
+| `sub`          | string | yes      | User ID in MongoDB ObjectID hex format.      |
+| `iat`          | number | yes      | Issued-at time in Unix seconds, UTC.         |
+| `exp`          | number | yes      | Expiration time in Unix seconds, UTC.        |
+| `jti`          | string | yes      | Token ID.                                    |
+| `username`     | string | yes      | User account identifier.                     |
+| `display_name` | string | yes      | User display name.                           |
 
 Decoded payload example:
 
@@ -377,13 +377,7 @@ query {
 
 ```graphql
 mutation Register($account: String!, $password: String!, $displayName: String!, $turnstileToken: String) {
-  UserRegister(
-    account: $account
-    password: $password
-    display_name: $displayName
-    captcha: ""
-    turnstile_token: $turnstileToken
-  ) {
+  UserRegister(account: $account, password: $password, display_name: $displayName, captcha: "", turnstile_token: $turnstileToken) {
     msg
   }
 }
@@ -393,12 +387,7 @@ mutation Register($account: String!, $password: String!, $displayName: String!, 
 
 ```graphql
 mutation Login($account: String!, $password: String!, $turnstileToken: String, $totpCode: String) {
-  UserLogin(
-    account: $account
-    password: $password
-    turnstile_token: $turnstileToken
-    totp_code: $totpCode
-  ) {
+  UserLogin(account: $account, password: $password, turnstile_token: $turnstileToken, totp_code: $totpCode) {
     token
     user {
       id
@@ -471,11 +460,7 @@ mutation StartPasskeyRegistration($label: String!) {
 
 ```graphql
 mutation FinishPasskeyRegistration($label: String!, $session: String!, $credentialJSON: String!) {
-  UserFinishPasskeyRegistration(
-    label: $label
-    session: $session
-    credential_json: $credentialJSON
-  ) {
+  UserFinishPasskeyRegistration(label: $label, session: $session, credential_json: $credentialJSON) {
     passkey_count
   }
 }

@@ -11,8 +11,8 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
-import { buildRedirectUrlWithToken, parseRedirectTarget } from '@/lib/sso-redirect';
-import { resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
+import { buildRedirectUrlWithToken, parseRedirectTarget, type RedirectTarget } from '@/lib/sso-redirect';
+import { clearSsoToken, loadSsoToken, resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
 
 export {
   buildRedirectUrlWithToken,
@@ -24,7 +24,7 @@ export {
   isInternalIPv6Address,
   normalizeHostname,
   parseIPv4Address,
-  parseRedirectTarget,
+  parseRedirectTarget
 } from '@/lib/sso-redirect';
 
 const USER_LOGIN_MUTATION = `
@@ -65,6 +65,18 @@ const USER_PASSKEY_LOGIN_FINISH_MUTATION = `
     UserFinishPasskeyLogin(session: $session, credential_json: $credentialJSON) {
       token
       redirect_to
+    }
+  }
+`;
+
+// SSO_SESSION_CHECK_QUERY is a lightweight authenticated probe used to confirm a
+// stored session token still represents a live session before auto-redirecting an
+// already-signed-in visitor. It selects the minimum field so the request only
+// succeeds when the backend accepts the token (UserProfile validates the session).
+const SSO_SESSION_CHECK_QUERY = `
+  query SsoSessionCheck {
+    UserProfile {
+      account
     }
   }
 `;
@@ -226,6 +238,37 @@ export function canStartGithubOAuth(state: SsoGithubStartState): boolean {
   return true;
 }
 
+// SsoSessionRedirect describes where a visitor who already holds a valid session
+// should be sent when they open the login page.
+export type SsoSessionRedirect =
+  // 'external' leaves the SPA for a cross-app destination (redirect_to), carrying
+  // the session token so the target application can adopt the session.
+  | { kind: 'external'; url: string }
+  // 'profile' keeps the visitor inside the SSO app on their own profile page.
+  | { kind: 'profile' }
+  // 'none' means do not auto-redirect: render the login form instead. This covers a
+  // redirect_to that was requested but failed validation, so its error stays visible
+  // rather than being silently swallowed by a redirect elsewhere.
+  | { kind: 'none' };
+
+// resolveAuthenticatedRedirect decides where a visitor with a confirmed-valid
+// session should go. A valid redirect target wins and receives the token; with no
+// target requested the visitor lands on their profile; a requested-but-invalid
+// target falls through to the login form so the validation error is shown.
+export function resolveAuthenticatedRedirect(params: {
+  token: string;
+  redirectTarget: RedirectTarget;
+  redirectRequested: boolean;
+}): SsoSessionRedirect {
+  if (params.redirectTarget.url) {
+    return { kind: 'external', url: buildRedirectUrlWithToken(params.redirectTarget.url, params.token) };
+  }
+  if (params.redirectRequested) {
+    return { kind: 'none' };
+  }
+  return { kind: 'profile' };
+}
+
 function getTurnstileAPI(): TurnstileAPI | undefined {
   return window.turnstile;
 }
@@ -308,6 +351,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     return parseRedirectTarget(redirectParam, origin);
   }, [origin, redirectParam]);
 
+  // isCheckingSession gates the page while we confirm whether a stored token still
+  // represents a live session. It starts true only when a token is present so
+  // anonymous visitors see the form immediately without a verification flash.
+  const [isCheckingSession, setIsCheckingSession] = useState(() => loadSsoToken().length > 0);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [account, setAccount] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -419,6 +466,64 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       turnstileWidgetIDRef.current = null;
     };
   }, [resolvedTurnstileSiteKey, turnstileChallengeRequired]);
+
+  // On mount, check whether the visitor already holds a valid session. If the stored
+  // token still authenticates, skip the form and send them straight on: to the
+  // requested redirect target when one is set, otherwise to their profile.
+  useEffect(() => {
+    const token = loadSsoToken();
+    if (!token) {
+      // No stored session; nothing to verify. Anonymous visitors use the form.
+      setIsCheckingSession(false);
+      return;
+    }
+
+    let isCancelled = false;
+    void (async () => {
+      try {
+        // Confirm the stored token still authenticates before trusting it. An expired
+        // or revoked token must not trigger a redirect (which could loop back here or
+        // land on a broken profile), so treat any failure as "not signed in".
+        await fetchGraphQL(token, SSO_SESSION_CHECK_QUERY);
+      } catch {
+        if (!isCancelled) {
+          clearSsoToken();
+          setIsCheckingSession(false);
+        }
+        return;
+      }
+
+      if (isCancelled) {
+        return;
+      }
+
+      const decision = resolveAuthenticatedRedirect({
+        token,
+        redirectTarget,
+        redirectRequested: hasRedirectParam,
+      });
+
+      if (decision.kind === 'external') {
+        // Hand the live session to the requested app and leave the SPA. Keep the
+        // checking screen up while the browser navigates away.
+        window.location.assign(decision.url);
+        return;
+      }
+
+      if (decision.kind === 'profile') {
+        navigate(profilePath);
+        return;
+      }
+
+      // A redirect was requested but is invalid; reveal the form so its banner can
+      // explain why the target could not be honored.
+      setIsCheckingSession(false);
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [redirectTarget, hasRedirectParam, navigate, profilePath]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -633,12 +738,26 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
           ? { tone: 'error', message: redirectTarget.error ?? 'Invalid redirect_to parameter.' }
           : { tone: 'info', message: 'Sign in to manage your profile.' };
   const redirectSubtext =
-    mode === 'register'
-      ? account || 'New account'
-      : redirectTarget.url || hasRedirectParam
-        ? redirectTarget.display
-        : 'Profile access';
+    mode === 'register' ? account || 'New account' : redirectTarget.url || hasRedirectParam ? redirectTarget.display : 'Profile access';
   const redirectBanner = { status: redirectStatus, subtext: redirectSubtext };
+
+  // While a stored session is being verified, hold the page on a minimal status
+  // screen instead of flashing the login form before the redirect resolves.
+  if (isCheckingSession) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground transition-colors">
+        <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,hsl(var(--border)/0.3)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/0.3)_1px,transparent_1px)] bg-[size:24px_24px]" />
+
+        <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
+          <ThemeToggle />
+        </div>
+
+        <main className="z-10 flex w-full max-w-lg flex-col gap-6">
+          <StatusBanner status={{ tone: 'info', message: 'Checking your session...' }} />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground transition-colors">

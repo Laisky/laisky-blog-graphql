@@ -338,143 +338,148 @@ export function SsoProfilePage() {
           </Card>
         </main>
       ) : (
-      <main className="mx-auto grid max-w-5xl gap-6 px-4 py-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <section className="space-y-6">
-          {status && <StatusBanner status={status} />}
-          <Card>
-            <CardHeader className="border-b border-border/50">
-              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                <UserRound className="h-4 w-4" />
-                Profile
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-6">
-              {isLoading ? (
-                <StatusBanner status={{ tone: 'info', message: 'Loading profile...' }} />
-              ) : profile ? (
-                <div className="space-y-3">
-                  <ProfileRow label="Display name" value={profile.user.username} />
-                  <ProfileRow label="Account" value={profile.account} />
-                  <ProfileRow label="Methods" value={authMethods} />
-                  <ProfileRow label="Passkeys" value={String(profile.passkey_count)} />
-                  <ProfileRow label="GitHub OIDC" value={profile.github_bound ? 'Bound' : 'Not bound'} />
+        <main className="mx-auto grid max-w-5xl gap-6 px-4 py-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section className="space-y-6">
+            {status && <StatusBanner status={status} />}
+            <Card>
+              <CardHeader className="border-b border-border/50">
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  <UserRound className="h-4 w-4" />
+                  Profile
                 </div>
-              ) : (
-                <StatusBanner status={{ tone: 'error', message: 'Profile unavailable.' }} />
-              )}
-              <Button type="button" variant="outline" className="w-full gap-2" onClick={() => void loadProfile(token)}>
-                <RefreshCcw className="h-4 w-4" />
-                Refresh
-              </Button>
-            </CardContent>
-          </Card>
-        </section>
-
-        <section className="space-y-6">
-          <Card>
-            <CardHeader className="border-b border-border/50">
-              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                <KeyRound className="h-4 w-4" />
-                Password
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <form className="space-y-4" onSubmit={handlePasswordChange}>
-                <Input
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="Current password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                />
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="New password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                />
-                <Button type="submit" className="w-full" disabled={!canSubmitPasswordChange(currentPassword, newPassword)}>
-                  Update Password
+              </CardHeader>
+              <CardContent className="space-y-4 pt-6">
+                {isLoading ? (
+                  <StatusBanner status={{ tone: 'info', message: 'Loading profile...' }} />
+                ) : profile ? (
+                  <div className="space-y-3">
+                    <ProfileRow label="Display name" value={profile.user.username} />
+                    <ProfileRow label="Account" value={profile.account} />
+                    <ProfileRow label="Methods" value={authMethods} />
+                    <ProfileRow label="Passkeys" value={String(profile.passkey_count)} />
+                    <ProfileRow label="GitHub OIDC" value={profile.github_bound ? 'Bound' : 'Not bound'} />
+                  </div>
+                ) : (
+                  <StatusBanner status={{ tone: 'error', message: 'Profile unavailable.' }} />
+                )}
+                <Button type="button" variant="outline" className="w-full gap-2" onClick={() => void loadProfile(token)}>
+                  <RefreshCcw className="h-4 w-4" />
+                  Refresh
                 </Button>
-              </form>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </section>
 
-          <Card>
-            <CardHeader className="border-b border-border/50">
-              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                <KeyRound className="h-4 w-4" />
-                Passkeys
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <form className="space-y-4" onSubmit={handleRegisterPasskey}>
-                <Input
-                  autoComplete="off"
-                  placeholder="Passkey label"
-                  value={passkeyLabel}
-                  onChange={(event) => setPasskeyLabel(event.target.value)}
-                />
-                <Button type="submit" variant="outline" className="w-full" disabled={isPasskeyRegistering || passkeyLabel.trim().length === 0}>
-                  {isPasskeyRegistering ? 'Waiting for Passkey...' : 'Register Passkey'}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="border-b border-border/50">
-              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                <ShieldCheck className="h-4 w-4" />
-                TOTP
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-6">
-              {profile?.totp_enabled ? (
-                <form className="space-y-4" onSubmit={handleDisableTotp}>
-                  <StatusBanner status={{ tone: 'success', message: 'TOTP enabled.' }} />
+          <section className="space-y-6">
+            <Card>
+              <CardHeader className="border-b border-border/50">
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                  Password
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <form className="space-y-4" onSubmit={handlePasswordChange}>
                   <Input
                     type="password"
                     autoComplete="current-password"
                     placeholder="Current password"
-                    value={disablePassword}
-                    onChange={(event) => setDisablePassword(event.target.value)}
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
                   />
-                  <Button type="submit" variant="outline" className="w-full">
-                    Disable TOTP
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="New password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                  />
+                  <Button type="submit" className="w-full" disabled={!canSubmitPasswordChange(currentPassword, newPassword)}>
+                    Update Password
                   </Button>
                 </form>
-              ) : (
-                <div className="space-y-4">
-                  <Button type="button" variant="outline" className="w-full gap-2" onClick={() => void handleStartTotp()}>
-                    <ShieldPlus className="h-4 w-4" />
-                    Start TOTP Setup
-                  </Button>
-                  {totpSetup && (
-                    <form className="space-y-4" onSubmit={handleConfirmTotp}>
-                      <div className="rounded-md border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">
-                        <div className="break-all">{totpSetup.secret}</div>
-                        <div className="mt-2 break-all">{totpSetup.provisioning_uri}</div>
-                      </div>
-                      <Input
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        placeholder="000000"
-                        value={totpCode}
-                        onChange={(event) => setTotpCode(event.target.value)}
-                      />
-                      <Button type="submit" className="w-full" disabled={!canSubmitTotpCode(totpCode)}>
-                        Enable TOTP
-                      </Button>
-                    </form>
-                  )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="border-b border-border/50">
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                  Passkeys
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-      </main>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <form className="space-y-4" onSubmit={handleRegisterPasskey}>
+                  <Input
+                    autoComplete="off"
+                    placeholder="Passkey label"
+                    value={passkeyLabel}
+                    onChange={(event) => setPasskeyLabel(event.target.value)}
+                  />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="w-full"
+                    disabled={isPasskeyRegistering || passkeyLabel.trim().length === 0}
+                  >
+                    {isPasskeyRegistering ? 'Waiting for Passkey...' : 'Register Passkey'}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="border-b border-border/50">
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  <ShieldCheck className="h-4 w-4" />
+                  TOTP
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-6">
+                {profile?.totp_enabled ? (
+                  <form className="space-y-4" onSubmit={handleDisableTotp}>
+                    <StatusBanner status={{ tone: 'success', message: 'TOTP enabled.' }} />
+                    <Input
+                      type="password"
+                      autoComplete="current-password"
+                      placeholder="Current password"
+                      value={disablePassword}
+                      onChange={(event) => setDisablePassword(event.target.value)}
+                    />
+                    <Button type="submit" variant="outline" className="w-full">
+                      Disable TOTP
+                    </Button>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <Button type="button" variant="outline" className="w-full gap-2" onClick={() => void handleStartTotp()}>
+                      <ShieldPlus className="h-4 w-4" />
+                      Start TOTP Setup
+                    </Button>
+                    {totpSetup && (
+                      <form className="space-y-4" onSubmit={handleConfirmTotp}>
+                        <div className="rounded-md border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">
+                          <div className="break-all">{totpSetup.secret}</div>
+                          <div className="mt-2 break-all">{totpSetup.provisioning_uri}</div>
+                        </div>
+                        <Input
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          placeholder="000000"
+                          value={totpCode}
+                          onChange={(event) => setTotpCode(event.target.value)}
+                        />
+                        <Button type="submit" className="w-full" disabled={!canSubmitTotpCode(totpCode)}>
+                          Enable TOTP
+                        </Button>
+                      </form>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+        </main>
       )}
     </div>
   );

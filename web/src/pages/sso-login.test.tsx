@@ -1,7 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { fetchGraphQL } from '@/lib/graphql';
+import { loadSsoToken, storeSsoToken } from '@/lib/sso-session';
 
 import {
   buildRedirectUrlWithToken,
@@ -11,6 +14,7 @@ import {
   isTurnstileEnabled,
   isTurnstileRequiredError,
   parseRedirectTarget,
+  resolveAuthenticatedRedirect,
   SsoLoginPage,
 } from './sso-login';
 
@@ -19,7 +23,51 @@ vi.mock('@/components/theme/theme-toggle', () => ({
   ThemeToggle: () => <div>Theme toggle</div>,
 }));
 
+// The session-check effect verifies a stored token via GraphQL; mock the transport
+// so tests can drive valid/invalid sessions without a backend.
+vi.mock('@/lib/graphql', () => ({
+  fetchGraphQL: vi.fn(),
+}));
+
+// Capture navigations so profile redirects can be asserted without a real router.
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
 const origin = 'https://console.laisky.com';
+
+// jsdom's window.location.assign is a non-configurable no-op, so swap the whole
+// location object for a stub whose assign can be asserted, then restore it.
+const assignMock = vi.fn();
+const originalLocation = window.location;
+
+beforeEach(() => {
+  window.localStorage.clear();
+  mockNavigate.mockReset();
+  assignMock.mockReset();
+  vi.mocked(fetchGraphQL).mockReset();
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: {
+      origin: 'https://sso.laisky.com',
+      href: 'https://sso.laisky.com/sso/login',
+      pathname: '/sso/login',
+      search: '',
+      hash: '',
+      assign: assignMock,
+      replace: vi.fn(),
+    },
+  });
+});
+
+afterEach(() => {
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: originalLocation,
+  });
+});
 
 describe('parseRedirectTarget', () => {
   it('returns error when redirect_to is missing', () => {
@@ -357,5 +405,91 @@ describe('SsoLoginPage GitHub option visibility', () => {
   it('shows the GitHub button when GitHub OAuth is configured', () => {
     renderLoginPage(true);
     expect(githubButton()).toBeInTheDocument();
+  });
+});
+
+describe('resolveAuthenticatedRedirect', () => {
+  it('sends a signed-in visitor to the requested target with the token attached', () => {
+    const redirectTarget = parseRedirectTarget('https://app.laisky.com/cb?foo=bar', origin);
+    expect(resolveAuthenticatedRedirect({ token: 'jwt', redirectTarget, redirectRequested: true })).toEqual({
+      kind: 'external',
+      url: 'https://app.laisky.com/cb?foo=bar&sso_token=jwt',
+    });
+  });
+
+  it('sends a signed-in visitor to their profile when no redirect was requested', () => {
+    const redirectTarget = parseRedirectTarget(null, origin);
+    expect(resolveAuthenticatedRedirect({ token: 'jwt', redirectTarget, redirectRequested: false })).toEqual({
+      kind: 'profile',
+    });
+  });
+
+  it('does not auto-redirect when a requested redirect target is invalid', () => {
+    const redirectTarget = parseRedirectTarget('https://evil.com/cb', origin);
+    expect(resolveAuthenticatedRedirect({ token: 'jwt', redirectTarget, redirectRequested: true })).toEqual({
+      kind: 'none',
+    });
+  });
+});
+
+describe('SsoLoginPage session detection', () => {
+  const renderAt = (entry: string) =>
+    render(
+      <MemoryRouter initialEntries={[entry]}>
+        <SsoLoginPage />
+      </MemoryRouter>
+    );
+
+  const loginButton = () => screen.findByRole('button', { name: /^login$/i });
+
+  it('shows the login form without probing the backend when no session is stored', async () => {
+    renderAt('/sso/login');
+    expect(await loginButton()).toBeInTheDocument();
+    expect(fetchGraphQL).not.toHaveBeenCalled();
+  });
+
+  it('clears an invalid stored token and reveals the login form', async () => {
+    storeSsoToken('stale-token');
+    vi.mocked(fetchGraphQL).mockRejectedValue(new Error('unauthorized'));
+
+    renderAt('/sso/login');
+
+    expect(await loginButton()).toBeInTheDocument();
+    expect(loadSsoToken()).toBe('');
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
+  it('redirects a signed-in visitor to their profile when no redirect was requested', async () => {
+    storeSsoToken('valid-jwt');
+    vi.mocked(fetchGraphQL).mockResolvedValue({ UserProfile: { account: 'alice' } });
+
+    renderAt('/sso/login');
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/sso/profile'));
+    expect(assignMock).not.toHaveBeenCalled();
+    // The valid session is preserved, not cleared.
+    expect(loadSsoToken()).toBe('valid-jwt');
+  });
+
+  it('redirects a signed-in visitor to the requested target with the token attached', async () => {
+    storeSsoToken('valid-jwt');
+    vi.mocked(fetchGraphQL).mockResolvedValue({ UserProfile: { account: 'alice' } });
+
+    renderAt('/sso/login?redirect_to=https://app.laisky.com/cb');
+
+    await waitFor(() => expect(assignMock).toHaveBeenCalledWith('https://app.laisky.com/cb?sso_token=valid-jwt'));
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps a signed-in visitor on the form when the requested target is invalid', async () => {
+    storeSsoToken('valid-jwt');
+    vi.mocked(fetchGraphQL).mockResolvedValue({ UserProfile: { account: 'alice' } });
+
+    renderAt('/sso/login?redirect_to=https://evil.com/cb');
+
+    expect(await loginButton()).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(assignMock).not.toHaveBeenCalled();
   });
 });
