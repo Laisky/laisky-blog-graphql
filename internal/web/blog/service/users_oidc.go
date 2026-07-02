@@ -98,7 +98,7 @@ func (s *Blog) GetOrCreateOIDCUser(ctx context.Context,
 		return s.createOIDCUser(ctx, provider, subject, email, displayName)
 	}
 
-	return s.bindOIDCIdentity(ctx, user, provider, subject, email)
+	return s.BindOIDCIdentityToUser(ctx, user, provider, subject, email)
 }
 
 // createOIDCUser creates a new active user linked to an external OIDC identity.
@@ -129,7 +129,7 @@ func (s *Blog) createOIDCUser(ctx context.Context,
 			if findErr != nil {
 				return nil, errors.Wrap(findErr, "find duplicate oidc account")
 			}
-			return s.bindOIDCIdentity(ctx, existing, provider, subject, email)
+			return s.BindOIDCIdentityToUser(ctx, existing, provider, subject, email)
 		}
 		return nil, errors.Wrapf(err, "insert oidc user %q", email)
 	}
@@ -137,9 +137,9 @@ func (s *Blog) createOIDCUser(ctx context.Context,
 	return user, nil
 }
 
-// bindOIDCIdentity links an existing local user to an external OIDC identity.
+// BindOIDCIdentityToUser links an existing local user to an external OIDC identity.
 // It accepts the user and identity fields, returning the updated user.
-func (s *Blog) bindOIDCIdentity(ctx context.Context,
+func (s *Blog) BindOIDCIdentityToUser(ctx context.Context,
 	user *model.User,
 	provider string,
 	subject string,
@@ -148,6 +148,25 @@ func (s *Blog) bindOIDCIdentity(ctx context.Context,
 	if user == nil {
 		return nil, errors.New("user is nil")
 	}
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	subject = strings.TrimSpace(subject)
+	email = strings.TrimSpace(strings.ToLower(email))
+	if provider == "" || subject == "" {
+		return nil, errors.New("provider and subject are required")
+	}
+
+	existingUser, err := s.FindUserByOIDCIdentity(ctx, provider, subject)
+	if err != nil {
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, errors.Wrap(err, "find oidc identity owner")
+		}
+	} else {
+		if existingUser.ID != user.ID {
+			return nil, errors.New("oidc identity is already bound to another user")
+		}
+		return s.EnsureUserUID(ctx, existingUser)
+	}
+
 	for _, identity := range user.OIDCIdentities {
 		if identity.Provider == provider && identity.Subject == subject {
 			return user, nil

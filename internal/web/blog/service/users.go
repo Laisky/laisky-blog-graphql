@@ -195,6 +195,18 @@ func (s *Blog) setupUserCols(ctx context.Context) error {
 		}
 	}
 
+	// create unique sparse index for external user uid
+	{
+		if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{
+			Keys: bson.M{
+				"uid": 1,
+			},
+			Options: options.Index().SetUnique(true).SetSparse(true),
+		}); err != nil {
+			return errors.Wrap(err, "create index for uid")
+		}
+	}
+
 	// create index for external identity lookups
 	{
 		if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{

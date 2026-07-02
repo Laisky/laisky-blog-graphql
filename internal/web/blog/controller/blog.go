@@ -319,7 +319,12 @@ func (r *PostSeriesResolver) Children(ctx context.Context,
 
 func (r *UserResolver) ID(ctx context.Context,
 	obj *model.User) (string, error) {
-	return obj.ID.Hex(), nil
+	user, err := r.svc.EnsureUserUID(ctx, obj)
+	if err != nil {
+		return "", errors.Wrap(err, "ensure user uid")
+	}
+
+	return user.UID, nil
 }
 
 // =====================================
@@ -478,16 +483,22 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 // newLoginResponse signs an SSO JWT for a validated user.
 // It accepts a context and user, returning the GraphQL login response.
 func (r *MutationResolver) newLoginResponse(ctx context.Context, user *model.User) (*models.BlogLoginResponse, error) {
+	user, err := r.svc.EnsureUserUID(ctx, user)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure user uid")
+	}
+
 	uc := &jwt.UserClaims{
 		RegisteredClaims: jwtLib.RegisteredClaims{
 			ID:        gutils.UUID7(),
-			Subject:   user.ID.Hex(),
+			Subject:   user.UID,
 			Issuer:    "laisky-sso",
 			IssuedAt:  jwtLib.NewNumericDate(gutils.Clock.GetUTCNow()),
 			ExpiresAt: jwtLib.NewNumericDate(gutils.Clock.GetUTCNow().Add(3 * 30 * 24 * time.Hour)),
 		},
 		Username:    user.Account,
 		DisplayName: user.Username,
+		UID:         user.UID,
 	}
 
 	token, signErr := auth.Instance.SetAuthHeader(ctx,

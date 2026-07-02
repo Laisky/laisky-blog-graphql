@@ -456,6 +456,10 @@ func (s *Blog) LoadUserByID(ctx context.Context, uid primitive.ObjectID) (user *
 		return nil, errors.Wrap(err, "decode user")
 	}
 
+	if user, err = s.EnsureUserUID(ctx, user); err != nil {
+		return nil, errors.Wrap(err, "ensure user uid")
+	}
+
 	return user, nil
 }
 
@@ -736,13 +740,24 @@ func (s *Blog) ValidateAndGetUser(ctx context.Context) (user *model.User, err er
 		return nil, errors.Wrap(err, "get user from token")
 	}
 
-	uid, err := primitive.ObjectIDFromHex(uc.Subject)
-	if err != nil {
-		return nil, errors.Wrap(err, "parse user id in hex")
+	tokenUID := strings.TrimSpace(uc.UID)
+	if tokenUID == "" {
+		tokenUID = strings.TrimSpace(uc.Subject)
+	}
+	if tokenUID == "" {
+		return nil, errors.New("token subject is empty")
 	}
 
-	if user, err = s.LoadUserByID(ctx, uid); err != nil {
-		return nil, errors.Wrapf(err, "load user `%s`", uid)
+	legacyID, parseLegacyErr := primitive.ObjectIDFromHex(tokenUID)
+	if parseLegacyErr != nil {
+		if user, err = s.LoadUserByUID(ctx, tokenUID); err != nil {
+			return nil, errors.Wrapf(err, "load user by uid `%s`", tokenUID)
+		}
+		return user, nil
+	}
+
+	if user, err = s.LoadUserByID(ctx, legacyID); err != nil {
+		return nil, errors.Wrapf(err, "load user `%s`", legacyID)
 	}
 
 	return user, nil

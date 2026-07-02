@@ -28,6 +28,8 @@ import (
 const (
 	githubOAuthAuthorizeEndpoint = "https://github.com/login/oauth/authorize"
 	githubOAuthProvider          = "github"
+	githubOAuthStateKindLogin    = "login"
+	githubOAuthStateKindBind     = "bind"
 	githubOAuthStateTTL          = 10 * time.Minute
 	githubOAuthHTTPTimeout       = 8 * time.Second
 
@@ -44,6 +46,8 @@ var githubOAuthHTTPClient = &http.Client{
 type githubOAuthState struct {
 	RedirectTo  string `json:"redirect_to"`
 	CallbackURL string `json:"callback_url"`
+	Kind        string `json:"kind,omitempty"`
+	UserUID     string `json:"user_uid,omitempty"`
 	Nonce       string `json:"nonce"`
 	ExpiresAt   int64  `json:"expires_at"`
 }
@@ -91,11 +95,50 @@ func (r *MutationResolver) UserGithubOAuthStart(ctx context.Context,
 	state, err := signGitHubOAuthState(githubOAuthState{
 		RedirectTo:  validatedRedirect,
 		CallbackURL: settings.RedirectURL,
+		Kind:        githubOAuthStateKindLogin,
 		Nonce:       gutils.UUID7(),
 		ExpiresAt:   gutils.Clock.GetUTCNow().Add(githubOAuthStateTTL).Unix(),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "sign github oauth state")
+	}
+
+	return &models.GithubOAuthStartResponse{
+		AuthorizeURL: settings.Config.AuthCodeURL(state, oauth2.AccessTypeOnline),
+	}, nil
+}
+
+// UserGithubOAuthBindStart starts GitHub OAuth binding for the authenticated user.
+// It accepts a request context and returns the GitHub authorization URL.
+func (r *MutationResolver) UserGithubOAuthBindStart(ctx context.Context) (*models.GithubOAuthStartResponse, error) {
+	user, err := r.svc.ValidateAndGetUser(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "validate user")
+	}
+	user, err = r.svc.EnsureUserUID(ctx, user)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure user uid")
+	}
+
+	settings, err := loadGitHubOAuthSettings(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "load github oauth settings")
+	}
+	validatedRedirect, err := resolveGitHubOAuthRedirectTarget(ctx, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "validate redirect target")
+	}
+
+	state, err := signGitHubOAuthState(githubOAuthState{
+		RedirectTo:  validatedRedirect,
+		CallbackURL: settings.RedirectURL,
+		Kind:        githubOAuthStateKindBind,
+		UserUID:     user.UID,
+		Nonce:       gutils.UUID7(),
+		ExpiresAt:   gutils.Clock.GetUTCNow().Add(githubOAuthStateTTL).Unix(),
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "sign github oauth bind state")
 	}
 
 	return &models.GithubOAuthStartResponse{
@@ -137,9 +180,29 @@ func (r *MutationResolver) UserGithubOAuthLogin(ctx context.Context,
 		displayName = email
 	}
 
-	user, err := r.svc.GetOrCreateOIDCUser(ctx, githubOAuthProvider, subject, email, displayName)
-	if err != nil {
-		return nil, errors.Wrap(err, "get or create github user")
+	stateKind := strings.TrimSpace(payload.Kind)
+	if stateKind == "" {
+		stateKind = githubOAuthStateKindLogin
+	}
+
+	var user *model.User
+	switch stateKind {
+	case githubOAuthStateKindLogin:
+		user, err = r.svc.GetOrCreateOIDCUser(ctx, githubOAuthProvider, subject, email, displayName)
+		if err != nil {
+			return nil, errors.Wrap(err, "get or create github user")
+		}
+	case githubOAuthStateKindBind:
+		user, err = r.svc.LoadUserByUID(ctx, payload.UserUID)
+		if err != nil {
+			return nil, errors.Wrap(err, "load github bind user")
+		}
+		user, err = r.svc.BindOIDCIdentityToUser(ctx, user, githubOAuthProvider, subject, email)
+		if err != nil {
+			return nil, errors.Wrap(err, "bind github identity")
+		}
+	default:
+		return nil, errors.New("invalid github oauth state kind")
 	}
 
 	loginResp, err := r.newLoginResponse(ctx, user)
@@ -394,6 +457,15 @@ func verifyGitHubOAuthState(encoded string) (*githubOAuthState, error) {
 	}
 	if payload.RedirectTo == "" {
 		return nil, errors.New("github oauth state redirect target is empty")
+	}
+	if strings.TrimSpace(payload.Kind) == "" {
+		payload.Kind = githubOAuthStateKindLogin
+	}
+	if payload.Kind != githubOAuthStateKindLogin && payload.Kind != githubOAuthStateKindBind {
+		return nil, errors.New("invalid github oauth state kind")
+	}
+	if payload.Kind == githubOAuthStateKindBind && strings.TrimSpace(payload.UserUID) == "" {
+		return nil, errors.New("github oauth bind state user uid is empty")
 	}
 
 	return &payload, nil

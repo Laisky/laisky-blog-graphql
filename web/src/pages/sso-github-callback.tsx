@@ -35,7 +35,7 @@ export function SsoGithubCallbackPage() {
   const [searchParams] = useSearchParams();
   const code = useMemo(() => searchParams.get('code') ?? '', [searchParams]);
   const state = useMemo(() => searchParams.get('state') ?? '', [searchParams]);
-  const [status, setStatus] = useState<StatusState>({ tone: 'info', message: 'Completing GitHub sign in...' });
+  const [status, setStatus] = useState<StatusState>({ tone: 'info', message: 'Completing GitHub authorization...' });
 
   useEffect(() => {
     let isCancelled = false;
@@ -54,12 +54,12 @@ export function SsoGithubCallbackPage() {
         }
         const redirectURL = buildGithubCallbackRedirect(data.UserGithubOAuthLogin.redirect_to, token, window.location.origin);
         if (!isCancelled) {
-          setStatus({ tone: 'success', message: 'GitHub sign in complete. Redirecting...' });
+          setStatus({ tone: 'success', message: 'GitHub authorization complete. Redirecting...' });
           window.location.assign(redirectURL);
         }
       } catch (error) {
         if (!isCancelled) {
-          setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'GitHub sign in failed.' });
+          setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'GitHub authorization failed.' });
         }
       }
     };

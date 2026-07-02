@@ -49,7 +49,7 @@ type passkeyUser struct {
 // WebAuthnID returns the stable WebAuthn user handle.
 // It accepts no parameters and returns the Mongo ObjectID hex value as bytes.
 func (u passkeyUser) WebAuthnID() []byte {
-	return []byte(u.user.ID.Hex())
+	return []byte(u.user.UID)
 }
 
 // WebAuthnName returns the account identifier shown to authenticators.
@@ -164,6 +164,47 @@ func (r *MutationResolver) UserFinishPasskeyRegistration(ctx context.Context,
 	updatedUser, err := r.svc.AddPasskeyCredential(ctx, user, label, credential)
 	if err != nil {
 		return nil, errors.Wrap(err, "store passkey credential")
+	}
+
+	return newSSOProfile(updatedUser), nil
+}
+
+// UserRenamePasskey updates the label for one authenticated user's passkey.
+// It accepts the passkey credential ID and new name, returning the updated SSO profile.
+func (r *MutationResolver) UserRenamePasskey(ctx context.Context, passkeyID string, name string) (*models.SsoProfile, error) {
+	user, err := r.svc.ValidateAndGetUser(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "validate user")
+	}
+	if err = validateInputLength(1024, passkeyID); err != nil {
+		return nil, errors.Wrap(err, "validate passkey id")
+	}
+	if err = validateInputLength(100, name); err != nil {
+		return nil, errors.Wrap(err, "validate passkey name")
+	}
+
+	updatedUser, err := r.svc.RenamePasskeyCredential(ctx, user, passkeyID, name)
+	if err != nil {
+		return nil, errors.Wrap(err, "rename passkey")
+	}
+
+	return newSSOProfile(updatedUser), nil
+}
+
+// UserDeletePasskey removes one authenticated user's passkey.
+// It accepts the passkey credential ID and returns the updated SSO profile.
+func (r *MutationResolver) UserDeletePasskey(ctx context.Context, passkeyID string) (*models.SsoProfile, error) {
+	user, err := r.svc.ValidateAndGetUser(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "validate user")
+	}
+	if err = validateInputLength(1024, passkeyID); err != nil {
+		return nil, errors.Wrap(err, "validate passkey id")
+	}
+
+	updatedUser, err := r.svc.DeletePasskeyCredential(ctx, user, passkeyID)
+	if err != nil {
+		return nil, errors.Wrap(err, "delete passkey")
 	}
 
 	return newSSOProfile(updatedUser), nil
@@ -286,9 +327,14 @@ func (r *MutationResolver) loadPasskeyUser(ctx context.Context, rawID []byte, us
 		return nil, errors.New("passkey user handle is empty")
 	}
 
-	id, err := primitive.ObjectIDFromHex(string(userHandle))
+	handle := strings.TrimSpace(string(userHandle))
+	id, err := primitive.ObjectIDFromHex(handle)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse passkey user handle")
+		user, loadErr := r.svc.LoadUserByUID(ctx, handle)
+		if loadErr != nil {
+			return nil, errors.Wrap(loadErr, "load passkey user by uid handle")
+		}
+		return user, nil
 	}
 	user, err := r.svc.LoadUserByID(ctx, id)
 	if err != nil {

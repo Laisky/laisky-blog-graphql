@@ -6,6 +6,7 @@ This manual covers Laisky SSO integration for client applications and operationa
 
 - [SSO Manual](#sso-manual)
   - [Audience](#audience)
+  - [Public Identity Contract](#public-identity-contract)
   - [User Capabilities](#user-capabilities)
   - [Client Integration Flow](#client-integration-flow)
   - [Login Entry URL](#login-entry-url)
@@ -14,6 +15,7 @@ This manual covers Laisky SSO integration for client applications and operationa
   - [JWT Token Specification](#jwt-token-specification)
   - [Token Validation](#token-validation)
   - [Account and Profile Flows](#account-and-profile-flows)
+  - [Data and Migration Notes](#data-and-migration-notes)
   - [Admin Configuration](#admin-configuration)
   - [GraphQL API Reference](#graphql-api-reference)
   - [Security Notes](#security-notes)
@@ -27,6 +29,19 @@ This manual covers Laisky SSO integration for client applications and operationa
 - Frontend engineers implementing SSO redirects.
 - Operators configuring SSO login methods, GitHub OAuth, WebAuthn passkeys, and Cloudflare Turnstile.
 
+## Public Identity Contract
+
+Every SSO user has a stable external `uid` generated as UUIDv7. This UID is the only user identifier intended for external systems.
+
+Public surfaces that expose the external UID:
+
+- `UserProfile.uid`.
+- `BlogUser.id` in SSO GraphQL responses, including `WhoAmI`, login responses, GitHub OAuth responses, and passkey login responses.
+- JWT `sub`.
+- JWT `uid`.
+
+Do not depend on internal storage identifiers. SSO-facing APIs must use the external UID for user identity.
+
 ## User Capabilities
 
 The SSO service supports these account and authentication flows:
@@ -36,8 +51,10 @@ The SSO service supports these account and authentication flows:
 - Password login with optional TOTP verification.
 - Discoverable passkey login.
 - Profile page for:
+  - Viewing the stable external user UID.
   - Reviewing account and enabled authentication methods.
   - Changing password.
+  - Binding GitHub OAuth identity.
   - Binding and disabling TOTP.
   - Registering passkeys.
 
@@ -126,7 +143,8 @@ Claims:
 | Claim          | Type   | Required | Description                                  |
 | -------------- | ------ | -------- | -------------------------------------------- |
 | `iss`          | string | yes      | Token issuer. Current value is `laisky-sso`. |
-| `sub`          | string | yes      | User ID in MongoDB ObjectID hex format.      |
+| `sub`          | string | yes      | Stable external user UID in UUID format.     |
+| `uid`          | string | yes      | Stable external user UID in UUID format.     |
 | `iat`          | number | yes      | Issued-at time in Unix seconds, UTC.         |
 | `exp`          | number | yes      | Expiration time in Unix seconds, UTC.        |
 | `jti`          | string | yes      | Token ID.                                    |
@@ -138,7 +156,8 @@ Decoded payload example:
 ```json
 {
   "iss": "laisky-sso",
-  "sub": "66c9f85d31dc8f4eb9a4df0a",
+  "sub": "0194d5f8-19f7-7f7b-a8d3-421a60f8d8ab",
+  "uid": "0194d5f8-19f7-7f7b-a8d3-421a60f8d8ab",
   "iat": 1738929600,
   "exp": 1746705600,
   "jti": "0194d5f8-19f7-7f7b-a8d3-421a60f8d8ab",
@@ -176,6 +195,8 @@ curl -X POST 'https://sso.laisky.com/query' \
 
 If successful, treat the token as valid and map the returned user to your local session model.
 
+`WhoAmI.id` is the same stable external UID carried in `sso_token.sub` and `sso_token.uid`.
+
 ### Optional: Local JWT Verification
 
 Use local verification only when your team is explicitly allowed to use the shared SSO signing secret.
@@ -185,7 +206,7 @@ Minimum checks:
 1. Verify the `HS256` signature.
 2. Verify `exp` and `iat`.
 3. Verify `iss == "laisky-sso"`.
-4. Verify `sub` has the expected user ID format.
+4. Verify `sub` and `uid` have the expected UUID format and match each other.
 
 ## Account and Profile Flows
 
@@ -211,6 +232,20 @@ Server flow:
 4. SSO issues `sso_token` and redirects to the original validated target.
 
 The server stores the GitHub provider subject and verified email. It does not store GitHub access tokens.
+
+### GitHub Profile Binding
+
+Authenticated users can bind GitHub from the SSO profile page.
+
+Server flow:
+
+1. The profile page calls `UserGithubOAuthBindStart` with the current `Authorization: Bearer <sso_token>` header.
+2. The server validates the current user, signs OAuth state with the user's external UID and `bind` mode, and returns GitHub `authorize_url`.
+3. GitHub redirects back to the same `/github/callback` route used by login.
+4. `UserGithubOAuthLogin` verifies signed state, exchanges the code, loads the verified GitHub email, and binds the GitHub provider subject to the authenticated user from the signed state.
+5. SSO issues a refreshed `sso_token` and redirects back to the profile page.
+
+Binding fails if the GitHub identity is already bound to a different local user. It is idempotent when the same GitHub identity is already bound to the same local user.
 
 ### Password and TOTP Login
 
@@ -244,10 +279,21 @@ https://mcp.laisky.com/sso/profile
 
 Profile supports:
 
+- Viewing the stable external UID used by clients and JWTs.
 - Password change.
+- GitHub OAuth identity binding.
 - TOTP enrollment and disable.
-- Passkey registration.
+- Passkey registration, rename, and delete.
+- Viewing registered passkey names, creation times, and shortened credential IDs.
 - Viewing whether GitHub is bound and how many passkeys are registered.
+
+## Data and Migration Notes
+
+- New users receive `uid` when the user record is created.
+- Existing users that do not yet have `uid` are assigned one lazily when loaded through authenticated SSO paths.
+- `settings.secret` signs JWTs, GitHub OAuth state, and passkey sessions. Rotating it invalidates active SSO tokens and pending OAuth/passkey ceremonies.
+- The users collection should have a unique sparse index on `uid` so old records without `uid` can coexist while migration happens lazily.
+- Passkey user handles use the external UID for new registrations. Legacy passkey handles based on internal IDs are still accepted during login for backward compatibility.
 
 ## Admin Configuration
 
@@ -341,6 +387,8 @@ Turnstile is enforced on:
 - GitHub OAuth start through `UserGithubOAuthStart`.
 - Passkey login start through `UserStartPasskeyLogin`.
 
+`UserGithubOAuthBindStart` is authenticated by the current SSO token and does not use Turnstile.
+
 The deprecated `BlogLogin` mutation cannot carry a Turnstile token. When Turnstile is configured, that legacy path fails closed and clients must use `UserLogin`.
 
 ## GraphQL API Reference
@@ -356,14 +404,22 @@ query {
 }
 ```
 
+`WhoAmI.id` is the external UID.
+
 ```graphql
 query {
   UserProfile {
+    uid
     account
     auth_methods
     password_enabled
     totp_enabled
     passkey_count
+    passkeys {
+      id
+      name
+      created_at
+    }
     github_bound
     user {
       id
@@ -420,6 +476,16 @@ mutation FinishGithub($code: String!, $state: String!) {
 }
 ```
 
+```graphql
+mutation StartGithubBind {
+  UserGithubOAuthBindStart {
+    authorize_url
+  }
+}
+```
+
+Call `UserGithubOAuthBindStart` with `Authorization: Bearer <sso_token>`.
+
 ### TOTP
 
 ```graphql
@@ -462,6 +528,37 @@ mutation StartPasskeyRegistration($label: String!) {
 mutation FinishPasskeyRegistration($label: String!, $session: String!, $credentialJSON: String!) {
   UserFinishPasskeyRegistration(label: $label, session: $session, credential_json: $credentialJSON) {
     passkey_count
+    passkeys {
+      id
+      name
+      created_at
+    }
+  }
+}
+```
+
+```graphql
+mutation RenamePasskey($passkeyID: String!, $name: String!) {
+  UserRenamePasskey(passkey_id: $passkeyID, name: $name) {
+    passkey_count
+    passkeys {
+      id
+      name
+      created_at
+    }
+  }
+}
+```
+
+```graphql
+mutation DeletePasskey($passkeyID: String!) {
+  UserDeletePasskey(passkey_id: $passkeyID) {
+    passkey_count
+    passkeys {
+      id
+      name
+      created_at
+    }
   }
 }
 ```
@@ -506,9 +603,10 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 3. `Unsupported redirect host`: callback host is outside the SSO allow-list.
 4. `turnstile token is required`: Turnstile is configured but the client did not provide a token.
 5. GitHub login returns no verified email: the GitHub account has no verified email visible through the granted scopes.
-6. Passkey registration fails on HTTP: WebAuthn requires a secure context, except for browser-supported local development cases.
-7. `WhoAmI` returns unauthorized: token is missing, malformed, expired, or not sent as `Authorization: Bearer <token>`.
-8. Callback loops after success: local callback did not persist a session before removing `sso_token`.
+6. GitHub binding fails because the GitHub identity is already bound to another SSO user.
+7. Passkey registration fails on HTTP: WebAuthn requires a secure context, except for browser-supported local development cases.
+8. `WhoAmI` returns unauthorized: token is missing, malformed, expired, or not sent as `Authorization: Bearer <token>`.
+9. Callback loops after success: local callback did not persist a session before removing `sso_token`.
 
 ## Go-Live Checklist
 
@@ -520,4 +618,5 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 6. GitHub OAuth callback URL exactly matches the deployed SSO callback route.
 7. WebAuthn `origin` and `rp_id` are stable for the deployed hostname.
 8. Turnstile site key and secret key are configured together when Turnstile is required.
-9. Logs and monitoring do not expose JWTs, OAuth codes, Turnstile tokens, TOTP secrets, passwords, or passkey credential JSON.
+9. User `uid` is indexed uniquely and downstream systems use UID instead of database IDs.
+10. Logs and monitoring do not expose JWTs, OAuth codes, Turnstile tokens, TOTP secrets, passwords, or passkey credential JSON.

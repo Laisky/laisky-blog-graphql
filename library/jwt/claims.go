@@ -11,6 +11,7 @@ type UserClaims struct {
 	jwtLib.RegisteredClaims
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
+	UID         string `json:"uid"`
 }
 
 // NewUserClaims create new user claims

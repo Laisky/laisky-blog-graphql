@@ -81,7 +81,7 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled
   return [
     { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
     { path: '/sso/github/callback', element: <SsoGithubCallbackPage /> },
-    { path: '/sso/profile', element: <SsoProfilePage /> },
+    { path: '/sso/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} /> },
     {
       path: '/',
       element: <AppLayout />,
@@ -112,7 +112,7 @@ function buildSsoRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled
     { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
     { path: '/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
     { path: '/github/callback', element: <SsoGithubCallbackPage /> },
-    { path: '/profile', element: <SsoProfilePage /> },
+    { path: '/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} /> },
     { path: '*', element: <NotFoundPage /> },
   ];
 }

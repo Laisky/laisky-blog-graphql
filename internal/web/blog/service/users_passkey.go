@@ -131,7 +131,7 @@ func (s *Blog) UpdatePasskeyCredential(ctx context.Context,
 	if err != nil {
 		return nil, errors.Wrapf(err, "update passkey for user %s", user.ID.Hex())
 	}
-	if result.ModifiedCount == 0 {
+	if result.MatchedCount == 0 {
 		return nil, errors.New("passkey credential not found")
 	}
 
@@ -143,6 +143,92 @@ func (s *Blog) UpdatePasskeyCredential(ctx context.Context,
 			break
 		}
 	}
+	user.ModifiedAt = now
+	return user, nil
+}
+
+// RenamePasskeyCredential updates the user-visible label for one passkey.
+// It accepts a context, user, credential ID, and new label, returning the updated user.
+func (s *Blog) RenamePasskeyCredential(ctx context.Context,
+	user *model.User,
+	credentialID string,
+	name string,
+) (*model.User, error) {
+	if user == nil {
+		return nil, errors.New("user is nil")
+	}
+	credentialID = strings.TrimSpace(credentialID)
+	if credentialID == "" {
+		return nil, errors.New("passkey credential id is empty")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("passkey name is empty")
+	}
+
+	now := gutils.Clock.GetUTCNow()
+	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
+		"_id":         user.ID,
+		"passkeys.id": credentialID,
+	}, bson.M{
+		"$set": bson.M{
+			"passkeys.$.name":   name,
+			"post_modified_gmt": now,
+		},
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "rename passkey for user %s", user.ID.Hex())
+	}
+	if result.ModifiedCount == 0 {
+		return nil, errors.New("passkey credential not found")
+	}
+
+	for idx := range user.Passkeys {
+		if user.Passkeys[idx].ID == credentialID {
+			user.Passkeys[idx].Name = name
+			break
+		}
+	}
+	user.ModifiedAt = now
+	return user, nil
+}
+
+// DeletePasskeyCredential removes one passkey from the authenticated user.
+// It accepts a context, user, and credential ID, returning the updated user.
+func (s *Blog) DeletePasskeyCredential(ctx context.Context,
+	user *model.User,
+	credentialID string,
+) (*model.User, error) {
+	if user == nil {
+		return nil, errors.New("user is nil")
+	}
+	credentialID = strings.TrimSpace(credentialID)
+	if credentialID == "" {
+		return nil, errors.New("passkey credential id is empty")
+	}
+
+	now := gutils.Clock.GetUTCNow()
+	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
+		"_id":         user.ID,
+		"passkeys.id": credentialID,
+	}, bson.M{
+		"$pull": bson.M{"passkeys": bson.M{"id": credentialID}},
+		"$set":  bson.M{"post_modified_gmt": now},
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "delete passkey for user %s", user.ID.Hex())
+	}
+	if result.ModifiedCount == 0 {
+		return nil, errors.New("passkey credential not found")
+	}
+
+	nextPasskeys := make([]model.PasskeyCredential, 0, len(user.Passkeys))
+	for _, passkey := range user.Passkeys {
+		if passkey.ID != credentialID {
+			nextPasskeys = append(nextPasskeys, passkey)
+		}
+	}
+	user.Passkeys = nextPasskeys
 	user.ModifiedAt = now
 	return user, nil
 }

@@ -6,6 +6,7 @@ import (
 
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,6 +31,56 @@ func TestGitHubOAuthStateRoundTrip(t *testing.T) {
 	require.Equal(t, "https://app.laisky.com/callback", decoded.RedirectTo)
 	require.Equal(t, "https://sso.laisky.com/github/callback", decoded.CallbackURL)
 	require.Equal(t, "nonce", decoded.Nonce)
+	require.Equal(t, githubOAuthStateKindLogin, decoded.Kind)
+}
+
+// TestGitHubOAuthBindStateRoundTrip verifies signed bind state preserves the user UID.
+func TestGitHubOAuthBindStateRoundTrip(t *testing.T) {
+	originalSecret := gconfig.Shared.GetString("settings.secret")
+	t.Cleanup(func() {
+		gconfig.Shared.Set("settings.secret", originalSecret)
+	})
+	gconfig.Shared.Set("settings.secret", "test-secret")
+
+	userUID := gutils.UUID7()
+	state, err := signGitHubOAuthState(githubOAuthState{
+		RedirectTo:  "https://sso.laisky.com/profile",
+		CallbackURL: "https://sso.laisky.com/github/callback",
+		Kind:        githubOAuthStateKindBind,
+		UserUID:     userUID,
+		Nonce:       "nonce",
+		ExpiresAt:   gutils.Clock.GetUTCNow().Add(githubOAuthStateTTL).Unix(),
+	})
+	require.NoError(t, err)
+
+	decoded, err := verifyGitHubOAuthState(state)
+	require.NoError(t, err)
+	require.Equal(t, githubOAuthStateKindBind, decoded.Kind)
+	require.Equal(t, userUID, decoded.UserUID)
+	_, err = uuid.Parse(decoded.UserUID)
+	require.NoError(t, err)
+}
+
+// TestGitHubOAuthBindStateRequiresUserUID verifies bind states cannot omit the local user.
+func TestGitHubOAuthBindStateRequiresUserUID(t *testing.T) {
+	originalSecret := gconfig.Shared.GetString("settings.secret")
+	t.Cleanup(func() {
+		gconfig.Shared.Set("settings.secret", originalSecret)
+	})
+	gconfig.Shared.Set("settings.secret", "test-secret")
+
+	state, err := signGitHubOAuthState(githubOAuthState{
+		RedirectTo:  "https://sso.laisky.com/profile",
+		CallbackURL: "https://sso.laisky.com/github/callback",
+		Kind:        githubOAuthStateKindBind,
+		Nonce:       "nonce",
+		ExpiresAt:   gutils.Clock.GetUTCNow().Add(githubOAuthStateTTL).Unix(),
+	})
+	require.NoError(t, err)
+
+	_, err = verifyGitHubOAuthState(state)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "user uid is empty")
 }
 
 // TestGitHubOAuthStateRejectsTampering verifies state signatures are checked with constant-time comparison.

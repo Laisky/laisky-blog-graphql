@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { KeyRound, Lock, LogOut, RefreshCcw, ShieldCheck, ShieldPlus, UserRound } from 'lucide-react';
+import { Github, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -13,19 +13,29 @@ import { fetchGraphQL } from '@/lib/graphql';
 import { createPasskeyCredentialJSON } from '@/lib/passkey';
 import { clearSsoToken, consumeSsoTokenFromLocation, resolveSiblingSsoPath } from '@/lib/sso-session';
 
+const SSO_PROFILE_FIELDS = `
+  uid
+  account
+  auth_methods
+  password_enabled
+  totp_enabled
+  passkey_count
+  passkeys {
+    id
+    name
+    created_at
+  }
+  github_bound
+  user {
+    id
+    username
+  }
+`;
+
 const USER_PROFILE_QUERY = `
   query SsoProfile {
     UserProfile {
-      account
-      auth_methods
-      password_enabled
-      totp_enabled
-      passkey_count
-      github_bound
-      user {
-        id
-        username
-      }
+      ${SSO_PROFILE_FIELDS}
     }
   }
 `;
@@ -33,13 +43,7 @@ const USER_PROFILE_QUERY = `
 const CHANGE_PASSWORD_MUTATION = `
   mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
     UserChangePassword(current_password: $currentPassword, new_password: $newPassword) {
-      account
-      auth_methods
-      password_enabled
-      totp_enabled
-      passkey_count
-      github_bound
-      user { id username }
+      ${SSO_PROFILE_FIELDS}
     }
   }
 `;
@@ -56,13 +60,7 @@ const START_TOTP_MUTATION = `
 const CONFIRM_TOTP_MUTATION = `
   mutation ConfirmTotp($code: String!) {
     UserConfirmTOTPSetup(code: $code) {
-      account
-      auth_methods
-      password_enabled
-      totp_enabled
-      passkey_count
-      github_bound
-      user { id username }
+      ${SSO_PROFILE_FIELDS}
     }
   }
 `;
@@ -70,13 +68,7 @@ const CONFIRM_TOTP_MUTATION = `
 const DISABLE_TOTP_MUTATION = `
   mutation DisableTotp($currentPassword: String!) {
     UserDisableTOTP(current_password: $currentPassword) {
-      account
-      auth_methods
-      password_enabled
-      totp_enabled
-      passkey_count
-      github_bound
-      user { id username }
+      ${SSO_PROFILE_FIELDS}
     }
   }
 `;
@@ -93,23 +85,49 @@ const START_PASSKEY_REGISTRATION_MUTATION = `
 const FINISH_PASSKEY_REGISTRATION_MUTATION = `
   mutation FinishPasskeyRegistration($label: String!, $session: String!, $credentialJSON: String!) {
     UserFinishPasskeyRegistration(label: $label, session: $session, credential_json: $credentialJSON) {
-      account
-      auth_methods
-      password_enabled
-      totp_enabled
-      passkey_count
-      github_bound
-      user { id username }
+      ${SSO_PROFILE_FIELDS}
     }
   }
 `;
 
+const RENAME_PASSKEY_MUTATION = `
+  mutation RenamePasskey($passkeyID: String!, $name: String!) {
+    UserRenamePasskey(passkey_id: $passkeyID, name: $name) {
+      ${SSO_PROFILE_FIELDS}
+    }
+  }
+`;
+
+const DELETE_PASSKEY_MUTATION = `
+  mutation DeletePasskey($passkeyID: String!) {
+    UserDeletePasskey(passkey_id: $passkeyID) {
+      ${SSO_PROFILE_FIELDS}
+    }
+  }
+`;
+
+const START_GITHUB_BIND_MUTATION = `
+  mutation StartGithubBind {
+    UserGithubOAuthBindStart {
+      authorize_url
+    }
+  }
+`;
+
+interface PasskeyInfo {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
 interface SsoProfile {
+  uid: string;
   account: string;
   auth_methods: string[];
   password_enabled: boolean;
   totp_enabled: boolean;
   passkey_count: number;
+  passkeys: PasskeyInfo[];
   github_bound: boolean;
   user: {
     id: string;
@@ -126,6 +144,14 @@ interface ProfileMutationResponse {
   UserConfirmTOTPSetup?: SsoProfile;
   UserDisableTOTP?: SsoProfile;
   UserFinishPasskeyRegistration?: SsoProfile;
+  UserRenamePasskey?: SsoProfile;
+  UserDeletePasskey?: SsoProfile;
+}
+
+interface GithubBindStartResponse {
+  UserGithubOAuthBindStart: {
+    authorize_url: string;
+  };
 }
 
 interface TotpSetupResponse {
@@ -150,7 +176,31 @@ export function canSubmitTotpCode(code: string): boolean {
   return /^\d{6}$/.test(code.trim());
 }
 
-export function SsoProfilePage() {
+export function canSubmitPasskeyRename(currentName: string, nextName: string): boolean {
+  const normalizedCurrent = currentName.trim();
+  const normalizedNext = nextName.trim();
+  return normalizedNext.length > 0 && normalizedNext.length <= 100 && normalizedNext !== normalizedCurrent;
+}
+
+export function formatPasskeyCreatedAt(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) {
+    return createdAt;
+  }
+
+  const iso = date.toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+}
+
+function buildPasskeyDraftNames(passkeys: PasskeyInfo[]): Record<string, string> {
+  return Object.fromEntries(passkeys.map((passkey) => [passkey.id, passkey.name]));
+}
+
+interface SsoProfilePageProps {
+  githubOAuthEnabled?: boolean;
+}
+
+export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const loginPath = resolveSiblingSsoPath(location.pathname, 'login');
@@ -166,13 +216,21 @@ export function SsoProfilePage() {
   const [disablePassword, setDisablePassword] = useState('');
   const [passkeyLabel, setPasskeyLabel] = useState('My passkey');
   const [isPasskeyRegistering, setIsPasskeyRegistering] = useState(false);
+  const [passkeyDraftNames, setPasskeyDraftNames] = useState<Record<string, string>>({});
+  const [passkeyBusyID, setPasskeyBusyID] = useState('');
+  const [isGithubBinding, setIsGithubBinding] = useState(false);
+
+  const applyProfile = (next: SsoProfile) => {
+    setProfile(next);
+    setPasskeyDraftNames(buildPasskeyDraftNames(next.passkeys));
+  };
 
   const loadProfile = async (authToken: string) => {
     setIsLoading(true);
     setStatus(null);
     try {
       const data = await fetchGraphQL<ProfileResponse>(authToken, USER_PROFILE_QUERY);
-      setProfile(data.UserProfile);
+      applyProfile(data.UserProfile);
     } catch (error) {
       setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Failed to load profile.' });
     } finally {
@@ -204,7 +262,7 @@ export function SsoProfilePage() {
 
   const updateProfile = (next: SsoProfile | undefined, message: string) => {
     if (next) {
-      setProfile(next);
+      applyProfile(next);
     }
     setStatus({ tone: 'success', message });
   };
@@ -287,11 +345,77 @@ export function SsoProfilePage() {
         session: start.UserStartPasskeyRegistration.session,
         credentialJSON,
       });
+      setPasskeyLabel('My passkey');
       updateProfile(finish.UserFinishPasskeyRegistration, 'Passkey registered.');
     } catch (error) {
       setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Failed to register passkey.' });
     } finally {
       setIsPasskeyRegistering(false);
+    }
+  };
+
+  const handlePasskeyNameChange = (passkeyID: string, name: string) => {
+    setPasskeyDraftNames((current) => ({
+      ...current,
+      [passkeyID]: name,
+    }));
+  };
+
+  const handleRenamePasskey = async (event: React.FormEvent<HTMLFormElement>, passkey: PasskeyInfo) => {
+    event.preventDefault();
+    const nextName = (passkeyDraftNames[passkey.id] || '').trim();
+    if (!canSubmitPasskeyRename(passkey.name, nextName)) {
+      setStatus({ tone: 'error', message: 'Enter a different passkey name.' });
+      return;
+    }
+
+    setPasskeyBusyID(passkey.id);
+    try {
+      const data = await fetchGraphQL<ProfileMutationResponse>(token, RENAME_PASSKEY_MUTATION, {
+        passkeyID: passkey.id,
+        name: nextName,
+      });
+      updateProfile(data.UserRenamePasskey, 'Passkey renamed.');
+    } catch (error) {
+      setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Failed to rename passkey.' });
+    } finally {
+      setPasskeyBusyID('');
+    }
+  };
+
+  const handleDeletePasskey = async (passkey: PasskeyInfo) => {
+    if (!window.confirm(`Delete passkey "${passkey.name}"?`)) {
+      return;
+    }
+
+    setPasskeyBusyID(passkey.id);
+    try {
+      const data = await fetchGraphQL<ProfileMutationResponse>(token, DELETE_PASSKEY_MUTATION, { passkeyID: passkey.id });
+      updateProfile(data.UserDeletePasskey, 'Passkey deleted.');
+    } catch (error) {
+      setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Failed to delete passkey.' });
+    } finally {
+      setPasskeyBusyID('');
+    }
+  };
+
+  const handleBindGithub = async () => {
+    if (!token || isGithubBinding || profile?.github_bound) {
+      return;
+    }
+
+    setIsGithubBinding(true);
+    setStatus({ tone: 'info', message: 'Opening GitHub...' });
+    try {
+      const data = await fetchGraphQL<GithubBindStartResponse>(token, START_GITHUB_BIND_MUTATION);
+      const authorizeURL = data.UserGithubOAuthBindStart?.authorize_url;
+      if (!authorizeURL) {
+        throw new Error('GitHub authorization URL was not returned.');
+      }
+      window.location.assign(authorizeURL);
+    } catch (error) {
+      setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Failed to start GitHub binding.' });
+      setIsGithubBinding(false);
     }
   };
 
@@ -354,10 +478,17 @@ export function SsoProfilePage() {
                 ) : profile ? (
                   <div className="space-y-3">
                     <ProfileRow label="Display name" value={profile.user.username} />
+                    <ProfileRow label="UID" value={profile.uid} />
                     <ProfileRow label="Account" value={profile.account} />
                     <ProfileRow label="Methods" value={authMethods} />
                     <ProfileRow label="Passkeys" value={String(profile.passkey_count)} />
                     <ProfileRow label="GitHub OIDC" value={profile.github_bound ? 'Bound' : 'Not bound'} />
+                    {githubOAuthEnabled && !profile.github_bound && (
+                      <Button type="button" variant="outline" className="w-full gap-2" disabled={isGithubBinding} onClick={() => void handleBindGithub()}>
+                        <Github className="h-4 w-4" />
+                        {isGithubBinding ? 'Opening GitHub...' : 'Bind GitHub'}
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <StatusBanner status={{ tone: 'error', message: 'Profile unavailable.' }} />
@@ -408,7 +539,60 @@ export function SsoProfilePage() {
                   Passkeys
                 </div>
               </CardHeader>
-              <CardContent className="pt-6">
+              <CardContent className="space-y-5 pt-6">
+                {profile && profile.passkeys.length > 0 && (
+                  <div className="space-y-3">
+                    {profile.passkeys.map((passkey) => {
+                      const draftName = passkeyDraftNames[passkey.id] || '';
+                      const isBusy = passkeyBusyID === passkey.id;
+                      return (
+                        <form
+                          key={passkey.id}
+                          className="space-y-3 rounded-md border border-border bg-muted/30 p-3"
+                          onSubmit={(event) => void handleRenamePasskey(event, passkey)}
+                        >
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                              autoComplete="off"
+                              value={draftName}
+                              onChange={(event) => handlePasskeyNameChange(passkey.id, event.target.value)}
+                              aria-label={`Name for passkey ${passkey.name}`}
+                            />
+                            <div className="flex shrink-0 gap-2">
+                              <Button
+                                type="submit"
+                                variant="outline"
+                                size="icon"
+                                disabled={isBusy || !canSubmitPasskeyRename(passkey.name, draftName)}
+                                aria-label={`Rename passkey ${passkey.name}`}
+                                title="Rename passkey"
+                              >
+                                <Save className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="icon"
+                                disabled={isBusy}
+                                aria-label={`Delete passkey ${passkey.name}`}
+                                title="Delete passkey"
+                                onClick={() => void handleDeletePasskey(passkey)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-[80px_minmax(0,1fr)]">
+                            <span>Created</span>
+                            <span className="min-w-0 break-words">{formatPasskeyCreatedAt(passkey.created_at)}</span>
+                            <span>ID</span>
+                            <span className="min-w-0 break-all font-mono">{passkey.id.slice(0, 24)}</span>
+                          </div>
+                        </form>
+                      );
+                    })}
+                  </div>
+                )}
                 <form className="space-y-4" onSubmit={handleRegisterPasskey}>
                   <Input
                     autoComplete="off"

@@ -13,6 +13,11 @@ Example: <https://gq.laisky.com/ui/>
 
 Introduction: <https://blog.laisky.com/p/gqlgen/>
 
+Docs:
+
+- SSO integration and operations manual: [docs/manual/sso.md](docs/manual/sso.md)
+- Remote MCP server manual: [docs/manual/mcp.md](docs/manual/mcp.md)
+
 Run:
 
 ```sh

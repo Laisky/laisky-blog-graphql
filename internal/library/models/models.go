@@ -92,6 +92,12 @@ type Pagination struct {
 	Size int `json:"size"`
 }
 
+type PasskeyInfo struct {
+	ID        string           `json:"id"`
+	Name      string           `json:"name"`
+	CreatedAt library.Datetime `json:"created_at"`
+}
+
 type PasskeyLoginResponse struct {
 	User       *model.User `json:"user"`
 	Token      string      `json:"token"`
@@ -112,13 +118,15 @@ type Sort struct {
 }
 
 type SsoProfile struct {
-	User            *model.User `json:"user"`
-	Account         string      `json:"account"`
-	AuthMethods     []string    `json:"auth_methods"`
-	PasswordEnabled bool        `json:"password_enabled"`
-	TotpEnabled     bool        `json:"totp_enabled"`
-	PasskeyCount    int         `json:"passkey_count"`
-	GithubBound     bool        `json:"github_bound"`
+	User            *model.User    `json:"user"`
+	UID             string         `json:"uid"`
+	Account         string         `json:"account"`
+	AuthMethods     []string       `json:"auth_methods"`
+	PasswordEnabled bool           `json:"password_enabled"`
+	TotpEnabled     bool           `json:"totp_enabled"`
+	PasskeyCount    int            `json:"passkey_count"`
+	Passkeys        []*PasskeyInfo `json:"passkeys"`
+	GithubBound     bool           `json:"github_bound"`
 }
 
 type TotpSetupResponse struct {

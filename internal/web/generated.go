@@ -208,13 +208,16 @@ type ComplexityRoot struct {
 		UserActive                    func(childComplexity int, token string) int
 		UserChangePassword            func(childComplexity int, currentPassword string, newPassword string) int
 		UserConfirmTOTPSetup          func(childComplexity int, code string) int
+		UserDeletePasskey             func(childComplexity int, passkeyID string) int
 		UserDisableTotp               func(childComplexity int, currentPassword string) int
 		UserFinishPasskeyLogin        func(childComplexity int, session string, credentialJSON string) int
 		UserFinishPasskeyRegistration func(childComplexity int, label string, session string, credentialJSON string) int
+		UserGithubOAuthBindStart      func(childComplexity int) int
 		UserGithubOAuthLogin          func(childComplexity int, code string, state string) int
 		UserGithubOAuthStart          func(childComplexity int, redirectTo *string, turnstileToken *string) int
 		UserLogin                     func(childComplexity int, account string, password string, turnstileToken *string, totpCode *string) int
 		UserRegister                  func(childComplexity int, account string, password string, displayName string, captcha string, turnstileToken *string) int
+		UserRenamePasskey             func(childComplexity int, passkeyID string, name string) int
 		UserResendActiveEmail         func(childComplexity int, account string) int
 		UserStartPasskeyLogin         func(childComplexity int, redirectTo *string, turnstileToken *string) int
 		UserStartPasskeyRegistration  func(childComplexity int, label string) int
@@ -226,6 +229,12 @@ type ComplexityRoot struct {
 	OneapiQuota struct {
 		RemainQuota func(childComplexity int) int
 		UsedQuota   func(childComplexity int) int
+	}
+
+	PasskeyInfo struct {
+		CreatedAt func(childComplexity int) int
+		ID        func(childComplexity int) int
+		Name      func(childComplexity int) int
 	}
 
 	PasskeyLoginResponse struct {
@@ -272,8 +281,10 @@ type ComplexityRoot struct {
 		AuthMethods     func(childComplexity int) int
 		GithubBound     func(childComplexity int) int
 		PasskeyCount    func(childComplexity int) int
+		Passkeys        func(childComplexity int) int
 		PasswordEnabled func(childComplexity int) int
 		TotpEnabled     func(childComplexity int) int
+		UID             func(childComplexity int) int
 		User            func(childComplexity int) int
 	}
 
@@ -406,9 +417,12 @@ type MutationResolver interface {
 	UserLogin(ctx context.Context, account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error)
 	UserRegister(ctx context.Context, account string, password string, displayName string, captcha string, turnstileToken *string) (*models.UserRegisterResponse, error)
 	UserGithubOAuthStart(ctx context.Context, redirectTo *string, turnstileToken *string) (*models.GithubOAuthStartResponse, error)
+	UserGithubOAuthBindStart(ctx context.Context) (*models.GithubOAuthStartResponse, error)
 	UserGithubOAuthLogin(ctx context.Context, code string, state string) (*models.GithubOAuthLoginResponse, error)
 	UserStartPasskeyRegistration(ctx context.Context, label string) (*models.PasskeyStartResponse, error)
 	UserFinishPasskeyRegistration(ctx context.Context, label string, session string, credentialJSON string) (*models.SsoProfile, error)
+	UserRenamePasskey(ctx context.Context, passkeyID string, name string) (*models.SsoProfile, error)
+	UserDeletePasskey(ctx context.Context, passkeyID string) (*models.SsoProfile, error)
 	UserStartPasskeyLogin(ctx context.Context, redirectTo *string, turnstileToken *string) (*models.PasskeyStartResponse, error)
 	UserFinishPasskeyLogin(ctx context.Context, session string, credentialJSON string) (*models.PasskeyLoginResponse, error)
 	UserActive(ctx context.Context, token string) (*models.UserActiveResponse, error)
@@ -1174,6 +1188,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserConfirmTOTPSetup(childComplexity, args["code"].(string)), true
+	case "Mutation.UserDeletePasskey":
+		if e.complexity.Mutation.UserDeletePasskey == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserDeletePasskey_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserDeletePasskey(childComplexity, args["passkey_id"].(string)), true
 	case "Mutation.UserDisableTOTP":
 		if e.complexity.Mutation.UserDisableTotp == nil {
 			break
@@ -1207,6 +1232,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserFinishPasskeyRegistration(childComplexity, args["label"].(string), args["session"].(string), args["credential_json"].(string)), true
+	case "Mutation.UserGithubOAuthBindStart":
+		if e.complexity.Mutation.UserGithubOAuthBindStart == nil {
+			break
+		}
+
+		return e.complexity.Mutation.UserGithubOAuthBindStart(childComplexity), true
 	case "Mutation.UserGithubOAuthLogin":
 		if e.complexity.Mutation.UserGithubOAuthLogin == nil {
 			break
@@ -1251,6 +1282,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserRegister(childComplexity, args["account"].(string), args["password"].(string), args["display_name"].(string), args["captcha"].(string), args["turnstile_token"].(*string)), true
+	case "Mutation.UserRenamePasskey":
+		if e.complexity.Mutation.UserRenamePasskey == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserRenamePasskey_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserRenamePasskey(childComplexity, args["passkey_id"].(string), args["name"].(string)), true
 	case "Mutation.UserResendActiveEmail":
 		if e.complexity.Mutation.UserResendActiveEmail == nil {
 			break
@@ -1325,6 +1367,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.OneapiQuota.UsedQuota(childComplexity), true
+
+	case "PasskeyInfo.created_at":
+		if e.complexity.PasskeyInfo.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.PasskeyInfo.CreatedAt(childComplexity), true
+	case "PasskeyInfo.id":
+		if e.complexity.PasskeyInfo.ID == nil {
+			break
+		}
+
+		return e.complexity.PasskeyInfo.ID(childComplexity), true
+	case "PasskeyInfo.name":
+		if e.complexity.PasskeyInfo.Name == nil {
+			break
+		}
+
+		return e.complexity.PasskeyInfo.Name(childComplexity), true
 
 	case "PasskeyLoginResponse.redirect_to":
 		if e.complexity.PasskeyLoginResponse.RedirectTo == nil {
@@ -1586,6 +1647,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SsoProfile.PasskeyCount(childComplexity), true
+	case "SsoProfile.passkeys":
+		if e.complexity.SsoProfile.Passkeys == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.Passkeys(childComplexity), true
 	case "SsoProfile.password_enabled":
 		if e.complexity.SsoProfile.PasswordEnabled == nil {
 			break
@@ -1598,6 +1665,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SsoProfile.TotpEnabled(childComplexity), true
+	case "SsoProfile.uid":
+		if e.complexity.SsoProfile.UID == nil {
+			break
+		}
+
+		return e.complexity.SsoProfile.UID(childComplexity), true
 	case "SsoProfile.user":
 		if e.complexity.SsoProfile.User == nil {
 			break
@@ -2293,6 +2366,17 @@ func (ec *executionContext) field_Mutation_UserConfirmTOTPSetup_args(ctx context
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_UserDeletePasskey_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "passkey_id", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["passkey_id"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_UserDisableTOTP_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -2427,6 +2511,22 @@ func (ec *executionContext) field_Mutation_UserRegister_args(ctx context.Context
 		return nil, err
 	}
 	args["turnstile_token"] = arg4
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserRenamePasskey_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "passkey_id", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["passkey_id"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "name", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg1
 	return args, nil
 }
 
@@ -5885,6 +5985,39 @@ func (ec *executionContext) fieldContext_Mutation_UserGithubOAuthStart(ctx conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_UserGithubOAuthBindStart(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserGithubOAuthBindStart,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Mutation().UserGithubOAuthBindStart(ctx)
+		},
+		nil,
+		ec.marshalNGithubOAuthStartResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthStartResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserGithubOAuthBindStart(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "authorize_url":
+				return ec.fieldContext_GithubOAuthStartResponse_authorize_url(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type GithubOAuthStartResponse", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_UserGithubOAuthLogin(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6008,6 +6141,8 @@ func (ec *executionContext) fieldContext_Mutation_UserFinishPasskeyRegistration(
 			switch field.Name {
 			case "user":
 				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "uid":
+				return ec.fieldContext_SsoProfile_uid(ctx, field)
 			case "account":
 				return ec.fieldContext_SsoProfile_account(ctx, field)
 			case "auth_methods":
@@ -6018,6 +6153,8 @@ func (ec *executionContext) fieldContext_Mutation_UserFinishPasskeyRegistration(
 				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
 			case "passkey_count":
 				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "passkeys":
+				return ec.fieldContext_SsoProfile_passkeys(ctx, field)
 			case "github_bound":
 				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
 			}
@@ -6032,6 +6169,128 @@ func (ec *executionContext) fieldContext_Mutation_UserFinishPasskeyRegistration(
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_UserFinishPasskeyRegistration_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserRenamePasskey(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserRenamePasskey,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserRenamePasskey(ctx, fc.Args["passkey_id"].(string), fc.Args["name"].(string))
+		},
+		nil,
+		ec.marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserRenamePasskey(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "uid":
+				return ec.fieldContext_SsoProfile_uid(ctx, field)
+			case "account":
+				return ec.fieldContext_SsoProfile_account(ctx, field)
+			case "auth_methods":
+				return ec.fieldContext_SsoProfile_auth_methods(ctx, field)
+			case "password_enabled":
+				return ec.fieldContext_SsoProfile_password_enabled(ctx, field)
+			case "totp_enabled":
+				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
+			case "passkey_count":
+				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "passkeys":
+				return ec.fieldContext_SsoProfile_passkeys(ctx, field)
+			case "github_bound":
+				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SsoProfile", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserRenamePasskey_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserDeletePasskey(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserDeletePasskey,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserDeletePasskey(ctx, fc.Args["passkey_id"].(string))
+		},
+		nil,
+		ec.marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserDeletePasskey(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "uid":
+				return ec.fieldContext_SsoProfile_uid(ctx, field)
+			case "account":
+				return ec.fieldContext_SsoProfile_account(ctx, field)
+			case "auth_methods":
+				return ec.fieldContext_SsoProfile_auth_methods(ctx, field)
+			case "password_enabled":
+				return ec.fieldContext_SsoProfile_password_enabled(ctx, field)
+			case "totp_enabled":
+				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
+			case "passkey_count":
+				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "passkeys":
+				return ec.fieldContext_SsoProfile_passkeys(ctx, field)
+			case "github_bound":
+				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SsoProfile", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserDeletePasskey_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -6253,6 +6512,8 @@ func (ec *executionContext) fieldContext_Mutation_UserChangePassword(ctx context
 			switch field.Name {
 			case "user":
 				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "uid":
+				return ec.fieldContext_SsoProfile_uid(ctx, field)
 			case "account":
 				return ec.fieldContext_SsoProfile_account(ctx, field)
 			case "auth_methods":
@@ -6263,6 +6524,8 @@ func (ec *executionContext) fieldContext_Mutation_UserChangePassword(ctx context
 				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
 			case "passkey_count":
 				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "passkeys":
+				return ec.fieldContext_SsoProfile_passkeys(ctx, field)
 			case "github_bound":
 				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
 			}
@@ -6345,6 +6608,8 @@ func (ec *executionContext) fieldContext_Mutation_UserConfirmTOTPSetup(ctx conte
 			switch field.Name {
 			case "user":
 				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "uid":
+				return ec.fieldContext_SsoProfile_uid(ctx, field)
 			case "account":
 				return ec.fieldContext_SsoProfile_account(ctx, field)
 			case "auth_methods":
@@ -6355,6 +6620,8 @@ func (ec *executionContext) fieldContext_Mutation_UserConfirmTOTPSetup(ctx conte
 				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
 			case "passkey_count":
 				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "passkeys":
+				return ec.fieldContext_SsoProfile_passkeys(ctx, field)
 			case "github_bound":
 				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
 			}
@@ -6402,6 +6669,8 @@ func (ec *executionContext) fieldContext_Mutation_UserDisableTOTP(ctx context.Co
 			switch field.Name {
 			case "user":
 				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "uid":
+				return ec.fieldContext_SsoProfile_uid(ctx, field)
 			case "account":
 				return ec.fieldContext_SsoProfile_account(ctx, field)
 			case "auth_methods":
@@ -6412,6 +6681,8 @@ func (ec *executionContext) fieldContext_Mutation_UserDisableTOTP(ctx context.Co
 				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
 			case "passkey_count":
 				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "passkeys":
+				return ec.fieldContext_SsoProfile_passkeys(ctx, field)
 			case "github_bound":
 				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
 			}
@@ -6927,6 +7198,93 @@ func (ec *executionContext) fieldContext_OneapiQuota_used_quota(_ context.Contex
 	return fc, nil
 }
 
+func (ec *executionContext) _PasskeyInfo_id(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PasskeyInfo_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PasskeyInfo_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PasskeyInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PasskeyInfo_name(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PasskeyInfo_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PasskeyInfo_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PasskeyInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PasskeyInfo_created_at(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PasskeyInfo_created_at,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PasskeyInfo_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PasskeyInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Date does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _PasskeyLoginResponse_user(ctx context.Context, field graphql.CollectedField, obj *models.PasskeyLoginResponse) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -7197,6 +7555,8 @@ func (ec *executionContext) fieldContext_Query_UserProfile(_ context.Context, fi
 			switch field.Name {
 			case "user":
 				return ec.fieldContext_SsoProfile_user(ctx, field)
+			case "uid":
+				return ec.fieldContext_SsoProfile_uid(ctx, field)
 			case "account":
 				return ec.fieldContext_SsoProfile_account(ctx, field)
 			case "auth_methods":
@@ -7207,6 +7567,8 @@ func (ec *executionContext) fieldContext_Query_UserProfile(_ context.Context, fi
 				return ec.fieldContext_SsoProfile_totp_enabled(ctx, field)
 			case "passkey_count":
 				return ec.fieldContext_SsoProfile_passkey_count(ctx, field)
+			case "passkeys":
+				return ec.fieldContext_SsoProfile_passkeys(ctx, field)
 			case "github_bound":
 				return ec.fieldContext_SsoProfile_github_bound(ctx, field)
 			}
@@ -8303,6 +8665,35 @@ func (ec *executionContext) fieldContext_SsoProfile_user(_ context.Context, fiel
 	return fc, nil
 }
 
+func (ec *executionContext) _SsoProfile_uid(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_uid,
+		func(ctx context.Context) (any, error) {
+			return obj.UID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_uid(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SsoProfile_account(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -8443,6 +8834,43 @@ func (ec *executionContext) fieldContext_SsoProfile_passkey_count(_ context.Cont
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SsoProfile_passkeys(ctx context.Context, field graphql.CollectedField, obj *models.SsoProfile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SsoProfile_passkeys,
+		func(ctx context.Context) (any, error) {
+			return obj.Passkeys, nil
+		},
+		nil,
+		ec.marshalNPasskeyInfo2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyInfoᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SsoProfile_passkeys(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SsoProfile",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_PasskeyInfo_id(ctx, field)
+			case "name":
+				return ec.fieldContext_PasskeyInfo_name(ctx, field)
+			case "created_at":
+				return ec.fieldContext_PasskeyInfo_created_at(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PasskeyInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -13196,6 +13624,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "UserGithubOAuthBindStart":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserGithubOAuthBindStart(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "UserGithubOAuthLogin":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_UserGithubOAuthLogin(ctx, field)
@@ -13213,6 +13648,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "UserFinishPasskeyRegistration":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_UserFinishPasskeyRegistration(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserRenamePasskey":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserRenamePasskey(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserDeletePasskey":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserDeletePasskey(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -13377,6 +13826,55 @@ func (ec *executionContext) _OneapiQuota(ctx context.Context, sel ast.SelectionS
 			}
 		case "used_quota":
 			out.Values[i] = ec._OneapiQuota_used_quota(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var passkeyInfoImplementors = []string{"PasskeyInfo"}
+
+func (ec *executionContext) _PasskeyInfo(ctx context.Context, sel ast.SelectionSet, obj *models.PasskeyInfo) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, passkeyInfoImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PasskeyInfo")
+		case "id":
+			out.Values[i] = ec._PasskeyInfo_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._PasskeyInfo_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._PasskeyInfo_created_at(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -14060,6 +14558,11 @@ func (ec *executionContext) _SsoProfile(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "uid":
+			out.Values[i] = ec._SsoProfile_uid(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "account":
 			out.Values[i] = ec._SsoProfile_account(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -14082,6 +14585,11 @@ func (ec *executionContext) _SsoProfile(ctx context.Context, sel ast.SelectionSe
 			}
 		case "passkey_count":
 			out.Values[i] = ec._SsoProfile_passkey_count(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "passkeys":
+			out.Values[i] = ec._SsoProfile_passkeys(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -16219,6 +16727,60 @@ func (ec *executionContext) marshalNOneapiQuota2ᚖgithubᚗcomᚋLaiskyᚋlaisk
 		return graphql.Null
 	}
 	return ec._OneapiQuota(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPasskeyInfo2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyInfoᚄ(ctx context.Context, sel ast.SelectionSet, v []*models.PasskeyInfo) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNPasskeyInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyInfo(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPasskeyInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyInfo(ctx context.Context, sel ast.SelectionSet, v *models.PasskeyInfo) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PasskeyInfo(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNPasskeyLoginResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyLoginResponse(ctx context.Context, sel ast.SelectionSet, v models.PasskeyLoginResponse) graphql.Marshaler {

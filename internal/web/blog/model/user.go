@@ -20,7 +20,9 @@ const (
 // User blog users
 type User struct {
 	// ID unique identifier for the user
-	ID primitive.ObjectID `bson:"_id,omitempty" json:"mongo_id"`
+	ID primitive.ObjectID `bson:"_id,omitempty" json:"-"`
+	// UID is the external stable user identifier exposed to clients and tokens.
+	UID string `bson:"uid,omitempty" json:"uid"`
 	// ModifiedAt last modified time
 	ModifiedAt time.Time `bson:"post_modified_gmt" json:"modified_at"`
 	// Username display name
@@ -73,9 +75,10 @@ type OIDCIdentity struct {
 	BoundAt time.Time `bson:"bound_at" json:"bound_at"`
 }
 
-// GetID get id
+// GetID returns the external stable user UID.
+// It accepts no parameters and returns the user UID string.
 func (u *User) GetID() string {
-	return u.ID.Hex()
+	return u.UID
 }
 
 // GetPayload get payload
@@ -91,10 +94,12 @@ func (u *User) IsAdmin() bool {
 	return u.Account == "ppcelery@gmail.com"
 }
 
-// NewUser create a new user
+// NewUser creates a user model with internal and external identifiers.
+// It accepts no parameters and returns a new pending user.
 func NewUser() *User {
 	return &User{
 		ID:         primitive.NewObjectID(),
+		UID:        gutils.UUID7(),
 		ModifiedAt: gutils.Clock.GetUTCNow(),
 		Status:     UserStatusPending,
 	}

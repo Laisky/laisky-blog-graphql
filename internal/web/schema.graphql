@@ -119,9 +119,12 @@ type Mutation {
   UserLogin(account: String!, password: String!, turnstile_token: String, totp_code: String): BlogLoginResponse!
   UserRegister(account: String!, password: String!, display_name: String!, captcha: String!, turnstile_token: String): UserRegisterResponse!
   UserGithubOAuthStart(redirect_to: String, turnstile_token: String): GithubOAuthStartResponse!
+  UserGithubOAuthBindStart: GithubOAuthStartResponse!
   UserGithubOAuthLogin(code: String!, state: String!): GithubOAuthLoginResponse!
   UserStartPasskeyRegistration(label: String!): PasskeyStartResponse!
   UserFinishPasskeyRegistration(label: String!, session: String!, credential_json: String!): SsoProfile!
+  UserRenamePasskey(passkey_id: String!, name: String!): SsoProfile!
+  UserDeletePasskey(passkey_id: String!): SsoProfile!
   UserStartPasskeyLogin(redirect_to: String, turnstile_token: String): PasskeyStartResponse!
   UserFinishPasskeyLogin(session: String!, credential_json: String!): PasskeyLoginResponse!
   UserActive(token: String!): UserActiveResponse!

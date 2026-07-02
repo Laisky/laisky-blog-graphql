@@ -7,6 +7,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	"github.com/Laisky/laisky-blog-graphql/library"
 )
 
 // UserProfile returns the authenticated user's SSO profile state.
@@ -104,14 +105,25 @@ func newSSOProfile(user *model.User) *models.SsoProfile {
 			break
 		}
 	}
+	passkeys := make([]*models.PasskeyInfo, 0, len(user.Passkeys))
+	for _, passkey := range user.Passkeys {
+		createdAt := library.NewDatetimeFromTime(passkey.CreatedAt)
+		passkeys = append(passkeys, &models.PasskeyInfo{
+			ID:        passkey.ID,
+			Name:      passkey.Name,
+			CreatedAt: *createdAt,
+		})
+	}
 
 	return &models.SsoProfile{
 		User:            user,
+		UID:             user.UID,
 		Account:         user.Account,
 		AuthMethods:     authMethods,
 		PasswordEnabled: user.Password != "",
 		TotpEnabled:     user.TOTPEnabled,
 		PasskeyCount:    len(user.Passkeys),
+		Passkeys:        passkeys,
 		GithubBound:     githubBound,
 	}
 }
