@@ -29,6 +29,31 @@ Durable findings from public Ora sources, checked 2026-07-03.
 - Public APIs include cached score lookup, scanning, leaderboard/discovery, feedback, badge, and check-feedback endpoints. Product feedback submission is MCP-only and uses a HATCHA agent-verification flow.
 - The public score page starts a fresh scan through an event stream at `/api/scan/stream?domain=<domain>&fresh=1` and polls deep checks at `/api/deep-checks/<domain>`. Its Access probes include conventional protected API paths such as `/api`, `/api/v1`, `/v1`, `/v2`, and `/agent/auth`, looking for JSON errors and `WWW-Authenticate: Bearer resource_metadata="..."` auth discovery.
 
+## 2026-07-03 optimization results
+
+- The agent-readiness iteration improved the fresh stream score from 29/100 grade D to 78/100 grade B.
+- Final fresh scan observed at 2026-07-03T04:02:53.694Z: Discovery 8/20, Identity 50/51, Access 104/117, Payments N/A, Experience N/A.
+- High-impact site-fixable gains came from no-JavaScript homepage content, sitemap/robots/llms surfaces, JSON-LD, OpenAPI, RFC 9727 API catalog,
+  OAuth protected-resource metadata, `WWW-Authenticate` auth discovery, MCP discovery files, server card, and WebMCP manifest links.
+- Remaining score gaps were mostly external discovery or real product work: search share-of-voice, Wikipedia/Wikidata, MCP registry listing,
+  ChatGPT app listing, third-party citations, webhooks, NLWeb `/ask`, JSON API error modeling, multi-surface MCP capabilities, resources,
+  and SDK package breadth.
+- `/.well-known/mcp` POST routing was committed to forward JSON-RPC initialize traffic to the root transport, but production continued returning
+  404 during the final polling window. The root MCP endpoint itself returned a valid initialize response.
+
+## Standards and ecosystem references checked
+
+- MCP specification and Streamable HTTP transport: https://modelcontextprotocol.io/specification/2025-11-25 and https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+- MCP tools and resources: https://modelcontextprotocol.io/specification/2025-06-18/server/tools and https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+- llms.txt: https://llmstxt.org/ and https://developer.chrome.com/docs/lighthouse/agentic-browsing/llms-txt
+- RFC 9727 API Catalog: https://datatracker.ietf.org/doc/rfc9727/
+- RFC 9728 OAuth 2.0 Protected Resource Metadata: https://datatracker.ietf.org/doc/rfc9728/
+- RFC 9421 HTTP Message Signatures: https://www.rfc-editor.org/info/rfc9421/
+- Web Bot Auth architecture draft: https://datatracker.ietf.org/doc/draft-meunier-web-bot-auth-architecture/
+- Official MCP Registry: https://registry.modelcontextprotocol.io/
+- OpenAI Apps SDK submission guidance: https://developers.openai.com/apps-sdk/deploy/submission
+- NLWeb overview: https://news.microsoft.com/source/features/company-news/introducing-nlweb-bringing-conversational-interfaces-directly-to-the-web/
+
 ## MCP unknown-tool probe behavior
 
 - Checked 2026-07-03 against the MCP 2025-06-18 tools specification and `github.com/mark3labs/mcp-go` v0.48.0.
