@@ -429,6 +429,38 @@ func TestNewAgentAPIProbeHandler(t *testing.T) {
 	})
 }
 
+func TestServeMCPTransportRootRewritesDiscoveryPath(t *testing.T) {
+	setupGinTestMode()
+	t.Parallel()
+
+	var seenMethod string
+	var seenPath string
+	var seenRequestURI string
+	var seenRawQuery string
+	transport := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenMethod = r.Method
+		seenPath = r.URL.Path
+		seenRequestURI = r.RequestURI
+		seenRawQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	router := gin.New()
+	router.Any("/.well-known/mcp", func(ctx *gin.Context) {
+		serveMCPTransportRoot(ctx, transport)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/.well-known/mcp?session=abc", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Equal(t, http.MethodPost, seenMethod)
+	require.Equal(t, "/", seenPath)
+	require.Equal(t, "/?session=abc", seenRequestURI)
+	require.Equal(t, "session=abc", seenRawQuery)
+}
+
 func TestClassifyGraphQLClientError(t *testing.T) {
 	t.Parallel()
 

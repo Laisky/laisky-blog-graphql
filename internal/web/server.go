@@ -226,7 +226,7 @@ func RunServer(addr string, resolver *Resolver) {
 					ctx.AbortWithStatus(http.StatusNotFound)
 					return
 				}
-				mcpHandler.ServeHTTP(ctx.Writer, ctx.Request)
+				serveMCPTransportRoot(ctx, mcpHandler)
 			}
 			server.Any("/.well-known/mcp", mcpDiscoveryHandler)
 
@@ -490,10 +490,6 @@ func RunServer(addr string, resolver *Resolver) {
 	if frontendSPA != nil {
 		server.NoRoute(func(ctx *gin.Context) {
 			if ctx.Request.Method != http.MethodGet && ctx.Request.Method != http.MethodHead {
-				if ctx.Request.URL != nil && ctx.Request.URL.Path == "/.well-known/mcp" {
-					ctx.Redirect(http.StatusTemporaryRedirect, "/")
-					return
-				}
 				ctx.AbortWithStatus(http.StatusNotFound)
 				return
 			}
@@ -528,6 +524,26 @@ func RunServer(addr string, resolver *Resolver) {
 
 	log.Logger.Info("listening on http", zap.String("addr", addr))
 	log.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))
+}
+
+func serveMCPTransportRoot(ctx *gin.Context, handler http.Handler) {
+	if ctx == nil || ctx.Request == nil {
+		return
+	}
+
+	req := ctx.Request.Clone(ctx.Request.Context())
+	if req.URL != nil {
+		urlCopy := *req.URL
+		urlCopy.Path = "/"
+		urlCopy.RawPath = ""
+		req.URL = &urlCopy
+		req.RequestURI = "/"
+		if req.URL.RawQuery != "" {
+			req.RequestURI += "?" + req.URL.RawQuery
+		}
+	}
+
+	handler.ServeHTTP(ctx.Writer, req)
 }
 
 func shouldServeFrontend(r *http.Request) bool {
