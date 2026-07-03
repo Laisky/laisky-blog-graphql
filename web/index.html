@@ -3,8 +3,115 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="https://s3.laisky.com/uploads/2025/12/mcp_icon.png" />
+    <link rel="canonical" href="https://mcp.laisky.com/" />
+    <link rel="alternate" type="text/markdown" href="/index.md" />
+    <link rel="alternate" type="text/plain" href="/llms.txt" />
+    <link rel="service-desc" type="application/vnd.oai.openapi+json" href="/openapi.json" />
+    <link rel="mcp" type="application/json" href="/.well-known/mcp" />
+    <link rel="ai-catalog" type="application/json" href="/.well-known/ai-catalog.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Laisky MCP is a remote Model Context Protocol server for AI agents, exposing web search, rendered web fetch, user request queues, FileIO storage, memory tools, and RAG extraction over authenticated Streamable HTTP."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Laisky MCP" />
+    <meta
+      property="og:description"
+      content="Remote MCP tools for AI agents: web search, rendered fetch, FileIO, memory, RAG extraction, and human-agent request queues."
+    />
+    <meta property="og:image" content="https://s3.laisky.com/uploads/2025/12/mcp_icon.png" />
+    <meta name="mcp-registry" content="https://mcp.laisky.com/.well-known/mcp/server-card.json" />
     <title>Laisky MCP</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Laisky MCP",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Web",
+        "url": "https://mcp.laisky.com/",
+        "image": "https://s3.laisky.com/uploads/2025/12/mcp_icon.png",
+        "description": "Laisky MCP is a remote Model Context Protocol server for AI agents, exposing web search, rendered web fetch, human request queues, FileIO storage, memory lifecycle tools, and RAG extraction over authenticated Streamable HTTP.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "description": "Free console pages and free control tools are available. Paid tools are billed per call where documented."
+        },
+        "sameAs": [
+          "https://github.com/Laisky/laisky-blog-graphql",
+          "https://wiki.laisky.com/projects/gpt/pay/"
+        ],
+        "speakable": {
+          "@type": "SpeakableSpecification",
+          "cssSelector": ["#agent-readable-summary h1", "#agent-readable-summary p"]
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Laisky",
+        "url": "https://laisky.com",
+        "logo": "https://s3.laisky.com/uploads/2025/12/mcp_icon.png",
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "contactType": "technical support",
+          "url": "https://wiki.laisky.com/projects/gpt/pay/"
+        },
+        "address": {
+          "@type": "PostalAddress",
+          "addressCountry": "US"
+        },
+        "sameAs": ["https://github.com/Laisky"]
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Laisky MCP?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Laisky MCP is a remote Model Context Protocol server that lets AI agents call web search, rendered web fetch, FileIO, memory, RAG extraction, and human request queue tools."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do agents connect?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Agents connect to https://mcp.laisky.com using MCP Streamable HTTP and send Authorization: Bearer <api key> with initialize, tools/list, and tools/call requests."
+            }
+          }
+        ]
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Laisky MCP",
+            "item": "https://mcp.laisky.com/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Agent docs",
+            "item": "https://mcp.laisky.com/llms.txt"
+          }
+        ]
+      }
+    </script>
     <script>
       (() => {
         try {
@@ -29,6 +136,20 @@
     </script>
   </head>
   <body>
+    <noscript>
+      <main id="agent-readable-summary">
+        <h1>Laisky MCP remote agent tools</h1>
+        <p>
+          Laisky MCP is an authenticated Streamable HTTP Model Context Protocol server at https://mcp.laisky.com. It gives
+          AI agents practical tools for current web search, rendered web page fetch, user request queues, FileIO storage,
+          memory lifecycle operations, RAG context extraction, tool discovery, and auditable call logs.
+        </p>
+        <p>
+          Start with /llms.txt for agent navigation, /auth.md for Bearer token setup, /.well-known/mcp for MCP discovery,
+          /.well-known/mcp/server-card.json for the server card, and /openapi.json for a machine-readable HTTP surface.
+        </p>
+      </main>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

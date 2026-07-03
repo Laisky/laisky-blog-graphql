@@ -1,0 +1,29 @@
+{
+  "name": "Laisky MCP Agent",
+  "description": "A remote MCP agent service that provides web, memory, FileIO, RAG, and human request queue tools.",
+  "url": "https://mcp.laisky.com",
+  "version": "1.0.0",
+  "provider": {
+    "name": "Laisky",
+    "url": "https://laisky.com"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "skills": [
+    {
+      "id": "remote-mcp-tools",
+      "name": "Remote MCP tools",
+      "description": "Call web_search, web_fetch, get_user_request, FileIO, memory, and RAG tools over MCP Streamable HTTP.",
+      "tags": ["mcp", "web-search", "memory", "file-io", "rag"]
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "mcp_streamable_http",
+      "url": "https://mcp.laisky.com"
+    }
+  ]
+}

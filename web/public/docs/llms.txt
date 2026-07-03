@@ -1,0 +1,8 @@
+# Laisky MCP Documentation Index
+
+- Root agent guide: `/llms.txt`
+- Full agent guide: `/llms-full.txt`
+- Authentication: `/auth.md`
+- Markdown homepage: `/index.md`
+- MCP server card: `/.well-known/mcp/server-card.json`
+- OpenAPI: `/openapi.json`

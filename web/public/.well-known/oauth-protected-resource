@@ -1,0 +1,14 @@
+{
+  "resource": "https://mcp.laisky.com",
+  "authorization_servers": ["https://mcp.laisky.com"],
+  "bearer_methods_supported": ["header"],
+  "resource_documentation": "https://mcp.laisky.com/auth.md",
+  "scopes_supported": [
+    "mcp:tools",
+    "mcp:web_search",
+    "mcp:web_fetch",
+    "mcp:file_io",
+    "mcp:memory",
+    "mcp:user_requests"
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "name": "Laisky MCP",
+  "displayName": "Laisky MCP",
+  "version": "1.0.0",
+  "description": "Remote MCP server for AI agents that need web search, rendered fetch, user request queues, FileIO storage, memory lifecycle tools, RAG extraction, and auditable call logs.",
+  "serverUrl": "https://mcp.laisky.com",
+  "transport": "streamable_http",
+  "protocolVersion": "2025-06-18",
+  "icon": "https://s3.laisky.com/uploads/2025/12/mcp_icon.png",
+  "documentationUrl": "https://mcp.laisky.com/llms.txt",
+  "authentication": {
+    "type": "bearer",
+    "authorizationUrl": "https://wiki.laisky.com/projects/gpt/pay/",
+    "instructions": "Send Authorization: Bearer <api key> on MCP initialize, tools/list, and tools/call requests."
+  },
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the public web with Google Programmable Search and return structured URL, title, snippet, and timestamp results.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string", "description": "Plain text search query." }
+        }
+      }
+    },
+    {
+      "name": "web_fetch",
+      "description": "Fetch and render a dynamic web page, optionally returning markdown suitable for agent context.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "output_markdown": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "get_user_request",
+      "description": "Retrieve the latest queued human directive for the bearer token and task_id, then mark it consumed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "string", "description": "Queue isolation key. Use graphql for this repository." }
+        }
+      }
+    },
+    {
+      "name": "file_read",
+      "description": "Read a project-scoped file from the remote FileIO workspace.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "path"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "path": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "file_write",
+      "description": "Write project-scoped content into the remote FileIO workspace for durable agent context.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "path", "content"],
+        "properties": {
+          "project": { "type": "string" },
+          "path": { "type": "string" },
+          "content": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "memory_before_turn",
+      "description": "Recall server-side memory and prepare model input before an agent turn.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "session_id", "current_input"],
+        "properties": {
+          "project": { "type": "string" },
+          "session_id": { "type": "string" },
+          "current_input": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "extract_key_info",
+      "description": "Chunk supplied materials, rank them for a query with retrieval techniques, and return the most relevant context passages.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["query", "materials"],
+        "properties": {
+          "query": { "type": "string" },
+          "materials": { "type": "string" },
+          "top_k": { "type": "integer", "minimum": 1, "maximum": 20 }
+        }
+      }
+    }
+  ]
+}

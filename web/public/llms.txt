@@ -1,0 +1,36 @@
+# Laisky MCP
+
+Laisky MCP is a remote Model Context Protocol server for AI agents. Use it when an agent needs current web search, rendered web fetch, human request queues, FileIO storage, persistent memory, RAG extraction, or MCP call auditing from a single authenticated endpoint.
+
+## When to Use This
+
+- Use `web_search` for Google Programmable Search results with URLs, titles, snippets, and timestamps.
+- Use `web_fetch` when a page needs browser rendering before extraction.
+- Use `get_user_request` to receive queued human directives for a task. For this repository, use `task_id=graphql`.
+- Use FileIO tools to store durable project-scoped context that multiple agents can share.
+- Use memory tools to prepare model input before a turn, persist outputs after a turn, run maintenance, and list memory abstracts.
+- Use `extract_key_info` for small RAG-style extraction from supplied materials.
+- Use `find_tool` or the MCP Inspector when you are unsure which tool best fits a job.
+
+## Connection
+
+- MCP endpoint: https://mcp.laisky.com
+- Transport: MCP Streamable HTTP
+- Authentication: `Authorization: Bearer <api key>`
+- Status: https://mcp.laisky.com/status
+- Inspector: https://mcp.laisky.com/debug
+
+## Agent Navigation
+
+- Full agent guide: https://mcp.laisky.com/llms-full.txt
+- Markdown homepage: https://mcp.laisky.com/index.md
+- Authentication guide: https://mcp.laisky.com/auth.md
+- OpenAPI surface: https://mcp.laisky.com/openapi.json
+- MCP discovery: https://mcp.laisky.com/.well-known/mcp
+- MCP server card: https://mcp.laisky.com/.well-known/mcp/server-card.json
+- Agent skills: https://mcp.laisky.com/.well-known/agent-skills/index.json
+- Public source repository: https://github.com/Laisky/laisky-blog-graphql
+
+## Constraints
+
+All tool calls require a valid bearer token. Do not place API keys in URLs, logs, screenshots, or shared documents. Prefer the browser console only for human operation; agents should use the MCP endpoint and the documented JSON-RPC methods.

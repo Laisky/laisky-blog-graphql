@@ -1,0 +1,18 @@
+{
+  "version": "2026-07-03",
+  "apis": [
+    {
+      "api": "Laisky MCP Streamable HTTP",
+      "description": "Model Context Protocol JSON-RPC endpoint for remote agent tools.",
+      "base_url": "https://mcp.laisky.com",
+      "openapi": "https://mcp.laisky.com/openapi.json",
+      "auth": "https://mcp.laisky.com/auth.md"
+    },
+    {
+      "api": "Laisky GraphQL",
+      "description": "GraphQL API mounted under /query and /query/v2.",
+      "base_url": "https://mcp.laisky.com/query",
+      "docs": "https://mcp.laisky.com/ui"
+    }
+  ]
+}

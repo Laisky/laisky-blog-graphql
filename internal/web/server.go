@@ -528,7 +528,10 @@ func shouldServeFrontend(r *http.Request) bool {
 		return true
 	}
 	accept = strings.ToLower(accept)
-	if strings.Contains(accept, "text/html") || strings.Contains(accept, "application/xhtml+xml") || strings.Contains(accept, "*/*") {
+	if strings.Contains(accept, "text/html") ||
+		strings.Contains(accept, "text/markdown") ||
+		strings.Contains(accept, "application/xhtml+xml") ||
+		strings.Contains(accept, "*/*") {
 		return true
 	}
 
@@ -760,9 +763,9 @@ func allowUnprefixedAsset(path string) bool {
 	}
 
 	switch lower {
-	case "/vite.svg", "/favicon.ico", "/robots.txt", "/manifest.json":
+	case "/vite.svg", "/favicon.ico", "/robots.txt", "/manifest.json", "/llms.txt", "/llms-full.txt", "/index.md", "/auth.md", "/agents.md", "/pricing.md", "/openapi.json", "/sitemap.xml", "/schemamap.xml":
 		return true
 	default:
-		return false
+		return strings.HasPrefix(lower, "/.well-known/") || strings.HasPrefix(lower, "/api/") || strings.HasPrefix(lower, "/docs/")
 	}
 }

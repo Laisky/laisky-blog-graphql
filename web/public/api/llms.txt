@@ -1,0 +1,8 @@
+# Laisky MCP API Notes
+
+- MCP endpoint: `POST https://mcp.laisky.com`
+- GraphQL endpoint: `POST https://mcp.laisky.com/query`
+- OpenAPI description: `https://mcp.laisky.com/openapi.json`
+- Auth guide: `https://mcp.laisky.com/auth.md`
+
+Agents should prefer MCP tools for operational work and GraphQL only when interacting with the broader laisky-blog backend API.

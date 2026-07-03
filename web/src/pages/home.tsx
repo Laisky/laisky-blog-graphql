@@ -1,4 +1,19 @@
-import { Activity, ClipboardList, Database, ExternalLink, FolderOpen, Globe, Key, MessageSquare, Search, Server } from 'lucide-react';
+import {
+  Activity,
+  ClipboardList,
+  Code2,
+  Database,
+  ExternalLink,
+  FileText,
+  FolderOpen,
+  Globe,
+  Key,
+  MessageSquare,
+  Search,
+  Server,
+  ShieldCheck,
+  Terminal,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +28,7 @@ import { cn } from '@/lib/utils';
  */
 export function HomePage() {
   const toolsConfig = useToolsConfig();
+  const endpoint = typeof window === 'undefined' ? 'https://mcp.laisky.com' : window.location.origin;
 
   const toolCards = [
     {
@@ -142,20 +158,78 @@ export function HomePage() {
   ];
 
   return (
-    <div className="space-y-10">
-      <section className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">MCP Workspace</h1>
-        <p className="max-w-2xl text-muted-foreground">
-          Manage and test your AI agent tools.{' '}
-          <Button variant="link" asChild className="h-auto p-0 text-base">
-            <a href="https://wiki.laisky.com/projects/gpt/pay/" target="_blank" rel="noopener noreferrer">
-              <Key className="mr-1 h-3.5 w-3.5" />
-              Get an API key
-              <ExternalLink className="ml-1 h-3 w-3" />
-            </a>
-          </Button>{' '}
-          to enable all tools.
-        </p>
+    <div className="space-y-12">
+      <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-start">
+        <div className="space-y-5">
+          <Badge variant="outline" className="w-fit border-primary/30 bg-primary/5 text-primary">
+            Streamable HTTP MCP server
+          </Badge>
+          <div className="space-y-3">
+            <h1 className="max-w-3xl text-3xl font-bold tracking-tight text-foreground sm:text-5xl">Remote MCP tools for AI agents</h1>
+            <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
+              Laisky MCP exposes web search, rendered fetch, FileIO, memory, RAG extraction, human request queues, and call logs through one
+              authenticated endpoint.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild>
+              <a href="/debug" target="_blank" rel="noopener noreferrer">
+                <Activity className="mr-2 h-4 w-4" />
+                Open Inspector
+              </a>
+            </Button>
+            <Button variant="outline" asChild>
+              <a href="/llms.txt">
+                <FileText className="mr-2 h-4 w-4" />
+                Agent Guide
+              </a>
+            </Button>
+            <Button variant="ghost" asChild>
+              <a href="https://wiki.laisky.com/projects/gpt/pay/" target="_blank" rel="noopener noreferrer">
+                <Key className="mr-2 h-4 w-4" />
+                Get API Key
+                <ExternalLink className="ml-2 h-3.5 w-3.5" />
+              </a>
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Terminal className="h-4 w-4 text-primary" />
+            Agent connection
+          </div>
+          <dl className="space-y-3 text-sm">
+            <div>
+              <dt className="text-xs uppercase tracking-widest text-muted-foreground">Endpoint</dt>
+              <dd className="mt-1 break-all font-mono text-foreground">{endpoint}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-widest text-muted-foreground">Transport</dt>
+              <dd className="mt-1 text-foreground">MCP Streamable HTTP</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-widest text-muted-foreground">Auth</dt>
+              <dd className="mt-1 flex items-center gap-2 text-foreground">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                Bearer token header
+              </dd>
+            </div>
+          </dl>
+          <pre className="mt-4 overflow-x-auto rounded-md bg-muted p-3 text-xs leading-5 text-foreground">
+            <code>{`Authorization: Bearer <api key>
+Accept: application/json, text/event-stream`}</code>
+          </pre>
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <ResourceLink href="/.well-known/mcp" title="MCP discovery" description="Transport URL, auth guide, server card, and OpenAPI links." />
+        <ResourceLink href="/openapi.json" title="OpenAPI" description="Machine-readable HTTP and GraphQL entry points." />
+        <ResourceLink href="/auth.md" title="auth.md" description="Bearer token workflow and agent credential handling." />
+        <ResourceLink href="/.well-known/mcp/server-card.json" title="Server card" description="Branded tool preview for registries and agents." />
+        <ResourceLink href="/index.md" title="Markdown homepage" description="Canonical low-noise root page for crawlers." />
+        <ResourceLink href="/.well-known/agent-skills/index.json" title="Agent skills" description="Capability index for agent skill discovery." />
       </section>
 
       {toolCards.length > 0 && (
@@ -169,6 +243,21 @@ export function HomePage() {
         </section>
       )}
     </div>
+  );
+}
+
+function ResourceLink({ href, title, description }: { href: string; title: string; description: string }) {
+  return (
+    <a href={href} className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/30">
+      <div className="flex items-start gap-3">
+        <Code2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+          <span className="mt-2 block truncate font-mono text-xs text-primary group-hover:underline">{href}</span>
+        </div>
+      </div>
+    </a>
   );
 }
 

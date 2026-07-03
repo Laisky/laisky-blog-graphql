@@ -1,0 +1,19 @@
+{
+  "schema_version": "2026-07-03",
+  "name": "Laisky MCP",
+  "description": "Remote Model Context Protocol server for AI agents, with web search, rendered fetch, user request queues, FileIO storage, memory lifecycle tools, RAG extraction, and call logs.",
+  "transport": {
+    "type": "streamable_http",
+    "url": "https://mcp.laisky.com",
+    "protocol_version": "2025-06-18"
+  },
+  "authentication": {
+    "type": "bearer",
+    "authorization_header": "Authorization: Bearer <api key>",
+    "docs": "https://mcp.laisky.com/auth.md",
+    "protected_resource_metadata": "https://mcp.laisky.com/.well-known/oauth-protected-resource"
+  },
+  "server_card": "https://mcp.laisky.com/.well-known/mcp/server-card.json",
+  "openapi": "https://mcp.laisky.com/openapi.json",
+  "llms_txt": "https://mcp.laisky.com/llms.txt"
+}

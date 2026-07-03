@@ -1,0 +1,382 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Laisky MCP HTTP Surface",
+    "version": "1.0.0",
+    "description": "Machine-readable description of the Laisky MCP Streamable HTTP endpoint, public discovery documents, status endpoint, and related GraphQL entry point."
+  },
+  "servers": [
+    {
+      "url": "https://mcp.laisky.com",
+      "description": "Production MCP domain"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/": {
+      "post": {
+        "operationId": "callMcpJsonRpc",
+        "summary": "Call the MCP Streamable HTTP JSON-RPC endpoint",
+        "description": "Send MCP initialize, initialized, tools/list, and tools/call JSON-RPC messages over Streamable HTTP.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonRpcRequest"
+              },
+              "examples": {
+                "initialize": {
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                      "protocolVersion": "2025-06-18",
+                      "capabilities": {},
+                      "clientInfo": {
+                        "name": "agent-client",
+                        "version": "1.0.0"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MCP JSON-RPC response or Streamable HTTP event stream.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonRpcResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "get": {
+        "operationId": "getMcpConsole",
+        "summary": "Open the Laisky MCP web console",
+        "description": "Returns the browser console for humans. Agents should prefer /llms.txt, /index.md, and the MCP JSON-RPC endpoint.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "HTML console or markdown homepage when requested with Accept: text/markdown.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "getStatus",
+        "summary": "Check MCP service status",
+        "description": "Returns a small status response for availability checks.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is available.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/llms.txt": {
+      "get": {
+        "operationId": "getLlmsTxt",
+        "summary": "Fetch the agent navigation index",
+        "description": "Returns the short markdown/plain-text index that tells AI agents when and how to use Laisky MCP.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Agent navigation document.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth.md": {
+      "get": {
+        "operationId": "getAuthMarkdown",
+        "summary": "Fetch agent authentication instructions",
+        "description": "Markdown walkthrough for bearer-token authentication and credential handling.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Authentication guide.",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/mcp": {
+      "get": {
+        "operationId": "getMcpDiscovery",
+        "summary": "Fetch MCP discovery metadata",
+        "description": "Returns a JSON discovery document pointing to the MCP transport, auth documentation, server card, and OpenAPI description.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "MCP discovery metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpDiscovery"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/mcp/server-card.json": {
+      "get": {
+        "operationId": "getMcpServerCard",
+        "summary": "Fetch MCP server card",
+        "description": "Returns a branded preview of the MCP server and representative tools.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "MCP server card.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/query": {
+      "post": {
+        "operationId": "callGraphql",
+        "summary": "Call the GraphQL API",
+        "description": "GraphQL endpoint for the broader laisky-blog backend. Use typed GraphQL operations and bearer authentication where required.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": { "type": "string" },
+                  "variables": { "type": "object", "additionalProperties": true },
+                  "operationName": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "GraphQL response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "object", "additionalProperties": true },
+                    "errors": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/GraphqlError" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Bearer API key from the Laisky account/billing page."
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid bearer token.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string",
+              "example": "Bearer resource_metadata=\"https://mcp.laisky.com/.well-known/oauth-protected-resource\""
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate or billing limit reached.",
+        "headers": {
+          "Retry-After": { "schema": { "type": "integer" } },
+          "RateLimit-Limit": { "schema": { "type": "integer" } },
+          "RateLimit-Remaining": { "schema": { "type": "integer" } },
+          "RateLimit-Reset": { "schema": { "type": "integer" } }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "JsonRpcRequest": {
+        "type": "object",
+        "required": ["jsonrpc", "method"],
+        "properties": {
+          "jsonrpc": { "type": "string", "const": "2.0" },
+          "id": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "integer" },
+              { "type": "null" }
+            ]
+          },
+          "method": {
+            "type": "string",
+            "examples": ["initialize", "tools/list", "tools/call"]
+          },
+          "params": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "JsonRpcResponse": {
+        "type": "object",
+        "required": ["jsonrpc"],
+        "properties": {
+          "jsonrpc": { "type": "string", "const": "2.0" },
+          "id": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "integer" },
+              { "type": "null" }
+            ]
+          },
+          "result": { "type": "object", "additionalProperties": true },
+          "error": { "$ref": "#/components/schemas/JsonRpcError" }
+        }
+      },
+      "JsonRpcError": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "integer" },
+          "message": { "type": "string" },
+          "data": {}
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "resolution": { "type": "string" }
+            }
+          }
+        }
+      },
+      "GraphqlError": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string" },
+          "path": { "type": "array", "items": {} },
+          "extensions": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "McpDiscovery": {
+        "type": "object",
+        "required": ["name", "transport", "server_card"],
+        "properties": {
+          "schema_version": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "transport": {
+            "type": "object",
+            "required": ["type", "url"],
+            "properties": {
+              "type": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "protocol_version": { "type": "string" }
+            }
+          },
+          "authentication": { "type": "object", "additionalProperties": true },
+          "server_card": { "type": "string", "format": "uri" },
+          "openapi": { "type": "string", "format": "uri" },
+          "llms_txt": { "type": "string", "format": "uri" }
+        }
+      }
+    }
+  }
+}

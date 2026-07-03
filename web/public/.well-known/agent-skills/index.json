@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "version": "0.2.0",
+  "skills": [
+    {
+      "name": "Laisky MCP Remote Tools",
+      "description": "Use the remote Laisky MCP server for web search, rendered fetch, FileIO, memory, RAG extraction, and human request queues.",
+      "type": "skill-md",
+      "url": "https://mcp.laisky.com/.well-known/agent-skills/laisky-mcp.md",
+      "digest": "sha256:3dd056d020ca256665691e435ecc864f36d38e17f45d225930764a94f29ddc0a"
+    }
+  ]
+}

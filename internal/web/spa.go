@@ -84,6 +84,9 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	requestPath := h.normalizeRequestPath(r.URL.Path)
 	if requestPath == "" || requestPath == "/" {
+		if prefersMarkdown(r) && h.serveMarkdownFile(w, r, "index.md") {
+			return
+		}
 		h.serveIndex(w, r)
 		return
 	}
@@ -101,9 +104,16 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if clean == ".well-known/mcp" && h.serveJSONFile(w, r, filepath.Join(".well-known", "mcp.json")) {
+		return
+	}
+
 	fsPath := filepath.Join(h.root, clean) //nolint:gosec // G703: path traversal prevented by filepath.Clean and ".." check above
 	info, err := os.Stat(fsPath)
 	if err == nil && !info.IsDir() {
+		if strings.HasSuffix(clean, ".md") {
+			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		}
 		http.ServeFile(w, r, fsPath)
 		return
 	}
@@ -120,6 +130,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *spaHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
+	setAgentDiscoveryHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
@@ -129,6 +140,50 @@ func (h *spaHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(h.index); err != nil {
 		h.logger.Warn("write frontend index", zap.Error(err))
 	}
+}
+
+func (h *spaHandler) serveMarkdownFile(w http.ResponseWriter, r *http.Request, clean string) bool {
+	fsPath := filepath.Join(h.root, clean) //nolint:gosec // G703: clean is a fixed internal asset name
+	info, err := os.Stat(fsPath)
+	if err != nil || info.IsDir() {
+		return false
+	}
+
+	setAgentDiscoveryHeaders(w)
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Add("Vary", "Accept")
+	http.ServeFile(w, r, fsPath)
+	return true
+}
+
+func (h *spaHandler) serveJSONFile(w http.ResponseWriter, r *http.Request, clean string) bool {
+	fsPath := filepath.Join(h.root, clean) //nolint:gosec // G703: clean is a fixed internal asset name
+	info, err := os.Stat(fsPath)
+	if err != nil || info.IsDir() {
+		return false
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	http.ServeFile(w, r, fsPath)
+	return true
+}
+
+func prefersMarkdown(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+
+	accept := strings.ToLower(r.Header.Get("Accept"))
+	return strings.Contains(accept, "text/markdown")
+}
+
+func setAgentDiscoveryHeaders(w http.ResponseWriter) {
+	w.Header().Add("Link", `</sitemap.xml>; rel="sitemap"; type="application/xml"`)
+	w.Header().Add("Link", `</index.md>; rel="alternate"; type="text/markdown"`)
+	w.Header().Add("Link", `</llms.txt>; rel="alternate"; type="text/plain"`)
+	w.Header().Add("Link", `</openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"`)
+	w.Header().Add("Link", `</.well-known/api-catalog>; rel="service-desc"; type="application/json"`)
+	w.Header().Add("Link", `</.well-known/mcp>; rel="mcp"; type="application/json"`)
 }
 
 func locateFrontendDist(logger logSDK.Logger) string {

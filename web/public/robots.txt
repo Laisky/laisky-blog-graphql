@@ -1,0 +1,32 @@
+# Purpose-based crawl permissions for Laisky MCP.
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ora-agent
+Allow: /
+
+User-agent: DeepSeekBot
+Allow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: ByteSpider
+Disallow: /
+
+User-agent: *
+Allow: /
+
+Sitemap: https://mcp.laisky.com/sitemap.xml
+Schemamap: https://mcp.laisky.com/schemamap.xml

@@ -1,0 +1,86 @@
+# Laisky MCP Full Agent Guide
+
+## Product Overview
+
+Laisky MCP is the remote Model Context Protocol surface for the laisky-blog GraphQL backend. It is designed for AI agents that need a hosted tool server instead of local browser scripts or one-off HTTP utilities. The production endpoint is `https://mcp.laisky.com` and the transport is MCP Streamable HTTP.
+
+The server exposes tools only when their backend dependencies are configured. The production runtime currently advertises web search, rendered web fetch, get user request, extract key info, FileIO, memory, call logs, and the embedded MCP Inspector console.
+
+## Core Capabilities
+
+### Discovery and Debugging
+
+- `find_tool`: search the server's own tool catalog by name or natural-language capability.
+- MCP Inspector: open `/debug` to inspect initialize responses, tool schemas, JSON-RPC traffic, and auth headers.
+- Call logs: open `/tools/call_log` to audit previous tool calls by time, tool, user prefix, cost, duration, status, and parameters.
+
+### Web Context
+
+- `web_search`: accepts `{ "query": "..." }` and returns structured web search results.
+- `web_fetch`: accepts `{ "url": "https://example.com", "output_markdown": true }` and returns rendered page content.
+
+### Human-Agent Coordination
+
+- `get_user_request`: accepts `{ "task_id": "graphql" }` for this repository and returns the latest queued human directive or an empty status.
+- The web console at `/tools/get_user_requests` lets a human queue, review, hold, and delete directives.
+
+### FileIO
+
+FileIO tools provide a remote project-scoped filesystem for durable agent context:
+
+- `file_stat`
+- `file_read`
+- `file_write`
+- `file_delete`
+- `file_rename`
+- `file_list`
+- `file_search`
+
+Use `project=graphql` for this repository. File paths are logical workspace paths inside the MCP storage service, not arbitrary host filesystem paths.
+
+### Memory
+
+Memory tools are built on top of FileIO and provide turn lifecycle operations:
+
+- `memory_before_turn`
+- `memory_after_turn`
+- `memory_run_maintenance`
+- `memory_list_dir_with_abstract`
+
+Use memory when the same task spans turns or when multiple agents need concise durable context. Keep memory content abstract, current, and free of secrets.
+
+### RAG Extraction
+
+`extract_key_info` accepts a query and supplied materials, chunks the materials, computes embeddings, stores task-local retrieval data, and returns the most relevant passages.
+
+## Authentication
+
+All MCP calls require `Authorization: Bearer <api key>`. A token may optionally include an identity prefix before `@`, such as `user:agent@sk-example`, to bind user and AI identities. See `/auth.md` for the complete agent walkthrough.
+
+## Example Initialize Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-06-18",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "agent-client",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+Send it as `POST https://mcp.laisky.com` with `Content-Type: application/json`, `Accept: application/json, text/event-stream`, and the bearer token.
+
+## Error Handling
+
+MCP protocol errors are JSON-RPC errors with a code and message. Tool-level recoverable failures return MCP tool errors rather than crashing the transport. Common causes are missing bearer tokens, billing refusal, unavailable backend dependencies, invalid tool arguments, or expired human request waits.
+
+## Rate and Cost Notes
+
+Some tools are free. `web_search` and `web_fetch` are billed per call where configured. Agents should cache durable results in FileIO or memory when appropriate and should avoid repeated browser-rendered fetches of the same URL.

@@ -1,0 +1,25 @@
+{
+  "version": "2026-07-03",
+  "name": "Laisky MCP Agent Catalog",
+  "description": "Machine-readable catalog for the Laisky MCP remote agent tools.",
+  "homepage": "https://mcp.laisky.com/",
+  "entries": [
+    {
+      "type": "mcp_server",
+      "name": "Laisky MCP",
+      "url": "https://mcp.laisky.com",
+      "discovery": "https://mcp.laisky.com/.well-known/mcp",
+      "server_card": "https://mcp.laisky.com/.well-known/mcp/server-card.json"
+    },
+    {
+      "type": "openapi",
+      "name": "Laisky MCP HTTP surface",
+      "url": "https://mcp.laisky.com/openapi.json"
+    },
+    {
+      "type": "llms_txt",
+      "name": "Laisky MCP agent guide",
+      "url": "https://mcp.laisky.com/llms.txt"
+    }
+  ]
+}

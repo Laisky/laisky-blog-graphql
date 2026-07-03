@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://mcp.laisky.com/</loc>
+    <lastmod>2026-07-03</lastmod>
+  </url>
+  <url>
+    <loc>https://mcp.laisky.com/llms.txt</loc>
+    <lastmod>2026-07-03</lastmod>
+  </url>
+  <url>
+    <loc>https://mcp.laisky.com/llms-full.txt</loc>
+    <lastmod>2026-07-03</lastmod>
+  </url>
+  <url>
+    <loc>https://mcp.laisky.com/auth.md</loc>
+    <lastmod>2026-07-03</lastmod>
+  </url>
+  <url>
+    <loc>https://mcp.laisky.com/index.md</loc>
+    <lastmod>2026-07-03</lastmod>
+  </url>
+  <url>
+    <loc>https://mcp.laisky.com/openapi.json</loc>
+    <lastmod>2026-07-03</lastmod>
+  </url>
+  <url>
+    <loc>https://mcp.laisky.com/.well-known/mcp/server-card.json</loc>
+    <lastmod>2026-07-03</lastmod>
+  </url>
+</urlset>

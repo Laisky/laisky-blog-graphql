@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemamap xmlns="https://github.com/microsoft/NLWeb/schemamap">
+  <url>
+    <loc>https://mcp.laisky.com/</loc>
+    <schema>SoftwareApplication</schema>
+  </url>
+  <url>
+    <loc>https://mcp.laisky.com/llms.txt</loc>
+    <schema>TechArticle</schema>
+  </url>
+  <url>
+    <loc>https://mcp.laisky.com/openapi.json</loc>
+    <schema>SoftwareSourceCode</schema>
+  </url>
+</schemamap>

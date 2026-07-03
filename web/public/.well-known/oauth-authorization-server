@@ -1,0 +1,31 @@
+{
+  "issuer": "https://mcp.laisky.com",
+  "authorization_endpoint": "https://wiki.laisky.com/projects/gpt/pay/",
+  "token_endpoint": "https://mcp.laisky.com/sso/token",
+  "registration_endpoint": "https://wiki.laisky.com/projects/gpt/pay/",
+  "response_types_supported": ["token"],
+  "grant_types_supported": ["client_credentials"],
+  "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+  "code_challenge_methods_supported": ["S256"],
+  "scopes_supported": [
+    "mcp:tools",
+    "mcp:web_search",
+    "mcp:web_fetch",
+    "mcp:file_io",
+    "mcp:memory",
+    "mcp:user_requests"
+  ],
+  "service_documentation": "https://mcp.laisky.com/auth.md",
+  "agent_auth": {
+    "skill": "https://mcp.laisky.com/auth.md",
+    "register_uri": "https://wiki.laisky.com/projects/gpt/pay/",
+    "identity_types_supported": ["anonymous", "identity_assertion"],
+    "anonymous": {
+      "credential_types_supported": ["bearer"]
+    },
+    "identity_assertion": {
+      "assertion_types_supported": ["urn:ietf:params:oauth:token-type:id-jag"],
+      "credential_types_supported": ["bearer"]
+    }
+  }
+}
