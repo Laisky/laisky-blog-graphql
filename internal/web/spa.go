@@ -84,6 +84,9 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	requestPath := h.normalizeRequestPath(r.URL.Path)
 	if requestPath == "" || requestPath == "/" {
+		if isAgentMode(r) && h.serveMarkdownFile(w, r, "index.md") {
+			return
+		}
 		if prefersMarkdown(r) && h.serveMarkdownFile(w, r, "index.md") {
 			return
 		}
@@ -104,6 +107,11 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isAgentAPIProbePath(clean) {
+		serveAgentAPIProbe(w, r)
+		return
+	}
+
 	if clean == ".well-known/mcp" && h.serveJSONFile(w, r, filepath.Join(".well-known", "mcp.json")) {
 		return
 	}
@@ -114,8 +122,8 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(clean, ".md"):
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		case shouldServeStaticJSON(clean):
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		case staticContentType(clean) != "":
+			w.Header().Set("Content-Type", staticContentType(clean))
 		}
 		http.ServeFile(w, r, fsPath)
 		return
@@ -171,16 +179,48 @@ func (h *spaHandler) serveJSONFile(w http.ResponseWriter, r *http.Request, clean
 	return true
 }
 
-func shouldServeStaticJSON(clean string) bool {
+func staticContentType(clean string) string {
 	switch clean {
-	case ".well-known/api-catalog",
-		".well-known/http-message-signatures-directory",
+	case ".well-known/api-catalog":
+		return `application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"; charset=utf-8`
+	case ".well-known/http-message-signatures-directory",
 		".well-known/oauth-authorization-server",
 		".well-known/oauth-protected-resource":
+		return "application/json; charset=utf-8"
+	default:
+		return ""
+	}
+}
+
+func isAgentMode(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+
+	return strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "agent")
+}
+
+func isAgentAPIProbePath(clean string) bool {
+	switch clean {
+	case "api", "api/v1", "v1", "v2", "agent/auth":
 		return true
 	default:
 		return false
 	}
+}
+
+func serveAgentAPIProbe(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Allow", "GET, HEAD, OPTIONS, POST")
+	w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://mcp.laisky.com/.well-known/oauth-protected-resource"`)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	w.WriteHeader(http.StatusUnauthorized)
+	_, _ = w.Write([]byte(`{"error":"authentication_required","error_description":"Use a Laisky MCP API key in the Authorization header.","resource_metadata":"https://mcp.laisky.com/.well-known/oauth-protected-resource"}`))
 }
 
 func prefersMarkdown(r *http.Request) bool {
