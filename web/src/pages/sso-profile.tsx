@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Github, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -436,13 +437,10 @@ export function SsoProfilePage({ githubOAuthEnabled = false, ssoJwt = null }: Ss
           </Link>
           <div className="flex items-center gap-2">
             {token && (
-              <>
-                <SsoTokenDetailsDialog ssoJwt={ssoJwt} currentToken={token} />
-                <Button type="button" variant="outline" size="sm" className="gap-2" onClick={handleSignOut}>
-                  <LogOut className="h-4 w-4" />
-                  Sign out
-                </Button>
-              </>
+              <Button type="button" variant="outline" size="sm" className="gap-2" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </Button>
             )}
             <ThemeToggle />
           </div>
@@ -489,6 +487,7 @@ export function SsoProfilePage({ githubOAuthEnabled = false, ssoJwt = null }: Ss
                     <ProfileRow label="Methods" value={authMethods} />
                     <ProfileRow label="Passkeys" value={String(profile.passkey_count)} />
                     <ProfileRow label="GitHub OIDC" value={profile.github_bound ? 'Bound' : 'Not bound'} />
+                    <SsoTokenDetailsDialog ssoJwt={ssoJwt} currentToken={token} />
                     {githubOAuthEnabled && !profile.github_bound && (
                       <Button type="button" variant="outline" className="w-full gap-2" disabled={isGithubBinding} onClick={() => void handleBindGithub()}>
                         <Github className="h-4 w-4" />
@@ -648,9 +647,22 @@ export function SsoProfilePage({ githubOAuthEnabled = false, ssoJwt = null }: Ss
                     </Button>
                     {totpSetup && (
                       <form className="space-y-4" onSubmit={handleConfirmTotp}>
-                        <div className="rounded-md border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">
-                          <div className="break-all">{totpSetup.secret}</div>
-                          <div className="mt-2 break-all">{totpSetup.provisioning_uri}</div>
+                        <div className="grid gap-4 rounded-md border border-border bg-muted p-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                          <div className="flex justify-center rounded-md bg-white p-3">
+                            <QRCodeSVG
+                              value={totpSetup.provisioning_uri}
+                              size={156}
+                              level="M"
+                              marginSize={2}
+                              title="TOTP setup QR code"
+                              role="img"
+                              aria-label="TOTP setup QR code"
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-2 font-mono text-xs text-muted-foreground">
+                            <div className="break-all">{totpSetup.secret}</div>
+                            <div className="break-all">{totpSetup.provisioning_uri}</div>
+                          </div>
                         </div>
                         <Input
                           inputMode="numeric"

@@ -216,7 +216,7 @@ The login page and authenticated profile page include a `Token Details` button. 
 - PEM-encoded public key.
 - JSON schema for expected token claims.
 
-On the profile page, the same modal also shows the current user's active `sso_token`.
+On the profile page, the same modal also shows the current user's active `sso_token` and decoded header/payload JSON.
 
 ## Account and Profile Flows
 
@@ -290,10 +290,10 @@ https://mcp.laisky.com/sso/profile
 Profile supports:
 
 - Viewing the stable external UID used by clients and JWTs.
-- Viewing SSO JWT metadata, the public verification key, claims schema, and the current session token.
+- Viewing SSO JWT metadata, the public verification key, claims schema, the current session token, and decoded token JSON.
 - Password change.
 - GitHub OAuth identity binding.
-- TOTP enrollment and disable.
+- TOTP enrollment with a scannable QR code, plus manual secret/URI fallback and disable.
 - Passkey registration, rename, and delete.
 - Viewing registered passkey names, creation times, and shortened credential IDs.
 - Viewing whether GitHub is bound and how many passkeys are registered.

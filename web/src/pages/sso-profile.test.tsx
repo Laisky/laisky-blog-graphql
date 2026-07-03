@@ -27,6 +27,12 @@ beforeEach(() => {
   vi.mocked(fetchGraphQL).mockReset();
 });
 
+// encodeJwtJSON serializes a JWT segment for tests.
+// It accepts a JSON value and returns a base64url-encoded string.
+function encodeJwtJSON(value: unknown): string {
+  return window.btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
 describe('canSubmitPasswordChange', () => {
   it('requires both passwords', () => {
     expect(canSubmitPasswordChange('', 'new-password')).toBe(false);
@@ -93,8 +99,14 @@ describe('SsoProfilePage token details', () => {
     },
   };
 
-  it('shows the current SSO token in the profile token details modal', async () => {
-    storeSsoToken('current.jwt.token');
+  it('shows the current SSO token and decoded JSON in the profile token details modal', async () => {
+    const currentToken = `${encodeJwtJSON({ alg: 'EdDSA', typ: 'JWT' })}.${encodeJwtJSON({
+      iss: 'laisky-sso',
+      uid: '0194d5f8-19f7-7f7b-a8d3-421a60f8d8ab',
+      username: 'alice@example.com',
+    })}.signature`;
+
+    storeSsoToken(currentToken);
     vi.mocked(fetchGraphQL).mockResolvedValue({
       UserProfile: {
         uid: '0194d5f8-19f7-7f7b-a8d3-421a60f8d8ab',
@@ -118,11 +130,55 @@ describe('SsoProfilePage token details', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(fetchGraphQL).toHaveBeenCalledWith('current.jwt.token', expect.any(String)));
+    await waitFor(() => expect(fetchGraphQL).toHaveBeenCalledWith(currentToken, expect.any(String)));
     fireEvent.click(screen.getByRole('button', { name: /token details/i }));
 
     expect(screen.getByText('Current Token')).toBeInTheDocument();
-    expect(screen.getByText('current.jwt.token')).toBeInTheDocument();
+    expect(screen.getByText(currentToken)).toBeInTheDocument();
+    expect(screen.getByText('Decoded Token JSON')).toBeInTheDocument();
+    expect(screen.getByText(/"alg": "EdDSA"/)).toBeInTheDocument();
+    expect(screen.getByText(/"username": "alice@example.com"/)).toBeInTheDocument();
     expect(screen.getByText('EdDSA')).toBeInTheDocument();
+  });
+});
+
+describe('SsoProfilePage TOTP setup', () => {
+  it('shows a scannable QR code after setup starts', async () => {
+    storeSsoToken('current.jwt.token');
+    vi.mocked(fetchGraphQL)
+      .mockResolvedValueOnce({
+        UserProfile: {
+          uid: '0194d5f8-19f7-7f7b-a8d3-421a60f8d8ab',
+          account: 'alice@example.com',
+          auth_methods: ['password'],
+          password_enabled: true,
+          totp_enabled: false,
+          passkey_count: 0,
+          passkeys: [],
+          github_bound: false,
+          user: {
+            id: '0194d5f8-19f7-7f7b-a8d3-421a60f8d8ab',
+            username: 'Alice',
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        UserStartTOTPSetup: {
+          secret: 'JBSWY3DPEHPK3PXP',
+          provisioning_uri: 'otpauth://totp/Laisky:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Laisky',
+        },
+      });
+
+    render(
+      <MemoryRouter initialEntries={['/sso/profile']}>
+        <SsoProfilePage />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /start totp setup/i }));
+
+    expect(await screen.findByRole('img', { name: /totp setup qr code/i })).toBeInTheDocument();
+    expect(screen.getByText('JBSWY3DPEHPK3PXP')).toBeInTheDocument();
+    expect(screen.getByText(/otpauth:\/\/totp\/Laisky/)).toBeInTheDocument();
   });
 });
