@@ -490,6 +490,10 @@ func RunServer(addr string, resolver *Resolver) {
 	if frontendSPA != nil {
 		server.NoRoute(func(ctx *gin.Context) {
 			if ctx.Request.Method != http.MethodGet && ctx.Request.Method != http.MethodHead {
+				if ctx.Request.URL != nil && ctx.Request.URL.Path == "/.well-known/mcp" {
+					ctx.Redirect(http.StatusTemporaryRedirect, "/")
+					return
+				}
 				ctx.AbortWithStatus(http.StatusNotFound)
 				return
 			}

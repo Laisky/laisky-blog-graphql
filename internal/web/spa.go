@@ -185,7 +185,8 @@ func staticContentType(clean string) string {
 		return `application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"; charset=utf-8`
 	case ".well-known/http-message-signatures-directory",
 		".well-known/oauth-authorization-server",
-		".well-known/oauth-protected-resource":
+		".well-known/oauth-protected-resource",
+		".well-known/webmcp":
 		return "application/json; charset=utf-8"
 	default:
 		return ""

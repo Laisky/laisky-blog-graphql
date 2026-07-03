@@ -1,0 +1,24 @@
+{
+  "name": "Laisky MCP WebMCP manifest",
+  "version": "2026-07-03",
+  "description": "Browser-discoverable agent manifest for the Laisky MCP console. The primary callable tool surface is the remote MCP endpoint.",
+  "endpoint": "https://mcp.laisky.com",
+  "transport": "streamable_http",
+  "tools": [
+    {
+      "name": "open_mcp_inspector",
+      "description": "Open the Laisky MCP inspector console for authenticated tool calls.",
+      "url": "https://mcp.laisky.com/debug"
+    },
+    {
+      "name": "read_agent_guide",
+      "description": "Read the Laisky MCP agent guide before connecting.",
+      "url": "https://mcp.laisky.com/llms.txt"
+    }
+  ],
+  "related": [
+    "https://mcp.laisky.com/.well-known/mcp",
+    "https://mcp.laisky.com/.well-known/mcp/server-card.json",
+    "https://mcp.laisky.com/openapi.json"
+  ]
+}

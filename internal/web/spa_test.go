@@ -81,6 +81,7 @@ func TestStaticContentType(t *testing.T) {
 	require.Equal(t, "application/json; charset=utf-8", staticContentType(".well-known/http-message-signatures-directory"))
 	require.Equal(t, "application/json; charset=utf-8", staticContentType(".well-known/oauth-authorization-server"))
 	require.Equal(t, "application/json; charset=utf-8", staticContentType(".well-known/oauth-protected-resource"))
+	require.Equal(t, "application/json; charset=utf-8", staticContentType(".well-known/webmcp"))
 	require.Empty(t, staticContentType("index.md"))
 	require.Empty(t, staticContentType(".well-known/agent-card.json"))
 }
