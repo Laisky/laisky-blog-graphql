@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -388,6 +389,43 @@ func TestNewStatusHandler(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Empty(t, w.Body.String())
 		assert.Equal(t, "GET, HEAD, OPTIONS", w.Header().Get("Allow"))
+	})
+}
+
+func TestNewAgentAPIProbeHandler(t *testing.T) {
+	setupGinTestMode()
+	t.Parallel()
+
+	router := gin.New()
+	registerAgentAPIProbeRoutes(router)
+
+	t.Run("GET returns JSON auth challenge", func(t *testing.T) {
+		t.Parallel()
+
+		req := httptest.NewRequest(http.MethodGet, "/api", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		require.Equal(t, `Bearer resource_metadata="https://mcp.laisky.com/.well-known/oauth-protected-resource"`, w.Header().Get("WWW-Authenticate"))
+		require.Equal(t, "application/json; charset=utf-8", w.Header().Get("Content-Type"))
+
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		require.Equal(t, "authentication_required", body["error"])
+		require.Equal(t, "https://mcp.laisky.com/.well-known/oauth-protected-resource", body["resource_metadata"])
+	})
+
+	t.Run("OPTIONS advertises probe methods", func(t *testing.T) {
+		t.Parallel()
+
+		req := httptest.NewRequest(http.MethodOptions, "/agent/auth", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusNoContent, w.Code)
+		require.Equal(t, "GET, HEAD, OPTIONS, POST", w.Header().Get("Allow"))
+		require.Equal(t, `Bearer resource_metadata="https://mcp.laisky.com/.well-known/oauth-protected-resource"`, w.Header().Get("WWW-Authenticate"))
 	})
 }
 

@@ -217,6 +217,18 @@ func RunServer(addr string, resolver *Resolver) {
 			for _, rootPath := range prefix.rootVariants() {
 				server.Any(rootPath, rootHandler)
 			}
+			mcpDiscoveryHandler := func(ctx *gin.Context) {
+				if ctx.Request.Method == http.MethodGet || ctx.Request.Method == http.MethodHead {
+					if frontendSPA != nil {
+						frontendSPA.ServeHTTP(ctx.Writer, ctx.Request)
+						return
+					}
+					ctx.AbortWithStatus(http.StatusNotFound)
+					return
+				}
+				mcpHandler.ServeHTTP(ctx.Writer, ctx.Request)
+			}
+			server.Any("/.well-known/mcp", mcpDiscoveryHandler)
 
 			if resolver.args.AskUserService != nil {
 				askUserMux := askuser.NewHTTPHandler(resolver.args.AskUserService, log.Logger.Named("ask_user_http"))
@@ -473,6 +485,8 @@ func RunServer(addr string, resolver *Resolver) {
 		server.Any("/runtime-config.json", runtimeConfigHandler)
 	}
 
+	registerAgentAPIProbeRoutes(server)
+
 	if frontendSPA != nil {
 		server.NoRoute(func(ctx *gin.Context) {
 			if ctx.Request.Method != http.MethodGet && ctx.Request.Method != http.MethodHead {
@@ -536,6 +550,34 @@ func shouldServeFrontend(r *http.Request) bool {
 	}
 
 	return false
+}
+
+func registerAgentAPIProbeRoutes(router gin.IRouter) {
+	handler := newAgentAPIProbeHandler()
+	for _, route := range []string{"/api", "/api/v1", "/v1", "/v2", "/agent/auth"} {
+		router.Any(route, handler)
+	}
+}
+
+func newAgentAPIProbeHandler() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		ctx.Header("Allow", "GET, HEAD, OPTIONS, POST")
+		ctx.Header("WWW-Authenticate", `Bearer resource_metadata="https://mcp.laisky.com/.well-known/oauth-protected-resource"`)
+
+		switch ctx.Request.Method {
+		case http.MethodOptions:
+			ctx.Status(http.StatusNoContent)
+			return
+		case http.MethodGet, http.MethodHead, http.MethodPost:
+			ctx.JSON(http.StatusUnauthorized, gin.H{
+				"error":             "authentication_required",
+				"error_description": "Use a Laisky MCP API key in the Authorization header.",
+				"resource_metadata": "https://mcp.laisky.com/.well-known/oauth-protected-resource",
+			})
+		default:
+			ctx.AbortWithStatus(http.StatusMethodNotAllowed)
+		}
+	}
 }
 
 func allowCORS(ctx *gin.Context) {

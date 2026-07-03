@@ -111,8 +111,11 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fsPath := filepath.Join(h.root, clean) //nolint:gosec // G703: path traversal prevented by filepath.Clean and ".." check above
 	info, err := os.Stat(fsPath)
 	if err == nil && !info.IsDir() {
-		if strings.HasSuffix(clean, ".md") {
+		switch {
+		case strings.HasSuffix(clean, ".md"):
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		case shouldServeStaticJSON(clean):
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		}
 		http.ServeFile(w, r, fsPath)
 		return
@@ -166,6 +169,17 @@ func (h *spaHandler) serveJSONFile(w http.ResponseWriter, r *http.Request, clean
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	http.ServeFile(w, r, fsPath)
 	return true
+}
+
+func shouldServeStaticJSON(clean string) bool {
+	switch clean {
+	case ".well-known/api-catalog",
+		".well-known/oauth-authorization-server",
+		".well-known/oauth-protected-resource":
+		return true
+	default:
+		return false
+	}
 }
 
 func prefersMarkdown(r *http.Request) bool {
