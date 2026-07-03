@@ -56,6 +56,12 @@ func (d *Blog) GetUsersCol() *mongoLib.Collection {
 	return d.db.GetCol("users")
 }
 
+// GetEmailVerificationCodesCol returns the SSO email verification code collection.
+// It accepts no parameters and returns the MongoDB collection handle.
+func (d *Blog) GetEmailVerificationCodesCol() *mongoLib.Collection {
+	return d.db.GetCol("email_verification_codes")
+}
+
 // GetCategoriesCol get categories collection
 func (d *Blog) GetCategoriesCol() *mongoLib.Collection {
 	return d.db.GetCol("categories")

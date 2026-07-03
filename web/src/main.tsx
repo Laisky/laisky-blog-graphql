@@ -22,6 +22,7 @@ import { NotFoundPage } from '@/pages/not-found';
 import { SsoGithubCallbackPage } from '@/pages/sso-github-callback';
 import { SsoLoginPage } from '@/pages/sso-login';
 import { SsoProfilePage } from '@/pages/sso-profile';
+import { SsoTokenDetailsPage } from '@/pages/sso-token-details';
 import './index.css';
 
 type RouterKind = 'mcp' | 'sso';
@@ -79,9 +80,10 @@ bootstrap().catch((error) => {
  */
 function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined) {
   return [
-    { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
+    { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
     { path: '/sso/github/callback', element: <SsoGithubCallbackPage /> },
-    { path: '/sso/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
+    { path: '/sso/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} /> },
+    { path: '/sso/token', element: <SsoTokenDetailsPage ssoJwt={ssoJwt} /> },
     {
       path: '/',
       element: <AppLayout />,
@@ -109,10 +111,11 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled
  */
 function buildSsoRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined) {
   return [
-    { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
-    { path: '/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
+    { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
+    { path: '/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
     { path: '/github/callback', element: <SsoGithubCallbackPage /> },
-    { path: '/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
+    { path: '/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} /> },
+    { path: '/token', element: <SsoTokenDetailsPage ssoJwt={ssoJwt} /> },
     { path: '*', element: <NotFoundPage /> },
   ];
 }

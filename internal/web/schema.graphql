@@ -117,7 +117,16 @@ type Mutation {
   # Deprecated: use UserLogin instead
   BlogLogin(account: String!, password: String!): BlogLoginResponse!
   UserLogin(account: String!, password: String!, turnstile_token: String, totp_code: String): BlogLoginResponse!
-  UserRegister(account: String!, password: String!, display_name: String!, captcha: String!, turnstile_token: String): UserRegisterResponse!
+  UserLoginWithEmailCode(account: String!, email_code: String!, turnstile_token: String): BlogLoginResponse!
+  UserRequestEmailCode(account: String!, purpose: String!, turnstile_token: String): UserEmailCodeResponse!
+  UserRegister(
+    account: String!
+    password: String!
+    display_name: String!
+    captcha: String!
+    turnstile_token: String
+    email_code: String!
+  ): UserRegisterResponse!
   UserGithubOAuthStart(redirect_to: String, turnstile_token: String): GithubOAuthStartResponse!
   UserGithubOAuthBindStart: GithubOAuthStartResponse!
   UserGithubOAuthLogin(code: String!, state: String!): GithubOAuthLoginResponse!

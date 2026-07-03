@@ -343,17 +343,94 @@ func (r *MutationResolver) UserLogin(ctx context.Context,
 	return r.loginWithPassword(ctx, account, password, totpCode)
 }
 
+// UserLoginWithEmailCode authenticates a user with an emailed verification code.
+// It accepts account, email code, and optional Turnstile token, returning a JWT response.
+func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
+	account string, emailCode string, turnstileToken *string) (*models.BlogLoginResponse, error) {
+	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+		if errors.Is(err, model.ErrTurnstileRequired) {
+			return nil, errors.WithStack(model.ErrTurnstileRequired)
+		}
+		return nil, maskLoginError(model.ErrInvalidCredentials)
+	}
+
+	logger := ginMw.GetLogger(ctx).Named("user_login_email_code")
+	if err := validateInputLength(100, account, emailCode); err != nil {
+		logger.Debug("email code login validation failed",
+			zap.Int("account_len", utf8.RuneCountInString(account)),
+			zap.Int("email_code_len", utf8.RuneCountInString(emailCode)),
+		)
+		return nil, errors.Wrap(err, "validate input length")
+	}
+
+	clientKey := resolveAuthClientKey(ctx)
+	tracker := getAuthChallengeTracker()
+	user, err := r.svc.ValidateEmailCodeLogin(ctx, account, emailCode)
+	if err != nil {
+		tracker.recordFailure(clientKey)
+		return nil, maskLoginError(err)
+	}
+
+	tracker.recordSuccess(clientKey)
+	return r.newLoginResponse(ctx, user)
+}
+
+// UserRequestEmailCode sends a one-time SSO email verification code.
+// It accepts the target account, code purpose, and optional Turnstile token, returning a generic status message.
+func (r *MutationResolver) UserRequestEmailCode(ctx context.Context,
+	account string, purpose string, turnstileToken *string) (*models.UserEmailCodeResponse, error) {
+	purpose = strings.TrimSpace(strings.ToLower(purpose))
+	switch purpose {
+	case model.EmailVerificationPurposeRegister:
+		if err := validateTurnstileTokenForRegister(ctx, turnstileToken); err != nil {
+			if errors.Is(err, model.ErrTurnstileRequired) {
+				return nil, errors.WithStack(model.ErrTurnstileRequired)
+			}
+			return nil, errors.Wrap(err, "validate turnstile token")
+		}
+	case model.EmailVerificationPurposeLogin:
+		if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+			if errors.Is(err, model.ErrTurnstileRequired) {
+				return nil, errors.WithStack(model.ErrTurnstileRequired)
+			}
+			return nil, maskLoginError(model.ErrInvalidCredentials)
+		}
+	default:
+		return nil, errors.Errorf("unsupported email verification purpose %q", purpose)
+	}
+
+	logger := ginMw.GetLogger(ctx).Named("user_request_email_code")
+	if err := validateInputLength(100, account, purpose); err != nil {
+		logger.Debug("email code request validation failed",
+			zap.Int("account_len", utf8.RuneCountInString(account)),
+			zap.Int("purpose_len", utf8.RuneCountInString(purpose)),
+		)
+		return nil, errors.Wrap(err, "validate input length")
+	}
+	if err := r.svc.RequestEmailVerificationCode(ctx, account, purpose); err != nil {
+		if purpose == model.EmailVerificationPurposeLogin {
+			return nil, maskLoginError(err)
+		}
+		return nil, errors.Wrap(err, "request email verification code")
+	}
+
+	return &models.UserEmailCodeResponse{
+		Msg: "If the account can use this flow, a verification code has been sent.",
+	}, nil
+}
+
 // UserRegister registers a user with an email account and password.
-// It accepts account details, a legacy captcha value, and an optional Turnstile token, returning an instruction message.
+// It accepts account details, a legacy captcha value, an optional Turnstile token, and an email verification code, returning an instruction message.
 func (r *MutationResolver) UserRegister(ctx context.Context,
-	account string, password string, displayName string, captcha string, turnstileToken *string) (
+	account string, password string, displayName string, captcha string, turnstileToken *string, emailCode string) (
 	*models.UserRegisterResponse, error) {
 	logger := ginMw.GetLogger(ctx).Named("user_register")
-	if err := validateInputLength(100, account, password, displayName); err != nil {
+	if err := validateInputLength(100, account, password, displayName, emailCode); err != nil {
 		logger.Debug("user register validation failed",
 			zap.Int("account_len", utf8.RuneCountInString(account)),
 			zap.Int("password_len", utf8.RuneCountInString(password)),
 			zap.Int("display_name_len", utf8.RuneCountInString(displayName)),
+			zap.Int("email_code_len", utf8.RuneCountInString(emailCode)),
 			zap.Int("captcha_len", utf8.RuneCountInString(captcha)),
 		)
 		return nil, err
@@ -370,13 +447,13 @@ func (r *MutationResolver) UserRegister(ctx context.Context,
 		}
 		return nil, errors.Wrap(err, "validate turnstile token")
 	}
-	_, err := r.svc.UserRegister(ctx, account, password, displayName)
+	_, err := r.svc.UserRegister(ctx, account, password, displayName, emailCode)
 	if err != nil {
 		return nil, errors.Wrap(err, "register user")
 	}
 
 	return &models.UserRegisterResponse{
-		Msg: fmt.Sprintf("account `%s` created; you can sign in now", html.EscapeString(account)),
+		Msg: fmt.Sprintf("account `%s` verified and created; you can sign in now", html.EscapeString(account)),
 	}, nil
 }
 

@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
-import { ArrowRight, Github, KeyRound, Lock } from 'lucide-react';
+import { ArrowRight, Github, Info, KeyRound, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -11,24 +11,34 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
-import type { SsoJwtConfig } from '@/lib/runtime-config';
-import { buildRedirectUrlWithToken, parseRedirectTarget, type RedirectTarget } from '@/lib/sso-redirect';
+import { buildRedirectUrlWithToken, parseRedirectTarget } from '@/lib/sso-redirect';
 import { clearSsoToken, loadSsoToken, resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
 import {
   SSO_SESSION_CHECK_QUERY,
   USER_GITHUB_OAUTH_START_MUTATION,
   USER_LOGIN_MUTATION,
+  USER_LOGIN_WITH_EMAIL_CODE_MUTATION,
   USER_PASSKEY_LOGIN_FINISH_MUTATION,
   USER_PASSKEY_LOGIN_START_MUTATION,
   USER_REGISTER_MUTATION,
+  USER_REQUEST_EMAIL_CODE_MUTATION,
+  type SsoEmailCodeLoginResponse,
+  type SsoEmailCodeResponse,
   type SsoGithubOAuthStartResponse,
   type SsoLoginResponse,
   type SsoPasskeyLoginResponse,
   type SsoPasskeyStartResponse,
   type SsoRegisterResponse,
 } from '@/pages/sso-login-api';
+import {
+  canStartGithubOAuth,
+  canSubmitSsoLogin,
+  isTotpRequiredError,
+  isTurnstileEnabled,
+  isTurnstileRequiredError,
+} from '@/pages/sso-login-state';
+import { resolveAuthenticatedRedirect } from '@/pages/sso-session-redirect';
 import { getTurnstileAPI, loadTurnstileScript } from '@/pages/sso-turnstile';
-import { SsoTokenDetailsDialog } from '@/pages/sso-token-details';
 
 export {
   buildRedirectUrlWithToken,
@@ -40,148 +50,28 @@ export {
   isInternalIPv6Address,
   normalizeHostname,
   parseIPv4Address,
-  parseRedirectTarget
+  parseRedirectTarget,
 } from '@/lib/sso-redirect';
-
+export {
+  canStartGithubOAuth,
+  canSubmitSsoLogin,
+  isTotpRequiredError,
+  isTurnstileEnabled,
+  isTurnstileRequiredError,
+} from '@/pages/sso-login-state';
+export { resolveAuthenticatedRedirect } from '@/pages/sso-session-redirect';
 export interface SsoLoginPageProps {
   turnstileSiteKey?: string;
   // githubOAuthEnabled controls whether the "Continue with GitHub" button is shown.
   // It defaults to false so the button stays hidden until the backend confirms
   // GitHub OAuth is configured, avoiding a dead button that only errors on click.
   githubOAuthEnabled?: boolean;
-  ssoJwt?: SsoJwtConfig | null;
-}
-
-export interface SsoSubmitState {
-  mode: 'login' | 'register';
-  hasRedirectTarget: boolean;
-  // redirectRequested is true when the URL carried a redirect_to parameter. When a
-  // redirect was requested it must resolve to a valid target before login can
-  // proceed; when it was omitted the user is signing in directly to their profile.
-  redirectRequested?: boolean;
-  account: string;
-  password: string;
-  displayName: string;
-  isSubmitting: boolean;
-  isTurnstileEnabled: boolean;
-  turnstileToken: string;
-  // totpRequired becomes true only after the backend asks for a second step,
-  // at which point a TOTP code must be supplied before the form can submit.
-  totpRequired?: boolean;
-  totpCode?: string;
-}
-
-// TOTP_REQUIRED_TOKEN is the stable signal the backend returns (as the GraphQL
-// error message) after a correct password when the account has TOTP enabled but
-// no code was provided. See model.ErrTOTPRequired on the server.
-const TOTP_REQUIRED_TOKEN = 'totp_required';
-
-// isTotpRequiredError reports whether a login error asks for a TOTP code as a
-// second step rather than signalling invalid credentials.
-export function isTotpRequiredError(message: string): boolean {
-  return message.trim().toLowerCase().includes(TOTP_REQUIRED_TOKEN);
-}
-
-// TURNSTILE_REQUIRED_TOKEN is the stable signal the backend returns once a client
-// trips the risk thresholds (frequent requests or repeated failures) and must
-// solve a Turnstile challenge. See model.ErrTurnstileRequired on the server.
-const TURNSTILE_REQUIRED_TOKEN = 'turnstile_required';
-
-// isTurnstileRequiredError reports whether an auth error is asking the client to
-// complete a Turnstile challenge rather than signalling a hard failure.
-export function isTurnstileRequiredError(message: string): boolean {
-  return message.trim().toLowerCase().includes(TURNSTILE_REQUIRED_TOKEN);
-}
-
-export interface SsoGithubStartState {
-  isSubmitting: boolean;
-  isTurnstileEnabled: boolean;
-  turnstileToken: string;
-}
-
-export function isTurnstileEnabled(siteKey: string | undefined): boolean {
-  return (siteKey ?? '').trim().length > 0;
-}
-
-export function canSubmitSsoLogin(state: SsoSubmitState): boolean {
-  // A login only needs a redirect target when one was explicitly requested. Without
-  // a redirect_to the user is signing in directly and will land on their profile,
-  // so an invalid/absent target must not block that case.
-  if (state.mode === 'login' && state.redirectRequested && !state.hasRedirectTarget) {
-    return false;
-  }
-
-  if (state.isSubmitting) {
-    return false;
-  }
-
-  if (state.account.trim().length === 0 || state.password.trim().length === 0) {
-    return false;
-  }
-
-  if (state.mode === 'register' && state.displayName.trim().length === 0) {
-    return false;
-  }
-
-  if (state.mode === 'login' && state.totpRequired && (state.totpCode ?? '').trim().length === 0) {
-    return false;
-  }
-
-  if (state.isTurnstileEnabled && state.turnstileToken.trim().length === 0) {
-    return false;
-  }
-
-  return true;
-}
-
-export function canStartGithubOAuth(state: SsoGithubStartState): boolean {
-  if (state.isSubmitting) {
-    return false;
-  }
-
-  if (state.isTurnstileEnabled && state.turnstileToken.trim().length === 0) {
-    return false;
-  }
-
-  return true;
-}
-
-// SsoSessionRedirect describes where a visitor who already holds a valid session
-// should be sent when they open the login page.
-export type SsoSessionRedirect =
-  // 'external' leaves the SPA for a cross-app destination (redirect_to), carrying
-  // the session token so the target application can adopt the session.
-  | { kind: 'external'; url: string }
-  // 'profile' keeps the visitor inside the SSO app on their own profile page.
-  | { kind: 'profile' }
-  // 'none' means do not auto-redirect: render the login form instead. This covers a
-  // redirect_to that was requested but failed validation, so its error stays visible
-  // rather than being silently swallowed by a redirect elsewhere.
-  | { kind: 'none' };
-
-// resolveAuthenticatedRedirect decides where a visitor with a confirmed-valid
-// session should go. A valid redirect target wins and receives the token; with no
-// target requested the visitor lands on their profile; a requested-but-invalid
-// target falls through to the login form so the validation error is shown.
-export function resolveAuthenticatedRedirect(params: {
-  token: string;
-  redirectTarget: RedirectTarget;
-  redirectRequested: boolean;
-}): SsoSessionRedirect {
-  if (params.redirectTarget.url) {
-    return { kind: 'external', url: buildRedirectUrlWithToken(params.redirectTarget.url, params.token) };
-  }
-  if (params.redirectRequested) {
-    return { kind: 'none' };
-  }
-  return { kind: 'profile' };
 }
 
 export function SsoLoginPage(props: SsoLoginPageProps) {
   const resolvedTurnstileSiteKey = (props.turnstileSiteKey ?? '').trim();
   const turnstileEnabled = isTurnstileEnabled(resolvedTurnstileSiteKey);
   const githubOAuthEnabled = props.githubOAuthEnabled ?? false;
-  const ssoJwt = props.ssoJwt ?? null;
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -189,6 +79,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
   const hasRedirectParam = (redirectParam ?? '').trim().length > 0;
   const origin = window.location.origin;
   const profilePath = resolveSiblingSsoPath(location.pathname, 'profile');
+  const tokenPath = resolveSiblingSsoPath(location.pathname, 'token');
 
   const redirectTarget = useMemo(() => {
     return parseRedirectTarget(redirectParam, origin);
@@ -199,13 +90,16 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
   // anonymous visitors see the form immediately without a verification flash.
   const [isCheckingSession, setIsCheckingSession] = useState(() => loadSsoToken().length > 0);
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [loginMethod, setLoginMethod] = useState<'password' | 'email_code'>('password');
   const [account, setAccount] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [emailCode, setEmailCode] = useState('');
   const [totpCode, setTotpCode] = useState('');
   const [totpRequired, setTotpRequired] = useState(false);
   const [status, setStatus] = useState<StatusState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEmailCodeSending, setIsEmailCodeSending] = useState(false);
   const [isGithubSubmitting, setIsGithubSubmitting] = useState(false);
   const [isPasskeySubmitting, setIsPasskeySubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
@@ -221,11 +115,13 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
   const canSubmit = canSubmitSsoLogin({
     mode,
+    loginMethod,
     hasRedirectTarget: Boolean(redirectTarget.url),
     redirectRequested: hasRedirectParam,
     account,
     password,
     displayName,
+    emailCode,
     isSubmitting,
     isTurnstileEnabled: turnstileChallengeRequired,
     turnstileToken,
@@ -237,6 +133,8 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
     isTurnstileEnabled: turnstileChallengeRequired,
     turnstileToken,
   });
+  const canSendEmailCode =
+    account.trim().length > 0 && !isEmailCodeSending && !isSubmitting && (!turnstileChallengeRequired || turnstileToken.trim().length > 0);
   const canStartPasskey = canStartGithubOAuth({
     isSubmitting: isSubmitting || isGithubSubmitting || isPasskeySubmitting,
     isTurnstileEnabled: turnstileChallengeRequired,
@@ -381,13 +279,25 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       return;
     }
 
-    if (!account || !password) {
-      setStatus({ tone: 'error', message: 'Please enter your account and password.' });
+    if (!account) {
+      setStatus({ tone: 'error', message: 'Please enter your account.' });
       return;
     }
 
     if (mode === 'register' && !displayName) {
       setStatus({ tone: 'error', message: 'Please enter your display name.' });
+      return;
+    }
+    if (mode === 'register' && !emailCode.trim()) {
+      setStatus({ tone: 'error', message: 'Please enter the email verification code.' });
+      return;
+    }
+    if (mode === 'login' && loginMethod === 'password' && !password) {
+      setStatus({ tone: 'error', message: 'Please enter your password.' });
+      return;
+    }
+    if (mode === 'login' && loginMethod === 'email_code' && !emailCode.trim()) {
+      setStatus({ tone: 'error', message: 'Please enter the email verification code.' });
       return;
     }
 
@@ -405,6 +315,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
           account,
           password,
           displayName,
+          emailCode,
           turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
         });
         setStatus({ tone: 'success', message: data.UserRegister?.msg ?? 'Registration complete. You can sign in now.' });
@@ -417,14 +328,23 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         return;
       }
 
-      const data = await fetchGraphQL<SsoLoginResponse>('', USER_LOGIN_MUTATION, {
-        account,
-        password,
-        totpCode: totpCode.trim() ? totpCode : null,
-        turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
-      });
-
-      const token = data.UserLogin?.token;
+      const token =
+        loginMethod === 'email_code'
+          ? (
+              await fetchGraphQL<SsoEmailCodeLoginResponse>('', USER_LOGIN_WITH_EMAIL_CODE_MUTATION, {
+                account,
+                emailCode,
+                turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
+              })
+            ).UserLoginWithEmailCode?.token
+          : (
+              await fetchGraphQL<SsoLoginResponse>('', USER_LOGIN_MUTATION, {
+                account,
+                password,
+                totpCode: totpCode.trim() ? totpCode : null,
+                turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
+              })
+            ).UserLogin?.token;
       if (!token) {
         throw new Error('Login succeeded but no token was returned.');
       }
@@ -472,6 +392,42 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       setStatus({ tone: 'error', message });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSendEmailCode = async () => {
+    if (!canSendEmailCode) {
+      return;
+    }
+    setIsEmailCodeSending(true);
+    setStatus({ tone: 'info', message: 'Sending verification code...' });
+    try {
+      const purpose = mode === 'register' ? 'register' : 'login';
+      const data = await fetchGraphQL<SsoEmailCodeResponse>('', USER_REQUEST_EMAIL_CODE_MUTATION, {
+        account,
+        purpose,
+        turnstileToken: turnstileChallengeRequired ? turnstileToken : null,
+      });
+      setStatus({ tone: 'success', message: data.UserRequestEmailCode?.msg ?? 'Verification code sent.' });
+      if (turnstileChallengeRequired) {
+        resetTurnstile();
+        setTurnstileMessage('Please complete the security verification again.');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send verification code.';
+      if (isTurnstileRequiredError(message)) {
+        setTurnstileChallengeActive(true);
+        resetTurnstile();
+        setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+        return;
+      }
+      setStatus({ tone: 'error', message });
+      if (turnstileChallengeRequired) {
+        resetTurnstile();
+        setTurnstileMessage('Please complete the security verification again.');
+      }
+    } finally {
+      setIsEmailCodeSending(false);
     }
   };
 
@@ -618,7 +574,12 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <LaiskyLink className="text-primary underline-offset-4 hover:underline">Laisky</LaiskyLink> SSO
             </span>
           </div>
-          <SsoTokenDetailsDialog ssoJwt={ssoJwt} />
+          <Button asChild variant="ghost" size="sm" className="gap-2 text-xs font-mono uppercase tracking-widest">
+            <Link to={tokenPath}>
+              <Info className="h-4 w-4" />
+              Token Details
+            </Link>
+          </Button>
         </div>
 
         <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-sm transition-colors">
@@ -634,6 +595,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'login' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => {
                   setMode('login');
+                  setLoginMethod('password');
                   setTotpRequired(false);
                   setTotpCode('');
                 }}
@@ -645,6 +607,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'register' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => {
                   setMode('register');
+                  setLoginMethod('password');
                   setTotpRequired(false);
                   setTotpCode('');
                 }}
@@ -694,10 +657,37 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                     // different account may not have TOTP enabled at all.
                     setTotpRequired(false);
                     setTotpCode('');
+                    setEmailCode('');
                   }}
                   className="h-12 font-mono transition-colors"
                 />
               </div>
+
+              {mode === 'login' && (
+                <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
+                  <button
+                    type="button"
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'password' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    onClick={() => {
+                      setLoginMethod('password');
+                      setEmailCode('');
+                    }}
+                  >
+                    Password
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'email_code' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    onClick={() => {
+                      setLoginMethod('email_code');
+                      setTotpRequired(false);
+                      setTotpCode('');
+                    }}
+                  >
+                    Email Code
+                  </button>
+                </div>
+              )}
 
               {mode === 'register' && (
                 <div className="space-y-2">
@@ -719,23 +709,60 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 </div>
               )}
 
-              <div className="space-y-2">
-                <label htmlFor="sso-password" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
-                  Passphrase
-                </label>
-                <Input
-                  id="sso-password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="••••••••••••"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="h-12 font-mono transition-colors"
-                />
-              </div>
+              {(mode === 'register' || loginMethod === 'password') && (
+                <div className="space-y-2">
+                  <label
+                    htmlFor="sso-password"
+                    className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1"
+                  >
+                    Passphrase
+                  </label>
+                  <Input
+                    id="sso-password"
+                    name="password"
+                    type="password"
+                    autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                    placeholder="••••••••••••"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    className="h-12 font-mono transition-colors"
+                  />
+                </div>
+              )}
 
-              {mode === 'login' && totpRequired && (
+              {(mode === 'register' || loginMethod === 'email_code') && (
+                <div className="space-y-3">
+                  <label
+                    htmlFor="sso-email-code"
+                    className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1"
+                  >
+                    Email Code
+                  </label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="sso-email-code"
+                      name="emailCode"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="000000"
+                      value={emailCode}
+                      onChange={(event) => setEmailCode(event.target.value)}
+                      className="h-12 font-mono transition-colors"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-12 sm:w-36"
+                      disabled={!canSendEmailCode}
+                      onClick={() => void handleSendEmailCode()}
+                    >
+                      {isEmailCodeSending ? 'Sending...' : 'Send Code'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {mode === 'login' && loginMethod === 'password' && totpRequired && (
                 <div className="space-y-2">
                   <label htmlFor="sso-totp" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
                     TOTP Code

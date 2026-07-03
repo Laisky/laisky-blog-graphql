@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { Github, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
+import { Github, Info, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -12,9 +12,7 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { createPasskeyCredentialJSON } from '@/lib/passkey';
-import type { SsoJwtConfig } from '@/lib/runtime-config';
 import { clearSsoToken, consumeSsoTokenFromLocation, resolveSiblingSsoPath } from '@/lib/sso-session';
-import { SsoTokenDetailsDialog } from '@/pages/sso-token-details';
 
 const SSO_PROFILE_FIELDS = `
   uid
@@ -201,13 +199,13 @@ function buildPasskeyDraftNames(passkeys: PasskeyInfo[]): Record<string, string>
 
 interface SsoProfilePageProps {
   githubOAuthEnabled?: boolean;
-  ssoJwt?: SsoJwtConfig | null;
 }
 
-export function SsoProfilePage({ githubOAuthEnabled = false, ssoJwt = null }: SsoProfilePageProps) {
+export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const loginPath = resolveSiblingSsoPath(location.pathname, 'login');
+  const tokenPath = resolveSiblingSsoPath(location.pathname, 'token');
   const [token, setToken] = useState('');
   const [authReady, setAuthReady] = useState(false);
   const [profile, setProfile] = useState<SsoProfile | null>(null);
@@ -229,18 +227,21 @@ export function SsoProfilePage({ githubOAuthEnabled = false, ssoJwt = null }: Ss
     setPasskeyDraftNames(buildPasskeyDraftNames(next.passkeys));
   }, []);
 
-  const loadProfile = useCallback(async (authToken: string) => {
-    setIsLoading(true);
-    setStatus(null);
-    try {
-      const data = await fetchGraphQL<ProfileResponse>(authToken, USER_PROFILE_QUERY);
-      applyProfile(data.UserProfile);
-    } catch (error) {
-      setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Failed to load profile.' });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [applyProfile]);
+  const loadProfile = useCallback(
+    async (authToken: string) => {
+      setIsLoading(true);
+      setStatus(null);
+      try {
+        const data = await fetchGraphQL<ProfileResponse>(authToken, USER_PROFILE_QUERY);
+        applyProfile(data.UserProfile);
+      } catch (error) {
+        setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Failed to load profile.' });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [applyProfile]
+  );
 
   useEffect(() => {
     // Callback logins (GitHub, passkey, and cross-app redirects) hand the freshly
@@ -487,9 +488,20 @@ export function SsoProfilePage({ githubOAuthEnabled = false, ssoJwt = null }: Ss
                     <ProfileRow label="Methods" value={authMethods} />
                     <ProfileRow label="Passkeys" value={String(profile.passkey_count)} />
                     <ProfileRow label="GitHub OIDC" value={profile.github_bound ? 'Bound' : 'Not bound'} />
-                    <SsoTokenDetailsDialog ssoJwt={ssoJwt} currentToken={token} />
+                    <Button asChild type="button" variant="outline" className="w-full gap-2">
+                      <Link to={tokenPath}>
+                        <Info className="h-4 w-4" />
+                        Token details
+                      </Link>
+                    </Button>
                     {githubOAuthEnabled && !profile.github_bound && (
-                      <Button type="button" variant="outline" className="w-full gap-2" disabled={isGithubBinding} onClick={() => void handleBindGithub()}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full gap-2"
+                        disabled={isGithubBinding}
+                        onClick={() => void handleBindGithub()}
+                      >
                         <Github className="h-4 w-4" />
                         {isGithubBinding ? 'Opening GitHub...' : 'Bind GitHub'}
                       </Button>

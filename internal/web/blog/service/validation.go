@@ -51,6 +51,8 @@ const (
 	maxUserDisplayNameLength = 128
 	// maxActiveTokenLength caps the length of account activation tokens.
 	maxActiveTokenLength = 256
+	// maxEmailVerificationCodeLength caps the length of email verification codes.
+	maxEmailVerificationCodeLength = 16
 )
 
 var (
@@ -300,6 +302,19 @@ func sanitizeUserDisplayName(displayName string) (string, error) {
 // It accepts the raw token string and returns the sanitized token.
 func sanitizeActiveToken(token string) (string, error) {
 	return sanitizeRequiredText(token, maxActiveTokenLength, "active token")
+}
+
+// sanitizeEmailVerificationCode validates an email verification code.
+// It accepts a raw code string and returns the sanitized code.
+func sanitizeEmailVerificationCode(code string) (string, error) {
+	trimmed, err := sanitizeRequiredText(code, maxEmailVerificationCodeLength, "email verification code")
+	if err != nil {
+		return "", err
+	}
+	if !regexp.MustCompile(`^\d{6}$`).MatchString(trimmed) {
+		return "", errors.New("email verification code must be six digits")
+	}
+	return trimmed, nil
 }
 
 // secureCompareString performs a constant-time comparison of two strings and returns true when they match.

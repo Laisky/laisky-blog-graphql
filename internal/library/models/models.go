@@ -139,6 +139,10 @@ type UserActiveResponse struct {
 	Token string      `json:"token"`
 }
 
+type UserEmailCodeResponse struct {
+	Msg string `json:"msg"`
+}
+
 type UserLoginResponse struct {
 	User  *model.User `json:"user"`
 	Token string      `json:"token"`

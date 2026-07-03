@@ -216,8 +216,10 @@ type ComplexityRoot struct {
 		UserGithubOAuthLogin          func(childComplexity int, code string, state string) int
 		UserGithubOAuthStart          func(childComplexity int, redirectTo *string, turnstileToken *string) int
 		UserLogin                     func(childComplexity int, account string, password string, turnstileToken *string, totpCode *string) int
-		UserRegister                  func(childComplexity int, account string, password string, displayName string, captcha string, turnstileToken *string) int
+		UserLoginWithEmailCode        func(childComplexity int, account string, emailCode string, turnstileToken *string) int
+		UserRegister                  func(childComplexity int, account string, password string, displayName string, captcha string, turnstileToken *string, emailCode string) int
 		UserRenamePasskey             func(childComplexity int, passkeyID string, name string) int
+		UserRequestEmailCode          func(childComplexity int, account string, purpose string, turnstileToken *string) int
 		UserResendActiveEmail         func(childComplexity int, account string) int
 		UserStartPasskeyLogin         func(childComplexity int, redirectTo *string, turnstileToken *string) int
 		UserStartPasskeyRegistration  func(childComplexity int, label string) int
@@ -339,6 +341,10 @@ type ComplexityRoot struct {
 		User  func(childComplexity int) int
 	}
 
+	UserEmailCodeResponse struct {
+		Msg func(childComplexity int) int
+	}
+
 	UserLoginResponse struct {
 		Token func(childComplexity int) int
 		User  func(childComplexity int) int
@@ -415,7 +421,9 @@ type MutationResolver interface {
 	BlogDeleteComment(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error)
 	UserLogin(ctx context.Context, account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error)
-	UserRegister(ctx context.Context, account string, password string, displayName string, captcha string, turnstileToken *string) (*models.UserRegisterResponse, error)
+	UserLoginWithEmailCode(ctx context.Context, account string, emailCode string, turnstileToken *string) (*models.BlogLoginResponse, error)
+	UserRequestEmailCode(ctx context.Context, account string, purpose string, turnstileToken *string) (*models.UserEmailCodeResponse, error)
+	UserRegister(ctx context.Context, account string, password string, displayName string, captcha string, turnstileToken *string, emailCode string) (*models.UserRegisterResponse, error)
 	UserGithubOAuthStart(ctx context.Context, redirectTo *string, turnstileToken *string) (*models.GithubOAuthStartResponse, error)
 	UserGithubOAuthBindStart(ctx context.Context) (*models.GithubOAuthStartResponse, error)
 	UserGithubOAuthLogin(ctx context.Context, code string, state string) (*models.GithubOAuthLoginResponse, error)
@@ -1271,6 +1279,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserLogin(childComplexity, args["account"].(string), args["password"].(string), args["turnstile_token"].(*string), args["totp_code"].(*string)), true
+	case "Mutation.UserLoginWithEmailCode":
+		if e.complexity.Mutation.UserLoginWithEmailCode == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserLoginWithEmailCode_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserLoginWithEmailCode(childComplexity, args["account"].(string), args["email_code"].(string), args["turnstile_token"].(*string)), true
 	case "Mutation.UserRegister":
 		if e.complexity.Mutation.UserRegister == nil {
 			break
@@ -1281,7 +1300,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.UserRegister(childComplexity, args["account"].(string), args["password"].(string), args["display_name"].(string), args["captcha"].(string), args["turnstile_token"].(*string)), true
+		return e.complexity.Mutation.UserRegister(childComplexity, args["account"].(string), args["password"].(string), args["display_name"].(string), args["captcha"].(string), args["turnstile_token"].(*string), args["email_code"].(string)), true
 	case "Mutation.UserRenamePasskey":
 		if e.complexity.Mutation.UserRenamePasskey == nil {
 			break
@@ -1293,6 +1312,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UserRenamePasskey(childComplexity, args["passkey_id"].(string), args["name"].(string)), true
+	case "Mutation.UserRequestEmailCode":
+		if e.complexity.Mutation.UserRequestEmailCode == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_UserRequestEmailCode_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UserRequestEmailCode(childComplexity, args["account"].(string), args["purpose"].(string), args["turnstile_token"].(*string)), true
 	case "Mutation.UserResendActiveEmail":
 		if e.complexity.Mutation.UserResendActiveEmail == nil {
 			break
@@ -1882,6 +1912,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.UserActiveResponse.User(childComplexity), true
 
+	case "UserEmailCodeResponse.msg":
+		if e.complexity.UserEmailCodeResponse.Msg == nil {
+			break
+		}
+
+		return e.complexity.UserEmailCodeResponse.Msg(childComplexity), true
+
 	case "UserLoginResponse.token":
 		if e.complexity.UserLoginResponse.Token == nil {
 			break
@@ -2457,6 +2494,27 @@ func (ec *executionContext) field_Mutation_UserGithubOAuthStart_args(ctx context
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_UserLoginWithEmailCode_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "account", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["account"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "email_code", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["email_code"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "turnstile_token", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["turnstile_token"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_UserLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -2511,6 +2569,11 @@ func (ec *executionContext) field_Mutation_UserRegister_args(ctx context.Context
 		return nil, err
 	}
 	args["turnstile_token"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "email_code", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["email_code"] = arg5
 	return args, nil
 }
 
@@ -2527,6 +2590,27 @@ func (ec *executionContext) field_Mutation_UserRenamePasskey_args(ctx context.Co
 		return nil, err
 	}
 	args["name"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_UserRequestEmailCode_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "account", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["account"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "purpose", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["purpose"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "turnstile_token", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["turnstile_token"] = arg2
 	return args, nil
 }
 
@@ -5895,6 +5979,98 @@ func (ec *executionContext) fieldContext_Mutation_UserLogin(ctx context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_UserLoginWithEmailCode(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserLoginWithEmailCode,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserLoginWithEmailCode(ctx, fc.Args["account"].(string), fc.Args["email_code"].(string), fc.Args["turnstile_token"].(*string))
+		},
+		nil,
+		ec.marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserLoginWithEmailCode(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "user":
+				return ec.fieldContext_BlogLoginResponse_user(ctx, field)
+			case "token":
+				return ec.fieldContext_BlogLoginResponse_token(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type BlogLoginResponse", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserLoginWithEmailCode_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_UserRequestEmailCode(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_UserRequestEmailCode,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UserRequestEmailCode(ctx, fc.Args["account"].(string), fc.Args["purpose"].(string), fc.Args["turnstile_token"].(*string))
+		},
+		nil,
+		ec.marshalNUserEmailCodeResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserEmailCodeResponse,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_UserRequestEmailCode(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "msg":
+				return ec.fieldContext_UserEmailCodeResponse_msg(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UserEmailCodeResponse", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_UserRequestEmailCode_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_UserRegister(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5903,7 +6079,7 @@ func (ec *executionContext) _Mutation_UserRegister(ctx context.Context, field gr
 		ec.fieldContext_Mutation_UserRegister,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.Mutation().UserRegister(ctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["display_name"].(string), fc.Args["captcha"].(string), fc.Args["turnstile_token"].(*string))
+			return ec.resolvers.Mutation().UserRegister(ctx, fc.Args["account"].(string), fc.Args["password"].(string), fc.Args["display_name"].(string), fc.Args["captcha"].(string), fc.Args["turnstile_token"].(*string), fc.Args["email_code"].(string))
 		},
 		nil,
 		ec.marshalNUserRegisterResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserRegisterResponse,
@@ -10034,6 +10210,35 @@ func (ec *executionContext) fieldContext_UserActiveResponse_token(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _UserEmailCodeResponse_msg(ctx context.Context, field graphql.CollectedField, obj *models.UserEmailCodeResponse) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserEmailCodeResponse_msg,
+		func(ctx context.Context) (any, error) {
+			return obj.Msg, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserEmailCodeResponse_msg(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserEmailCodeResponse",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UserLoginResponse_user(ctx context.Context, field graphql.CollectedField, obj *models.UserLoginResponse) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -13610,6 +13815,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "UserLoginWithEmailCode":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserLoginWithEmailCode(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "UserRequestEmailCode":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_UserRequestEmailCode(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "UserRegister":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_UserRegister(ctx, field)
@@ -15524,6 +15743,45 @@ func (ec *executionContext) _UserActiveResponse(ctx context.Context, sel ast.Sel
 	return out
 }
 
+var userEmailCodeResponseImplementors = []string{"UserEmailCodeResponse"}
+
+func (ec *executionContext) _UserEmailCodeResponse(ctx context.Context, sel ast.SelectionSet, obj *models.UserEmailCodeResponse) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, userEmailCodeResponseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UserEmailCodeResponse")
+		case "msg":
+			out.Values[i] = ec._UserEmailCodeResponse_msg(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var userLoginResponseImplementors = []string{"UserLoginResponse"}
 
 func (ec *executionContext) _UserLoginResponse(ctx context.Context, sel ast.SelectionSet, obj *models.UserLoginResponse) graphql.Marshaler {
@@ -17069,6 +17327,20 @@ func (ec *executionContext) marshalNUserActiveResponse2ᚖgithubᚗcomᚋLaisky�
 		return graphql.Null
 	}
 	return ec._UserActiveResponse(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNUserEmailCodeResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserEmailCodeResponse(ctx context.Context, sel ast.SelectionSet, v models.UserEmailCodeResponse) graphql.Marshaler {
+	return ec._UserEmailCodeResponse(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNUserEmailCodeResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserEmailCodeResponse(ctx context.Context, sel ast.SelectionSet, v *models.UserEmailCodeResponse) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UserEmailCodeResponse(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNUserRegisterResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserRegisterResponse(ctx context.Context, sel ast.SelectionSet, v models.UserRegisterResponse) graphql.Marshaler {

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -222,6 +222,7 @@ describe('canSubmitSsoLogin', () => {
         account: 'alice@example.com',
         password: 'secret',
         displayName: 'Alice',
+        emailCode: '123456',
         isSubmitting: false,
         isTurnstileEnabled: false,
         turnstileToken: '',
@@ -237,6 +238,56 @@ describe('canSubmitSsoLogin', () => {
         account: 'alice@example.com',
         password: 'secret',
         displayName: '',
+        isSubmitting: false,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+      })
+    ).toBe(false);
+  });
+
+  it('requires email code for registration', () => {
+    expect(
+      canSubmitSsoLogin({
+        mode: 'register',
+        hasRedirectTarget: false,
+        account: 'alice@example.com',
+        password: 'secret',
+        displayName: 'Alice',
+        emailCode: '   ',
+        isSubmitting: false,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+      })
+    ).toBe(false);
+  });
+
+  it('allows email-code login without a password', () => {
+    expect(
+      canSubmitSsoLogin({
+        mode: 'login',
+        loginMethod: 'email_code',
+        hasRedirectTarget: true,
+        account: 'alice@example.com',
+        password: '',
+        displayName: '',
+        emailCode: '123456',
+        isSubmitting: false,
+        isTurnstileEnabled: false,
+        turnstileToken: '',
+      })
+    ).toBe(true);
+  });
+
+  it('requires email code for email-code login', () => {
+    expect(
+      canSubmitSsoLogin({
+        mode: 'login',
+        loginMethod: 'email_code',
+        hasRedirectTarget: true,
+        account: 'alice@example.com',
+        password: '',
+        displayName: '',
+        emailCode: '',
         isSubmitting: false,
         isTurnstileEnabled: false,
         turnstileToken: '',
@@ -427,19 +478,15 @@ describe('SsoLoginPage token details', () => {
     expect(formatSsoJwtSchema(ssoJwt.claims_schema)).toContain('"required": [');
   });
 
-  it('opens the JWT metadata modal from the login page', () => {
+  it('links to the standalone token details page from the login page', () => {
     render(
       <MemoryRouter initialEntries={['/sso/login']}>
-        <SsoLoginPage ssoJwt={ssoJwt} />
+        <SsoLoginPage />
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /token details/i }));
-
-    expect(screen.getByText('SSO JWT Token')).toBeInTheDocument();
-    expect(screen.getByText('EdDSA')).toBeInTheDocument();
-    expect(screen.getByText(/BEGIN PUBLIC KEY/)).toBeInTheDocument();
-    expect(screen.getByText(/"uid"/)).toBeInTheDocument();
+    const tokenLink = screen.getByRole('link', { name: /token details/i });
+    expect(tokenLink).toHaveAttribute('href', '/sso/token');
   });
 });
 

@@ -6,8 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchGraphQL } from '@/lib/graphql';
 import { storeSsoToken } from '@/lib/sso-session';
-import { canSubmitPasskeyRename, canSubmitPasswordChange, canSubmitTotpCode, formatPasskeyCreatedAt } from './sso-profile';
-import { SsoProfilePage } from './sso-profile';
+import { canSubmitPasskeyRename, canSubmitPasswordChange, canSubmitTotpCode, formatPasskeyCreatedAt, SsoProfilePage } from './sso-profile';
 
 vi.mock('@/components/theme/theme-toggle', () => ({
   ThemeToggle: () => <div>Theme toggle</div>,
@@ -26,12 +25,6 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/sso/profile');
   vi.mocked(fetchGraphQL).mockReset();
 });
-
-// encodeJwtJSON serializes a JWT segment for tests.
-// It accepts a JSON value and returns a base64url-encoded string.
-function encodeJwtJSON(value: unknown): string {
-  return window.btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
 
 describe('canSubmitPasswordChange', () => {
   it('requires both passwords', () => {
@@ -87,25 +80,8 @@ describe('formatPasskeyCreatedAt', () => {
 });
 
 describe('SsoProfilePage token details', () => {
-  const ssoJwt = {
-    algorithm: 'EdDSA',
-    type: 'JWT',
-    issuer: 'laisky-sso',
-    ttl_seconds: 7_776_000,
-    public_key_pem: '-----BEGIN PUBLIC KEY-----\npublic-key\n-----END PUBLIC KEY-----\n',
-    claims_schema: {
-      type: 'object',
-      required: ['iss', 'sub', 'uid'],
-    },
-  };
-
-  it('shows the current SSO token and decoded JSON in the profile token details modal', async () => {
-    const currentToken = `${encodeJwtJSON({ alg: 'EdDSA', typ: 'JWT' })}.${encodeJwtJSON({
-      iss: 'laisky-sso',
-      uid: '0194d5f8-19f7-7f7b-a8d3-421a60f8d8ab',
-      username: 'alice@example.com',
-    })}.signature`;
-
+  it('links to the standalone token details page from the profile', async () => {
+    const currentToken = 'header.payload.signature';
     storeSsoToken(currentToken);
     vi.mocked(fetchGraphQL).mockResolvedValue({
       UserProfile: {
@@ -126,19 +102,14 @@ describe('SsoProfilePage token details', () => {
 
     render(
       <MemoryRouter initialEntries={['/sso/profile']}>
-        <SsoProfilePage ssoJwt={ssoJwt} />
+        <SsoProfilePage />
       </MemoryRouter>
     );
 
     await waitFor(() => expect(fetchGraphQL).toHaveBeenCalledWith(currentToken, expect.any(String)));
-    fireEvent.click(screen.getByRole('button', { name: /token details/i }));
 
-    expect(screen.getByText('Current Token')).toBeInTheDocument();
-    expect(screen.getByText(currentToken)).toBeInTheDocument();
-    expect(screen.getByText('Decoded Token JSON')).toBeInTheDocument();
-    expect(screen.getByText(/"alg": "EdDSA"/)).toBeInTheDocument();
-    expect(screen.getByText(/"username": "alice@example.com"/)).toBeInTheDocument();
-    expect(screen.getByText('EdDSA')).toBeInTheDocument();
+    const tokenLink = await screen.findByRole('link', { name: /token details/i });
+    expect(tokenLink).toHaveAttribute('href', '/sso/token');
   });
 });
 

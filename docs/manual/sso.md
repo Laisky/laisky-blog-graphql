@@ -27,7 +27,7 @@ This manual covers Laisky SSO integration for client applications and operationa
 - Product teams integrating login with Laisky SSO.
 - Backend engineers implementing callback and session exchange.
 - Frontend engineers implementing SSO redirects.
-- Operators configuring SSO login methods, GitHub OAuth, WebAuthn passkeys, and Cloudflare Turnstile.
+- Operators configuring SSO login methods, SMTP email delivery, GitHub OAuth, WebAuthn passkeys, and Cloudflare Turnstile.
 
 ## Public Identity Contract
 
@@ -46,7 +46,8 @@ Do not depend on internal storage identifiers. SSO-facing APIs must use the exte
 
 The SSO service supports these account and authentication flows:
 
-- Email account registration with password.
+- Email account registration with password and an SMTP-delivered verification code.
+- Email verification-code login.
 - GitHub-backed registration and login through GitHub OAuth.
 - Password login with optional TOTP verification.
 - Discoverable passkey login.
@@ -65,6 +66,7 @@ GitHub user authentication is implemented with GitHub OAuth authorization-code f
 1. Your application redirects the browser to the SSO login page with a validated callback URL in `redirect_to`.
 2. The user signs in with one of the enabled methods:
    - Password, plus TOTP when the user has TOTP enabled.
+   - Email verification code.
    - Passkey.
    - GitHub.
 3. SSO redirects the browser to your callback URL with `sso_token=<JWT>`.
@@ -227,8 +229,23 @@ Users can register from the SSO login page with:
 - Account email.
 - Display name.
 - Password.
+- Six-digit email verification code.
+
+Registration starts by requesting a code with `UserRequestEmailCode` and purpose `register`. The server stores only a hashed code, sends the code through SMTP, and expires it after 30 minutes. `UserRegister` must include the code; successful registration consumes it.
 
 New email registrations are active immediately and can sign in after registration succeeds.
+
+### Email Code Login
+
+Users can sign in with a one-time email verification code instead of a password.
+
+Server flow:
+
+1. `UserRequestEmailCode` with purpose `login` validates Turnstile when the client is high risk, creates a six-digit code for active existing users, and sends it through SMTP.
+2. The code is valid for 30 minutes.
+3. `UserLoginWithEmailCode` validates Turnstile when required, consumes the code, and returns `sso_token`.
+
+The login code request returns a generic success message even when the account cannot use this flow, so clients should not use the response to infer account existence.
 
 ### GitHub Registration and Login
 
@@ -365,6 +382,23 @@ settings:
 
 The server requests `read:user` and `user:email` scopes so it can load a verified email address.
 
+### SMTP Email Codes
+
+Email registration and email-code login require an SMTP relay:
+
+```yaml
+settings:
+  web:
+    smtp:
+      host: smtp.example.com # SMTP server domain
+      port: 465 # implicit TLS port; optional, default 465
+      username: sso@example.com # login user, also used as the From address
+      password: YOUR_SMTP_PASSWORD
+      sender_name: Laisky SSO # optional From display name
+```
+
+`port` is optional and defaults to `465`, which connects over implicit TLS (SSL on connect). `username` doubles as the From address, and `sender_name` sets the optional From display name. Any SMTP provider works, including Mailgun's SMTP credentials (`smtp.mailgun.org`). Codes are six digits, expire after 30 minutes, and are stored only as HMAC hashes.
+
 ### WebAuthn Passkeys
 
 Passkeys require a stable relying-party origin and ID. The server derives these from the request by default.
@@ -384,7 +418,7 @@ Use explicit values in production when the service is behind a proxy or when the
 
 ### Cloudflare Turnstile
 
-Turnstile is optional. If a matching secret key is configured, SSO registration and login flows require a valid Turnstile token.
+Turnstile is optional. If a matching secret key is configured, SSO registration and login flows may require a valid Turnstile token after frequent requests, repeated failures, or other suspicious activity.
 
 Per-site configuration:
 
@@ -410,8 +444,10 @@ settings:
 
 Turnstile is enforced on:
 
-- Email registration.
-- Password login through `UserLogin`.
+- Email registration code request through `UserRequestEmailCode` with purpose `register` when the client is high risk.
+- Email registration completion through `UserRegister` when the client is high risk.
+- Password login through `UserLogin` when the client is high risk.
+- Email-code request and login through `UserRequestEmailCode` with purpose `login` and `UserLoginWithEmailCode` when the login client is high risk.
 - GitHub OAuth start through `UserGithubOAuthStart`.
 - Passkey login start through `UserStartPasskeyLogin`.
 
@@ -460,8 +496,23 @@ query {
 ### Email Registration
 
 ```graphql
-mutation Register($account: String!, $password: String!, $displayName: String!, $turnstileToken: String) {
-  UserRegister(account: $account, password: $password, display_name: $displayName, captcha: "", turnstile_token: $turnstileToken) {
+mutation RequestRegisterCode($account: String!, $turnstileToken: String) {
+  UserRequestEmailCode(account: $account, purpose: "register", turnstile_token: $turnstileToken) {
+    msg
+  }
+}
+```
+
+```graphql
+mutation Register($account: String!, $password: String!, $displayName: String!, $emailCode: String!, $turnstileToken: String) {
+  UserRegister(
+    account: $account
+    password: $password
+    display_name: $displayName
+    captcha: ""
+    turnstile_token: $turnstileToken
+    email_code: $emailCode
+  ) {
     msg
   }
 }
@@ -472,6 +523,28 @@ mutation Register($account: String!, $password: String!, $displayName: String!, 
 ```graphql
 mutation Login($account: String!, $password: String!, $turnstileToken: String, $totpCode: String) {
   UserLogin(account: $account, password: $password, turnstile_token: $turnstileToken, totp_code: $totpCode) {
+    token
+    user {
+      id
+      username
+    }
+  }
+}
+```
+
+### Email Code Login
+
+```graphql
+mutation RequestLoginCode($account: String!, $turnstileToken: String) {
+  UserRequestEmailCode(account: $account, purpose: "login", turnstile_token: $turnstileToken) {
+    msg
+  }
+}
+```
+
+```graphql
+mutation LoginWithEmailCode($account: String!, $emailCode: String!, $turnstileToken: String) {
+  UserLoginWithEmailCode(account: $account, email_code: $emailCode, turnstile_token: $turnstileToken) {
     token
     user {
       id
@@ -620,7 +693,7 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 3. Treat `sso_token` as a credential and never log full token values.
 4. Remove `sso_token` from URLs immediately after callback processing.
 5. Use HttpOnly, Secure, SameSite cookies for local application sessions.
-6. Keep GitHub OAuth client secrets and Turnstile secret keys out of frontend bundles.
+6. Keep GitHub OAuth client secrets, SMTP passwords, and Turnstile secret keys out of frontend bundles.
 7. Passkey sessions and GitHub OAuth states are signed by the server and expire after a short window.
 8. Store passkey credential records as sensitive data; avoid exposing credential JSON in logs or APIs.
 9. SSO JWTs are signed, not encrypted; anyone holding a token can decode its claims.
@@ -649,4 +722,4 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 8. Turnstile site key and secret key are configured together when Turnstile is required.
 9. SSO JWT private key is explicitly configured and the published public key is available from the login/profile page modal.
 10. User `uid` is indexed uniquely and downstream systems use UID instead of database IDs.
-11. Logs and monitoring do not expose JWTs, OAuth codes, Turnstile tokens, TOTP secrets, passwords, or passkey credential JSON.
+11. Logs and monitoring do not expose JWTs, OAuth codes, email verification codes, Turnstile tokens, TOTP secrets, passwords, SMTP passwords, or passkey credential JSON.

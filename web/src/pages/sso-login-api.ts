@@ -7,9 +7,25 @@ export const USER_LOGIN_MUTATION = `
 `;
 
 export const USER_REGISTER_MUTATION = `
-  mutation SsoRegister($account: String!, $password: String!, $displayName: String!, $turnstileToken: String) {
-    UserRegister(account: $account, password: $password, display_name: $displayName, captcha: "", turnstile_token: $turnstileToken) {
+  mutation SsoRegister($account: String!, $password: String!, $displayName: String!, $turnstileToken: String, $emailCode: String!) {
+    UserRegister(account: $account, password: $password, display_name: $displayName, captcha: "", turnstile_token: $turnstileToken, email_code: $emailCode) {
       msg
+    }
+  }
+`;
+
+export const USER_REQUEST_EMAIL_CODE_MUTATION = `
+  mutation RequestEmailCode($account: String!, $purpose: String!, $turnstileToken: String) {
+    UserRequestEmailCode(account: $account, purpose: $purpose, turnstile_token: $turnstileToken) {
+      msg
+    }
+  }
+`;
+
+export const USER_LOGIN_WITH_EMAIL_CODE_MUTATION = `
+  mutation LoginWithEmailCode($account: String!, $emailCode: String!, $turnstileToken: String) {
+    UserLoginWithEmailCode(account: $account, email_code: $emailCode, turnstile_token: $turnstileToken) {
+      token
     }
   }
 `;
@@ -59,9 +75,23 @@ export interface SsoLoginResponse {
   };
 }
 
+// SsoEmailCodeLoginResponse describes the token returned by email-code login.
+export interface SsoEmailCodeLoginResponse {
+  UserLoginWithEmailCode: {
+    token: string;
+  };
+}
+
 // SsoRegisterResponse describes the registration message returned by the backend.
 export interface SsoRegisterResponse {
   UserRegister: {
+    msg: string;
+  };
+}
+
+// SsoEmailCodeResponse describes the response returned after requesting an email code.
+export interface SsoEmailCodeResponse {
+  UserRequestEmailCode: {
     msg: string;
   };
 }

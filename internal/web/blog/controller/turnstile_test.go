@@ -118,6 +118,30 @@ func TestValidateTurnstileTokenRequiredForHighRiskRegister(t *testing.T) {
 	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
 }
 
+// TestValidateTurnstileTokenRequiredForFrequentLogin verifies frequent login
+// attempts activate the Turnstile challenge.
+func TestValidateTurnstileTokenRequiredForFrequentLogin(t *testing.T) {
+	setTurnstileEnabledSite(t)
+	withAuthChallengeTracker(t, newAuthChallengeTracker(time.Minute, 1, 15*time.Minute, 100, 100))
+
+	require.NoError(t, validateTurnstileTokenForLogin(context.Background(), nil))
+	err := validateTurnstileTokenForLogin(context.Background(), nil)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
+}
+
+// TestValidateTurnstileTokenRequiredForFrequentRegister verifies frequent
+// registration attempts activate the Turnstile challenge.
+func TestValidateTurnstileTokenRequiredForFrequentRegister(t *testing.T) {
+	setTurnstileEnabledSite(t)
+	withAuthChallengeTracker(t, newAuthChallengeTracker(time.Minute, 1, 15*time.Minute, 100, 100))
+
+	require.NoError(t, validateTurnstileTokenForRegister(context.Background(), nil))
+	err := validateTurnstileTokenForRegister(context.Background(), nil)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
+}
+
 // TestBlogLoginRejectedForHighRiskClient verifies the legacy login path enforces
 // the challenge for suspicious clients (masked as invalid credentials since the
 // legacy client cannot render a widget).

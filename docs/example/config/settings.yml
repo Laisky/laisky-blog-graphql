@@ -148,6 +148,12 @@ settings:
       client_id: YOUR_GITHUB_OAUTH_CLIENT_ID
       client_secret: YOUR_GITHUB_OAUTH_CLIENT_SECRET
       redirect_url: https://sso.laisky.com/github/callback
+    smtp:
+      host: smtp.example.com # SMTP server domain
+      port: 465 # implicit TLS port; 465 connects over SSL/TLS. Optional, default: 465
+      username: sso@example.com # login user, also used as the From address
+      password: YOUR_SMTP_PASSWORD # SMTP password
+      sender_name: Laisky SSO # optional From display name
     sso_jwt:
       private_key: |
         -----BEGIN PRIVATE KEY-----

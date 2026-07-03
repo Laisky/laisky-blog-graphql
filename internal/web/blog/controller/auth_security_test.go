@@ -13,22 +13,22 @@ func TestUserRegisterInputLength(t *testing.T) {
 	ctx := context.Background()
 
 	// Test account too long
-	_, err := r.UserRegister(ctx, strings.Repeat("a", 101), "pass", "name", "captcha", nil)
+	_, err := r.UserRegister(ctx, strings.Repeat("a", 101), "pass", "name", "captcha", nil, "123456")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input too long")
 
 	// Test password too long
-	_, err = r.UserRegister(ctx, "account", strings.Repeat("p", 101), "name", "captcha", nil)
+	_, err = r.UserRegister(ctx, "account", strings.Repeat("p", 101), "name", "captcha", nil, "123456")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input too long")
 
 	// Test displayName too long
-	_, err = r.UserRegister(ctx, "account", "pass", strings.Repeat("n", 101), "captcha", nil)
+	_, err = r.UserRegister(ctx, "account", "pass", strings.Repeat("n", 101), "captcha", nil, "123456")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input too long")
 
 	// Test captcha too long
-	_, err = r.UserRegister(ctx, "account", "pass", "name", strings.Repeat("c", 501), nil)
+	_, err = r.UserRegister(ctx, "account", "pass", "name", strings.Repeat("c", 501), nil, "123456")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input too long")
 }
@@ -64,7 +64,7 @@ func TestUserRegisterInputLengthWithMultiByteCharacters(t *testing.T) {
 	r := &MutationResolver{}
 	ctx := context.Background()
 
-	_, err := r.UserRegister(ctx, strings.Repeat("😀", 101), "pass", "name", "captcha", nil)
+	_, err := r.UserRegister(ctx, strings.Repeat("😀", 101), "pass", "name", "captcha", nil, "123456")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input too long")
 }

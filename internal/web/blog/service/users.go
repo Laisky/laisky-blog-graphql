@@ -230,12 +230,17 @@ func (s *Blog) setupUserCols(ctx context.Context) error {
 		}
 	}
 
+	if err := s.setupEmailVerificationCols(ctx); err != nil {
+		return errors.Wrap(err, "setup email verification cols")
+	}
+
 	return nil
 }
 
-// UserRegister user register
+// UserRegister creates an active email/password user after verifying the email code.
+// It accepts account credentials, display name, and email code, returning the created user.
 func (s *Blog) UserRegister(ctx context.Context,
-	account, password, displayName string) (u *model.User, err error) {
+	account, password, displayName string, emailCode string) (u *model.User, err error) {
 	if account, err = sanitizeUserAccount(account); err != nil {
 		return nil, errors.Wrap(err, "sanitize account")
 	}
@@ -244,6 +249,9 @@ func (s *Blog) UserRegister(ctx context.Context,
 	}
 	if displayName, err = sanitizeUserDisplayName(displayName); err != nil {
 		return nil, errors.Wrap(err, "sanitize display name")
+	}
+	if err = s.ConsumeEmailVerificationCode(ctx, account, model.EmailVerificationPurposeRegister, emailCode); err != nil {
+		return nil, errors.Wrap(err, "verify email code")
 	}
 
 	col := s.dao.GetUsersCol()
