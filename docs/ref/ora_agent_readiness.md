@@ -28,3 +28,10 @@ Durable findings from public Ora sources, checked 2026-07-03.
 - Ora marks genuinely irrelevant checks as N/A so missing commerce or in-agent UI protocols do not necessarily penalize non-commerce/backend products.
 - Public APIs include cached score lookup, scanning, leaderboard/discovery, feedback, badge, and check-feedback endpoints. Product feedback submission is MCP-only and uses a HATCHA agent-verification flow.
 - The public score page starts a fresh scan through an event stream at `/api/scan/stream?domain=<domain>&fresh=1` and polls deep checks at `/api/deep-checks/<domain>`. Its Access probes include conventional protected API paths such as `/api`, `/api/v1`, `/v1`, `/v2`, and `/agent/auth`, looking for JSON errors and `WWW-Authenticate: Bearer resource_metadata="..."` auth discovery.
+
+## MCP unknown-tool probe behavior
+
+- Checked 2026-07-03 against the MCP 2025-06-18 tools specification and `github.com/mark3labs/mcp-go` v0.48.0.
+- The MCP tools specification classifies unknown tools as protocol errors returned through a standard JSON-RPC error response, not as successful tool execution results with `isError=true`.
+- In `mcp-go` v0.48.0, `MCPServer.handleToolCall` returns a request error with code `INVALID_PARAMS` and wraps `server.ErrToolNotFound` when the requested tool name is not registered. `MCPServer.HandleMessage` then calls `Hooks.onError` before returning the JSON-RPC error.
+- Therefore, external readiness scanners or clients may intentionally call a nonexistent tool to verify protocol behavior. The server response is correct when it returns the JSON-RPC unknown-tool error. Application logging should classify known synthetic unknown-tool probes as debug or info noise instead of service failure alerts, while preserving warn/error visibility for real client misuse or repeated suspicious unknown-tool traffic.
