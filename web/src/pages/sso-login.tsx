@@ -11,8 +11,24 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
+import type { SsoJwtConfig } from '@/lib/runtime-config';
 import { buildRedirectUrlWithToken, parseRedirectTarget, type RedirectTarget } from '@/lib/sso-redirect';
 import { clearSsoToken, loadSsoToken, resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
+import {
+  SSO_SESSION_CHECK_QUERY,
+  USER_GITHUB_OAUTH_START_MUTATION,
+  USER_LOGIN_MUTATION,
+  USER_PASSKEY_LOGIN_FINISH_MUTATION,
+  USER_PASSKEY_LOGIN_START_MUTATION,
+  USER_REGISTER_MUTATION,
+  type SsoGithubOAuthStartResponse,
+  type SsoLoginResponse,
+  type SsoPasskeyLoginResponse,
+  type SsoPasskeyStartResponse,
+  type SsoRegisterResponse,
+} from '@/pages/sso-login-api';
+import { getTurnstileAPI, loadTurnstileScript } from '@/pages/sso-turnstile';
+import { SsoTokenDetailsDialog } from '@/pages/sso-token-details';
 
 export {
   buildRedirectUrlWithToken,
@@ -27,121 +43,13 @@ export {
   parseRedirectTarget
 } from '@/lib/sso-redirect';
 
-const USER_LOGIN_MUTATION = `
-  mutation SsoLogin($account: String!, $password: String!, $turnstileToken: String, $totpCode: String) {
-    UserLogin(account: $account, password: $password, turnstile_token: $turnstileToken, totp_code: $totpCode) {
-      token
-    }
-  }
-`;
-
-const USER_REGISTER_MUTATION = `
-  mutation SsoRegister($account: String!, $password: String!, $displayName: String!, $turnstileToken: String) {
-    UserRegister(account: $account, password: $password, display_name: $displayName, captcha: "", turnstile_token: $turnstileToken) {
-      msg
-    }
-  }
-`;
-
-const USER_GITHUB_OAUTH_START_MUTATION = `
-  mutation StartGithubOAuth($redirectTo: String, $turnstileToken: String) {
-    UserGithubOAuthStart(redirect_to: $redirectTo, turnstile_token: $turnstileToken) {
-      authorize_url
-    }
-  }
-`;
-
-const USER_PASSKEY_LOGIN_START_MUTATION = `
-  mutation StartPasskeyLogin($redirectTo: String, $turnstileToken: String) {
-    UserStartPasskeyLogin(redirect_to: $redirectTo, turnstile_token: $turnstileToken) {
-      options_json
-      session
-    }
-  }
-`;
-
-const USER_PASSKEY_LOGIN_FINISH_MUTATION = `
-  mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
-    UserFinishPasskeyLogin(session: $session, credential_json: $credentialJSON) {
-      token
-      redirect_to
-    }
-  }
-`;
-
-// SSO_SESSION_CHECK_QUERY is a lightweight authenticated probe used to confirm a
-// stored session token still represents a live session before auto-redirecting an
-// already-signed-in visitor. It selects the minimum field so the request only
-// succeeds when the backend accepts the token (UserProfile validates the session).
-const SSO_SESSION_CHECK_QUERY = `
-  query SsoSessionCheck {
-    UserProfile {
-      account
-    }
-  }
-`;
-
-const TURNSTILE_SCRIPT_ID = 'cloudflare-turnstile-script';
-const TURNSTILE_SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-
-interface SsoLoginResponse {
-  UserLogin: {
-    token: string;
-  };
-}
-
-interface SsoRegisterResponse {
-  UserRegister: {
-    msg: string;
-  };
-}
-
-interface SsoGithubOAuthStartResponse {
-  UserGithubOAuthStart: {
-    authorize_url: string;
-  };
-}
-
-interface SsoPasskeyStartResponse {
-  UserStartPasskeyLogin: {
-    options_json: string;
-    session: string;
-  };
-}
-
-interface SsoPasskeyLoginResponse {
-  UserFinishPasskeyLogin: {
-    token: string;
-    redirect_to: string;
-  };
-}
-
 export interface SsoLoginPageProps {
   turnstileSiteKey?: string;
   // githubOAuthEnabled controls whether the "Continue with GitHub" button is shown.
   // It defaults to false so the button stays hidden until the backend confirms
   // GitHub OAuth is configured, avoiding a dead button that only errors on click.
   githubOAuthEnabled?: boolean;
-}
-
-interface TurnstileRenderOptions {
-  sitekey: string;
-  callback: (token: string) => void;
-  'expired-callback'?: () => void;
-  'error-callback'?: () => void;
-  'timeout-callback'?: () => void;
-}
-
-interface TurnstileAPI {
-  render: (container: HTMLElement, options: TurnstileRenderOptions) => string;
-  reset: (widgetId?: string) => void;
-  remove: (widgetId: string) => void;
-}
-
-declare global {
-  interface Window {
-    turnstile?: TurnstileAPI;
-  }
+  ssoJwt?: SsoJwtConfig | null;
 }
 
 export interface SsoSubmitState {
@@ -269,76 +177,11 @@ export function resolveAuthenticatedRedirect(params: {
   return { kind: 'profile' };
 }
 
-function getTurnstileAPI(): TurnstileAPI | undefined {
-  return window.turnstile;
-}
-
-export function loadTurnstileScript(documentRef: Document): Promise<TurnstileAPI> {
-  const existing = getTurnstileAPI();
-  if (existing) {
-    return Promise.resolve(existing);
-  }
-
-  return new Promise<TurnstileAPI>((resolve, reject) => {
-    let script: HTMLScriptElement | null = null;
-
-    const cleanup = (tid: number | undefined) => {
-      if (tid !== undefined) {
-        window.clearTimeout(tid);
-      }
-      if (script) {
-        script.removeEventListener('load', resolveIfReady);
-        script.removeEventListener('error', rejectWithError);
-      }
-    };
-
-    const resolveIfReady = () => {
-      const api = getTurnstileAPI();
-      if (!api) {
-        cleanup(timeoutID);
-        reject(new Error('Turnstile script loaded but API is unavailable.'));
-        return;
-      }
-      cleanup(timeoutID);
-      resolve(api);
-    };
-
-    const rejectWithError = () => {
-      cleanup(timeoutID);
-      reject(new Error('Failed to load Cloudflare Turnstile script.'));
-    };
-
-    const timeoutID = window.setTimeout(() => {
-      rejectWithError();
-    }, 10_000);
-
-    const existingScript = documentRef.getElementById(TURNSTILE_SCRIPT_ID);
-    if (existingScript instanceof HTMLScriptElement) {
-      script = existingScript;
-      script.addEventListener('load', resolveIfReady);
-      script.addEventListener('error', rejectWithError);
-      const api = getTurnstileAPI();
-      if (api) {
-        resolveIfReady();
-      }
-      return;
-    }
-
-    script = documentRef.createElement('script');
-    script.id = TURNSTILE_SCRIPT_ID;
-    script.src = TURNSTILE_SCRIPT_SRC;
-    script.async = true;
-    script.defer = true;
-    script.addEventListener('load', resolveIfReady);
-    script.addEventListener('error', rejectWithError);
-    documentRef.head.appendChild(script);
-  });
-}
-
 export function SsoLoginPage(props: SsoLoginPageProps) {
   const resolvedTurnstileSiteKey = (props.turnstileSiteKey ?? '').trim();
   const turnstileEnabled = isTurnstileEnabled(resolvedTurnstileSiteKey);
   const githubOAuthEnabled = props.githubOAuthEnabled ?? false;
+  const ssoJwt = props.ssoJwt ?? null;
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -775,6 +618,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               <LaiskyLink className="text-primary underline-offset-4 hover:underline">Laisky</LaiskyLink> SSO
             </span>
           </div>
+          <SsoTokenDetailsDialog ssoJwt={ssoJwt} />
         </div>
 
         <Card className="border-border/60 bg-card/80 text-card-foreground shadow-2xl backdrop-blur-sm transition-colors">

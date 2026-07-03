@@ -14,7 +14,7 @@ import { UserRequestsPage } from '@/features/mcp/user-requests/page';
 import { WebFetchPage } from '@/features/mcp/web-fetch/page';
 import { WebSearchPage } from '@/features/mcp/web-search/page';
 import { ApiKeyProvider } from '@/lib/api-key-context';
-import { defaultToolsConfig, loadRuntimeConfig, type ToolsConfig } from '@/lib/runtime-config';
+import { defaultToolsConfig, loadRuntimeConfig, type SsoJwtConfig, type ToolsConfig } from '@/lib/runtime-config';
 import { applySiteBranding } from '@/lib/site-branding';
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
 import { HomePage } from '@/pages/home';
@@ -45,8 +45,8 @@ async function bootstrap() {
   applySiteBranding(runtimeConfig?.site);
   const routes =
     routeContext.routerKind === 'sso'
-      ? buildSsoRoutes(turnstileSiteKey, githubOAuthEnabled)
-      : buildMcpRoutes(turnstileSiteKey, githubOAuthEnabled);
+      ? buildSsoRoutes(turnstileSiteKey, githubOAuthEnabled, runtimeConfig?.ssoJwt ?? undefined)
+      : buildMcpRoutes(turnstileSiteKey, githubOAuthEnabled, runtimeConfig?.ssoJwt ?? undefined);
   const router = createBrowserRouter(routes, { basename: routeContext.basename });
 
   const container = document.getElementById('root');
@@ -77,11 +77,11 @@ bootstrap().catch((error) => {
  * buildMcpRoutes builds the router table for the MCP console experience.
  * It accepts the optional Turnstile site key and GitHub OAuth availability flag and returns the route configuration used by React Router.
  */
-function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean) {
+function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined) {
   return [
-    { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
+    { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
     { path: '/sso/github/callback', element: <SsoGithubCallbackPage /> },
-    { path: '/sso/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} /> },
+    { path: '/sso/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
     {
       path: '/',
       element: <AppLayout />,
@@ -107,12 +107,12 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled
  * buildSsoRoutes builds the router table for the standalone SSO experience.
  * It accepts the optional Turnstile site key and GitHub OAuth availability flag and returns the route configuration used by React Router.
  */
-function buildSsoRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean) {
+function buildSsoRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined) {
   return [
-    { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
-    { path: '/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
+    { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
+    { path: '/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
     { path: '/github/callback', element: <SsoGithubCallbackPage /> },
-    { path: '/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} /> },
+    { path: '/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} ssoJwt={ssoJwt} /> },
     { path: '*', element: <NotFoundPage /> },
   ];
 }

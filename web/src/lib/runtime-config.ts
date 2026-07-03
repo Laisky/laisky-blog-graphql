@@ -25,6 +25,18 @@ export interface RuntimeSiteConfig {
 }
 
 /**
+ * SsoJwtConfig describes the public SSO JWT verification metadata.
+ */
+export interface SsoJwtConfig {
+  algorithm: string;
+  type: string;
+  issuer: string;
+  ttl_seconds: number;
+  public_key_pem: string;
+  claims_schema: Record<string, unknown>;
+}
+
+/**
  * RuntimeConfig describes the runtime configuration fetched from the backend.
  */
 export interface RuntimeConfig {
@@ -36,6 +48,7 @@ export interface RuntimeConfig {
   // configured. The SSO login page hides the GitHub sign-in option when this is
   // false so users never trigger a "github oauth client is not configured" error.
   githubOAuthEnabled?: boolean;
+  ssoJwt?: SsoJwtConfig | null;
 }
 
 // Default tools config with all tools enabled

@@ -736,7 +736,15 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 
 func (s *Blog) ValidateAndGetUser(ctx context.Context) (user *model.User, err error) {
 	uc := &jwt.UserClaims{}
-	if err = auth.Instance.GetUserClaims(ctx, uc); err != nil {
+	rawToken := bearerTokenFromContext(ctx)
+	if rawToken != "" {
+		parseErr := jwt.ParseSSOToken(rawToken, uc)
+		if parseErr != nil {
+			if err = auth.Instance.GetUserClaims(ctx, uc); err != nil {
+				return nil, errors.Wrapf(err, "parse asymmetric sso token: %v", parseErr)
+			}
+		}
+	} else if err = auth.Instance.GetUserClaims(ctx, uc); err != nil {
 		return nil, errors.Wrap(err, "get user from token")
 	}
 
@@ -761,4 +769,27 @@ func (s *Blog) ValidateAndGetUser(ctx context.Context) (user *model.User, err er
 	}
 
 	return user, nil
+}
+
+// bearerTokenFromContext extracts the Bearer token from the current HTTP request.
+// It accepts a request context and returns the trimmed token string when present.
+func bearerTokenFromContext(ctx context.Context) string {
+	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
+	if !ok || gctx == nil {
+		return ""
+	}
+
+	header := strings.TrimSpace(gctx.GetHeader("Authorization"))
+	if header == "" {
+		return ""
+	}
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	if strings.ToLower(strings.TrimSpace(parts[0])) != "bearer" {
+		return ""
+	}
+
+	return strings.TrimSpace(parts[1])
 }

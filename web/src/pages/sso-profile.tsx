@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Github, KeyRound, Lock, LogOut, RefreshCcw, Save, ShieldCheck, ShieldPlus, Trash2, UserRound } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/theme/theme-toggle';
@@ -11,7 +11,9 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { createPasskeyCredentialJSON } from '@/lib/passkey';
+import type { SsoJwtConfig } from '@/lib/runtime-config';
 import { clearSsoToken, consumeSsoTokenFromLocation, resolveSiblingSsoPath } from '@/lib/sso-session';
+import { SsoTokenDetailsDialog } from '@/pages/sso-token-details';
 
 const SSO_PROFILE_FIELDS = `
   uid
@@ -198,9 +200,10 @@ function buildPasskeyDraftNames(passkeys: PasskeyInfo[]): Record<string, string>
 
 interface SsoProfilePageProps {
   githubOAuthEnabled?: boolean;
+  ssoJwt?: SsoJwtConfig | null;
 }
 
-export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePageProps) {
+export function SsoProfilePage({ githubOAuthEnabled = false, ssoJwt = null }: SsoProfilePageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const loginPath = resolveSiblingSsoPath(location.pathname, 'login');
@@ -220,12 +223,12 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
   const [passkeyBusyID, setPasskeyBusyID] = useState('');
   const [isGithubBinding, setIsGithubBinding] = useState(false);
 
-  const applyProfile = (next: SsoProfile) => {
+  const applyProfile = useCallback((next: SsoProfile) => {
     setProfile(next);
     setPasskeyDraftNames(buildPasskeyDraftNames(next.passkeys));
-  };
+  }, []);
 
-  const loadProfile = async (authToken: string) => {
+  const loadProfile = useCallback(async (authToken: string) => {
     setIsLoading(true);
     setStatus(null);
     try {
@@ -236,7 +239,7 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [applyProfile]);
 
   useEffect(() => {
     // Callback logins (GitHub, passkey, and cross-app redirects) hand the freshly
@@ -251,7 +254,7 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
     } else {
       setIsLoading(false);
     }
-  }, []);
+  }, [loadProfile]);
 
   const handleSignOut = () => {
     clearSsoToken();
@@ -433,10 +436,13 @@ export function SsoProfilePage({ githubOAuthEnabled = false }: SsoProfilePagePro
           </Link>
           <div className="flex items-center gap-2">
             {token && (
-              <Button type="button" variant="outline" size="sm" className="gap-2" onClick={handleSignOut}>
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </Button>
+              <>
+                <SsoTokenDetailsDialog ssoJwt={ssoJwt} currentToken={token} />
+                <Button type="button" variant="outline" size="sm" className="gap-2" onClick={handleSignOut}>
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </Button>
+              </>
             )}
             <ThemeToggle />
           </div>

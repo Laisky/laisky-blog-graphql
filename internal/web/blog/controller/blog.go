@@ -7,7 +7,6 @@ import (
 	"html"
 	"regexp"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/Laisky/errors/v2"
@@ -22,7 +21,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
-	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 )
 
@@ -492,20 +490,18 @@ func (r *MutationResolver) newLoginResponse(ctx context.Context, user *model.Use
 		RegisteredClaims: jwtLib.RegisteredClaims{
 			ID:        gutils.UUID7(),
 			Subject:   user.UID,
-			Issuer:    "laisky-sso",
+			Issuer:    jwt.SSOIssuer,
 			IssuedAt:  jwtLib.NewNumericDate(gutils.Clock.GetUTCNow()),
-			ExpiresAt: jwtLib.NewNumericDate(gutils.Clock.GetUTCNow().Add(3 * 30 * 24 * time.Hour)),
+			ExpiresAt: jwtLib.NewNumericDate(gutils.Clock.GetUTCNow().Add(jwt.SSOTokenTTL)),
 		},
 		Username:    user.Account,
 		DisplayName: user.Username,
 		UID:         user.UID,
 	}
 
-	token, signErr := auth.Instance.SetAuthHeader(ctx,
-		ginMw.WithSetAuthHeaderClaim(uc),
-	)
+	token, signErr := jwt.SignSSOToken(uc)
 	if signErr != nil {
-		return nil, errors.Wrap(signErr, "try to set cookies got error")
+		return nil, errors.Wrap(signErr, "sign sso token")
 	}
 
 	return &models.BlogLoginResponse{

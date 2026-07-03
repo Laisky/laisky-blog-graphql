@@ -131,12 +131,13 @@ Your callback endpoint should:
 
 ## JWT Token Specification
 
-`sso_token` is a standard JWT.
+`sso_token` is a standard signed JWT. The payload is readable by clients; do not put secrets in claims.
 
-- Signing algorithm: `HS256`.
+- Signing algorithm: `EdDSA` with an Ed25519 key pair.
 - Issuer: `laisky-sso`.
 - Current TTL: about 90 days (`3 * 30 * 24h`).
 - Server time is UTC.
+- Public verification key: available from the SSO login/profile page `Token Details` modal and from `runtime-config.json` under `ssoJwt.public_key_pem`.
 
 Claims:
 
@@ -199,14 +200,23 @@ If successful, treat the token as valid and map the returned user to your local 
 
 ### Optional: Local JWT Verification
 
-Use local verification only when your team is explicitly allowed to use the shared SSO signing secret.
+Local verification uses the public Ed25519 key published by SSO. You do not need access to the private signing key.
 
 Minimum checks:
 
-1. Verify the `HS256` signature.
+1. Verify the `EdDSA` signature with the published public key.
 2. Verify `exp` and `iat`.
 3. Verify `iss == "laisky-sso"`.
 4. Verify `sub` and `uid` have the expected UUID format and match each other.
+5. Reject tokens whose JWT header algorithm is not `EdDSA`.
+
+The login page and authenticated profile page include a `Token Details` button. Open it to view:
+
+- Token type, algorithm, issuer, and TTL.
+- PEM-encoded public key.
+- JSON schema for expected token claims.
+
+On the profile page, the same modal also shows the current user's active `sso_token`.
 
 ## Account and Profile Flows
 
@@ -280,6 +290,7 @@ https://mcp.laisky.com/sso/profile
 Profile supports:
 
 - Viewing the stable external UID used by clients and JWTs.
+- Viewing SSO JWT metadata, the public verification key, claims schema, and the current session token.
 - Password change.
 - GitHub OAuth identity binding.
 - TOTP enrollment and disable.
@@ -291,7 +302,8 @@ Profile supports:
 
 - New users receive `uid` when the user record is created.
 - Existing users that do not yet have `uid` are assigned one lazily when loaded through authenticated SSO paths.
-- `settings.secret` signs JWTs, GitHub OAuth state, and passkey sessions. Rotating it invalidates active SSO tokens and pending OAuth/passkey ceremonies.
+- `settings.web.sso_jwt.private_key` signs SSO JWTs when configured. If it is omitted, the service derives an Ed25519 signing key from `settings.secret` for compatibility with older deployments.
+- `settings.secret` signs GitHub OAuth state and passkey sessions. When the SSO JWT private key is omitted, rotating `settings.secret` also invalidates active SSO tokens.
 - The users collection should have a unique sparse index on `uid` so old records without `uid` can coexist while migration happens lazily.
 - Passkey user handles use the external UID for new registrations. Legacy passkey handles based on internal IDs are still accepted during login for backward compatibility.
 
@@ -315,6 +327,22 @@ settings:
 ```
 
 Use `router: sso` for the standalone SSO experience. The MCP router can still expose `/sso/login`, `/sso/profile`, and `/sso/github/callback`.
+
+### SSO JWT Signing Key
+
+Production deployments should configure an explicit PKCS#8 Ed25519 private key:
+
+```yaml
+settings:
+  web:
+    sso_jwt:
+      private_key: |
+        -----BEGIN PRIVATE KEY-----
+        YOUR_BASE64_PKCS8_ED25519_PRIVATE_KEY
+        -----END PRIVATE KEY-----
+```
+
+The corresponding public key is exposed to clients through `runtime-config.json` and the login/profile page `Token Details` modal. Rotate this key deliberately because existing SSO tokens signed by the previous key stop validating after rotation.
 
 ### GitHub OAuth
 
@@ -595,6 +623,7 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 6. Keep GitHub OAuth client secrets and Turnstile secret keys out of frontend bundles.
 7. Passkey sessions and GitHub OAuth states are signed by the server and expire after a short window.
 8. Store passkey credential records as sensitive data; avoid exposing credential JSON in logs or APIs.
+9. SSO JWTs are signed, not encrypted; anyone holding a token can decode its claims.
 
 ## Common Failure Cases
 
@@ -618,5 +647,6 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 6. GitHub OAuth callback URL exactly matches the deployed SSO callback route.
 7. WebAuthn `origin` and `rp_id` are stable for the deployed hostname.
 8. Turnstile site key and secret key are configured together when Turnstile is required.
-9. User `uid` is indexed uniquely and downstream systems use UID instead of database IDs.
-10. Logs and monitoring do not expose JWTs, OAuth codes, Turnstile tokens, TOTP secrets, passwords, or passkey credential JSON.
+9. SSO JWT private key is explicitly configured and the published public key is available from the login/profile page modal.
+10. User `uid` is indexed uniquely and downstream systems use UID instead of database IDs.
+11. Logs and monitoring do not expose JWTs, OAuth codes, Turnstile tokens, TOTP secrets, passwords, or passkey credential JSON.

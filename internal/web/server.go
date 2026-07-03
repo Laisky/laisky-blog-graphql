@@ -27,6 +27,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
+	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -450,6 +451,11 @@ func RunServer(addr string, resolver *Resolver) {
 			zap.String("host", requestHost(ctx.Request)),
 			zap.String("site_id", siteConfig.ID),
 		)
+		ssoJWTInfo, err := jwt.SSOJWTInfo()
+		if err != nil {
+			logger.Warn("load sso jwt metadata", zap.Error(err))
+			ssoJWTInfo = nil
+		}
 
 		ctx.JSON(http.StatusOK, gin.H{
 			"urlPrefix":          prefix.internal,
@@ -457,6 +463,7 @@ func RunServer(addr string, resolver *Resolver) {
 			"site":               siteConfig,
 			"tools":              toolsConfig,
 			"githubOAuthEnabled": blog.IsGithubOAuthConfigured(),
+			"ssoJwt":             ssoJWTInfo,
 		})
 	}
 

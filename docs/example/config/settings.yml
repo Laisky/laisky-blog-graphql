@@ -148,6 +148,11 @@ settings:
       client_id: YOUR_GITHUB_OAUTH_CLIENT_ID
       client_secret: YOUR_GITHUB_OAUTH_CLIENT_SECRET
       redirect_url: https://sso.laisky.com/github/callback
+    sso_jwt:
+      private_key: |
+        -----BEGIN PRIVATE KEY-----
+        YOUR_BASE64_PKCS8_ED25519_PRIVATE_KEY
+        -----END PRIVATE KEY-----
     webauthn:
       origin: https://sso.laisky.com
       rp_id: sso.laisky.com

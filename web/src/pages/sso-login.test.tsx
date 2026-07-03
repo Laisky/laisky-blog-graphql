@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,6 +17,7 @@ import {
   resolveAuthenticatedRedirect,
   SsoLoginPage,
 } from './sso-login';
+import { formatSsoJwtSchema } from './sso-token-schema';
 
 // ThemeToggle depends on ThemeProvider context; stub it so the page renders standalone.
 vi.mock('@/components/theme/theme-toggle', () => ({
@@ -405,6 +406,40 @@ describe('SsoLoginPage GitHub option visibility', () => {
   it('shows the GitHub button when GitHub OAuth is configured', () => {
     renderLoginPage(true);
     expect(githubButton()).toBeInTheDocument();
+  });
+});
+
+describe('SsoLoginPage token details', () => {
+  const ssoJwt = {
+    algorithm: 'EdDSA',
+    type: 'JWT',
+    issuer: 'laisky-sso',
+    ttl_seconds: 7_776_000,
+    public_key_pem: '-----BEGIN PUBLIC KEY-----\npublic-key\n-----END PUBLIC KEY-----\n',
+    claims_schema: {
+      type: 'object',
+      required: ['iss', 'sub', 'uid'],
+    },
+  };
+
+  it('formats missing and present claims schemas', () => {
+    expect(formatSsoJwtSchema(undefined)).toBe('{}');
+    expect(formatSsoJwtSchema(ssoJwt.claims_schema)).toContain('"required": [');
+  });
+
+  it('opens the JWT metadata modal from the login page', () => {
+    render(
+      <MemoryRouter initialEntries={['/sso/login']}>
+        <SsoLoginPage ssoJwt={ssoJwt} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /token details/i }));
+
+    expect(screen.getByText('SSO JWT Token')).toBeInTheDocument();
+    expect(screen.getByText('EdDSA')).toBeInTheDocument();
+    expect(screen.getByText(/BEGIN PUBLIC KEY/)).toBeInTheDocument();
+    expect(screen.getByText(/"uid"/)).toBeInTheDocument();
   });
 });
 
