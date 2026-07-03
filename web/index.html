@@ -137,6 +137,9 @@
   </head>
   <body>
     <noscript>
+      <p>This page includes a static agent-readable overview before the interactive console loads.</p>
+    </noscript>
+    <div id="root">
       <main id="agent-readable-summary">
         <h1>Laisky MCP remote agent tools</h1>
         <p>
@@ -148,9 +151,27 @@
           Start with /llms.txt for agent navigation, /auth.md for Bearer token setup, /.well-known/mcp for MCP discovery,
           /.well-known/mcp/server-card.json for the server card, and /openapi.json for a machine-readable HTTP surface.
         </p>
+        <h2>Primary agent use cases</h2>
+        <p>
+          Use Laisky MCP when an agent needs a hosted tool surface instead of local scripts: search current web results,
+          render JavaScript-heavy pages before extraction, coordinate with a human request queue, persist shared project
+          notes in FileIO, recall and maintain long-lived memory, inspect available tools, or extract key context from
+          supplied materials with RAG.
+        </p>
+        <h2>Machine-readable resources</h2>
+        <ul>
+          <li><a href="/llms.txt">Agent navigation guide</a></li>
+          <li><a href="/llms-full.txt">Full agent guide</a></li>
+          <li><a href="/auth.md">Authentication guide</a></li>
+          <li><a href="/openapi.json">OpenAPI service description</a></li>
+          <li><a href="/api">Protected API probe endpoint</a></li>
+          <li><a href="/.well-known/api-catalog">RFC 9727 API catalog</a></li>
+          <li><a href="/.well-known/ai-catalog.json">Agentic Resource Discovery catalog</a></li>
+          <li><a href="/.well-known/mcp">MCP discovery endpoint</a></li>
+          <li><a href="/.well-known/mcp/server-card.json">MCP server card</a></li>
+        </ul>
       </main>
-    </noscript>
-    <div id="root"></div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

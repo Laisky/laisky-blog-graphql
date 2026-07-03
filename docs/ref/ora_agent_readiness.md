@@ -9,6 +9,7 @@ Durable findings from public Ora sources, checked 2026-07-03.
 - Overall: 29/100, grade D, "At Risk".
 - Ora summary: MCP has OAuth 2.0 support, but lacks a public API with reachable endpoints.
 - Layer totals: Discovery 4/22 on the public page; Identity 4/22 on the public page; Access 15/34 on the public page; Payments N/A; Experience 0/10. The structured API exposes a broader internal check denominator, but the page-normalized score is the user-facing result.
+- Fresh stream scan after the first agent-discovery iteration completed at 2026-07-03T03:04:06Z with 63/100, grade C. Layer raw totals were Discovery 6/20, Identity 40/51, Access 92/108, Payments 1/3, Experience 0/0. The cached score API may lag the stream result.
 
 ## Reported weaknesses
 

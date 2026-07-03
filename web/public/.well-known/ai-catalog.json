@@ -1,24 +1,31 @@
 {
+  "specVersion": "0.2.0",
   "version": "2026-07-03",
-  "name": "Laisky MCP Agent Catalog",
+  "displayName": "Laisky MCP Agent Catalog",
   "description": "Machine-readable catalog for the Laisky MCP remote agent tools.",
   "homepage": "https://mcp.laisky.com/",
   "entries": [
     {
+      "identifier": "urn:air:mcp.laisky.com:mcp-server:laisky-mcp",
       "type": "mcp_server",
-      "name": "Laisky MCP",
+      "displayName": "Laisky MCP",
+      "mediaType": "application/json",
       "url": "https://mcp.laisky.com",
       "discovery": "https://mcp.laisky.com/.well-known/mcp",
       "server_card": "https://mcp.laisky.com/.well-known/mcp/server-card.json"
     },
     {
+      "identifier": "urn:air:mcp.laisky.com:api:openapi",
       "type": "openapi",
-      "name": "Laisky MCP HTTP surface",
+      "displayName": "Laisky MCP HTTP surface",
+      "mediaType": "application/vnd.oai.openapi+json",
       "url": "https://mcp.laisky.com/openapi.json"
     },
     {
+      "identifier": "urn:air:mcp.laisky.com:guide:llms-txt",
       "type": "llms_txt",
-      "name": "Laisky MCP agent guide",
+      "displayName": "Laisky MCP agent guide",
+      "mediaType": "text/plain",
       "url": "https://mcp.laisky.com/llms.txt"
     }
   ]

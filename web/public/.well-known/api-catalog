@@ -1,18 +1,48 @@
 {
-  "version": "2026-07-03",
-  "apis": [
+  "linkset": [
     {
-      "api": "Laisky MCP Streamable HTTP",
-      "description": "Model Context Protocol JSON-RPC endpoint for remote agent tools.",
-      "base_url": "https://mcp.laisky.com",
-      "openapi": "https://mcp.laisky.com/openapi.json",
-      "auth": "https://mcp.laisky.com/auth.md"
+      "anchor": "https://mcp.laisky.com",
+      "service-desc": [
+        {
+          "href": "https://mcp.laisky.com/openapi.json",
+          "type": "application/vnd.oai.openapi+json",
+          "title": "Laisky MCP OpenAPI description"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://mcp.laisky.com/index.md",
+          "type": "text/markdown",
+          "title": "Laisky MCP agent overview"
+        },
+        {
+          "href": "https://mcp.laisky.com/auth.md",
+          "type": "text/markdown",
+          "title": "Laisky MCP authentication guide"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://mcp.laisky.com/status",
+          "title": "Laisky MCP status"
+        }
+      ]
     },
     {
-      "api": "Laisky GraphQL",
-      "description": "GraphQL API mounted under /query and /query/v2.",
-      "base_url": "https://mcp.laisky.com/query",
-      "docs": "https://mcp.laisky.com/ui"
+      "anchor": "https://mcp.laisky.com/query",
+      "service-doc": [
+        {
+          "href": "https://mcp.laisky.com/ui",
+          "type": "text/html",
+          "title": "Laisky GraphQL playground"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://mcp.laisky.com/status",
+          "title": "Laisky MCP status"
+        }
+      ]
     }
   ]
 }

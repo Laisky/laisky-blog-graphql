@@ -2,6 +2,10 @@
 
 Laisky MCP is a remote Model Context Protocol server for AI agents. Use it when an agent needs current web search, rendered web fetch, human request queues, FileIO storage, persistent memory, RAG extraction, or MCP call auditing from a single authenticated endpoint.
 
+## Description
+
+Laisky MCP exposes hosted Streamable HTTP MCP tools for agents that need a shared, authenticated backend. The server helps agents search the current web, fetch rendered pages, coordinate with queued human requests, persist project files, maintain memory, extract key information from supplied materials, and inspect available tools.
+
 ## When to Use This
 
 - Use `web_search` for Google Programmable Search results with URLs, titles, snippets, and timestamps.
@@ -12,24 +16,36 @@ Laisky MCP is a remote Model Context Protocol server for AI agents. Use it when 
 - Use `extract_key_info` for small RAG-style extraction from supplied materials.
 - Use `find_tool` or the MCP Inspector when you are unsure which tool best fits a job.
 
+## Use Cases
+
+- Research current public information, then save durable findings for other agents.
+- Render and summarize pages that require JavaScript before content extraction.
+- Keep multi-agent work aligned through FileIO notes and user request queues.
+- Run memory before-turn and after-turn workflows for long-running agent sessions.
+- Inspect the live tool catalog before calling unfamiliar MCP tools.
+
 ## Connection
 
-- MCP endpoint: https://mcp.laisky.com
+- MCP endpoint: [https://mcp.laisky.com](https://mcp.laisky.com)
 - Transport: MCP Streamable HTTP
 - Authentication: `Authorization: Bearer <api key>`
-- Status: https://mcp.laisky.com/status
-- Inspector: https://mcp.laisky.com/debug
+- Status: [https://mcp.laisky.com/status](https://mcp.laisky.com/status)
+- Inspector: [https://mcp.laisky.com/debug](https://mcp.laisky.com/debug)
 
 ## Agent Navigation
 
-- Full agent guide: https://mcp.laisky.com/llms-full.txt
-- Markdown homepage: https://mcp.laisky.com/index.md
-- Authentication guide: https://mcp.laisky.com/auth.md
-- OpenAPI surface: https://mcp.laisky.com/openapi.json
-- MCP discovery: https://mcp.laisky.com/.well-known/mcp
-- MCP server card: https://mcp.laisky.com/.well-known/mcp/server-card.json
-- Agent skills: https://mcp.laisky.com/.well-known/agent-skills/index.json
-- Public source repository: https://github.com/Laisky/laisky-blog-graphql
+- Full agent guide: [https://mcp.laisky.com/llms-full.txt](https://mcp.laisky.com/llms-full.txt)
+- Markdown homepage: [https://mcp.laisky.com/index.md](https://mcp.laisky.com/index.md)
+- Authentication guide: [https://mcp.laisky.com/auth.md](https://mcp.laisky.com/auth.md)
+- OpenAPI surface: [https://mcp.laisky.com/openapi.json](https://mcp.laisky.com/openapi.json)
+- OpenAPI markdown twin: [https://mcp.laisky.com/openapi.json.md](https://mcp.laisky.com/openapi.json.md)
+- Protected API probe endpoint: [https://mcp.laisky.com/api](https://mcp.laisky.com/api)
+- RFC 9727 API catalog: [https://mcp.laisky.com/.well-known/api-catalog](https://mcp.laisky.com/.well-known/api-catalog)
+- ARD catalog: [https://mcp.laisky.com/.well-known/ai-catalog.json](https://mcp.laisky.com/.well-known/ai-catalog.json)
+- MCP discovery: [https://mcp.laisky.com/.well-known/mcp](https://mcp.laisky.com/.well-known/mcp)
+- MCP server card: [https://mcp.laisky.com/.well-known/mcp/server-card.json](https://mcp.laisky.com/.well-known/mcp/server-card.json)
+- Agent skills: [https://mcp.laisky.com/.well-known/agent-skills/index.json](https://mcp.laisky.com/.well-known/agent-skills/index.json)
+- Public source repository: [https://github.com/Laisky/laisky-blog-graphql](https://github.com/Laisky/laisky-blog-graphql)
 
 ## Constraints
 
