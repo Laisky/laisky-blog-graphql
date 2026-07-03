@@ -16,6 +16,7 @@ Laisky MCP is a remote Model Context Protocol server at `https://mcp.laisky.com`
 - Auth guide: `/auth.md`
 - OpenAPI description: `/openapi.json`
 - MCP discovery: `/.well-known/mcp`
+- WebMCP manifest: `/.well-known/webmcp`
 - MCP server card: `/.well-known/mcp/server-card.json`
 - Agent skills index: `/.well-known/agent-skills/index.json`
 - Status: `/status`

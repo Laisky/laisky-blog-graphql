@@ -225,6 +225,7 @@ Accept: application/json, text/event-stream`}</code>
 
       <section className="grid gap-4 md:grid-cols-3">
         <ResourceLink href="/.well-known/mcp" title="MCP discovery" description="Transport URL, auth guide, server card, and OpenAPI links." />
+        <ResourceLink href="/.well-known/webmcp" title="WebMCP" description="Browser-discoverable manifest for MCP-aware user agents." />
         <ResourceLink href="/openapi.json" title="OpenAPI" description="Machine-readable HTTP and GraphQL entry points." />
         <ResourceLink href="/auth.md" title="auth.md" description="Bearer token workflow and agent credential handling." />
         <ResourceLink href="/.well-known/mcp/server-card.json" title="Server card" description="Branded tool preview for registries and agents." />
