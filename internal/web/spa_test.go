@@ -37,6 +37,7 @@ func TestShouldServeStaticJSON(t *testing.T) {
 	t.Parallel()
 
 	require.True(t, shouldServeStaticJSON(".well-known/api-catalog"))
+	require.True(t, shouldServeStaticJSON(".well-known/http-message-signatures-directory"))
 	require.True(t, shouldServeStaticJSON(".well-known/oauth-authorization-server"))
 	require.True(t, shouldServeStaticJSON(".well-known/oauth-protected-resource"))
 	require.False(t, shouldServeStaticJSON("index.md"))

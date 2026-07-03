@@ -95,6 +95,23 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
+        "@type": "Service",
+        "name": "Laisky MCP remote agent tools",
+        "serviceType": "Model Context Protocol server",
+        "url": "https://mcp.laisky.com/",
+        "description": "Hosted Streamable HTTP MCP tools for AI agents that need current web search, rendered fetch, FileIO, memory, RAG extraction, and human request queues.",
+        "provider": {
+          "@type": "Organization",
+          "name": "Laisky",
+          "url": "https://laisky.com"
+        },
+        "areaServed": "Worldwide",
+        "termsOfService": "https://mcp.laisky.com/auth.md"
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
         "@type": "BreadcrumbList",
         "itemListElement": [
           {
@@ -140,6 +157,15 @@
       <p>This page includes a static agent-readable overview before the interactive console loads.</p>
     </noscript>
     <div id="root">
+      <header>
+        <p>Laisky MCP</p>
+        <nav aria-label="Static agent navigation">
+          <a href="/llms.txt">Agent guide</a>
+          <a href="/auth.md">Auth</a>
+          <a href="/openapi.json">OpenAPI</a>
+          <a href="/.well-known/mcp">MCP</a>
+        </nav>
+      </header>
       <main id="agent-readable-summary">
         <h1>Laisky MCP remote agent tools</h1>
         <p>
@@ -158,6 +184,17 @@
           notes in FileIO, recall and maintain long-lived memory, inspect available tools, or extract key context from
           supplied materials with RAG.
         </p>
+        <p>
+          The canonical MCP endpoint is a Streamable HTTP JSON-RPC service. Agents can initialize the server, list tools,
+          inspect parameter schemas, call read-only tools such as web_search and web_fetch, and use project-scoped FileIO
+          or memory tools when they have an API key. The public documentation is intentionally compact so it fits inside
+          agent context windows without requiring a browser-rendered console.
+        </p>
+        <p>
+          The live MCP server currently exposes seventeen tools: web_search, web_fetch, get_user_request, FileIO read and
+          write operations, FileIO list/search/stat/delete/rename helpers, memory before-turn and after-turn workflows,
+          memory maintenance, memory abstract listing, RAG key-info extraction, tool discovery, and MCP pipe execution.
+        </p>
         <h2>Machine-readable resources</h2>
         <ul>
           <li><a href="/llms.txt">Agent navigation guide</a></li>
@@ -171,6 +208,12 @@
           <li><a href="/.well-known/mcp/server-card.json">MCP server card</a></li>
         </ul>
       </main>
+      <footer>
+        <p>
+          For human setup, generate or retrieve an API key through the documented authentication page, then send it only in
+          the Authorization header. Do not place secrets in URLs, logs, screenshots, or shared files.
+        </p>
+      </footer>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -174,6 +174,7 @@ func (h *spaHandler) serveJSONFile(w http.ResponseWriter, r *http.Request, clean
 func shouldServeStaticJSON(clean string) bool {
 	switch clean {
 	case ".well-known/api-catalog",
+		".well-known/http-message-signatures-directory",
 		".well-known/oauth-authorization-server",
 		".well-known/oauth-protected-resource":
 		return true

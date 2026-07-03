@@ -9,6 +9,18 @@
           "title": "Laisky MCP OpenAPI description"
         }
       ],
+      "item": [
+        {
+          "href": "https://mcp.laisky.com/.well-known/mcp",
+          "type": "application/json",
+          "title": "Laisky MCP discovery endpoint"
+        },
+        {
+          "href": "https://mcp.laisky.com/.well-known/mcp/server-card.json",
+          "type": "application/json",
+          "title": "Laisky MCP server card"
+        }
+      ],
       "service-doc": [
         {
           "href": "https://mcp.laisky.com/index.md",
@@ -30,6 +42,13 @@
     },
     {
       "anchor": "https://mcp.laisky.com/query",
+      "item": [
+        {
+          "href": "https://mcp.laisky.com/query",
+          "type": "application/json",
+          "title": "Laisky GraphQL endpoint"
+        }
+      ],
       "service-doc": [
         {
           "href": "https://mcp.laisky.com/ui",

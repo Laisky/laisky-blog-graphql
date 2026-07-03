@@ -97,6 +97,138 @@
           "top_k": { "type": "integer", "minimum": 1, "maximum": 20 }
         }
       }
+    },
+    {
+      "name": "file_stat",
+      "description": "Inspect metadata for a project-scoped FileIO path before reading, writing, moving, or deleting it.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "path"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "path": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "file_list",
+      "description": "List files and directories under a project-scoped FileIO path with configurable traversal depth.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "path"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "path": { "type": "string" },
+          "depth": { "type": "integer", "minimum": 0 },
+          "limit": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
+      "name": "file_search",
+      "description": "Search project-scoped FileIO memory for relevant files or chunks using the configured memory backend.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "query"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "query": { "type": "string" },
+          "path_prefix": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
+      "name": "file_delete",
+      "description": "Delete a project-scoped FileIO file or directory after the agent has confirmed the target is correct.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "path"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "path": { "type": "string" },
+          "recursive": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "file_rename",
+      "description": "Move or rename a project-scoped FileIO file or directory while preserving shared remote context.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "from_path", "to_path"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "from_path": { "type": "string" },
+          "to_path": { "type": "string" },
+          "overwrite": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "find_tool",
+      "description": "Search the live MCP tool catalog by keyword or semantic intent when an agent is unsure which tool to call.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string" },
+          "mode": { "type": "string", "enum": ["auto", "regex", "bm25", "embedding"] },
+          "return_references_only": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "mcp_pipe",
+      "description": "Execute a controlled sequence of MCP tool calls with variable substitution for multi-step agent workflows.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["steps"],
+        "properties": {
+          "steps": { "type": "array", "items": { "type": "object" } },
+          "vars": { "type": "object" }
+        }
+      }
+    },
+    {
+      "name": "memory_after_turn",
+      "description": "Persist useful outcomes after an agent turn so future agents can reuse project knowledge.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "session_id", "current_input", "assistant_response"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "session_id": { "type": "string" },
+          "current_input": { "type": "string" },
+          "assistant_response": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "memory_run_maintenance",
+      "description": "Run maintenance over stored project memory to compact, refresh, or clean durable agent context.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "path_prefix": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
+      "name": "memory_list_dir_with_abstract",
+      "description": "List memory directory entries with abstracts so an agent can choose relevant context without reading every file.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["project", "path"],
+        "properties": {
+          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
+          "path": { "type": "string" },
+          "depth": { "type": "integer", "minimum": 0 }
+        }
+      }
     }
   ]
 }

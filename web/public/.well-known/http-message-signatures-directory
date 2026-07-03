@@ -1,0 +1,11 @@
+{
+  "issuer": "https://mcp.laisky.com",
+  "status": "not_required",
+  "description": "Laisky MCP currently uses bearer API keys for MCP and GraphQL access. HTTP Message Signatures are not required for normal tool calls, but this directory tells agents where to find authentication metadata.",
+  "authentication": {
+    "type": "bearer",
+    "protected_resource": "https://mcp.laisky.com/.well-known/oauth-protected-resource",
+    "authorization_server": "https://mcp.laisky.com/.well-known/oauth-authorization-server",
+    "guide": "https://mcp.laisky.com/auth.md"
+  }
+}
