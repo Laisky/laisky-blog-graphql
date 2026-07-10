@@ -19,6 +19,13 @@ func (s *Blog) LoadUserByUID(ctx context.Context, uid string) (user *model.User,
 	if _, err = uuid.Parse(uid); err != nil {
 		return nil, errors.Wrap(err, "parse user uid")
 	}
+	if s.oneapi != nil {
+		user, err = s.oneapi.GetByUID(ctx, uid)
+		if err != nil {
+			return nil, errors.Wrap(err, "load oneapi user by sso uid")
+		}
+		return user, nil
+	}
 
 	user = &model.User{}
 	result := s.dao.GetUsersCol().FindOne(ctx, bson.D{{Key: "uid", Value: uid}})
@@ -41,6 +48,16 @@ func (s *Blog) EnsureUserUID(ctx context.Context, user *model.User) (*model.User
 	}
 	if strings.TrimSpace(user.UID) != "" {
 		return user, nil
+	}
+	if s.oneapi != nil {
+		if user.OneAPIID <= 0 {
+			return nil, errors.New("oneapi user id is missing")
+		}
+		resolved, err := s.oneapi.GetByID(ctx, user.OneAPIID)
+		if err != nil {
+			return nil, errors.Wrap(err, "ensure oneapi user uid")
+		}
+		return resolved, nil
 	}
 
 	uid := gutils.UUID7()

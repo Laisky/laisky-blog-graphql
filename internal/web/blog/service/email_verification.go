@@ -15,12 +15,14 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/go-utils/v6/email"
+	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	blogoneapi "github.com/Laisky/laisky-blog-graphql/internal/web/blog/oneapi"
 )
 
 const (
@@ -57,6 +59,26 @@ func (s *Blog) RequestEmailVerificationCode(ctx context.Context, account string,
 		return errors.Wrap(err, "generate email verification code")
 	}
 	now := gutils.Clock.GetUTCNow()
+	if s.oneapi != nil {
+		challenge := blogoneapi.SSOEmailVerificationCode{
+			ID:        gutils.UUID7(),
+			Account:   account,
+			Purpose:   purpose,
+			CodeHash:  hashEmailVerificationCode(account, purpose, code),
+			CreatedAt: now,
+			ExpiresAt: now.Add(EmailVerificationCodeTTL),
+		}
+		if err = s.oneapi.ReplaceEmailCode(ctx, challenge); err != nil {
+			return errors.Wrap(err, "replace oneapi email verification code")
+		}
+		if err = s.sendSMTPVerificationCode(account, code, purpose); err != nil {
+			if cleanupErr := s.oneapi.DeleteEmailCode(ctx, challenge.ID); cleanupErr != nil {
+				s.logger.Warn("delete undelivered oneapi email code", zap.Error(cleanupErr))
+			}
+			return errors.Wrap(err, "send verification email")
+		}
+		return nil
+	}
 	challenge := &model.EmailVerificationCode{
 		ID:        primitive.NewObjectID(),
 		Account:   account,
@@ -90,6 +112,20 @@ func (s *Blog) ConsumeEmailVerificationCode(ctx context.Context, account string,
 	code, err = sanitizeEmailVerificationCode(code)
 	if err != nil {
 		return errors.Wrap(err, "sanitize email verification code")
+	}
+	if s.oneapi != nil {
+		challenge, findErr := s.oneapi.FindValidEmailCode(ctx, account, purpose, gutils.Clock.GetUTCNow())
+		if findErr != nil {
+			return errors.New("invalid email verification code")
+		}
+		expectedHash := hashEmailVerificationCode(account, purpose, code)
+		if !secureCompareString(challenge.CodeHash, expectedHash) {
+			return errors.New("invalid email verification code")
+		}
+		if consumeErr := s.oneapi.ConsumeEmailCode(ctx, challenge.ID, expectedHash); consumeErr != nil {
+			return errors.New("invalid email verification code")
+		}
+		return nil
 	}
 
 	col := s.dao.GetEmailVerificationCodesCol()

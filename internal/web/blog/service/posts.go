@@ -21,6 +21,7 @@ import (
 	gutils "github.com/Laisky/go-utils/v6"
 	glog "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -30,6 +31,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	blogoneapi "github.com/Laisky/laisky-blog-graphql/internal/web/blog/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/auth"
 	mongoSDK "github.com/Laisky/laisky-blog-graphql/library/db/mongo"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
@@ -39,19 +41,27 @@ import (
 type Blog struct {
 	logger glog.Logger
 	dao    *dao.Blog
+	oneapi *blogoneapi.Repo
 }
 
 // New new blog service
 func New(ctx context.Context,
 	logger glog.Logger,
-	dao *dao.Blog) (*Blog, error) {
+	dao *dao.Blog,
+	oneAPIRepo *blogoneapi.Repo,
+) (*Blog, error) {
 	b := &Blog{
 		logger: logger,
 		dao:    dao,
+		oneapi: oneAPIRepo,
 	}
 
-	if err := b.setupUserCols(ctx); err != nil {
-		return nil, errors.Wrap(err, "setup user cols")
+	if b.oneapi != nil {
+		if err := b.oneapi.Prepare(ctx); err != nil {
+			return nil, errors.Wrap(err, "prepare oneapi sso repository")
+		}
+	} else if err := b.setupUserCols(ctx); err != nil {
+		return nil, errors.Wrap(err, "setup mongo user collections")
 	}
 
 	return b, nil
@@ -449,6 +459,13 @@ func (s *Blog) LoadUserByID(ctx context.Context, uid primitive.ObjectID) (user *
 	if uid.IsZero() {
 		return nil, errors.Errorf("uid is empty")
 	}
+	if s.oneapi != nil {
+		user, err = s.oneapi.GetByBlogObjectID(ctx, uid)
+		if err != nil {
+			return nil, errors.Wrap(err, "load oneapi user by blog object id")
+		}
+		return user, nil
+	}
 
 	user = &model.User{}
 	result := s.dao.GetUsersCol().FindOne(ctx, bson.D{{Key: "_id", Value: uid}})
@@ -743,6 +760,15 @@ func (s *Blog) ValidateAndGetUser(ctx context.Context) (user *model.User, err er
 			if err = auth.Instance.GetUserClaims(ctx, uc); err != nil {
 				return nil, errors.Wrapf(err, "parse asymmetric sso token: %v", parseErr)
 			}
+		} else {
+			subject := strings.TrimSpace(uc.Subject)
+			uid := strings.TrimSpace(uc.UID)
+			if subject == "" || uid == "" || subject != uid {
+				return nil, errors.New("sso token subject and uid must match")
+			}
+			if _, uuidErr := uuid.Parse(uid); uuidErr != nil {
+				return nil, errors.Wrap(uuidErr, "parse sso token uid")
+			}
 		}
 	} else if err = auth.Instance.GetUserClaims(ctx, uc); err != nil {
 		return nil, errors.Wrap(err, "get user from token")
@@ -761,13 +787,20 @@ func (s *Blog) ValidateAndGetUser(ctx context.Context) (user *model.User, err er
 		if user, err = s.LoadUserByUID(ctx, tokenUID); err != nil {
 			return nil, errors.Wrapf(err, "load user by uid `%s`", tokenUID)
 		}
-		return user, nil
+		return requireActiveUser(user)
 	}
 
 	if user, err = s.LoadUserByID(ctx, legacyID); err != nil {
 		return nil, errors.Wrapf(err, "load user `%s`", legacyID)
 	}
 
+	return requireActiveUser(user)
+}
+
+func requireActiveUser(user *model.User) (*model.User, error) {
+	if user == nil || user.Status != model.UserStatusActive {
+		return nil, errors.WithStack(model.ErrInvalidCredentials)
+	}
 	return user, nil
 }
 

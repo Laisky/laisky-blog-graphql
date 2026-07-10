@@ -11,6 +11,11 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 )
 
+const (
+	ssoUserStoreMongo  = "mongo"
+	ssoUserStoreOneAPI = "oneapi"
+)
+
 // configGetter retrieves raw configuration values by dotted key path.
 type configGetter func(key string) any
 
@@ -39,6 +44,7 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	validateMCPMemoryConfig(get, &validationErrs)
 	validateWebsearchConfig(get, &validationErrs)
 	validateWebSiteConfig(get, &validationErrs)
+	validateSSOConfig(get, &validationErrs)
 	validateOpenAIConfig(get, &validationErrs)
 
 	if len(validationErrs) == 0 {
@@ -46,6 +52,44 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	}
 
 	return errors.Errorf("invalid configuration:\n - %s", strings.Join(validationErrs, "\n - "))
+}
+
+// validateSSOConfig validates the selected SSO user store and OneAPI database
+// connection settings.
+func validateSSOConfig(get configGetter, errs *[]string) {
+	validateOptionalStringOneOf(get, "settings.web.sso.user_store", []string{ssoUserStoreMongo, ssoUserStoreOneAPI}, errs)
+	userStore, _ := parseStrictString(get("settings.web.sso.user_store"))
+	if strings.ToLower(strings.TrimSpace(userStore)) != ssoUserStoreOneAPI {
+		return
+	}
+
+	driver, driverErr := parseStrictString(get("settings.db.oneapi.driver"))
+	driver = strings.ToLower(strings.TrimSpace(driver))
+	if driverErr != nil || (driver != "postgres" && driver != "postgresql" && driver != "mysql" && driver != "sqlite") {
+		appendValidationErrorf(errs, "settings.db.oneapi.driver must be one of [postgres, mysql, sqlite]")
+	} else if driver == "sqlite" {
+		validateRequiredConfigString(get, "settings.db.oneapi.sqlite_path", errs)
+	} else {
+		validateRequiredConfigString(get, "settings.db.oneapi.dsn", errs)
+	}
+
+	validateOptionalIntMin(get, "settings.db.oneapi.sqlite_busy_timeout_ms", 1, errs)
+	validateOptionalIntMin(get, "settings.db.oneapi.max_idle_conns", 1, errs)
+	validateOptionalIntMin(get, "settings.db.oneapi.max_open_conns", 1, errs)
+	validateOptionalIntMin(get, "settings.db.oneapi.conn_max_lifetime_seconds", 1, errs)
+
+	idle, idleErr := parseStrictInt(get("settings.db.oneapi.max_idle_conns"))
+	open, openErr := parseStrictInt(get("settings.db.oneapi.max_open_conns"))
+	if idleErr == nil && openErr == nil && idle > open {
+		appendValidationErrorf(errs, "settings.db.oneapi.max_idle_conns must be <= settings.db.oneapi.max_open_conns")
+	}
+}
+
+func validateRequiredConfigString(get configGetter, key string, errs *[]string) {
+	value, err := parseStrictString(get(key))
+	if err != nil || strings.TrimSpace(value) == "" {
+		appendValidationErrorf(errs, "%s must be a non-empty string", key)
+	}
 }
 
 // validateRedisConfig validates redis-related startup configuration values.

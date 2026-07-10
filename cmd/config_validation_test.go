@@ -309,6 +309,34 @@ func TestValidateStartupConfigWithGetterValidMemoryHeuristicBaseURL(t *testing.T
 	require.NoError(t, err)
 }
 
+// TestValidateStartupConfigWithGetterValidOneAPIStore verifies an explicit
+// OneAPI SSO cutover configuration passes validation.
+func TestValidateStartupConfigWithGetterValidOneAPIStore(t *testing.T) {
+	cfg := map[string]any{"settings": map[string]any{
+		"web": map[string]any{"sso": map[string]any{"user_store": "oneapi"}},
+		"db": map[string]any{"oneapi": map[string]any{
+			"driver": "postgres", "dsn": "postgres://user:password@db/oneapi",
+			"max_idle_conns": 5, "max_open_conns": 20,
+		}},
+	}}
+	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(cfg)))
+}
+
+// TestValidateStartupConfigWithGetterRejectsIncompleteOneAPIStore verifies the
+// service fails closed instead of silently falling back to MongoDB.
+func TestValidateStartupConfigWithGetterRejectsIncompleteOneAPIStore(t *testing.T) {
+	cfg := map[string]any{"settings": map[string]any{
+		"web": map[string]any{"sso": map[string]any{"user_store": "oneapi"}},
+		"db": map[string]any{"oneapi": map[string]any{
+			"driver": "postgres", "max_idle_conns": 30, "max_open_conns": 20,
+		}},
+	}}
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "settings.db.oneapi.dsn")
+	require.Contains(t, err.Error(), "max_idle_conns must be <=")
+}
+
 // newMapConfigGetter builds a dotted-path getter for nested map-based test configuration.
 // It accepts a nested map and returns a getter function compatible with validateStartupConfigWithGetter.
 func newMapConfigGetter(root map[string]any) configGetter {

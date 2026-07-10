@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 	gutils "github.com/Laisky/go-utils/v6"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
+
+const pendingTOTPEnrollmentTTL = 10 * time.Minute
 
 // ValidateTOTPCode validates a one-time code for a user that has TOTP enabled.
 // It accepts a user and raw TOTP code, returning nil when TOTP is disabled or the code is valid.
@@ -41,6 +44,9 @@ func (s *Blog) ValidateLogin(ctx context.Context, account, password string) (u *
 	if password, err = sanitizeUserPassword(password); err != nil {
 		return nil, errors.Wrap(err, "sanitize password")
 	}
+	if s.oneapi != nil {
+		return s.oneapi.ValidateLogin(ctx, account, password)
+	}
 
 	return s.dao.ValidateLogin(ctx, account, password)
 }
@@ -56,12 +62,22 @@ func (s *Blog) ChangePassword(ctx context.Context, user *model.User, currentPass
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize current password")
 	}
-	newPassword, err = sanitizeUserPassword(newPassword)
+	newPassword, err = sanitizeNewUserPassword(newPassword)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize new password")
 	}
 	if strings.TrimSpace(currentPassword) == strings.TrimSpace(newPassword) {
 		return nil, errors.New("new password must be different from current password")
+	}
+	if s.oneapi != nil {
+		if !s.oneapi.VerifyPassword(user, currentPassword) {
+			return nil, errors.WithStack(model.ErrInvalidCredentials)
+		}
+		updated, updateErr := s.oneapi.ChangePassword(ctx, user.OneAPIID, newPassword)
+		if updateErr != nil {
+			return nil, errors.Wrap(updateErr, "change oneapi password")
+		}
+		return updated, nil
 	}
 
 	if err = gcrypto.VerifyHashedPassword([]byte(currentPassword), user.Password); err != nil {
@@ -100,6 +116,16 @@ func (s *Blog) StartTOTPSetup(ctx context.Context, user *model.User) (string, st
 	if secret == "" {
 		return "", "", errors.New("generate totp secret")
 	}
+	if s.oneapi != nil {
+		if user.OneAPIID <= 0 {
+			return "", "", errors.New("oneapi user id is missing")
+		}
+		if err := s.oneapi.UpsertTOTPEnrollment(ctx, user.OneAPIID, secret,
+			gutils.Clock.GetUTCNow().Add(pendingTOTPEnrollmentTTL)); err != nil {
+			return "", "", errors.Wrap(err, "store pending oneapi totp enrollment")
+		}
+		return secret, buildTOTPProvisioningURI(user.Account, secret), nil
+	}
 
 	now := gutils.Clock.GetUTCNow()
 	col := s.dao.GetUsersCol()
@@ -124,6 +150,20 @@ func (s *Blog) StartTOTPSetup(ctx context.Context, user *model.User) (string, st
 func (s *Blog) ConfirmTOTPSetup(ctx context.Context, user *model.User, code string) (*model.User, error) {
 	if user == nil {
 		return nil, errors.New("user is nil")
+	}
+	if s.oneapi != nil {
+		enrollment, err := s.oneapi.GetTOTPEnrollment(ctx, user.OneAPIID, gutils.Clock.GetUTCNow())
+		if err != nil {
+			return nil, errors.Wrap(err, "load pending oneapi totp enrollment")
+		}
+		if !verifyTOTPCode(enrollment.Secret, code) {
+			return nil, errors.New("invalid totp code")
+		}
+		updated, err := s.oneapi.ConfirmTOTPEnrollment(ctx, user.OneAPIID, enrollment.Secret)
+		if err != nil {
+			return nil, errors.Wrap(err, "confirm oneapi totp enrollment")
+		}
+		return updated, nil
 	}
 	if user.TOTPSecret == "" {
 		return nil, errors.New("totp setup has not been started")
@@ -157,6 +197,16 @@ func (s *Blog) DisableTOTP(ctx context.Context, user *model.User, currentPasswor
 	currentPassword, err := sanitizeUserPassword(currentPassword)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize current password")
+	}
+	if s.oneapi != nil {
+		if !s.oneapi.VerifyPassword(user, currentPassword) {
+			return nil, errors.WithStack(model.ErrInvalidCredentials)
+		}
+		updated, updateErr := s.oneapi.ClearTOTP(ctx, user.OneAPIID)
+		if updateErr != nil {
+			return nil, errors.Wrap(updateErr, "clear oneapi totp")
+		}
+		return updated, nil
 	}
 	if err = gcrypto.VerifyHashedPassword([]byte(currentPassword), user.Password); err != nil {
 		return nil, errors.WithStack(model.ErrInvalidCredentials)
@@ -244,11 +294,33 @@ func (s *Blog) UserRegister(ctx context.Context,
 	if account, err = sanitizeUserAccount(account); err != nil {
 		return nil, errors.Wrap(err, "sanitize account")
 	}
-	if password, err = sanitizeUserPassword(password); err != nil {
+	if password, err = sanitizeNewUserPassword(password); err != nil {
 		return nil, errors.Wrap(err, "sanitize password")
 	}
 	if displayName, err = sanitizeUserDisplayName(displayName); err != nil {
 		return nil, errors.Wrap(err, "sanitize display name")
+	}
+	if s.oneapi != nil {
+		emailCode, err = sanitizeEmailVerificationCode(emailCode)
+		if err != nil {
+			return nil, errors.Wrap(err, "sanitize registration email code")
+		}
+		challenge, findErr := s.oneapi.FindValidEmailCode(ctx, account,
+			model.EmailVerificationPurposeRegister, gutils.Clock.GetUTCNow())
+		if findErr != nil {
+			return nil, errors.New("invalid email verification code")
+		}
+		expectedHash := hashEmailVerificationCode(account, model.EmailVerificationPurposeRegister, emailCode)
+		if !secureCompareString(challenge.CodeHash, expectedHash) {
+			return nil, errors.New("invalid email verification code")
+		}
+		user, createErr := s.oneapi.RegisterUserWithEmailCode(ctx, challenge.ID, expectedHash,
+			account, password, displayName)
+		if createErr != nil {
+			return nil, errors.Wrap(createErr, "create oneapi sso user")
+		}
+		s.logger.Info("insert new oneapi sso user", zap.String("account", account))
+		return user, nil
 	}
 	if err = s.ConsumeEmailVerificationCode(ctx, account, model.EmailVerificationPurposeRegister, emailCode); err != nil {
 		return nil, errors.Wrap(err, "verify email code")

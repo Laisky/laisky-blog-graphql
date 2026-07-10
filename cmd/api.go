@@ -22,6 +22,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
@@ -37,6 +38,7 @@ import (
 	blogCtl "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	blogDao "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dao"
 	blogModel "github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	blogOneAPI "github.com/Laisky/laisky-blog-graphql/internal/web/blog/oneapi"
 	blogSvc "github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
 	telegramCtl "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
 	telegramDao "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
@@ -120,8 +122,13 @@ func runAPI() error {
 		blogDB     mongodb.DB
 		mcpDB      *postgres.DB
 		mcpPGXPool *pgxpool.Pool
+		oneAPIDB   *gorm.DB
 		dbMutex    sync.Mutex
 	)
+	userStore := strings.ToLower(strings.TrimSpace(gconfig.S.GetString("settings.web.sso.user_store")))
+	if userStore == "" {
+		userStore = ssoUserStoreMongo
+	}
 
 	logger.Debug("starting parallel database initialization")
 	dbInitStart := time.Now()
@@ -139,6 +146,20 @@ func runAPI() error {
 		dbMutex.Unlock()
 		return nil
 	})
+
+	// OneAPI SQL database: authoritative SSO user store when explicitly enabled.
+	if userStore == ssoUserStoreOneAPI {
+		eg.Go(func() error {
+			db, err := blogOneAPI.NewDB(egCtx, loadOneAPIDBOptions())
+			if err != nil {
+				return errors.Wrap(err, "connect authoritative oneapi user database")
+			}
+			dbMutex.Lock()
+			oneAPIDB = db
+			dbMutex.Unlock()
+			return nil
+		})
+	}
 
 	// MongoDB: telegram
 	eg.Go(func() error {
@@ -200,6 +221,17 @@ func runAPI() error {
 	if err := eg.Wait(); err != nil {
 		return errors.Wrap(err, "parallel database initialization failed")
 	}
+	if oneAPIDB != nil {
+		sqlDB, dbErr := oneAPIDB.DB()
+		if dbErr != nil {
+			return errors.Wrap(dbErr, "get oneapi sql database for shutdown")
+		}
+		defer func() {
+			if closeErr := sqlDB.Close(); closeErr != nil {
+				logger.Warn("close oneapi database", zap.Error(closeErr))
+			}
+		}()
+	}
 	logger.Info("parallel database initialization completed",
 		zap.Duration("duration", time.Since(dbInitStart)))
 
@@ -252,7 +284,14 @@ func runAPI() error {
 	blogStart := time.Now()
 	if blogDB != nil {
 		blogDaoInst := blogDao.New(logger.Named("blog_dao"), blogDB, arweaveClient)
-		args.BlogSvc, err = blogSvc.New(ctx, logger.Named("blog_svc"), blogDaoInst)
+		var oneAPIRepo *blogOneAPI.Repo
+		if userStore == ssoUserStoreOneAPI {
+			if oneAPIDB == nil {
+				return errors.New("oneapi user store selected but database is unavailable")
+			}
+			oneAPIRepo = blogOneAPI.New(logger.Named("oneapi_sso_repo"), oneAPIDB)
+		}
+		args.BlogSvc, err = blogSvc.New(ctx, logger.Named("blog_svc"), blogDaoInst, oneAPIRepo)
 		if err != nil {
 			return errors.Wrap(err, "new blog service")
 		}

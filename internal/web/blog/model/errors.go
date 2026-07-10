@@ -5,6 +5,9 @@ import "github.com/Laisky/errors/v2"
 // ErrInvalidCredentials indicates the login credentials are invalid.
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
+// ErrAccountExists indicates a registration collided with an existing account.
+var ErrAccountExists = errors.New("account already exists")
+
 // ErrTurnstileRequired indicates the client must complete a Turnstile challenge
 // before the authentication request can proceed.
 //

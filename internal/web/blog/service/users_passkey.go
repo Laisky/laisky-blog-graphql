@@ -22,6 +22,13 @@ func (s *Blog) FindUserByPasskeyID(ctx context.Context, credentialID []byte) (*m
 	if encodedID == "" {
 		return nil, errors.New("passkey credential id is empty")
 	}
+	if s.oneapi != nil {
+		user, err := s.oneapi.FindByPasskeyCredentialID(ctx, credentialID)
+		if err != nil {
+			return nil, errors.Wrap(err, "find oneapi user by passkey id")
+		}
+		return user, nil
+	}
 
 	user := new(model.User)
 	if err := s.dao.GetUsersCol().FindOne(ctx, bson.M{"passkeys.id": encodedID}).Decode(user); err != nil {
@@ -50,6 +57,13 @@ func (s *Blog) AddPasskeyCredential(ctx context.Context,
 	label = strings.TrimSpace(label)
 	if label == "" {
 		label = "Passkey"
+	}
+	if s.oneapi != nil {
+		updated, err := s.oneapi.AddPasskey(ctx, user, label, credential)
+		if err != nil {
+			return nil, errors.Wrap(err, "add oneapi passkey")
+		}
+		return updated, nil
 	}
 
 	encodedID := base64.RawURLEncoding.EncodeToString(credential.ID)
@@ -109,6 +123,13 @@ func (s *Blog) UpdatePasskeyCredential(ctx context.Context,
 	if credential == nil {
 		return nil, errors.New("credential is nil")
 	}
+	if s.oneapi != nil {
+		updated, err := s.oneapi.UpdatePasskey(ctx, user.OneAPIID, credential)
+		if err != nil {
+			return nil, errors.Wrap(err, "update oneapi passkey")
+		}
+		return updated, nil
+	}
 
 	encodedID := base64.RawURLEncoding.EncodeToString(credential.ID)
 	credentialJSON, err := json.Marshal(credential)
@@ -165,6 +186,13 @@ func (s *Blog) RenamePasskeyCredential(ctx context.Context,
 	if name == "" {
 		return nil, errors.New("passkey name is empty")
 	}
+	if s.oneapi != nil {
+		updated, err := s.oneapi.RenamePasskey(ctx, user.OneAPIID, credentialID, name)
+		if err != nil {
+			return nil, errors.Wrap(err, "rename oneapi passkey")
+		}
+		return updated, nil
+	}
 
 	now := gutils.Clock.GetUTCNow()
 	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
@@ -205,6 +233,13 @@ func (s *Blog) DeletePasskeyCredential(ctx context.Context,
 	credentialID = strings.TrimSpace(credentialID)
 	if credentialID == "" {
 		return nil, errors.New("passkey credential id is empty")
+	}
+	if s.oneapi != nil {
+		updated, err := s.oneapi.DeletePasskey(ctx, user.OneAPIID, credentialID)
+		if err != nil {
+			return nil, errors.Wrap(err, "delete oneapi passkey")
+		}
+		return updated, nil
 	}
 
 	now := gutils.Clock.GetUTCNow()

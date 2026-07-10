@@ -317,14 +317,56 @@ Profile supports:
 
 ## Data and Migration Notes
 
-- New users receive `uid` when the user record is created.
-- Existing users that do not yet have `uid` are assigned one lazily when loaded through authenticated SSO paths.
+- `settings.web.sso.user_store` selects one authoritative backend. `oneapi` is
+  the production target; `mongo` exists only for a controlled migration or
+  rollback window. The service never falls back automatically after OneAPI has
+  been selected.
+- OneAPI's `users.uuid` remains its own public identifier. The SSO-owned
+  `sso_user_links` table preserves the existing SSO UUID and Mongo-shaped blog
+  author ID, so JWT subjects and historical post ownership do not change at
+  cutover.
+- New OneAPI users use their OneAPI UUID as the SSO UID and receive a stable,
+  deterministic blog author ObjectID. Existing users must be linked before
+  cutover so their prior SSO UID and author ObjectID are retained.
+- Passwords are OneAPI-compatible bcrypt hashes. Legacy Mongo password hashes
+  cannot be copied; affected users must use email-code login and set a new
+  password, or complete a separately audited login-time upgrade.
+- SSO uses OneAPI's native `passkey_credentials` and confirmed
+  `users.totp_secret` fields. Pending TOTP enrollment and hashed email codes
+  remain in SSO-owned SQL tables.
 - `settings.web.sso_jwt.private_key` signs SSO JWTs when configured. If it is omitted, the service derives an Ed25519 signing key from `settings.secret` for compatibility with older deployments.
 - `settings.secret` signs GitHub OAuth state and passkey sessions. When the SSO JWT private key is omitted, rotating `settings.secret` also invalidates active SSO tokens.
-- The users collection should have a unique sparse index on `uid` so old records without `uid` can coexist while migration happens lazily.
-- Passkey user handles use the external UID for new registrations. Legacy passkey handles based on internal IDs are still accepted during login for backward compatibility.
+- Passkey user handles use the external SSO UID. Legacy ObjectID handles remain
+  resolvable only when their `sso_user_links.blog_object_id` mapping was
+  imported.
+
+Follow the [OneAPI SSO migration runbook](sso_oneapi_migration.md) before
+changing the production selector.
 
 ## Admin Configuration
+
+### Authoritative OneAPI User Database
+
+```yaml
+settings:
+  db:
+    oneapi:
+      driver: postgres # postgres, mysql, or sqlite for local development
+      dsn: postgres://oneapi:REPLACE_ME@db.example.com:5432/oneapi
+      max_idle_conns: 5
+      max_open_conns: 20
+      conn_max_lifetime_seconds: 300
+  web:
+    sso:
+      user_store: oneapi
+```
+
+For SQLite development, set `driver: sqlite` and `sqlite_path`; do not set a
+DSN. Sharing a SQLite file between independently deployed OneAPI and SSO
+processes is not recommended for production. Startup validates the OneAPI-owned
+`users`, `tokens`, `options`, and `passkey_credentials` schemas, migrates only
+SSO-owned side tables, and fails closed if the selected database is unavailable.
+The DSN is sensitive and is never logged.
 
 ### Site Routing and Branding
 

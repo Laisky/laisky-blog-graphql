@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	blogoneapi "github.com/Laisky/laisky-blog-graphql/internal/web/blog/oneapi"
 )
 
 // FindUserByOIDCIdentity loads a user by external identity provider and subject.
@@ -19,6 +20,16 @@ func (s *Blog) FindUserByOIDCIdentity(ctx context.Context, provider string, subj
 	subject = strings.TrimSpace(subject)
 	if provider == "" || subject == "" {
 		return nil, errors.New("provider and subject are required")
+	}
+	if s.oneapi != nil {
+		user, err := s.oneapi.FindByOIDCIdentity(ctx, provider, subject)
+		if errors.Is(err, blogoneapi.ErrNotFound) {
+			return nil, errors.WithStack(mongo.ErrNoDocuments)
+		}
+		if err != nil {
+			return nil, errors.Wrap(err, "find oneapi user by oidc identity")
+		}
+		return user, nil
 	}
 
 	user := new(model.User)
@@ -47,6 +58,16 @@ func (s *Blog) FindUserByAccount(ctx context.Context, account string) (*model.Us
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize account")
 	}
+	if s.oneapi != nil {
+		user, findErr := s.oneapi.FindByAccount(ctx, account)
+		if errors.Is(findErr, blogoneapi.ErrNotFound) {
+			return nil, errors.WithStack(mongo.ErrNoDocuments)
+		}
+		if findErr != nil {
+			return nil, errors.Wrap(findErr, "find oneapi user by account")
+		}
+		return user, nil
+	}
 
 	user := new(model.User)
 	if err = s.dao.GetUsersCol().FindOne(ctx, bson.M{"account": account}).Decode(user); err != nil {
@@ -69,8 +90,15 @@ func (s *Blog) GetOrCreateOIDCUser(ctx context.Context,
 ) (*model.User, error) {
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	subject = strings.TrimSpace(subject)
-	email = strings.TrimSpace(strings.ToLower(email))
-	displayName = strings.TrimSpace(displayName)
+	var err error
+	email, err = sanitizeUserAccount(email)
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize oidc email")
+	}
+	displayName, err = sanitizeUserDisplayName(displayName)
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize oidc display name")
+	}
 	if provider == "" || subject == "" {
 		return nil, errors.New("provider and subject are required")
 	}
@@ -87,7 +115,7 @@ func (s *Blog) GetOrCreateOIDCUser(ctx context.Context,
 			return nil, errors.Wrap(err, "find existing oidc user")
 		}
 	} else {
-		return user, nil
+		return requireActiveUser(user)
 	}
 
 	user, err = s.FindUserByAccount(ctx, email)
@@ -95,7 +123,21 @@ func (s *Blog) GetOrCreateOIDCUser(ctx context.Context,
 		if !errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.Wrap(err, "find existing account")
 		}
-		return s.createOIDCUser(ctx, provider, subject, email, displayName)
+		created, createErr := s.createOIDCUser(ctx, provider, subject, email, displayName)
+		if createErr == nil {
+			return created, nil
+		}
+		if s.oneapi == nil || !errors.Is(createErr, model.ErrAccountExists) {
+			return nil, createErr
+		}
+		user, err = s.FindUserByAccount(ctx, email)
+		if err != nil {
+			return nil, errors.Wrap(err, "reload concurrently created oidc account")
+		}
+		return s.BindOIDCIdentityToUser(ctx, user, provider, subject, email)
+	}
+	if _, err = requireActiveUser(user); err != nil {
+		return nil, err
 	}
 
 	return s.BindOIDCIdentityToUser(ctx, user, provider, subject, email)
@@ -109,6 +151,13 @@ func (s *Blog) createOIDCUser(ctx context.Context,
 	email string,
 	displayName string,
 ) (*model.User, error) {
+	if s.oneapi != nil {
+		user, err := s.oneapi.CreateOIDCUser(ctx, provider, subject, email, displayName)
+		if err != nil {
+			return nil, errors.Wrap(err, "create oneapi oidc user")
+		}
+		return user, nil
+	}
 	now := gutils.Clock.GetUTCNow()
 	user := model.NewUser()
 	user.Account = email
@@ -153,6 +202,13 @@ func (s *Blog) BindOIDCIdentityToUser(ctx context.Context,
 	email = strings.TrimSpace(strings.ToLower(email))
 	if provider == "" || subject == "" {
 		return nil, errors.New("provider and subject are required")
+	}
+	if s.oneapi != nil {
+		updated, err := s.oneapi.BindOIDCIdentity(ctx, user.OneAPIID, provider, subject, email)
+		if err != nil {
+			return nil, errors.Wrap(err, "bind oneapi oidc identity")
+		}
+		return updated, nil
 	}
 
 	existingUser, err := s.FindUserByOIDCIdentity(ctx, provider, subject)

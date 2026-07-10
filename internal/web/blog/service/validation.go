@@ -44,11 +44,11 @@ const (
 	// maxCommentWebsiteLen caps the length of comment author websites.
 	maxCommentWebsiteLen = 2048
 	// maxUserAccountLength caps the length of user account identifiers.
-	maxUserAccountLength = 128
+	maxUserAccountLength = 50
 	// maxUserPasswordLength caps the length of user passwords.
-	maxUserPasswordLength = 1024
+	maxUserPasswordLength = 20
 	// maxUserDisplayNameLength caps the length of user display names.
-	maxUserDisplayNameLength = 128
+	maxUserDisplayNameLength = 20
 	// maxActiveTokenLength caps the length of account activation tokens.
 	maxActiveTokenLength = 256
 	// maxEmailVerificationCodeLength caps the length of email verification codes.
@@ -290,6 +290,19 @@ func sanitizeUserAccount(account string) (string, error) {
 // It accepts the raw password string and returns the sanitized password.
 func sanitizeUserPassword(password string) (string, error) {
 	return sanitizeRequiredText(password, maxUserPasswordLength, "password")
+}
+
+// sanitizeNewUserPassword validates a password against OneAPI's accepted
+// registration range.
+func sanitizeNewUserPassword(password string) (string, error) {
+	password, err := sanitizeUserPassword(password)
+	if err != nil {
+		return "", err
+	}
+	if utf8.RuneCountInString(password) < 8 {
+		return "", errors.New("password must contain at least 8 characters")
+	}
+	return password, nil
 }
 
 // sanitizeUserDisplayName validates an optional display name and returns the sanitized value or an error.

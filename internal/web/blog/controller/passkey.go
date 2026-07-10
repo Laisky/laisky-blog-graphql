@@ -415,11 +415,32 @@ func decodeStoredPasskeyCredential(passkey model.PasskeyCredential) (webauthn.Cr
 	if err != nil {
 		return webauthn.Credential{}, errors.Wrap(err, "decode passkey public key")
 	}
+	var aaguid []byte
+	if strings.TrimSpace(passkey.AAGUID) != "" {
+		aaguid, err = base64.RawURLEncoding.DecodeString(passkey.AAGUID)
+		if err != nil {
+			return webauthn.Credential{}, errors.Wrap(err, "decode passkey aaguid")
+		}
+	}
+	transports := make([]protocol.AuthenticatorTransport, 0)
+	for _, rawTransport := range strings.Split(passkey.Transport, ",") {
+		rawTransport = strings.TrimSpace(rawTransport)
+		if rawTransport != "" {
+			transports = append(transports, protocol.AuthenticatorTransport(rawTransport))
+		}
+	}
 
 	return webauthn.Credential{
-		ID:        id,
-		PublicKey: publicKey,
+		ID:              id,
+		PublicKey:       publicKey,
+		AttestationType: passkey.AttestationType,
+		Transport:       transports,
+		Flags: webauthn.CredentialFlags{
+			BackupEligible: passkey.BackupEligible,
+			BackupState:    passkey.BackupState,
+		},
 		Authenticator: webauthn.Authenticator{
+			AAGUID:    aaguid,
 			SignCount: passkey.SignCount,
 		},
 	}, nil

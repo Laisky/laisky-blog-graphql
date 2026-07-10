@@ -22,6 +22,12 @@ settings:
       addr: 127.0.0.1
       user: postgres
       pwd: changeme
+    oneapi:
+      driver: postgres # postgres, mysql, or sqlite (sqlite is for local development only)
+      dsn: postgres://oneapi:change-me@127.0.0.1:5432/oneapi?sslmode=disable
+      max_idle_conns: 5
+      max_open_conns: 20
+      conn_max_lifetime_seconds: 300
   openai:
     base_url: https://api.openai.com # Base URL without /v1 suffix (the code appends /v1/embeddings automatically)
     embedding_model: text-embedding-3-small
@@ -144,6 +150,8 @@ settings:
   web:
     url_prefix: /mcp # internal mount path on the Go server
     public_url_prefix: / # set to '/' to hide the prefix in generated links
+    sso:
+      user_store: oneapi # use mongo only during a controlled rollback window
     github_oauth:
       client_id: YOUR_GITHUB_OAUTH_CLIENT_ID
       client_secret: YOUR_GITHUB_OAUTH_CLIENT_SECRET
