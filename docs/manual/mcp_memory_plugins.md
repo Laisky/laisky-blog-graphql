@@ -99,6 +99,18 @@ caller.
 Mutations are sticky: a `file_write` under plugin X stores the path under X only. There
 is no implicit migration on write or read.
 
+### 3.3 File-level summaries in search results
+
+Regardless of the resolved plugin, every `file_search` hit returns a `file_summary`: a
+concise, English, file-level overview (≤ 300 words / 2,048 bytes) bound to the same
+content generation as the matched chunk. `rag` publishes it through its asynchronous
+index worker (a just-written file may briefly return without one; a slow or missing
+summarizer yields a bounded deterministic fallback, never an empty field). `pageindex`
+returns its bounded `Tree.DocDescription`. The summary is display-only response
+metadata and never changes ranking, and it is redacted from logs and call audits. See
+[`docs/proposals/file_search_file_summaries.md`](../proposals/file_search_file_summaries.md)
+for configuration (`...plugins.rag.index.file_summary.*`), readiness, and rollback.
+
 ## 4. Capabilities
 
 Each plugin advertises a capability vector consumed by error hints and operator dashboards.

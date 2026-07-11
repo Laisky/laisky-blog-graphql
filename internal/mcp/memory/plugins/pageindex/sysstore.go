@@ -22,6 +22,9 @@ type IndexEntry struct {
 	PageCount int    `json:"page_count,omitempty"`
 	LineCount int    `json:"line_count,omitempty"`
 	IndexedAt string `json:"indexed_at"`
+	// SourceContentHash mirrors Tree.SourceContentHash so search-time candidate
+	// selection can reject entries that no longer match the active file (§4.5).
+	SourceContentHash string `json:"source_content_hash,omitempty"`
 }
 
 // Index is the persisted path↔doc_id catalog (one file per project).

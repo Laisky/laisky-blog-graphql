@@ -66,6 +66,11 @@ func redactChunks(value any) any {
 		if content, ok := cloned["chunk_content"]; ok {
 			cloned["chunk_content"] = summarizeRedaction(content)
 		}
+		// file_summary is returned in search results; keep it out of logs and audits
+		// (docs/proposals/file_search_file_summaries.md §6.1, §7.2).
+		if summary, ok := cloned["file_summary"]; ok {
+			cloned["file_summary"] = summarizeRedaction(summary)
+		}
 		result = append(result, cloned)
 	}
 	return result

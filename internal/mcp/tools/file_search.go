@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -12,6 +13,33 @@ import (
 type FileSearchTool struct {
 	svc FileService
 }
+
+// fileSearchOutputSchema describes the {"chunks": [...]} envelope, including the
+// optional file_summary string, so typed clients can validate structuredContent
+// (docs/proposals/file_search_file_summaries.md §3.3).
+var fileSearchOutputSchema = json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "chunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string"},
+          "file_path": {"type": "string"},
+          "file_seek_start_bytes": {"type": "integer"},
+          "file_seek_end_bytes": {"type": "integer"},
+          "is_full_file": {"type": "boolean"},
+          "chunk_content": {"type": "string"},
+          "file_summary": {"type": "string"},
+          "score": {"type": "number"}
+        },
+        "required": ["file_path", "file_seek_start_bytes", "file_seek_end_bytes", "chunk_content", "score"]
+      }
+    }
+  },
+  "required": ["chunks"]
+}`)
 
 // NewFileSearchTool constructs a FileSearchTool.
 func NewFileSearchTool(svc FileService) (*FileSearchTool, error) {
@@ -25,12 +53,15 @@ func NewFileSearchTool(svc FileService) (*FileSearchTool, error) {
 func (t *FileSearchTool) Definition() mcp.Tool {
 	return mcp.NewTool(
 		"file_search",
-		mcp.WithDescription("Search file content using hybrid retrieval (semantic + keyword). Use this to find text, code, or patterns within files, similar to grep or full-text search."),
+		mcp.WithDescription("Search file content using hybrid retrieval (semantic + keyword). "+
+			"Use this to find text, code, or patterns within files, similar to grep or full-text search. "+
+			"Each hit returns the matched chunk plus a concise file-level summary in file_summary."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace. Use \"*\" to search across every project owned by the caller; in that case each returned chunk includes its source project.")),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query string.")),
 		mcp.WithString("path_prefix", mcp.Description("Optional path prefix filter.")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of chunks to return.")),
 		fileToolPluginOption(),
+		mcp.WithRawOutputSchema(fileSearchOutputSchema),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
 	)

@@ -10,7 +10,12 @@ type Tree struct {
 	LineCount      int     `json:"line_count,omitempty"`
 	IndexedAt      string  `json:"indexed_at,omitempty"`
 	AlgorithmVer   string  `json:"algorithm_version"`
-	Structure      []*Node `json:"structure"`
+	// SourceContentHash is the SHA-256 of the complete source file the cached pages
+	// and DocDescription were produced from. It binds the tree to a content
+	// generation so a stale writer cannot overwrite a newer one
+	// (docs/proposals/file_search_file_summaries.md §4.2, §4.5).
+	SourceContentHash string  `json:"source_content_hash,omitempty"`
+	Structure         []*Node `json:"structure"`
 	// Pages caches per-page extracted text so retrieval can resolve page ranges
 	// without re-parsing the original bytes.
 	Pages []Page `json:"pages,omitempty"`

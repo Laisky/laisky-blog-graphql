@@ -361,6 +361,7 @@ Response example:
       "file_seek_end_bytes": 120,
       "is_full_file": false,
       "chunk_content": "...",
+      "file_summary": "This readme explains how to install and configure the demo project, lists its main commands, and points to the troubleshooting section.",
       "score": 0.93
     }
   ]
@@ -369,6 +370,7 @@ Response example:
 
 - `is_full_file=true` means this returned chunk byte range covers the whole file.
 - `is_full_file=false` means this is only part of the file; call `file_read` if full content is needed.
+- `file_summary` is a concise, English, file-level overview (at most 300 words / 2,048 bytes) describing the whole source file the chunk came from. Use it to understand a match without a second `file_read`. It is generated during indexing, so a just-written file may briefly return without it; a slow or unavailable summarizer yields a short deterministic fallback rather than an empty field. The summary never changes ranking.
 - When `project="*"`, each chunk also includes a `project` field naming the source project. The field is omitted for single-project searches.
 
 Cross-project example:
@@ -399,6 +401,7 @@ mcp_call '{
       "file_seek_end_bytes": 120,
       "is_full_file": false,
       "chunk_content": "...",
+      "file_summary": "This readme explains how to install and configure the demo project and where to find troubleshooting steps.",
       "score": 0.93
     }
   ]

@@ -117,7 +117,7 @@ func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path 
 	owner := systemOwnerFromContext(ctx)
 	var file File
 	err := s.db.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at
+		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, content_hash, summary_content_hash, summary_status
 			FROM mcp_files
 			WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
 			LIMIT 1`, s.isPostgres),
@@ -136,6 +136,9 @@ func (s *Service) findActiveFile(ctx context.Context, apiKeyHash, project, path 
 		&file.UpdatedAt,
 		&file.Deleted,
 		&file.DeletedAt,
+		&file.ContentHash,
+		&file.SummaryContentHash,
+		&file.SummaryStatus,
 	)
 	if err != nil {
 		return nil, err

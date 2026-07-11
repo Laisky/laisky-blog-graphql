@@ -104,10 +104,43 @@ type ChunkEntry struct {
     FilePath           string
     FileSeekStartBytes int64 // inclusive
     FileSeekEndBytes   int64 // exclusive
+    IsFullFile         bool
     ChunkContent       string
+    FileSummary        string // file-level overview, json:"file_summary,omitempty"
     Score              float64
 }
 ```
+
+#### 3.1.1 File-level summary lifecycle
+
+`file_search` returns a `FileSummary` bound to the same content generation as the
+chunk. Key architecture points (full contract:
+[`docs/proposals/file_search_file_summaries.md`](../proposals/file_search_file_summaries.md)):
+
+- `mcp_files` carries `content_hash` (SHA-256 of stored bytes) plus `file_summary`,
+  `summary_content_hash`, `summary_status` (`pending|ready|degraded|failed`),
+  `summary_source` (`model|pageindex|deterministic_fallback`), `summary_word_count`,
+  `summary_model`, `summary_prompt_version`, `summary_generation_key`,
+  `summary_updated_at`, and `summary_error_code`. `mcp_file_chunks` carries
+  `file_content_hash`; `mcp_file_index_jobs` carries `content_hash`,
+  `last_error_code`, and `summary_generation_key`. All columns are additive and
+  migrated idempotently on Postgres and SQLite.
+- The RAG index worker generates one summary per content generation off the
+  transaction path (never under the project lock), then publishes chunks + summary
+  atomically after rechecking the active `content_hash`. A stale worker whose hash no
+  longer matches is discarded. Search pairs a chunk with a summary only when
+  `summary_content_hash == file_content_hash` and the status is ready or degraded.
+- On model failure or a missing caller credential the worker publishes a bounded
+  deterministic fallback marked `degraded` and enqueues a deduplicated
+  `SUMMARY_REFRESH` job (states `pending|processing|waiting_auth|done|failed`) that
+  upgrades the summary once an authenticated operation supplies a credential. A
+  platform key is never substituted.
+- PageIndex maps `Tree.DocDescription` (bounded to the shared limits, derived for
+  Markdown, deterministic fallback otherwise) into every returned chunk and publishes
+  the same catalog metadata onto the user row through a content-hash-guarded publisher.
+  `Tree.SourceContentHash` and `IndexEntry.SourceContentHash` reject stale writers.
+- Summary text is response metadata only: it is excluded from embeddings, lexical
+  tokens, rerank input, and scoring, and is redacted from logs and call audits.
 
 ### 3.2 MCP Tool I/O Shape
 

@@ -58,7 +58,7 @@ func TestIndexWorkerDegradesWhenCredentialMissing(t *testing.T) {
 		context.Background(),
 		`SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at
 		FROM mcp_file_index_jobs
-		WHERE apikey_hash = ? AND project = ? AND file_path = ?
+		WHERE apikey_hash = ? AND project = ? AND file_path = ? AND operation = 'UPSERT'
 		ORDER BY id DESC
 		LIMIT 1`,
 		auth.APIKeyHash,

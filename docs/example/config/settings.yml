@@ -141,6 +141,28 @@ settings:
         retry_max: 5
         retry_backoff_ms: 1000
         slo_p95_seconds: 30
+        # summary.* configures the per-CHUNK contextualizer (retrieval input), NOT the
+        # file-level overview returned in file_search results.
+        summary:
+          model: openai/gpt-oss-120b
+          base_url: https://oneapi.laisky.com
+          timeout_ms: 8000
+        # file_summary.* configures the file-level overview returned in each
+        # file_search hit (docs/proposals/file_search_file_summaries.md §6.4). Word and
+        # byte caps may be lowered but never raised above 300 / 2048.
+        file_summary:
+          enabled: true
+          model: openai/gpt-oss-120b # defaults to the chunk-context model when unset
+          base_url: https://oneapi.laisky.com
+          timeout_ms: 20000
+          target_words: 160
+          max_words: 300
+          max_bytes: 2048
+          max_input_tokens: 16000
+          max_reduce_calls: 8
+          max_total_input_tokens: 64000
+          max_total_output_tokens: 4096
+          prompt_version: file_summary_v1
       security:
         encryption_keks:
           '1': REPLACE_WITH_BASE64_32BYTE_SECRET

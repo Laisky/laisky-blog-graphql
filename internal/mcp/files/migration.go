@@ -54,6 +54,10 @@ func RunMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) error 
 		return errors.WithStack(err)
 	}
 
+	if err := applyFileSummaryColumns(ctx, db, isPostgres); err != nil {
+		return errors.WithStack(err)
+	}
+
 	statements := []string{}
 	if isPostgres {
 		statements = []string{
@@ -114,6 +118,58 @@ func applySkipRAGIndexColumn(ctx context.Context, db *sql.DB, isPostgres bool) e
 	}
 	return applyAddColumnIfMissing(ctx, db, "mcp_files", "skip_rag_index",
 		`ALTER TABLE mcp_files ADD COLUMN skip_rag_index BOOLEAN NOT NULL DEFAULT 0`)
+}
+
+// fileSummaryColumnSpec describes one additive column for the file-summary feature
+// (docs/proposals/file_search_file_summaries.md §5.1). Types differ per engine.
+type fileSummaryColumnSpec struct {
+	table      string
+	column     string
+	pgType     string
+	sqliteType string
+}
+
+// fileSummaryColumns are the additive, idempotent columns introduced by the
+// file-level summary contract. content_hash identifies the current stored bytes;
+// summary_* carry the validated overview and its generation identity; the chunk and
+// job columns bind a chunk/job to a whole-file content generation. All defaults are
+// constants so SQLite ADD COLUMN accepts them and re-running the migration is safe.
+var fileSummaryColumns = []fileSummaryColumnSpec{
+	{"mcp_files", "content_hash", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_files", "file_summary", "TEXT NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_files", "summary_content_hash", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_files", "summary_word_count", "INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"},
+	{"mcp_files", "summary_source", "VARCHAR(32) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_files", "summary_model", "VARCHAR(128) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_files", "summary_prompt_version", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_files", "summary_generation_key", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_files", "summary_status", "VARCHAR(16) NOT NULL DEFAULT 'pending'", "TEXT NOT NULL DEFAULT 'pending'"},
+	{"mcp_files", "summary_updated_at", "TIMESTAMPTZ", "DATETIME"},
+	{"mcp_files", "summary_error_code", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_file_chunks", "file_content_hash", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_file_index_jobs", "content_hash", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_file_index_jobs", "last_error_code", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{"mcp_file_index_jobs", "summary_generation_key", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+}
+
+// applyFileSummaryColumns adds the file-summary columns idempotently on Postgres and
+// SQLite. Postgres uses ADD COLUMN IF NOT EXISTS; SQLite probes PRAGMA table_info via
+// applyAddColumnIfMissing before issuing a bare ALTER.
+func applyFileSummaryColumns(ctx context.Context, db *sql.DB, isPostgres bool) error {
+	for _, c := range fileSummaryColumns {
+		if isPostgres {
+			stmt := `ALTER TABLE ` + c.table + ` ADD COLUMN IF NOT EXISTS ` + c.column + ` ` + c.pgType
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return errors.Wrapf(err, "add %s.%s column", c.table, c.column)
+			}
+			continue
+		}
+		ddl := `ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.column + ` ` + c.sqliteType
+		if err := applyAddColumnIfMissing(ctx, db, c.table, c.column, ddl); err != nil {
+			return errors.Wrapf(err, "add %s.%s column", c.table, c.column)
+		}
+	}
+	return nil
 }
 
 // applyAddColumnIfMissing emulates ADD COLUMN IF NOT EXISTS for SQLite, which lacked

@@ -141,6 +141,10 @@ func (p *Plugin) Read(ctx context.Context, auth files.AuthContext, project, path
 }
 
 // Write forwards to userFS.WriteWith with SkipRAGIndex=true and triggers indexing.
+// Indexing and summarization always run against the complete post-write file re-read
+// from storage, never merely the write argument, so APPEND/OVERWRITE/TRUNCATE describe
+// the whole content (§4.5). Every stored file — including unsupported extensions —
+// receives a bounded user-row summary published through the conditional publisher.
 func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, path, content, encoding string, offset int64, mode files.WriteMode) (files.WriteResult, error) {
 	if isLongDocPath(path) && mode == files.WriteModeOverwrite && offset > 0 {
 		return files.WriteResult{}, errors.New("INVALID_ARGUMENT: pageindex rejects OVERWRITE@offset on .pdf/.md paths; use file_delete then file_write instead")
@@ -149,26 +153,59 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 	if err != nil {
 		return res, err
 	}
-	if !isLongDocPath(path) {
+
+	// Re-read the complete post-write content so APPEND/OVERWRITE/TRUNCATE index and
+	// summarize the whole file, not just the request delta.
+	full, readErr := p.userFS.Read(ctx, auth, project, path, 0, -1)
+	if readErr != nil {
+		if p.log != nil {
+			p.log.Warn("pageindex.write reread content: " + readErr.Error())
+		}
 		return res, nil
 	}
-	if p.indexer == nil {
+	fullBytes := []byte(full.Content)
+	sourceHash := files.HashFileContent(fullBytes)
+
+	if !isLongDocPath(path) || p.indexer == nil {
+		// Unsupported extension (or no indexer): store a local deterministic summary
+		// without routing through RAG or exposing a false search hit.
+		desc := files.DeterministicFileSummaryFallback(full.Content, docSummaryMaxWords, docSummaryMaxBytes)
+		p.publishUserRowSummary(ctx, auth, project, path, desc, files.SummarySourceDeterministicFallback, sourceHash)
 		return res, nil
 	}
-	bytesContent := []byte(content)
+
 	kind := KindPDF
 	if strings.HasSuffix(strings.ToLower(path), ".md") {
 		kind = KindMarkdown
 	}
 	docID := docIDFromAuth(auth, project, path)
-	tree, _, indexErr := p.indexer.Index(ctx, kind, bytesContent, IndexOptions{DocID: docID}, nil)
+	tree, _, indexErr := p.indexer.Index(ctx, kind, fullBytes, IndexOptions{DocID: docID}, nil)
 	if indexErr != nil {
-		// Indexing errors should not silently fail the write; surface as warning.
+		// Indexing errors should not silently fail the write; surface as warning and
+		// still publish a deterministic user-row summary for the content generation.
 		if p.log != nil {
 			p.log.Warn("pageindex.write index error: " + indexErr.Error())
 		}
+		desc := files.DeterministicFileSummaryFallback(full.Content, docSummaryMaxWords, docSummaryMaxBytes)
+		p.publishUserRowSummary(ctx, auth, project, path, desc, files.SummarySourceDeterministicFallback, sourceHash)
 		return res, nil
 	}
+
+	tree.SourceContentHash = sourceHash
+	desc, source := finalizeDocDescription(tree, fullBytes)
+	tree.DocDescription = desc
+
+	// Publish the user-row summary first, guarded by the content hash. A false result
+	// means a newer generation is already active, so this stale writer must not
+	// overwrite the tree or index mapping (P06).
+	published := p.publishUserRowSummary(ctx, auth, project, path, desc, source, sourceHash)
+	if !published {
+		if p.log != nil {
+			p.log.Debug("pageindex.write skipped stale tree publish: " + path)
+		}
+		return res, nil
+	}
+
 	if err := p.store.PutTree(ctx, project, docID, tree); err != nil {
 		if p.log != nil {
 			p.log.Warn("pageindex.write put tree: " + err.Error())
@@ -176,16 +213,41 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 		return res, nil
 	}
 	entry := IndexEntry{
-		DocID:     docID,
-		Type:      string(kind),
-		PageCount: tree.PageCount,
-		LineCount: tree.LineCount,
-		IndexedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		DocID:             docID,
+		Type:              string(kind),
+		PageCount:         tree.PageCount,
+		LineCount:         tree.LineCount,
+		IndexedAt:         time.Now().UTC().Format(time.RFC3339Nano),
+		SourceContentHash: sourceHash,
 	}
 	if err := p.store.UpdateIndexEntry(ctx, project, path, entry); err != nil && p.log != nil {
 		p.log.Warn("pageindex.write update index: " + err.Error())
 	}
 	return res, nil
+}
+
+// publishUserRowSummary publishes bounded summary catalog metadata onto the user file
+// row through the conditional publisher. It returns whether the summary was published
+// (false when a newer content generation is already active).
+func (p *Plugin) publishUserRowSummary(ctx context.Context, auth files.AuthContext, project, path, summary string, source files.SummarySource, contentHash string) bool {
+	status := files.SummaryStatusReady
+	if source == files.SummarySourceDeterministicFallback {
+		status = files.SummaryStatusDegraded
+	}
+	published, err := p.userFS.PublishPluginSummary(ctx, auth, project, path, files.PluginSummaryInput{
+		ExpectedContentHash: contentHash,
+		Summary:             summary,
+		WordCount:           files.SummaryWordCount(summary),
+		Source:              source,
+		Status:              status,
+		Model:               "",
+		PromptVersion:       AlgorithmVersion,
+		GenerationKey:       contentHash,
+	})
+	if err != nil && p.log != nil {
+		p.log.Warn("pageindex.write publish summary: " + err.Error())
+	}
+	return published
 }
 
 // Delete forwards to userFS and cleans up sysstore entries.

@@ -37,13 +37,17 @@ type FileEntry struct {
 // ChunkEntry describes a file chunk returned by file_search.
 type ChunkEntry struct {
 	// Project is populated only for cross-project searches (project="*").
-	Project            string  `json:"project,omitempty"`
-	FilePath           string  `json:"file_path"`
-	FileSeekStartBytes int64   `json:"file_seek_start_bytes"`
-	FileSeekEndBytes   int64   `json:"file_seek_end_bytes"`
-	IsFullFile         bool    `json:"is_full_file"`
-	ChunkContent       string  `json:"chunk_content"`
-	Score              float64 `json:"score"`
+	Project            string `json:"project,omitempty"`
+	FilePath           string `json:"file_path"`
+	FileSeekStartBytes int64  `json:"file_seek_start_bytes"`
+	FileSeekEndBytes   int64  `json:"file_seek_end_bytes"`
+	IsFullFile         bool   `json:"is_full_file"`
+	ChunkContent       string `json:"chunk_content"`
+	// FileSummary is a concise, English, file-level overview associated with the same
+	// content generation as ChunkContent. It is response metadata only and never
+	// participates in ranking (docs/proposals/file_search_file_summaries.md §3.1).
+	FileSummary string  `json:"file_summary,omitempty"`
+	Score       float64 `json:"score"`
 }
 
 // AuthContext carries trusted caller identity for file operations.

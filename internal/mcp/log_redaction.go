@@ -69,6 +69,10 @@ func redactMCPMap(input map[string]any) map[string]any {
 	if _, ok := output["chunk_content"]; ok {
 		output["chunk_content"] = files.RedactToolArguments("file_search", map[string]any{"content": output["chunk_content"]})["content"]
 	}
+	// file_summary is response metadata that must never reach logs or audits (§7.2).
+	if _, ok := output["file_summary"]; ok {
+		output["file_summary"] = files.RedactToolArguments("file_search", map[string]any{"content": output["file_summary"]})["content"]
+	}
 	return output
 }
 

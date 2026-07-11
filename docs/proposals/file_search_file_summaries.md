@@ -1,9 +1,9 @@
 ---
 title: File-level summaries in file_search results
-status: proposed
+status: accepted
 owner: mcp team
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-11
 affected_plugins:
   - rag
   - pageindex
@@ -13,6 +13,23 @@ supersedes_on_acceptance:
 ---
 
 # File-level Summaries in `file_search` Results — Change Manual
+
+> **Implementation status (2026-07-11).** The engineering slice of this proposal has
+> landed: additive schema/migrations, the shared summary normalizer (Unicode word +
+> byte caps, deterministic fallback), the `FileSummarizer` with bounded hierarchical
+> summarization, content-hash generation binding, the RAG index-worker producer with
+> atomic chunk+summary publication and the `SUMMARY_REFRESH` lifecycle, summary mapping
+> across every RAG search branch, PageIndex `DocDescription` bounding / Markdown
+> derivation / `SourceContentHash` / complete-content re-read / user-row publication,
+> the `file_search` `outputSchema` + description, `file_summary` log/audit redaction,
+> structured summary metrics, and the source-of-truth doc amendments in §1.4. The
+> acceptance-gate artifacts that require external infrastructure or human review — the
+> ≥200-file frozen golden corpus under `docs/eval/file_summary_v1/` with pinned
+> LLM-judge runs and a two-reviewer human audit (§8.6, A2), production load tests for
+> the p95/p99 latency gates (§8.6 Q07, A9), and the multi-instance PostgreSQL race
+> matrix — are scaffolded under `docs/eval/file_summary_v1/` and remain operator/CI
+> responsibilities before the response-enforcement gate (`search.enforce_summary`) is
+> turned on.
 
 ## 1. Background
 
@@ -43,6 +60,17 @@ The current RAG pipeline already performs asynchronous indexing after `file_writ
 5. Build lexical and semantic index rows.
 6. Return the original chunk text from `file_search`.
 
+Three facts about the current implementation constrain this design:
+
+- `mcp_file_chunks.content_hash` already exists but is a per-chunk hash of chunk text.
+  No file-level content hash exists on `mcp_files`; this proposal's `file_content_hash`
+  and `content_hash` columns are new and must not be confused with the chunk-text hash.
+- Stale-job detection compares `file_updated_at` timestamps, not content identity.
+- The tool layer serializes the `{"chunks": [...]}` payload through
+  `mcp.NewToolResultJSON`, which emits the same JSON in both a text content block and
+  `structuredContent`. This dual-channel shape follows MCP specification guidance and
+  is already observed by clients.
+
 The existing `Index.Summary*` settings and `OpenAIContextualizer` are misleadingly
 named for this requirement: they generate short context for each chunk's retrieval
 input. They neither produce nor persist one overview for the file.
@@ -57,8 +85,11 @@ Relevant implementation anchors:
 - [shared result type](../../internal/mcp/files/types.go#L37)
 - [RAG write and outbox path](../../internal/mcp/files/service_write_delete.go#L74)
 - [RAG index worker](../../internal/mcp/files/index_worker.go#L260)
+- [timestamp-based stale-job check](../../internal/mcp/files/index_worker.go#L269)
 - [chunk contextualizer](../../internal/mcp/files/contextualizer_openai.go#L40)
 - [RAG search result mapping](../../internal/mcp/files/service_search.go#L181)
+- [raw-file search fallback](../../internal/mcp/files/service_search.go#L207)
+- [MCP tool result serialization](../../internal/mcp/tools/file_search.go#L57)
 - [PageIndex tree](../../internal/mcp/memory/plugins/pageindex/tree.go#L3)
 - [PageIndex search mapping](../../internal/mcp/memory/plugins/pageindex/search_loop.go#L40)
 
@@ -88,6 +119,15 @@ The design consequences are:
 - Do not alter ranking with a generic summary without a separate evaluation.
 - Expose readiness, retries, failures, and backfill progress.
 - Enforce the length limit in application code after model decoding.
+- Keep the MCP dual-channel result shape: a tool that returns `structuredContent`
+  should also return the equivalent serialized JSON text block, and should advertise an
+  `outputSchema`. Response-size budgets must therefore account for both channels.
+- Treat summarizer input as untrusted per OWASP LLM01 (prompt injection): segregate
+  document text, validate output against a rigid shape, and grant the summarizer no
+  tools.
+- LLM-as-judge evaluation must pin the judge configuration, but pinned seeds do not
+  guarantee determinism; protocols need repeat runs with reported variance and a
+  demonstrated judge-human agreement bar.
 
 ### 1.4 Source-of-truth reconciliation
 
@@ -152,6 +192,18 @@ calculation.
 - No public exposure of model names, prompt versions, content hashes, internal status,
   or raw generation errors.
 
+### 2.4 Alternatives considered
+
+| Alternative                                                       | Decision and reason                                                                                                                                                                              |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Response-level `files` map keyed by path, referenced from chunks   | Rejected for v1. It changes the `{"chunks": [...]}` envelope, breaks self-contained hits, and forces older clients to learn a second lookup structure. Revisit only via a versioned envelope.    |
+| Summary generated at query time                                    | Rejected. It adds model latency and cost to the search hot path, is nondeterministic across identical queries, and violates the ingestion-time guidance in section 1.3.                          |
+| Summary text included in embeddings, BM25 tokens, or rerank input  | Rejected pending a separate evaluated proposal. Published evaluation found generic document summaries add little retrieval value, unlike chunk-specific context, and any ranking change needs its own baseline comparison. |
+| Reusing per-chunk contextualizer output as the file overview       | Rejected. Chunk context situates one chunk and is not a document-level overview; concatenating chunk contexts produces unbounded, redundant text.                                                |
+| Summarizing in the source document's language, or configurable     | Deferred. English-only keeps v1 limits, evaluation, and rubric uniform; the summary never feeds retrieval, so same-language benefits do not apply. A `language` key may be added later without changing limit machinery. |
+| Summary fields on `file_stat` / `file_read` / `file_list`          | Deferred. Those tools already return full content or metadata cheaply; adding summaries there expands scope without evidence of need.                                                            |
+| OpenAI-style caller-supplied `attributes` side-channel             | Rejected. Callers cannot be required to author summaries, and a 256-character attribute ceiling cannot hold the specified overview.                                                              |
+
 ## 3. Public API Contract
 
 ### 3.1 Additive type change
@@ -199,13 +251,26 @@ same file. This keeps every result self-contained, preserves the existing
 do not understand.
 
 The cost is bounded by both summary limits. With the current maximum `limit=20`, the
-summary-specific contribution is at most 40,960 UTF-8 bytes before JSON escaping.
-The implementation must also serialize the complete `mcp.CallToolResult` at
-`limit=20`, including JSON escaping and any MCP text/structured-content wrapper, and
-prove that the default configuration stays within both 128 KiB and the deployed MCP
-output-token budget. `file_summary` cannot be copied into two content channels. If
-`mcp.NewToolResultJSON` duplicates the payload, construct one canonical JSON text block
-instead. Future response normalization or references require a separate versioned
+summary-specific contribution is at most 40,960 UTF-8 bytes per content channel before
+JSON escaping.
+
+The existing serialization path (`mcp.NewToolResultJSON`) emits the payload in both a
+text content block and `structuredContent`. That duplication is intentional MCP
+behavior — the specification recommends that a tool returning `structuredContent` also
+return the equivalent serialized JSON as text — and removing either channel would be a
+breaking wire-shape change for clients that already read it. This change therefore
+keeps both channels identical and sizes the budget for the doubled payload: the
+summary-specific worst case is 81,920 UTF-8 bytes across both channels before JSON
+escaping.
+
+The implementation must serialize the complete `mcp.CallToolResult` at `limit=20`,
+including JSON escaping and both content channels, and prove that the default
+configuration stays within 128 KiB and the deployed MCP output-token budget. The
+128 KiB serialized-response budget is a new normative limit established by this
+proposal; it must be recorded in `docs/requirements/mcp_files.md` during the section
+1.4 amendments. If the worst case exceeds either budget, the fix is lowering the
+configured summary caps or the maximum `limit`, not dropping a content channel. Future
+response normalization or reference-based envelopes require a separate versioned
 proposal.
 
 ### 3.3 Compatibility rules
@@ -221,6 +286,10 @@ proposal.
 - Search errors retain the existing machine-stable error format.
 - The MCP tool description must state that each hit includes matched content and a
   concise file-level summary.
+- The `file_search` tool declares (or updates) an MCP `outputSchema` describing the
+  `{"chunks": [...]}` envelope including `file_summary` as an optional string, so typed
+  clients can validate `structuredContent`. Adding `outputSchema` is additive to
+  `tools/list` and is covered by the superseded-claims note in the frontmatter.
 
 ### 3.4 Summary format and limits
 
@@ -241,6 +310,14 @@ The shared normalizer is authoritative. Prompt instructions and model output-tok
 limits are defenses in depth, not proof of compliance. Word counting follows Unicode
 text segmentation. Operators may configure a lower limit but may not raise either hard
 maximum.
+
+English is the v1 summary language because the summary is display-only response
+metadata consumed by agents, never retrieval input, and a single language keeps the
+word/byte caps, golden corpus, and judge rubric uniform. Published research shows
+same-language context mainly matters when the text feeds retrieval or generation in
+the document's language; that does not apply here. A configurable summary language is
+explicitly deferred (section 2.4); the Unicode word counter and byte cap are already
+language-aware, so enabling it later does not change the limit machinery.
 
 Empty or opaque content uses a deterministic English fallback, for example `Empty
 file.` or `This file contains encoded or non-natural-language text; no reliable
@@ -273,6 +350,14 @@ file_write / restore
 
 No external model request may run while the project mutation transaction or advisory
 lock is held.
+
+Cost is bounded to at most one successful model summarization per published content
+generation. A queued job whose expected content hash no longer matches the active file
+must be skipped before any model call, so rapid successive writes to the same path
+coalesce to the newest generation instead of paying one model call per intermediate
+write. Per-generation call and token ceilings come from the section 6.4 configuration;
+`mcp_files_summary_model_calls_total` and `mcp_files_summary_tokens_total` make the
+realized cost observable.
 
 ### 4.2 Content-generation binding
 
@@ -370,7 +455,9 @@ but the search loop must not choose between two authorities.
 Add one generation-safe PageIndex publisher backed by a single database transaction.
 After PageIndex finishes model work, the publisher must:
 
-1. acquire the project mutation lock;
+1. acquire the project mutation lock — the same transaction-scoped PostgreSQL advisory
+   lock the files service uses for mutations, because the PageIndex store's in-process
+   mutex is process-local and cannot serialize writers across instances;
 2. re-read the active user file and compare its `content_hash` with
    `Tree.SourceContentHash`;
 3. reject the stale publication when the hashes differ;
@@ -466,9 +553,12 @@ Add the following logical fields to `mcp_files`:
 | `summary_error_code`     | Safe machine code only; never raw provider output.        |
 
 Add `file_content_hash` to `mcp_file_chunks` and the expected `content_hash` to
-`mcp_file_index_jobs`. Extend the job operation/status model for the
-`SUMMARY_REFRESH` lifecycle in section 4.6. Existing timestamp-based stale-job checks
-remain as defense in depth, but the hash is authoritative.
+`mcp_file_index_jobs`. The new `file_content_hash` column identifies the whole-file
+generation and is distinct from the existing `mcp_file_chunks.content_hash`, which
+hashes only the chunk's own text and keeps its current meaning. Extend the job
+operation/status model for the `SUMMARY_REFRESH` lifecycle in section 4.6. Existing
+timestamp-based stale-job checks remain as defense in depth, but the hash is
+authoritative.
 
 `summary_generation_key` is SHA-256 over the content hash, model, prompt version, and
 effective limits. A model, prompt, or limit change therefore schedules a refresh even
@@ -534,7 +624,10 @@ would observe a mix of missing and non-empty summaries.
 
 - Add `FileSummary` to `files.ChunkEntry` and the plugin type aliases.
 - Update the `file_search` MCP description and response examples.
-- Keep the existing `{"chunks": [...]}` envelope and all input schemas unchanged.
+- Declare or update the `file_search` MCP `outputSchema` to describe the envelope with
+  the optional `file_summary` string.
+- Keep the existing `{"chunks": [...]}` envelope, both content channels emitted by
+  `mcp.NewToolResultJSON`, and all input schemas unchanged.
 - Extend output redaction so logs and call audits never persist `file_summary`.
 
 ### 6.2 RAG persistence and indexing
@@ -644,6 +737,9 @@ conventions.
 
 ### 7.3 Prompt-injection and output safety
 
+These controls follow the OWASP GenAI prompt-injection guidance (LLM01) for pipelines
+that summarize untrusted documents:
+
 - Delimit file content as untrusted data and state that embedded instructions must not
   be followed.
 - The summarizer cannot invoke tools, browse, fetch URLs, or mutate files.
@@ -653,6 +749,10 @@ conventions.
   ordinary structured data.
 - Do not reveal system prompts, credentials, internal paths, or facts absent from the
   file.
+
+Injection test coverage (C08) reuses the OWASP GenAI 12-attack catalogue already
+adopted by the memory-plugin quality gates, extended with summary-specific payloads
+(instructions to change the summary language, exceed limits, or embed markup).
 
 ### 7.4 Tenant and namespace isolation
 
@@ -753,8 +853,13 @@ implementation acceptance:
 - a stratified 50-file human audit by two reviewers, with disagreements adjudicated
   and critical unsupported claims listed explicitly.
 
-A floating judge alias or an undocumented prompt change invalidates the run. Model,
-prompt, or effective-limit changes must alter `summary_generation_key` and exercise the
+A floating judge alias or an undocumented prompt change invalidates the run. Pinned
+temperature and seed reduce but do not guarantee judge determinism, so the protocol
+runs the judge at least three times over the corpus and reports per-metric mean and
+spread; a threshold pass must hold on the mean with the worst run within 2 points.
+Before judge scores gate acceptance, judge-human agreement on the 50-file audit must
+be at least 0.80; below that, the human adjudication is authoritative. Model, prompt,
+or effective-limit changes must alter `summary_generation_key` and exercise the
 refresh path.
 
 | ID  | Scenario                                                | Expected result                                                                                                                                                     |
@@ -767,7 +872,7 @@ refresh path.
 | Q06 | Golden summary corpus across formats and languages      | Mean groundedness is at least 0.90, key-topic coverage at least 0.80, and human review finds zero critical unsupported claims.                                      |
 | Q07 | RAG `file_search` load test                             | p95 latency is at most baseline ×1.05 and p99 at most baseline ×1.10.                                                                                               |
 | Q08 | RAG indexing throughput                                 | At least the existing 1,500 text-pages/minute/worker gate.                                                                                                          |
-| Q09 | Maximum limit and worst-case escapable summaries        | The fully serialized `CallToolResult` at `limit=20` is at most 128 KiB, fits the deployed token budget, carries one payload copy, and uses bounded memory.          |
+| Q09 | Maximum limit and worst-case escapable summaries        | The fully serialized `CallToolResult` at `limit=20`, counting both content channels, is at most 128 KiB, fits the deployed token budget, and uses bounded memory.  |
 | Q10 | Freshness test with healthy dependencies                | RAG summary+chunk visibility meets its advertised 5-second window and the older 30-second FileIO ceiling; PageIndex preserves its synchronous zero-window contract. |
 | Q11 | Eval comparison with and without returned summaries     | Retrieval metrics do not regress; downstream groundedness, relevance, and completeness are reported separately.                                                     |
 | Q12 | Healthy-provider summary state distribution             | At least 99% of searchable generations are model/pageindex `ready`; degraded generations remain at or below 1%.                                                     |
@@ -782,7 +887,7 @@ After implementation:
 ```bash
 make lint
 go test -race -cover ./...
-go test -bench ./...
+go test -bench=. -benchmem ./...
 ```
 
 Run the plugin conformance and frozen evaluation targets for both RAG and PageIndex.
@@ -848,8 +953,8 @@ A9. **Freshness and performance stay within existing gates.** Healthy RAG indexi
 publishes a complete summary+chunk generation within its advertised 5-second window
 and remains inside the 30-second FileIO ceiling. `file_search` p95 is no more than
 baseline ×1.05 and p99 no more than baseline ×1.10. PageIndex retains its synchronous
-freshness contract. A worst-case `limit=20` response fits the 128 KiB and deployed
-output-token budgets as a single serialized payload.
+freshness contract. A worst-case `limit=20` response, serialized with both content
+channels, fits the 128 KiB and deployed output-token budgets.
 
 A10. **Rollout is complete before enforcement.** Idempotent migrations, producer
 deployment, bounded backfill, and missing-summary audits finish before response

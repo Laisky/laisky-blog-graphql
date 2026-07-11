@@ -115,7 +115,8 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 	// Index workers only process user-namespace jobs. System-owner writes never
 	// enqueue, but we filter defensively so a future bug cannot leak system rows
 	// into the chunking/embedding pipeline.
-	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? AND system_owner = ? ORDER BY id ASC LIMIT ?"
+	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, content_hash, last_error_code, summary_generation_key " +
+		"FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? AND system_owner = ? ORDER BY id ASC LIMIT ?"
 	args := []any{"pending", now, "", batch}
 	if svc.isPostgres {
 		query += " FOR UPDATE SKIP LOCKED"
@@ -141,6 +142,9 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 			&job.AvailableAt,
 			&job.CreatedAt,
 			&job.UpdatedAt,
+			&job.ContentHash,
+			&job.LastErrorCode,
+			&job.SummaryGenerationKey,
 		); scanErr != nil {
 			_ = rows.Close()
 			_ = tx.Rollback()
@@ -195,6 +199,10 @@ func (w *IndexWorker) processJob(ctx context.Context, job FileIndexJob) error {
 		err = svc.processUpsertJob(ctx, job)
 	case "DELETE":
 		err = svc.processDeleteJob(ctx, job)
+	case "SUMMARY_REFRESH":
+		// The refresh handler owns its terminal state (done/waiting_auth/retry) so it
+		// can move to waiting_auth without consuming a retry (§4.6).
+		return w.runSummaryRefresh(ctx, job)
 	default:
 		return w.markJobFailed(ctx, job, errors.New("unknown job operation"))
 	}
@@ -202,6 +210,100 @@ func (w *IndexWorker) processJob(ctx context.Context, job FileIndexJob) error {
 		return w.handleJobError(ctx, job, err)
 	}
 	return w.markJobDone(ctx, job)
+}
+
+// runSummaryRefresh attempts to upgrade a degraded summary to a validated model
+// summary for the same content generation. It never rebuilds or reranks chunks and
+// never uses a platform key. Missing credentials move the job to waiting_auth until a
+// later authenticated operation reactivates it (§4.6).
+func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) error {
+	svc := w.svc
+	file, err := svc.findActiveFile(ctx, job.APIKeyHash, job.Project, job.FilePath)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return w.markSummaryRefreshStatus(ctx, job, "done", "")
+		}
+		return w.handleJobError(ctx, job, errors.Wrap(err, "load file for summary refresh"))
+	}
+	fileHash := file.ContentHash
+	if fileHash == "" {
+		fileHash = HashFileContent(file.Content)
+	}
+	// Superseded by a newer content generation, or already refreshed to ready.
+	if job.ContentHash != "" && job.ContentHash != fileHash {
+		return w.markSummaryRefreshStatus(ctx, job, "done", "")
+	}
+	if file.SummaryStatus == string(SummaryStatusReady) && file.SummaryContentHash == fileHash {
+		return w.markSummaryRefreshStatus(ctx, job, "done", "")
+	}
+	if svc.summarizer == nil {
+		return w.markSummaryRefreshStatus(ctx, job, "waiting_auth", "summarizer_disabled")
+	}
+
+	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
+	if job.FileUpdatedAt != nil {
+		ref.UpdatedAt = *job.FileUpdatedAt
+	}
+	apiKey, credErr := svc.loadCredential(ctx, ref)
+	if credErr != nil || strings.TrimSpace(apiKey) == "" {
+		return w.markSummaryRefreshStatus(ctx, job, "waiting_auth", "credential_unavailable")
+	}
+
+	pub := svc.buildSummaryPublication(ctx, apiKey, string(file.Content), fileHash, nil)
+	svc.logSummaryGeneration(ctx, "rag_refresh", pub)
+	if pub.status != SummaryStatusReady {
+		// Still failing: retry with bounded backoff, then mark failed.
+		return w.handleSummaryRefreshRetry(ctx, job, pub.errorCode)
+	}
+
+	if err := svc.publishSummaryStandalone(ctx, job, pub); err != nil {
+		return w.handleJobError(ctx, job, err)
+	}
+	_ = svc.deleteCredential(ctx, ref)
+	svc.summaryRefreshOutcome(ctx, "rag", "done")
+	return w.markSummaryRefreshStatus(ctx, job, "done", "")
+}
+
+// handleSummaryRefreshRetry requeues a transient refresh failure with bounded backoff
+// and marks the job failed once retries are exhausted. The already-published degraded
+// summary remains searchable either way.
+func (w *IndexWorker) handleSummaryRefreshRetry(ctx context.Context, job FileIndexJob, errorCode string) error {
+	svc := w.svc
+	if job.RetryCount >= svc.settings.Index.RetryMax {
+		svc.summaryRefreshOutcome(ctx, "rag", "failed")
+		return w.markSummaryRefreshStatus(ctx, job, "failed", errorCode)
+	}
+	backoff := svc.settings.Index.RetryBackoff
+	if backoff <= 0 {
+		backoff = time.Second
+	}
+	next := svc.clock().Add(backoff * time.Duration(job.RetryCount+1))
+	svc.summaryRefreshOutcome(ctx, "rag", "retry")
+	_, execErr := svc.db.ExecContext(ctx,
+		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, retry_count = ?, available_at = ?, updated_at = ?, last_error_code = ? WHERE id = ? AND system_owner = ?`, svc.isPostgres),
+		"pending",
+		job.RetryCount+1,
+		next,
+		svc.clock(),
+		errorCode,
+		job.ID,
+		"",
+	)
+	return execErr
+}
+
+// markSummaryRefreshStatus sets the terminal (or waiting) state for a refresh job.
+func (w *IndexWorker) markSummaryRefreshStatus(ctx context.Context, job FileIndexJob, status, errorCode string) error {
+	svc := w.svc
+	_, err := svc.db.ExecContext(ctx,
+		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, updated_at = ?, last_error_code = ? WHERE id = ? AND system_owner = ?`, svc.isPostgres),
+		status,
+		svc.clock(),
+		errorCode,
+		job.ID,
+		"",
+	)
+	return err
 }
 
 // handleJobError schedules retries or marks a job as failed.
@@ -276,13 +378,26 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 		return nil
 	}
 
+	// fileContentHash is the immutable generation identity that binds this file's
+	// chunks and summary. A queued job whose expected hash no longer matches the
+	// active file is skipped before any model call so rapid successive writes to the
+	// same path coalesce to the newest generation (§4.1, §4.2).
+	fileContentHash := file.ContentHash
+	if fileContentHash == "" {
+		fileContentHash = HashFileContent(file.Content)
+	}
+	if job.ContentHash != "" && fileContentHash != "" && job.ContentHash != fileContentHash {
+		s.summaryStaleDiscard(ctx, "rag", job.Project, job.FilePath)
+		return nil
+	}
+
 	chunks := s.chunker.Split(string(file.Content))
 	apiKey := ""
 	ref := CredentialReference{APIKeyHash: job.APIKeyHash, Project: job.Project, Path: job.FilePath}
 	if job.FileUpdatedAt != nil {
 		ref.UpdatedAt = *job.FileUpdatedAt
 	}
-	if s.contextualizer != nil || s.embedder != nil {
+	if s.contextualizer != nil || s.embedder != nil || s.summarizer != nil {
 		loadedAPIKey, loadErr := s.loadCredential(ctx, ref)
 		if loadErr != nil {
 			s.LoggerFromContext(ctx).Debug("load credential failed before indexing",
@@ -295,9 +410,13 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 		}
 	}
 
+	// Generate the summary off the transaction path (no model call under a lock).
+	pub := s.buildSummaryPublication(ctx, apiKey, string(file.Content), fileContentHash, file)
+	s.logSummaryGeneration(ctx, "rag", pub)
+
 	indexContents := s.buildContextualizedChunkInputs(ctx, apiKey, string(file.Content), job.FilePath, chunks)
 	plan := s.buildEmbeddingPlan(ctx, job, apiKey, indexContents)
-	if err := s.replaceIndexRows(ctx, job, chunks, indexContents, plan.vectors); err != nil {
+	if err := s.replaceIndexRows(ctx, job, chunks, indexContents, plan.vectors, pub); err != nil {
 		return err
 	}
 	if plan.err != nil {
@@ -310,7 +429,7 @@ func (s *Service) processUpsertJob(ctx context.Context, job FileIndexJob) error 
 		return plan.err
 	}
 
-	if s.embedder != nil || s.contextualizer != nil {
+	if s.embedder != nil || s.contextualizer != nil || s.summarizer != nil {
 		if err := s.deleteCredential(ctx, ref); err != nil {
 			return err
 		}
@@ -367,12 +486,38 @@ func (s *Service) processDeleteJob(ctx context.Context, job FileIndexJob) error 
 	return s.deleteIndexRows(ctx, job.APIKeyHash, job.Project, job.FilePath)
 }
 
-// replaceIndexRows rebuilds all chunk rows and lexical metadata for a file,
-// and writes embeddings when vectors are provided.
-func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, indexContents []string, vectors []pgvector.Vector) error {
+// replaceIndexRows rebuilds all chunk rows and lexical metadata for a file, writes
+// embeddings when vectors are provided, and atomically publishes the file summary for
+// the same content generation. It first rechecks the active content hash: if a newer
+// write arrived while the summary/embeddings were being produced, the stale generation
+// is discarded rather than overwriting the newer state (§4.1, §4.2).
+func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks []Chunk, indexContents []string, vectors []pgvector.Vector, pub summaryPublication) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.Wrap(err, "begin replace index rows transaction")
+	}
+
+	curHash, hashErr := s.checkActiveContentHashTx(ctx, tx, job)
+	switch {
+	case errors.Is(hashErr, sql.ErrNoRows):
+		// File was deleted concurrently: drop any leftover index rows and stop.
+		if delErr := s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath); delErr != nil {
+			_ = tx.Rollback()
+			return delErr
+		}
+		if commitErr := tx.Commit(); commitErr != nil {
+			return errors.Wrap(commitErr, "commit deleted-file index cleanup")
+		}
+		return nil
+	case hashErr != nil:
+		_ = tx.Rollback()
+		return errors.Wrap(hashErr, "recheck active content hash")
+	}
+	if curHash != "" && pub.contentHash != "" && curHash != pub.contentHash {
+		// A newer generation is already active; discard this stale worker output.
+		_ = tx.Rollback()
+		s.summaryStaleDiscard(ctx, "rag", job.Project, job.FilePath)
+		return nil
 	}
 
 	if err := s.deleteIndexRowsTx(ctx, tx, job.APIKeyHash, job.Project, job.FilePath); err != nil {
@@ -381,62 +526,15 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 	}
 
 	now := s.clock()
-	if len(chunks) == 0 {
-		if commitErr := tx.Commit(); commitErr != nil {
-			return errors.Wrap(commitErr, "commit empty replace index rows")
-		}
-		return nil
-	}
 	shouldWriteEmbeddings := len(vectors) == len(chunks)
 	shouldUseContextualizedContent := len(indexContents) == len(chunks)
 
 	for i, ch := range chunks {
-		hash := sha256.Sum256([]byte(ch.Content))
-		insertChunkQuery := rebindSQL(`INSERT INTO mcp_file_chunks (apikey_hash, project, file_path, chunk_index, start_byte, end_byte, chunk_content, content_hash, created_at, updated_at, system_owner)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres)
-		var chunkID int64
-		if s.isPostgres {
-			if err = tx.QueryRowContext(ctx, insertChunkQuery+" RETURNING id",
-				job.APIKeyHash,
-				job.Project,
-				job.FilePath,
-				ch.Index,
-				ch.StartByte,
-				ch.EndByte,
-				ch.Content,
-				hex.EncodeToString(hash[:]),
-				now,
-				now,
-				"",
-			).Scan(&chunkID); err != nil {
-				_ = tx.Rollback()
-				return errors.Wrap(err, "insert chunk")
-			}
-		} else {
-			result, execErr := tx.ExecContext(ctx, insertChunkQuery,
-				job.APIKeyHash,
-				job.Project,
-				job.FilePath,
-				ch.Index,
-				ch.StartByte,
-				ch.EndByte,
-				ch.Content,
-				hex.EncodeToString(hash[:]),
-				now,
-				now,
-				"",
-			)
-			if execErr != nil {
-				_ = tx.Rollback()
-				return errors.Wrap(execErr, "insert chunk")
-			}
-			chunkID, err = result.LastInsertId()
-			if err != nil {
-				_ = tx.Rollback()
-				return errors.Wrap(err, "load inserted chunk id")
-			}
+		chunkID, insertErr := s.insertChunkRowTx(ctx, tx, job, ch, pub.contentHash, now)
+		if insertErr != nil {
+			_ = tx.Rollback()
+			return insertErr
 		}
-
 		indexContent := ch.Content
 		if shouldUseContextualizedContent && indexContents[i] != "" {
 			indexContent = indexContents[i]
@@ -453,11 +551,61 @@ func (s *Service) replaceIndexRows(ctx context.Context, job FileIndexJob, chunks
 		}
 	}
 
+	// Backfill a legacy-empty content_hash so search can pair chunks and summary.
+	if curHash == "" && pub.contentHash != "" {
+		if _, err := tx.ExecContext(ctx,
+			rebindSQL(`UPDATE mcp_files SET content_hash = ? WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE`, s.isPostgres),
+			pub.contentHash, job.APIKeyHash, job.Project, job.FilePath, "",
+		); err != nil {
+			_ = tx.Rollback()
+			return errors.Wrap(err, "backfill content hash")
+		}
+	}
+
+	// Publish the summary and enqueue a refresh atomically with the chunk generation.
+	if err := s.publishSummaryTx(ctx, tx, job, pub, now); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := s.enqueueSummaryRefreshTx(ctx, tx, job, pub, now); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
 	if err = tx.Commit(); err != nil {
 		return errors.Wrap(err, "commit replace index rows transaction")
 	}
 
 	return nil
+}
+
+// insertChunkRowTx inserts one chunk row (carrying both the per-chunk content_hash and
+// the whole-file file_content_hash) and returns its generated id, hiding the
+// Postgres RETURNING vs SQLite LastInsertId dialect split.
+func (s *Service) insertChunkRowTx(ctx context.Context, tx *sql.Tx, job FileIndexJob, ch Chunk, fileContentHash string, now time.Time) (int64, error) {
+	hash := sha256.Sum256([]byte(ch.Content))
+	insertChunkQuery := rebindSQL(`INSERT INTO mcp_file_chunks (apikey_hash, project, file_path, chunk_index, start_byte, end_byte, chunk_content, content_hash, file_content_hash, created_at, updated_at, system_owner)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres)
+	args := []any{
+		job.APIKeyHash, job.Project, job.FilePath, ch.Index, ch.StartByte, ch.EndByte,
+		ch.Content, hex.EncodeToString(hash[:]), fileContentHash, now, now, "",
+	}
+	if s.isPostgres {
+		var chunkID int64
+		if err := tx.QueryRowContext(ctx, insertChunkQuery+" RETURNING id", args...).Scan(&chunkID); err != nil {
+			return 0, errors.Wrap(err, "insert chunk")
+		}
+		return chunkID, nil
+	}
+	result, execErr := tx.ExecContext(ctx, insertChunkQuery, args...)
+	if execErr != nil {
+		return 0, errors.Wrap(execErr, "insert chunk")
+	}
+	chunkID, err := result.LastInsertId()
+	if err != nil {
+		return 0, errors.Wrap(err, "load inserted chunk id")
+	}
+	return chunkID, nil
 }
 
 // insertEmbedding stores a chunk embedding, using pgvector when available.

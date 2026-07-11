@@ -128,10 +128,15 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		return 0, err
 	}
 
+	// contentHash binds this saved generation to its chunks and summary. It is
+	// recomputed from the complete resulting file so APPEND/OVERWRITE/TRUNCATE and
+	// restore all describe the full content, never only the request delta (§4.2).
+	contentHash := HashFileContent(newContent)
+
 	if errors.Is(findErr, sql.ErrNoRows) {
 		if _, err := tx.ExecContext(ctx,
-			rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, system_owner, skip_rag_index)
-				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL, ?, ?)`, s.isPostgres),
+			rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, system_owner, skip_rag_index, content_hash)
+				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL, ?, ?, ?)`, s.isPostgres),
 			auth.APIKeyHash,
 			project,
 			path,
@@ -141,6 +146,7 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 			now,
 			owner,
 			opts.SkipRAGIndex,
+			contentHash,
 		); err != nil {
 			return 0, errors.Wrap(err, "create file")
 		}
@@ -148,12 +154,16 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		if err := s.snapshotFileVersionTx(ctx, tx, auth.APIKeyHash, project, path, existing.Content, existing.Size, existing.ID, now); err != nil {
 			return 0, err
 		}
+		// Only the current content_hash is updated here. The previous summary_* row
+		// values are intentionally preserved so the prior complete generation stays
+		// searchable until the worker atomically republishes chunks + summary (§4.2).
 		if _, err := tx.ExecContext(ctx,
-			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
+			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = ?, content_hash = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
 			newContent,
 			newSize,
 			now,
 			opts.SkipRAGIndex,
+			contentHash,
 			existing.ID,
 			owner,
 		); err != nil {
@@ -179,6 +189,7 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 			AvailableAt:   now,
 			CreatedAt:     now,
 			UpdatedAt:     now,
+			ContentHash:   contentHash,
 		}); err != nil {
 			return 0, errors.Wrap(err, "enqueue index job")
 		}
@@ -481,8 +492,8 @@ func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) error {
 	owner := systemOwnerFromContext(ctx)
 	_, err := tx.ExecContext(ctx,
-		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, system_owner)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
+		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, system_owner, content_hash, last_error_code, summary_generation_key)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
 		job.APIKeyHash,
 		job.Project,
 		job.FilePath,
@@ -494,6 +505,9 @@ func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileInde
 		job.CreatedAt,
 		job.UpdatedAt,
 		owner,
+		job.ContentHash,
+		job.LastErrorCode,
+		job.SummaryGenerationKey,
 	)
 	if err != nil {
 		return errors.Wrap(err, "insert index job")
@@ -539,7 +553,7 @@ func (s *Service) findActiveFileTx(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 	owner := systemOwnerFromContext(ctx)
 	var file File
 	err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at
+		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, content_hash, summary_content_hash, summary_status
 		FROM mcp_files
 		WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
 		LIMIT 1`, s.isPostgres),
@@ -558,6 +572,9 @@ func (s *Service) findActiveFileTx(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 		&file.UpdatedAt,
 		&file.Deleted,
 		&file.DeletedAt,
+		&file.ContentHash,
+		&file.SummaryContentHash,
+		&file.SummaryStatus,
 	)
 	if err != nil {
 		return nil, err

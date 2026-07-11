@@ -1387,10 +1387,21 @@ Every criterion below follows §5.0: it is satisfied iff the **observable outcom
 produced when an agent or operator does the named action. Tests are listed as evidence,
 not as the criterion itself.
 
+> **Superseded in part by
+> [`docs/proposals/file_search_file_summaries.md`](file_search_file_summaries.md).**
+> That accepted proposal makes `file_search` responses an intentional additive change:
+> each returned `ChunkEntry` gains a `file_summary` string and the `file_search` tool
+> gains an `outputSchema`. The A1 "returned bytes … the same as before" and A2 "every
+> other field is byte-identical" language below therefore no longer holds for
+> `file_search`; it remains accurate for every other `file_*` tool. Clients that ignore
+> unknown JSON fields are unaffected.
+
 A1. **Existing user-visible behavior is preserved on `rag`-routed calls.**
 When any agent that worked against the pre-refactor system replays its full history of
 tool calls, every observable response (returned bytes, errors, list/stat results,
-search ordering at top-K, per-call latency within ±5%) is the same as before.
+search ordering at top-K, per-call latency within ±5%) is the same as before —
+except that `file_search` hits now additionally carry `file_summary` (see the
+superseded-claims note above).
 _Evidence:_ the existing test corpus under `internal/mcp/files/` and
 `internal/mcp/tools/` is green under `go test -race -count=1 ./internal/mcp/...`.
 
@@ -1398,8 +1409,9 @@ A2. **The public schema is additive-only.**
 When a client calls MCP `tools/list`, the response for every `file_*` tool differs
 from the pre-refactor response by exactly one new optional input field (`plugin`,
 enum `["rag","pageindex","auto"]`, default `"auto"`); every other field is
-byte-identical. Pre-existing callers that omit the field observe identical behavior to
-today.
+byte-identical, except that `file_search` also gains an additive `outputSchema` and an
+optional `file_summary` output field per the file-summaries proposal. Pre-existing
+callers that omit the field observe identical behavior to today.
 
 A3. **A user can switch plugins without changing tool-call shape.**
 When an operator switches `default_plugin` between `rag` and `pageindex` and an agent
