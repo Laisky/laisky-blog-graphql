@@ -5,10 +5,13 @@ on:
     paths:
       - 'cmd/memory-bench/**'
       - 'internal/mcp/memory/benchmark/**'
+      - 'internal/mcp/memory/plugins/**'
+      - 'internal/mcp/files/**'
       - 'tests/eval/memory_bench_smoke.jsonl'
       - 'docs/eval/memory_benchmark.md'
       - 'docs/ref/agent_memory_benchmarks_2026.md'
       - '.github/workflows/memory-benchmark.yml'
+      - 'Makefile'
   schedule:
     - cron: '30 4 * * *'
   workflow_dispatch:
@@ -28,8 +31,52 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Test benchmark harness
-        run: go test -race ./internal/mcp/memory/benchmark ./cmd/memory-bench
+      - name: Test benchmark framework and current plugin adapters
+        run: |
+          go test -v -race -coverprofile=/tmp/memory-benchmark.cover ./internal/mcp/memory/benchmark ./cmd/memory-bench
+          go vet ./internal/mcp/memory/benchmark ./cmd/memory-bench
+
+  local-current-plugins:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [rag, pageindex]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run current plugin benchmark
+        run: |
+          go run ./cmd/memory-bench \
+            --backend=local \
+            --plugin='${{ matrix.plugin }}' \
+            --dataset=tests/eval/memory_bench_smoke.jsonl \
+            --format=canonical \
+            --top-k=5 \
+            --min-score=0 \
+            --concurrency=1 \
+            --warmup=1 \
+            --repetitions=3 \
+            --seed=42 \
+            --index-timeout=30s \
+            --poll-interval=25ms \
+            --run-timeout=5m \
+            --git-sha="$GITHUB_SHA" \
+            --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}"
+          cat "docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}/scorecard.md"
+
+      - name: Upload local scorecard
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-benchmark-local-${{ matrix.plugin }}-${{ github.sha }}
+          path: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/
+          if-no-files-found: error
 
   live:
     if: github.event_name != 'pull_request'
@@ -60,7 +107,7 @@ jobs:
             echo 'Live memory benchmark skipped: MCP_BENCH_ENDPOINT or MCP_BENCH_AUTHORIZATION is not configured.'
           fi
 
-      - name: Run live plugin benchmark
+      - name: Run deployed plugin benchmark
         if: steps.config.outputs.configured == 'true'
         env:
           MCP_ENDPOINT: ${{ secrets.MCP_BENCH_ENDPOINT }}
@@ -70,22 +117,26 @@ jobs:
           MEMORY_BENCH_READER_API_KEY: ${{ secrets.MEMORY_BENCH_READER_API_KEY }}
         run: |
           go run ./cmd/memory-bench \
+            --backend=mcp \
             --plugin='${{ matrix.plugin }}' \
             --dataset=tests/eval/memory_bench_smoke.jsonl \
             --format=canonical \
             --top-k=5 \
             --min-score=0.20 \
             --concurrency=2 \
-            --index-timeout=60s \
+            --warmup=2 \
+            --repetitions=10 \
+            --seed=42 \
+            --index-timeout=120s \
             --poll-interval=500ms \
-            --run-timeout=15m \
+            --run-timeout=30m \
             --git-sha="$GITHUB_SHA" \
             --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}"
 
-      - name: Upload scorecard
+      - name: Upload deployed scorecard
         if: steps.config.outputs.configured == 'true' && always()
         uses: actions/upload-artifact@v4
         with:
-          name: memory-benchmark-${{ matrix.plugin }}-${{ github.sha }}
+          name: memory-benchmark-live-${{ matrix.plugin }}-${{ github.sha }}
           path: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/
           if-no-files-found: warn
