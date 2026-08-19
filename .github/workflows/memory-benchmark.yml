@@ -1,0 +1,91 @@
+name: memory-benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/memory-bench/**'
+      - 'internal/mcp/memory/benchmark/**'
+      - 'tests/eval/memory_bench_smoke.jsonl'
+      - 'docs/eval/memory_benchmark.md'
+      - 'docs/ref/agent_memory_benchmarks_2026.md'
+      - '.github/workflows/memory-benchmark.yml'
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test benchmark harness
+        run: go test -race ./internal/mcp/memory/benchmark ./cmd/memory-bench
+
+  live:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [rag, pageindex]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check live benchmark configuration
+        id: config
+        env:
+          MCP_ENDPOINT: ${{ secrets.MCP_BENCH_ENDPOINT }}
+          MCP_AUTHORIZATION: ${{ secrets.MCP_BENCH_AUTHORIZATION }}
+        run: |
+          if [ -n "$MCP_ENDPOINT" ] && [ -n "$MCP_AUTHORIZATION" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo 'Live memory benchmark skipped: MCP_BENCH_ENDPOINT or MCP_BENCH_AUTHORIZATION is not configured.'
+          fi
+
+      - name: Run live plugin benchmark
+        if: steps.config.outputs.configured == 'true'
+        env:
+          MCP_ENDPOINT: ${{ secrets.MCP_BENCH_ENDPOINT }}
+          MCP_AUTHORIZATION: ${{ secrets.MCP_BENCH_AUTHORIZATION }}
+          MEMORY_BENCH_READER_BASE_URL: ${{ secrets.MEMORY_BENCH_READER_BASE_URL }}
+          MEMORY_BENCH_READER_MODEL: ${{ secrets.MEMORY_BENCH_READER_MODEL }}
+          MEMORY_BENCH_READER_API_KEY: ${{ secrets.MEMORY_BENCH_READER_API_KEY }}
+        run: |
+          go run ./cmd/memory-bench \
+            --plugin='${{ matrix.plugin }}' \
+            --dataset=tests/eval/memory_bench_smoke.jsonl \
+            --format=canonical \
+            --top-k=5 \
+            --min-score=0.20 \
+            --concurrency=2 \
+            --index-timeout=60s \
+            --poll-interval=500ms \
+            --run-timeout=15m \
+            --git-sha="$GITHUB_SHA" \
+            --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}"
+
+      - name: Upload scorecard
+        if: steps.config.outputs.configured == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-benchmark-${{ matrix.plugin }}-${{ github.sha }}
+          path: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/
+          if-no-files-found: warn
