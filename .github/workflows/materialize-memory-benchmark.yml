@@ -26,9 +26,8 @@ jobs:
           set -euo pipefail
           test -s .memory-benchmark-patch.ready
           cat .memory-benchmark-patch.part-* > .memory-benchmark-patch.tgz.b64
-          printf '%s  %s\n' 'd88cae97e4f3334268a9f57ffa464a9d5e075a80211de76417ee1fad2e411949' /tmp/memory-benchmark-patch.tgz > /tmp/memory-benchmark-patch.sha256
           base64 --decode .memory-benchmark-patch.tgz.b64 > /tmp/memory-benchmark-patch.tgz
-          sha256sum --check /tmp/memory-benchmark-patch.sha256
+          printf '%s  %s\n' 'd99c48f22a987732fb0ce4df5e60c1d7341fc687c643b9d2bcfdcd2cafd08fff' /tmp/memory-benchmark-patch.tgz | sha256sum --check
           tar -xzf /tmp/memory-benchmark-patch.tgz
           rm -f .memory-benchmark-patch.ready .memory-benchmark-patch.part-* .memory-benchmark-patch.tgz.b64
           rm -f .github/workflows/materialize-memory-benchmark.yml
@@ -42,22 +41,26 @@ jobs:
 
       - name: Validate generated implementation
         run: |
+          set -euo pipefail
           go test -race -cover ./internal/mcp/memory/benchmark ./cmd/memory-bench
           go vet ./internal/mcp/memory/benchmark ./cmd/memory-bench
-          go run ./cmd/memory-bench \
-            --backend=fixture \
-            --plugin=rag \
-            --dataset=tests/eval/memory_bench_smoke.jsonl \
-            --format=canonical \
-            --top-k=5 \
-            --min-score=0.25 \
-            --concurrency=2 \
-            --warmup=1 \
-            --repetitions=2 \
-            --index-timeout=2s \
-            --poll-interval=10ms \
-            --run-timeout=2m \
-            --out=/tmp/memory-benchmark-smoke
+          for plugin in rag pageindex; do
+            go run ./cmd/memory-bench \
+              --backend=inprocess \
+              --plugin="$plugin" \
+              --dataset=tests/eval/memory_bench_smoke.jsonl \
+              --format=canonical \
+              --top-k=5 \
+              --min-score=0.20 \
+              --concurrency=1 \
+              --warmup=1 \
+              --repetitions=1 \
+              --seed=42 \
+              --index-timeout=15s \
+              --poll-interval=50ms \
+              --run-timeout=5m \
+              --out="/tmp/memory-benchmark-$plugin"
+          done
 
       - name: Commit materialized patch
         run: |
