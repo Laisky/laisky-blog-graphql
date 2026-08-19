@@ -7,152 +7,200 @@
 ## Decision
 
 Evaluate memory as a multi-axis system rather than publishing one opaque score. A
-production scorecard must keep retrieval quality, answer quality, abstention,
-freshness, latency, and context cost separate. A plugin may improve one axis while
-regressing another, and that trade-off must remain visible.
+production scorecard must keep retrieval quality, end-to-end answer quality,
+abstention, freshness, latency, throughput, and retrieved-context cost separate. A
+plugin may improve one axis while regressing another; that trade-off must remain
+visible.
 
-The in-tree runner therefore uses the public MCP `file_*` surface. This includes
-transport, plugin selection, writes, indexing, retrieval, and deletion in the
-measurement instead of benchmarking a private helper that production callers do not
-use.
+The in-tree runner therefore uses the same `file_write`, `file_search`, and
+`file_delete` contract used by production callers. It has two execution modes:
+
+1. `mcp`: the authoritative deployed test. It includes HTTP transport,
+   authentication, plugin routing, storage, indexing, and retrieval.
+2. `local`: a deterministic CI smoke test over the real Go plugin implementations.
+   RAG uses the real file service with its lexical/raw fallback and PageIndex uses the
+   real indexer, system namespace, and tree search with a deterministic `StubLLM`.
+   This mode detects code regressions but is not presented as a public leaderboard
+   result.
 
 ## Benchmark landscape
 
-### LongMemEval
+### MemoryAgentBench — ICLR 2026
 
-LongMemEval remains the stable conversational-memory benchmark. Its released set has
-500 questions spanning single-session user facts, assistant facts, preferences,
-multi-session synthesis, temporal reasoning, and knowledge updates. It is useful for
-regression tests because the question categories map directly to concrete memory
-abilities and the official data includes evidence-session labels.
+MemoryAgentBench evaluates memory in incremental multi-turn interactions across four
+competencies:
 
-Source: <https://github.com/xiaowu0162/LongMemEval>
+- Accurate Retrieval;
+- Test-Time Learning;
+- Long-Range Understanding;
+- Conflict Resolution.
 
-### LoCoMo
-
-LoCoMo supplies ten unusually long, multi-session conversations with annotated QA,
-evidence dialog IDs, timestamps, and event summaries. It is particularly useful for
-single-hop, multi-hop, temporal, and open-domain conversational recall. The native
-adapter in this repository converts each session into one Markdown memory document
-and preserves the evidence dialog text for evidence-recall scoring.
-
-Source: <https://github.com/snap-research/locomo>
-
-### BEAM
-
-BEAM extends evaluation to larger histories and ability-specific slices such as
-preference following, instruction following, information extraction, knowledge
-updates, temporal reasoning, event ordering, contradiction resolution, summarization,
-and abstention. The open Mem0 benchmark suite exposes LoCoMo, LongMemEval, and BEAM
-through a common ingest-search-evaluate pipeline.
-
-Source: <https://github.com/mem0ai/memory-benchmarks>
-
-### LongMemEval-V2
-
-LongMemEval-V2 moves from chat history to long histories of multimodal agent
-trajectories. It evaluates answer accuracy and query latency over 451 manually curated
-questions, five agent-memory abilities, two domains, and haystacks that can reach 115M
-tokens. This makes latency and compact evidence first-class benchmark outputs rather
-than secondary telemetry.
-
-The current MCP plugins expose a text/PDF file surface, so this PR does not claim full
-leaderboard parity for LongMemEval-V2's screenshot-bearing trajectories. Textual
-trajectory exports can be converted to the canonical JSONL contract, while an official
-leaderboard submission should use the upstream harness and preserve its multimodal
-inputs.
-
-Source: <https://github.com/xiaowu0162/LongMemEval-V2>
-
-## 2026 system-design signals
-
-Recent work reinforces that accuracy alone is insufficient:
-
-- **MemForest** evaluates quality together with memory-construction throughput and
-  freshness latency, motivated by expensive sequential write paths.
-- **LazyMem** reports answer quality together with retrieved-memory tokens and latency,
-  showing that broad retrieval can preserve recall while selective query-time
-  construction controls noise.
-- **LycheeMemory V2** reports construction-token reductions alongside LongMemEval and
-  LoCoMo quality, emphasizing consolidation granularity as a cost/quality decision.
+The official implementation maps tasks to exact match, substring exact match,
+Recall@5, or an LLM judge depending on the source dataset. It is useful because it
+separates abilities that a single long-conversation QA score can hide. The repository
+also follows an inject-once/query-many design that is efficient for repeated plugin
+experiments.
 
 Sources:
 
-- <https://arxiv.org/abs/2605.23986>
-- <https://arxiv.org/abs/2607.22690>
-- <https://arxiv.org/abs/2608.12990>
+- <https://github.com/HUST-AI-HYZ/MemoryAgentBench>
+- <https://arxiv.org/abs/2507.05257>
+- <https://openreview.net/forum?id=DT7JyQC3MR>
+
+The native adapter accepts JSON or JSONL exports containing `questions`, `answers`, a
+context/chunk field, and the benchmark metadata arrays. When an export only provides
+sample-level context labels, retrieval relevance is intentionally recorded at sample
+level; official task scoring should still use the upstream evaluator.
+
+### LongMemEval
+
+LongMemEval remains the stable conversational-memory regression benchmark. Its
+released cleaned set has 500 questions covering:
+
+- information extraction;
+- multi-session reasoning;
+- knowledge updates;
+- temporal reasoning;
+- abstention.
+
+The official data includes evidence session IDs and turn-level `has_answer` labels.
+The adapter preserves both: session IDs become gold document paths and labelled turns
+become gold evidence strings.
+
+Sources:
+
+- <https://github.com/xiaowu0162/LongMemEval>
+- <https://arxiv.org/abs/2410.10813>
+
+### LongMemEval-V2
+
+LongMemEval-V2 extends the problem from chat transcripts to long histories of agent
+trajectories and makes query latency a first-class output. Its multimodal trajectories
+can include screenshots and much larger histories. The current MCP memory surface is
+text/PDF oriented, so this repository does not claim full leaderboard parity for V2.
+Textual trajectory exports may be converted to canonical JSONL; official V2
+submissions must retain upstream multimodal inputs and evaluation.
+
+Source: <https://github.com/xiaowu0162/LongMemEval-V2>
+
+### LoCoMo
+
+LoCoMo provides ten very long, multi-session conversations with timestamps, dialog
+IDs, QA labels, and evidence dialog IDs. It is especially useful for single-hop,
+multi-hop, temporal, and open-domain conversational recall. The adapter converts each
+session into one Markdown memory document, maps evidence dialog IDs to gold paths, and
+preserves evidence text for evidence-recall scoring.
+
+Sources:
+
+- <https://github.com/snap-research/locomo>
+- <https://arxiv.org/abs/2402.17753>
+
+### BEAM
+
+BEAM targets large conversational histories and ability-specific probes including
+preference following, instruction following, information extraction, knowledge
+updates, temporal reasoning, event ordering, contradiction resolution,
+summarization, and abstention. The adapter reads one official scenario directory:
+`chat.json` plus `probing_questions/probing_questions.json`. Source chat IDs are mapped
+to gold document paths and text evidence; rubrics are retained for answer inspection.
+
+Source: <https://github.com/mohammadtavakoli78/BEAM>
+
+### RAGAS and standard retrieval metrics
+
+RAGAS separates retrieval/context quality from answer faithfulness and correctness.
+This repository already contains a pure-Go RAGAS-oriented evaluator under
+`internal/mcp/memory/conformance/eval`. The new runner complements it with a
+production-path retrieval benchmark and deterministic answer metrics.
+
+The retrieval scorecard follows standard information-retrieval definitions used by
+BEIR-style evaluation:
+
+- `Recall@k`: fraction of unique relevant documents retrieved;
+- `Precision@k`: relevant unique documents divided by `k`;
+- `nDCG@k`: binary relevance with logarithmic rank discount;
+- `MRR`: reciprocal rank of the first relevant document;
+- `Hit rate@k`: fraction of answerable queries with at least one relevant result;
+- `Evidence recall`: fraction of labelled evidence strings present in returned chunks.
+
+Sources:
+
+- <https://github.com/vibrantlabsai/ragas>
+- <https://github.com/beir-cellar/beir>
+
+Repeated chunks from the same file are deduplicated for document-level metrics but
+remain available to the fixed reader and evidence scorer.
 
 ## Metric contract
 
 ### Retrieval
 
-The runner uses standard information-retrieval metrics also exposed by BEIR:
-
-- `Recall@k`: fraction of unique relevant documents retrieved.
-- `Precision@k`: relevant unique documents divided by `k`.
-- `nDCG@k`: rank-sensitive binary relevance.
-- `MRR`: reciprocal rank of the first relevant document.
-- `Hit rate@k`: fraction of queries with at least one relevant result.
-- `Evidence recall`: fraction of labelled evidence strings present in returned chunks.
-
-Source: <https://github.com/beir-cellar/beir>
-
-Document metrics deduplicate repeated chunks from the same file. The returned chunks
-are not discarded: evidence recall, the optional reader, and context-token estimates
-still use the actual top-k chunk payload.
+Document metrics are averaged over answerable queries. Unanswerable questions are
+reported separately so they cannot improve retrieval accuracy by contributing empty
+gold sets. Evidence recall is measured against actual returned chunk text.
 
 ### End-to-end answers
 
-A fixed optional reader receives only the retrieved evidence and must emit
-`INSUFFICIENT_EVIDENCE` when evidence is missing. The default deterministic metrics
-are normalized exact match and token F1. These are suitable for CI because they do not
-introduce judge variance.
+A fixed optional Responses-compatible reader receives only retrieved evidence and is
+instructed to return `INSUFFICIENT_EVIDENCE` when evidence is missing. Deterministic
+metrics are:
 
-For semantic or leaderboard accuracy, keep the answerer and judge models fixed and run
-the official benchmark judge or the repository's existing RAGAS-oriented evaluation.
-Judge model, prompt, and retrieval depth materially affect scores and must not change
-between compared runs.
+- normalized exact match;
+- token precision, recall, and F1;
+- rubric substring coverage where a benchmark provides rubrics;
+- abstention accuracy and false-answer rate.
 
-RAGAS source: <https://github.com/vibrantlabsai/ragas>
-
-### Abstention and readiness
-
-An unanswerable query is not credited merely because asynchronous indexing has not
-finished. Before the real abstention query, the runner uses a labelled document from
-the same path scope as an index-readiness probe. A timeout becomes an error rather
-than a false abstention success. Meaningful retrieval-only abstention also requires a
-fixed `min_score` threshold.
+For an official public result, use the benchmark's own evaluator or judge against the
+saved per-case answers. The answerer model, judge model, prompt version, and top-k must
+remain fixed across compared runs.
 
 ### Operations
 
 Every report includes:
 
-- file-write latency and write throughput;
-- final search latency p50/p95/p99;
-- post-ingest wait-to-relevant latency;
-- readiness-probe latency for unanswerable cases;
-- estimated retrieved-context tokens;
-- provider-reported reader tokens when a reader is enabled;
-- per-query errors and attempts.
+- `file_write` latency and documents/second;
+- write-to-relevant index readiness latency;
+- final `file_search` p50/p95/p99 over configurable repetitions;
+- retrieved-context token estimate;
+- provider-reported fixed-reader tokens;
+- errors and attempts for every case.
+
+Latency comparisons require the same service build, hardware/database class, network
+location, concurrency, and warm/cold policy. Local CI latency is diagnostic only;
+deployed latency is the operational decision input.
+
+### Statistical comparison
+
+Regression gating checks absolute drops in quality metrics, absolute error-rate
+increase, and relative p95 latency increase. Candidate and baseline reports are
+rejected as incompatible when dataset bytes, plugin, report schema, or benchmark
+configuration differ.
+
+A paired two-sided sign-flip permutation test over per-query nDCG differences is also
+reported. The default is 10,000 iterations with a fixed seed and alpha 0.05. The test
+is informative; configured metric gates remain the merge-blocking contract.
 
 ## Reproducibility rules
 
-A comparison is valid only when the following remain equal:
+A valid comparison keeps the following equal:
 
-- dataset SHA-256;
-- report schema and reader prompt version;
+- dataset SHA-256 and query set;
+- report schema and harness configuration hash;
+- plugin and backend mode;
 - top-k and minimum score;
-- concurrency and polling configuration;
+- concurrency, warm-up, repetitions, polling, and timeouts;
 - MCP protocol version;
-- reader model.
+- fixed reader model and prompt version.
 
-For operational comparisons, use the same deployed build, hardware class, database
-state, network location, and warm/cold policy. Change one variable at a time. Store the
-raw per-case output; averages alone hide regressions in important ability slices.
+Each run stores raw per-case results, the exact dataset hash, Git SHA, runtime,
+architecture, hostname, and a stable configuration hash. Secrets and URL query strings
+are never written to artifacts.
 
 ## Dataset policy
 
 Public benchmark data is not vendored into this repository. It can be large, may have
-separate terms, and changes independently. The runner records the exact input hash,
-so downloaded datasets remain reproducible without committing them. CI uses only the
-small synthetic smoke fixture under `tests/eval/`.
+separate terms, and evolves independently. The runner hashes the exact input bytes, so
+downloaded data remains replayable without committing it. Pull-request CI uses only
+the small synthetic fixture under `tests/eval/`; scheduled live jobs may point to a
+controlled internal golden set.
