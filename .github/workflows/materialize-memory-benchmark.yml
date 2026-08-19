@@ -5,7 +5,7 @@ on:
     branches:
       - agent/memory-benchmark-framework
     paths:
-      - '.memory-benchmark-patch.tgz.b64'
+      - '.memory-benchmark-patch.ready'
   workflow_dispatch:
 
 permissions:
@@ -24,9 +24,13 @@ jobs:
       - name: Materialize reviewed patch
         run: |
           set -euo pipefail
-          test -s .memory-benchmark-patch.tgz.b64
-          base64 --decode .memory-benchmark-patch.tgz.b64 | tar -xzf -
-          rm -f .memory-benchmark-patch.tgz.b64
+          test -s .memory-benchmark-patch.ready
+          cat .memory-benchmark-patch.part-* > .memory-benchmark-patch.tgz.b64
+          printf '%s  %s\n' 'd88cae97e4f3334268a9f57ffa464a9d5e075a80211de76417ee1fad2e411949' /tmp/memory-benchmark-patch.tgz > /tmp/memory-benchmark-patch.sha256
+          base64 --decode .memory-benchmark-patch.tgz.b64 > /tmp/memory-benchmark-patch.tgz
+          sha256sum --check /tmp/memory-benchmark-patch.sha256
+          tar -xzf /tmp/memory-benchmark-patch.tgz
+          rm -f .memory-benchmark-patch.ready .memory-benchmark-patch.part-* .memory-benchmark-patch.tgz.b64
           rm -f .github/workflows/materialize-memory-benchmark.yml
           gofmt -w ./internal/mcp/memory/benchmark ./cmd/memory-bench
           git diff --check
