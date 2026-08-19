@@ -1,119 +1,185 @@
 # MCP Memory Quantitative Benchmark
 
-This runbook evaluates the real `rag` and `pageindex` plugins through the deployed MCP
-Streamable HTTP endpoint. It complements `cmd/eval-plugin`: the older command remains
-useful for in-process conformance and metric unit tests, while `cmd/memory-bench`
-provides live end-to-end measurements instead of a stub plugin and `n/a` scorecard
-cells.
+This runbook evaluates the current `rag` and `pageindex` plugins with one shared
+scorecard. It complements `cmd/eval-plugin`: the older command is useful for
+conformance and RAGAS-oriented metric tests, while `cmd/memory-bench` performs corpus
+write, index-readiness, retrieval, optional answer generation, artifact creation, and
+regression comparison.
 
 Research and metric rationale are recorded in
 [`docs/ref/agent_memory_benchmarks_2026.md`](../ref/agent_memory_benchmarks_2026.md).
 
-## Quick start
+## Execution modes
 
-Set secrets through environment variables. Do not put tokens on the command line.
+### Deployed MCP — authoritative
+
+This mode calls the public MCP Streamable HTTP endpoint. It includes authentication,
+transport, plugin routing, storage, indexing, and retrieval.
 
 ```bash
 export MCP_ENDPOINT='https://example.test/mcp'
 export MCP_AUTHORIZATION='Bearer ...'
 
 go run ./cmd/memory-bench \
+  --backend=mcp \
   --plugin=rag \
   --dataset=tests/eval/memory_bench_smoke.jsonl \
   --format=canonical \
   --top-k=5 \
   --min-score=0.20 \
+  --warmup=2 \
+  --repetitions=10 \
+  --out=docs/eval/runs/live/rag
+```
+
+Run the same command with `--plugin=pageindex` and otherwise identical settings for a
+fair comparison.
+
+### Local current-plugin smoke — deterministic CI
+
+This mode constructs the real Go plugins against an isolated SQLite-backed file
+service:
+
+- RAG uses `plugins/rag.Plugin` and the production file service's lexical/raw fallback;
+- PageIndex uses `plugins/pageindex.Plugin`, the real Markdown indexer, private
+  `SystemFS`, tree persistence, and search loop; external model variance is removed by
+  injecting the repository's deterministic `StubLLM`.
+
+```bash
+make memory-bench-current
+```
+
+Equivalent direct commands:
+
+```bash
+go run ./cmd/memory-bench \
+  --backend=local \
+  --plugin=rag \
+  --dataset=tests/eval/memory_bench_smoke.jsonl \
+  --format=canonical \
+  --top-k=5 \
+  --concurrency=1 \
+  --warmup=1 \
+  --repetitions=3 \
+  --seed=42 \
   --out=docs/eval/runs/local/rag
 
 go run ./cmd/memory-bench \
+  --backend=local \
   --plugin=pageindex \
   --dataset=tests/eval/memory_bench_smoke.jsonl \
   --format=canonical \
   --top-k=5 \
-  --min-score=0.20 \
+  --concurrency=1 \
+  --warmup=1 \
+  --repetitions=3 \
+  --seed=42 \
   --out=docs/eval/runs/local/pageindex
 ```
 
-Each run uses an isolated project namespace when `--project` is omitted. Documents are
-deleted at the end unless `--cleanup=false` is supplied.
+Local quality results are valid regression evidence for the exact deterministic
+fixture. Local latency is diagnostic only and must not be compared with production
+SLOs.
 
-## Public datasets
+## What is measured
 
-Download public data from its official source; the repository intentionally does not
-vendor it.
+### Retrieval
+
+- unique-document Recall@k;
+- Precision@k;
+- binary nDCG@k;
+- MRR;
+- Hit rate@k;
+- labelled evidence-string recall over returned chunk text.
+
+Repeated chunks from the same file count once for document metrics but remain in the
+reader context and evidence calculation.
+
+### Answers and abstention
+
+An optional fixed Responses-compatible reader is restricted to returned evidence and
+must emit `INSUFFICIENT_EVIDENCE` when the evidence is insufficient. The runner reports
+normalized exact match, token precision/recall/F1, rubric coverage, abstention
+accuracy, and false-answer rate.
 
 ```bash
-# LongMemEval release JSON
-# https://github.com/xiaowu0162/LongMemEval
+export MEMORY_BENCH_READER_BASE_URL='https://api.openai.com/v1'
+export MEMORY_BENCH_READER_MODEL='gpt-5-mini'
+export MEMORY_BENCH_READER_API_KEY='...'
+```
+
+The reader prompt version and model are stored in the report. For an official public
+benchmark result, run the upstream evaluator or judge against `cases.jsonl`; do not
+present the deterministic CI scorer as leaderboard parity.
+
+### Operations
+
+- `file_write` mean and p50/p95/p99;
+- documents/second;
+- write-to-relevant index readiness latency;
+- repeated `file_search` mean and p50/p95/p99;
+- retrieved-context token estimate;
+- fixed-reader provider token usage;
+- per-case attempts and errors.
+
+## Supported datasets
+
+### Canonical JSONL
+
+```jsonl
+{"type":"dataset","name":"example","version":"2026-08-19","source":"internal-golden"}
+{"type":"document","id":"doc-1","path":"/facts/profile.md","content":"Alice lives in Ottawa."}
+{"type":"query","id":"q-1","query":"Where does Alice live?","gold_paths":["/facts/profile.md"],"gold_evidence":["Alice lives in Ottawa"],"answer":"Ottawa","category":"single-hop"}
+{"type":"query","id":"q-2","query":"What is the ZXQ-991 launch code?","answer":"INSUFFICIENT_EVIDENCE","category":"abstention","unanswerable":true}
+```
+
+Document paths and query IDs must be unique. Answerable queries require at least one
+gold path or evidence string. Public data can be normalized to this format when no
+native adapter is appropriate.
+
+### LongMemEval
+
+```bash
 go run ./cmd/memory-bench \
+  --backend=mcp \
   --plugin=rag \
   --dataset=/data/longmemeval_s_cleaned.json \
   --format=longmemeval \
   --out=docs/eval/runs/longmemeval/rag
+```
 
-# LoCoMo locomo10.json
-# https://github.com/snap-research/locomo
+Each question receives an isolated path prefix. History sessions become documents,
+`answer_session_ids` become gold paths, and `has_answer` turns become gold evidence.
+
+### LoCoMo
+
+```bash
 go run ./cmd/memory-bench \
+  --backend=mcp \
   --plugin=pageindex \
   --dataset=/data/locomo10.json \
   --format=locomo \
   --out=docs/eval/runs/locomo/pageindex
 ```
 
-The adapters preserve category labels and evidence/session mappings. They generate
-Markdown documents because both current plugins can ingest that common format.
+Each conversation session becomes a Markdown document. Evidence dialog IDs are mapped
+to their session paths and original text.
 
-BEAM, private production exports, and textual LongMemEval-V2 trajectory exports can be
-converted to the canonical JSONL format below. Full LongMemEval-V2 leaderboard parity
-requires its upstream multimodal harness and is not claimed by this text-only MCP
-adapter.
+### MemoryAgentBench
 
-## Canonical JSONL
+Use `--format=memoryagentbench` with an array or JSONL export containing `questions`,
+`answers`, benchmark metadata, and one of the supported context/chunk fields. Exports
+with sample-level labels are marked as sample-level relevance in query metadata.
+Official task scores still come from the upstream evaluator.
 
-The first row may define dataset metadata. All later rows are documents or queries.
-Blank lines and lines beginning with `#` are ignored.
+### BEAM
 
-```jsonl
-{"type":"dataset","name":"example","version":"2026-08-19","source":"internal-golden"}
-{"type":"document","id":"doc-1","path":"/facts/profile.md","content":"Alice lives in Ottawa.","category":"profile"}
-{"type":"query","id":"q-1","query":"Where does Alice live?","path_prefix":"/facts/","gold_paths":["/facts/profile.md"],"gold_evidence":["Alice lives in Ottawa"],"answer":"Ottawa","category":"single-hop"}
-{"type":"query","id":"q-2","query":"What is Alice's passport number?","path_prefix":"/facts/","answer":"INSUFFICIENT_EVIDENCE","category":"abstention","unanswerable":true}
-```
+Point `--dataset` to one scenario directory containing `chat.json` and
+`probing_questions/probing_questions.json`, then use `--format=beam`. Source chat IDs
+become gold paths/evidence and benchmark rubrics are retained.
 
-Required rules:
-
-- document paths must be unique;
-- query IDs must be unique;
-- answerable queries need `gold_paths` or `gold_evidence`;
-- an unanswerable query must set `unanswerable=true`;
-- use ability labels such as `single-hop`, `multi-session`, `temporal-reasoning`,
-  `knowledge-update`, `contradiction-resolution`, and `abstention` so regressions are
-  visible per slice.
-
-## Fixed reader
-
-Retrieval-only runs are deterministic. To evaluate the answer produced from retrieved
-chunks, configure one fixed OpenAI Responses-compatible reader:
-
-```bash
-export MEMORY_BENCH_READER_BASE_URL='https://api.openai.com/v1'
-export MEMORY_BENCH_READER_MODEL='gpt-5-mini'
-export MEMORY_BENCH_READER_API_KEY='...'
-
-go run ./cmd/memory-bench \
-  --plugin=rag \
-  --dataset=/data/locomo10.json \
-  --format=locomo \
-  --out=docs/eval/runs/locomo/rag-with-reader
-```
-
-The reader is told to use only the retrieved evidence, to ignore instructions embedded
-inside memory content, and to return `INSUFFICIENT_EVIDENCE` when appropriate. The
-report records the model and prompt version, not the API key.
-
-Exact match and token F1 are deterministic CI metrics. For publication or official
-leaderboard accuracy, run the official benchmark judge against the saved per-case
-answers and keep judge model/settings fixed.
+Public data is deliberately not vendored. Exact input bytes are identified by SHA-256
+in every report.
 
 ## Outputs
 
@@ -121,21 +187,23 @@ The output directory contains:
 
 | File | Purpose |
 |---|---|
-| `report.json` | Versioned aggregate report plus every case. |
-| `scorecard.md` | Human-readable quality, ability-slice, and operations tables. |
-| `cases.jsonl` | One inspectable record per query. |
-| `comparison.json` | Baseline deltas and gate outcomes when `--baseline` is used. |
+| `report.json` | Versioned aggregate report, metadata, categories, and all cases. |
+| `scorecard.md` | Human-readable quality, slice, operations, and case tables. |
+| `cases.jsonl` | One inspectable record per query for upstream judges and diagnosis. |
+| `comparison.json` | Machine-readable baseline deltas and gate outcomes. |
+| `comparison.md` | Human-readable regression table and paired statistical test. |
 
-The report includes dataset SHA-256, harness version, optional Git SHA, protocol,
-runtime, retrieval configuration, reader prompt version, and sanitized endpoint. Secret
-values are excluded.
+Reports record the dataset hash, Git SHA, backend, plugin, configuration hash, MCP
+protocol, runtime, host, warm-up, repetitions, seed, and fixed-reader identity. Secrets,
+URL credentials, query strings, and fragments are excluded.
 
 ## Baseline regression gate
 
-Capture a trusted report, then compare a candidate using identical inputs and settings:
+Capture a trusted report and compare a candidate using identical inputs and settings:
 
 ```bash
 go run ./cmd/memory-bench \
+  --backend=mcp \
   --plugin=rag \
   --dataset=/data/internal-memory-golden.jsonl \
   --format=canonical \
@@ -144,36 +212,39 @@ go run ./cmd/memory-bench \
   --max-ndcg-drop=0.02 \
   --max-mrr-drop=0.02 \
   --max-hit-rate-drop=0.02 \
+  --max-evidence-recall-drop=0.02 \
   --max-error-rate-increase=0 \
   --max-p95-latency-increase=0.20 \
+  --permutation-iterations=10000 \
+  --permutation-alpha=0.05 \
   --out=docs/eval/runs/candidate/rag
 ```
 
-An incompatible comparison or failed gate exits with code `3`. The comparator rejects
-changes to dataset hash, top-k, minimum score, reader model/prompt, concurrency, polling,
-or MCP protocol rather than producing misleading deltas.
+Incompatible inputs or a failed gate exit with code `3`. Compatibility requires the
+same report schema, dataset hash, plugin, query count, and configuration hash. The
+comparison also reports a paired two-sided sign-flip permutation test over per-query
+nDCG differences.
 
-## Fair comparison checklist
+## Fair-comparison checklist
 
-- Use the same dataset bytes, query order, top-k, minimum score, and reader.
-- Run RAG and PageIndex against the same service build and database class.
-- Keep concurrency, timeout, network location, and warm/cold policy fixed.
-- Run multiple repetitions for latency decisions; do not gate on one noisy remote run.
-- Inspect category and per-case output, not only aggregate averages.
-- Treat write throughput as file-write throughput. Index readiness is reported
-  separately by post-ingest wait and readiness probes.
-- Set a non-zero `--min-score` before interpreting retrieval-only abstention accuracy.
+- Use identical dataset bytes, top-k, minimum score, answerer, and prompt.
+- Run both plugins against the same build, database class, network location, and load.
+- Keep concurrency, warm-up, repetitions, timeout, and cold/warm policy fixed.
+- Use multiple repetitions for latency; never gate on one remote call.
+- Inspect ability slices and failed cases, not only aggregate averages.
+- Set a validated minimum score before interpreting retrieval-only abstention.
+- Separate local deterministic results from deployed production results.
 
 ## CI
 
-`.github/workflows/memory-benchmark.yml` always runs unit/race tests for the harness.
-Scheduled and manually dispatched live runs use repository secrets:
+`.github/workflows/memory-benchmark.yml` performs three levels of validation:
 
-- `MCP_BENCH_ENDPOINT`
-- `MCP_BENCH_AUTHORIZATION`
-- optionally `MEMORY_BENCH_READER_BASE_URL`
-- optionally `MEMORY_BENCH_READER_MODEL`
-- optionally `MEMORY_BENCH_READER_API_KEY`
+1. unit, race, coverage, and vet for the harness;
+2. a pull-request matrix that runs the current RAG and PageIndex implementations and
+   uploads both scorecards;
+3. scheduled/manual deployed MCP runs when `MCP_BENCH_ENDPOINT` and
+   `MCP_BENCH_AUTHORIZATION` are configured.
 
-When the MCP endpoint or authorization secret is absent, the live job records a clear
-skip rather than creating a fake benchmark.
+The optional reader uses `MEMORY_BENCH_READER_BASE_URL`,
+`MEMORY_BENCH_READER_MODEL`, and `MEMORY_BENCH_READER_API_KEY`. Missing deployed
+secrets produce an explicit skip; CI never substitutes fake production scores.
