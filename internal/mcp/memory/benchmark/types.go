@@ -1,6 +1,4 @@
-// Package benchmark provides a reproducible, end-to-end evaluation harness for
-// MCP memory plugins. It deliberately talks to the public MCP tool surface so
-// measurements include plugin routing, indexing, retrieval, and transport cost.
+// Package benchmark provides reproducible quantitative evaluation for MCP memory plugins.
 package benchmark
 
 import "time"
@@ -8,7 +6,7 @@ import "time"
 const (
 	// SchemaVersion identifies the persisted report contract.
 	SchemaVersion = "mcp-memory-benchmark/v1"
-	// HarnessVersion identifies the executable behavior independently of the report schema.
+	// HarnessVersion identifies executable behavior independently of the report schema.
 	HarnessVersion = "1.0.0"
 	// ReaderPromptVersion identifies the fixed answer-generation prompt.
 	ReaderPromptVersion = "reader-v1"
@@ -16,7 +14,7 @@ const (
 	DefaultProtocolVersion = "2025-06-18"
 )
 
-// Document is one corpus item written through file_write before evaluation.
+// Document is one corpus item written before evaluation.
 type Document struct {
 	ID              string            `json:"id"`
 	Path            string            `json:"path"`
@@ -30,14 +28,16 @@ type Document struct {
 
 // Query is one labelled retrieval and optional answer-quality case.
 type Query struct {
-	ID           string   `json:"id"`
-	Text         string   `json:"query"`
-	PathPrefix   string   `json:"path_prefix,omitempty"`
-	GoldPaths    []string `json:"gold_paths,omitempty"`
-	GoldEvidence []string `json:"gold_evidence,omitempty"`
-	Answer       string   `json:"answer,omitempty"`
-	Category     string   `json:"category,omitempty"`
-	Unanswerable bool     `json:"unanswerable,omitempty"`
+	ID           string            `json:"id"`
+	Text         string            `json:"query"`
+	PathPrefix   string            `json:"path_prefix,omitempty"`
+	GoldPaths    []string          `json:"gold_paths,omitempty"`
+	GoldEvidence []string          `json:"gold_evidence,omitempty"`
+	Answer       string            `json:"answer,omitempty"`
+	Rubric       []string          `json:"rubric,omitempty"`
+	Category     string            `json:"category,omitempty"`
+	Unanswerable bool              `json:"unanswerable,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 // Dataset is the normalized representation consumed by Runner.
@@ -79,10 +79,13 @@ type CaseMetrics struct {
 	EvidenceRecall float64  `json:"evidence_recall"`
 	AbstentionOK   *bool    `json:"abstention_ok,omitempty"`
 	ExactMatch     *bool    `json:"exact_match,omitempty"`
+	TokenPrecision *float64 `json:"token_precision,omitempty"`
+	TokenRecall    *float64 `json:"token_recall,omitempty"`
 	TokenF1        *float64 `json:"token_f1,omitempty"`
+	RubricCoverage *float64 `json:"rubric_coverage,omitempty"`
 }
 
-// CaseResult records the evidence and timings for one query.
+// CaseResult records evidence, answer, timings, and errors for one query.
 type CaseResult struct {
 	QueryID            string        `json:"query_id"`
 	Category           string        `json:"category,omitempty"`
@@ -93,10 +96,9 @@ type CaseResult struct {
 	Retrieved          []SearchHit   `json:"retrieved,omitempty"`
 	Metrics            CaseMetrics   `json:"metrics"`
 	SearchLatencyMS    float64       `json:"search_latency_ms"`
+	SearchLatenciesMS  []float64     `json:"search_latencies_ms,omitempty"`
 	IndexWaitLatencyMS float64       `json:"index_wait_latency_ms"`
 	SearchAttempts     int           `json:"search_attempts"`
-	ProbeLatencyMS     float64       `json:"probe_latency_ms,omitempty"`
-	ProbeAttempts      int           `json:"probe_attempts,omitempty"`
 	EstimatedCtxTokens int           `json:"estimated_context_tokens"`
 	Answer             *AnswerResult `json:"answer,omitempty"`
 	Error              string        `json:"error,omitempty"`
@@ -124,8 +126,12 @@ type QualitySummary struct {
 	HitRateAtK          float64 `json:"hit_rate_at_k"`
 	EvidenceRecall      float64 `json:"evidence_recall"`
 	AbstentionAccuracy  float64 `json:"abstention_accuracy,omitempty"`
+	FalseAnswerRate     float64 `json:"false_answer_rate,omitempty"`
 	ExactMatch          float64 `json:"exact_match,omitempty"`
+	TokenPrecision      float64 `json:"token_precision,omitempty"`
+	TokenRecall         float64 `json:"token_recall,omitempty"`
 	TokenF1             float64 `json:"token_f1,omitempty"`
+	RubricCoverage      float64 `json:"rubric_coverage,omitempty"`
 	ErrorRate           float64 `json:"error_rate"`
 }
 
@@ -140,7 +146,6 @@ type OperationalSummary struct {
 	IngestLatency      LatencyStats `json:"ingest_latency"`
 	SearchLatency      LatencyStats `json:"search_latency"`
 	IndexWaitLatency   LatencyStats `json:"index_wait_latency"`
-	ProbeLatency       LatencyStats `json:"probe_latency"`
 	DocumentsPerSecond float64      `json:"documents_per_second"`
 	MeanContextTokens  float64      `json:"mean_estimated_context_tokens"`
 	ReaderInputTokens  int64        `json:"reader_input_tokens,omitempty"`
@@ -155,20 +160,26 @@ type RunMetadata struct {
 	RunID           string    `json:"run_id"`
 	StartedAt       time.Time `json:"started_at"`
 	CompletedAt     time.Time `json:"completed_at"`
-	Endpoint        string    `json:"endpoint"`
+	Backend         string    `json:"backend"`
+	Endpoint        string    `json:"endpoint,omitempty"`
 	Plugin          string    `json:"plugin"`
 	Project         string    `json:"project"`
 	TopK            int       `json:"top_k"`
 	MinScore        float64   `json:"min_score"`
 	Concurrency     int       `json:"concurrency"`
+	Warmup          int       `json:"warmup"`
+	Repetitions     int       `json:"repetitions"`
+	Seed            int64     `json:"seed"`
 	IndexTimeoutMS  int64     `json:"index_timeout_ms"`
 	PollIntervalMS  int64     `json:"poll_interval_ms"`
-	ProtocolVersion string    `json:"protocol_version"`
+	ProtocolVersion string    `json:"protocol_version,omitempty"`
 	ReaderModel     string    `json:"reader_model,omitempty"`
 	ReaderPrompt    string    `json:"reader_prompt_version,omitempty"`
+	ConfigSHA256    string    `json:"config_sha256"`
 	GoVersion       string    `json:"go_version"`
 	GOOS            string    `json:"goos"`
 	GOARCH          string    `json:"goarch"`
+	Hostname        string    `json:"hostname,omitempty"`
 }
 
 // Report is the durable JSON result of one benchmark run.
@@ -180,6 +191,7 @@ type Report struct {
 	Operational   OperationalSummary `json:"operational"`
 	Categories    []CategorySummary  `json:"categories,omitempty"`
 	Cases         []CaseResult       `json:"cases"`
+	Warnings      []string           `json:"warnings,omitempty"`
 }
 
 // DatasetMetadata avoids duplicating the full corpus in report.json.
@@ -194,12 +206,16 @@ type DatasetMetadata struct {
 
 // RunConfig controls one benchmark execution.
 type RunConfig struct {
+	Backend         string
 	Endpoint        string
 	Plugin          string
 	Project         string
 	TopK            int
 	MinScore        float64
 	Concurrency     int
+	Warmup          int
+	Repetitions     int
+	Seed            int64
 	IndexTimeout    time.Duration
 	PollInterval    time.Duration
 	Cleanup         bool
@@ -214,8 +230,12 @@ type GateConfig struct {
 	MaxNDCGDrop           float64
 	MaxMRRDrop            float64
 	MaxHitRateDrop        float64
+	MaxEvidenceRecallDrop float64
 	MaxErrorRateIncrease  float64
 	MaxP95LatencyIncrease float64
+	PermutationIterations int
+	PermutationAlpha      float64
+	Seed                   int64
 }
 
 // MetricDelta describes one baseline comparison.
@@ -227,12 +247,24 @@ type MetricDelta struct {
 	Limit     float64 `json:"limit"`
 	Passed    bool    `json:"passed"`
 	Direction string  `json:"direction"`
+	Unit      string  `json:"unit,omitempty"`
+}
+
+// PermutationResult records a paired sign-flip test over per-query nDCG.
+type PermutationResult struct {
+	Pairs       int     `json:"pairs"`
+	Iterations  int     `json:"iterations"`
+	MeanDelta   float64 `json:"mean_delta"`
+	PValue      float64 `json:"p_value"`
+	Alpha       float64 `json:"alpha"`
+	Significant bool    `json:"significant"`
 }
 
 // Comparison is emitted when a baseline report is supplied.
 type Comparison struct {
-	Compatible bool          `json:"compatible"`
-	Passed     bool          `json:"passed"`
-	Reason     string        `json:"reason,omitempty"`
-	Metrics    []MetricDelta `json:"metrics,omitempty"`
+	Compatible bool               `json:"compatible"`
+	Passed     bool               `json:"passed"`
+	Reason     string             `json:"reason,omitempty"`
+	Metrics    []MetricDelta      `json:"metrics,omitempty"`
+	Permutation *PermutationResult `json:"paired_ndcg_permutation,omitempty"`
 }
