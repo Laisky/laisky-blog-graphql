@@ -1,0 +1,132 @@
+name: memory-benchmark-capture
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/memory-bench/**'
+      - 'internal/mcp/memory/benchmark/**'
+      - 'internal/mcp/memory/plugins/**'
+      - 'internal/mcp/files/**'
+      - 'tests/eval/memory_bench_smoke.jsonl'
+      - '.github/workflows/memory-benchmark-capture.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Format and validate benchmark implementation
+        run: |
+          gofmt -w ./internal/mcp/memory/benchmark ./cmd/memory-bench
+          git diff --check
+          go test -v -race -cover ./internal/mcp/memory/benchmark ./cmd/memory-bench
+          go vet ./internal/mcp/memory/benchmark ./cmd/memory-bench
+
+      - name: Run both current plugins
+        run: |
+          rm -rf /tmp/memory-benchmark-results
+          for plugin in rag pageindex; do
+            go run ./cmd/memory-bench \
+              --backend=local \
+              --plugin="$plugin" \
+              --dataset=tests/eval/memory_bench_smoke.jsonl \
+              --format=canonical \
+              --top-k=5 \
+              --min-score=0 \
+              --concurrency=1 \
+              --warmup=1 \
+              --repetitions=3 \
+              --seed=42 \
+              --index-timeout=30s \
+              --poll-interval=25ms \
+              --run-timeout=5m \
+              --git-sha="$GITHUB_SHA" \
+              --out="/tmp/memory-benchmark-results/$plugin"
+          done
+
+      - name: Build committed result summary
+        run: |
+          python3 - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path('/tmp/memory-benchmark-results')
+          reports = {name: json.loads((root / name / 'report.json').read_text()) for name in ('rag', 'pageindex')}
+          destination = Path('docs/eval/current_plugins_local_smoke.md')
+          lines = [
+              '# Current MCP Memory Plugin Local Smoke Benchmark',
+              '',
+              f'**Captured:** {datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}  ',
+              f'**Commit:** `{reports["rag"]["run"]["git_sha"]}`  ',
+              f'**Dataset:** `{reports["rag"]["dataset"]["name"]}` / `{reports["rag"]["dataset"]["sha256"]}`',
+              '',
+              '## Method',
+              '',
+              '- The same runner and dataset are used for both plugins.',
+              '- Backend: real in-process production plugin over an isolated SQLite file service.',
+              '- RAG: production RAG plugin and file-service lexical/raw fallback.',
+              '- PageIndex: production PageIndex plugin, Markdown indexer, SystemFS tree persistence, and tree-search loop with deterministic StubLLM.',
+              '- Settings: top-k 5, min-score 0, concurrency 1, one warm-up, three timed repetitions, seed 42.',
+              '- Local latency is diagnostic only; deployed MCP results are required for production SLO decisions.',
+              '',
+              '## Results',
+              '',
+              '| Plugin | Recall@5 | Precision@5 | nDCG@5 | MRR | Hit@5 | Evidence recall | Abstention accuracy | Error rate | Search p50 ms | Search p95 ms | Index-ready p95 ms |',
+              '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+          ]
+          for name in ('rag', 'pageindex'):
+              report = reports[name]
+              q = report['quality']
+              o = report['operational']
+              lines.append(
+                  f'| {name} | {q["recall_at_k"]:.4f} | {q["precision_at_k"]:.4f} | '
+                  f'{q["ndcg_at_k"]:.4f} | {q["mrr"]:.4f} | {q["hit_rate_at_k"]:.4f} | '
+                  f'{q["evidence_recall"]:.4f} | {q.get("abstention_accuracy", 0):.4f} | '
+                  f'{q["error_rate"]:.4f} | {o["search_latency"]["p50_ms"]:.3f} | '
+                  f'{o["search_latency"]["p95_ms"]:.3f} | {o["index_wait_latency"]["p95_ms"]:.3f} |'
+              )
+          lines += [
+              '',
+              '## Interpretation',
+              '',
+              'These numbers are regression-smoke results for the exact repository fixture, not public benchmark leaderboard claims. '
+              'The scheduled `mcp` backend job is the authoritative end-to-end operational measurement because it includes transport, authentication, production storage, indexing workers, and configured model providers.',
+              '',
+          ]
+          destination.write_text('\n'.join(lines))
+          PY
+
+      - name: Commit validated formatting and results
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add internal/mcp/memory/benchmark cmd/memory-bench docs/eval/current_plugins_local_smoke.md
+          if git diff --cached --quiet; then
+            echo 'No formatting or result changes to commit.'
+            exit 0
+          fi
+          git commit -m 'test(mcp): capture current memory plugin benchmark results'
+          git push origin HEAD:"${{ github.head_ref }}"
+
+      - name: Upload complete reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-memory-plugin-benchmark-${{ github.sha }}
+          path: /tmp/memory-benchmark-results/
+          if-no-files-found: error
