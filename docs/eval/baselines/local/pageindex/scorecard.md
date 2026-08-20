@@ -22,13 +22,13 @@
 | MRR | 0.5500 |
 | Hit rate@5 | 1.0000 |
 | Evidence recall | 0.8000 |
-| Abstention accuracy | 0.0000 |
-| False-answer rate | 1.0000 |
+| Retrieval abstention accuracy | 0.0000 |
+| Unexpected retrieval rate | 1.0000 |
 | Error rate | 0.0000 |
 
 ## Ability slices
 
-| Category | N | Failed | Recall@5 | nDCG@5 | MRR | Hit@5 | Evidence | Abstention | Errors |
+| Category | N | Failed | Recall@5 | nDCG@5 | MRR | Hit@5 | Evidence | Retrieval abstention accuracy | Errors |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | abstention | 1 | 0 | n/a | n/a | n/a | n/a | n/a | 0.0000 | 0.0000 |
 | knowledge-update | 1 | 0 | 1.0000 | 0.4307 | 0.2500 | 1.0000 | 1.0000 | n/a | 0.0000 |
@@ -58,4 +58,3 @@
 | `preference-drink` | preference | 1.0000 | 0.6309 | 0.5000 | 1.0000 | 0.575 |  |
 | `single-hop-city` | single-hop | 1.0000 | 0.6309 | 0.5000 | 1.0000 | 0.482 |  |
 | `unknown-launch-code` | abstention | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.444 |  |
-
