@@ -15,6 +15,8 @@ import (
 // SysOwner is the system_owner string used by every SystemFS write.
 const SysOwner = "pageindex"
 
+const sysStoreRoot = "/pageindex"
+
 // IndexEntry maps a user path to its PageIndex tree.
 type IndexEntry struct {
 	DocID     string `json:"doc_id"`
@@ -27,7 +29,7 @@ type IndexEntry struct {
 // Index is the persisted path↔doc_id catalog (one file per project).
 type Index map[string]IndexEntry
 
-// Meta is the per-project descriptor stored at pageindex/_meta.json.
+// Meta is the per-project descriptor stored at /pageindex/_meta.json.
 type Meta struct {
 	UpdatedAt string `json:"updated_at"`
 	Count     int    `json:"count"`
@@ -44,9 +46,9 @@ func NewSysStore(sys files.SystemFS) *SysStore {
 	return &SysStore{sys: sys}
 }
 
-func treePath(docID string) string { return path.Join("pageindex", docID+".json") }
-func indexPath() string            { return path.Join("pageindex", "index.json") }
-func metaPath() string             { return path.Join("pageindex", "_meta.json") }
+func treePath(docID string) string { return path.Join(sysStoreRoot, docID+".json") }
+func indexPath() string            { return path.Join(sysStoreRoot, "index.json") }
+func metaPath() string             { return path.Join(sysStoreRoot, "_meta.json") }
 
 // PutTree persists a tree as JSON.
 func (s *SysStore) PutTree(ctx context.Context, project, docID string, tree *Tree) error {
