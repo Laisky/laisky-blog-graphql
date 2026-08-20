@@ -78,9 +78,12 @@ func (s *SysStore) GetTree(ctx context.Context, project, docID string) (*Tree, e
 	return &tree, nil
 }
 
-// DeleteTree removes the tree JSON for docID. NotFound is silently ignored.
+// DeleteTree removes the tree JSON for docID. Missing trees are treated as an idempotent success.
 func (s *SysStore) DeleteTree(ctx context.Context, project, docID string) error {
 	if err := s.sys.Delete(ctx, project, treePath(docID)); err != nil {
+		if files.IsCode(err, files.ErrCodeNotFound) {
+			return nil
+		}
 		return errors.Wrap(err, "delete tree")
 	}
 	return nil
