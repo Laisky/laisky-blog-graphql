@@ -117,8 +117,9 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 	writeOptionalMetricRow(builder, fmt.Sprintf("Hit rate@%d", report.Run.TopK), retrievalAvailable, report.Quality.HitRateAtK)
 	writeOptionalMetricRow(builder, "Evidence recall", retrievalAvailable, report.Quality.EvidenceRecall)
 	if report.Quality.UnanswerableQueries > 0 || report.Quality.AbstentionMetricsAvailable {
-		writeOptionalMetricRow(builder, "Abstention accuracy", valid && report.Quality.AbstentionMetricsAvailable, report.Quality.AbstentionAccuracy)
-		writeOptionalMetricRow(builder, "False-answer rate", valid && report.Quality.AbstentionMetricsAvailable, report.Quality.FalseAnswerRate)
+		accuracyLabel, failureLabel := abstentionMetricLabels(report)
+		writeOptionalMetricRow(builder, accuracyLabel, valid && report.Quality.AbstentionMetricsAvailable, report.Quality.AbstentionAccuracy)
+		writeOptionalMetricRow(builder, failureLabel, valid && report.Quality.AbstentionMetricsAvailable, report.Quality.FalseAnswerRate)
 	}
 	if valid && report.Quality.AnswerMetricsAvailable {
 		writeMetricRow(builder, "Exact match", report.Quality.ExactMatch)
@@ -134,7 +135,8 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 
 	fmt.Fprintln(builder, "## Ability slices")
 	fmt.Fprintln(builder)
-	fmt.Fprintf(builder, "| Category | N | Failed | Recall@%d | nDCG@%d | MRR | Hit@%d | Evidence | Abstention | Errors |\n", report.Run.TopK, report.Run.TopK, report.Run.TopK)
+	abstentionColumn, _ := abstentionMetricLabels(report)
+	fmt.Fprintf(builder, "| Category | N | Failed | Recall@%d | nDCG@%d | MRR | Hit@%d | Evidence | %s | Errors |\n", report.Run.TopK, report.Run.TopK, report.Run.TopK, abstentionColumn)
 	fmt.Fprintln(builder, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 	for _, category := range report.Categories {
 		quality := category.Quality
@@ -236,6 +238,13 @@ func optionalMetric(available bool, value float64) string {
 		return "n/a"
 	}
 	return fmt.Sprintf("%.4f", value)
+}
+
+func abstentionMetricLabels(report *Report) (string, string) {
+	if report != nil && strings.TrimSpace(report.Run.ReaderModel) == "" {
+		return "Retrieval abstention accuracy", "Unexpected retrieval rate"
+	}
+	return "Answer abstention accuracy", "False-answer rate"
 }
 
 func writeCases(path string, cases []CaseResult) error {
