@@ -37,10 +37,22 @@ jobs:
 
       - name: Format and validate benchmark implementation
         run: |
-          gofmt -w ./internal/mcp/memory/benchmark ./cmd/memory-bench
+          gofmt -w \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
           git diff --check
-          go test -v -race -cover ./internal/mcp/memory/benchmark ./cmd/memory-bench
-          go vet ./internal/mcp/memory/benchmark ./cmd/memory-bench
+          go test -v -race -cover \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
+          go vet \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
 
       - name: Run both current plugins
         run: |
@@ -141,7 +153,13 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add internal/mcp/memory/benchmark cmd/memory-bench docs/eval/current_plugins_local_smoke.md docs/eval/baselines/local
+          git add \
+            internal/mcp/files \
+            internal/mcp/memory/plugins/pageindex \
+            internal/mcp/memory/benchmark \
+            cmd/memory-bench \
+            docs/eval/current_plugins_local_smoke.md \
+            docs/eval/baselines/local
           if git diff --cached --quiet; then
             echo 'No formatting, result, or baseline changes to commit.'
             exit 0
