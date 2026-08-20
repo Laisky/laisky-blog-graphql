@@ -1,6 +1,7 @@
 package benchmark
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	errors "github.com/Laisky/errors/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,6 +40,73 @@ func TestRetrievalAndAnswerMetrics(t *testing.T) {
 	require.True(t, *metrics.ExactMatch)
 	require.InDelta(t, 1.0, *metrics.TokenF1, 1e-9)
 	require.InDelta(t, 1.0, *metrics.RubricCoverage, 1e-9)
+}
+
+func TestEvaluatedZeroMetricsRemainSerialized(t *testing.T) {
+	t.Parallel()
+	cases := []CaseResult{
+		{
+			QueryID: "answer", Metrics: CaseMetrics{
+				ExactMatch: boolPointer(false), TokenPrecision: floatPointer(0),
+				TokenRecall: floatPointer(0), TokenF1: floatPointer(0), RubricCoverage: floatPointer(0),
+			},
+		},
+		{QueryID: "abstention", Unanswerable: true, Metrics: CaseMetrics{AbstentionOK: boolPointer(false)}},
+	}
+	summary := aggregateQuality(cases)
+	require.True(t, summary.AnswerMetricsAvailable)
+	require.True(t, summary.RubricMetricsAvailable)
+	require.True(t, summary.AbstentionMetricsAvailable)
+	raw, err := json.Marshal(summary)
+	require.NoError(t, err)
+	for _, field := range []string{
+		`"exact_match":0`, `"token_precision":0`, `"token_recall":0`, `"token_f1":0`,
+		`"rubric_coverage":0`, `"abstention_accuracy":0`, `"false_answer_rate":1`,
+	} {
+		require.Contains(t, string(raw), field)
+	}
+
+	report := testReport()
+	report.Quality = summary
+	var scorecard bytes.Buffer
+	require.NoError(t, WriteScorecard(&scorecard, report, nil))
+	require.Contains(t, scorecard.String(), "| Exact match | 0.0000 |")
+	require.Contains(t, scorecard.String(), "| Token F1 | 0.0000 |")
+	require.Contains(t, scorecard.String(), "| Rubric coverage | 0.0000 |")
+}
+
+func TestReportOmitsConfiguredEndpoint(t *testing.T) {
+	t.Parallel()
+	backend := &staticBackend{hits: []SearchHit{{FilePath: "/fact.md", Content: "fact", Score: 1}}}
+	runner, err := NewRunner(backend, nil)
+	require.NoError(t, err)
+	report, err := runner.Run(context.Background(), Dataset{
+		Name: "endpoint-redaction", Version: "1",
+		Documents: []Document{{ID: "fact", Path: "/fact.md", Content: "fact"}},
+		Queries: []Query{{ID: "q", Text: "fact", GoldPaths: []string{"/fact.md"}, GoldEvidence: []string{"fact"}}},
+	}, RunConfig{
+		Backend: "mcp", Endpoint: "https://user:password@private.example/mcp?token=secret#fragment",
+		Plugin: "rag", TopK: 1, Concurrency: 1, Repetitions: 1, Cleanup: false,
+	})
+	require.NoError(t, err)
+	raw, err := json.Marshal(report)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "private.example")
+	require.NotContains(t, string(raw), "password")
+	require.NotContains(t, string(raw), "secret")
+	require.NotContains(t, string(raw), `"endpoint"`)
+}
+
+func TestBenchmarkWorkflowTracksGoDependencies(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..", "..", "..")
+	for _, name := range []string{"memory-benchmark.yml", "memory-benchmark-capture.yml", "memory-benchmark-results.yml"} {
+		path := filepath.Join(root, ".github", "workflows", name)
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err, name)
+		require.Contains(t, string(raw), "'go.mod'", name)
+		require.Contains(t, string(raw), "'go.sum'", name)
+	}
 }
 
 func TestLoadDatasetAdapters(t *testing.T) {
@@ -215,6 +284,22 @@ func TestArtifactsAndRegressionGate(t *testing.T) {
 	require.False(t, comparison.Passed)
 }
 
+type staticBackend struct {
+	hits []SearchHit
+}
+
+func (b *staticBackend) Name() string { return "static-test" }
+
+func (b *staticBackend) Write(context.Context, string, Document) error { return nil }
+
+func (b *staticBackend) Search(context.Context, string, Query, int) ([]SearchHit, error) {
+	return append([]SearchHit(nil), b.hits...), nil
+}
+
+func (b *staticBackend) Delete(context.Context, string, string, bool) error { return nil }
+
+func (b *staticBackend) Close(context.Context) error { return nil }
+
 func testReport() *Report {
 	return &Report{
 		SchemaVersion: SchemaVersion,
@@ -240,3 +325,5 @@ func ExampleWriteScorecard() {
 	fmt.Println(report.SchemaVersion)
 	// Output: mcp-memory-benchmark/v1
 }
+
+var _ = errors.New
