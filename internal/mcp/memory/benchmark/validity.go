@@ -6,14 +6,14 @@ import (
 	errors "github.com/Laisky/errors/v2"
 )
 
-const invalidReportWarning = "Benchmark run is INVALID because one or more cases failed. Aggregate quality metrics exclude failed cases, abstention credit is disabled, and this report must not be used as a baseline."
+const invalidReportWarning = "Benchmark run is INVALID because one or more query cases or lifecycle operations failed. Failed query cases are excluded from aggregate quality metrics, abstention credit is disabled, and this report must not be used as a baseline."
 
-// FinalizeReport derives the durable validity status and warning text from case errors.
+// FinalizeReport derives the durable validity status and warning text from query and lifecycle errors.
 func FinalizeReport(report *Report) {
 	if report == nil {
 		return
 	}
-	if reportFailureCount(report) > 0 || report.Quality.ErrorRate > 0 {
+	if reportFailureCount(report) > 0 || report.Quality.ErrorRate > 0 || len(report.ExecutionErrors) > 0 {
 		report.Status = ReportStatusInvalid
 		if !containsWarning(report.Warnings, invalidReportWarning) {
 			report.Warnings = append(report.Warnings, invalidReportWarning)
@@ -23,7 +23,7 @@ func FinalizeReport(report *Report) {
 	report.Status = ReportStatusValid
 }
 
-// ValidateReport returns an error when a report is nil or contains execution failures.
+// ValidateReport returns an error when a report is nil or contains query or lifecycle failures.
 func ValidateReport(report *Report) error {
 	if report == nil {
 		return errors.New("benchmark report is nil")
@@ -35,9 +35,10 @@ func ValidateReport(report *Report) error {
 			total = len(report.Cases)
 		}
 		return errors.Errorf(
-			"benchmark report is invalid: %d of %d queries failed",
+			"benchmark report is invalid: %d of %d queries failed and %d lifecycle operations failed",
 			reportFailureCount(report),
 			total,
+			len(report.ExecutionErrors),
 		)
 	}
 	return nil
