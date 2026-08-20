@@ -69,6 +69,7 @@ jobs:
           else
             echo "No committed local baseline exists yet for ${{ matrix.plugin }}; this bootstrap run is score-only."
           fi
+          head_sha="$(git rev-parse HEAD)"
           go run ./cmd/memory-bench \
             --backend=local \
             --plugin='${{ matrix.plugin }}' \
@@ -84,7 +85,7 @@ jobs:
             --poll-interval=25ms \
             --run-timeout=5m \
             --max-p95-latency-increase=1.00 \
-            --git-sha="$GITHUB_SHA" \
+            --git-sha="$head_sha" \
             --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}" \
             "${baseline_args[@]}"
           cat "docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}/scorecard.md"
