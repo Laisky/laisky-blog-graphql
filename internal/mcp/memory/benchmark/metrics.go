@@ -162,6 +162,10 @@ func rubricCoverage(answer string, rubric []string) float64 {
 }
 
 func aggregateQuality(cases []CaseResult) QualitySummary {
+	return aggregateQualityWithAbstention(cases, !hasCaseErrors(cases))
+}
+
+func aggregateQualityWithAbstention(cases []CaseResult, allowAbstention bool) QualitySummary {
 	summary := QualitySummary{Queries: len(cases)}
 	answerable := 0
 	unanswerable := 0
@@ -175,12 +179,13 @@ func aggregateQuality(cases []CaseResult) QualitySummary {
 	tokenTotal := 0
 	rubricTotal := 0
 	for _, result := range cases {
-		if result.Error != "" {
+		if strings.TrimSpace(result.Error) != "" {
 			errorsCount++
+			continue
 		}
 		if result.Unanswerable {
 			unanswerable++
-			if result.Metrics.AbstentionOK != nil {
+			if allowAbstention && result.Metrics.AbstentionOK != nil {
 				abstentionTotal++
 				if *result.Metrics.AbstentionOK {
 					abstentionCount++
@@ -216,9 +221,12 @@ func aggregateQuality(cases []CaseResult) QualitySummary {
 			summary.RubricCoverage += *result.Metrics.RubricCoverage
 		}
 	}
+	summary.FailedQueries = errorsCount
+	summary.EvaluatedQueries = len(cases) - errorsCount
 	summary.AnswerableQueries = answerable
 	summary.UnanswerableQueries = unanswerable
 	if answerable > 0 {
+		summary.RetrievalMetricsAvailable = true
 		denominator := float64(answerable)
 		summary.RecallAtK /= denominator
 		summary.PrecisionAtK /= denominator
@@ -267,11 +275,24 @@ func aggregateCategories(cases []CaseResult) []CategorySummary {
 		categories = append(categories, category)
 	}
 	sort.Strings(categories)
+	allowAbstention := !hasCaseErrors(cases)
 	result := make([]CategorySummary, 0, len(categories))
 	for _, category := range categories {
-		result = append(result, CategorySummary{Category: category, Quality: aggregateQuality(grouped[category])})
+		result = append(result, CategorySummary{
+			Category: category,
+			Quality: aggregateQualityWithAbstention(grouped[category], allowAbstention),
+		})
 	}
 	return result
+}
+
+func hasCaseErrors(cases []CaseResult) bool {
+	for _, result := range cases {
+		if strings.TrimSpace(result.Error) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func latencyStats(values []float64) LatencyStats {
