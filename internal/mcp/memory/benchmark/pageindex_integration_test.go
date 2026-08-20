@@ -55,7 +55,7 @@ func TestPageIndexPersistsAndSearchesThroughRealSystemFS(t *testing.T) {
 	require.NotEmpty(t, index[documentPath].DocID)
 	tree, err := store.GetTree(ctx, project, index[documentPath].DocID)
 	require.NoError(t, err)
-	require.NotEmpty(t, tree.Roots)
+	require.NotEmpty(t, tree.Structure)
 
 	result, err := plugin.Search(ctx, auth, project, "Which token is required for rollback?", "/", 5)
 	require.NoError(t, err)
