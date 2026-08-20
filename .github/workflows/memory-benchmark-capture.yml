@@ -1,5 +1,7 @@
 name: memory-benchmark-capture
 
+# Manual dispatch checks out the complete selected ref, so dependency changes in
+# 'go.mod' and 'go.sum' are always included without a pull-request path filter.
 on:
   workflow_dispatch:
     inputs:
