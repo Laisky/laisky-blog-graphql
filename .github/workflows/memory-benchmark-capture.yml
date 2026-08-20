@@ -54,7 +54,7 @@ jobs:
               --dataset=tests/eval/memory_bench_smoke.jsonl \
               --format=canonical \
               --top-k=5 \
-              --min-score=0 \
+              --min-score=0.20 \
               --concurrency=1 \
               --warmup=1 \
               --repetitions=3 \
@@ -75,6 +75,11 @@ jobs:
 
           root = Path('/tmp/memory-benchmark-results')
           reports = {name: json.loads((root / name / 'report.json').read_text()) for name in ('rag', 'pageindex')}
+          for name, report in reports.items():
+              quality = report['quality']
+              if report.get('status') != 'valid' or quality.get('failed_queries', 0) != 0 or quality.get('error_rate', 0) != 0:
+                  raise SystemExit(f'refusing to capture invalid {name} baseline: status={report.get("status")} failed={quality.get("failed_queries")} error_rate={quality.get("error_rate")}')
+
           destination = Path('docs/eval/current_plugins_local_smoke.md')
           lines = [
               '# Current MCP Memory Plugin Local Smoke Benchmark',
@@ -89,23 +94,26 @@ jobs:
               '- Backend: real in-process production plugin over an isolated SQLite file service.',
               '- RAG: production RAG plugin and file-service lexical/raw fallback.',
               '- PageIndex: production PageIndex plugin, Markdown indexer, SystemFS tree persistence, and tree-search loop with deterministic StubLLM.',
-              '- Settings: top-k 5, min-score 0, concurrency 1, one warm-up, three timed repetitions, seed 42.',
+              '- Settings: top-k 5, min-score 0.20, concurrency 1, one warm-up, three timed repetitions, seed 42.',
               '- Local latency is diagnostic only; deployed MCP results are required for production SLO decisions.',
               '- The first validated capture seeds immutable local baseline reports under `docs/eval/baselines/local/`; later PR runs compare against them.',
               '',
               '## Results',
               '',
-              '| Plugin | Recall@5 | Precision@5 | nDCG@5 | MRR | Hit@5 | Evidence recall | Abstention accuracy | Error rate | Search p50 ms | Search p95 ms | Index-ready p95 ms |',
-              '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+              '| Plugin | Status | Failed | Recall@5 | Precision@5 | nDCG@5 | MRR | Hit@5 | Evidence recall | Retrieval abstention | Error rate | Search p50 ms | Search p95 ms | Index-ready p95 ms |',
+              '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
           ]
           for name in ('rag', 'pageindex'):
               report = reports[name]
               q = report['quality']
               o = report['operational']
+              abstention = q['abstention_accuracy'] if q.get('abstention_metrics_available') else None
+              abstention_text = f'{abstention:.4f}' if abstention is not None else 'n/a'
               lines.append(
-                  f'| {name} | {q["recall_at_k"]:.4f} | {q["precision_at_k"]:.4f} | '
+                  f'| {name} | {report["status"]} | {q["failed_queries"]} | '
+                  f'{q["recall_at_k"]:.4f} | {q["precision_at_k"]:.4f} | '
                   f'{q["ndcg_at_k"]:.4f} | {q["mrr"]:.4f} | {q["hit_rate_at_k"]:.4f} | '
-                  f'{q["evidence_recall"]:.4f} | {q["abstention_accuracy"]:.4f} | '
+                  f'{q["evidence_recall"]:.4f} | {abstention_text} | '
                   f'{q["error_rate"]:.4f} | {o["search_latency"]["p50_ms"]:.3f} | '
                   f'{o["search_latency"]["p95_ms"]:.3f} | {o["index_wait_latency"]["p95_ms"]:.3f} |'
               )
@@ -119,7 +127,8 @@ jobs:
               '',
               '## Interpretation',
               '',
-              'These numbers are regression-smoke results for the exact repository fixture, not public benchmark leaderboard claims. '
+              'These numbers are valid regression-smoke baselines for the exact repository fixture, not public benchmark leaderboard claims. '
+              'PageIndex uses a deterministic StubLLM so the local run measures the production persistence, tree construction, traversal, ranking, and result-shaping code without provider variance; it does not estimate the quality or latency of a production reasoning model. '
               'The scheduled `mcp` backend job is the authoritative end-to-end operational measurement because it includes transport, authentication, production storage, indexing workers, and configured model providers. '
               'That deployed job is intentionally score-only until an operator adopts a stable environment-specific production baseline.',
               '',
