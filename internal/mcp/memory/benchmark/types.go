@@ -193,15 +193,16 @@ type RunMetadata struct {
 
 // Report is the durable JSON result of one benchmark run.
 type Report struct {
-	SchemaVersion string             `json:"schema_version"`
-	Status        string             `json:"status"`
-	Run           RunMetadata        `json:"run"`
-	Dataset       DatasetMetadata    `json:"dataset"`
-	Quality       QualitySummary     `json:"quality"`
-	Operational   OperationalSummary `json:"operational"`
-	Categories    []CategorySummary  `json:"categories,omitempty"`
-	Cases         []CaseResult       `json:"cases"`
-	Warnings      []string           `json:"warnings,omitempty"`
+	SchemaVersion   string             `json:"schema_version"`
+	Status          string             `json:"status"`
+	Run             RunMetadata        `json:"run"`
+	Dataset         DatasetMetadata    `json:"dataset"`
+	Quality         QualitySummary     `json:"quality"`
+	Operational     OperationalSummary `json:"operational"`
+	Categories      []CategorySummary  `json:"categories,omitempty"`
+	Cases           []CaseResult       `json:"cases"`
+	Warnings        []string           `json:"warnings,omitempty"`
+	ExecutionErrors []string           `json:"execution_errors,omitempty"`
 }
 
 // DatasetMetadata avoids duplicating the full corpus in report.json.
