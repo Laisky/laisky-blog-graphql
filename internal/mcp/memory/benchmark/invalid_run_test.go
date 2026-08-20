@@ -17,22 +17,22 @@ func TestAggregateQualityExcludesFailedCases(t *testing.T) {
 		{
 			QueryID: "successful-answerable",
 			Metrics: CaseMetrics{
-				RecallAtK: 1,
-				PrecisionAtK: 0.2,
-				NDCGAtK: 1,
-				MRR: 1,
-				HitAtK: true,
+				RecallAtK:      1,
+				PrecisionAtK:   0.2,
+				NDCGAtK:        1,
+				MRR:            1,
+				HitAtK:         true,
 				EvidenceRecall: 1,
 			},
 		},
 		{
 			QueryID: "failed-answerable",
-			Error: "index readiness timeout",
+			Error:   "index readiness timeout",
 		},
 		{
-			QueryID: "apparently-correct-abstention",
+			QueryID:      "apparently-correct-abstention",
 			Unanswerable: true,
-			Metrics: CaseMetrics{AbstentionOK: boolPointer(true)},
+			Metrics:      CaseMetrics{AbstentionOK: boolPointer(true)},
 		},
 	}
 
@@ -63,11 +63,11 @@ func TestInvalidScorecardUsesNAAndCannotBecomeBaseline(t *testing.T) {
 	}
 	invalid := &Report{
 		SchemaVersion: SchemaVersion,
-		Run: RunMetadata{Plugin: "pageindex", TopK: 5, ConfigSHA256: "same"},
-		Dataset: DatasetMetadata{SHA256: "dataset", Queries: len(invalidCases)},
-		Quality: aggregateQuality(invalidCases),
-		Categories: aggregateCategories(invalidCases),
-		Cases: invalidCases,
+		Run:           RunMetadata{Plugin: "pageindex", TopK: 5, ConfigSHA256: "same"},
+		Dataset:       DatasetMetadata{SHA256: "dataset", Queries: len(invalidCases)},
+		Quality:       aggregateQuality(invalidCases),
+		Categories:    aggregateCategories(invalidCases),
+		Cases:         invalidCases,
 	}
 
 	var scorecard bytes.Buffer
@@ -84,10 +84,10 @@ func TestInvalidScorecardUsesNAAndCannotBecomeBaseline(t *testing.T) {
 	}}
 	valid := &Report{
 		SchemaVersion: SchemaVersion,
-		Run: RunMetadata{Plugin: "pageindex", TopK: 5, ConfigSHA256: "same"},
-		Dataset: DatasetMetadata{SHA256: "dataset", Queries: len(validCases)},
-		Quality: aggregateQuality(validCases),
-		Cases: validCases,
+		Run:           RunMetadata{Plugin: "pageindex", TopK: 5, ConfigSHA256: "same"},
+		Dataset:       DatasetMetadata{SHA256: "dataset", Queries: len(validCases)},
+		Quality:       aggregateQuality(validCases),
+		Cases:         validCases,
 	}
 	comparison := CompareReports(valid, invalid, GateConfig{})
 	require.False(t, comparison.Compatible)
@@ -102,10 +102,10 @@ func TestWriteArtifactsPersistsInvalidStatus(t *testing.T) {
 
 	report := &Report{
 		SchemaVersion: SchemaVersion,
-		Run: RunMetadata{Plugin: "pageindex", TopK: 5},
-		Dataset: DatasetMetadata{SHA256: "dataset", Queries: 1},
-		Quality: aggregateQuality([]CaseResult{{QueryID: "failed", Error: "backend unavailable"}}),
-		Cases: []CaseResult{{QueryID: "failed", Error: "backend unavailable"}},
+		Run:           RunMetadata{Plugin: "pageindex", TopK: 5},
+		Dataset:       DatasetMetadata{SHA256: "dataset", Queries: 1},
+		Quality:       aggregateQuality([]CaseResult{{QueryID: "failed", Error: "backend unavailable"}}),
+		Cases:         []CaseResult{{QueryID: "failed", Error: "backend unavailable"}},
 	}
 	dir := t.TempDir()
 	require.NoError(t, WriteArtifacts(dir, report, nil))

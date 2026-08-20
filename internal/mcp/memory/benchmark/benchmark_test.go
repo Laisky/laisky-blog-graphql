@@ -82,7 +82,7 @@ func TestReportOmitsConfiguredEndpoint(t *testing.T) {
 	report, err := runner.Run(context.Background(), Dataset{
 		Name: "endpoint-redaction", Version: "1",
 		Documents: []Document{{ID: "fact", Path: "/fact.md", Content: "fact"}},
-		Queries: []Query{{ID: "q", Text: "fact", GoldPaths: []string{"/fact.md"}, GoldEvidence: []string{"fact"}}},
+		Queries:   []Query{{ID: "q", Text: "fact", GoldPaths: []string{"/fact.md"}, GoldEvidence: []string{"fact"}}},
 	}, RunConfig{
 		Backend: "mcp", Endpoint: "https://user:password@private.example/mcp?token=secret#fragment",
 		Plugin: "rag", TopK: 1, Concurrency: 1, Repetitions: 1, Cleanup: false,
@@ -195,7 +195,7 @@ func TestMCPClientJSONTransport(t *testing.T) {
 			"jsonrpc": "2.0", "id": id,
 			"result": map[string]any{
 				"structuredContent": map[string]any{"chunks": []map[string]any{{"file_path": "/a.md", "chunk_content": "hello", "score": 1.0}}},
-				"content": []map[string]any{{"type": "text", "text": "fallback"}}, "isError": false,
+				"content":           []map[string]any{{"type": "text", "text": "fallback"}}, "isError": false,
 			},
 		})
 	}))

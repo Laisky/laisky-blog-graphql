@@ -1,0 +1,599 @@
+{
+  "schema_version": "mcp-memory-benchmark/v1",
+  "status": "valid",
+  "run": {
+    "harness_version": "1.1.0",
+    "git_sha": "0540bf4f11c5b5c0628d675a8a9b57d1105a9481",
+    "run_id": "20260820T020712.411497534Z",
+    "started_at": "2026-08-20T02:07:12.411497534Z",
+    "completed_at": "2026-08-20T02:07:12.415474503Z",
+    "backend": "local-in-process",
+    "plugin": "rag",
+    "project": "memory-bench-16ee655d76bb-1787191632411497534",
+    "top_k": 5,
+    "min_score": 0.2,
+    "concurrency": 1,
+    "warmup": 1,
+    "repetitions": 3,
+    "seed": 42,
+    "index_timeout_ms": 30000,
+    "poll_interval_ms": 25,
+    "protocol_version": "2025-06-18",
+    "config_sha256": "721af7f9f31d677507af76a086248a74e7bea353392805aa8b6afe98952cbc3a",
+    "go_version": "go1.26.2",
+    "goos": "linux",
+    "goarch": "amd64",
+    "hostname": "runnervm76f27"
+  },
+  "dataset": {
+    "name": "mcp-memory-smoke",
+    "version": "2026-08-19-v2",
+    "source": "repository-synthetic-fixture",
+    "sha256": "16ee655d76bb002fe584f31ba8236333a7a2c855457407dc535ac7cd1642268b",
+    "documents": 4,
+    "queries": 6
+  },
+  "quality": {
+    "queries": 6,
+    "evaluated_queries": 6,
+    "failed_queries": 0,
+    "answerable_queries": 5,
+    "unanswerable_queries": 1,
+    "retrieval_metrics_available": true,
+    "recall_at_k": 1,
+    "precision_at_k": 0.24,
+    "ndcg_at_k": 0.9839441578296375,
+    "mrr": 1,
+    "hit_rate_at_k": 1,
+    "evidence_recall": 1,
+    "abstention_metrics_available": true,
+    "abstention_accuracy": 0,
+    "false_answer_rate": 1,
+    "answer_metrics_available": false,
+    "exact_match": 0,
+    "token_precision": 0,
+    "token_recall": 0,
+    "token_f1": 0,
+    "rubric_metrics_available": false,
+    "rubric_coverage": 0,
+    "error_rate": 0
+  },
+  "operational": {
+    "ingest_latency": {
+      "count": 4,
+      "mean_ms": 0.15993400000000002,
+      "p50_ms": 0.13684200000000002,
+      "p95_ms": 0.24506869999999997,
+      "p99_ms": 0.25933453999999995,
+      "max_ms": 0.262901
+    },
+    "search_latency": {
+      "count": 18,
+      "mean_ms": 0.08655916666666667,
+      "p50_ms": 0.08386350000000001,
+      "p95_ms": 0.10873074999999997,
+      "p99_ms": 0.12441494999999997,
+      "max_ms": 0.128336
+    },
+    "index_wait_latency": {
+      "count": 5,
+      "mean_ms": 0.11321940000000001,
+      "p50_ms": 0.116874,
+      "p95_ms": 0.124396,
+      "p99_ms": 0.125724,
+      "max_ms": 0.126056
+    },
+    "documents_per_second": 6126.859693381307,
+    "mean_estimated_context_tokens": 104.5
+  },
+  "categories": [
+    {
+      "category": "abstention",
+      "quality": {
+        "queries": 1,
+        "evaluated_queries": 1,
+        "failed_queries": 0,
+        "answerable_queries": 0,
+        "unanswerable_queries": 1,
+        "retrieval_metrics_available": false,
+        "recall_at_k": 0,
+        "precision_at_k": 0,
+        "ndcg_at_k": 0,
+        "mrr": 0,
+        "hit_rate_at_k": 0,
+        "evidence_recall": 0,
+        "abstention_metrics_available": true,
+        "abstention_accuracy": 0,
+        "false_answer_rate": 1,
+        "answer_metrics_available": false,
+        "exact_match": 0,
+        "token_precision": 0,
+        "token_recall": 0,
+        "token_f1": 0,
+        "rubric_metrics_available": false,
+        "rubric_coverage": 0,
+        "error_rate": 0
+      }
+    },
+    {
+      "category": "knowledge-update",
+      "quality": {
+        "queries": 1,
+        "evaluated_queries": 1,
+        "failed_queries": 0,
+        "answerable_queries": 1,
+        "unanswerable_queries": 0,
+        "retrieval_metrics_available": true,
+        "recall_at_k": 1,
+        "precision_at_k": 0.2,
+        "ndcg_at_k": 1,
+        "mrr": 1,
+        "hit_rate_at_k": 1,
+        "evidence_recall": 1,
+        "abstention_metrics_available": false,
+        "abstention_accuracy": 0,
+        "false_answer_rate": 0,
+        "answer_metrics_available": false,
+        "exact_match": 0,
+        "token_precision": 0,
+        "token_recall": 0,
+        "token_f1": 0,
+        "rubric_metrics_available": false,
+        "rubric_coverage": 0,
+        "error_rate": 0
+      }
+    },
+    {
+      "category": "long-document",
+      "quality": {
+        "queries": 1,
+        "evaluated_queries": 1,
+        "failed_queries": 0,
+        "answerable_queries": 1,
+        "unanswerable_queries": 0,
+        "retrieval_metrics_available": true,
+        "recall_at_k": 1,
+        "precision_at_k": 0.2,
+        "ndcg_at_k": 1,
+        "mrr": 1,
+        "hit_rate_at_k": 1,
+        "evidence_recall": 1,
+        "abstention_metrics_available": false,
+        "abstention_accuracy": 0,
+        "false_answer_rate": 0,
+        "answer_metrics_available": false,
+        "exact_match": 0,
+        "token_precision": 0,
+        "token_recall": 0,
+        "token_f1": 0,
+        "rubric_metrics_available": false,
+        "rubric_coverage": 0,
+        "error_rate": 0
+      }
+    },
+    {
+      "category": "multi-hop",
+      "quality": {
+        "queries": 1,
+        "evaluated_queries": 1,
+        "failed_queries": 0,
+        "answerable_queries": 1,
+        "unanswerable_queries": 0,
+        "retrieval_metrics_available": true,
+        "recall_at_k": 1,
+        "precision_at_k": 0.4,
+        "ndcg_at_k": 0.9197207891481877,
+        "mrr": 1,
+        "hit_rate_at_k": 1,
+        "evidence_recall": 1,
+        "abstention_metrics_available": false,
+        "abstention_accuracy": 0,
+        "false_answer_rate": 0,
+        "answer_metrics_available": false,
+        "exact_match": 0,
+        "token_precision": 0,
+        "token_recall": 0,
+        "token_f1": 0,
+        "rubric_metrics_available": false,
+        "rubric_coverage": 0,
+        "error_rate": 0
+      }
+    },
+    {
+      "category": "preference",
+      "quality": {
+        "queries": 1,
+        "evaluated_queries": 1,
+        "failed_queries": 0,
+        "answerable_queries": 1,
+        "unanswerable_queries": 0,
+        "retrieval_metrics_available": true,
+        "recall_at_k": 1,
+        "precision_at_k": 0.2,
+        "ndcg_at_k": 1,
+        "mrr": 1,
+        "hit_rate_at_k": 1,
+        "evidence_recall": 1,
+        "abstention_metrics_available": false,
+        "abstention_accuracy": 0,
+        "false_answer_rate": 0,
+        "answer_metrics_available": false,
+        "exact_match": 0,
+        "token_precision": 0,
+        "token_recall": 0,
+        "token_f1": 0,
+        "rubric_metrics_available": false,
+        "rubric_coverage": 0,
+        "error_rate": 0
+      }
+    },
+    {
+      "category": "single-hop",
+      "quality": {
+        "queries": 1,
+        "evaluated_queries": 1,
+        "failed_queries": 0,
+        "answerable_queries": 1,
+        "unanswerable_queries": 0,
+        "retrieval_metrics_available": true,
+        "recall_at_k": 1,
+        "precision_at_k": 0.2,
+        "ndcg_at_k": 1,
+        "mrr": 1,
+        "hit_rate_at_k": 1,
+        "evidence_recall": 1,
+        "abstention_metrics_available": false,
+        "abstention_accuracy": 0,
+        "false_answer_rate": 0,
+        "answer_metrics_available": false,
+        "exact_match": 0,
+        "token_precision": 0,
+        "token_recall": 0,
+        "token_f1": 0,
+        "rubric_metrics_available": false,
+        "rubric_coverage": 0,
+        "error_rate": 0
+      }
+    }
+  ],
+  "cases": [
+    {
+      "query_id": "single-hop-city",
+      "category": "single-hop",
+      "query": "Which city does Alice live in?",
+      "gold_paths": [
+        "/bench/smoke/profile.md"
+      ],
+      "gold_evidence": [
+        "Alice moved to Ottawa in March 2025"
+      ],
+      "retrieved": [
+        {
+          "file_path": "/bench/smoke/profile.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 105,
+          "is_full_file": true,
+          "chunk_content": "# User profile\n\nAlice moved to Ottawa in March 2025. Her dog is named Goose. She prefers tea over coffee.",
+          "score": 2
+        },
+        {
+          "file_path": "/bench/smoke/updates.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 168,
+          "is_full_file": true,
+          "chunk_content": "# Preference history\n\nIn January 2025, Alice selected red as the dashboard color. In June 2026, she replaced that choice with blue. The current dashboard color is blue.",
+          "score": 2
+        },
+        {
+          "file_path": "/bench/smoke/project.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 144,
+          "is_full_file": true,
+          "chunk_content": "# Project Atlas\n\nProject Atlas is implemented in Go and PostgreSQL. It runs on Kubernetes. The regular deployment window is Friday at 22:00 UTC.",
+          "score": 1
+        }
+      ],
+      "metrics": {
+        "recall_at_k": 1,
+        "precision_at_k": 0.2,
+        "ndcg_at_k": 1,
+        "mrr": 1,
+        "hit_at_k": true,
+        "evidence_recall": 1
+      },
+      "search_latency_ms": 0.086965,
+      "search_latencies_ms": [
+        0.09282,
+        0.081503,
+        0.086572
+      ],
+      "index_wait_latency_ms": 0.116874,
+      "search_attempts": 5,
+      "estimated_context_tokens": 70
+    },
+    {
+      "query_id": "preference-drink",
+      "category": "preference",
+      "query": "Does Alice prefer tea or coffee?",
+      "gold_paths": [
+        "/bench/smoke/profile.md"
+      ],
+      "gold_evidence": [
+        "She prefers tea over coffee"
+      ],
+      "retrieved": [
+        {
+          "file_path": "/bench/smoke/profile.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 105,
+          "is_full_file": true,
+          "chunk_content": "# User profile\n\nAlice moved to Ottawa in March 2025. Her dog is named Goose. She prefers tea over coffee.",
+          "score": 3
+        },
+        {
+          "file_path": "/bench/smoke/updates.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 168,
+          "is_full_file": true,
+          "chunk_content": "# Preference history\n\nIn January 2025, Alice selected red as the dashboard color. In June 2026, she replaced that choice with blue. The current dashboard color is blue.",
+          "score": 1
+        }
+      ],
+      "metrics": {
+        "recall_at_k": 1,
+        "precision_at_k": 0.2,
+        "ndcg_at_k": 1,
+        "mrr": 1,
+        "hit_at_k": true,
+        "evidence_recall": 1
+      },
+      "search_latency_ms": 0.07684866666666668,
+      "search_latencies_ms": [
+        0.073329,
+        0.05757,
+        0.099647
+      ],
+      "index_wait_latency_ms": 0.126056,
+      "search_attempts": 5,
+      "estimated_context_tokens": 46
+    },
+    {
+      "query_id": "multi-document",
+      "category": "multi-hop",
+      "query": "Where does Alice live and which language is Project Atlas implemented in?",
+      "gold_paths": [
+        "/bench/smoke/profile.md",
+        "/bench/smoke/project.md"
+      ],
+      "gold_evidence": [
+        "Alice moved to Ottawa",
+        "Project Atlas is implemented in Go"
+      ],
+      "retrieved": [
+        {
+          "file_path": "/bench/smoke/project.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 144,
+          "is_full_file": true,
+          "chunk_content": "# Project Atlas\n\nProject Atlas is implemented in Go and PostgreSQL. It runs on Kubernetes. The regular deployment window is Friday at 22:00 UTC.",
+          "score": 6
+        },
+        {
+          "file_path": "/bench/smoke/manual.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 608,
+          "is_full_file": true,
+          "chunk_content": "# Atlas Operations Manual\n\n## Purpose\nThis manual describes routine operations for Project Atlas.\n\n## Deployment\nDeployments use a staged Kubernetes rollout.\n\n## Monitoring\nOperators watch request errors, saturation, and queue age.\n\n## Backups\nPostgreSQL backups are verified before a release.\n\n## Incident response\nThe incident commander coordinates communication and recovery.\n\n## Rollback\nFor an emergency rollback, the operator must enter the rollback token ORBIT-17 and then restore the previous release manifest.\n\n## Verification\nThe operator verifies health checks and customer traffic after rollback.",
+          "score": 3
+        },
+        {
+          "file_path": "/bench/smoke/profile.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 105,
+          "is_full_file": true,
+          "chunk_content": "# User profile\n\nAlice moved to Ottawa in March 2025. Her dog is named Goose. She prefers tea over coffee.",
+          "score": 3
+        },
+        {
+          "file_path": "/bench/smoke/updates.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 168,
+          "is_full_file": true,
+          "chunk_content": "# Preference history\n\nIn January 2025, Alice selected red as the dashboard color. In June 2026, she replaced that choice with blue. The current dashboard color is blue.",
+          "score": 3
+        }
+      ],
+      "metrics": {
+        "recall_at_k": 1,
+        "precision_at_k": 0.4,
+        "ndcg_at_k": 0.9197207891481877,
+        "mrr": 1,
+        "hit_at_k": true,
+        "evidence_recall": 1
+      },
+      "search_latency_ms": 0.10243366666666666,
+      "search_latencies_ms": [
+        0.104793,
+        0.098697,
+        0.103811
+      ],
+      "index_wait_latency_ms": 0.117756,
+      "search_attempts": 5,
+      "estimated_context_tokens": 147
+    },
+    {
+      "query_id": "latest-value",
+      "category": "knowledge-update",
+      "query": "What is Alice's current dashboard color?",
+      "gold_paths": [
+        "/bench/smoke/updates.md"
+      ],
+      "gold_evidence": [
+        "The current dashboard color is blue"
+      ],
+      "retrieved": [
+        {
+          "file_path": "/bench/smoke/updates.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 168,
+          "is_full_file": true,
+          "chunk_content": "# Preference history\n\nIn January 2025, Alice selected red as the dashboard color. In June 2026, she replaced that choice with blue. The current dashboard color is blue.",
+          "score": 4
+        },
+        {
+          "file_path": "/bench/smoke/profile.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 105,
+          "is_full_file": true,
+          "chunk_content": "# User profile\n\nAlice moved to Ottawa in March 2025. Her dog is named Goose. She prefers tea over coffee.",
+          "score": 1
+        },
+        {
+          "file_path": "/bench/smoke/project.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 144,
+          "is_full_file": true,
+          "chunk_content": "# Project Atlas\n\nProject Atlas is implemented in Go and PostgreSQL. It runs on Kubernetes. The regular deployment window is Friday at 22:00 UTC.",
+          "score": 1
+        }
+      ],
+      "metrics": {
+        "recall_at_k": 1,
+        "precision_at_k": 0.2,
+        "ndcg_at_k": 1,
+        "mrr": 1,
+        "hit_at_k": true,
+        "evidence_recall": 1
+      },
+      "search_latency_ms": 0.08525133333333333,
+      "search_latencies_ms": [
+        0.067326,
+        0.083157,
+        0.105271
+      ],
+      "index_wait_latency_ms": 0.097604,
+      "search_attempts": 5,
+      "estimated_context_tokens": 70
+    },
+    {
+      "query_id": "long-document-rollback",
+      "category": "long-document",
+      "query": "Which token is required for an emergency Atlas rollback?",
+      "gold_paths": [
+        "/bench/smoke/manual.md"
+      ],
+      "gold_evidence": [
+        "rollback token ORBIT-17"
+      ],
+      "retrieved": [
+        {
+          "file_path": "/bench/smoke/manual.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 608,
+          "is_full_file": true,
+          "chunk_content": "# Atlas Operations Manual\n\n## Purpose\nThis manual describes routine operations for Project Atlas.\n\n## Deployment\nDeployments use a staged Kubernetes rollout.\n\n## Monitoring\nOperators watch request errors, saturation, and queue age.\n\n## Backups\nPostgreSQL backups are verified before a release.\n\n## Incident response\nThe incident commander coordinates communication and recovery.\n\n## Rollback\nFor an emergency rollback, the operator must enter the rollback token ORBIT-17 and then restore the previous release manifest.\n\n## Verification\nThe operator verifies health checks and customer traffic after rollback.",
+          "score": 6
+        },
+        {
+          "file_path": "/bench/smoke/project.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 144,
+          "is_full_file": true,
+          "chunk_content": "# Project Atlas\n\nProject Atlas is implemented in Go and PostgreSQL. It runs on Kubernetes. The regular deployment window is Friday at 22:00 UTC.",
+          "score": 2
+        },
+        {
+          "file_path": "/bench/smoke/profile.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 105,
+          "is_full_file": true,
+          "chunk_content": "# User profile\n\nAlice moved to Ottawa in March 2025. Her dog is named Goose. She prefers tea over coffee.",
+          "score": 1
+        },
+        {
+          "file_path": "/bench/smoke/updates.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 168,
+          "is_full_file": true,
+          "chunk_content": "# Preference history\n\nIn January 2025, Alice selected red as the dashboard color. In June 2026, she replaced that choice with blue. The current dashboard color is blue.",
+          "score": 1
+        }
+      ],
+      "metrics": {
+        "recall_at_k": 1,
+        "precision_at_k": 0.2,
+        "ndcg_at_k": 1,
+        "mrr": 1,
+        "hit_at_k": true,
+        "evidence_recall": 1
+      },
+      "search_latency_ms": 0.07278666666666667,
+      "search_latencies_ms": [
+        0.070972,
+        0.078257,
+        0.069131
+      ],
+      "index_wait_latency_ms": 0.107807,
+      "search_attempts": 5,
+      "estimated_context_tokens": 147
+    },
+    {
+      "query_id": "unknown-launch-code",
+      "category": "abstention",
+      "query": "What is the ZXQ-991 lunar launch authorization code?",
+      "unanswerable": true,
+      "retrieved": [
+        {
+          "file_path": "/bench/smoke/project.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 144,
+          "is_full_file": true,
+          "chunk_content": "# Project Atlas\n\nProject Atlas is implemented in Go and PostgreSQL. It runs on Kubernetes. The regular deployment window is Friday at 22:00 UTC.",
+          "score": 2
+        },
+        {
+          "file_path": "/bench/smoke/updates.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 168,
+          "is_full_file": true,
+          "chunk_content": "# Preference history\n\nIn January 2025, Alice selected red as the dashboard color. In June 2026, she replaced that choice with blue. The current dashboard color is blue.",
+          "score": 2
+        },
+        {
+          "file_path": "/bench/smoke/manual.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 608,
+          "is_full_file": true,
+          "chunk_content": "# Atlas Operations Manual\n\n## Purpose\nThis manual describes routine operations for Project Atlas.\n\n## Deployment\nDeployments use a staged Kubernetes rollout.\n\n## Monitoring\nOperators watch request errors, saturation, and queue age.\n\n## Backups\nPostgreSQL backups are verified before a release.\n\n## Incident response\nThe incident commander coordinates communication and recovery.\n\n## Rollback\nFor an emergency rollback, the operator must enter the rollback token ORBIT-17 and then restore the previous release manifest.\n\n## Verification\nThe operator verifies health checks and customer traffic after rollback.",
+          "score": 1
+        },
+        {
+          "file_path": "/bench/smoke/profile.md",
+          "file_seek_start_bytes": 0,
+          "file_seek_end_bytes": 105,
+          "is_full_file": true,
+          "chunk_content": "# User profile\n\nAlice moved to Ottawa in March 2025. Her dog is named Goose. She prefers tea over coffee.",
+          "score": 1
+        }
+      ],
+      "metrics": {
+        "recall_at_k": 0,
+        "precision_at_k": 0,
+        "ndcg_at_k": 0,
+        "mrr": 0,
+        "hit_at_k": false,
+        "evidence_recall": 0,
+        "abstention_ok": false
+      },
+      "search_latency_ms": 0.09506966666666668,
+      "search_latencies_ms": [
+        0.128336,
+        0.072303,
+        0.08457
+      ],
+      "index_wait_latency_ms": 0,
+      "search_attempts": 4,
+      "estimated_context_tokens": 147
+    }
+  ]
+}

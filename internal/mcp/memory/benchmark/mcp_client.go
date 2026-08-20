@@ -73,8 +73,8 @@ func (c *MCPClient) Initialize(ctx context.Context) error {
 		JSONRPC: "2.0", ID: requestID, Method: "initialize",
 		Params: map[string]any{
 			"protocolVersion": c.protocolVersion,
-			"capabilities": map[string]any{},
-			"clientInfo": map[string]any{"name": "laisky-memory-bench", "version": HarnessVersion},
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "laisky-memory-bench", "version": HarnessVersion},
 		},
 	})
 	if err != nil {

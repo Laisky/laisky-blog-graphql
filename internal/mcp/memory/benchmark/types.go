@@ -120,29 +120,29 @@ type LatencyStats struct {
 
 // QualitySummary aggregates successful case metrics and separately reports failed cases.
 type QualitySummary struct {
-	Queries                      int     `json:"queries"`
-	EvaluatedQueries             int     `json:"evaluated_queries"`
-	FailedQueries                int     `json:"failed_queries"`
-	AnswerableQueries            int     `json:"answerable_queries"`
-	UnanswerableQueries          int     `json:"unanswerable_queries"`
-	RetrievalMetricsAvailable    bool    `json:"retrieval_metrics_available"`
-	RecallAtK                    float64 `json:"recall_at_k"`
-	PrecisionAtK                 float64 `json:"precision_at_k"`
-	NDCGAtK                      float64 `json:"ndcg_at_k"`
-	MRR                          float64 `json:"mrr"`
-	HitRateAtK                   float64 `json:"hit_rate_at_k"`
-	EvidenceRecall               float64 `json:"evidence_recall"`
-	AbstentionMetricsAvailable   bool    `json:"abstention_metrics_available"`
-	AbstentionAccuracy           float64 `json:"abstention_accuracy"`
-	FalseAnswerRate              float64 `json:"false_answer_rate"`
-	AnswerMetricsAvailable       bool    `json:"answer_metrics_available"`
-	ExactMatch                   float64 `json:"exact_match"`
-	TokenPrecision               float64 `json:"token_precision"`
-	TokenRecall                  float64 `json:"token_recall"`
-	TokenF1                      float64 `json:"token_f1"`
-	RubricMetricsAvailable       bool    `json:"rubric_metrics_available"`
-	RubricCoverage               float64 `json:"rubric_coverage"`
-	ErrorRate                    float64 `json:"error_rate"`
+	Queries                    int     `json:"queries"`
+	EvaluatedQueries           int     `json:"evaluated_queries"`
+	FailedQueries              int     `json:"failed_queries"`
+	AnswerableQueries          int     `json:"answerable_queries"`
+	UnanswerableQueries        int     `json:"unanswerable_queries"`
+	RetrievalMetricsAvailable  bool    `json:"retrieval_metrics_available"`
+	RecallAtK                  float64 `json:"recall_at_k"`
+	PrecisionAtK               float64 `json:"precision_at_k"`
+	NDCGAtK                    float64 `json:"ndcg_at_k"`
+	MRR                        float64 `json:"mrr"`
+	HitRateAtK                 float64 `json:"hit_rate_at_k"`
+	EvidenceRecall             float64 `json:"evidence_recall"`
+	AbstentionMetricsAvailable bool    `json:"abstention_metrics_available"`
+	AbstentionAccuracy         float64 `json:"abstention_accuracy"`
+	FalseAnswerRate            float64 `json:"false_answer_rate"`
+	AnswerMetricsAvailable     bool    `json:"answer_metrics_available"`
+	ExactMatch                 float64 `json:"exact_match"`
+	TokenPrecision             float64 `json:"token_precision"`
+	TokenRecall                float64 `json:"token_recall"`
+	TokenF1                    float64 `json:"token_f1"`
+	RubricMetricsAvailable     bool    `json:"rubric_metrics_available"`
+	RubricCoverage             float64 `json:"rubric_coverage"`
+	ErrorRate                  float64 `json:"error_rate"`
 }
 
 // CategorySummary exposes benchmark ability slices independently.
@@ -245,7 +245,7 @@ type GateConfig struct {
 	MaxP95LatencyIncrease float64
 	PermutationIterations int
 	PermutationAlpha      float64
-	Seed                   int64
+	Seed                  int64
 }
 
 // MetricDelta describes one baseline comparison.

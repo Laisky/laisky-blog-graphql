@@ -111,7 +111,7 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 		Warnings:   warnings,
 		Operational: OperationalSummary{
 			IngestLatency: ingestLatencies, SearchLatency: latencyStats(searchLatencies),
-			IndexWaitLatency: latencyStats(waitLatencies),
+			IndexWaitLatency:  latencyStats(waitLatencies),
 			ReaderInputTokens: readerInputTokens, ReaderOutputTokens: readerOutputTokens,
 			ReaderTotalTokens: readerTotalTokens,
 		},
@@ -279,7 +279,7 @@ func (r *Runner) evaluateQueries(ctx context.Context, queries []Query, waits map
 func (r *Runner) evaluateQuery(ctx context.Context, query Query, readiness readinessResult, config RunConfig) CaseResult {
 	result := CaseResult{
 		QueryID: query.ID, Category: query.Category, Query: query.Text,
-		GoldPaths: append([]string(nil), query.GoldPaths...),
+		GoldPaths:    append([]string(nil), query.GoldPaths...),
 		GoldEvidence: append([]string(nil), query.GoldEvidence...),
 		Unanswerable: query.Unanswerable, IndexWaitLatencyMS: readiness.latencyMS,
 		SearchAttempts: readiness.attempts,
@@ -368,9 +368,9 @@ func hasRelevant(query Query, hits []SearchHit) bool {
 func runConfigHash(config RunConfig) string {
 	stable := struct {
 		Backend, Plugin, ProtocolVersion, ReaderModel string
-		TopK, Concurrency, Warmup, Repetitions       int
-		MinScore                                     float64
-		Seed                                         int64
+		TopK, Concurrency, Warmup, Repetitions        int
+		MinScore                                      float64
+		Seed                                          int64
 		IndexTimeoutMS, PollIntervalMS                int64
 	}{
 		config.Backend, config.Plugin, config.ProtocolVersion, config.ReaderModel,

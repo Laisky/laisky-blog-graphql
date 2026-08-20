@@ -280,7 +280,7 @@ func aggregateCategories(cases []CaseResult) []CategorySummary {
 	for _, category := range categories {
 		result = append(result, CategorySummary{
 			Category: category,
-			Quality: aggregateQualityWithAbstention(grouped[category], allowAbstention),
+			Quality:  aggregateQualityWithAbstention(grouped[category], allowAbstention),
 		})
 	}
 	return result
@@ -378,7 +378,7 @@ func mean(values []float64) float64 {
 	return total / float64(len(values))
 }
 
-func boolPointer(value bool) *bool { return &value }
+func boolPointer(value bool) *bool        { return &value }
 func floatPointer(value float64) *float64 { return &value }
 
 func pointerValue(value *float64) float64 {

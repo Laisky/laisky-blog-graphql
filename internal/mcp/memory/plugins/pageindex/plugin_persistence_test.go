@@ -36,10 +36,10 @@ func TestWritePropagatesSynchronousPersistenceFailures(t *testing.T) {
 			tokenizer, err := NewTokenizer(settings.LLM.IndexingModel)
 			require.NoError(t, err)
 			plugin, err := New(PluginDeps{
-				UserFS: service,
-				SystemFS: &failNthWriteSystemFS{failAt: testCase.failAt},
-				Settings: settings,
-				LLM: NewStubLLM(),
+				UserFS:    service,
+				SystemFS:  &failNthWriteSystemFS{failAt: testCase.failAt},
+				Settings:  settings,
+				LLM:       NewStubLLM(),
 				Tokenizer: tokenizer,
 			})
 			require.NoError(t, err)
@@ -91,15 +91,15 @@ func newPersistenceTestService(t *testing.T) (*sql.DB, *files.Service) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	service, err := files.NewService(db, files.Settings{
-		MaxPayloadBytes: 2_000_000,
-		MaxFileBytes: 10_000_000,
-		MaxProjectBytes: 100_000_000,
+		MaxPayloadBytes:  2_000_000,
+		MaxFileBytes:     10_000_000,
+		MaxProjectBytes:  100_000_000,
 		ListLimitDefault: 20,
-		ListLimitMax: 100,
-		LockTimeout: time.Second,
-		DeleteRetention: time.Hour,
-		Search: files.SearchSettings{Enabled: false},
-		Index: files.IndexSettings{Workers: 1, BatchSize: 1, ChunkBytes: 4096},
+		ListLimitMax:     100,
+		LockTimeout:      time.Second,
+		DeleteRetention:  time.Hour,
+		Search:           files.SearchSettings{Enabled: false},
+		Index:            files.IndexSettings{Workers: 1, BatchSize: 1, ChunkBytes: 4096},
 	}, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	return db, service
@@ -108,21 +108,21 @@ func newPersistenceTestService(t *testing.T) (*sql.DB, *files.Service) {
 func persistenceTestSettings() Settings {
 	return Settings{
 		Indexer: IndexerSettings{
-			TimeoutIndex: time.Second,
-			TimeoutQuery: time.Second,
+			TimeoutIndex:   time.Second,
+			TimeoutQuery:   time.Second,
 			MaxConcurrency: 1,
-			Retry: RetrySettings{MaxAttempts: 1, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond},
-			Cache: CacheSettings{Enabled: false},
+			Retry:          RetrySettings{MaxAttempts: 1, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond},
+			Cache:          CacheSettings{Enabled: false},
 		},
 		LLM: LLMSettings{IndexingModel: "gpt-5.4-mini", RetrieveModel: "gpt-5.4-mini", APIKey: "test-key"},
 		Algo: AlgoSettings{
-			TocCheckPageNum: 20,
-			MaxPageNumEachNode: 10,
-			MaxTokenNumEachNode: 20_000,
-			GenerateNodeSummary: false,
+			TocCheckPageNum:        20,
+			MaxPageNumEachNode:     10,
+			MaxTokenNumEachNode:    20_000,
+			GenerateNodeSummary:    false,
 			GenerateDocDescription: false,
 		},
 		TreeQuery: TreeQuerySettings{MaxSteps: 8, MaxTokens: 20_000, CandidateDocs: 5},
-		PDF: PDFSettings{TextParser: "pdfcpu", OutlineParser: "pdfcpu"},
+		PDF:       PDFSettings{TextParser: "pdfcpu", OutlineParser: "pdfcpu"},
 	}
 }

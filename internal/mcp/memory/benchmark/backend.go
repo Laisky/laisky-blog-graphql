@@ -262,7 +262,7 @@ func newLocalPageIndex(fileService *files.Service) (mcpplugin.Plugin, error) {
 			GenerateNodeSummary: false, GenerateDocDescription: false,
 		},
 		TreeQuery: pageindexplugin.TreeQuerySettings{MaxSteps: 16, MaxTokens: 20_000, CandidateDocs: 16},
-		PDF: pageindexplugin.PDFSettings{TextParser: "pdfcpu", OutlineParser: "pdfcpu"},
+		PDF:       pageindexplugin.PDFSettings{TextParser: "pdfcpu", OutlineParser: "pdfcpu"},
 	}
 	tokenizer, err := pageindexplugin.NewTokenizer(settings.LLM.IndexingModel)
 	if err != nil {
@@ -270,7 +270,7 @@ func newLocalPageIndex(fileService *files.Service) (mcpplugin.Plugin, error) {
 	}
 	llm := pageindexplugin.NewStubLLM()
 	llm.SetDefault(&pageindexplugin.Response{
-		Text: `{"ranges":[{"start":1,"end":1000,"reason":"deterministic benchmark traversal"}]}`,
+		Text:  `{"ranges":[{"start":1,"end":1000,"reason":"deterministic benchmark traversal"}]}`,
 		Usage: pageindexplugin.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
 	})
 	plugin, err := pageindexplugin.New(pageindexplugin.PluginDeps{
@@ -342,9 +342,9 @@ func localFileSettings() files.Settings {
 			ChunkBytes: 4096, FreshnessSLO: 2 * time.Second,
 		},
 		Security: files.SecuritySettings{
-			EncryptionKEKs: map[uint16]string{1: "memory-benchmark-local-encryption-key-2026"},
+			EncryptionKEKs:        map[uint16]string{1: "memory-benchmark-local-encryption-key-2026"},
 			CredentialCachePrefix: "memory-benchmark:credential",
-			CredentialCacheTTL: time.Hour,
+			CredentialCacheTTL:    time.Hour,
 		},
 	}
 }

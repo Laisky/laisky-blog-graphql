@@ -37,8 +37,8 @@ func TestPageIndexPersistsAndSearchesThroughRealSystemFS(t *testing.T) {
 	defer func() { require.NoError(t, plugin.Stop(context.Background())) }()
 
 	auth := files.AuthContext{
-		APIKey: "pageindex-systemfs-regression",
-		APIKeyHash: "pageindex-systemfs-regression",
+		APIKey:       "pageindex-systemfs-regression",
+		APIKeyHash:   "pageindex-systemfs-regression",
 		UserIdentity: "user:pageindex-systemfs-regression",
 	}
 	const project = "pageindex-systemfs-regression"
