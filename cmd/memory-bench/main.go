@@ -57,6 +57,7 @@ type cliConfig struct {
 	permutationAlpha   float64
 }
 
+// main executes the command and maps benchmark regression failures to a distinct exit code.
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "memory-bench:", err)
@@ -67,7 +68,8 @@ func main() {
 	}
 }
 
-func run() error {
+// run parses configuration, executes one benchmark, writes artifacts, and applies an optional regression gate.
+func run() (runErr error) {
 	cfg := parseFlags()
 	if cfg.datasetPath == "" {
 		return errors.New("--dataset is required")
@@ -81,7 +83,7 @@ func run() error {
 
 	dataset, err := benchmark.LoadDataset(cfg.datasetPath, cfg.datasetFormat)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "load benchmark dataset")
 	}
 
 	baseCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -96,12 +98,12 @@ func run() error {
 	httpClient := &http.Client{Timeout: minDuration(cfg.runTimeout, 10*time.Minute)}
 	backend, err := buildBackend(ctx, cfg, httpClient)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "build benchmark backend")
 	}
 	defer func() {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer closeCancel()
-		_ = backend.Close(closeCtx)
+		runErr = closeBenchmarkBackend(closeCtx, backend, runErr)
 	}()
 
 	var answerer benchmark.Answerer
@@ -110,14 +112,14 @@ func run() error {
 			cfg.readerBaseURL, os.Getenv(cfg.readerAPIKeyEnv), cfg.readerModel, httpClient,
 		)
 		if readerErr != nil {
-			return readerErr
+			return errors.Wrap(readerErr, "construct benchmark reader")
 		}
 		answerer = reader
 	}
 
 	runner, err := benchmark.NewRunner(backend, answerer)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "construct benchmark runner")
 	}
 	report, err := runner.Run(ctx, dataset, benchmark.RunConfig{
 		Backend: cfg.backend, Endpoint: cfg.endpoint, Plugin: cfg.plugin, Project: cfg.project,
@@ -127,14 +129,14 @@ func run() error {
 		ProtocolVersion: cfg.protocolVersion, ReaderModel: cfg.readerModel, GitSHA: cfg.gitSHA,
 	})
 	if err != nil {
-		return err
+		return errors.Wrap(err, "execute memory benchmark")
 	}
 
 	var comparison *benchmark.Comparison
 	if cfg.baselinePath != "" {
 		baseline, loadErr := benchmark.LoadReport(cfg.baselinePath)
 		if loadErr != nil {
-			return loadErr
+			return errors.Wrap(loadErr, "load benchmark baseline")
 		}
 		result := benchmark.CompareReports(baseline, report, benchmark.GateConfig{
 			MaxRecallDrop: cfg.maxRecallDrop, MaxNDCGDrop: cfg.maxNDCGDrop,
@@ -146,14 +148,18 @@ func run() error {
 		comparison = &result
 	}
 	if err := benchmark.WriteArtifacts(cfg.outDir, report, comparison); err != nil {
-		return err
+		return errors.Wrap(err, "write benchmark artifacts")
 	}
 
-	fmt.Printf("memory benchmark complete backend=%s plugin=%s dataset=%s queries=%d recall@%d=%.4f ndcg@%d=%.4f mrr=%.4f hit@%d=%.4f abstention=%.4f p95_ms=%.3f out=%s\n",
+	abstention := "n/a"
+	if report.Quality.AbstentionMetricsAvailable {
+		abstention = fmt.Sprintf("%.4f", report.Quality.AbstentionAccuracy)
+	}
+	fmt.Printf("memory benchmark complete backend=%s plugin=%s dataset=%s queries=%d recall@%d=%.4f ndcg@%d=%.4f mrr=%.4f hit@%d=%.4f abstention=%s p95_ms=%.3f out=%s\n",
 		report.Run.Backend, report.Run.Plugin, report.Dataset.Name, report.Dataset.Queries,
 		report.Run.TopK, report.Quality.RecallAtK, report.Run.TopK, report.Quality.NDCGAtK,
 		report.Quality.MRR, report.Run.TopK, report.Quality.HitRateAtK,
-		report.Quality.AbstentionAccuracy, report.Operational.SearchLatency.P95, cfg.outDir)
+		abstention, report.Operational.SearchLatency.P95, cfg.outDir)
 	if comparison != nil {
 		fmt.Printf("baseline compatible=%t passed=%t\n", comparison.Compatible, comparison.Passed)
 		if !comparison.Compatible || !comparison.Passed {
@@ -163,21 +169,26 @@ func run() error {
 	return nil
 }
 
+// buildBackend constructs either a deterministic in-process plugin backend or a deployed MCP backend.
 func buildBackend(ctx context.Context, cfg cliConfig, httpClient *http.Client) (benchmark.Backend, error) {
 	switch cfg.backend {
 	case "local":
-		return benchmark.NewLocalPluginBackend(ctx, cfg.plugin)
+		backend, err := benchmark.NewLocalPluginBackend(ctx, cfg.plugin)
+		if err != nil {
+			return nil, errors.Wrap(err, "construct local plugin backend")
+		}
+		return backend, nil
 	case "mcp":
 		client, err := benchmark.NewMCPClient(
 			cfg.endpoint, os.Getenv(cfg.authorizationEnv), cfg.protocolVersion, httpClient,
 		)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "construct MCP client")
 		}
 		backend, err := benchmark.NewMCPBackend(ctx, client, cfg.plugin)
 		if err != nil {
 			_ = client.Close(ctx)
-			return nil, err
+			return nil, errors.Wrap(err, "construct MCP plugin backend")
 		}
 		return backend, nil
 	default:
@@ -185,6 +196,7 @@ func buildBackend(ctx context.Context, cfg cliConfig, httpClient *http.Client) (
 	}
 }
 
+// parseFlags registers command-line flags and returns the parsed benchmark configuration.
 func parseFlags() cliConfig {
 	var cfg cliConfig
 	flag.StringVar(&cfg.backend, "backend", "mcp", "Backend: mcp for a deployed server or local for deterministic in-process plugin smoke tests.")
@@ -224,6 +236,19 @@ func parseFlags() cliConfig {
 	return cfg
 }
 
+// closeBenchmarkBackend closes the backend and returns its error only when no earlier run error exists.
+func closeBenchmarkBackend(ctx context.Context, backend benchmark.Backend, runErr error) error {
+	closeErr := backend.Close(ctx)
+	if runErr != nil {
+		return runErr
+	}
+	if closeErr != nil {
+		return errors.Wrap(closeErr, "close benchmark backend")
+	}
+	return nil
+}
+
+// minDuration returns the smaller positive duration, treating a non-positive left value as unbounded.
 func minDuration(left, right time.Duration) time.Duration {
 	if left <= 0 {
 		return right
