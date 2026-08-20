@@ -39,6 +39,7 @@ jobs:
 
       - name: Run current plugin benchmark
         run: |
+          head_sha="$(git rev-parse HEAD)"
           go run ./cmd/memory-bench \
             --backend=local \
             --plugin='${{ matrix.plugin }}' \
@@ -53,7 +54,7 @@ jobs:
             --index-timeout=30s \
             --poll-interval=25ms \
             --run-timeout=5m \
-            --git-sha="$GITHUB_SHA" \
+            --git-sha="$head_sha" \
             --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}"
 
       - name: Publish exact scorecard to PR
