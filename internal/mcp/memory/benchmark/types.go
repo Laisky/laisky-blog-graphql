@@ -7,11 +7,15 @@ const (
 	// SchemaVersion identifies the persisted report contract.
 	SchemaVersion = "mcp-memory-benchmark/v1"
 	// HarnessVersion identifies executable behavior independently of the report schema.
-	HarnessVersion = "1.0.0"
+	HarnessVersion = "1.1.0"
 	// ReaderPromptVersion identifies the fixed answer-generation prompt.
 	ReaderPromptVersion = "reader-v1"
 	// DefaultProtocolVersion is the MCP protocol version used by the HTTP client.
 	DefaultProtocolVersion = "2025-06-18"
+	// ReportStatusValid identifies a completed run whose cases contain no execution failures.
+	ReportStatusValid = "valid"
+	// ReportStatusInvalid identifies a run with one or more failed cases that must not become a baseline.
+	ReportStatusInvalid = "invalid"
 )
 
 // Document is one corpus item written before evaluation.
@@ -114,11 +118,14 @@ type LatencyStats struct {
 	Max   float64 `json:"max_ms"`
 }
 
-// QualitySummary aggregates case-level quality metrics and records which optional metric families were evaluated.
+// QualitySummary aggregates successful case metrics and separately reports failed cases.
 type QualitySummary struct {
 	Queries                      int     `json:"queries"`
+	EvaluatedQueries             int     `json:"evaluated_queries"`
+	FailedQueries                int     `json:"failed_queries"`
 	AnswerableQueries            int     `json:"answerable_queries"`
 	UnanswerableQueries          int     `json:"unanswerable_queries"`
+	RetrievalMetricsAvailable    bool    `json:"retrieval_metrics_available"`
 	RecallAtK                    float64 `json:"recall_at_k"`
 	PrecisionAtK                 float64 `json:"precision_at_k"`
 	NDCGAtK                      float64 `json:"ndcg_at_k"`
@@ -187,6 +194,7 @@ type RunMetadata struct {
 // Report is the durable JSON result of one benchmark run.
 type Report struct {
 	SchemaVersion string             `json:"schema_version"`
+	Status        string             `json:"status"`
 	Run           RunMetadata        `json:"run"`
 	Dataset       DatasetMetadata    `json:"dataset"`
 	Quality       QualitySummary     `json:"quality"`
