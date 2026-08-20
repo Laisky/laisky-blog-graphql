@@ -22,3 +22,19 @@ func TestBenchmarkWorkflowsRecordCheckedOutCommit(t *testing.T) {
 		})
 	}
 }
+
+func TestLocalBenchmarkCommandsUseValidatedThreshold(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join("..", "..", "..", "..")
+	for _, path := range []string{
+		"Makefile",
+		filepath.Join(".github", "workflows", "memory-benchmark.yml"),
+		filepath.Join(".github", "workflows", "memory-benchmark-capture.yml"),
+		filepath.Join(".github", "workflows", "memory-benchmark-results.yml"),
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, path))
+		require.NoError(t, err, path)
+		require.Contains(t, string(raw), "--min-score=0.20", path)
+	}
+}
