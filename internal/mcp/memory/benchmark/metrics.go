@@ -168,6 +168,7 @@ func aggregateQuality(cases []CaseResult) QualitySummary {
 	errorsCount := 0
 	hitsCount := 0
 	abstentionCount := 0
+	abstentionTotal := 0
 	falseAnswers := 0
 	exactCount := 0
 	exactTotal := 0
@@ -180,6 +181,7 @@ func aggregateQuality(cases []CaseResult) QualitySummary {
 		if result.Unanswerable {
 			unanswerable++
 			if result.Metrics.AbstentionOK != nil {
+				abstentionTotal++
 				if *result.Metrics.AbstentionOK {
 					abstentionCount++
 				} else {
@@ -225,20 +227,24 @@ func aggregateQuality(cases []CaseResult) QualitySummary {
 		summary.HitRateAtK = float64(hitsCount) / denominator
 		summary.EvidenceRecall /= denominator
 	}
-	if unanswerable > 0 {
-		summary.AbstentionAccuracy = float64(abstentionCount) / float64(unanswerable)
-		summary.FalseAnswerRate = float64(falseAnswers) / float64(unanswerable)
+	if abstentionTotal > 0 {
+		summary.AbstentionMetricsAvailable = true
+		summary.AbstentionAccuracy = float64(abstentionCount) / float64(abstentionTotal)
+		summary.FalseAnswerRate = float64(falseAnswers) / float64(abstentionTotal)
 	}
 	if exactTotal > 0 {
+		summary.AnswerMetricsAvailable = true
 		summary.ExactMatch = float64(exactCount) / float64(exactTotal)
 	}
 	if tokenTotal > 0 {
+		summary.AnswerMetricsAvailable = true
 		denominator := float64(tokenTotal)
 		summary.TokenPrecision /= denominator
 		summary.TokenRecall /= denominator
 		summary.TokenF1 /= denominator
 	}
 	if rubricTotal > 0 {
+		summary.RubricMetricsAvailable = true
 		summary.RubricCoverage /= float64(rubricTotal)
 	}
 	if len(cases) > 0 {
