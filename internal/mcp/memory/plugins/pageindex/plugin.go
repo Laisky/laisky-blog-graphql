@@ -140,7 +140,9 @@ func (p *Plugin) Read(ctx context.Context, auth files.AuthContext, project, path
 	return p.userFS.Read(ctx, auth, project, path, offset, length)
 }
 
-// Write forwards to userFS.WriteWith with SkipRAGIndex=true and triggers indexing.
+// Write persists the user document and synchronously builds and stores its PageIndex tree.
+// A long-document write returns an error unless the tree and catalog are both durable,
+// preserving the plugin's advertised zero-second freshness window.
 func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, path, content, encoding string, offset int64, mode files.WriteMode) (files.WriteResult, error) {
 	if isLongDocPath(path) && mode == files.WriteModeOverwrite && offset > 0 {
 		return files.WriteResult{}, errors.New("INVALID_ARGUMENT: pageindex rejects OVERWRITE@offset on .pdf/.md paths; use file_delete then file_write instead")
@@ -153,7 +155,7 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 		return res, nil
 	}
 	if p.indexer == nil {
-		return res, nil
+		return res, errors.New("pageindex indexer is unavailable")
 	}
 	bytesContent := []byte(content)
 	kind := KindPDF
@@ -161,19 +163,12 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 		kind = KindMarkdown
 	}
 	docID := docIDFromAuth(auth, project, path)
-	tree, _, indexErr := p.indexer.Index(ctx, kind, bytesContent, IndexOptions{DocID: docID}, nil)
-	if indexErr != nil {
-		// Indexing errors should not silently fail the write; surface as warning.
-		if p.log != nil {
-			p.log.Warn("pageindex.write index error: " + indexErr.Error())
-		}
-		return res, nil
+	tree, _, err := p.indexer.Index(ctx, kind, bytesContent, IndexOptions{DocID: docID}, nil)
+	if err != nil {
+		return res, errors.Wrap(err, "build pageindex tree")
 	}
 	if err := p.store.PutTree(ctx, project, docID, tree); err != nil {
-		if p.log != nil {
-			p.log.Warn("pageindex.write put tree: " + err.Error())
-		}
-		return res, nil
+		return res, errors.Wrap(err, "persist pageindex tree")
 	}
 	entry := IndexEntry{
 		DocID:     docID,
@@ -182,8 +177,11 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 		LineCount: tree.LineCount,
 		IndexedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	if err := p.store.UpdateIndexEntry(ctx, project, path, entry); err != nil && p.log != nil {
-		p.log.Warn("pageindex.write update index: " + err.Error())
+	if err := p.store.UpdateIndexEntry(ctx, project, path, entry); err != nil {
+		if cleanupErr := p.store.DeleteTree(ctx, project, docID); cleanupErr != nil {
+			return res, errors.Wrapf(err, "persist pageindex catalog; rollback tree failed: %v", cleanupErr)
+		}
+		return res, errors.Wrap(err, "persist pageindex catalog")
 	}
 	return res, nil
 }
@@ -194,19 +192,27 @@ func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, pa
 	if err != nil {
 		return res, err
 	}
-	if entry, ok, _ := p.store.RemoveIndexEntry(ctx, project, path); ok {
-		_ = p.store.DeleteTree(ctx, project, entry.DocID)
+	entry, ok, err := p.store.RemoveIndexEntry(ctx, project, path)
+	if err != nil {
+		return res, errors.Wrap(err, "remove pageindex catalog entry")
+	}
+	if ok {
+		if err := p.store.DeleteTree(ctx, project, entry.DocID); err != nil {
+			return res, errors.Wrap(err, "delete pageindex tree")
+		}
 	}
 	return res, nil
 }
 
-// Rename updates both the user FS row and the index mapping (tree JSON unchanged).
+// Rename updates both the user file and the PageIndex path mapping.
 func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, src, dst string, overwrite bool) (files.RenameResult, error) {
 	res, err := p.userFS.Rename(ctx, auth, project, src, dst, overwrite)
 	if err != nil {
 		return res, err
 	}
-	_ = p.store.RenameIndexEntry(ctx, project, src, dst)
+	if err := p.store.RenameIndexEntry(ctx, project, src, dst); err != nil {
+		return res, errors.Wrap(err, "rename pageindex catalog entry")
+	}
 	return res, nil
 }
 
