@@ -27,17 +27,17 @@ func WriteArtifacts(dir string, report *Report, comparison *Comparison) error {
 	}
 	reportJSON = append(reportJSON, '\n')
 	if err := writeAtomic(filepath.Join(dir, "report.json"), reportJSON); err != nil {
-		return err
+		return errors.Wrap(err, "write report.json")
 	}
 	if err := writeCases(filepath.Join(dir, "cases.jsonl"), report.Cases); err != nil {
-		return err
+		return errors.Wrap(err, "write cases.jsonl")
 	}
 	var scorecard bytes.Buffer
 	if err := WriteScorecard(&scorecard, report, comparison); err != nil {
-		return err
+		return errors.Wrap(err, "render scorecard")
 	}
 	if err := writeAtomic(filepath.Join(dir, "scorecard.md"), scorecard.Bytes()); err != nil {
-		return err
+		return errors.Wrap(err, "write scorecard.md")
 	}
 	if comparison != nil {
 		comparisonJSON, marshalErr := json.MarshalIndent(comparison, "", "  ")
@@ -46,12 +46,12 @@ func WriteArtifacts(dir string, report *Report, comparison *Comparison) error {
 		}
 		comparisonJSON = append(comparisonJSON, '\n')
 		if err := writeAtomic(filepath.Join(dir, "comparison.json"), comparisonJSON); err != nil {
-			return err
+			return errors.Wrap(err, "write comparison.json")
 		}
 		var comparisonMarkdown bytes.Buffer
 		writeComparison(&comparisonMarkdown, comparison)
 		if err := writeAtomic(filepath.Join(dir, "comparison.md"), comparisonMarkdown.Bytes()); err != nil {
-			return err
+			return errors.Wrap(err, "write comparison.md")
 		}
 	}
 	return nil
@@ -102,16 +102,18 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 	writeMetricRow(builder, "MRR", report.Quality.MRR)
 	writeMetricRow(builder, fmt.Sprintf("Hit rate@%d", report.Run.TopK), report.Quality.HitRateAtK)
 	writeMetricRow(builder, "Evidence recall", report.Quality.EvidenceRecall)
-	if report.Quality.UnanswerableQueries > 0 {
+	if report.Quality.AbstentionMetricsAvailable {
 		writeMetricRow(builder, "Abstention accuracy", report.Quality.AbstentionAccuracy)
 		writeMetricRow(builder, "False-answer rate", report.Quality.FalseAnswerRate)
 	}
-	if report.Run.ReaderModel != "" {
+	if report.Quality.AnswerMetricsAvailable {
 		writeMetricRow(builder, "Exact match", report.Quality.ExactMatch)
+		writeMetricRow(builder, "Token precision", report.Quality.TokenPrecision)
+		writeMetricRow(builder, "Token recall", report.Quality.TokenRecall)
 		writeMetricRow(builder, "Token F1", report.Quality.TokenF1)
-		if report.Quality.RubricCoverage > 0 {
-			writeMetricRow(builder, "Rubric coverage", report.Quality.RubricCoverage)
-		}
+	}
+	if report.Quality.RubricMetricsAvailable {
+		writeMetricRow(builder, "Rubric coverage", report.Quality.RubricCoverage)
 	}
 	writeMetricRow(builder, "Error rate", report.Quality.ErrorRate)
 	fmt.Fprintln(builder)
@@ -122,9 +124,10 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 	fmt.Fprintln(builder, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")
 	for _, category := range report.Categories {
 		quality := category.Quality
-		fmt.Fprintf(builder, "| %s | %d | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f |\n",
+		fmt.Fprintf(builder, "| %s | %d | %.4f | %.4f | %.4f | %.4f | %.4f | %s | %.4f |\n",
 			markdownEscape(category.Category), quality.Queries, quality.RecallAtK, quality.NDCGAtK,
-			quality.MRR, quality.HitRateAtK, quality.EvidenceRecall, quality.AbstentionAccuracy, quality.ErrorRate)
+			quality.MRR, quality.HitRateAtK, quality.EvidenceRecall,
+			optionalMetric(quality.AbstentionMetricsAvailable, quality.AbstentionAccuracy), quality.ErrorRate)
 	}
 	fmt.Fprintln(builder)
 
@@ -201,6 +204,13 @@ func writeMetricRow(builder *bytes.Buffer, name string, value float64) {
 
 func writeLatencyRow(builder *bytes.Buffer, name string, stats LatencyStats) {
 	fmt.Fprintf(builder, "| %s | %.3f | %.3f | %.3f | %.3f | %.3f |\n", markdownEscape(name), stats.Mean, stats.P50, stats.P95, stats.P99, stats.Max)
+}
+
+func optionalMetric(available bool, value float64) string {
+	if !available {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.4f", value)
 }
 
 func writeCases(path string, cases []CaseResult) error {
