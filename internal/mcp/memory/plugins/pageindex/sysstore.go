@@ -110,7 +110,10 @@ func (s *SysStore) putIndexLocked(ctx context.Context, project string, ix Index)
 func (s *SysStore) getIndexLocked(ctx context.Context, project string) (Index, error) {
 	body, err := s.sys.Read(ctx, project, indexPath())
 	if err != nil {
-		return Index{}, nil
+		if files.IsCode(err, files.ErrCodeNotFound) {
+			return Index{}, nil
+		}
+		return nil, errors.Wrap(err, "read index")
 	}
 	if len(body) == 0 {
 		return Index{}, nil
@@ -138,7 +141,10 @@ func (s *SysStore) putMetaLocked(ctx context.Context, project string, meta Meta)
 func (s *SysStore) GetIndex(ctx context.Context, project string) (Index, error) {
 	body, err := s.sys.Read(ctx, project, indexPath())
 	if err != nil {
-		return Index{}, nil
+		if files.IsCode(err, files.ErrCodeNotFound) {
+			return Index{}, nil
+		}
+		return nil, errors.Wrap(err, "read index")
 	}
 	if len(body) == 0 {
 		return Index{}, nil
@@ -166,7 +172,10 @@ func (s *SysStore) PutMeta(ctx context.Context, project string, meta Meta) error
 func (s *SysStore) GetMeta(ctx context.Context, project string) (Meta, error) {
 	body, err := s.sys.Read(ctx, project, metaPath())
 	if err != nil {
-		return Meta{}, nil
+		if files.IsCode(err, files.ErrCodeNotFound) {
+			return Meta{}, nil
+		}
+		return Meta{}, errors.Wrap(err, "read meta")
 	}
 	if len(body) == 0 {
 		return Meta{}, nil
