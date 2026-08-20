@@ -9,6 +9,8 @@ on:
       - 'internal/mcp/files/**'
       - 'tests/eval/memory_bench_smoke.jsonl'
       - '.github/workflows/memory-benchmark-results.yml'
+      - 'go.mod'
+      - 'go.sum'
 
 permissions:
   contents: read
