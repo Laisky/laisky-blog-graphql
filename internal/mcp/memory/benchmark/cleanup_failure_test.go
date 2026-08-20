@@ -1,6 +1,7 @@
 package benchmark
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -49,6 +50,11 @@ func TestRunnerMarksCleanupFailureInvalid(t *testing.T) {
 	require.Zero(t, report.Quality.ErrorRate)
 	require.Len(t, report.ExecutionErrors, 1)
 	require.ErrorContains(t, ValidateReport(report), "1 lifecycle operations failed")
+
+	var scorecard bytes.Buffer
+	require.NoError(t, WriteScorecard(&scorecard, report, nil))
+	require.Contains(t, scorecard.String(), "| Recall@1 | n/a |")
+	require.Contains(t, scorecard.String(), "Lifecycle execution error: benchmark cleanup failed")
 }
 
 type cleanupFailureBackend struct{}
