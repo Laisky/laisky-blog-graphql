@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"sort"
 	"strings"
 	"time"
 
@@ -178,40 +179,62 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 		IndexedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if err := p.store.UpdateIndexEntry(ctx, project, path, entry); err != nil {
-		if cleanupErr := p.store.DeleteTree(ctx, project, docID); cleanupErr != nil {
-			return res, errors.Wrapf(err, "persist pageindex catalog; rollback tree failed: %v", cleanupErr)
-		}
+		// Keep the deterministic tree. Deleting it here can corrupt an existing
+		// catalog entry because updates reuse the same docID. A retry safely
+		// overwrites the tree and converges the catalog and metadata.
 		return res, errors.Wrap(err, "persist pageindex catalog")
 	}
 	return res, nil
 }
 
-// Delete forwards to userFS and cleans up sysstore entries.
+// Delete removes matching PageIndex trees and catalog entries before deleting
+// user files, so failures remain fail-closed and the same request can be retried.
 func (p *Plugin) Delete(ctx context.Context, auth files.AuthContext, project, path string, recursive bool) (files.DeleteResult, error) {
+	entries, err := p.indexEntriesForPath(ctx, project, path, recursive)
+	if err != nil {
+		return files.DeleteResult{}, errors.Wrap(err, "list pageindex catalog entries for delete")
+	}
+	for _, indexed := range entries {
+		if err := p.store.DeleteTree(ctx, project, indexed.entry.DocID); err != nil {
+			return files.DeleteResult{}, errors.Wrapf(err, "delete pageindex tree for %s", indexed.path)
+		}
+		if _, _, err := p.store.RemoveIndexEntry(ctx, project, indexed.path); err != nil {
+			return files.DeleteResult{}, errors.Wrapf(err, "remove pageindex catalog entry %s", indexed.path)
+		}
+	}
+
 	res, err := p.userFS.Delete(ctx, auth, project, path, recursive)
 	if err != nil {
-		return res, err
-	}
-	entry, ok, err := p.store.RemoveIndexEntry(ctx, project, path)
-	if err != nil {
-		return res, errors.Wrap(err, "remove pageindex catalog entry")
-	}
-	if ok {
-		if err := p.store.DeleteTree(ctx, project, entry.DocID); err != nil {
-			return res, errors.Wrap(err, "delete pageindex tree")
+		if files.IsCode(err, files.ErrCodeNotFound) && len(entries) > 0 {
+			return files.DeleteResult{DeletedCount: len(entries)}, nil
 		}
+		return res, err
 	}
 	return res, nil
 }
 
-// Rename updates both the user file and the PageIndex path mapping.
+// Rename persists the PageIndex path mapping before moving the user file. If
+// the user-file rename fails, the catalog move is rolled back when possible.
 func (p *Plugin) Rename(ctx context.Context, auth files.AuthContext, project, src, dst string, overwrite bool) (files.RenameResult, error) {
+	index, err := p.store.GetIndex(ctx, project)
+	if err != nil {
+		return files.RenameResult{}, errors.Wrap(err, "read pageindex catalog for rename")
+	}
+	_, indexed := index[src]
+	if indexed {
+		if err := p.store.RenameIndexEntry(ctx, project, src, dst); err != nil {
+			return files.RenameResult{}, errors.Wrap(err, "rename pageindex catalog entry")
+		}
+	}
+
 	res, err := p.userFS.Rename(ctx, auth, project, src, dst, overwrite)
 	if err != nil {
+		if indexed {
+			if rollbackErr := p.store.RenameIndexEntry(ctx, project, dst, src); rollbackErr != nil {
+				return res, errors.Wrapf(err, "rename user file; rollback pageindex catalog failed: %v", rollbackErr)
+			}
+		}
 		return res, err
-	}
-	if err := p.store.RenameIndexEntry(ctx, project, src, dst); err != nil {
-		return res, errors.Wrap(err, "rename pageindex catalog entry")
 	}
 	return res, nil
 }
@@ -228,6 +251,27 @@ func (p *Plugin) Search(ctx context.Context, auth files.AuthContext, project, qu
 	}
 	_ = auth // auth is enforced by the SystemFS handle scoped at construction
 	return p.searcher.Run(ctx, SearchInput{Project: project, Query: query, PathPrefix: pathPrefix, Limit: limit})
+}
+
+type indexedPathEntry struct {
+	path  string
+	entry IndexEntry
+}
+
+func (p *Plugin) indexEntriesForPath(ctx context.Context, project, target string, recursive bool) ([]indexedPathEntry, error) {
+	index, err := p.store.GetIndex(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	prefix := strings.TrimSuffix(target, "/") + "/"
+	entries := make([]indexedPathEntry, 0)
+	for indexedPath, entry := range index {
+		if indexedPath == target || (recursive && strings.HasPrefix(indexedPath, prefix)) {
+			entries = append(entries, indexedPathEntry{path: indexedPath, entry: entry})
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
+	return entries, nil
 }
 
 func isLongDocPath(path string) bool {
