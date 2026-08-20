@@ -9,6 +9,8 @@ on:
       - 'internal/mcp/files/**'
       - 'tests/eval/memory_bench_smoke.jsonl'
       - '.github/workflows/memory-benchmark-capture.yml'
+      - 'go.mod'
+      - 'go.sum'
 
 permissions:
   contents: write
@@ -58,7 +60,7 @@ jobs:
               --out="/tmp/memory-benchmark-results/$plugin"
           done
 
-      - name: Build committed result summary
+      - name: Build committed result summary and bootstrap baselines
         run: |
           python3 - <<'PY'
           import json
@@ -83,6 +85,7 @@ jobs:
               '- PageIndex: production PageIndex plugin, Markdown indexer, SystemFS tree persistence, and tree-search loop with deterministic StubLLM.',
               '- Settings: top-k 5, min-score 0, concurrency 1, one warm-up, three timed repetitions, seed 42.',
               '- Local latency is diagnostic only; deployed MCP results are required for production SLO decisions.',
+              '- The first validated capture seeds immutable local baseline reports under `docs/eval/baselines/local/`; later PR runs compare against them.',
               '',
               '## Results',
               '',
@@ -96,32 +99,39 @@ jobs:
               lines.append(
                   f'| {name} | {q["recall_at_k"]:.4f} | {q["precision_at_k"]:.4f} | '
                   f'{q["ndcg_at_k"]:.4f} | {q["mrr"]:.4f} | {q["hit_rate_at_k"]:.4f} | '
-                  f'{q["evidence_recall"]:.4f} | {q.get("abstention_accuracy", 0):.4f} | '
+                  f'{q["evidence_recall"]:.4f} | {q["abstention_accuracy"]:.4f} | '
                   f'{q["error_rate"]:.4f} | {o["search_latency"]["p50_ms"]:.3f} | '
                   f'{o["search_latency"]["p95_ms"]:.3f} | {o["index_wait_latency"]["p95_ms"]:.3f} |'
               )
+              baseline_dir = Path('docs/eval/baselines/local') / name
+              baseline_report = baseline_dir / 'report.json'
+              if not baseline_report.exists():
+                  baseline_dir.mkdir(parents=True, exist_ok=True)
+                  baseline_report.write_text(json.dumps(report, indent=2) + '\n')
+                  (baseline_dir / 'scorecard.md').write_text((root / name / 'scorecard.md').read_text())
           lines += [
               '',
               '## Interpretation',
               '',
               'These numbers are regression-smoke results for the exact repository fixture, not public benchmark leaderboard claims. '
-              'The scheduled `mcp` backend job is the authoritative end-to-end operational measurement because it includes transport, authentication, production storage, indexing workers, and configured model providers.',
+              'The scheduled `mcp` backend job is the authoritative end-to-end operational measurement because it includes transport, authentication, production storage, indexing workers, and configured model providers. '
+              'That deployed job is intentionally score-only until an operator adopts a stable environment-specific production baseline.',
               '',
           ]
           destination.write_text('\n'.join(lines))
           PY
 
-      - name: Commit validated formatting and results
+      - name: Commit validated formatting, results, and first baselines
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add internal/mcp/memory/benchmark cmd/memory-bench docs/eval/current_plugins_local_smoke.md
+          git add internal/mcp/memory/benchmark cmd/memory-bench docs/eval/current_plugins_local_smoke.md docs/eval/baselines/local
           if git diff --cached --quiet; then
-            echo 'No formatting or result changes to commit.'
+            echo 'No formatting, result, or baseline changes to commit.'
             exit 0
           fi
-          git commit -m 'test(mcp): capture current memory plugin benchmark results'
+          git commit -m 'test(mcp): capture current memory plugin benchmark baselines'
           git push origin HEAD:"${{ github.head_ref }}"
 
       - name: Upload complete reports
