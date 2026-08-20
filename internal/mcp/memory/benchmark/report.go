@@ -18,6 +18,7 @@ func WriteArtifacts(dir string, report *Report, comparison *Comparison) error {
 	if report == nil {
 		return errors.New("benchmark report is nil")
 	}
+	FinalizeReport(report)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return errors.Wrapf(err, "create benchmark output directory %s", dir)
 	}
@@ -70,6 +71,7 @@ func LoadReport(path string) (*Report, error) {
 	if report.SchemaVersion == "" {
 		return nil, errors.Errorf("benchmark report %s has no schema_version", path)
 	}
+	FinalizeReport(&report)
 	return &report, nil
 }
 
@@ -78,7 +80,10 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 	if builder == nil || report == nil {
 		return errors.New("scorecard writer and report are required")
 	}
+	FinalizeReport(report)
+	valid := report.Status == ReportStatusValid
 	fmt.Fprintf(builder, "# MCP Memory Benchmark — %s\n\n", report.Run.Plugin)
+	fmt.Fprintf(builder, "- **Status:** `%s`\n", strings.ToUpper(report.Status))
 	fmt.Fprintf(builder, "- **Run:** `%s`\n", markdownEscape(report.Run.RunID))
 	fmt.Fprintf(builder, "- **Backend:** `%s`\n", markdownEscape(report.Run.Backend))
 	fmt.Fprintf(builder, "- **Dataset:** `%s` (`%s`, SHA-256 `%s`)\n", markdownEscape(report.Dataset.Name), markdownEscape(report.Dataset.Version), markdownEscape(report.Dataset.SHA256))
@@ -91,28 +96,37 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 		fmt.Fprintln(builder, "- **Fixed reader:** disabled; answer metrics are not reported")
 	}
 	fmt.Fprintln(builder)
+	if !valid {
+		fmt.Fprintln(builder, "> [!CAUTION]")
+		fmt.Fprintln(builder, "> This run is **INVALID** because one or more cases failed. Failed cases are excluded from aggregate quality calculations, abstention credit is disabled, and the report must not be used as a baseline.")
+		fmt.Fprintln(builder)
+	}
 
 	fmt.Fprintln(builder, "## Quality")
 	fmt.Fprintln(builder)
 	fmt.Fprintln(builder, "| Metric | Value |")
 	fmt.Fprintln(builder, "|---|---:|")
-	writeMetricRow(builder, fmt.Sprintf("Recall@%d", report.Run.TopK), report.Quality.RecallAtK)
-	writeMetricRow(builder, fmt.Sprintf("Precision@%d", report.Run.TopK), report.Quality.PrecisionAtK)
-	writeMetricRow(builder, fmt.Sprintf("nDCG@%d", report.Run.TopK), report.Quality.NDCGAtK)
-	writeMetricRow(builder, "MRR", report.Quality.MRR)
-	writeMetricRow(builder, fmt.Sprintf("Hit rate@%d", report.Run.TopK), report.Quality.HitRateAtK)
-	writeMetricRow(builder, "Evidence recall", report.Quality.EvidenceRecall)
-	if report.Quality.AbstentionMetricsAvailable {
-		writeMetricRow(builder, "Abstention accuracy", report.Quality.AbstentionAccuracy)
-		writeMetricRow(builder, "False-answer rate", report.Quality.FalseAnswerRate)
+	fmt.Fprintf(builder, "| Total queries | %d |\n", report.Quality.Queries)
+	fmt.Fprintf(builder, "| Evaluated queries | %d |\n", report.Quality.EvaluatedQueries)
+	fmt.Fprintf(builder, "| Failed queries | %d |\n", report.Quality.FailedQueries)
+	retrievalAvailable := valid && report.Quality.RetrievalMetricsAvailable
+	writeOptionalMetricRow(builder, fmt.Sprintf("Recall@%d", report.Run.TopK), retrievalAvailable, report.Quality.RecallAtK)
+	writeOptionalMetricRow(builder, fmt.Sprintf("Precision@%d", report.Run.TopK), retrievalAvailable, report.Quality.PrecisionAtK)
+	writeOptionalMetricRow(builder, fmt.Sprintf("nDCG@%d", report.Run.TopK), retrievalAvailable, report.Quality.NDCGAtK)
+	writeOptionalMetricRow(builder, "MRR", retrievalAvailable, report.Quality.MRR)
+	writeOptionalMetricRow(builder, fmt.Sprintf("Hit rate@%d", report.Run.TopK), retrievalAvailable, report.Quality.HitRateAtK)
+	writeOptionalMetricRow(builder, "Evidence recall", retrievalAvailable, report.Quality.EvidenceRecall)
+	if report.Quality.UnanswerableQueries > 0 || report.Quality.AbstentionMetricsAvailable {
+		writeOptionalMetricRow(builder, "Abstention accuracy", valid && report.Quality.AbstentionMetricsAvailable, report.Quality.AbstentionAccuracy)
+		writeOptionalMetricRow(builder, "False-answer rate", valid && report.Quality.AbstentionMetricsAvailable, report.Quality.FalseAnswerRate)
 	}
-	if report.Quality.AnswerMetricsAvailable {
+	if valid && report.Quality.AnswerMetricsAvailable {
 		writeMetricRow(builder, "Exact match", report.Quality.ExactMatch)
 		writeMetricRow(builder, "Token precision", report.Quality.TokenPrecision)
 		writeMetricRow(builder, "Token recall", report.Quality.TokenRecall)
 		writeMetricRow(builder, "Token F1", report.Quality.TokenF1)
 	}
-	if report.Quality.RubricMetricsAvailable {
+	if valid && report.Quality.RubricMetricsAvailable {
 		writeMetricRow(builder, "Rubric coverage", report.Quality.RubricCoverage)
 	}
 	writeMetricRow(builder, "Error rate", report.Quality.ErrorRate)
@@ -120,14 +134,17 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 
 	fmt.Fprintln(builder, "## Ability slices")
 	fmt.Fprintln(builder)
-	fmt.Fprintf(builder, "| Category | N | Recall@%d | nDCG@%d | MRR | Hit@%d | Evidence | Abstention | Errors |\n", report.Run.TopK, report.Run.TopK, report.Run.TopK)
-	fmt.Fprintln(builder, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+	fmt.Fprintf(builder, "| Category | N | Failed | Recall@%d | nDCG@%d | MRR | Hit@%d | Evidence | Abstention | Errors |\n", report.Run.TopK, report.Run.TopK, report.Run.TopK)
+	fmt.Fprintln(builder, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 	for _, category := range report.Categories {
 		quality := category.Quality
-		fmt.Fprintf(builder, "| %s | %d | %.4f | %.4f | %.4f | %.4f | %.4f | %s | %.4f |\n",
-			markdownEscape(category.Category), quality.Queries, quality.RecallAtK, quality.NDCGAtK,
-			quality.MRR, quality.HitRateAtK, quality.EvidenceRecall,
-			optionalMetric(quality.AbstentionMetricsAvailable, quality.AbstentionAccuracy), quality.ErrorRate)
+		available := valid && quality.RetrievalMetricsAvailable
+		fmt.Fprintf(builder, "| %s | %d | %d | %s | %s | %s | %s | %s | %s | %.4f |\n",
+			markdownEscape(category.Category), quality.Queries, quality.FailedQueries,
+			optionalMetric(available, quality.RecallAtK), optionalMetric(available, quality.NDCGAtK),
+			optionalMetric(available, quality.MRR), optionalMetric(available, quality.HitRateAtK),
+			optionalMetric(available, quality.EvidenceRecall),
+			optionalMetric(valid && quality.AbstentionMetricsAvailable, quality.AbstentionAccuracy), quality.ErrorRate)
 	}
 	fmt.Fprintln(builder)
 
@@ -151,9 +168,13 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 	fmt.Fprintf(builder, "| Query | Category | Recall@%d | nDCG@%d | MRR | Evidence | Search mean ms | Error |\n", report.Run.TopK, report.Run.TopK)
 	fmt.Fprintln(builder, "|---|---|---:|---:|---:|---:|---:|---|")
 	for _, result := range SortedCases(report.Cases) {
-		fmt.Fprintf(builder, "| `%s` | %s | %.4f | %.4f | %.4f | %.4f | %.3f | %s |\n",
-			markdownEscape(result.QueryID), markdownEscape(result.Category), result.Metrics.RecallAtK,
-			result.Metrics.NDCGAtK, result.Metrics.MRR, result.Metrics.EvidenceRecall,
+		caseAvailable := strings.TrimSpace(result.Error) == ""
+		fmt.Fprintf(builder, "| `%s` | %s | %s | %s | %s | %s | %.3f | %s |\n",
+			markdownEscape(result.QueryID), markdownEscape(result.Category),
+			optionalMetric(caseAvailable, result.Metrics.RecallAtK),
+			optionalMetric(caseAvailable, result.Metrics.NDCGAtK),
+			optionalMetric(caseAvailable, result.Metrics.MRR),
+			optionalMetric(caseAvailable, result.Metrics.EvidenceRecall),
 			result.SearchLatencyMS, markdownEscape(result.Error))
 	}
 	fmt.Fprintln(builder)
@@ -200,6 +221,10 @@ func writeComparison(builder *bytes.Buffer, comparison *Comparison) {
 
 func writeMetricRow(builder *bytes.Buffer, name string, value float64) {
 	fmt.Fprintf(builder, "| %s | %.4f |\n", markdownEscape(name), value)
+}
+
+func writeOptionalMetricRow(builder *bytes.Buffer, name string, available bool, value float64) {
+	fmt.Fprintf(builder, "| %s | %s |\n", markdownEscape(name), optionalMetric(available, value))
 }
 
 func writeLatencyRow(builder *bytes.Buffer, name string, stats LatencyStats) {
