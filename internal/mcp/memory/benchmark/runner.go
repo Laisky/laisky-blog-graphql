@@ -60,10 +60,10 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 	}
 
 	cases := r.evaluateQueries(ctx, normalizedDataset.Queries, waitResults, config)
-	warnings := make([]string, 0)
+	executionErrors := make([]string, 0)
 	if config.Cleanup {
 		if cleanupErr := r.cleanup(ctx, normalizedDataset.Documents, config); cleanupErr != nil {
-			warnings = append(warnings, cleanupErr.Error())
+			executionErrors = append(executionErrors, cleanupErr.Error())
 		}
 	}
 
@@ -105,13 +105,13 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 			Name: normalizedDataset.Name, Version: normalizedDataset.Version, Source: normalizedDataset.Source,
 			SHA256: normalizedDataset.SHA256, Documents: len(normalizedDataset.Documents), Queries: len(normalizedDataset.Queries),
 		},
-		Quality:    aggregateQuality(cases),
-		Categories: aggregateCategories(cases),
-		Cases:      cases,
-		Warnings:   warnings,
+		Quality:         aggregateQuality(cases),
+		Categories:      aggregateCategories(cases),
+		Cases:           cases,
+		ExecutionErrors: executionErrors,
 		Operational: OperationalSummary{
 			IngestLatency: ingestLatencies, SearchLatency: latencyStats(searchLatencies),
-			IndexWaitLatency:  latencyStats(waitLatencies),
+			IndexWaitLatency: latencyStats(waitLatencies),
 			ReaderInputTokens: readerInputTokens, ReaderOutputTokens: readerOutputTokens,
 			ReaderTotalTokens: readerTotalTokens,
 		},
@@ -122,6 +122,7 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 	if len(cases) > 0 {
 		report.Operational.MeanContextTokens = float64(contextTokens) / float64(len(cases))
 	}
+	FinalizeReport(report)
 	return report, nil
 }
 
