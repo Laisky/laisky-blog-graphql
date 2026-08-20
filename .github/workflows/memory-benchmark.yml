@@ -8,10 +8,13 @@ on:
       - 'internal/mcp/memory/plugins/**'
       - 'internal/mcp/files/**'
       - 'tests/eval/memory_bench_smoke.jsonl'
+      - 'docs/eval/baselines/local/**'
       - 'docs/eval/memory_benchmark.md'
       - 'docs/ref/agent_memory_benchmarks_2026.md'
       - '.github/workflows/memory-benchmark.yml'
       - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
   schedule:
     - cron: '30 4 * * *'
   workflow_dispatch:
@@ -51,8 +54,17 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run current plugin benchmark
+      - name: Run current plugin benchmark and regression gate
+        shell: bash
         run: |
+          set -euo pipefail
+          baseline="docs/eval/baselines/local/${{ matrix.plugin }}/report.json"
+          baseline_args=()
+          if [[ -f "$baseline" ]]; then
+            baseline_args+=(--baseline="$baseline")
+          else
+            echo "No committed local baseline exists yet for ${{ matrix.plugin }}; this bootstrap run is score-only."
+          fi
           go run ./cmd/memory-bench \
             --backend=local \
             --plugin='${{ matrix.plugin }}' \
@@ -67,8 +79,10 @@ jobs:
             --index-timeout=30s \
             --poll-interval=25ms \
             --run-timeout=5m \
+            --max-p95-latency-increase=1.00 \
             --git-sha="$GITHUB_SHA" \
-            --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}"
+            --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}" \
+            "${baseline_args[@]}"
           cat "docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}/scorecard.md"
 
       - name: Upload local scorecard
@@ -107,7 +121,7 @@ jobs:
             echo 'Live memory benchmark skipped: MCP_BENCH_ENDPOINT or MCP_BENCH_AUTHORIZATION is not configured.'
           fi
 
-      - name: Run deployed plugin benchmark
+      - name: Run deployed plugin benchmark (score-only)
         if: steps.config.outputs.configured == 'true'
         env:
           MCP_ENDPOINT: ${{ secrets.MCP_BENCH_ENDPOINT }}
@@ -116,6 +130,7 @@ jobs:
           MEMORY_BENCH_READER_MODEL: ${{ secrets.MEMORY_BENCH_READER_MODEL }}
           MEMORY_BENCH_READER_API_KEY: ${{ secrets.MEMORY_BENCH_READER_API_KEY }}
         run: |
+          echo 'The deployed scheduled run is score-only until an operator adopts a hardware- and environment-specific production baseline.'
           go run ./cmd/memory-bench \
             --backend=mcp \
             --plugin='${{ matrix.plugin }}' \
