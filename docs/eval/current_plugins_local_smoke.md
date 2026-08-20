@@ -11,16 +11,24 @@
 - RAG: production RAG plugin and file-service lexical/raw fallback.
 - PageIndex: production PageIndex plugin, Markdown indexer, SystemFS tree persistence, and tree-search loop with deterministic StubLLM.
 - Settings: top-k 5, min-score 0.20, concurrency 1, one warm-up, three timed repetitions, seed 42.
+- Four documents and six queries are evaluated: five answerable ability cases and one unanswerable retrieval-abstention case.
 - Local latency is diagnostic only; deployed MCP results are required for production SLO decisions.
-- The first validated capture seeds immutable local baseline reports under `docs/eval/baselines/local/`; later PR runs compare against them.
+- The reports have `status=valid`, zero failed cases, and zero execution error rate, so they are eligible regression baselines.
+- Baseline replacement is an explicit manual action; ordinary pull requests only compare candidates with these committed reports.
 
 ## Results
 
-| Plugin | Status | Failed | Recall@5 | Precision@5 | nDCG@5 | MRR | Hit@5 | Evidence recall | Retrieval abstention | Error rate | Search p50 ms | Search p95 ms | Index-ready p95 ms |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rag | valid | 0 | 1.0000 | 0.2400 | 0.9839 | 1.0000 | 1.0000 | 1.0000 | 0.0000 | 0.0000 | 0.084 | 0.109 | 0.124 |
-| pageindex | valid | 0 | 1.0000 | 0.2400 | 0.6772 | 0.5500 | 1.0000 | 0.8000 | 0.0000 | 0.0000 | 0.465 | 0.872 | 0.591 |
+| Plugin | Status | Failed | Recall@5 | Precision@5 | nDCG@5 | MRR | Hit@5 | Evidence recall | Retrieval abstention | Unexpected retrieval | Error rate | Search p50 ms | Search p95 ms | Index-ready p95 ms |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| rag | valid | 0 | 1.0000 | 0.2400 | 0.9839 | 1.0000 | 1.0000 | 1.0000 | 0.0000 | 1.0000 | 0.0000 | 0.084 | 0.109 | 0.124 |
+| pageindex | valid | 0 | 1.0000 | 0.2400 | 0.6772 | 0.5500 | 1.0000 | 0.8000 | 0.0000 | 1.0000 | 0.0000 | 0.465 | 0.872 | 0.591 |
 
 ## Interpretation
 
-These numbers are valid regression-smoke baselines for the exact repository fixture, not public benchmark leaderboard claims. PageIndex uses a deterministic StubLLM so the local run measures the production persistence, tree construction, traversal, ranking, and result-shaping code without provider variance; it does not estimate the quality or latency of a production reasoning model. The scheduled `mcp` backend job is the authoritative end-to-end operational measurement because it includes transport, authentication, production storage, indexing workers, and configured model providers. That deployed job is intentionally score-only until an operator adopts a stable environment-specific production baseline.
+Both plugins retrieved every labelled relevant document within the top five on this fixture: Recall@5 and Hit@5 are 1.0 for both. RAG ranked the relevant document first in every answerable case, producing MRR 1.0 and nDCG@5 0.9839. PageIndex found all relevant documents but ranked them lower in several cases, producing MRR 0.55 and nDCG@5 0.6772. Its evidence recall of 0.8 reflects one long-document case where the correct document was retrieved but the exact labelled evidence string was outside the returned top-five chunks under the deterministic traversal.
+
+Precision@5 is 0.24 for both because the metric uses a fixed denominator of five while most cases have one relevant document and the multi-hop case has two. It should be interpreted together with Recall, MRR, and nDCG rather than as a standalone failure.
+
+The fixed answer reader is disabled. Therefore the final two quality columns measure retrieval behavior, not LLM hallucination: both plugins returned at least one above-threshold candidate for the synthetic unknown query, yielding retrieval-abstention accuracy 0 and unexpected-retrieval rate 1. This is a valid measured limitation of the current `min-score=0.20` retrieval policy, not an answer-generation result.
+
+These numbers are regression-smoke baselines for the exact repository fixture, not public benchmark leaderboard claims. PageIndex uses a deterministic StubLLM so the local run measures production persistence, tree construction, traversal, ranking, and result shaping without provider variance; it does not estimate production reasoning-model quality or latency. The scheduled `mcp` backend job remains the authoritative end-to-end operational measurement.
