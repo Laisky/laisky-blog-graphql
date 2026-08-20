@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	errors "github.com/Laisky/errors/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -249,6 +248,11 @@ func TestCurrentMemoryPluginsLocalBenchmark(t *testing.T) {
 				IndexTimeout: 5 * time.Second, PollInterval: 10 * time.Millisecond, Cleanup: true,
 			})
 			require.NoError(t, err)
+			for _, result := range report.Cases {
+				if result.Error != "" {
+					t.Logf("PLUGIN_CASE_ERROR plugin=%s query=%s error=%s hits=%v", pluginName, result.QueryID, result.Error, result.Retrieved)
+				}
+			}
 			require.Zero(t, report.Quality.ErrorRate)
 			require.GreaterOrEqual(t, report.Quality.HitRateAtK, 0.50)
 			require.GreaterOrEqual(t, report.Quality.RecallAtK, 0.50)
@@ -303,11 +307,11 @@ func (b *staticBackend) Close(context.Context) error { return nil }
 func testReport() *Report {
 	return &Report{
 		SchemaVersion: SchemaVersion,
-		Run: RunMetadata{Plugin: "rag", ConfigSHA256: "same", TopK: 5},
-		Dataset: DatasetMetadata{SHA256: "dataset", Queries: 1},
-		Quality: QualitySummary{RecallAtK: 0.8, NDCGAtK: 0.8, MRR: 0.8, HitRateAtK: 0.8, EvidenceRecall: 0.8},
-		Operational: OperationalSummary{SearchLatency: LatencyStats{P95: 10}},
-		Cases: []CaseResult{{QueryID: "q", Metrics: CaseMetrics{NDCGAtK: 0.8}}},
+		Run:           RunMetadata{Plugin: "rag", ConfigSHA256: "same", TopK: 5},
+		Dataset:       DatasetMetadata{SHA256: "dataset", Queries: 1},
+		Quality:       QualitySummary{RecallAtK: 0.8, NDCGAtK: 0.8, MRR: 0.8, HitRateAtK: 0.8, EvidenceRecall: 0.8},
+		Operational:   OperationalSummary{SearchLatency: LatencyStats{P95: 10}},
+		Cases:         []CaseResult{{QueryID: "q", Metrics: CaseMetrics{NDCGAtK: 0.8}}},
 	}
 }
 
@@ -325,5 +329,3 @@ func ExampleWriteScorecard() {
 	fmt.Println(report.SchemaVersion)
 	// Output: mcp-memory-benchmark/v1
 }
-
-var _ = errors.New
