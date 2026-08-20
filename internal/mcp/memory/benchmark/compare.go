@@ -10,6 +10,12 @@ func CompareReports(baseline, candidate *Report, config GateConfig) Comparison {
 	if baseline == nil || candidate == nil {
 		return Comparison{Compatible: false, Passed: false, Reason: "baseline and candidate reports are required"}
 	}
+	if err := ValidateReport(baseline); err != nil {
+		return Comparison{Compatible: false, Passed: false, Reason: "baseline " + err.Error()}
+	}
+	if err := ValidateReport(candidate); err != nil {
+		return Comparison{Compatible: false, Passed: false, Reason: "candidate " + err.Error()}
+	}
 	if reason := compatibilityReason(baseline, candidate); reason != "" {
 		return Comparison{Compatible: false, Passed: false, Reason: reason}
 	}
