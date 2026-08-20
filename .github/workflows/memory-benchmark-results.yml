@@ -1,0 +1,96 @@
+name: memory-benchmark-results
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/memory-bench/**'
+      - 'internal/mcp/memory/benchmark/**'
+      - 'internal/mcp/memory/plugins/**'
+      - 'internal/mcp/files/**'
+      - 'tests/eval/memory_bench_smoke.jsonl'
+      - '.github/workflows/memory-benchmark-results.yml'
+      - 'go.mod'
+      - 'go.sum'
+
+concurrency:
+  group: memory-benchmark-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [rag, pageindex]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run current plugin benchmark
+        run: |
+          head_sha="$(git rev-parse HEAD)"
+          go run ./cmd/memory-bench \
+            --backend=local \
+            --plugin='${{ matrix.plugin }}' \
+            --dataset=tests/eval/memory_bench_smoke.jsonl \
+            --format=canonical \
+            --top-k=5 \
+            --min-score=0.20 \
+            --concurrency=1 \
+            --warmup=1 \
+            --repetitions=3 \
+            --seed=42 \
+            --index-timeout=30s \
+            --poll-interval=25ms \
+            --run-timeout=5m \
+            --git-sha="$head_sha" \
+            --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}"
+
+      - name: Publish exact scorecard to PR
+        uses: actions/github-script@v7
+        env:
+          PLUGIN: ${{ matrix.plugin }}
+          SCORECARD: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/scorecard.md
+        with:
+          script: |
+            const fs = require('fs');
+            const plugin = process.env.PLUGIN;
+            const marker = `<!-- memory-benchmark-scorecard:${plugin} -->`;
+            const scorecard = fs.readFileSync(process.env.SCORECARD, 'utf8');
+            const method = [
+              marker,
+              `## Current ${plugin} plugin benchmark`,
+              '',
+              '> Method: real in-process production plugin, isolated SQLite file service, repository synthetic v2 corpus, top-k 5, min-score 0.20, one warm-up, three timed repetitions, concurrency 1, seed 42. PageIndex uses the real tree index/search implementation with deterministic StubLLM; RAG uses the real file service lexical/raw fallback. Local latency is diagnostic, not a production SLO.',
+              '',
+              scorecard,
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: method });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: method });
+            }
+
+      - name: Upload exact artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-benchmark-pr-${{ matrix.plugin }}-${{ github.sha }}
+          path: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/
+          if-no-files-found: error

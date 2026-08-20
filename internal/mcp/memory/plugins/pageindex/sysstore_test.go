@@ -4,6 +4,11 @@ import (
 	"context"
 	"sync"
 	"testing"
+
+	errors "github.com/Laisky/errors/v2"
+	"github.com/stretchr/testify/require"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 )
 
 // inMemoryFS is a SystemFS stub for unit tests.
@@ -21,11 +26,11 @@ func (m *inMemoryFS) Read(_ context.Context, project, path string) ([]byte, erro
 	defer m.mu.Unlock()
 	bucket, ok := m.data[project]
 	if !ok {
-		return nil, &notFoundError{path: path}
+		return nil, files.NewError(files.ErrCodeNotFound, "not found: "+path, false)
 	}
 	body, ok := bucket[path]
 	if !ok {
-		return nil, &notFoundError{path: path}
+		return nil, files.NewError(files.ErrCodeNotFound, "not found: "+path, false)
 	}
 	return append([]byte(nil), body...), nil
 }
@@ -63,44 +68,26 @@ func (m *inMemoryFS) List(_ context.Context, project, prefix string) ([]string, 
 	return out, nil
 }
 
-type notFoundError struct{ path string }
-
-func (e *notFoundError) Error() string { return "not found: " + e.path }
-
 func TestSysStoreRoundTrip(t *testing.T) {
 	fs := newMemoryFS()
 	store := NewSysStore(fs)
 	ctx := context.Background()
 	tree := &Tree{DocID: "doc1", Type: KindPDF, PageCount: 3, Structure: []*Node{{Title: "T"}}}
-	if err := store.PutTree(ctx, "p", "doc1", tree); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.UpdateIndexEntry(ctx, "p", "/a.pdf", IndexEntry{DocID: "doc1", Type: "pdf"}); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, store.PutTree(ctx, "p", "doc1", tree))
+	require.NoError(t, store.UpdateIndexEntry(ctx, "p", "/a.pdf", IndexEntry{DocID: "doc1", Type: "pdf"}))
 	got, err := store.GetTree(ctx, "p", "doc1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.PageCount != 3 {
-		t.Fatalf("page count: %d", got.PageCount)
-	}
+	require.NoError(t, err)
+	require.Equal(t, 3, got.PageCount)
 	ix, err := store.GetIndex(ctx, "p")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := ix["/a.pdf"]; !ok {
-		t.Fatalf("missing index entry: %+v", ix)
-	}
-	if _, ok, _ := store.RemoveIndexEntry(ctx, "p", "/a.pdf"); !ok {
-		t.Fatal("expected entry to be removed")
-	}
+	require.NoError(t, err)
+	require.Contains(t, ix, "/a.pdf")
+	_, ok, err := store.RemoveIndexEntry(ctx, "p", "/a.pdf")
+	require.NoError(t, err)
+	require.True(t, ok)
 }
 
-// TestSysStoreConcurrentIndexUpdates (P10) — ten goroutines each call
-// UpdateIndexEntry against distinct user paths in the same project. The
-// SysStore mutex must serialize the read-modify-write so the final mapping
-// holds all ten entries with no lost updates.
+// TestSysStoreConcurrentIndexUpdates verifies the store mutex serializes the
+// read-modify-write sequence and prevents lost catalog entries.
 func TestSysStoreConcurrentIndexUpdates(t *testing.T) {
 	fs := newMemoryFS()
 	store := NewSysStore(fs)
@@ -123,84 +110,76 @@ func TestSysStoreConcurrentIndexUpdates(t *testing.T) {
 	wg.Wait()
 
 	ix, err := store.GetIndex(ctx, "p")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ix) != n {
-		t.Fatalf("expected %d entries after concurrent updates, got %d (lost updates indicate missing serialization)", n, len(ix))
-	}
+	require.NoError(t, err)
+	require.Len(t, ix, n)
 }
 
-// TestSysStoreRenameRoundTrip (P09 — sysstore portion) — verifies that
-// RenameIndexEntry moves the mapping from src to dst while leaving the
-// underlying tree JSON in SystemFS untouched.
+// TestSysStoreRenameRoundTrip verifies a catalog rename leaves the persisted tree unchanged.
 func TestSysStoreRenameRoundTrip(t *testing.T) {
 	fs := newMemoryFS()
 	store := NewSysStore(fs)
 	ctx := context.Background()
 	tree := &Tree{DocID: "d1", Type: KindPDF, PageCount: 1, Structure: []*Node{{Title: "T"}}}
-	if err := store.PutTree(ctx, "p", "d1", tree); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.UpdateIndexEntry(ctx, "p", "/from.pdf", IndexEntry{DocID: "d1", Type: "pdf"}); err != nil {
-		t.Fatal(err)
-	}
-	// Capture the on-disk tree bytes so we can confirm rename does not touch them.
+	require.NoError(t, store.PutTree(ctx, "p", "d1", tree))
+	require.NoError(t, store.UpdateIndexEntry(ctx, "p", "/from.pdf", IndexEntry{DocID: "d1", Type: "pdf"}))
 	beforeBytes, err := fs.Read(ctx, "p", treePath("d1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.RenameIndexEntry(ctx, "p", "/from.pdf", "/to.pdf"); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, store.RenameIndexEntry(ctx, "p", "/from.pdf", "/to.pdf"))
 	ix, err := store.GetIndex(ctx, "p")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := ix["/from.pdf"]; exists {
-		t.Errorf("rename: src path still in index: %+v", ix)
-	}
-	if entry, exists := ix["/to.pdf"]; !exists || entry.DocID != "d1" {
-		t.Errorf("rename: dst path missing or wrong doc_id: %+v", ix)
-	}
+	require.NoError(t, err)
+	require.NotContains(t, ix, "/from.pdf")
+	require.Equal(t, "d1", ix["/to.pdf"].DocID)
 	afterBytes, err := fs.Read(ctx, "p", treePath("d1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(beforeBytes) != string(afterBytes) {
-		t.Error("rename must not mutate persisted tree JSON")
-	}
+	require.NoError(t, err)
+	require.Equal(t, string(beforeBytes), string(afterBytes))
 }
 
-// TestSysStoreRemoveAndDeleteTree (P08 — sysstore portion) — RemoveIndexEntry
-// returns the entry so the caller can DeleteTree, after which both the mapping
-// and the tree JSON are absent from the SystemFS.
+// TestSysStoreRemoveAndDeleteTree verifies catalog and tree removal complete together.
 func TestSysStoreRemoveAndDeleteTree(t *testing.T) {
 	fs := newMemoryFS()
 	store := NewSysStore(fs)
 	ctx := context.Background()
 	tree := &Tree{DocID: "d1", Type: KindPDF, PageCount: 1, Structure: []*Node{{Title: "T"}}}
-	if err := store.PutTree(ctx, "p", "d1", tree); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.UpdateIndexEntry(ctx, "p", "/p1.pdf", IndexEntry{DocID: "d1", Type: "pdf"}); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, store.PutTree(ctx, "p", "d1", tree))
+	require.NoError(t, store.UpdateIndexEntry(ctx, "p", "/p1.pdf", IndexEntry{DocID: "d1", Type: "pdf"}))
 	entry, ok, err := store.RemoveIndexEntry(ctx, "p", "/p1.pdf")
-	if err != nil || !ok {
-		t.Fatalf("remove entry ok=%v err=%v", ok, err)
-	}
-	if err := store.DeleteTree(ctx, "p", entry.DocID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fs.Read(ctx, "p", treePath("d1")); err == nil {
-		t.Error("delete-tree: tree JSON should be absent from SystemFS")
-	}
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, store.DeleteTree(ctx, "p", entry.DocID))
+	_, err = fs.Read(ctx, "p", treePath("d1"))
+	require.Error(t, err)
 	ix, err := store.GetIndex(ctx, "p")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := ix["/p1.pdf"]; exists {
-		t.Errorf("delete: index still contains removed path: %+v", ix)
-	}
+	require.NoError(t, err)
+	require.NotContains(t, ix, "/p1.pdf")
 }
+
+// TestSysStorePropagatesTransientIndexReadFailure verifies a storage outage is
+// not reinterpreted as an empty catalog and cannot overwrite existing state.
+func TestSysStorePropagatesTransientIndexReadFailure(t *testing.T) {
+	t.Parallel()
+
+	fs := &readFailureSystemFS{}
+	store := NewSysStore(fs)
+	_, err := store.GetIndex(context.Background(), "project")
+	require.ErrorContains(t, err, "transient index read failure")
+	err = store.UpdateIndexEntry(context.Background(), "project", "/doc.md", IndexEntry{DocID: "doc"})
+	require.ErrorContains(t, err, "transient index read failure")
+	require.Zero(t, fs.writes, "a failed catalog read must not be followed by a destructive empty-catalog write")
+}
+
+type readFailureSystemFS struct {
+	writes int
+}
+
+func (*readFailureSystemFS) Read(context.Context, string, string) ([]byte, error) {
+	return nil, errors.New("transient index read failure")
+}
+
+func (s *readFailureSystemFS) Write(context.Context, string, string, []byte) error {
+	s.writes++
+	return nil
+}
+
+func (*readFailureSystemFS) Delete(context.Context, string, string) error { return nil }
+
+func (*readFailureSystemFS) List(context.Context, string, string) ([]string, error) { return nil, nil }
