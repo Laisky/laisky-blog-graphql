@@ -12,6 +12,10 @@ on:
       - 'go.mod'
       - 'go.sum'
 
+concurrency:
+  group: memory-benchmark-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
