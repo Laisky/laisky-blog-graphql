@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"runtime"
 	"sort"
@@ -35,7 +34,7 @@ func NewRunner(backend Backend, answerer Answerer) (*Runner, error) {
 func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*Report, error) {
 	normalizedDataset, err := normalizeDataset(dataset)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "normalize benchmark dataset")
 	}
 	config = normalizeRunConfig(config)
 	startedAt := time.Now().UTC()
@@ -93,7 +92,7 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 		Run: RunMetadata{
 			HarnessVersion: HarnessVersion, GitSHA: config.GitSHA,
 			RunID: startedAt.Format("20060102T150405.000000000Z"), StartedAt: startedAt,
-			CompletedAt: time.Now().UTC(), Backend: r.backend.Name(), Endpoint: sanitizeEndpoint(config.Endpoint),
+			CompletedAt: time.Now().UTC(), Backend: r.backend.Name(),
 			Plugin: config.Plugin, Project: config.Project, TopK: config.TopK, MinScore: config.MinScore,
 			Concurrency: config.Concurrency, Warmup: config.Warmup, Repetitions: config.Repetitions,
 			Seed: config.Seed, IndexTimeoutMS: config.IndexTimeout.Milliseconds(),
@@ -381,17 +380,6 @@ func runConfigHash(config RunConfig) string {
 	raw, _ := json.Marshal(stable)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
-}
-
-func sanitizeEndpoint(raw string) string {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Host == "" {
-		return strings.TrimSpace(raw)
-	}
-	parsed.User = nil
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	return parsed.String()
 }
 
 func readerPromptVersion(answerer Answerer) string {
