@@ -46,7 +46,7 @@ jobs:
             --dataset=tests/eval/memory_bench_smoke.jsonl \
             --format=canonical \
             --top-k=5 \
-            --min-score=0 \
+            --min-score=0.20 \
             --concurrency=1 \
             --warmup=1 \
             --repetitions=3 \
@@ -72,7 +72,7 @@ jobs:
               marker,
               `## Current ${plugin} plugin benchmark`,
               '',
-              '> Method: real in-process production plugin, isolated SQLite file service, repository synthetic v2 corpus, top-k 5, one warm-up, three timed repetitions, concurrency 1, seed 42. PageIndex uses the real tree index/search implementation with deterministic StubLLM; RAG uses the real file service lexical/raw fallback. Local latency is diagnostic, not a production SLO.',
+              '> Method: real in-process production plugin, isolated SQLite file service, repository synthetic v2 corpus, top-k 5, min-score 0.20, one warm-up, three timed repetitions, concurrency 1, seed 42. PageIndex uses the real tree index/search implementation with deterministic StubLLM; RAG uses the real file service lexical/raw fallback. Local latency is diagnostic, not a production SLO.',
               '',
               scorecard,
             ].join('\n');
