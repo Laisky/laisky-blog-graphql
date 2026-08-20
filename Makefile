@@ -70,8 +70,16 @@ eval-baseline-rag:
 
 .PHONY: memory-bench-test
 memory-bench-test:
-	go test -v -race -cover ./internal/mcp/memory/benchmark ./cmd/memory-bench
-	go vet ./internal/mcp/memory/benchmark ./cmd/memory-bench
+	go test -v -race -cover \
+		./internal/mcp/files \
+		./internal/mcp/memory/plugins/pageindex \
+		./internal/mcp/memory/benchmark \
+		./cmd/memory-bench
+	go vet \
+		./internal/mcp/files \
+		./internal/mcp/memory/plugins/pageindex \
+		./internal/mcp/memory/benchmark \
+		./cmd/memory-bench
 
 .PHONY: memory-bench-local
 memory-bench-local:
@@ -82,6 +90,7 @@ memory-bench-local:
 		--dataset=tests/eval/memory_bench_smoke.jsonl \
 		--format=canonical \
 		--top-k=5 \
+		--min-score=0.20 \
 		--concurrency=1 \
 		--warmup=1 \
 		--repetitions=3 \
@@ -105,6 +114,7 @@ memory-bench-live:
 		--dataset=tests/eval/memory_bench_smoke.jsonl \
 		--format=canonical \
 		--top-k=5 \
+		--min-score=0.20 \
 		--concurrency=2 \
 		--warmup=2 \
 		--repetitions=10 \
