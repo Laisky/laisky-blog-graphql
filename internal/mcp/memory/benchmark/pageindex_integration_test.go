@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,11 @@ func TestPageIndexPersistsAndSearchesThroughRealSystemFS(t *testing.T) {
 	result, err := plugin.Search(ctx, auth, project, "Which token is required for rollback?", "/", 5)
 	require.NoError(t, err)
 	require.NotEmpty(t, result.Chunks)
-	require.Equal(t, documentPath, result.Chunks[0].FilePath)
-	require.Contains(t, result.Chunks[0].ChunkContent, "ORBIT-17")
+	var retrieved strings.Builder
+	for _, chunk := range result.Chunks {
+		require.Equal(t, documentPath, chunk.FilePath)
+		retrieved.WriteString(chunk.ChunkContent)
+		retrieved.WriteByte('\n')
+	}
+	require.Contains(t, retrieved.String(), "ORBIT-17", "PageIndex may return the document heading before the matching child node, so evidence is asserted across the ranked result set")
 }
