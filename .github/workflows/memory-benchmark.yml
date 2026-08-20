@@ -40,8 +40,16 @@ jobs:
 
       - name: Test benchmark framework and current plugin adapters
         run: |
-          go test -v -race -coverprofile=/tmp/memory-benchmark.cover ./internal/mcp/memory/benchmark ./cmd/memory-bench
-          go vet ./internal/mcp/memory/benchmark ./cmd/memory-bench
+          go test -v -race -coverprofile=/tmp/memory-benchmark.cover \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
+          go vet \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
 
   local-current-plugins:
     runs-on: ubuntu-latest
