@@ -150,13 +150,16 @@ func run() (runErr error) {
 	if err := benchmark.WriteArtifacts(cfg.outDir, report, comparison); err != nil {
 		return errors.Wrap(err, "write benchmark artifacts")
 	}
+	if err := benchmark.ValidateReport(report); err != nil {
+		return errors.Wrap(err, "validate memory benchmark report")
+	}
 
 	abstention := "n/a"
 	if report.Quality.AbstentionMetricsAvailable {
 		abstention = fmt.Sprintf("%.4f", report.Quality.AbstentionAccuracy)
 	}
-	fmt.Printf("memory benchmark complete backend=%s plugin=%s dataset=%s queries=%d recall@%d=%.4f ndcg@%d=%.4f mrr=%.4f hit@%d=%.4f abstention=%s p95_ms=%.3f out=%s\n",
-		report.Run.Backend, report.Run.Plugin, report.Dataset.Name, report.Dataset.Queries,
+	fmt.Printf("memory benchmark complete status=%s backend=%s plugin=%s dataset=%s queries=%d recall@%d=%.4f ndcg@%d=%.4f mrr=%.4f hit@%d=%.4f abstention=%s p95_ms=%.3f out=%s\n",
+		report.Status, report.Run.Backend, report.Run.Plugin, report.Dataset.Name, report.Dataset.Queries,
 		report.Run.TopK, report.Quality.RecallAtK, report.Run.TopK, report.Quality.NDCGAtK,
 		report.Quality.MRR, report.Run.TopK, report.Quality.HitRateAtK,
 		abstention, report.Operational.SearchLatency.P95, cfg.outDir)
