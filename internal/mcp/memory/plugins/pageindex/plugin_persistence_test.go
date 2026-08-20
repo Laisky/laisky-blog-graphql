@@ -67,8 +67,8 @@ type failNthWriteSystemFS struct {
 	writes int
 }
 
-func (s *failNthWriteSystemFS) Read(context.Context, string, string) ([]byte, error) {
-	return nil, errors.New("not found")
+func (*failNthWriteSystemFS) Read(context.Context, string, string) ([]byte, error) {
+	return nil, files.NewError(files.ErrCodeNotFound, "not found", false)
 }
 
 func (s *failNthWriteSystemFS) Write(context.Context, string, string, []byte) error {
