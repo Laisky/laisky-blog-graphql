@@ -44,7 +44,9 @@ jobs:
 
       - name: Run both current plugins
         run: |
+          set -euo pipefail
           rm -rf /tmp/memory-benchmark-results
+          head_sha="$(git rev-parse HEAD)"
           for plugin in rag pageindex; do
             go run ./cmd/memory-bench \
               --backend=local \
@@ -60,7 +62,7 @@ jobs:
               --index-timeout=30s \
               --poll-interval=25ms \
               --run-timeout=5m \
-              --git-sha="$GITHUB_SHA" \
+              --git-sha="$head_sha" \
               --out="/tmp/memory-benchmark-results/$plugin"
           done
 
