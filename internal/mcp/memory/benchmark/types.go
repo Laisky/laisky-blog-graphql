@@ -114,25 +114,28 @@ type LatencyStats struct {
 	Max   float64 `json:"max_ms"`
 }
 
-// QualitySummary aggregates case-level quality metrics.
+// QualitySummary aggregates case-level quality metrics and records which optional metric families were evaluated.
 type QualitySummary struct {
-	Queries             int     `json:"queries"`
-	AnswerableQueries   int     `json:"answerable_queries"`
-	UnanswerableQueries int     `json:"unanswerable_queries"`
-	RecallAtK           float64 `json:"recall_at_k"`
-	PrecisionAtK        float64 `json:"precision_at_k"`
-	NDCGAtK             float64 `json:"ndcg_at_k"`
-	MRR                 float64 `json:"mrr"`
-	HitRateAtK          float64 `json:"hit_rate_at_k"`
-	EvidenceRecall      float64 `json:"evidence_recall"`
-	AbstentionAccuracy  float64 `json:"abstention_accuracy,omitempty"`
-	FalseAnswerRate     float64 `json:"false_answer_rate,omitempty"`
-	ExactMatch          float64 `json:"exact_match,omitempty"`
-	TokenPrecision      float64 `json:"token_precision,omitempty"`
-	TokenRecall         float64 `json:"token_recall,omitempty"`
-	TokenF1             float64 `json:"token_f1,omitempty"`
-	RubricCoverage      float64 `json:"rubric_coverage,omitempty"`
-	ErrorRate           float64 `json:"error_rate"`
+	Queries                      int     `json:"queries"`
+	AnswerableQueries            int     `json:"answerable_queries"`
+	UnanswerableQueries          int     `json:"unanswerable_queries"`
+	RecallAtK                    float64 `json:"recall_at_k"`
+	PrecisionAtK                 float64 `json:"precision_at_k"`
+	NDCGAtK                      float64 `json:"ndcg_at_k"`
+	MRR                          float64 `json:"mrr"`
+	HitRateAtK                   float64 `json:"hit_rate_at_k"`
+	EvidenceRecall               float64 `json:"evidence_recall"`
+	AbstentionMetricsAvailable   bool    `json:"abstention_metrics_available"`
+	AbstentionAccuracy           float64 `json:"abstention_accuracy"`
+	FalseAnswerRate              float64 `json:"false_answer_rate"`
+	AnswerMetricsAvailable       bool    `json:"answer_metrics_available"`
+	ExactMatch                   float64 `json:"exact_match"`
+	TokenPrecision               float64 `json:"token_precision"`
+	TokenRecall                  float64 `json:"token_recall"`
+	TokenF1                      float64 `json:"token_f1"`
+	RubricMetricsAvailable       bool    `json:"rubric_metrics_available"`
+	RubricCoverage               float64 `json:"rubric_coverage"`
+	ErrorRate                    float64 `json:"error_rate"`
 }
 
 // CategorySummary exposes benchmark ability slices independently.
@@ -153,7 +156,7 @@ type OperationalSummary struct {
 	ReaderTotalTokens  int64        `json:"reader_total_tokens,omitempty"`
 }
 
-// RunMetadata makes scorecards replayable and comparable.
+// RunMetadata makes scorecards replayable and comparable without persisting secret-backed service endpoints.
 type RunMetadata struct {
 	HarnessVersion  string    `json:"harness_version"`
 	GitSHA          string    `json:"git_sha,omitempty"`
@@ -161,7 +164,6 @@ type RunMetadata struct {
 	StartedAt       time.Time `json:"started_at"`
 	CompletedAt     time.Time `json:"completed_at"`
 	Backend         string    `json:"backend"`
-	Endpoint        string    `json:"endpoint,omitempty"`
 	Plugin          string    `json:"plugin"`
 	Project         string    `json:"project"`
 	TopK            int       `json:"top_k"`
@@ -262,9 +264,9 @@ type PermutationResult struct {
 
 // Comparison is emitted when a baseline report is supplied.
 type Comparison struct {
-	Compatible bool               `json:"compatible"`
-	Passed     bool               `json:"passed"`
-	Reason     string             `json:"reason,omitempty"`
-	Metrics    []MetricDelta      `json:"metrics,omitempty"`
+	Compatible  bool               `json:"compatible"`
+	Passed      bool               `json:"passed"`
+	Reason      string             `json:"reason,omitempty"`
+	Metrics     []MetricDelta      `json:"metrics,omitempty"`
 	Permutation *PermutationResult `json:"paired_ndcg_permutation,omitempty"`
 }
