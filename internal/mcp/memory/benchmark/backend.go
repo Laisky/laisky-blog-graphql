@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -193,7 +194,14 @@ func NewLocalPluginBackend(ctx context.Context, pluginName string) (Backend, err
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
-	fileService, err := files.NewService(db, localFileSettings(), nil, nil, nil, nil, nil, nil, nil)
+	fileSettings := localFileSettings()
+	credentialProtector, err := files.NewCredentialProtector(fileSettings.Security)
+	if err != nil {
+		_ = db.Close()
+		return nil, errors.Wrap(err, "construct local benchmark credential protector")
+	}
+	credentialStore := newLocalCredentialStore()
+	fileService, err := files.NewService(db, fileSettings, nil, nil, credentialProtector, credentialStore, nil, nil, nil)
 	if err != nil {
 		_ = db.Close()
 		return nil, errors.Wrap(err, "construct local file service")
@@ -276,6 +284,48 @@ func newLocalPageIndex(fileService *files.Service) (mcpplugin.Plugin, error) {
 	return plugin, nil
 }
 
+type localCredentialStore struct {
+	mu     sync.Mutex
+	values map[string]string
+}
+
+func newLocalCredentialStore() *localCredentialStore {
+	return &localCredentialStore{values: make(map[string]string)}
+}
+
+func (s *localCredentialStore) Store(ctx context.Context, key, payload string, _ time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return errors.WithStack(err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[key] = payload
+	return nil
+}
+
+func (s *localCredentialStore) Load(ctx context.Context, key string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", errors.WithStack(err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	payload, ok := s.values[key]
+	if !ok {
+		return "", errors.New("local benchmark credential envelope not found")
+	}
+	return payload, nil
+}
+
+func (s *localCredentialStore) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return errors.WithStack(err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, key)
+	return nil
+}
+
 func localFileSettings() files.Settings {
 	return files.Settings{
 		AllowRootWipe: false, MaxPayloadBytes: 2_000_000, MaxFileBytes: 10_000_000,
@@ -289,6 +339,10 @@ func localFileSettings() files.Settings {
 			Workers: 1, BatchSize: 10, RetryMax: 0, RetryBackoff: 10 * time.Millisecond,
 			ChunkBytes: 4096, FreshnessSLO: 2 * time.Second,
 		},
-		Security: files.SecuritySettings{EncryptionKEKs: map[uint16]string{}},
+		Security: files.SecuritySettings{
+			EncryptionKEKs: map[uint16]string{1: "memory-benchmark-local-encryption-key-2026"},
+			CredentialCachePrefix: "memory-benchmark:credential",
+			CredentialCacheTTL: time.Hour,
+		},
 	}
 }
