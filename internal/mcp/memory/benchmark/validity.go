@@ -13,6 +13,16 @@ func FinalizeReport(report *Report) {
 	if report == nil {
 		return
 	}
+	for _, executionError := range report.ExecutionErrors {
+		trimmed := strings.TrimSpace(executionError)
+		if trimmed == "" {
+			continue
+		}
+		warning := "Lifecycle execution error: " + trimmed
+		if !containsWarning(report.Warnings, warning) {
+			report.Warnings = append(report.Warnings, warning)
+		}
+	}
 	if reportFailureCount(report) > 0 || report.Quality.ErrorRate > 0 || len(report.ExecutionErrors) > 0 {
 		report.Status = ReportStatusInvalid
 		if !containsWarning(report.Warnings, invalidReportWarning) {
