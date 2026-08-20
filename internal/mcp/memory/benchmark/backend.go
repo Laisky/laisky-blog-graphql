@@ -15,6 +15,7 @@ import (
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	pageindexplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
 	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
+	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // Backend is the minimal production-shaped surface measured by Runner.
@@ -274,6 +275,7 @@ func newLocalPageIndex(fileService *files.Service) (mcpplugin.Plugin, error) {
 	})
 	plugin, err := pageindexplugin.New(pageindexplugin.PluginDeps{
 		UserFS: fileService, SystemFS: systemFS, Settings: settings, LLM: llm, Tokenizer: tokenizer,
+		Logger: log.Logger.Named("memory_benchmark_pageindex"),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "construct pageindex plugin")
