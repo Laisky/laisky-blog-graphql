@@ -8,6 +8,8 @@ regression comparison.
 
 Research and metric rationale are recorded in
 [`docs/ref/agent_memory_benchmarks_2026.md`](../ref/agent_memory_benchmarks_2026.md).
+The latest validated deterministic baselines are recorded in
+[`docs/eval/current_plugins_local_smoke.md`](current_plugins_local_smoke.md).
 
 ## Execution modes
 
@@ -58,6 +60,7 @@ go run ./cmd/memory-bench \
   --dataset=tests/eval/memory_bench_smoke.jsonl \
   --format=canonical \
   --top-k=5 \
+  --min-score=0.20 \
   --concurrency=1 \
   --warmup=1 \
   --repetitions=3 \
@@ -70,6 +73,7 @@ go run ./cmd/memory-bench \
   --dataset=tests/eval/memory_bench_smoke.jsonl \
   --format=canonical \
   --top-k=5 \
+  --min-score=0.20 \
   --concurrency=1 \
   --warmup=1 \
   --repetitions=3 \
@@ -79,7 +83,8 @@ go run ./cmd/memory-bench \
 
 Local quality results are valid regression evidence for the exact deterministic
 fixture. Local latency is diagnostic only and must not be compared with production
-SLOs.
+SLOs. PageIndex's local `StubLLM` makes tree traversal reproducible; it does not model
+the quality or latency of the production reasoning model.
 
 ## What is measured
 
@@ -99,7 +104,7 @@ reader context and evidence calculation.
 
 An optional fixed Responses-compatible reader is restricted to returned evidence and
 must emit `INSUFFICIENT_EVIDENCE` when the evidence is insufficient. The runner reports
-normalized exact match, token precision/recall/F1, rubric coverage, abstention
+normalized exact match, token precision/recall/F1, rubric coverage, answer abstention
 accuracy, and false-answer rate.
 
 ```bash
@@ -107,6 +112,11 @@ export MEMORY_BENCH_READER_BASE_URL='https://api.openai.com/v1'
 export MEMORY_BENCH_READER_MODEL='gpt-5-mini'
 export MEMORY_BENCH_READER_API_KEY='...'
 ```
+
+When the reader is disabled, the harness does not claim to measure hallucination or
+answer quality. It reports **retrieval abstention accuracy** and **unexpected retrieval
+rate** instead: an unanswerable case passes only when no hit survives the configured
+`--min-score` threshold. Choose and version that threshold before comparing runs.
 
 The reader prompt version and model are stored in the report. For an official public
 benchmark result, run the upstream evaluator or judge against `cases.jsonl`; do not
@@ -121,6 +131,25 @@ present the deterministic CI scorer as leaderboard parity.
 - retrieved-context token estimate;
 - fixed-reader provider token usage;
 - per-case attempts and errors.
+
+## Validity and failure semantics
+
+A numeric zero is a measurement only when the case completed successfully. The harness
+uses the following rules to prevent execution failures from being misread as poor
+quality:
+
+1. Any write, readiness, search, reader, or cleanup failure is recorded on the case.
+2. Failed cases are excluded from aggregate quality denominators and appear as `n/a`
+   in the scorecard instead of `0.0000`.
+3. A report with any failed case has `status: invalid`; retrieval or answer abstention
+   credit is disabled for the whole run.
+4. Diagnostic `report.json`, `cases.jsonl`, and `scorecard.md` are still written, then
+   the command exits non-zero.
+5. Invalid reports are rejected as both baselines and candidates by the comparison
+   gate. CI refuses to capture them under `docs/eval/baselines/`.
+
+This contract specifically prevents an empty or broken index from receiving a perfect
+abstention score.
 
 ## Supported datasets
 
@@ -187,8 +216,8 @@ The output directory contains:
 
 | File | Purpose |
 |---|---|
-| `report.json` | Versioned aggregate report, metadata, categories, and all cases. |
-| `scorecard.md` | Human-readable quality, slice, operations, and case tables. |
+| `report.json` | Versioned status, aggregates, metadata, categories, and all cases. |
+| `scorecard.md` | Human-readable validity, quality, slice, operations, and case tables. |
 | `cases.jsonl` | One inspectable record per query for upstream judges and diagnosis. |
 | `comparison.json` | Machine-readable baseline deltas and gate outcomes. |
 | `comparison.md` | Human-readable regression table and paired statistical test. |
@@ -220,10 +249,10 @@ go run ./cmd/memory-bench \
   --out=docs/eval/runs/candidate/rag
 ```
 
-Incompatible inputs or a failed gate exit with code `3`. Compatibility requires the
-same report schema, dataset hash, plugin, query count, and configuration hash. The
-comparison also reports a paired two-sided sign-flip permutation test over per-query
-nDCG differences.
+Incompatible inputs, invalid reports, or a failed gate exit with code `3` or a general
+non-zero execution code. Compatibility requires the same report schema, dataset hash,
+plugin, query count, and configuration hash. The comparison also reports a paired
+two-sided sign-flip permutation test over per-query nDCG differences.
 
 ## Fair-comparison checklist
 
@@ -237,12 +266,15 @@ nDCG differences.
 
 ## CI
 
-`.github/workflows/memory-benchmark.yml` performs three levels of validation:
+The memory benchmark workflows perform four levels of validation:
 
-1. unit, race, coverage, and vet for the harness;
-2. a pull-request matrix that runs the current RAG and PageIndex implementations and
-   uploads both scorecards;
-3. scheduled/manual deployed MCP runs when `MCP_BENCH_ENDPOINT` and
+1. race, coverage, and vet for `internal/mcp/files`, the real PageIndex plugin, the
+   benchmark harness, and the CLI;
+2. behavior regressions for `SystemFS` UTF-8 persistence, PageIndex tree/catalog
+   durability, synchronous error propagation, and invalid-run reporting;
+3. a pull-request matrix that runs the current RAG and PageIndex implementations,
+   publishes exact scorecards, and compares them with committed local baselines;
+4. scheduled/manual deployed MCP runs when `MCP_BENCH_ENDPOINT` and
    `MCP_BENCH_AUTHORIZATION` are configured.
 
 The optional reader uses `MEMORY_BENCH_READER_BASE_URL`,
