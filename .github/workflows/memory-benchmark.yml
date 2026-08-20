@@ -76,7 +76,7 @@ jobs:
             --dataset=tests/eval/memory_bench_smoke.jsonl \
             --format=canonical \
             --top-k=5 \
-            --min-score=0 \
+            --min-score=0.20 \
             --concurrency=1 \
             --warmup=1 \
             --repetitions=3 \
