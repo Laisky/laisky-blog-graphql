@@ -1,0 +1,165 @@
+name: Bolt PageIndex diagnostics
+
+on:
+  push:
+    branches:
+      - 'bolt/pageindex-bounded-candidates-20260822'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TARGET_BRANCH: bolt/pageindex-bounded-candidates-v2-20260822
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve optimization head
+        id: target
+        shell: bash
+        run: |
+          sha=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')
+          test -n "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout optimization branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install lint tools
+        id: tools
+        continue-on-error: true
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Install golangci-lint
+        id: install_golangci
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+
+      - name: Run goimports and gofmt
+        id: format
+        continue-on-error: true
+        run: |
+          goimports -local github.com/Laisky/laisky-blog-graphql -w .
+          gofmt -s -w .
+
+      - name: Run go mod tidy
+        id: tidy
+        continue-on-error: true
+        run: go mod tidy
+
+      - name: Inspect formatting changes
+        id: dirty
+        continue-on-error: true
+        shell: bash
+        run: |
+          files=$(git diff --name-only)
+          if [[ -n "$files" ]]; then
+            printf '%s\n' "$files"
+            while IFS= read -r file; do
+              context=$(printf '%s' "$file" | tr '/.' '--' | cut -c1-75)
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${{ steps.target.outputs.sha }}" \
+                -f state=failure \
+                -f context="bolt/dirty/${context}" \
+                -f description="make lint rewrites ${file}"
+            done <<< "$files"
+            exit 1
+          fi
+
+      - name: Run go vet
+        id: vet
+        continue-on-error: true
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        id: golangci
+        continue-on-error: true
+        run: golangci-lint run -c .golangci.lint.yml
+
+      - name: Run govulncheck
+        id: vuln
+        continue-on-error: true
+        run: govulncheck ./...
+
+      - name: Enforce pure-Go invariant
+        id: pure
+        continue-on-error: true
+        run: ./.scripts/check_pure_go.sh
+
+      - name: Enforce system-owner invariant
+        id: owner
+        continue-on-error: true
+        run: ./.scripts/check_system_owner.sh
+
+      - name: Run targeted behavior tests
+        id: behavior
+        continue-on-error: true
+        run: >-
+          go test ./internal/mcp/memory/plugins/pageindex
+          -run '^(TestFilterCandidatesLimitedMatchesFullSort|TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments)$'
+          -count=1
+
+      - name: Run race and coverage suite
+        id: race
+        continue-on-error: true
+        run: go test -race -cover ./...
+
+      - name: Run full benchmark suite
+        id: bench
+        continue-on-error: true
+        run: go test -bench ./...
+
+      - name: Publish diagnostic statuses
+        if: always()
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          TOOLS: ${{ steps.tools.outcome }}
+          INSTALL_GOLANGCI: ${{ steps.install_golangci.outcome }}
+          FORMAT: ${{ steps.format.outcome }}
+          TIDY: ${{ steps.tidy.outcome }}
+          DIRTY: ${{ steps.dirty.outcome }}
+          VET: ${{ steps.vet.outcome }}
+          GOLANGCI: ${{ steps.golangci.outcome }}
+          VULN: ${{ steps.vuln.outcome }}
+          PURE: ${{ steps.pure.outcome }}
+          OWNER: ${{ steps.owner.outcome }}
+          BEHAVIOR: ${{ steps.behavior.outcome }}
+          RACE: ${{ steps.race.outcome }}
+          BENCH: ${{ steps.bench.outcome }}
+        shell: bash
+        run: |
+          lint_state=success
+          for outcome in "$TOOLS" "$INSTALL_GOLANGCI" "$FORMAT" "$TIDY" "$DIRTY" "$VET" "$GOLANGCI" "$VULN"; do
+            [[ "$outcome" == success ]] || lint_state=failure
+          done
+          test_state=success
+          for outcome in "$PURE" "$OWNER" "$BEHAVIOR" "$RACE" "$BENCH"; do
+            [[ "$outcome" == success ]] || test_state=failure
+          done
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$lint_state" \
+            -f context="bolt/diag/lint/t-${TOOLS}/i-${INSTALL_GOLANGCI}/f-${FORMAT}/d-${DIRTY}/v-${VET}/g-${GOLANGCI}/u-${VULN}" \
+            -f description="tools, golangci install, format, clean diff, vet, golangci, and govulncheck outcomes"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$test_state" \
+            -f context="bolt/diag/tests/p-${PURE}/o-${OWNER}/b-${BEHAVIOR}/r-${RACE}/m-${BENCH}" \
+            -f description="pure-Go, system-owner, behavior, race/coverage, and benchmark outcomes"
+
+          [[ "$lint_state" == success && "$test_state" == success ]]
