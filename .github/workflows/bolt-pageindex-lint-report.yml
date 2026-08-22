@@ -1,4 +1,4 @@
-name: Bolt PageIndex final clean-branch acceptance
+name: Bolt PageIndex lint component diagnostics
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - 'bolt/pageindex-bounded-candidates-20260822'
 
 concurrency:
-  group: bolt-pageindex-final-clean-acceptance
+  group: bolt-pageindex-lint-component-diagnostics
   cancel-in-progress: true
 
 permissions:
@@ -14,9 +14,9 @@ permissions:
   statuses: write
 
 jobs:
-  accept:
+  diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
     env:
       TARGET_BRANCH: bolt/pageindex-bounded-candidates-v2-20260822
       GH_TOKEN: ${{ github.token }}
@@ -29,99 +29,99 @@ jobs:
           test -n "$sha"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      - name: Publish pending status
-        env:
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-        run: |
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-            -f state=pending \
-            -f context='bolt/validation' \
-            -f description='final lint, baseline drift, race, CI, behavior, and A/B benchmark acceptance is running'
-
       - name: Checkout optimization branch
-        id: checkout
-        continue-on-error: true
         uses: actions/checkout@v6
         with:
           ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
 
       - name: Set up Go
-        id: setup_go
-        continue-on-error: true
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Install lint tools with repository Go version
+      - name: Install lint tools with Go 1.27
         id: tools
         continue-on-error: true
-        shell: bash
         run: |
           go install golang.org/x/tools/cmd/goimports@latest
           go install golang.org/x/vuln/cmd/govulncheck@latest
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
           golangci-lint version
 
-      - name: Capture master formatter baseline
-        id: baseline_format
+      - name: Run goimports
+        id: goimports
         continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          git worktree add --detach /tmp/bolt-master origin/master
-          (
-            cd /tmp/bolt-master
-            goimports -local github.com/Laisky/laisky-blog-graphql -w .
-            go mod tidy
-            gofmt -s -w .
-            git diff --binary > /tmp/bolt-master-format.diff
-            git diff --name-only
-          )
+        run: goimports -local github.com/Laisky/laisky-blog-graphql -w .
 
-      - name: Run project lint
-        id: lint
+      - name: Run go mod tidy
+        id: tidy
         continue-on-error: true
-        run: make lint
+        run: go mod tidy
 
-      - name: Verify lint drift is baseline-only
-        id: drift
+      - name: Run gofmt
+        id: gofmt
         continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          git diff --binary > /tmp/bolt-target-format.diff
-          cmp -s /tmp/bolt-master-format.diff /tmp/bolt-target-format.diff
-          compare_status=$?
-          if [[ "$compare_status" -ne 0 ]]; then
-            echo 'Target lint drift differs from master baseline:'
-            git diff --name-only
-          else
-            echo 'Target lint drift exactly matches master baseline:'
-            git diff --name-only
-          fi
-          git restore .
-          git clean -fd
-          exit "$compare_status"
-
-      - name: Run targeted unit and behavior tests
-        id: behavior
-        continue-on-error: true
-        run: >-
-          go test ./internal/mcp/memory/plugins/pageindex
-          -run '^(TestFilterCandidatesLimitedMatchesFullSort|TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments)$'
-          -count=1
-
-      - name: Vendor modules like repository CI
-        id: vendor
-        continue-on-error: true
-        run: go mod vendor
+        run: gofmt -s -w .
 
       - name: Run go vet
         id: vet
         continue-on-error: true
         run: go vet ./...
+
+      - name: Run golangci-lint and publish exact diagnostics
+        id: golangci
+        continue-on-error: true
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set +e
+          output=$(golangci-lint run -c .golangci.lint.yml 2>&1)
+          lint_status=$?
+          set -e
+          printf '%s\n' "$output"
+
+          issue_count=0
+          while IFS= read -r issue; do
+            [[ -n "$issue" ]] || continue
+            file=$(printf '%s' "$issue" | cut -d: -f1)
+            line=$(printf '%s' "$issue" | cut -d: -f2)
+            base=$(basename "$file" | tr -cd '[:alnum:]_.-')
+            linter=$(printf '%s' "$issue" | sed -n 's/.*(\([^()]\+\))$/\1/p' | tr -cd '[:alnum:]_.-')
+            [[ -n "$linter" ]] || linter=unknown
+            context=$(printf 'bolt/current-lint/%s/%s/%s' "$base" "$line" "$linter" | cut -c1-100)
+            description=$(printf '%s' "$issue" | cut -c1-140)
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=failure \
+              -f context="$context" \
+              -f description="$description"
+            issue_count=$((issue_count + 1))
+          done < <(printf '%s\n' "$output" | grep -E '^[^:]+:[0-9]+:[0-9]+:' | head -30)
+
+          if [[ "$lint_status" -ne 0 && "$issue_count" -eq 0 ]]; then
+            while IFS= read -r diagnostic; do
+              [[ -n "$diagnostic" ]] || continue
+              slug=$(printf '%s' "$diagnostic" \
+                | tr '[:upper:]' '[:lower:]' \
+                | tr -cd '[:alnum:] _.-' \
+                | tr ' _.' '-' \
+                | sed 's/-\+/-/g; s/^-//; s/-$//' \
+                | cut -c1-68)
+              [[ -n "$slug" ]] || continue
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+                -f state=failure \
+                -f context="bolt/current-lint/error/${slug}" \
+                -f description="$(printf '%s' "$diagnostic" | cut -c1-140)"
+            done < <(printf '%s\n' "$output" | tail -12)
+          fi
+          exit "$lint_status"
+
+      - name: Run govulncheck
+        id: vuln
+        continue-on-error: true
+        run: govulncheck ./...
 
       - name: Enforce pure-Go invariant
         id: pure
@@ -133,165 +133,28 @@ jobs:
         continue-on-error: true
         run: ./.scripts/check_system_owner.sh
 
-      - name: Run exact race and atomic coverage suite
-        id: race
-        continue-on-error: true
-        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
-
-      - name: Run full benchmark suite
-        id: fullbench
-        continue-on-error: true
-        run: go test -bench ./...
-
-      - name: Run comparable baseline and optimized benchmarks
-        id: perf
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          output=$(go test ./internal/mcp/memory/plugins/pageindex \
-            -run '^$' \
-            -bench '^(BenchmarkFilterCandidatesFullSort100K|BenchmarkFilterCandidatesLimited100K)$' \
-            -benchmem \
-            -count=10 2>&1)
-          printf '%s\n' "$output"
-
-          parsed=$(printf '%s\n' "$output" | awk '
-            /^BenchmarkFilterCandidatesFullSort100K-/ {
-              baseline_samples = baseline_samples (baseline_samples == "" ? "" : ",") $3
-              baseline_bytes = $5
-              baseline_allocs = $7
-              baseline_count++
-            }
-            /^BenchmarkFilterCandidatesLimited100K-/ {
-              optimized_samples = optimized_samples (optimized_samples == "" ? "" : ",") $3
-              optimized_bytes = $5
-              optimized_allocs = $7
-              optimized_count++
-            }
-            END {
-              if (baseline_count != 10 || optimized_count != 10) exit 1
-              print baseline_samples "|" optimized_samples "|" baseline_bytes "|" optimized_bytes "|" baseline_allocs "|" optimized_allocs
-            }
-          ')
-
-          IFS='|' read -r baseline_samples optimized_samples baseline_bytes optimized_bytes baseline_allocs optimized_allocs <<< "$parsed"
-          metrics=$(python3 - "$baseline_samples" "$optimized_samples" "$baseline_bytes" "$optimized_bytes" "$baseline_allocs" "$optimized_allocs" <<'PY'
-          import statistics
-          import sys
-
-          baseline = [int(value) for value in sys.argv[1].split(',')]
-          optimized = [int(value) for value in sys.argv[2].split(',')]
-          baseline_bytes, optimized_bytes = map(int, sys.argv[3:5])
-          baseline_allocs, optimized_allocs = map(int, sys.argv[5:7])
-
-          baseline_median = statistics.median(baseline)
-          optimized_median = statistics.median(optimized)
-          runtime_reduction = (baseline_median - optimized_median) / baseline_median * 100
-          speedup = baseline_median / optimized_median
-          bytes_reduction = (baseline_bytes - optimized_bytes) / baseline_bytes * 100
-
-          if runtime_reduction < 5 or bytes_reduction <= 0:
-              raise SystemExit(
-                  f'performance gate failed: runtime={runtime_reduction:.2f}% '
-                  f'bytes={baseline_bytes}->{optimized_bytes}'
-              )
-
-          print('|'.join([
-              str(int(baseline_median)),
-              str(int(optimized_median)),
-              f'{runtime_reduction:.2f}',
-              f'{speedup:.2f}',
-              f'{bytes_reduction:.2f}',
-              str(baseline_allocs),
-              str(optimized_allocs),
-          ]))
-          PY
-          )
-
-          IFS='|' read -r baseline_median optimized_median runtime_reduction speedup bytes_reduction baseline_allocs optimized_allocs <<< "$metrics"
-          {
-            echo "baseline_median=$baseline_median"
-            echo "optimized_median=$optimized_median"
-            echo "runtime_reduction=$runtime_reduction"
-            echo "speedup=$speedup"
-            echo "baseline_bytes=$baseline_bytes"
-            echo "optimized_bytes=$optimized_bytes"
-            echo "bytes_reduction=$bytes_reduction"
-            echo "baseline_allocs=$baseline_allocs"
-            echo "optimized_allocs=$optimized_allocs"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Publish final acceptance evidence
+      - name: Publish component summary
         if: always()
         shell: bash
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
-          CHECKOUT: ${{ steps.checkout.outcome }}
-          SETUP_GO: ${{ steps.setup_go.outcome }}
           TOOLS: ${{ steps.tools.outcome }}
-          BASELINE_FORMAT: ${{ steps.baseline_format.outcome }}
-          LINT: ${{ steps.lint.outcome }}
-          DRIFT: ${{ steps.drift.outcome }}
-          BEHAVIOR: ${{ steps.behavior.outcome }}
-          VENDOR: ${{ steps.vendor.outcome }}
+          GOIMPORTS: ${{ steps.goimports.outcome }}
+          TIDY: ${{ steps.tidy.outcome }}
+          GOFMT: ${{ steps.gofmt.outcome }}
           VET: ${{ steps.vet.outcome }}
+          GOLANGCI: ${{ steps.golangci.outcome }}
+          VULN: ${{ steps.vuln.outcome }}
           PURE: ${{ steps.pure.outcome }}
           OWNER: ${{ steps.owner.outcome }}
-          RACE: ${{ steps.race.outcome }}
-          FULLBENCH: ${{ steps.fullbench.outcome }}
-          PERF: ${{ steps.perf.outcome }}
-          BASELINE_MEDIAN: ${{ steps.perf.outputs.baseline_median }}
-          OPTIMIZED_MEDIAN: ${{ steps.perf.outputs.optimized_median }}
-          RUNTIME_REDUCTION: ${{ steps.perf.outputs.runtime_reduction }}
-          SPEEDUP: ${{ steps.perf.outputs.speedup }}
-          BASELINE_BYTES: ${{ steps.perf.outputs.baseline_bytes }}
-          OPTIMIZED_BYTES: ${{ steps.perf.outputs.optimized_bytes }}
-          BYTES_REDUCTION: ${{ steps.perf.outputs.bytes_reduction }}
-          BASELINE_ALLOCS: ${{ steps.perf.outputs.baseline_allocs }}
-          OPTIMIZED_ALLOCS: ${{ steps.perf.outputs.optimized_allocs }}
         run: |
           state=success
-          for outcome in \
-            "$CHECKOUT" "$SETUP_GO" "$TOOLS" "$BASELINE_FORMAT" "$LINT" \
-            "$DRIFT" "$BEHAVIOR" "$VENDOR" "$VET" "$PURE" "$OWNER" \
-            "$RACE" "$FULLBENCH" "$PERF"; do
+          for outcome in "$TOOLS" "$GOIMPORTS" "$TIDY" "$GOFMT" "$VET" "$GOLANGCI" "$VULN" "$PURE" "$OWNER"; do
             [[ "$outcome" == success ]] || state=failure
           done
-
-          context="bolt/final/l-${LINT}/d-${DRIFT}/b-${BEHAVIOR}/v-${VET}/p-${PURE}/o-${OWNER}/r-${RACE}/m-${FULLBENCH}/x-${PERF}"
+          context="bolt/lint-components/t-${TOOLS}/i-${GOIMPORTS}/d-${TIDY}/f-${GOFMT}/v-${VET}/g-${GOLANGCI}/u-${VULN}/p-${PURE}/o-${OWNER}"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state="$state" \
             -f context="${context:0:100}" \
-            -f description='final clean-branch acceptance outcomes'
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-            -f state="$state" \
-            -f context='bolt/validation' \
-            -f description="lint=$LINT drift=$DRIFT behavior=$BEHAVIOR race=$RACE bench=$FULLBENCH perf=$PERF"
-
-          if [[ "$PERF" == success ]]; then
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-              -f state=success \
-              -f context="bolt/final-runtime/${BASELINE_MEDIAN}/${OPTIMIZED_MEDIAN}/${RUNTIME_REDUCTION}/${SPEEDUP}" \
-              -f description="median ns/op: ${BASELINE_MEDIAN} -> ${OPTIMIZED_MEDIAN}; ${RUNTIME_REDUCTION}% lower, ${SPEEDUP}x faster"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-              -f state=success \
-              -f context="bolt/final-memory/${BASELINE_BYTES}/${OPTIMIZED_BYTES}/${BYTES_REDUCTION}/${BASELINE_ALLOCS}/${OPTIMIZED_ALLOCS}" \
-              -f description="B/op: ${BASELINE_BYTES} -> ${OPTIMIZED_BYTES}; allocs: ${BASELINE_ALLOCS} -> ${OPTIMIZED_ALLOCS}"
-          fi
-
-          if [[ "$state" == success ]]; then
-            for old_context in \
-              'bolt/dirty/internal-web-generated-go' \
-              'bolt/diag/lint/t-success/i-success/f-success/d-failure/v-success/g-failure/u-success' \
-              'bolt/lint/unparsed-failure' \
-              'bolt/lint/error/error-cant-load-config-the-go-language-version-go1-26-used-to-build-gola' \
-              'bolt/lint/error/the-command-is-terminated-due-to-an-error-cant-load-config-the-go-langua'; do
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-                -f state=success \
-                -f context="$old_context" \
-                -f description='diagnostic condition resolved or confirmed as master-baseline-only'
-            done
-          fi
-
+            -f description='isolated make lint component outcomes'
           [[ "$state" == success ]]
