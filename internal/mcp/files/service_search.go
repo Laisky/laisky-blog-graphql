@@ -129,6 +129,16 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 	}
 
 	merged := mergeCandidates(semantic, lexical)
+	if s.settings.Search.EnforceSummary {
+		filtered := make([]searchCandidate, 0, len(merged))
+		for _, candidate := range merged {
+			if summaryForChunk(candidate.Chunk) == "" {
+				continue
+			}
+			filtered = append(filtered, candidate)
+		}
+		merged = filtered
+	}
 	if len(merged) == 0 {
 		fallbackStartedAt := time.Now()
 		fallbackChunks, fallbackErr := s.searchFallbackFromRawFiles(ctx, auth.APIKeyHash, project, pathPrefix, query, limit)

@@ -270,7 +270,7 @@ func (w *IndexWorker) runSummaryRefresh(ctx context.Context, job FileIndexJob) e
 func (w *IndexWorker) handleSummaryRefreshRetry(ctx context.Context, job FileIndexJob, errorCode string) error {
 	svc := w.svc
 	if job.RetryCount >= svc.settings.Index.RetryMax {
-		svc.summaryRefreshOutcome(ctx, "rag", "failed")
+		svc.summaryRefreshOutcome(ctx, "rag", "failed", errorCode)
 		return w.markSummaryRefreshStatus(ctx, job, "failed", errorCode)
 	}
 	backoff := svc.settings.Index.RetryBackoff
@@ -278,7 +278,7 @@ func (w *IndexWorker) handleSummaryRefreshRetry(ctx context.Context, job FileInd
 		backoff = time.Second
 	}
 	next := svc.clock().Add(backoff * time.Duration(job.RetryCount+1))
-	svc.summaryRefreshOutcome(ctx, "rag", "retry")
+	svc.summaryRefreshOutcome(ctx, "rag", "retry", errorCode)
 	_, execErr := svc.db.ExecContext(ctx,
 		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, retry_count = ?, available_at = ?, updated_at = ?, last_error_code = ? WHERE id = ? AND system_owner = ?`, svc.isPostgres),
 		"pending",

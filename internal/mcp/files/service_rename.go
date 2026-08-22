@@ -23,6 +23,17 @@ type renameMapping struct {
 
 // Rename renames or moves a file path or directory subtree.
 func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool) (RenameResult, error) { //nolint:gocognit // rename involves multiple validation and migration steps
+	return s.renameWithSystemState(ctx, auth, project, fromPath, toPath, overwrite, "", "", nil)
+}
+
+func (s *Service) renameWithSystemState(
+	ctx context.Context,
+	auth AuthContext,
+	project, fromPath, toPath string,
+	overwrite bool,
+	systemProject, systemOwner string,
+	mutate SystemStateMutator,
+) (RenameResult, error) { //nolint:gocognit // rename involves multiple validation and migration steps
 	if err := s.validateAuth(auth); err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}
@@ -133,7 +144,7 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 					return errors.Wrap(err, "enqueue rename upsert job")
 				}
 
-				if err := s.storeCredentialEnvelope(ctx, auth, project, mapping.NewPath, now); err != nil {
+				if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, mapping.NewPath, now); err != nil {
 					return err
 				}
 			}
@@ -155,6 +166,20 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 				}); err != nil {
 					return errors.Wrap(err, "enqueue overwrite delete job")
 				}
+			}
+		}
+
+		if mutate != nil {
+			stateCtx := contextWithSystemOwner(ctx, systemOwner)
+			state, err := s.loadSystemStateTx(stateCtx, tx, systemOwner, systemProject)
+			if err != nil {
+				return err
+			}
+			if err := mutate(state); err != nil {
+				return errors.Wrap(err, "mutate rename system state")
+			}
+			if err := s.persistSystemStateTx(stateCtx, tx, systemOwner, systemProject, state); err != nil {
+				return err
 			}
 		}
 

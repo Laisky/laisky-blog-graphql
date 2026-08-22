@@ -13,10 +13,11 @@ import (
 
 // SearchInput captures the per-call retrieval parameters.
 type SearchInput struct {
-	Project    string
-	Query      string
-	PathPrefix string
-	Limit      int
+	Project        string
+	Query          string
+	PathPrefix     string
+	Limit          int
+	ValidateSource func(context.Context, string, string) (bool, error)
 }
 
 // SearchEngine is the smaller interface the plugin uses against the indexer.
@@ -60,6 +61,12 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 	for _, cand := range candidates {
 		if stepBudget <= 0 || budget.Remaining() <= 0 {
 			break
+		}
+		if in.ValidateSource != nil {
+			valid, validateErr := in.ValidateSource(ctx, cand.userPath, cand.entry.SourceContentHash)
+			if validateErr != nil || !valid {
+				continue
+			}
 		}
 		stepBudget--
 		tree, err := s.store.GetTree(ctx, in.Project, cand.entry.DocID)

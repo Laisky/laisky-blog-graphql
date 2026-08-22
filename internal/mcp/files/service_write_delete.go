@@ -196,7 +196,7 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 	}
 
 	if owner == "" {
-		if err := s.storeCredentialEnvelope(ctx, auth, project, path, now); err != nil {
+		if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, path, now); err != nil {
 			return 0, err
 		}
 	}
@@ -282,11 +282,6 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		return DeleteResult{}, errors.WithStack(err)
 	}
 	return DeleteResult{DeletedCount: deletedCount}, nil
-}
-
-// applyWriteMode merges incoming content with existing data and returns new bytes.
-func applyWriteMode(existing []byte, content string, offset int64, mode WriteMode) ([]byte, error) {
-	return applyWriteModeBytes(existing, []byte(content), offset, mode)
 }
 
 // applyWriteModeBytes merges raw incoming bytes with existing data per write mode.
@@ -553,7 +548,7 @@ func (s *Service) findActiveFileTx(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 	owner := systemOwnerFromContext(ctx)
 	var file File
 	err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, content_hash, summary_content_hash, summary_status
+		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, content_hash, summary_content_hash, summary_status, summary_generation_key
 		FROM mcp_files
 		WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
 		LIMIT 1`, s.isPostgres),
@@ -575,6 +570,7 @@ func (s *Service) findActiveFileTx(ctx context.Context, tx *sql.Tx, apiKeyHash, 
 		&file.ContentHash,
 		&file.SummaryContentHash,
 		&file.SummaryStatus,
+		&file.SummaryGenerationKey,
 	)
 	if err != nil {
 		return nil, err

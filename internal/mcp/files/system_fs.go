@@ -21,6 +21,15 @@ type SystemFS interface {
 	List(ctx context.Context, project, prefix string) ([]string, error)
 }
 
+// AtomicSystemFS extends SystemFS with transaction-scoped mutations that can
+// commit a user file operation and the owner's system catalog together.
+type AtomicSystemFS interface {
+	SystemFS
+	PublishPluginSummaryAndState(ctx context.Context, auth AuthContext, project, systemProject, path string, in PluginSummaryInput, mutate SystemStateMutator) (bool, error)
+	DeleteWithState(ctx context.Context, auth AuthContext, project, systemProject, path string, recursive bool, mutate SystemStateMutator) (DeleteResult, error)
+	RenameWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, toPath string, overwrite bool, mutate SystemStateMutator) (RenameResult, error)
+}
+
 // systemFS is the concrete implementation. The owner string is captured at
 // construction so callers cannot widen the handle back into the user namespace.
 type systemFS struct {
@@ -93,4 +102,35 @@ func (s *systemFS) List(ctx context.Context, project, prefix string) ([]string, 
 		}
 	}
 	return paths, nil
+}
+
+// PublishPluginSummaryAndState atomically publishes user summary metadata and
+// system-owned plugin state under the authenticated project lock.
+func (s *systemFS) PublishPluginSummaryAndState(ctx context.Context, auth AuthContext, project, systemProject, path string, in PluginSummaryInput, mutate SystemStateMutator) (bool, error) {
+	ctx = contextWithSystemOwner(ctx, s.owner)
+	published, err := s.svc.PublishPluginSummaryAndState(ctx, auth, project, systemProject, path, in, mutate)
+	if err != nil {
+		return false, errors.WithStack(err)
+	}
+	return published, nil
+}
+
+// DeleteWithState atomically deletes user files and system-owned plugin state.
+func (s *systemFS) DeleteWithState(ctx context.Context, auth AuthContext, project, systemProject, path string, recursive bool, mutate SystemStateMutator) (DeleteResult, error) {
+	ctx = contextWithSystemOwner(ctx, s.owner)
+	result, err := s.svc.DeleteWithSystemState(ctx, auth, project, systemProject, path, recursive, mutate)
+	if err != nil {
+		return DeleteResult{}, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+// RenameWithState atomically renames user files and system-owned plugin state.
+func (s *systemFS) RenameWithState(ctx context.Context, auth AuthContext, project, systemProject, fromPath, toPath string, overwrite bool, mutate SystemStateMutator) (RenameResult, error) {
+	ctx = contextWithSystemOwner(ctx, s.owner)
+	result, err := s.svc.RenameWithSystemState(ctx, auth, project, systemProject, fromPath, toPath, overwrite, mutate)
+	if err != nil {
+		return RenameResult{}, errors.WithStack(err)
+	}
+	return result, nil
 }

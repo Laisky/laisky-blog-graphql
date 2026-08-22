@@ -22,6 +22,9 @@ type File struct {
 	SummaryContentHash string
 	// SummaryStatus is the lifecycle state of the persisted summary.
 	SummaryStatus string
+	// SummaryGenerationKey identifies the model, prompt, and effective limits used
+	// to produce the persisted summary.
+	SummaryGenerationKey string
 }
 
 // TableName returns the database table name.

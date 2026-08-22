@@ -139,11 +139,20 @@ func sanitizeInline(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// publicDocSummary returns the bounded description to attach to a search hit,
-// defensively clamping legacy over-long descriptions (§4.5).
+// publicDocSummary returns a validated description to attach to a search hit.
+// Legacy trees may contain markup or malformed descriptions, so clamping alone
+// is insufficient; derive a grounded replacement before using an opaque fallback.
 func publicDocSummary(tree *Tree) string {
 	if tree == nil {
 		return ""
 	}
-	return files.ClampSummaryText(tree.DocDescription, docSummaryMaxWords, docSummaryMaxBytes)
+	if text, _, ok := files.NormalizeSummary(tree.DocDescription, docSummaryMaxWords, docSummaryMaxBytes); ok {
+		return text
+	}
+	if candidate := deriveTreeDescription(tree); candidate != "" {
+		if text, _, ok := files.NormalizeSummary(candidate, docSummaryMaxWords, docSummaryMaxBytes); ok {
+			return text
+		}
+	}
+	return "This document is indexed by PageIndex."
 }

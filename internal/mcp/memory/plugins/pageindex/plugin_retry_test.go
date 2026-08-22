@@ -18,6 +18,7 @@ func TestWriteCatalogFailureKeepsRetryableTree(t *testing.T) {
 	defer func() { require.NoError(t, db.Close()) }()
 	plugin, faultFS, auth := newRetryTestPlugin(t, service)
 	defer func() { require.NoError(t, plugin.Stop(context.Background())) }()
+	storageProject := PageIndexStorageProject(auth, "project")
 
 	faultFS.FailNextWrite(indexPath())
 	_, err := plugin.Write(
@@ -27,7 +28,7 @@ func TestWriteCatalogFailureKeepsRetryableTree(t *testing.T) {
 	require.Error(t, err)
 
 	docID := docIDFromAuth(auth, "project", "/manual.md")
-	tree, treeErr := plugin.store.GetTree(context.Background(), "project", docID)
+	tree, treeErr := plugin.store.GetTree(context.Background(), storageProject, docID)
 	require.NoError(t, treeErr, "the tree remains durable so retry can converge")
 	require.NotEmpty(t, tree.Structure)
 
@@ -36,7 +37,7 @@ func TestWriteCatalogFailureKeepsRetryableTree(t *testing.T) {
 		"# Manual\n\nThe rollback token is ORBIT-17.", "utf-8", 0, files.WriteModeTruncate,
 	)
 	require.NoError(t, err)
-	index, err := plugin.store.GetIndex(context.Background(), "project")
+	index, err := plugin.store.GetIndex(context.Background(), storageProject)
 	require.NoError(t, err)
 	require.Contains(t, index, "/manual.md")
 }
@@ -48,6 +49,7 @@ func TestDeleteCatalogFailureIsRetryable(t *testing.T) {
 	defer func() { require.NoError(t, db.Close()) }()
 	plugin, faultFS, auth := newRetryTestPlugin(t, service)
 	defer func() { require.NoError(t, plugin.Stop(context.Background())) }()
+	storageProject := PageIndexStorageProject(auth, "project")
 
 	_, err := plugin.Write(
 		context.Background(), auth, "project", "/manual.md",
@@ -67,7 +69,7 @@ func TestDeleteCatalogFailureIsRetryable(t *testing.T) {
 	stat, statErr = plugin.Stat(context.Background(), auth, "project", "/manual.md")
 	require.NoError(t, statErr)
 	require.False(t, stat.Exists)
-	index, err := plugin.store.GetIndex(context.Background(), "project")
+	index, err := plugin.store.GetIndex(context.Background(), storageProject)
 	require.NoError(t, err)
 	require.NotContains(t, index, "/manual.md")
 }
@@ -79,6 +81,7 @@ func TestRenameCatalogFailureIsRetryable(t *testing.T) {
 	defer func() { require.NoError(t, db.Close()) }()
 	plugin, faultFS, auth := newRetryTestPlugin(t, service)
 	defer func() { require.NoError(t, plugin.Stop(context.Background())) }()
+	storageProject := PageIndexStorageProject(auth, "project")
 
 	_, err := plugin.Write(
 		context.Background(), auth, "project", "/source.md",
@@ -98,7 +101,7 @@ func TestRenameCatalogFailureIsRetryable(t *testing.T) {
 	destination, destinationErr := plugin.Stat(context.Background(), auth, "project", "/destination.md")
 	require.NoError(t, destinationErr)
 	require.True(t, destination.Exists)
-	index, err := plugin.store.GetIndex(context.Background(), "project")
+	index, err := plugin.store.GetIndex(context.Background(), storageProject)
 	require.NoError(t, err)
 	require.NotContains(t, index, "/source.md")
 	require.Contains(t, index, "/destination.md")
@@ -114,28 +117,28 @@ func newRetryTestPlugin(t *testing.T, service *files.Service) (*Plugin, *failOnc
 	require.NoError(t, err)
 	llm := NewStubLLM()
 	llm.SetDefault(&Response{
-		Text: `{"ranges":[{"start":1,"end":1000,"reason":"retry regression"}]}`,
+		Text:  `{"ranges":[{"start":1,"end":1000,"reason":"retry regression"}]}`,
 		Usage: Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
 	})
 	plugin, err := New(PluginDeps{
-		UserFS: service,
-		SystemFS: faultFS,
-		Settings: settings,
-		LLM: llm,
+		UserFS:    service,
+		SystemFS:  faultFS,
+		Settings:  settings,
+		LLM:       llm,
 		Tokenizer: tokenizer,
 	})
 	require.NoError(t, err)
 	require.NoError(t, plugin.Start(context.Background()))
 	return plugin, faultFS, files.AuthContext{
-		APIKey: "retry-test",
-		APIKeyHash: "retry-test",
+		APIKey:       "retry-test",
+		APIKeyHash:   "retry-test",
 		UserIdentity: "user:retry-test",
 	}
 }
 
 type failOnceSystemFS struct {
-	delegate files.SystemFS
-	mu sync.Mutex
+	delegate      files.SystemFS
+	mu            sync.Mutex
 	failWritePath string
 }
 

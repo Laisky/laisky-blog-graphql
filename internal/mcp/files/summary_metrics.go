@@ -25,6 +25,7 @@ func (s *Service) logSummaryGeneration(ctx context.Context, plugin string, pub s
 		zap.String("source", string(pub.source)),
 		zap.Int("word_count", pub.wordCount),
 		zap.Bool("model_call", pub.usedModelCall),
+		zap.Int64("latency_ms", pub.latencyMS),
 		zap.String("error_code", pub.errorCode),
 	)
 	if pub.status == SummaryStatusDegraded {
@@ -48,11 +49,17 @@ func (s *Service) summaryStaleDiscard(ctx context.Context, plugin, project, path
 }
 
 // summaryRefreshOutcome records a SUMMARY_REFRESH terminal or retry transition.
-func (s *Service) summaryRefreshOutcome(ctx context.Context, plugin, status string) {
-	s.LoggerFromContext(ctx).Debug("mcp_files_summary_refresh_total",
+func (s *Service) summaryRefreshOutcome(ctx context.Context, plugin, status string, reason ...string) {
+	fields := []zap.Field{
 		zap.String("metric", "mcp_files_summary_refresh_total"),
 		zap.String("plugin", plugin),
 		zap.String("status", status),
+	}
+	if len(reason) > 0 {
+		fields = append(fields, zap.String("reason", reason[0]))
+	}
+	s.LoggerFromContext(ctx).Debug("mcp_files_summary_refresh_total",
+		fields...,
 	)
 }
 
@@ -64,5 +71,18 @@ func (s *Service) summaryMissingHit(ctx context.Context, plugin, project, path s
 		zap.String("plugin", plugin),
 		zap.String("project", project),
 		zap.String("file_path", path),
+	)
+}
+
+// summaryBackfillProgress records the durable cursor and remaining row count.
+func (s *Service) summaryBackfillProgress(ctx context.Context, project string, result SummaryBackfillResult) {
+	s.LoggerFromContext(ctx).Debug("mcp_files_summary_backfill_remaining",
+		zap.String("metric", "mcp_files_summary_backfill_remaining"),
+		zap.String("project", project),
+		zap.Int("processed", result.Processed),
+		zap.Int("enqueued", result.Enqueued),
+		zap.Int("remaining", result.Remaining),
+		zap.String("next_path", result.NextPath),
+		zap.Bool("done", result.Done),
 	)
 }

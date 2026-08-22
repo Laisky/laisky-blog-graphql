@@ -79,6 +79,14 @@ func newSummaryTestService(t *testing.T, stub FileSummarizer) (*Service, *memory
 	return svc, store, setClock
 }
 
+func storeCredentialForTest(t *testing.T, svc *Service, auth AuthContext, project, path string, updatedAt time.Time) {
+	t.Helper()
+	tx, err := svc.db.BeginTx(context.Background(), nil)
+	require.NoError(t, err)
+	require.NoError(t, svc.storeCredentialEnvelopeTx(context.Background(), tx, auth, project, path, updatedAt))
+	require.NoError(t, tx.Commit())
+}
+
 func summaryRow(t *testing.T, svc *Service, apiKeyHash, project, path string) (summary, status, contentHash, summaryHash, source string) {
 	t.Helper()
 	err := svc.db.QueryRowContext(context.Background(),
@@ -201,6 +209,59 @@ func TestSummaryRenameReusesWithoutModelCall(t *testing.T) {
 	require.Equal(t, stub.result, res.Chunks[0].FileSummary)
 }
 
+// TestSummaryGenerationKeyChangeRegenerates covers §5.1: changing summary
+// generation inputs must not reuse a ready summary from the old configuration.
+func TestSummaryGenerationKeyChangeRegenerates(t *testing.T) {
+	stub := &stubFileSummarizer{result: "The original generation summary."}
+	svc, _, _ := newSummaryTestService(t, stub)
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+	ctx := context.Background()
+	worker := svc.NewIndexWorker()
+
+	_, err := svc.Write(ctx, auth, "proj", "/a.txt", "alpha beta gamma", "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	require.NoError(t, worker.RunOnce(ctx))
+	require.Equal(t, 1, stub.callCount())
+
+	svc.settings.Index.FileSummary.PromptVersion = "changed-prompt"
+	stub.mu.Lock()
+	stub.result = "The regenerated summary for the changed prompt."
+	stub.mu.Unlock()
+	_, err = svc.Write(ctx, auth, "proj", "/a.txt", "alpha beta gamma", "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	require.NoError(t, worker.RunOnce(ctx))
+	require.Equal(t, 2, stub.callCount())
+
+	summary, status, _, _, _ := summaryRow(t, svc, "hash", "proj", "/a.txt")
+	require.Equal(t, string(SummaryStatusReady), status)
+	require.Equal(t, "The regenerated summary for the changed prompt.", summary)
+}
+
+// TestSummarySearchEnforcesSummary covers the hard enforcement contract: an
+// indexed chunk whose summary is missing or generation-mismatched is excluded,
+// and raw fallback must not reintroduce it.
+func TestSummarySearchEnforcesSummary(t *testing.T) {
+	stub := &stubFileSummarizer{result: "A valid summary for the searchable document."}
+	svc, _, _ := newSummaryTestService(t, stub)
+	auth := AuthContext{APIKeyHash: "hash", APIKey: "key", UserIdentity: "user:test"}
+	ctx := context.Background()
+
+	_, err := svc.Write(ctx, auth, "proj", "/a.txt", "alpha beta gamma", "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	require.NoError(t, svc.NewIndexWorker().RunOnce(ctx))
+
+	_, err = svc.db.ExecContext(ctx,
+		`UPDATE mcp_files SET file_summary = '', summary_content_hash = '', summary_status = 'pending'
+		WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = '' AND deleted = FALSE`,
+		"hash", "proj", "/a.txt")
+	require.NoError(t, err)
+	svc.settings.Search.EnforceSummary = true
+
+	res, err := svc.Search(ctx, auth, "proj", "alpha", "", 10)
+	require.NoError(t, err)
+	require.Empty(t, res.Chunks)
+}
+
 // TestSummaryProviderFailurePublishesDegraded covers F01: a provider failure publishes
 // a deterministic fallback (degraded) and enqueues a bounded refresh; write is durable.
 func TestSummaryProviderFailurePublishesDegraded(t *testing.T) {
@@ -264,7 +325,7 @@ func TestSummaryRefreshUpgradesDegradedToReady(t *testing.T) {
 
 	// Re-authenticate: attach a fresh credential envelope keyed by the original write
 	// time (the refresh job carries that file_updated_at), then let the provider succeed.
-	require.NoError(t, svc.storeCredentialEnvelope(ctx, auth, "proj", "/a.txt", base))
+	storeCredentialForTest(t, svc, auth, "proj", "/a.txt", base)
 	stub.mu.Lock()
 	stub.err = nil
 	stub.result = "A validated model summary describing the retry queue incident."
@@ -307,6 +368,20 @@ func TestSummaryRefreshWaitsForAuth(t *testing.T) {
 		`SELECT status, last_error_code FROM mcp_file_index_jobs WHERE operation = 'SUMMARY_REFRESH' ORDER BY id DESC LIMIT 1`).Scan(&jobStatus, &errCode))
 	require.Equal(t, "waiting_auth", jobStatus)
 	require.Equal(t, "credential_unavailable", errCode)
+
+	// A later authenticated operation reactivates the parked job and refreshes
+	// its credential timestamp so the worker can load the new envelope.
+	stub.mu.Lock()
+	stub.err = nil
+	stub.result = "A validated summary after re-authentication."
+	stub.mu.Unlock()
+	storeCredentialForTest(t, svc, auth, "proj", "/a.txt", base)
+	require.NoError(t, worker.RunOnce(ctx))
+
+	summary, status, _, _, source := summaryRow(t, svc, "hash", "proj", "/a.txt")
+	require.Equal(t, string(SummaryStatusReady), status)
+	require.Equal(t, string(SummarySourceModel), source)
+	require.Equal(t, "A validated summary after re-authentication.", summary)
 }
 
 // contentEchoSummarizer derives its summary from the document's first token so tests

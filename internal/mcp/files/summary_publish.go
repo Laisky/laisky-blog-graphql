@@ -28,6 +28,7 @@ type summaryPublication struct {
 	errorCode      string
 	enqueueRefresh bool
 	usedModelCall  bool
+	latencyMS      int64
 }
 
 // buildSummaryPublication decides whether to reuse, generate, or fall back to a
@@ -35,18 +36,26 @@ type summaryPublication struct {
 // (if any) here, outside any transaction. A ready model summary is returned when the
 // output validates; otherwise a bounded deterministic fallback marked degraded is
 // returned together with a request to enqueue a SUMMARY_REFRESH job (§4.4, §4.6).
-func (s *Service) buildSummaryPublication(ctx context.Context, apiKey, content, fileContentHash string, existing *File) summaryPublication {
+func (s *Service) buildSummaryPublication(ctx context.Context, apiKey, content, fileContentHash string, existing *File) (pub summaryPublication) {
+	startedAt := time.Now()
+	defer func() {
+		pub.latencyMS = time.Since(startedAt).Milliseconds()
+	}()
 	cfg := s.settings.Index.FileSummary
 	maxWords, maxBytes := ClampSummaryLimits(cfg.MaxWords, cfg.MaxBytes)
 	genKey := summaryGenerationKey(fileContentHash, cfg.Model, cfg.PromptVersion, maxWords, maxBytes)
 
-	// Reuse an existing ready summary for the same content generation. This makes a
-	// content-preserving rename and a coalesced re-index free of model calls (§4.3, G5).
-	if existing != nil && existing.SummaryContentHash == fileContentHash && existing.SummaryStatus == string(SummaryStatusReady) {
+	// Reuse a summary only when both the content generation and the effective
+	// generation key match. This keeps content-preserving renames cheap while
+	// forcing a refresh when the model, prompt, or limits change (§4.3, G5).
+	if existing != nil &&
+		existing.SummaryContentHash == fileContentHash &&
+		existing.SummaryGenerationKey == genKey &&
+		(existing.SummaryStatus == string(SummaryStatusReady) || existing.SummaryStatus == string(SummaryStatusDegraded)) {
 		return summaryPublication{contentHash: fileContentHash, publish: false}
 	}
 
-	pub := summaryPublication{
+	pub = summaryPublication{
 		contentHash:   fileContentHash,
 		publish:       true,
 		promptVersion: cfg.PromptVersion,
@@ -289,11 +298,11 @@ func (s *Service) enqueueSummaryRefreshTx(ctx context.Context, tx *sql.Tx, job F
 		backoff = time.Second
 	}
 	return s.insertIndexJobTx(ctx, tx, FileIndexJob{
-		APIKeyHash:           job.APIKeyHash,
-		Project:              job.Project,
-		FilePath:             job.FilePath,
-		Operation:            "SUMMARY_REFRESH",
-		FileUpdatedAt:        job.FileUpdatedAt,
+		APIKeyHash:    job.APIKeyHash,
+		Project:       job.Project,
+		FilePath:      job.FilePath,
+		Operation:     "SUMMARY_REFRESH",
+		FileUpdatedAt: job.FileUpdatedAt,
 		// "pending" here is the index-job lifecycle status (see index_worker.go), not
 		// the SummaryStatus enum; the two domains share the word by coincidence.
 		Status:               "pending", //nolint:goconst // job status, not SummaryStatusPending
