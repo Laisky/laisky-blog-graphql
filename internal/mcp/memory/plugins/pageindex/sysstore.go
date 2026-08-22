@@ -15,6 +15,8 @@ import (
 // SysOwner is the system_owner string used by every SystemFS write.
 const SysOwner = "pageindex"
 
+const sysStoreRoot = "/pageindex"
+
 // IndexEntry maps a user path to its PageIndex tree.
 type IndexEntry struct {
 	DocID     string `json:"doc_id"`
@@ -30,7 +32,7 @@ type IndexEntry struct {
 // Index is the persisted path↔doc_id catalog (one file per project).
 type Index map[string]IndexEntry
 
-// Meta is the per-project descriptor stored at pageindex/_meta.json.
+// Meta is the per-project descriptor stored at /pageindex/_meta.json.
 type Meta struct {
 	UpdatedAt string `json:"updated_at"`
 	Count     int    `json:"count"`
@@ -47,9 +49,9 @@ func NewSysStore(sys files.SystemFS) *SysStore {
 	return &SysStore{sys: sys}
 }
 
-func treePath(docID string) string { return path.Join("pageindex", docID+".json") }
-func indexPath() string            { return path.Join("pageindex", "index.json") }
-func metaPath() string             { return path.Join("pageindex", "_meta.json") }
+func treePath(docID string) string { return path.Join(sysStoreRoot, docID+".json") }
+func indexPath() string            { return path.Join(sysStoreRoot, "index.json") }
+func metaPath() string             { return path.Join(sysStoreRoot, "_meta.json") }
 
 // PutTree persists a tree as JSON.
 func (s *SysStore) PutTree(ctx context.Context, project, docID string, tree *Tree) error {
@@ -79,9 +81,12 @@ func (s *SysStore) GetTree(ctx context.Context, project, docID string) (*Tree, e
 	return &tree, nil
 }
 
-// DeleteTree removes the tree JSON for docID. NotFound is silently ignored.
+// DeleteTree removes the tree JSON for docID. Missing trees are treated as an idempotent success.
 func (s *SysStore) DeleteTree(ctx context.Context, project, docID string) error {
 	if err := s.sys.Delete(ctx, project, treePath(docID)); err != nil {
+		if files.IsCode(err, files.ErrCodeNotFound) {
+			return nil
+		}
 		return errors.Wrap(err, "delete tree")
 	}
 	return nil
@@ -108,7 +113,10 @@ func (s *SysStore) putIndexLocked(ctx context.Context, project string, ix Index)
 func (s *SysStore) getIndexLocked(ctx context.Context, project string) (Index, error) {
 	body, err := s.sys.Read(ctx, project, indexPath())
 	if err != nil {
-		return Index{}, nil
+		if files.IsCode(err, files.ErrCodeNotFound) {
+			return Index{}, nil
+		}
+		return nil, errors.Wrap(err, "read index")
 	}
 	if len(body) == 0 {
 		return Index{}, nil
@@ -136,7 +144,10 @@ func (s *SysStore) putMetaLocked(ctx context.Context, project string, meta Meta)
 func (s *SysStore) GetIndex(ctx context.Context, project string) (Index, error) {
 	body, err := s.sys.Read(ctx, project, indexPath())
 	if err != nil {
-		return Index{}, nil
+		if files.IsCode(err, files.ErrCodeNotFound) {
+			return Index{}, nil
+		}
+		return nil, errors.Wrap(err, "read index")
 	}
 	if len(body) == 0 {
 		return Index{}, nil
@@ -164,7 +175,10 @@ func (s *SysStore) PutMeta(ctx context.Context, project string, meta Meta) error
 func (s *SysStore) GetMeta(ctx context.Context, project string) (Meta, error) {
 	body, err := s.sys.Read(ctx, project, metaPath())
 	if err != nil {
-		return Meta{}, nil
+		if files.IsCode(err, files.ErrCodeNotFound) {
+			return Meta{}, nil
+		}
+		return Meta{}, errors.Wrap(err, "read meta")
 	}
 	if len(body) == 0 {
 		return Meta{}, nil

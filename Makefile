@@ -67,3 +67,57 @@ eval-baseline-rag:
 		--golden=tests/eval/golden \
 		--baseline \
 		--git-sha=$$(git rev-parse --short HEAD)
+
+.PHONY: memory-bench-test
+memory-bench-test:
+	go test -v -race -cover \
+		./internal/mcp/files \
+		./internal/mcp/memory/plugins/pageindex \
+		./internal/mcp/memory/benchmark \
+		./cmd/memory-bench
+	go vet \
+		./internal/mcp/files \
+		./internal/mcp/memory/plugins/pageindex \
+		./internal/mcp/memory/benchmark \
+		./cmd/memory-bench
+
+.PHONY: memory-bench-local
+memory-bench-local:
+	@if [ -z "$(PLUGIN)" ]; then echo "PLUGIN required, e.g. make memory-bench-local PLUGIN=rag"; exit 2; fi
+	go run ./cmd/memory-bench \
+		--backend=local \
+		--plugin=$(PLUGIN) \
+		--dataset=tests/eval/memory_bench_smoke.jsonl \
+		--format=canonical \
+		--top-k=5 \
+		--min-score=0.20 \
+		--concurrency=1 \
+		--warmup=1 \
+		--repetitions=3 \
+		--seed=42 \
+		--index-timeout=30s \
+		--poll-interval=25ms \
+		--out=docs/eval/runs/local/$(PLUGIN)
+
+.PHONY: memory-bench-current
+memory-bench-current:
+	$(MAKE) memory-bench-local PLUGIN=rag
+	$(MAKE) memory-bench-local PLUGIN=pageindex
+
+.PHONY: memory-bench-live
+memory-bench-live:
+	@if [ -z "$(PLUGIN)" ]; then echo "PLUGIN required, e.g. make memory-bench-live PLUGIN=rag"; exit 2; fi
+	@if [ -z "$$MCP_ENDPOINT" ]; then echo "MCP_ENDPOINT is required"; exit 2; fi
+	go run ./cmd/memory-bench \
+		--backend=mcp \
+		--plugin=$(PLUGIN) \
+		--dataset=tests/eval/memory_bench_smoke.jsonl \
+		--format=canonical \
+		--top-k=5 \
+		--min-score=0.20 \
+		--concurrency=2 \
+		--warmup=2 \
+		--repetitions=10 \
+		--seed=42 \
+		--index-timeout=120s \
+		--poll-interval=500ms

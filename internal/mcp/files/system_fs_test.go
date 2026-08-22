@@ -1,6 +1,7 @@
 package files
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -33,4 +34,25 @@ func TestSystemNamespaceConstructorReturnsHandle(t *testing.T) {
 	require.Equal(t, "pageindex", concrete.owner)
 	require.Same(t, svc, concrete.svc)
 	require.Equal(t, "system:pageindex", concrete.systemAuth().APIKeyHash)
+}
+
+// TestSystemFSWriteUsesCanonicalUTF8Encoding reproduces the PageIndex persistence
+// failure where SystemFS passed the unsupported "utf8" alias to the production
+// file service. A successful write/read round trip keeps that contract covered.
+func TestSystemFSWriteUsesCanonicalUTF8Encoding(t *testing.T) {
+	settings := LoadSettingsFromConfig()
+	settings.Search.Enabled = false
+	settings.Security.EncryptionKEKs = map[uint16]string{1: testEncryptionKey()}
+	settings.MaxProjectBytes = 10_000
+
+	svc := newTestService(t, settings, nil, &memoryCredentialStore{})
+	systemFS, err := svc.SystemNamespace("pageindex")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	require.NoError(t, systemFS.Write(ctx, "project", "/pageindex/index.json", []byte(`{"/manual.md":{"doc_id":"doc-1"}}`)))
+
+	content, err := systemFS.Read(ctx, "project", "/pageindex/index.json")
+	require.NoError(t, err)
+	require.JSONEq(t, `{"/manual.md":{"doc_id":"doc-1"}}`, string(content))
 }

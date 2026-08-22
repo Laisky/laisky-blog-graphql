@@ -1,0 +1,187 @@
+name: memory-benchmark-capture
+
+# Manual dispatch checks out the complete selected ref, so dependency changes in
+# 'go.mod' and 'go.sum' are always included without a pull-request path filter.
+on:
+  workflow_dispatch:
+    inputs:
+      replace_baselines:
+        description: Replace the committed local baselines after deliberate review
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: memory-benchmark-capture-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Format and validate benchmark implementation
+        run: |
+          gofmt -w \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
+          git diff --check
+          go test -v -race -cover \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
+          go vet \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
+
+      - name: Run both current plugins
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/memory-benchmark-results
+          head_sha="$(git rev-parse HEAD)"
+          for plugin in rag pageindex; do
+            go run ./cmd/memory-bench \
+              --backend=local \
+              --plugin="$plugin" \
+              --dataset=tests/eval/memory_bench_smoke.jsonl \
+              --format=canonical \
+              --top-k=5 \
+              --min-score=0.20 \
+              --concurrency=1 \
+              --warmup=1 \
+              --repetitions=3 \
+              --seed=42 \
+              --index-timeout=30s \
+              --poll-interval=25ms \
+              --run-timeout=5m \
+              --git-sha="$head_sha" \
+              --out="/tmp/memory-benchmark-results/$plugin"
+          done
+
+      - name: Build result summary and optionally replace baselines
+        env:
+          REPLACE_BASELINES: ${{ inputs.replace_baselines }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path('/tmp/memory-benchmark-results')
+          reports = {name: json.loads((root / name / 'report.json').read_text()) for name in ('rag', 'pageindex')}
+          for name, report in reports.items():
+              quality = report['quality']
+              if report.get('status') != 'valid' or quality.get('failed_queries', 0) != 0 or quality.get('error_rate', 0) != 0:
+                  raise SystemExit(
+                      f'refusing to capture invalid {name} baseline: '
+                      f'status={report.get("status")} failed={quality.get("failed_queries")} '
+                      f'error_rate={quality.get("error_rate")}'
+                  )
+
+          destination = Path('docs/eval/current_plugins_local_smoke.md')
+          lines = [
+              '# Current MCP Memory Plugin Local Smoke Benchmark',
+              '',
+              f'**Captured:** {datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}  ',
+              f'**Commit:** `{reports["rag"]["run"]["git_sha"]}`  ',
+              f'**Dataset:** `{reports["rag"]["dataset"]["name"]}` / `{reports["rag"]["dataset"]["sha256"]}`',
+              '',
+              '## Method',
+              '',
+              '- The same runner and dataset are used for both plugins.',
+              '- Backend: real in-process production plugin over an isolated SQLite file service.',
+              '- RAG: production RAG plugin and file-service lexical/raw fallback.',
+              '- PageIndex: production PageIndex plugin, Markdown indexer, SystemFS tree persistence, and tree-search loop with deterministic StubLLM.',
+              '- Settings: top-k 5, min-score 0.20, concurrency 1, one warm-up, three timed repetitions, seed 42.',
+              '- Local latency is diagnostic only; deployed MCP results are required for production SLO decisions.',
+              '- Baselines are replaced only when this manually dispatched workflow receives `replace_baselines=true`.',
+              '',
+              '## Results',
+              '',
+              '| Plugin | Status | Failed | Recall@5 | Precision@5 | nDCG@5 | MRR | Hit@5 | Evidence recall | Retrieval abstention | Unexpected retrieval | Error rate | Search p50 ms | Search p95 ms | Index-ready p95 ms |',
+              '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+          ]
+          for name in ('rag', 'pageindex'):
+              report = reports[name]
+              quality = report['quality']
+              operations = report['operational']
+              abstention = quality['abstention_accuracy'] if quality.get('abstention_metrics_available') else None
+              unexpected = quality['false_answer_rate'] if quality.get('abstention_metrics_available') else None
+              abstention_text = f'{abstention:.4f}' if abstention is not None else 'n/a'
+              unexpected_text = f'{unexpected:.4f}' if unexpected is not None else 'n/a'
+              lines.append(
+                  f'| {name} | {report["status"]} | {quality["failed_queries"]} | '
+                  f'{quality["recall_at_k"]:.4f} | {quality["precision_at_k"]:.4f} | '
+                  f'{quality["ndcg_at_k"]:.4f} | {quality["mrr"]:.4f} | '
+                  f'{quality["hit_rate_at_k"]:.4f} | {quality["evidence_recall"]:.4f} | '
+                  f'{abstention_text} | {unexpected_text} | {quality["error_rate"]:.4f} | '
+                  f'{operations["search_latency"]["p50_ms"]:.3f} | '
+                  f'{operations["search_latency"]["p95_ms"]:.3f} | '
+                  f'{operations["index_wait_latency"]["p95_ms"]:.3f} |'
+              )
+          lines += [
+              '',
+              '## Interpretation',
+              '',
+              'These numbers are valid regression-smoke baselines for the exact repository fixture, not public benchmark leaderboard claims. '
+              'PageIndex uses a deterministic StubLLM so the local run measures production persistence, tree construction, traversal, ranking, and result shaping without provider variance; it does not estimate the quality or latency of a production reasoning model. '
+              'Because the fixed reader is disabled, the abstention columns measure retrieval behavior rather than generated-answer hallucination. '
+              'The scheduled `mcp` backend job remains the authoritative end-to-end operational measurement.',
+              '',
+          ]
+          destination.write_text('\n'.join(lines))
+
+          replace = os.environ.get('REPLACE_BASELINES', '').lower() == 'true'
+          for name in ('rag', 'pageindex'):
+              baseline_dir = Path('docs/eval/baselines/local') / name
+              baseline_report = baseline_dir / 'report.json'
+              if replace or not baseline_report.exists():
+                  baseline_dir.mkdir(parents=True, exist_ok=True)
+                  baseline_report.write_text(json.dumps(reports[name], indent=2) + '\n')
+                  (baseline_dir / 'scorecard.md').write_text((root / name / 'scorecard.md').read_text())
+          PY
+
+      - name: Commit explicitly captured results
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            internal/mcp/files \
+            internal/mcp/memory/plugins/pageindex \
+            internal/mcp/memory/benchmark \
+            cmd/memory-bench \
+            docs/eval/current_plugins_local_smoke.md \
+            docs/eval/baselines/local
+          if git diff --cached --quiet; then
+            echo 'No formatting, summary, or baseline changes to commit.'
+            exit 0
+          fi
+          git commit -m 'test(mcp): capture reviewed memory plugin baselines'
+          git push origin HEAD:"${{ github.ref_name }}"
+
+      - name: Upload complete reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-memory-plugin-benchmark-${{ github.sha }}
+          path: /tmp/memory-benchmark-results/
+          if-no-files-found: error

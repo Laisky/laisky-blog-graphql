@@ -62,7 +62,7 @@ func (s *systemFS) Read(ctx context.Context, project, path string) ([]byte, erro
 // always TRUNCATE — system data is JSON keyed lookups, not partial offsets.
 func (s *systemFS) Write(ctx context.Context, project, path string, content []byte) error {
 	ctx = contextWithSystemOwner(ctx, s.owner)
-	if _, err := s.svc.WriteWith(ctx, s.systemAuth(), project, path, string(content), "utf8", 0, WriteModeTruncate, WriteOpts{SystemOwner: s.owner}); err != nil {
+	if _, err := s.svc.WriteWith(ctx, s.systemAuth(), project, path, string(content), "utf-8", 0, WriteModeTruncate, WriteOpts{SystemOwner: s.owner}); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil

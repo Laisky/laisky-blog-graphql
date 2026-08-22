@@ -1,0 +1,170 @@
+name: memory-benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/memory-bench/**'
+      - 'internal/mcp/memory/benchmark/**'
+      - 'internal/mcp/memory/plugins/**'
+      - 'internal/mcp/files/**'
+      - 'tests/eval/memory_bench_smoke.jsonl'
+      - 'docs/eval/baselines/local/**'
+      - 'docs/eval/memory_benchmark.md'
+      - 'docs/ref/agent_memory_benchmarks_2026.md'
+      - '.github/workflows/memory-benchmark.yml'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: memory-benchmark-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test benchmark framework and current plugin adapters
+        run: |
+          go test -v -race -coverprofile=/tmp/memory-benchmark.cover \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
+          go vet \
+            ./internal/mcp/files \
+            ./internal/mcp/memory/plugins/pageindex \
+            ./internal/mcp/memory/benchmark \
+            ./cmd/memory-bench
+
+  local-current-plugins:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [rag, pageindex]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run current plugin benchmark and regression gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline="docs/eval/baselines/local/${{ matrix.plugin }}/report.json"
+          baseline_args=()
+          if [[ -f "$baseline" ]]; then
+            baseline_args+=(--baseline="$baseline")
+          else
+            echo "No committed local baseline exists yet for ${{ matrix.plugin }}; this bootstrap run is score-only."
+          fi
+          head_sha="$(git rev-parse HEAD)"
+          go run ./cmd/memory-bench \
+            --backend=local \
+            --plugin='${{ matrix.plugin }}' \
+            --dataset=tests/eval/memory_bench_smoke.jsonl \
+            --format=canonical \
+            --top-k=5 \
+            --min-score=0.20 \
+            --concurrency=1 \
+            --warmup=1 \
+            --repetitions=3 \
+            --seed=42 \
+            --index-timeout=30s \
+            --poll-interval=25ms \
+            --run-timeout=5m \
+            --max-p95-latency-increase=1.00 \
+            --git-sha="$head_sha" \
+            --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}" \
+            "${baseline_args[@]}"
+          cat "docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}/scorecard.md"
+
+      - name: Upload local scorecard
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-benchmark-local-${{ matrix.plugin }}-${{ github.sha }}
+          path: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/
+          if-no-files-found: error
+
+  live:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [rag, pageindex]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check live benchmark configuration
+        id: config
+        env:
+          MCP_ENDPOINT: ${{ secrets.MCP_BENCH_ENDPOINT }}
+          MCP_AUTHORIZATION: ${{ secrets.MCP_BENCH_AUTHORIZATION }}
+        run: |
+          if [ -n "$MCP_ENDPOINT" ] && [ -n "$MCP_AUTHORIZATION" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo 'Live memory benchmark skipped: MCP_BENCH_ENDPOINT or MCP_BENCH_AUTHORIZATION is not configured.'
+          fi
+
+      - name: Run deployed plugin benchmark (score-only)
+        if: steps.config.outputs.configured == 'true'
+        env:
+          MCP_ENDPOINT: ${{ secrets.MCP_BENCH_ENDPOINT }}
+          MCP_AUTHORIZATION: ${{ secrets.MCP_BENCH_AUTHORIZATION }}
+          MEMORY_BENCH_READER_BASE_URL: ${{ secrets.MEMORY_BENCH_READER_BASE_URL }}
+          MEMORY_BENCH_READER_MODEL: ${{ secrets.MEMORY_BENCH_READER_MODEL }}
+          MEMORY_BENCH_READER_API_KEY: ${{ secrets.MEMORY_BENCH_READER_API_KEY }}
+        run: |
+          echo 'The deployed scheduled run is score-only until an operator adopts a hardware- and environment-specific production baseline.'
+          go run ./cmd/memory-bench \
+            --backend=mcp \
+            --plugin='${{ matrix.plugin }}' \
+            --dataset=tests/eval/memory_bench_smoke.jsonl \
+            --format=canonical \
+            --top-k=5 \
+            --min-score=0.20 \
+            --concurrency=2 \
+            --warmup=2 \
+            --repetitions=10 \
+            --seed=42 \
+            --index-timeout=120s \
+            --poll-interval=500ms \
+            --run-timeout=30m \
+            --git-sha="$GITHUB_SHA" \
+            --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}"
+
+      - name: Upload deployed scorecard
+        if: steps.config.outputs.configured == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-benchmark-live-${{ matrix.plugin }}-${{ github.sha }}
+          path: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/
+          if-no-files-found: warn
