@@ -71,10 +71,28 @@ jobs:
           done < <(printf '%s\n' "$output" | grep -E '^[^:]+:[0-9]+:[0-9]+:' | head -20)
 
           if [[ "$lint_status" -ne 0 && "$issue_count" -eq 0 ]]; then
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-              -f state=failure \
-              -f context='bolt/lint/unparsed-failure' \
-              -f description="$(printf '%s' "$output" | tail -1 | cut -c1-140)"
+            diagnostic_count=0
+            while IFS= read -r diagnostic; do
+              [[ -n "$diagnostic" ]] || continue
+              slug=$(printf '%s' "$diagnostic" \
+                | tr '[:upper:]' '[:lower:]' \
+                | tr -cd '[:alnum:] _.-' \
+                | tr ' _.' '-' \
+                | sed 's/-\+/-/g; s/^-//; s/-$//' \
+                | cut -c1-72)
+              [[ -n "$slug" ]] || continue
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+                -f state=failure \
+                -f context="bolt/lint/error/${slug}" \
+                -f description="$(printf '%s' "$diagnostic" | cut -c1-140)"
+              diagnostic_count=$((diagnostic_count + 1))
+            done < <(printf '%s\n' "$output" | tail -8)
+            if [[ "$diagnostic_count" -eq 0 ]]; then
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+                -f state=failure \
+                -f context='bolt/lint/unparsed-empty-failure' \
+                -f description='golangci-lint failed without parseable output'
+            fi
           fi
           if [[ "$lint_status" -eq 0 ]]; then
             gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
