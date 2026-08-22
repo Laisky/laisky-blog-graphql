@@ -1,0 +1,86 @@
+name: Bolt PageIndex lint issue report
+
+on:
+  push:
+    branches:
+      - 'bolt/pageindex-bounded-candidates-20260822'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET_BRANCH: bolt/pageindex-bounded-candidates-v2-20260822
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve optimization head
+        id: target
+        shell: bash
+        run: |
+          sha=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')
+          test -n "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout optimization branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+
+      - name: Run linter and publish exact issue locations
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set +e
+          output=$(golangci-lint run -c .golangci.lint.yml 2>&1)
+          lint_status=$?
+          set -e
+          printf '%s\n' "$output"
+
+          issue_count=0
+          while IFS= read -r issue; do
+            [[ -n "$issue" ]] || continue
+            file=$(printf '%s' "$issue" | cut -d: -f1)
+            line=$(printf '%s' "$issue" | cut -d: -f2)
+            base=$(basename "$file" | tr -cd '[:alnum:]_.-')
+            linter=$(printf '%s' "$issue" | sed -n 's/.*(\([^()]\+\))$/\1/p' | tr -cd '[:alnum:]_.-')
+            [[ -n "$linter" ]] || linter=unknown
+            context=$(printf 'bolt/lint/%s/%s/%s' "$base" "$line" "$linter" | cut -c1-100)
+            description=$(printf '%s' "$issue" | cut -c1-140)
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=failure \
+              -f context="$context" \
+              -f description="$description"
+            issue_count=$((issue_count + 1))
+          done < <(printf '%s\n' "$output" | grep -E '^[^:]+:[0-9]+:[0-9]+:' | head -20)
+
+          if [[ "$lint_status" -ne 0 && "$issue_count" -eq 0 ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=failure \
+              -f context='bolt/lint/unparsed-failure' \
+              -f description="$(printf '%s' "$output" | tail -1 | cut -c1-140)"
+          fi
+          if [[ "$lint_status" -eq 0 ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=success \
+              -f context='bolt/lint/clean' \
+              -f description='golangci-lint completed without issues'
+          fi
+
+          exit "$lint_status"
