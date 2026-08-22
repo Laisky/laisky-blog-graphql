@@ -1,0 +1,108 @@
+name: Bolt exact repository CI
+
+on:
+  push:
+    branches:
+      - 'bolt/pageindex-bounded-candidates-20260822'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  exact-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27'
+          cache: true
+
+      - name: Go version
+        id: version
+        continue-on-error: true
+        run: go version
+
+      - name: Working directory
+        id: pwd
+        continue-on-error: true
+        run: pwd
+
+      - name: Vendor modules
+        id: vendor
+        continue-on-error: true
+        run: go mod vendor
+
+      - name: Vet
+        id: vet
+        continue-on-error: true
+        run: go vet
+
+      - name: Pure-Go invariant
+        id: purego
+        continue-on-error: true
+        run: ./.scripts/check_pure_go.sh
+
+      - name: system_owner invariant
+        id: owner
+        continue-on-error: true
+        run: ./.scripts/check_system_owner.sh
+
+      - name: Race and atomic coverage suite
+        id: race
+        continue-on-error: true
+        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Full benchmark suite
+        id: bench
+        continue-on-error: true
+        run: go test -bench ./...
+
+      - name: Publish exact CI statuses
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_OUTCOME: ${{ steps.version.outcome }}
+          PWD_OUTCOME: ${{ steps.pwd.outcome }}
+          VENDOR_OUTCOME: ${{ steps.vendor.outcome }}
+          VET_OUTCOME: ${{ steps.vet.outcome }}
+          PUREGO_OUTCOME: ${{ steps.purego.outcome }}
+          OWNER_OUTCOME: ${{ steps.owner.outcome }}
+          RACE_OUTCOME: ${{ steps.race.outcome }}
+          BENCH_OUTCOME: ${{ steps.bench.outcome }}
+        shell: bash
+        run: |
+          state=success
+          checks=(
+            "version:$VERSION_OUTCOME"
+            "pwd:$PWD_OUTCOME"
+            "vendor:$VENDOR_OUTCOME"
+            "vet:$VET_OUTCOME"
+            "purego:$PUREGO_OUTCOME"
+            "owner:$OWNER_OUTCOME"
+            "race-cover-atomic:$RACE_OUTCOME"
+            "bench-all:$BENCH_OUTCOME"
+          )
+          for check in "${checks[@]}"; do
+            name=${check%%:*}
+            outcome=${check#*:}
+            check_state=success
+            if [[ "$outcome" != success ]]; then
+              check_state=failure
+              state=failure
+            fi
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+              -f state="$check_state" \
+              -f context="bolt/exact-ci/${name}" \
+              -f description="$outcome"
+          done
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context='bolt/exact-ci' \
+            -f description='literal .github/workflows/lint.yml command sequence'
+          [[ "$state" == success ]]
