@@ -1,0 +1,235 @@
+name: Bolt PageIndex deterministic acceptance
+
+on:
+  push:
+    branches:
+      - 'bolt/pageindex-bounded-candidates-20260822'
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BASELINE_SHA: db936e983e3bb7338c99e1e031bc482248f2cb8c
+      BRANCH: bolt/pageindex-bounded-candidates-20260822
+    steps:
+      - name: Checkout optimized branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install lint tools
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+
+      - name: Verify formatting and lint
+        run: |
+          make lint
+          git diff --exit-code
+
+      - name: Verify targeted behavior
+        run: >-
+          go test ./internal/mcp/memory/plugins/pageindex
+          -run '^(TestFilterCandidatesLimitedMatchesFullSort|TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments)$'
+          -count=1
+
+      - name: Verify race safety and coverage
+        run: go test -race -cover ./...
+
+      - name: Verify full benchmark suite
+        run: go test -bench ./...
+
+      - name: Benchmark identical baseline and optimized revisions
+        id: benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          benchmark() {
+            local directory=$1
+            (
+              cd "$directory"
+              go test ./internal/mcp/memory/plugins/pageindex \
+                -run '^$' \
+                -bench '^BenchmarkFilterCandidatesLimited100K$' \
+                -benchmem \
+                -count=10
+            )
+          }
+          parse() {
+            awk '
+              /^BenchmarkFilterCandidatesLimited100K-/ {
+                samples = samples (samples == "" ? "" : ",") $3
+                bytes = $5
+                allocs = $7
+                count++
+              }
+              END {
+                if (count != 10) exit 1
+                print samples "|" bytes "|" allocs
+              }
+            '
+          }
+
+          git worktree add /tmp/bolt-pageindex-baseline "$BASELINE_SHA"
+          baseline_output=$(benchmark /tmp/bolt-pageindex-baseline)
+          printf '%s\n' "$baseline_output"
+          baseline=$(printf '%s\n' "$baseline_output" | parse)
+
+          optimized_output=$(benchmark "$GITHUB_WORKSPACE")
+          printf '%s\n' "$optimized_output"
+          optimized=$(printf '%s\n' "$optimized_output" | parse)
+
+          IFS='|' read -r baseline_samples baseline_bytes baseline_allocs <<< "$baseline"
+          IFS='|' read -r optimized_samples optimized_bytes optimized_allocs <<< "$optimized"
+          metrics=$(python3 - "$baseline_samples" "$optimized_samples" "$baseline_bytes" "$optimized_bytes" "$baseline_allocs" "$optimized_allocs" <<'PY'
+          import statistics
+          import sys
+
+          baseline = [int(value) for value in sys.argv[1].split(',')]
+          optimized = [int(value) for value in sys.argv[2].split(',')]
+          baseline_bytes, optimized_bytes = map(int, sys.argv[3:5])
+          baseline_allocs, optimized_allocs = map(int, sys.argv[5:7])
+          baseline_median = statistics.median(baseline)
+          optimized_median = statistics.median(optimized)
+          speedup = (baseline_median - optimized_median) / baseline_median * 100
+          bytes_reduction = (baseline_bytes - optimized_bytes) / baseline_bytes * 100
+          allocs_reduction = (baseline_allocs - optimized_allocs) / baseline_allocs * 100
+          if speedup < 5 or optimized_bytes > baseline_bytes or optimized_allocs > baseline_allocs:
+              raise SystemExit(
+                  f'optimization gate failed: speedup={speedup:.2f}% '
+                  f'bytes={baseline_bytes}->{optimized_bytes} '
+                  f'allocs={baseline_allocs}->{optimized_allocs}'
+              )
+          print('|'.join([
+              f'{baseline_median:.1f}',
+              f'{optimized_median:.1f}',
+              f'{speedup:.2f}',
+              f'{bytes_reduction:.2f}',
+              f'{allocs_reduction:.2f}',
+          ]))
+          PY
+          )
+          IFS='|' read -r baseline_median optimized_median speedup bytes_reduction allocs_reduction <<< "$metrics"
+          {
+            echo "baseline_samples=$baseline_samples"
+            echo "baseline_bytes=$baseline_bytes"
+            echo "baseline_allocs=$baseline_allocs"
+            echo "baseline_median=$baseline_median"
+            echo "optimized_samples=$optimized_samples"
+            echo "optimized_bytes=$optimized_bytes"
+            echo "optimized_allocs=$optimized_allocs"
+            echo "optimized_median=$optimized_median"
+            echo "speedup=$speedup"
+            echo "bytes_reduction=$bytes_reduction"
+            echo "allocs_reduction=$allocs_reduction"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Remove temporary workflows
+        id: cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Bolt Performance Bot'
+          git config user.email 'github@laisky.com'
+          for workflow in \
+            .github/workflows/bolt-pageindex-candidates.yml \
+            .github/workflows/bolt-pageindex-finalize.yml \
+            .github/workflows/bolt-pageindex-watchdog.yml; do
+            if [[ -e "$workflow" ]]; then
+              git rm "$workflow"
+            fi
+          done
+          git commit -m 'ci: remove temporary Bolt benchmark harness'
+          git push origin "HEAD:${BRANCH}"
+          echo "final_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update validated pull request
+        env:
+          FINAL_SHA: ${{ steps.cleanup.outputs.final_sha }}
+          BASELINE_SAMPLES: ${{ steps.benchmark.outputs.baseline_samples }}
+          BASELINE_BYTES: ${{ steps.benchmark.outputs.baseline_bytes }}
+          BASELINE_ALLOCS: ${{ steps.benchmark.outputs.baseline_allocs }}
+          BASELINE_MEDIAN: ${{ steps.benchmark.outputs.baseline_median }}
+          OPTIMIZED_SAMPLES: ${{ steps.benchmark.outputs.optimized_samples }}
+          OPTIMIZED_BYTES: ${{ steps.benchmark.outputs.optimized_bytes }}
+          OPTIMIZED_ALLOCS: ${{ steps.benchmark.outputs.optimized_allocs }}
+          OPTIMIZED_MEDIAN: ${{ steps.benchmark.outputs.optimized_median }}
+          SPEEDUP: ${{ steps.benchmark.outputs.speedup }}
+          BYTES_REDUCTION: ${{ steps.benchmark.outputs.bytes_reduction }}
+          ALLOCS_REDUCTION: ${{ steps.benchmark.outputs.allocs_reduction }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/bolt-pr-body.md <<EOF
+          💡 What:
+          Replace PageIndex's full candidate sort with a bounded max-heap when `tree_query.candidate_docs` is positive. Search still returns the exact lexicographically first candidates, while unlimited mode continues to use the original full-sort path.
+
+          🎯 Why:
+          Every PageIndex search previously materialized and sorted every matching indexed path before retaining the configured candidate count (default: 5). For large projects this made candidate selection O(n log n) time and O(n) candidate storage on every query.
+
+          🧪 Correctness:
+          - `TestFilterCandidatesLimitedMatchesFullSort` compares the bounded implementation with the original full-sort oracle across unlimited, negative, wildcard, prefix, missing-prefix, small-limit, and oversized-limit cases.
+          - `TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments` proves externally observable search ordering and candidate limiting remain identical.
+          - `make lint`
+          - clean working tree after lint
+          - `go test -race -cover ./...`
+          - `go test -bench ./...`
+
+          📊 Benchmark:
+          Command: `go test ./internal/mcp/memory/plugins/pageindex -run '^$' -bench '^BenchmarkFilterCandidatesLimited100K$' -benchmem -count=10`
+
+          Scenario: 100,000 indexed documents, empty prefix, `candidate_docs=5`.
+
+          - Baseline (`${BASELINE_SHA}`, full sort): median ${BASELINE_MEDIAN} ns/op, ${BASELINE_BYTES} B/op, ${BASELINE_ALLOCS} allocs/op.
+          - Optimized (`${GITHUB_SHA}`, bounded max-heap): median ${OPTIMIZED_MEDIAN} ns/op, ${OPTIMIZED_BYTES} B/op, ${OPTIMIZED_ALLOCS} allocs/op.
+          - Improvement: ${SPEEDUP}% lower median runtime, ${BYTES_REDUCTION}% fewer bytes/op, and ${ALLOCS_REDUCTION}% fewer allocations/op.
+          - Baseline samples (ns/op): `${BASELINE_SAMPLES}`
+          - Optimized samples (ns/op): `${OPTIMIZED_SAMPLES}`
+
+          🔬 Measurement:
+          Both revisions used the same benchmark source and command, 10 repetitions, the Go version from `go.mod`, and the same GitHub-hosted Ubuntu runner. The 100,000-entry fixture is built outside the timed region.
+
+          ⚠️ Risk:
+          Low. The change is confined to a private PageIndex candidate-selection helper. Exact equivalence is tested against the original implementation. `limit <= 0` and limits at least as large as the index retain the original path. Rollback is a single helper replacement.
+          EOF
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${FINAL_SHA}" \
+            -f state=success \
+            -f context="bolt/validated/${SPEEDUP}pct" \
+            -f description="lint, race, coverage, behavior, and benchmark gates passed at ${GITHUB_SHA}"
+
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base master --state all --json number,state --jq '.[0].number // empty')
+          if [[ -n "$existing" ]]; then
+            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" \
+              --title '⚡ Bolt: bound PageIndex candidate sorting' \
+              --body-file /tmp/bolt-pr-body.md
+            state=$(gh pr view "$existing" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')
+            if [[ "$state" != OPEN ]]; then
+              gh pr reopen "$existing" --repo "$GITHUB_REPOSITORY"
+            fi
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" \
+              --base master \
+              --head "$BRANCH" \
+              --title '⚡ Bolt: bound PageIndex candidate sorting' \
+              --body-file /tmp/bolt-pr-body.md
+          fi
