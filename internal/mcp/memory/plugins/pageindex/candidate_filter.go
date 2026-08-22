@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// filterCandidatesLimited keeps only the lexicographically first limit matches
-// in a bounded max-heap. PageIndex normally asks for five candidate documents,
-// so this avoids allocating and sorting the entire project index on every query.
+// filterCandidatesLimited returns the lexicographically first limit entries
+// from ix whose paths match prefix. A non-positive limit preserves the original
+// unbounded behavior; otherwise the returned candidates are sorted by path.
 func filterCandidatesLimited(ix Index, prefix string, limit int) []rankedCandidate {
 	if limit <= 0 || limit >= len(ix) {
 		return filterCandidates(ix, prefix)
@@ -42,12 +42,20 @@ func filterCandidatesLimited(ix Index, prefix string, limit int) []rankedCandida
 	return candidates
 }
 
+// candidateMaxHeap keeps the lexicographically largest retained path at index zero.
 type candidateMaxHeap []rankedCandidate
 
-func (h candidateMaxHeap) Len() int           { return len(h) }
-func (h candidateMaxHeap) Less(i, j int) bool { return h[i].userPath > h[j].userPath }
-func (h candidateMaxHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+// Len returns the number of candidates currently stored in the heap.
+func (h candidateMaxHeap) Len() int { return len(h) }
 
+// Less reports whether the candidate at i should rank above the candidate at j
+// in the max-heap, placing the lexicographically largest path at the root.
+func (h candidateMaxHeap) Less(i, j int) bool { return h[i].userPath > h[j].userPath }
+
+// Swap exchanges the candidates at indices i and j.
+func (h candidateMaxHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+// Push appends value to the heap and panics when value is not a rankedCandidate.
 func (h *candidateMaxHeap) Push(value any) {
 	candidate, ok := value.(rankedCandidate)
 	if !ok {
@@ -56,6 +64,8 @@ func (h *candidateMaxHeap) Push(value any) {
 	*h = append(*h, candidate)
 }
 
+// Pop removes and returns the last candidate after container/heap moves the
+// current root there; callers receive the removed rankedCandidate value.
 func (h *candidateMaxHeap) Pop() any {
 	old := *h
 	last := len(old) - 1
