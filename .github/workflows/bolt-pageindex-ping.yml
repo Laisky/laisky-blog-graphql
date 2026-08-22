@@ -1,0 +1,34 @@
+name: Bolt PageIndex validation start
+
+on:
+  push:
+    branches:
+      - 'ci/bolt-pageindex-validation-20260822'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: bolt/pageindex-bounded-candidates-v2-20260822
+    steps:
+      - name: Resolve optimization head
+        id: target
+        shell: bash
+        run: |
+          sha=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')
+          test -n "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Publish pending status
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=pending \
+            -f context='bolt/validation' \
+            -f description='full lint, race, behavior, benchmark, and A/B performance validation is running'
