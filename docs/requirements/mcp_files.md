@@ -50,7 +50,9 @@ All paths are relative to project root.
 - `path` length: `0..512`
 - Empty path `""` means project root.
 - `/` is the only separator.
-- Path must start with `/`.
+- MCP tool inputs may omit the leading `/`; for non-empty paths the tool layer
+  adds it before validation. Canonical paths passed to the service start with
+  `/`.
 - Path must not end with `/` (except empty root path).
 - Empty segments are forbidden (`a//b` is invalid).
 - `.` and `..` segments are forbidden.
@@ -105,13 +107,28 @@ type ChunkEntry struct {
     FilePath           string
     FileSeekStartBytes int64 // byte offset, inclusive
     FileSeekEndBytes   int64 // byte offset, exclusive
+    IsFullFile         bool
     ChunkContent       string
+    FileSummary        string // concise file-level overview; JSON key file_summary, omitempty
     Score              float64
 }
 ```
 
 `ChunkEntry` offsets must be byte offsets compatible with `file_read`.
 Offsets use `[start, end)` and `end` may equal file size.
+
+Each successful `file_search` hit additionally returns `file_summary`: a concise,
+English, file-level overview bound to the same content generation as `chunk_content`.
+The summary is response metadata only — it is never part of any ranking, embedding, or
+lexical input, and it is repeated on every hit so results stay self-contained. The
+summary is generated during indexing (never on the query path), is validated to at
+most 300 Unicode word segments and 2,048 UTF-8 bytes, and degrades to a bounded
+deterministic fallback when the model is unavailable. See
+[`docs/proposals/file_search_file_summaries.md`](../proposals/file_search_file_summaries.md)
+for the full contract. Because the summary is repeated per hit and emitted in both the
+text and `structuredContent` channels, the fully serialized `file_search`
+`CallToolResult` at `limit=20` MUST remain within a 128 KiB budget; this is a normative
+limit introduced by that proposal.
 
 ### 6.2 `file_stat`
 
@@ -255,7 +272,8 @@ Parameter semantics:
 
 - `project`: target project namespace. The literal value `"*"` expands the search to every project owned by the authenticated caller and is accepted only by `file_search`. All other file tools (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`) must reject `"*"` and require an explicit project to prevent accidental cross-project mutations.
 - `query`: search query string, must be non-empty after trim.
-- `path_prefix`: optional raw string prefix filter on file path.
+- `path_prefix`: optional raw string prefix filter on file path; the MCP tool
+  layer applies the same leading-slash normalization as `path`.
 - `limit`: max returned chunk entries, default `5`, max `20`.
 
 Search behavior:

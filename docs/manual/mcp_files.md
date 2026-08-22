@@ -133,7 +133,8 @@ Tool output is typically in `result.content[0].text` (as JSON string). Error pay
 ### 4.2 `path`
 
 - Root path is `""`
-- Non-root paths must start with `/`, for example `/docs/a.txt`
+- Non-root paths may be provided with or without a leading `/`; the tool adds
+  the prefix automatically (for example, `docs/a.txt` becomes `/docs/a.txt`)
 - Must not end with `/`
 - Must not contain `//`, `.` or `..` segments
 - Must not contain whitespace or control characters
@@ -330,7 +331,8 @@ Search indexed chunks inside a project.
 - Required: `project`, `query`
   - Set `project` to `"*"` to search across every project owned by the caller. The wildcard is accepted only by `file_search`; all other file tools still require an explicit project.
 - Optional:
-  - `path_prefix`: prefix filter, for example `/docs`
+  - `path_prefix`: prefix filter, for example `/docs`; a missing leading `/`
+    is added automatically
   - `limit`: default `5`, max `20`
 
 ```bash
@@ -361,6 +363,7 @@ Response example:
       "file_seek_end_bytes": 120,
       "is_full_file": false,
       "chunk_content": "...",
+      "file_summary": "This readme explains how to install and configure the demo project, lists its main commands, and points to the troubleshooting section.",
       "score": 0.93
     }
   ]
@@ -369,6 +372,7 @@ Response example:
 
 - `is_full_file=true` means this returned chunk byte range covers the whole file.
 - `is_full_file=false` means this is only part of the file; call `file_read` if full content is needed.
+- `file_summary` is a concise, English, file-level overview (at most 300 words / 2,048 bytes) describing the whole source file the chunk came from. Use it to understand a match without a second `file_read`. It is generated during indexing, so a just-written file may briefly return without it; a slow or unavailable summarizer yields a short deterministic fallback rather than an empty field. The summary never changes ranking.
 - When `project="*"`, each chunk also includes a `project` field naming the source project. The field is omitted for single-project searches.
 
 Cross-project example:
@@ -399,6 +403,7 @@ mcp_call '{
       "file_seek_end_bytes": 120,
       "is_full_file": false,
       "chunk_content": "...",
+      "file_summary": "This readme explains how to install and configure the demo project and where to find troubleshooting steps.",
       "score": 0.93
     }
   ]

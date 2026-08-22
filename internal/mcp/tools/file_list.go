@@ -100,6 +100,7 @@ func (t *FileListTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 // normalizeFileListPath canonicalizes file_list directory paths.
 // It accepts a raw path argument and returns the normalized service path.
 func normalizeFileListPath(path string) string {
+	path = normalizeFilePath(path)
 	if path == "/" {
 		return ""
 	}

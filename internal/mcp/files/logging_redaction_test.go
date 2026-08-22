@@ -15,12 +15,14 @@ func TestRedactToolArguments(t *testing.T) {
 	require.Equal(t, true, payload["redacted"])
 }
 
-// TestRedactToolResultChunks ensures chunk content is redacted in results.
+// TestRedactToolResultChunks ensures chunk content and file_summary are redacted in
+// results (S06/A11): neither may reach logs or audits.
 func TestRedactToolResultChunks(t *testing.T) {
 	result := map[string]any{
 		"chunks": []any{
 			map[string]any{
 				"chunk_content": "secret",
+				"file_summary":  "sensitive overview text",
 			},
 		},
 	}
@@ -32,4 +34,7 @@ func TestRedactToolResultChunks(t *testing.T) {
 	payload, ok := entry["chunk_content"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, true, payload["redacted"])
+	summaryPayload, ok := entry["file_summary"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, summaryPayload["redacted"])
 }

@@ -111,7 +111,7 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 		ExecutionErrors: executionErrors,
 		Operational: OperationalSummary{
 			IngestLatency: ingestLatencies, SearchLatency: latencyStats(searchLatencies),
-			IndexWaitLatency: latencyStats(waitLatencies),
+			IndexWaitLatency:  latencyStats(waitLatencies),
 			ReaderInputTokens: readerInputTokens, ReaderOutputTokens: readerOutputTokens,
 			ReaderTotalTokens: readerTotalTokens,
 		},

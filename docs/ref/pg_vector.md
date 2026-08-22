@@ -1,8 +1,8 @@
-# **2025 Best-Practice Technical Guide: Go 1.25 RAG Web Server with PostgreSQL 17, pgvector v0.8.1, go-gin 1.11, VCHORDBM25 0.2.2, PGTOKENIZER 0.1.1, VCHORD 0.5.3, and go-gorm 1.6**
+# **2026 Best-Practice Technical Guide: Go 1.27 RAG Web Server with PostgreSQL 17, pgvector v0.8.1, go-gin 1.11, VCHORDBM25 0.2.2, PGTOKENIZER 0.1.1, VCHORD 0.5.3, and go-gorm 1.6**
 
 ## Scenario Overview
 
-Building a modern Retrieval-Augmented Generation (RAG) server in 2025 requires integrating advanced vector search, robust keyword retrieval, and scalable Go APIs. This guide details a production-grade architecture using Go 1.25, PostgreSQL 17 with pgvector v0.8.1, go-gin 1.11, go-gorm 1.6, VCHORDBM25 0.2.2, PGTOKENIZER 0.1.1, and VCHORD 0.5.3. The server exposes an API accepting a JSON payload with `prompt`, `text_context`, `file_context`, and `file_ext`, and performs three core operations:
+Building a modern Retrieval-Augmented Generation (RAG) server in 2026 requires integrating advanced vector search, robust keyword retrieval, and scalable Go APIs. This guide details a production-grade architecture using Go 1.27, PostgreSQL 17 with pgvector v0.8.1, go-gin 1.11, go-gorm 1.6, VCHORDBM25 0.2.2, PGTOKENIZER 0.1.1, and VCHORD 0.5.3. The server exposes an API accepting a JSON payload with `prompt`, `text_context`, `file_context`, and `file_ext`, and performs three core operations:
 
 1.  **Chunking and Embedding Ingestion:** Sends `text_context` and `file_context` to an external chunking service, computes embeddings for each chunk, and stores them in PostgreSQL using pgvector.
 2.  **Vector Similarity Search:** Computes an embedding for the `prompt` and retrieves the top-5 most similar chunks via vector search.
@@ -19,7 +19,7 @@ The architecture is designed for modularity, scalability, and observability:
 - **Persistence Layer:** Uses go-gorm 1.6 for ORM-based interaction with PostgreSQL 17, supporting both relational and vector data.
 - **Database:** PostgreSQL 17 with pgvector v0.8.1 for vector storage, VCHORDBM25 0.2.2 for BM25 ranking, PGTOKENIZER 0.1.1 for tokenization, and VCHORD 0.5.3 for high-performance vector search.
 - **Chunking Service:** External microservice (language-agnostic) for advanced chunking strategies.
-- **Observability:** Integrated logging, tracing, and metrics using Go 1.25’s runtime features and structured logging libraries.
+- **Observability:** Integrated logging, tracing, and metrics using Go 1.27’s runtime features and structured logging libraries.
 
 **Architecture Diagram (Description):**
 
@@ -360,7 +360,7 @@ This API design supports robust, versioned, and discoverable endpoints, with cle
 
 ## Core Go Implementations
 
-This section provides idiomatic Go 1.25 code snippets for the core server logic, focusing on modularity, concurrency, and integration with PostgreSQL and the required extensions.
+This section provides idiomatic Go 1.27 code snippets for the core server logic, focusing on modularity, concurrency, and integration with PostgreSQL and the required extensions.
 
 ### Project Structure
 
@@ -744,7 +744,7 @@ func ReciprocalRankFusion(vectorResults, bm25Results []ChunkResult, k int) []Chu
 
 **Observability:**
 
-- Use Go 1.25’s flight recorder for lightweight, in-memory tracing of performance issues.
+- Use Go 1.27’s flight recorder for lightweight, in-memory tracing of performance issues.
 - Integrate structured logging (log/slog, zap) and metrics (Prometheus) for real-time monitoring.
 
 **Resource Sizing:**

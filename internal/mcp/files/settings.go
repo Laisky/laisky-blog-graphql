@@ -52,6 +52,11 @@ type SearchSettings struct {
 	RerankTimeout     time.Duration
 	SemanticWeight    float64
 	LexicalWeight     float64
+	// EnforceSummary is the rollout enforcement gate for the file-summary contract
+	// (docs/proposals/file_search_file_summaries.md §3.3, §4.7). When enabled, the
+	// raw-file fallback must not return a hit whose current content generation lacks
+	// a ready or degraded summary. Default false preserves pre-rollout behavior.
+	EnforceSummary bool
 }
 
 // IndexSettings configures index worker behavior.
@@ -65,6 +70,26 @@ type IndexSettings struct {
 	SummaryBaseURL string
 	SummaryTimeout time.Duration
 	FreshnessSLO   time.Duration
+	// FileSummary configures the file-level overview published with each search hit.
+	// It is separate from the SummaryModel/BaseURL/Timeout fields above, which drive
+	// the per-chunk contextualizer (§4.4, §6.4).
+	FileSummary FileSummarySettings
+}
+
+// FileSummarySettings configures the file-level summary producer (§6.4).
+type FileSummarySettings struct {
+	Enabled              bool
+	Model                string
+	BaseURL              string
+	Timeout              time.Duration
+	TargetWords          int
+	MaxWords             int
+	MaxBytes             int
+	MaxInputTokens       int
+	MaxReduceCalls       int
+	MaxTotalInputTokens  int
+	MaxTotalOutputTokens int
+	PromptVersion        string
 }
 
 // SecuritySettings configures credential handoff encryption and cache usage.
@@ -111,6 +136,7 @@ func LoadSettingsFromConfig() Settings {
 			RerankTimeout:     time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("search.rerank.timeout_ms"), legacyFilesConfigKey("search.rerank.timeout_ms")), 6000)) * time.Millisecond,
 			SemanticWeight:    floatFromConfig(configKeyWithFallback(ragFilesConfigKey("search.fallback.semantic_weight"), legacyFilesConfigKey("search.fallback.semantic_weight")), 0.65),
 			LexicalWeight:     floatFromConfig(configKeyWithFallback(ragFilesConfigKey("search.fallback.lexical_weight"), legacyFilesConfigKey("search.fallback.lexical_weight")), 0.35),
+			EnforceSummary:    boolFromConfig(configKeyWithFallback(ragFilesConfigKey("search.enforce_summary"), legacyFilesConfigKey("search.enforce_summary")), false),
 		},
 		Index: IndexSettings{
 			Workers:        intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.workers"), legacyFilesConfigKey("index.workers")), 2),
@@ -122,6 +148,20 @@ func LoadSettingsFromConfig() Settings {
 			SummaryBaseURL: strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("index.summary.base_url"), legacyFilesConfigKey("index.summary.base_url")))),
 			SummaryTimeout: time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.summary.timeout_ms"), legacyFilesConfigKey("index.summary.timeout_ms")), 8000)) * time.Millisecond,
 			FreshnessSLO:   time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.slo_p95_seconds"), legacyFilesConfigKey("index.slo_p95_seconds")), 30)) * time.Second,
+			FileSummary: FileSummarySettings{
+				Enabled:              boolFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.enabled"), legacyFilesConfigKey("index.file_summary.enabled")), true),
+				Model:                strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("index.file_summary.model"), legacyFilesConfigKey("index.file_summary.model")))),
+				BaseURL:              strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("index.file_summary.base_url"), legacyFilesConfigKey("index.file_summary.base_url")))),
+				Timeout:              time.Duration(intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.timeout_ms"), legacyFilesConfigKey("index.file_summary.timeout_ms")), 20000)) * time.Millisecond,
+				TargetWords:          intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.target_words"), legacyFilesConfigKey("index.file_summary.target_words")), SummaryTargetWordsDefault),
+				MaxWords:             intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.max_words"), legacyFilesConfigKey("index.file_summary.max_words")), SummaryMaxWordsHard),
+				MaxBytes:             intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.max_bytes"), legacyFilesConfigKey("index.file_summary.max_bytes")), SummaryMaxBytesHard),
+				MaxInputTokens:       intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.max_input_tokens"), legacyFilesConfigKey("index.file_summary.max_input_tokens")), 16000),
+				MaxReduceCalls:       intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.max_reduce_calls"), legacyFilesConfigKey("index.file_summary.max_reduce_calls")), 8),
+				MaxTotalInputTokens:  intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.max_total_input_tokens"), legacyFilesConfigKey("index.file_summary.max_total_input_tokens")), 64000),
+				MaxTotalOutputTokens: intFromConfig(configKeyWithFallback(ragFilesConfigKey("index.file_summary.max_total_output_tokens"), legacyFilesConfigKey("index.file_summary.max_total_output_tokens")), 4096),
+				PromptVersion:        strings.TrimSpace(gconfig.S.GetString(configKeyWithFallback(ragFilesConfigKey("index.file_summary.prompt_version"), legacyFilesConfigKey("index.file_summary.prompt_version")))),
+			},
 		},
 		Security: SecuritySettings{
 			EncryptionKEKs:        uint16StringMapFromConfig(configKeyWithFallback(ragFilesConfigKey("security.encryption_keks"), legacyFilesConfigKey("security.encryption_keks"))),
@@ -212,6 +252,7 @@ func LoadSettingsFromConfig() Settings {
 	if settings.Index.FreshnessSLO <= 0 {
 		settings.Index.FreshnessSLO = 30 * time.Second
 	}
+	applyFileSummaryDefaults(&settings.Index)
 	if settings.Security.CredentialCachePrefix == "" {
 		settings.Security.CredentialCachePrefix = "mcp:files:cred"
 	}
@@ -223,6 +264,49 @@ func LoadSettingsFromConfig() Settings {
 	}
 
 	return settings
+}
+
+// applyFileSummaryDefaults fills unset file-summary knobs and clamps the hard caps.
+// The model and base URL fall back to the chunk-context values so operators need not
+// duplicate credentials; word and byte caps can be lowered but never raised (§3.4, §6.4).
+func applyFileSummaryDefaults(index *IndexSettings) {
+	fs := &index.FileSummary
+	if fs.Model == "" {
+		fs.Model = index.SummaryModel
+	}
+	if fs.BaseURL == "" {
+		fs.BaseURL = index.SummaryBaseURL
+	}
+	if fs.Timeout <= 0 {
+		fs.Timeout = 20 * time.Second
+	}
+	if fs.TargetWords <= 0 {
+		fs.TargetWords = SummaryTargetWordsDefault
+	}
+	if fs.MaxWords <= 0 || fs.MaxWords > SummaryMaxWordsHard {
+		fs.MaxWords = SummaryMaxWordsHard
+	}
+	if fs.MaxBytes <= 0 || fs.MaxBytes > SummaryMaxBytesHard {
+		fs.MaxBytes = SummaryMaxBytesHard
+	}
+	if fs.TargetWords > fs.MaxWords {
+		fs.TargetWords = fs.MaxWords
+	}
+	if fs.MaxInputTokens <= 0 {
+		fs.MaxInputTokens = 16000
+	}
+	if fs.MaxReduceCalls <= 0 {
+		fs.MaxReduceCalls = 8
+	}
+	if fs.MaxTotalInputTokens <= 0 {
+		fs.MaxTotalInputTokens = 64000
+	}
+	if fs.MaxTotalOutputTokens <= 0 {
+		fs.MaxTotalOutputTokens = 4096
+	}
+	if fs.PromptVersion == "" {
+		fs.PromptVersion = "file_summary_v1"
+	}
 }
 
 // LegacyConfigConfigured reports whether the deprecated settings.mcp.files.* tree is present.

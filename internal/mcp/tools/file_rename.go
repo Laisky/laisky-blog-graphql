@@ -49,6 +49,8 @@ func (t *FileRenameTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	fromPath = normalizeFilePath(fromPath)
+	toPath = normalizeFilePath(toPath)
 	overwrite := readBoolArg(req, "overwrite")
 	ctx = withFilePluginOverride(ctx, req)
 

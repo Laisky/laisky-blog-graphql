@@ -20,29 +20,29 @@ func TestRunnerMarksCleanupFailureInvalid(t *testing.T) {
 	require.NoError(t, err)
 
 	dataset := Dataset{
-		Name: "cleanup-failure",
-		Version: "1",
+		Name:      "cleanup-failure",
+		Version:   "1",
 		Documents: []Document{{ID: "doc", Path: "/fact.md", Content: "The code is ORBIT-17."}},
 		Queries: []Query{{
-			ID: "fact",
-			Text: "What is the code?",
-			GoldPaths: []string{"/fact.md"},
+			ID:           "fact",
+			Text:         "What is the code?",
+			GoldPaths:    []string{"/fact.md"},
 			GoldEvidence: []string{"ORBIT-17"},
 		}},
 	}
 	report, err := runner.Run(context.Background(), dataset, RunConfig{
-		Backend: "test",
-		Plugin: "rag",
-		Project: "cleanup-failure",
-		TopK: 1,
-		MinScore: 0.20,
-		Concurrency: 1,
-		Warmup: 0,
-		Repetitions: 1,
-		Seed: 42,
+		Backend:      "test",
+		Plugin:       "rag",
+		Project:      "cleanup-failure",
+		TopK:         1,
+		MinScore:     0.20,
+		Concurrency:  1,
+		Warmup:       0,
+		Repetitions:  1,
+		Seed:         42,
 		IndexTimeout: time.Second,
 		PollInterval: time.Millisecond,
-		Cleanup: true,
+		Cleanup:      true,
 	})
 	require.NoError(t, err, "Runner returns diagnostic evidence; command-level validation rejects the report")
 	require.Equal(t, ReportStatusInvalid, report.Status)

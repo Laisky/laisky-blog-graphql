@@ -14,17 +14,17 @@ func TestScorecardDistinguishesRetrievalAndAnswerAbstention(t *testing.T) {
 
 	newReport := func(readerModel string) *Report {
 		cases := []CaseResult{{
-			QueryID: "unknown",
+			QueryID:      "unknown",
 			Unanswerable: true,
-			Metrics: CaseMetrics{AbstentionOK: boolPointer(false)},
+			Metrics:      CaseMetrics{AbstentionOK: boolPointer(false)},
 		}}
 		return &Report{
 			SchemaVersion: SchemaVersion,
-			Run: RunMetadata{Plugin: "rag", TopK: 5, ReaderModel: readerModel},
-			Dataset: DatasetMetadata{SHA256: "dataset", Queries: len(cases)},
-			Quality: aggregateQuality(cases),
-			Categories: aggregateCategories(cases),
-			Cases: cases,
+			Run:           RunMetadata{Plugin: "rag", TopK: 5, ReaderModel: readerModel},
+			Dataset:       DatasetMetadata{SHA256: "dataset", Queries: len(cases)},
+			Quality:       aggregateQuality(cases),
+			Categories:    aggregateCategories(cases),
+			Cases:         cases,
 		}
 	}
 

@@ -13,10 +13,11 @@ import (
 
 // SearchInput captures the per-call retrieval parameters.
 type SearchInput struct {
-	Project    string
-	Query      string
-	PathPrefix string
-	Limit      int
+	Project        string
+	Query          string
+	PathPrefix     string
+	Limit          int
+	ValidateSource func(context.Context, string, string) (bool, error)
 }
 
 // SearchEngine is the smaller interface the plugin uses against the indexer.
@@ -61,6 +62,12 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		if stepBudget <= 0 || budget.Remaining() <= 0 {
 			break
 		}
+		if in.ValidateSource != nil {
+			valid, validateErr := in.ValidateSource(ctx, cand.userPath, cand.entry.SourceContentHash)
+			if validateErr != nil || !valid {
+				continue
+			}
+		}
 		stepBudget--
 		tree, err := s.store.GetTree(ctx, in.Project, cand.entry.DocID)
 		if err != nil {
@@ -75,6 +82,10 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		if err != nil {
 			continue
 		}
+		// Tree.DocDescription is the authoritative public summary for this document.
+		// It is bounded to the shared limits and repeated on every returned chunk so
+		// each hit is self-contained (§3.2, §4.5).
+		docSummary := publicDocSummary(tree)
 		for i, ch := range chunks {
 			score := positionDecay(i, len(chunks))
 			allChunks = append(allChunks, files.ChunkEntry{
@@ -82,6 +93,7 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 				FileSeekStartBytes: int64(ch.Page) * 1024,
 				FileSeekEndBytes:   int64(ch.Page)*1024 + int64(len(ch.Content)),
 				ChunkContent:       ch.Content,
+				FileSummary:        docSummary,
 				Score:              score,
 			})
 		}

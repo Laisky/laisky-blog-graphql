@@ -40,7 +40,7 @@ func (t *FileDeleteTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	path := readStringArg(req, "path")
+	path := normalizeFilePath(readStringArg(req, "path"))
 	recursive := readBoolArg(req, "recursive")
 	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {

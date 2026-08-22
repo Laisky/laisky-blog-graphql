@@ -85,7 +85,8 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	writeResp, err := writeTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
-		"path":    "/docs/a.txt",
+		// The MCP tool layer adds the missing leading slash.
+		"path":    "docs/a.txt",
 		"content": "hello tools",
 		"mode":    "APPEND",
 	}))
@@ -96,8 +97,8 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	renameResp, err := renameTool.Handle(authCtx, newToolReq(map[string]any{
 		"project":   "proj",
-		"from_path": "/docs/a.txt",
-		"to_path":   "/docs/b.txt",
+		"from_path": "docs/a.txt",
+		"to_path":   "docs/b.txt",
 	}))
 	require.NoError(t, err)
 	require.False(t, renameResp.IsError)
@@ -106,7 +107,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	statResp, err := statTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
-		"path":    "/docs/b.txt",
+		"path":    "docs/b.txt",
 	}))
 	require.NoError(t, err)
 	require.False(t, statResp.IsError)
@@ -116,7 +117,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	readResp, err := readTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
-		"path":    "/docs/b.txt",
+		"path":    "docs/b.txt",
 	}))
 	require.NoError(t, err)
 	require.False(t, readResp.IsError)
@@ -126,7 +127,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	listResp, err := listTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
-		"path":    "/docs",
+		"path":    "docs",
 		"depth":   1,
 		"limit":   10,
 	}))
@@ -139,9 +140,10 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 	require.NoError(t, worker.RunOnce(context.Background()))
 
 	searchResp, err := searchTool.Handle(authCtx, newToolReq(map[string]any{
-		"project": "proj",
-		"query":   "hello",
-		"limit":   5,
+		"project":     "proj",
+		"query":       "hello",
+		"path_prefix": "docs",
+		"limit":       5,
 	}))
 	require.NoError(t, err)
 	require.False(t, searchResp.IsError)
@@ -152,7 +154,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	deleteResp, err := deleteTool.Handle(authCtx, newToolReq(map[string]any{
 		"project":   "proj",
-		"path":      "/docs/b.txt",
+		"path":      "docs/b.txt",
 		"recursive": false,
 	}))
 	require.NoError(t, err)
@@ -162,7 +164,7 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 
 	statAfterDeleteResp, err := statTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
-		"path":    "/docs/b.txt",
+		"path":    "docs/b.txt",
 	}))
 	require.NoError(t, err)
 	require.False(t, statAfterDeleteResp.IsError)

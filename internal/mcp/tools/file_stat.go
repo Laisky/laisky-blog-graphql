@@ -40,7 +40,7 @@ func (t *FileStatTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	path := readStringArg(req, "path")
+	path := normalizeFilePath(readStringArg(req, "path"))
 	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Stat(ctx, auth, project, path)

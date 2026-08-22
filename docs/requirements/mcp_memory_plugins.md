@@ -83,6 +83,15 @@ Each `FR-*` lists its mapped acceptance criterion from
 - **FR-14 — Frozen Phase-1 baseline.** `docs/eval/baseline_v1/rag_plugin_scorecard.md`,
   `raw_per_query.jsonl`, and `run_metadata.yml` land in the same PR as the Phase 1 code
   and are not overwritten without a `CHANGELOG.md` entry. _Acceptance:_ A9; gates Q1–Q12.
+- **FR-15 — Uniform file-level summary.** Every successful `file_search` hit — under
+  `rag`, `pageindex`, or `auto` — includes a non-empty `file_summary`: a concise,
+  English, file-level overview (≤ 300 Unicode word segments / 2,048 UTF-8 bytes) bound
+  to the same content generation as the chunk. RAG publishes it through its async index
+  worker; PageIndex maps `Tree.DocDescription` (bounded, Markdown-derived, or
+  deterministic fallback) into every returned chunk. Summary text is response metadata
+  only and never affects ranking. Full contract:
+  [`docs/proposals/file_search_file_summaries.md`](../proposals/file_search_file_summaries.md).
+  _Acceptance:_ the file-summaries proposal §9 (A1–A12).
 
 ## 5. Quality requirements
 

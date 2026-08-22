@@ -47,6 +47,7 @@ type Service struct {
 	logger         logSDK.Logger
 	embedder       Embedder
 	contextualizer Contextualizer
+	summarizer     FileSummarizer
 	rerank         RerankClient
 	chunker        Chunker
 	credential     *CredentialProtector
@@ -99,6 +100,9 @@ func NewService(db *sql.DB, settings Settings, embedder Embedder, rerank RerankC
 		credStore:      store,
 		lockProvider:   lockProvider,
 		clock:          clock,
+	}
+	if settings.Index.FileSummary.Enabled {
+		svc.summarizer = NewOpenAIFileSummarizer(settings.Index.FileSummary, nil)
 	}
 
 	return svc, nil

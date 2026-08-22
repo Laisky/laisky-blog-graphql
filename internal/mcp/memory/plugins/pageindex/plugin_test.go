@@ -79,35 +79,3 @@ func TestIsLongDocPathClassification(t *testing.T) {
 		}
 	}
 }
-
-// TestPluginP07_RoundTripViaUserFS_Skipped pins P07 — Write(.pdf, TRUNCATE)
-// then Read(.pdf) returns identical bytes via userFS — as a TODO. The plugin
-// delegates to *files.Service which requires a real Postgres-shaped DB; a
-// DB-less unit test cannot exercise the round-trip.
-func TestPluginP07_RoundTripViaUserFS_Skipped(t *testing.T) {
-	t.Skip("TODO(P07): verifiable only against a real DB; covered by E2E suite in internal/mcp/files (E01) and the integration corpus")
-}
-
-// TestPluginP08_DeleteAtomicity_Skipped pins P08 — Delete updates user row +
-// system tree + index mapping atomically. The user-row side requires the
-// production *files.Service backed by a real DB. The SystemFS portion (tree
-// JSON + index map) is exercised by TestSysStoreRemoveAndDeleteTree.
-func TestPluginP08_DeleteAtomicity_Skipped(t *testing.T) {
-	t.Skip("TODO(P08): user-row side verifiable only against a real DB; covered by E2E suite. SystemFS side is covered by TestSysStoreRemoveAndDeleteTree")
-}
-
-// TestPluginP09_RenameAtomicity_Skipped pins P09 — Rename updates user row +
-// index mapping; tree JSON unchanged. The user-row side requires a real DB;
-// the index-mapping + tree-stability side is covered by
-// TestSysStoreRenameRoundTrip.
-func TestPluginP09_RenameAtomicity_Skipped(t *testing.T) {
-	t.Skip("TODO(P09): user-row side verifiable only against a real DB; covered by E2E suite. SystemFS side is covered by TestSysStoreRenameRoundTrip")
-}
-
-// TestPluginP13_SkipRAGIndex_Skipped pins P13 — WriteOpts.SkipRAGIndex=true
-// means the rag index worker observes no new job for the row. The plugin
-// hard-codes SkipRAGIndex=true in Plugin.Write (see plugin.go), but verifying
-// the absence of an enqueued mcp_file_index_jobs row needs a real DB.
-func TestPluginP13_SkipRAGIndex_Skipped(t *testing.T) {
-	t.Skip("TODO(P13): verifiable only against a real DB observing mcp_file_index_jobs; covered by E2E suite")
-}
