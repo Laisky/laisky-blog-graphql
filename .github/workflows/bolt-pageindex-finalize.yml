@@ -1,0 +1,320 @@
+name: Bolt PageIndex final acceptance
+
+on:
+  push:
+    branches:
+      - 'bolt/pageindex-bounded-candidates-20260822'
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      behavior: ${{ steps.behavior.outcome }}
+      benchmark: ${{ steps.benchmark.outcome }}
+      samples: ${{ steps.benchmark.outputs.samples }}
+      bytes: ${{ steps.benchmark.outputs.bytes }}
+      allocs: ${{ steps.benchmark.outputs.allocs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Candidate behavior tests
+        id: behavior
+        continue-on-error: true
+        run: >-
+          go test ./internal/mcp/memory/plugins/pageindex
+          -run '^(TestFilterCandidatesLimitedMatchesFullSort|TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments)$'
+          -count=1
+
+      - name: Candidate benchmark
+        id: benchmark
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          output=$(go test ./internal/mcp/memory/plugins/pageindex \
+            -run '^$' \
+            -bench '^BenchmarkFilterCandidatesLimited100K$' \
+            -benchmem \
+            -count=10 2>&1)
+          printf '%s\n' "$output"
+          parsed=$(printf '%s\n' "$output" | awk '
+            /^BenchmarkFilterCandidatesLimited100K-/ {
+              samples = samples (samples == "" ? "" : ",") $3
+              bytes = $5
+              allocs = $7
+              count++
+            }
+            END {
+              if (count != 10) exit 1
+              print samples "|" bytes "|" allocs
+            }
+          ')
+          IFS='|' read -r samples bytes allocs <<< "$parsed"
+          echo "samples=$samples" >> "$GITHUB_OUTPUT"
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "allocs=$allocs" >> "$GITHUB_OUTPUT"
+
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      tools: ${{ steps.tools.outcome }}
+      golangci: ${{ steps.golangci.outcome }}
+      lint: ${{ steps.lint.outcome }}
+      clean: ${{ steps.clean.outcome }}
+      race: ${{ steps.race.outcome }}
+      fullbench: ${{ steps.fullbench.outcome }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install lint tools
+        id: tools
+        continue-on-error: true
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Install golangci-lint
+        id: golangci
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+
+      - name: Format and lint
+        id: lint
+        continue-on-error: true
+        run: make lint
+
+      - name: Ensure lint did not rewrite tracked files
+        id: clean
+        continue-on-error: true
+        run: git diff --exit-code
+
+      - name: Race and coverage suite
+        id: race
+        continue-on-error: true
+        run: go test -race -cover ./...
+
+      - name: Full benchmark suite
+        id: fullbench
+        continue-on-error: true
+        run: go test -bench ./...
+
+  finalize:
+    if: always()
+    needs: [benchmark, validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BASELINE_SHA: db936e983e3bb7338c99e1e031bc482248f2cb8c
+      BRANCH: bolt/pageindex-bounded-candidates-20260822
+      BEHAVIOR_OUTCOME: ${{ needs.benchmark.outputs.behavior }}
+      BENCHMARK_OUTCOME: ${{ needs.benchmark.outputs.benchmark }}
+      OPT_SAMPLES: ${{ needs.benchmark.outputs.samples }}
+      OPT_BYTES: ${{ needs.benchmark.outputs.bytes }}
+      OPT_ALLOCS: ${{ needs.benchmark.outputs.allocs }}
+      TOOLS_OUTCOME: ${{ needs.validate.outputs.tools }}
+      GOLANGCI_OUTCOME: ${{ needs.validate.outputs.golangci }}
+      LINT_OUTCOME: ${{ needs.validate.outputs.lint }}
+      CLEAN_OUTCOME: ${{ needs.validate.outputs.clean }}
+      RACE_OUTCOME: ${{ needs.validate.outputs.race }}
+      FULLBENCH_OUTCOME: ${{ needs.validate.outputs.fullbench }}
+    steps:
+      - name: Checkout validated branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify correctness gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          outcomes=(
+            "$BEHAVIOR_OUTCOME"
+            "$BENCHMARK_OUTCOME"
+            "$TOOLS_OUTCOME"
+            "$GOLANGCI_OUTCOME"
+            "$LINT_OUTCOME"
+            "$CLEAN_OUTCOME"
+            "$RACE_OUTCOME"
+            "$FULLBENCH_OUTCOME"
+          )
+          for outcome in "${outcomes[@]}"; do
+            if [[ "$outcome" != success ]]; then
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+                -f state=failure \
+                -f context='bolt/final-acceptance' \
+                -f description="behavior=$BEHAVIOR_OUTCOME benchmark=$BENCHMARK_OUTCOME lint=$LINT_OUTCOME clean=$CLEAN_OUTCOME race=$RACE_OUTCOME fullbench=$FULLBENCH_OUTCOME"
+              exit 1
+            fi
+          done
+
+      - name: Compare baseline and optimized benchmark
+        id: comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline_json=''
+          for _ in {1..30}; do
+            baseline_json=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${BASELINE_SHA}/status")
+            time_1=$(jq -r '[.statuses[].context | select(startswith("bolt/time-1/"))][0] // empty' <<< "$baseline_json")
+            time_2=$(jq -r '[.statuses[].context | select(startswith("bolt/time-2/"))][0] // empty' <<< "$baseline_json")
+            memory=$(jq -r '[.statuses[].context | select(startswith("bolt/memory/"))][0] // empty' <<< "$baseline_json")
+            baseline_gate=$(jq -r '[.statuses[] | select(.context == "bolt/candidate-baseline") | .state][0] // empty' <<< "$baseline_json")
+            if [[ -n "$time_1" && -n "$time_2" && -n "$memory" && "$baseline_gate" == success ]]; then
+              break
+            fi
+            sleep 10
+          done
+          if [[ -z "$time_1" || -z "$time_2" || -z "$memory" || "$baseline_gate" != success ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+              -f state=failure \
+              -f context='bolt/final-acceptance' \
+              -f description='baseline benchmark evidence was not available'
+            exit 1
+          fi
+
+          baseline_samples="${time_1#bolt/time-1/},${time_2#bolt/time-2/}"
+          IFS='/' read -r _ _ baseline_bytes baseline_allocs <<< "$memory"
+          metrics=$(python3 - "$baseline_samples" "$OPT_SAMPLES" "$baseline_bytes" "$OPT_BYTES" "$baseline_allocs" "$OPT_ALLOCS" <<'PY'
+          import statistics
+          import sys
+
+          baseline = [int(value) for value in sys.argv[1].split(',')]
+          optimized = [int(value) for value in sys.argv[2].split(',')]
+          baseline_bytes, optimized_bytes = map(int, sys.argv[3:5])
+          baseline_allocs, optimized_allocs = map(int, sys.argv[5:7])
+          baseline_median = statistics.median(baseline)
+          optimized_median = statistics.median(optimized)
+          speedup = (baseline_median - optimized_median) / baseline_median * 100
+          bytes_reduction = (baseline_bytes - optimized_bytes) / baseline_bytes * 100
+          allocs_reduction = (baseline_allocs - optimized_allocs) / baseline_allocs * 100
+          if speedup < 5 or optimized_bytes > baseline_bytes or optimized_allocs > baseline_allocs:
+              raise SystemExit(
+                  f'optimization gate failed: speedup={speedup:.2f}% '
+                  f'bytes={baseline_bytes}->{optimized_bytes} '
+                  f'allocs={baseline_allocs}->{optimized_allocs}'
+              )
+          print('|'.join([
+              f'{baseline_median:.1f}',
+              f'{optimized_median:.1f}',
+              f'{speedup:.2f}',
+              f'{bytes_reduction:.2f}',
+              f'{allocs_reduction:.2f}',
+          ]))
+          PY
+          )
+          IFS='|' read -r baseline_median optimized_median speedup bytes_reduction allocs_reduction <<< "$metrics"
+          {
+            echo "baseline_samples=$baseline_samples"
+            echo "baseline_bytes=$baseline_bytes"
+            echo "baseline_allocs=$baseline_allocs"
+            echo "baseline_median=$baseline_median"
+            echo "optimized_median=$optimized_median"
+            echo "speedup=$speedup"
+            echo "bytes_reduction=$bytes_reduction"
+            echo "allocs_reduction=$allocs_reduction"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Remove temporary acceptance workflows
+        id: cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Bolt Performance Bot'
+          git config user.email 'github@laisky.com'
+          git rm \
+            .github/workflows/bolt-pageindex-candidates.yml \
+            .github/workflows/bolt-pageindex-finalize.yml
+          git commit -m 'ci: remove temporary Bolt benchmark harness'
+          git push origin "HEAD:${BRANCH}"
+          echo "final_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create validated pull request
+        env:
+          FINAL_SHA: ${{ steps.cleanup.outputs.final_sha }}
+          BASELINE_SAMPLES: ${{ steps.comparison.outputs.baseline_samples }}
+          BASELINE_BYTES: ${{ steps.comparison.outputs.baseline_bytes }}
+          BASELINE_ALLOCS: ${{ steps.comparison.outputs.baseline_allocs }}
+          BASELINE_MEDIAN: ${{ steps.comparison.outputs.baseline_median }}
+          OPTIMIZED_MEDIAN: ${{ steps.comparison.outputs.optimized_median }}
+          SPEEDUP: ${{ steps.comparison.outputs.speedup }}
+          BYTES_REDUCTION: ${{ steps.comparison.outputs.bytes_reduction }}
+          ALLOCS_REDUCTION: ${{ steps.comparison.outputs.allocs_reduction }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/bolt-pr-body.md <<EOF
+          💡 What:
+          Replace PageIndex's full candidate sort with a bounded max-heap when `tree_query.candidate_docs` is positive. The search still returns the exact lexicographically first candidates, while unlimited mode continues to use the original full-sort path.
+
+          🎯 Why:
+          Every PageIndex search previously materialized and sorted every matching indexed path before retaining the configured candidate count (default: 5). For large projects this made candidate selection O(n log n) time and O(n) candidate storage on every query.
+
+          🧪 Correctness:
+          - `TestFilterCandidatesLimitedMatchesFullSort` compares the bounded implementation against the original full-sort oracle across unlimited, negative, wildcard, prefix, missing-prefix, small-limit, and oversized-limit cases.
+          - `TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments` proves externally observable search ordering and candidate limiting remain identical.
+          - `make lint`
+          - `git diff --exit-code` after lint
+          - `go test -race -cover ./...`
+          - `go test -bench ./...`
+
+          📊 Benchmark:
+          Command:
+          `go test ./internal/mcp/memory/plugins/pageindex -run '^$' -bench '^BenchmarkFilterCandidatesLimited100K$' -benchmem -count=10`
+
+          Scenario: 100,000 indexed documents, empty prefix, `candidate_docs=5`.
+
+          - Baseline (`${BASELINE_SHA}`, full sort): median ${BASELINE_MEDIAN} ns/op, ${BASELINE_BYTES} B/op, ${BASELINE_ALLOCS} allocs/op.
+          - Optimized (`${GITHUB_SHA}`, bounded max-heap): median ${OPTIMIZED_MEDIAN} ns/op, ${OPT_BYTES} B/op, ${OPT_ALLOCS} allocs/op.
+          - Improvement: ${SPEEDUP}% lower median runtime, ${BYTES_REDUCTION}% fewer bytes/op, and ${ALLOCS_REDUCTION}% fewer allocations/op.
+          - Baseline samples (ns/op): `${BASELINE_SAMPLES}`
+          - Optimized samples (ns/op): `${OPT_SAMPLES}`
+
+          🔬 Measurement:
+          Both revisions used the same benchmark source, command, 10 repetitions, Go version from `go.mod`, and GitHub-hosted Ubuntu runner. Setup of the 100,000-entry fixture is outside the timed region. Reproduce with the command above.
+
+          ⚠️ Risk:
+          Low. The change is confined to a private PageIndex candidate-selection helper. Exact equivalence is tested against the original implementation. `limit <= 0` and limits at least as large as the index retain the original path. Rollback is a single helper replacement.
+          EOF
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${FINAL_SHA}" \
+            -f state=success \
+            -f context="bolt/validated/${SPEEDUP}pct" \
+            -f description="validated at ${GITHUB_SHA}; final commit only removes temporary workflows"
+
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base master --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$existing" ]]; then
+            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" \
+              --title '⚡ Bolt: bound PageIndex candidate sorting' \
+              --body-file /tmp/bolt-pr-body.md
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" \
+              --base master \
+              --head "$BRANCH" \
+              --title '⚡ Bolt: bound PageIndex candidate sorting' \
+              --body-file /tmp/bolt-pr-body.md
+          fi
