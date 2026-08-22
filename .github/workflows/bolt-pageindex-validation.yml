@@ -1,0 +1,218 @@
+name: Bolt PageIndex validation
+
+on:
+  push:
+    branches:
+      - 'ci/bolt-pageindex-validation-20260822'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TARGET_BRANCH: bolt/pageindex-bounded-candidates-v2-20260822
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout optimization branch
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Resolve target commit
+        id: target
+        if: steps.checkout.outcome == 'success'
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        id: setup_go
+        continue-on-error: true
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install lint tools
+        id: tools
+        continue-on-error: true
+        shell: bash
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Install golangci-lint
+        id: golangci
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+
+      - name: Run project lint
+        id: lint
+        continue-on-error: true
+        run: make lint
+
+      - name: Verify lint did not rewrite tracked files
+        id: clean
+        continue-on-error: true
+        run: git diff --exit-code
+
+      - name: Run targeted unit and behavior tests
+        id: behavior
+        continue-on-error: true
+        run: >-
+          go test ./internal/mcp/memory/plugins/pageindex
+          -run '^(TestFilterCandidatesLimitedMatchesFullSort|TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments)$'
+          -count=1
+
+      - name: Run race and coverage suite
+        id: race
+        continue-on-error: true
+        run: go test -race -cover ./...
+
+      - name: Run full benchmark suite
+        id: fullbench
+        continue-on-error: true
+        run: go test -bench ./...
+
+      - name: Run comparable baseline and optimized benchmarks
+        id: perf
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=$(go test ./internal/mcp/memory/plugins/pageindex \
+            -run '^$' \
+            -bench '^(BenchmarkFilterCandidatesFullSort100K|BenchmarkFilterCandidatesLimited100K)$' \
+            -benchmem \
+            -count=10 2>&1)
+          printf '%s\n' "$output"
+
+          parsed=$(printf '%s\n' "$output" | awk '
+            /^BenchmarkFilterCandidatesFullSort100K-/ {
+              baseline_samples = baseline_samples (baseline_samples == "" ? "" : ",") $3
+              baseline_bytes = $5
+              baseline_allocs = $7
+              baseline_count++
+            }
+            /^BenchmarkFilterCandidatesLimited100K-/ {
+              optimized_samples = optimized_samples (optimized_samples == "" ? "" : ",") $3
+              optimized_bytes = $5
+              optimized_allocs = $7
+              optimized_count++
+            }
+            END {
+              if (baseline_count != 10 || optimized_count != 10) exit 1
+              print baseline_samples "|" optimized_samples "|" baseline_bytes "|" optimized_bytes "|" baseline_allocs "|" optimized_allocs
+            }
+          ')
+
+          IFS='|' read -r baseline_samples optimized_samples baseline_bytes optimized_bytes baseline_allocs optimized_allocs <<< "$parsed"
+          metrics=$(python3 - "$baseline_samples" "$optimized_samples" "$baseline_bytes" "$optimized_bytes" "$baseline_allocs" "$optimized_allocs" <<'PY'
+          import statistics
+          import sys
+
+          baseline = [int(value) for value in sys.argv[1].split(',')]
+          optimized = [int(value) for value in sys.argv[2].split(',')]
+          baseline_bytes, optimized_bytes = map(int, sys.argv[3:5])
+          baseline_allocs, optimized_allocs = map(int, sys.argv[5:7])
+
+          baseline_median = statistics.median(baseline)
+          optimized_median = statistics.median(optimized)
+          runtime_reduction = (baseline_median - optimized_median) / baseline_median * 100
+          speedup = baseline_median / optimized_median
+          bytes_reduction = (baseline_bytes - optimized_bytes) / baseline_bytes * 100
+
+          if runtime_reduction < 5 or bytes_reduction <= 0:
+              raise SystemExit(
+                  f'performance gate failed: runtime={runtime_reduction:.2f}% '
+                  f'bytes={baseline_bytes}->{optimized_bytes}'
+              )
+
+          print('|'.join([
+              str(int(baseline_median)),
+              str(int(optimized_median)),
+              f'{runtime_reduction:.2f}',
+              f'{speedup:.2f}',
+              f'{bytes_reduction:.2f}',
+              str(baseline_allocs),
+              str(optimized_allocs),
+          ]))
+          PY
+          )
+
+          IFS='|' read -r baseline_median optimized_median runtime_reduction speedup bytes_reduction baseline_allocs optimized_allocs <<< "$metrics"
+          {
+            echo "baseline_median=$baseline_median"
+            echo "optimized_median=$optimized_median"
+            echo "runtime_reduction=$runtime_reduction"
+            echo "speedup=$speedup"
+            echo "baseline_bytes=$baseline_bytes"
+            echo "optimized_bytes=$optimized_bytes"
+            echo "bytes_reduction=$bytes_reduction"
+            echo "baseline_allocs=$baseline_allocs"
+            echo "optimized_allocs=$optimized_allocs"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish validation evidence
+        if: always() && steps.target.outputs.sha != ''
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SETUP_GO_OUTCOME: ${{ steps.setup_go.outcome }}
+          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          GOLANGCI_OUTCOME: ${{ steps.golangci.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          CLEAN_OUTCOME: ${{ steps.clean.outcome }}
+          BEHAVIOR_OUTCOME: ${{ steps.behavior.outcome }}
+          RACE_OUTCOME: ${{ steps.race.outcome }}
+          FULLBENCH_OUTCOME: ${{ steps.fullbench.outcome }}
+          PERF_OUTCOME: ${{ steps.perf.outcome }}
+          BASELINE_MEDIAN: ${{ steps.perf.outputs.baseline_median }}
+          OPTIMIZED_MEDIAN: ${{ steps.perf.outputs.optimized_median }}
+          RUNTIME_REDUCTION: ${{ steps.perf.outputs.runtime_reduction }}
+          SPEEDUP: ${{ steps.perf.outputs.speedup }}
+          BASELINE_BYTES: ${{ steps.perf.outputs.baseline_bytes }}
+          OPTIMIZED_BYTES: ${{ steps.perf.outputs.optimized_bytes }}
+          BYTES_REDUCTION: ${{ steps.perf.outputs.bytes_reduction }}
+          BASELINE_ALLOCS: ${{ steps.perf.outputs.baseline_allocs }}
+          OPTIMIZED_ALLOCS: ${{ steps.perf.outputs.optimized_allocs }}
+        run: |
+          state=success
+          for outcome in \
+            "$CHECKOUT_OUTCOME" "$SETUP_GO_OUTCOME" "$TOOLS_OUTCOME" \
+            "$GOLANGCI_OUTCOME" "$LINT_OUTCOME" "$CLEAN_OUTCOME" \
+            "$BEHAVIOR_OUTCOME" "$RACE_OUTCOME" "$FULLBENCH_OUTCOME" \
+            "$PERF_OUTCOME"; do
+            if [[ "$outcome" != success ]]; then
+              state=failure
+            fi
+          done
+
+          summary="lint=$LINT_OUTCOME clean=$CLEAN_OUTCOME behavior=$BEHAVIOR_OUTCOME race=$RACE_OUTCOME bench=$FULLBENCH_OUTCOME perf=$PERF_OUTCOME"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='bolt/validation' \
+            -f description="${summary:0:140}"
+
+          if [[ "$PERF_OUTCOME" == success ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=success \
+              -f context="bolt/runtime/${BASELINE_MEDIAN}/${OPTIMIZED_MEDIAN}/${RUNTIME_REDUCTION}/${SPEEDUP}" \
+              -f description="median ns/op: ${BASELINE_MEDIAN} -> ${OPTIMIZED_MEDIAN}; ${RUNTIME_REDUCTION}% lower, ${SPEEDUP}x faster"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=success \
+              -f context="bolt/memory/${BASELINE_BYTES}/${OPTIMIZED_BYTES}/${BYTES_REDUCTION}/${BASELINE_ALLOCS}/${OPTIMIZED_ALLOCS}" \
+              -f description="B/op: ${BASELINE_BYTES} -> ${OPTIMIZED_BYTES} (${BYTES_REDUCTION}% lower); allocs: ${BASELINE_ALLOCS} -> ${OPTIMIZED_ALLOCS}"
+          fi
+
+          [[ "$state" == success ]]
