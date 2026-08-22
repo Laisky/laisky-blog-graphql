@@ -46,6 +46,7 @@ func (t *FileReadTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	path = normalizeFilePath(path)
 	offset := readInt64Arg(req, "offset")
 	length := readInt64ArgWithDefault(req, "length", -1)
 	ctx = withFilePluginOverride(ctx, req)

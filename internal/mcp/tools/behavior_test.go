@@ -73,9 +73,11 @@ type behaviorFileService struct {
 	searchResult files.SearchResult
 	searchErr    error
 
-	lastProject string
-	lastPath    string
-	lastMode    files.WriteMode
+	lastProject    string
+	lastPath       string
+	lastToPath     string
+	lastPathPrefix string
+	lastMode       files.WriteMode
 }
 
 func (m *behaviorFileService) Stat(_ context.Context, _ files.AuthContext, project, path string) (files.StatResult, error) {
@@ -103,9 +105,10 @@ func (m *behaviorFileService) Delete(_ context.Context, _ files.AuthContext, pro
 	return m.deleteResult, m.deleteErr
 }
 
-func (m *behaviorFileService) Rename(_ context.Context, _ files.AuthContext, project, from string, _ string, _ bool) (files.RenameResult, error) {
+func (m *behaviorFileService) Rename(_ context.Context, _ files.AuthContext, project, from, to string, _ bool) (files.RenameResult, error) {
 	m.lastProject = project
 	m.lastPath = from
+	m.lastToPath = to
 	return m.renameResult, m.renameErr
 }
 
@@ -115,9 +118,10 @@ func (m *behaviorFileService) List(_ context.Context, _ files.AuthContext, proje
 	return m.listResult, m.listErr
 }
 
-func (m *behaviorFileService) Search(_ context.Context, _ files.AuthContext, project, query string, _ string, _ int) (files.SearchResult, error) {
+func (m *behaviorFileService) Search(_ context.Context, _ files.AuthContext, project, query, pathPrefix string, _ int) (files.SearchResult, error) {
 	m.lastProject = project
 	m.lastPath = query
+	m.lastPathPrefix = pathPrefix
 	return m.searchResult, m.searchErr
 }
 
@@ -476,6 +480,103 @@ func TestFileToolsSuccessfulOperations(t *testing.T) {
 		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "query": "find me"}))
 		require.NoError(t, err)
 		require.False(t, result.IsError)
+	})
+}
+
+// TestFileToolsNormalizeMissingLeadingSlash verifies that MCP file tools accept
+// non-root paths without a leading slash and pass canonical paths to services.
+func TestFileToolsNormalizeMissingLeadingSlash(t *testing.T) {
+	t.Parallel()
+	ctx := behaviorAuthCtx()
+
+	t.Run("file_stat", func(t *testing.T) {
+		svc := &behaviorFileService{statResult: files.StatResult{Exists: true}}
+		tool, err := NewFileStatTool(svc)
+		require.NoError(t, err)
+
+		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "path": "meta.json"}))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+		require.Equal(t, "/meta.json", svc.lastPath)
+	})
+
+	t.Run("file_read", func(t *testing.T) {
+		svc := &behaviorFileService{readResult: files.ReadResult{ContentEncoding: "utf-8"}}
+		tool, err := NewFileReadTool(svc)
+		require.NoError(t, err)
+
+		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "path": "read.txt"}))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+		require.Equal(t, "/read.txt", svc.lastPath)
+	})
+
+	t.Run("file_write", func(t *testing.T) {
+		svc := &behaviorFileService{}
+		tool, err := NewFileWriteTool(svc)
+		require.NoError(t, err)
+
+		result, err := tool.Handle(ctx, behaviorReq(map[string]any{
+			"project": "p",
+			"path":    "write.txt",
+			"content": "content",
+		}))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+		require.Equal(t, "/write.txt", svc.lastPath)
+	})
+
+	t.Run("file_delete", func(t *testing.T) {
+		svc := &behaviorFileService{}
+		tool, err := NewFileDeleteTool(svc)
+		require.NoError(t, err)
+
+		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "path": "delete.txt"}))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+		require.Equal(t, "/delete.txt", svc.lastPath)
+	})
+
+	t.Run("file_rename", func(t *testing.T) {
+		svc := &behaviorFileService{}
+		tool, err := NewFileRenameTool(svc)
+		require.NoError(t, err)
+
+		result, err := tool.Handle(ctx, behaviorReq(map[string]any{
+			"project":   "p",
+			"from_path": "old.txt",
+			"to_path":   "new.txt",
+		}))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+		require.Equal(t, "/old.txt", svc.lastPath)
+		require.Equal(t, "/new.txt", svc.lastToPath)
+	})
+
+	t.Run("file_list", func(t *testing.T) {
+		svc := &behaviorFileService{}
+		tool, err := NewFileListTool(svc)
+		require.NoError(t, err)
+
+		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "path": "docs"}))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+		require.Equal(t, "/docs", svc.lastPath)
+	})
+
+	t.Run("file_search path prefix", func(t *testing.T) {
+		svc := &behaviorFileService{}
+		tool, err := NewFileSearchTool(svc)
+		require.NoError(t, err)
+
+		result, err := tool.Handle(ctx, behaviorReq(map[string]any{
+			"project":     "p",
+			"query":       "hello",
+			"path_prefix": "docs",
+		}))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+		require.Equal(t, "/docs", svc.lastPathPrefix)
 	})
 }
 
@@ -838,7 +939,7 @@ func TestNormalizeFileListPath(t *testing.T) {
 	require.Equal(t, "", normalizeFileListPath("/"))
 	require.Equal(t, "", normalizeFileListPath(""))
 	require.Equal(t, "/docs", normalizeFileListPath("/docs"))
-	require.Equal(t, "subdir", normalizeFileListPath("subdir"))
+	require.Equal(t, "/subdir", normalizeFileListPath("subdir"))
 }
 
 // ---------------------------------------------------------------------------

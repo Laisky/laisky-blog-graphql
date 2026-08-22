@@ -48,6 +48,7 @@ func (t *FileWriteTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	path = normalizeFilePath(path)
 	content, err := req.RequireString("content")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil

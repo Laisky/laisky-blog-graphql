@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
@@ -13,6 +14,16 @@ import (
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
+
+// normalizeFilePath adds the canonical leading slash to a non-root path.
+// Empty paths remain empty because they represent the project root.
+func normalizeFilePath(path string) string {
+	if path == "" || strings.HasPrefix(path, "/") {
+		return path
+	}
+
+	return "/" + path
+}
 
 // fileAuthFromContext extracts the trusted auth context for file tools.
 func fileAuthFromContext(ctx context.Context) (files.AuthContext, bool) {

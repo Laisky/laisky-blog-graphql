@@ -77,7 +77,7 @@ func (t *FileSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	pathPrefix := readStringArg(req, "path_prefix")
+	pathPrefix := normalizeFilePath(readStringArg(req, "path_prefix"))
 	limit := readIntArg(req, "limit")
 	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {

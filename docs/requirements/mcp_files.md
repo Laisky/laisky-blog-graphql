@@ -50,7 +50,9 @@ All paths are relative to project root.
 - `path` length: `0..512`
 - Empty path `""` means project root.
 - `/` is the only separator.
-- Path must start with `/`.
+- MCP tool inputs may omit the leading `/`; for non-empty paths the tool layer
+  adds it before validation. Canonical paths passed to the service start with
+  `/`.
 - Path must not end with `/` (except empty root path).
 - Empty segments are forbidden (`a//b` is invalid).
 - `.` and `..` segments are forbidden.
@@ -270,7 +272,8 @@ Parameter semantics:
 
 - `project`: target project namespace. The literal value `"*"` expands the search to every project owned by the authenticated caller and is accepted only by `file_search`. All other file tools (`file_stat`, `file_read`, `file_write`, `file_delete`, `file_rename`, `file_list`) must reject `"*"` and require an explicit project to prevent accidental cross-project mutations.
 - `query`: search query string, must be non-empty after trim.
-- `path_prefix`: optional raw string prefix filter on file path.
+- `path_prefix`: optional raw string prefix filter on file path; the MCP tool
+  layer applies the same leading-slash normalization as `path`.
 - `limit`: max returned chunk entries, default `5`, max `20`.
 
 Search behavior:

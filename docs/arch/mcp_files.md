@@ -400,8 +400,9 @@ ON mcp_file_index_jobs (status, available_at, id);
 
 - length `0..512`
 - empty string means project root
-- non-root path:
-  - must start with `/`
+- non-root path is normalized by the MCP tool layer with a leading `/` when
+  omitted; canonical service paths:
+  - start with `/`
   - must not end with `/`
   - no empty segment (`//`)
   - no `.` or `..` segments
@@ -592,7 +593,8 @@ Execution outline:
 ### 9.7 `file_search(project, query, path_prefix="", limit=5)`
 
 - `query` must be non-empty after trim, else `INVALID_QUERY`.
-- `path_prefix` is raw string-prefix filter (not directory-boundary filter).
+- `path_prefix` is a raw string-prefix filter (not directory-boundary filter);
+  the MCP tool layer normalizes a missing leading `/`.
 - limit default 5, max 20.
 - return only chunks from active files (never deleted).
 - order by final score descending.

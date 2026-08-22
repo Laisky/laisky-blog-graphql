@@ -1,12 +1,12 @@
 .PHONY: install
 install:
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	# go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install google.golang.org/protobuf/protoc-gen-go@latest
 
 .PHONY: gen
 gen:
-	GQLGEN_DEBUG=1 GQLGEN_TRACE=1 go run github.com/99designs/gqlgen@v0.17.84 generate
+	GQLGEN_DEBUG=1 GQLGEN_TRACE=1 go run github.com/99designs/gqlgen@v0.17.94 generate
 
 .PHONY: test
 test:

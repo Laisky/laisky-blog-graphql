@@ -133,7 +133,8 @@ Tool output is typically in `result.content[0].text` (as JSON string). Error pay
 ### 4.2 `path`
 
 - Root path is `""`
-- Non-root paths must start with `/`, for example `/docs/a.txt`
+- Non-root paths may be provided with or without a leading `/`; the tool adds
+  the prefix automatically (for example, `docs/a.txt` becomes `/docs/a.txt`)
 - Must not end with `/`
 - Must not contain `//`, `.` or `..` segments
 - Must not contain whitespace or control characters
@@ -330,7 +331,8 @@ Search indexed chunks inside a project.
 - Required: `project`, `query`
   - Set `project` to `"*"` to search across every project owned by the caller. The wildcard is accepted only by `file_search`; all other file tools still require an explicit project.
 - Optional:
-  - `path_prefix`: prefix filter, for example `/docs`
+  - `path_prefix`: prefix filter, for example `/docs`; a missing leading `/`
+    is added automatically
   - `limit`: default `5`, max `20`
 
 ```bash
