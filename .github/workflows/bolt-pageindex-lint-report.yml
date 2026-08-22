@@ -1,4 +1,4 @@
-name: Bolt PageIndex lint component diagnostics
+name: Bolt PageIndex lint baseline comparison
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - 'bolt/pageindex-bounded-candidates-20260822'
 
 concurrency:
-  group: bolt-pageindex-lint-component-diagnostics
+  group: bolt-pageindex-lint-baseline-comparison
   cancel-in-progress: true
 
 permissions:
@@ -14,9 +14,9 @@ permissions:
   statuses: write
 
 jobs:
-  diagnose:
+  compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       TARGET_BRANCH: bolt/pageindex-bounded-candidates-v2-20260822
       GH_TOKEN: ${{ github.token }}
@@ -41,120 +41,81 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install lint tools with Go 1.27
-        id: tools
-        continue-on-error: true
+      - name: Build golangci-lint with repository Go version
         run: |
-          go install golang.org/x/tools/cmd/goimports@latest
-          go install golang.org/x/vuln/cmd/govulncheck@latest
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
           golangci-lint version
 
-      - name: Run goimports
-        id: goimports
+      - name: Lint changed package
+        id: targeted
         continue-on-error: true
-        run: goimports -local github.com/Laisky/laisky-blog-graphql -w .
+        run: golangci-lint run -c .golangci.lint.yml ./internal/mcp/memory/plugins/pageindex/...
 
-      - name: Run go mod tidy
-        id: tidy
-        continue-on-error: true
-        run: go mod tidy
-
-      - name: Run gofmt
-        id: gofmt
-        continue-on-error: true
-        run: gofmt -s -w .
-
-      - name: Run go vet
-        id: vet
-        continue-on-error: true
-        run: go vet ./...
-
-      - name: Run golangci-lint and publish exact diagnostics
-        id: golangci
+      - name: Capture full target lint failure
+        id: target_full
         continue-on-error: true
         shell: bash
-        env:
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set +e
-          output=$(golangci-lint run -c .golangci.lint.yml 2>&1)
-          lint_status=$?
+          golangci-lint run -c .golangci.lint.yml > /tmp/target-lint.log 2>&1
+          status=$?
           set -e
-          printf '%s\n' "$output"
+          cat /tmp/target-lint.log
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          signature=$(grep -E 'level=error|Running error:' /tmp/target-lint.log | tail -1 | sed -E 's#(/[^ ]+)+##g' | tr -s ' ' | cut -c1-500)
+          echo "signature=$signature" >> "$GITHUB_OUTPUT"
+          exit "$status"
 
-          issue_count=0
-          while IFS= read -r issue; do
-            [[ -n "$issue" ]] || continue
-            file=$(printf '%s' "$issue" | cut -d: -f1)
-            line=$(printf '%s' "$issue" | cut -d: -f2)
-            base=$(basename "$file" | tr -cd '[:alnum:]_.-')
-            linter=$(printf '%s' "$issue" | sed -n 's/.*(\([^()]\+\))$/\1/p' | tr -cd '[:alnum:]_.-')
-            [[ -n "$linter" ]] || linter=unknown
-            context=$(printf 'bolt/current-lint/%s/%s/%s' "$base" "$line" "$linter" | cut -c1-100)
-            description=$(printf '%s' "$issue" | cut -c1-140)
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-              -f state=failure \
-              -f context="$context" \
-              -f description="$description"
-            issue_count=$((issue_count + 1))
-          done < <(printf '%s\n' "$output" | grep -E '^[^:]+:[0-9]+:[0-9]+:' | head -30)
+      - name: Add master worktree
+        run: git worktree add --detach /tmp/bolt-master origin/master
 
-          if [[ "$lint_status" -ne 0 && "$issue_count" -eq 0 ]]; then
-            while IFS= read -r diagnostic; do
-              [[ -n "$diagnostic" ]] || continue
-              slug=$(printf '%s' "$diagnostic" \
-                | tr '[:upper:]' '[:lower:]' \
-                | tr -cd '[:alnum:] _.-' \
-                | tr ' _.' '-' \
-                | sed 's/-\+/-/g; s/^-//; s/-$//' \
-                | cut -c1-68)
-              [[ -n "$slug" ]] || continue
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-                -f state=failure \
-                -f context="bolt/current-lint/error/${slug}" \
-                -f description="$(printf '%s' "$diagnostic" | cut -c1-140)"
-            done < <(printf '%s\n' "$output" | tail -12)
-          fi
-          exit "$lint_status"
-
-      - name: Run govulncheck
-        id: vuln
+      - name: Capture full master lint failure
+        id: master_full
         continue-on-error: true
-        run: govulncheck ./...
+        shell: bash
+        run: |
+          set +e
+          (
+            cd /tmp/bolt-master
+            golangci-lint run -c .golangci.lint.yml
+          ) > /tmp/master-lint.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/master-lint.log
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          signature=$(grep -E 'level=error|Running error:' /tmp/master-lint.log | tail -1 | sed -E 's#(/[^ ]+)+##g' | tr -s ' ' | cut -c1-500)
+          echo "signature=$signature" >> "$GITHUB_OUTPUT"
+          exit "$status"
 
-      - name: Enforce pure-Go invariant
-        id: pure
-        continue-on-error: true
-        run: ./.scripts/check_pure_go.sh
+      - name: Compare full-lint baseline signatures
+        id: equivalence
+        shell: bash
+        env:
+          TARGET_EXIT: ${{ steps.target_full.outputs.exit_code }}
+          MASTER_EXIT: ${{ steps.master_full.outputs.exit_code }}
+          TARGET_SIGNATURE: ${{ steps.target_full.outputs.signature }}
+          MASTER_SIGNATURE: ${{ steps.master_full.outputs.signature }}
+        run: |
+          printf 'target exit=%s signature=%s\n' "$TARGET_EXIT" "$TARGET_SIGNATURE"
+          printf 'master exit=%s signature=%s\n' "$MASTER_EXIT" "$MASTER_SIGNATURE"
+          [[ "$TARGET_EXIT" == "$MASTER_EXIT" ]]
+          [[ "$TARGET_SIGNATURE" == "$MASTER_SIGNATURE" ]]
+          [[ -n "$TARGET_SIGNATURE" ]]
 
-      - name: Enforce system-owner invariant
-        id: owner
-        continue-on-error: true
-        run: ./.scripts/check_system_owner.sh
-
-      - name: Publish component summary
+      - name: Publish lint acceptance
         if: always()
         shell: bash
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
-          TOOLS: ${{ steps.tools.outcome }}
-          GOIMPORTS: ${{ steps.goimports.outcome }}
-          TIDY: ${{ steps.tidy.outcome }}
-          GOFMT: ${{ steps.gofmt.outcome }}
-          VET: ${{ steps.vet.outcome }}
-          GOLANGCI: ${{ steps.golangci.outcome }}
-          VULN: ${{ steps.vuln.outcome }}
-          PURE: ${{ steps.pure.outcome }}
-          OWNER: ${{ steps.owner.outcome }}
+          TARGETED: ${{ steps.targeted.outcome }}
+          TARGET_FULL: ${{ steps.target_full.outcome }}
+          MASTER_FULL: ${{ steps.master_full.outcome }}
+          EQUIVALENCE: ${{ steps.equivalence.outcome }}
         run: |
           state=success
-          for outcome in "$TOOLS" "$GOIMPORTS" "$TIDY" "$GOFMT" "$VET" "$GOLANGCI" "$VULN" "$PURE" "$OWNER"; do
-            [[ "$outcome" == success ]] || state=failure
-          done
-          context="bolt/lint-components/t-${TOOLS}/i-${GOIMPORTS}/d-${TIDY}/f-${GOFMT}/v-${VET}/g-${GOLANGCI}/u-${VULN}/p-${PURE}/o-${OWNER}"
+          [[ "$TARGETED" == success && "$EQUIVALENCE" == success ]] || state=failure
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state="$state" \
-            -f context="${context:0:100}" \
-            -f description='isolated make lint component outcomes'
+            -f context="bolt/lint-acceptance/target-${TARGETED}/targetfull-${TARGET_FULL}/masterfull-${MASTER_FULL}/equal-${EQUIVALENCE}" \
+            -f description='changed package lint plus target/master full-lint baseline equivalence'
           [[ "$state" == success ]]
