@@ -1,28 +1,37 @@
 package rag
 
-import (
-	"regexp"
-	"strings"
-)
-
-var nonWord = regexp.MustCompile(`[^a-z0-9]+`)
+import "strings"
 
 // Tokenize splits the text into lowercase alphanumeric tokens suitable for approximate BM25 scoring.
 func Tokenize(text string) []string {
 	lowered := strings.ToLower(text)
-	cleaned := nonWord.Split(lowered, -1)
-	tokens := make([]string, 0, len(cleaned))
+	tokens := make([]string, 0)
 	seen := make(map[string]struct{})
-	for _, token := range cleaned {
-		token = strings.TrimSpace(token)
-		if token == "" {
+	tokenStart := -1
+
+	// Scan lowered bytes directly to preserve the ASCII [a-z0-9] contract while
+	// avoiding regexp.Split's intermediate slice of every token occurrence.
+	for i := 0; i <= len(lowered); i++ {
+		if i < len(lowered) && isTokenByte(lowered[i]) {
+			if tokenStart == -1 {
+				tokenStart = i
+			}
 			continue
 		}
-		if _, ok := seen[token]; ok {
+		if tokenStart == -1 {
 			continue
 		}
-		seen[token] = struct{}{}
-		tokens = append(tokens, token)
+
+		token := lowered[tokenStart:i]
+		if _, ok := seen[token]; !ok {
+			seen[token] = struct{}{}
+			tokens = append(tokens, token)
+		}
+		tokenStart = -1
 	}
 	return tokens
+}
+
+func isTokenByte(value byte) bool {
+	return (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9')
 }
