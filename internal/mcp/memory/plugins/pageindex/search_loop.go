@@ -48,10 +48,7 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 	if err != nil {
 		return files.SearchResult{}, err
 	}
-	candidates := filterCandidates(ix, in.PathPrefix)
-	if len(candidates) > s.cfg.TreeQuery.CandidateDocs && s.cfg.TreeQuery.CandidateDocs > 0 {
-		candidates = candidates[:s.cfg.TreeQuery.CandidateDocs]
-	}
+	candidates := filterCandidatesLimited(ix, in.PathPrefix, s.cfg.TreeQuery.CandidateDocs)
 	budget := NewBudget(int64(s.cfg.TreeQuery.MaxTokens))
 	stepBudget := s.cfg.TreeQuery.MaxSteps
 	if stepBudget <= 0 {
