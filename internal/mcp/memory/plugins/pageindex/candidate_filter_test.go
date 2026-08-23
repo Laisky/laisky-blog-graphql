@@ -8,6 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFilterCandidatesLimitedMatchesFullSort uses t to verify that bounded
+// candidate selection returns exactly the same ordered entries as the original
+// full-sort implementation across prefix and limit edge cases.
 func TestFilterCandidatesLimitedMatchesFullSort(t *testing.T) {
 	t.Parallel()
 
@@ -48,6 +51,9 @@ func TestFilterCandidatesLimitedMatchesFullSort(t *testing.T) {
 	}
 }
 
+// TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments uses t to verify that
+// Searcher.Run preserves the externally observable path ordering and candidate
+// limit after switching to bounded candidate selection.
 func TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments(t *testing.T) {
 	t.Parallel()
 
@@ -82,8 +88,12 @@ func TestSearcherRunCandidateLimitKeepsLexicalFirstDocuments(t *testing.T) {
 	})
 }
 
+// benchmarkCandidateSink retains benchmark results so the compiler cannot
+// eliminate candidate selection as dead code.
 var benchmarkCandidateSink []rankedCandidate
 
+// BenchmarkFilterCandidatesFullSort100K uses b to measure the original full
+// sort followed by truncation to five candidates over a 100,000-entry index.
 func BenchmarkFilterCandidatesFullSort100K(b *testing.B) {
 	ix := newCandidateBenchmarkIndex()
 
@@ -97,6 +107,8 @@ func BenchmarkFilterCandidatesFullSort100K(b *testing.B) {
 	require.Len(b, benchmarkCandidateSink, 5)
 }
 
+// BenchmarkFilterCandidatesLimited100K uses b to measure bounded selection of
+// five candidates over the same 100,000-entry index as the baseline benchmark.
 func BenchmarkFilterCandidatesLimited100K(b *testing.B) {
 	ix := newCandidateBenchmarkIndex()
 
@@ -109,6 +121,8 @@ func BenchmarkFilterCandidatesLimited100K(b *testing.B) {
 	require.Len(b, benchmarkCandidateSink, 5)
 }
 
+// newCandidateBenchmarkIndex returns the deterministic 100,000-entry index used
+// by both candidate-selection benchmarks so their workloads remain comparable.
 func newCandidateBenchmarkIndex() Index {
 	const size = 100_000
 	ix := make(Index, size)
