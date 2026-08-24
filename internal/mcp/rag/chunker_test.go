@@ -16,3 +16,10 @@ func TestParagraphChunkerSplit(t *testing.T) {
 		require.LessOrEqual(t, len(fragment.Text), 40, "fragment exceeds limit: %d", len(fragment.Text))
 	}
 }
+
+// TestParagraphChunkerSplitPreservesTokenBehavior verifies the token sequence exposed by the chunker remains stable.
+func TestParagraphChunkerSplitPreservesTokenBehavior(t *testing.T) {
+	fragments := (ParagraphChunker{}).Split("AKB AİB. Hello, HELLO world!! world", 500)
+	require.Len(t, fragments, 1)
+	require.Equal(t, []string{"akb", "aib", "hello", "world"}, fragments[0].Tokens)
+}
