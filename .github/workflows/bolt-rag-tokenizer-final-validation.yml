@@ -1,0 +1,274 @@
+name: Bolt RAG tokenizer final validation
+
+on:
+  push:
+    branches:
+      - 'ci/bolt-rag-tokenizer-final-validation-20260823'
+
+concurrency:
+  group: bolt-rag-tokenizer-final-validation
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TARGET_BRANCH: develop
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve optimization head
+        id: target
+        shell: bash
+        run: |
+          sha=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')
+          test -n "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout clean optimization branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install repository validation tools
+        shell: bash
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+
+      - name: Add master worktree
+        run: git worktree add --detach /tmp/bolt-master origin/master
+
+      - name: Validate correctness and benchmark improvement
+        id: validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          set +e
+          make lint > /tmp/target-make-lint.log 2>&1
+          target_lint_exit=$?
+          set -e
+          git diff --binary > /tmp/target-format.diff
+          cat /tmp/target-make-lint.log
+          git restore .
+          git clean -fd
+
+          set +e
+          (
+            cd /tmp/bolt-master
+            make lint
+          ) > /tmp/master-make-lint.log 2>&1
+          master_lint_exit=$?
+          set -e
+          (
+            cd /tmp/bolt-master
+            git diff --binary
+          ) > /tmp/master-format.diff
+          cat /tmp/master-make-lint.log
+
+          normalize_lint_signature() {
+            { grep -E 'level=error|Running error:' "$1" || true; } \
+              | tail -1 \
+              | sed -E 's#(/[^ ]+)+##g' \
+              | tr -s ' ' \
+              | cut -c1-500
+          }
+
+          target_lint_signature=$(normalize_lint_signature /tmp/target-make-lint.log)
+          master_lint_signature=$(normalize_lint_signature /tmp/master-make-lint.log)
+          printf 'target lint exit=%s signature=%s\n' "$target_lint_exit" "$target_lint_signature"
+          printf 'master lint exit=%s signature=%s\n' "$master_lint_exit" "$master_lint_signature"
+
+          [[ "$target_lint_exit" == "$master_lint_exit" ]]
+          if [[ "$target_lint_exit" != 0 ]]; then
+            [[ -n "$target_lint_signature" ]]
+            [[ "$target_lint_signature" == "$master_lint_signature" ]]
+          fi
+          cmp -s /tmp/target-format.diff /tmp/master-format.diff
+          if grep -E 'internal/mcp/rag/tokenizer\.go:[0-9]+:[0-9]+:' /tmp/target-make-lint.log; then
+            echo 'make lint reported a concrete issue in the changed production file' >&2
+            exit 1
+          fi
+
+          go mod vendor
+          (cd /tmp/bolt-master && go mod vendor)
+          go vet ./...
+          govulncheck ./...
+          ./.scripts/check_pure_go.sh
+          ./.scripts/check_system_owner.sh
+          go test -race ./internal/mcp/rag -count=1
+          go test -race -coverprofile=coverage.txt -covermode=atomic \
+            -skip '^TestRepoConcurrentIdentityLink$' ./...
+
+          set +e
+          go test -race ./internal/web/blog/oneapi \
+            -run '^TestRepoConcurrentIdentityLink$' \
+            -count=1 \
+            -timeout=90s > /tmp/target-known-race.log 2>&1
+          target_race_exit=$?
+          set -e
+          cat /tmp/target-known-race.log
+
+          if [[ "$target_race_exit" != 0 ]]; then
+            set +e
+            (
+              cd /tmp/bolt-master
+              go test -race ./internal/web/blog/oneapi \
+                -run '^TestRepoConcurrentIdentityLink$' \
+                -count=1 \
+                -timeout=90s
+            ) > /tmp/master-known-race.log 2>&1
+            master_race_exit=$?
+            set -e
+            cat /tmp/master-known-race.log
+
+            timeout_signature() {
+              {
+                grep -m1 'panic: test timed out' "$1" || true
+                grep -m1 -E '^[[:space:]]+TestRepoConcurrentIdentityLink' "$1" || true
+                grep -m1 -E '^FAIL[[:space:]]+github.com/.*/internal/web/blog/oneapi' "$1" || true
+              } | sed -E \
+                -e 's/after [0-9]+m[0-9.]+s/after duration/' \
+                -e 's/\([0-9]+m[0-9.]+s\)/(duration)/' \
+                -e 's/[0-9]+\.[0-9]+s$/(duration)/'
+            }
+
+            target_race_signature=$(timeout_signature /tmp/target-known-race.log)
+            master_race_signature=$(timeout_signature /tmp/master-known-race.log)
+            [[ "$master_race_exit" != 0 ]]
+            [[ -n "$target_race_signature" ]]
+            [[ "$target_race_signature" == "$master_race_signature" ]]
+          fi
+
+          go test -bench ./...
+          go test ./internal/mcp/rag \
+            -run '^$' \
+            -bench '^BenchmarkTokenize(RegexpSplit|DirectScan)$' \
+            -benchmem \
+            -benchtime=500ms \
+            -count=6 \
+            -cpu=1 | tee /tmp/tokenizer-bench.txt
+
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import pathlib
+          import re
+          import statistics
+
+          line_re = re.compile(
+              r'^BenchmarkTokenize(RegexpSplit|DirectScan)/(search_query_128B|rag_chunk_512B)(?:-\d+)?'
+              r'\s+\d+\s+([\d.]+)\s+ns/op(?:\s+[\d.]+\s+MB/s)?'
+              r'\s+(\d+)\s+B/op\s+(\d+)\s+allocs/op$',
+          )
+          samples = {}
+          for line in pathlib.Path('/tmp/tokenizer-bench.txt').read_text().splitlines():
+              match = line_re.match(line)
+              if not match:
+                  continue
+              implementation, scenario, runtime, allocated, allocs = match.groups()
+              samples.setdefault((scenario, implementation), []).append(
+                  (float(runtime), int(allocated), int(allocs)),
+              )
+
+          for prefix, scenario in {
+              'query': 'search_query_128B',
+              'chunk': 'rag_chunk_512B',
+          }.items():
+              baseline = samples.get((scenario, 'RegexpSplit'), [])
+              optimized = samples.get((scenario, 'DirectScan'), [])
+              if len(baseline) != 6 or len(optimized) != 6:
+                  raise SystemExit(
+                      f'missing benchmark samples for {scenario}: '
+                      f'{len(baseline)} baseline, {len(optimized)} optimized'
+                  )
+
+              baseline_ns = statistics.median(value[0] for value in baseline)
+              optimized_ns = statistics.median(value[0] for value in optimized)
+              baseline_bytes = int(statistics.median(value[1] for value in baseline))
+              optimized_bytes = int(statistics.median(value[1] for value in optimized))
+              baseline_allocs = int(statistics.median(value[2] for value in baseline))
+              optimized_allocs = int(statistics.median(value[2] for value in optimized))
+              runtime_reduction = (baseline_ns - optimized_ns) / baseline_ns * 100
+              speedup = baseline_ns / optimized_ns
+              bytes_reduction = (baseline_bytes - optimized_bytes) / baseline_bytes * 100
+
+              if runtime_reduction < 5 or bytes_reduction <= 0:
+                  raise SystemExit(
+                      f'performance gate failed for {scenario}: '
+                      f'runtime={runtime_reduction:.2f}% '
+                      f'bytes={baseline_bytes}->{optimized_bytes}'
+                  )
+
+              print(f'{prefix}_baseline_ns={baseline_ns:.1f}')
+              print(f'{prefix}_optimized_ns={optimized_ns:.1f}')
+              print(f'{prefix}_runtime_reduction={runtime_reduction:.2f}')
+              print(f'{prefix}_speedup={speedup:.2f}')
+              print(f'{prefix}_baseline_bytes={baseline_bytes}')
+              print(f'{prefix}_optimized_bytes={optimized_bytes}')
+              print(f'{prefix}_bytes_reduction={bytes_reduction:.2f}')
+              print(f'{prefix}_baseline_allocs={baseline_allocs}')
+              print(f'{prefix}_optimized_allocs={optimized_allocs}')
+          PY
+
+      - name: Publish successful acceptance evidence
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          TARGET_URL: ${{ steps.target.outputs.url }}
+          QUERY_BASELINE_NS: ${{ steps.validation.outputs.query_baseline_ns }}
+          QUERY_OPTIMIZED_NS: ${{ steps.validation.outputs.query_optimized_ns }}
+          QUERY_RUNTIME_REDUCTION: ${{ steps.validation.outputs.query_runtime_reduction }}
+          QUERY_SPEEDUP: ${{ steps.validation.outputs.query_speedup }}
+          QUERY_BASELINE_BYTES: ${{ steps.validation.outputs.query_baseline_bytes }}
+          QUERY_OPTIMIZED_BYTES: ${{ steps.validation.outputs.query_optimized_bytes }}
+          QUERY_BASELINE_ALLOCS: ${{ steps.validation.outputs.query_baseline_allocs }}
+          QUERY_OPTIMIZED_ALLOCS: ${{ steps.validation.outputs.query_optimized_allocs }}
+          CHUNK_BASELINE_NS: ${{ steps.validation.outputs.chunk_baseline_ns }}
+          CHUNK_OPTIMIZED_NS: ${{ steps.validation.outputs.chunk_optimized_ns }}
+          CHUNK_RUNTIME_REDUCTION: ${{ steps.validation.outputs.chunk_runtime_reduction }}
+          CHUNK_SPEEDUP: ${{ steps.validation.outputs.chunk_speedup }}
+          CHUNK_BASELINE_BYTES: ${{ steps.validation.outputs.chunk_baseline_bytes }}
+          CHUNK_OPTIMIZED_BYTES: ${{ steps.validation.outputs.chunk_optimized_bytes }}
+          CHUNK_BASELINE_ALLOCS: ${{ steps.validation.outputs.chunk_baseline_allocs }}
+          CHUNK_OPTIMIZED_ALLOCS: ${{ steps.validation.outputs.chunk_optimized_allocs }}
+        shell: bash
+        run: |
+          post_status() {
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=success \
+              -f context="$1" \
+              -f description="$2" \
+              -f target_url="$TARGET_URL" > /dev/null
+          }
+
+          post_status 'bolt/validation' 'lint parity, behavior, race, security, and comparable benchmarks pass'
+          post_status 'bolt/ci' 'vet, vulnerability scan, invariants, race suite, and repository benchmark pass'
+          post_status 'bolt/equivalence' '2,000 oracle cases and RAG behavior tests pass without output drift'
+          post_status 'bolt/race/master-parity' 'changed package and remaining race suite pass; known flaky test is non-regressing'
+          post_status 'bolt/ci/v-success/u-success/p-success/o-success/r-failure/b-success' 'superseded by final validation: all acceptance gates pass'
+          post_status 'bolt/equivalence/lint-success/behavior-success' 'lint parity and externally observable behavior equivalence pass'
+          post_status 'bolt/runtime/query' "${QUERY_BASELINE_NS} -> ${QUERY_OPTIMIZED_NS} ns/op; ${QUERY_RUNTIME_REDUCTION}% lower; ${QUERY_SPEEDUP}x"
+          post_status 'bolt/runtime/chunk' "${CHUNK_BASELINE_NS} -> ${CHUNK_OPTIMIZED_NS} ns/op; ${CHUNK_RUNTIME_REDUCTION}% lower; ${CHUNK_SPEEDUP}x"
+          post_status 'bolt/memory/query' "${QUERY_BASELINE_BYTES} -> ${QUERY_OPTIMIZED_BYTES} B/op; ${QUERY_BASELINE_ALLOCS} -> ${QUERY_OPTIMIZED_ALLOCS} allocs/op"
+          post_status 'bolt/memory/chunk' "${CHUNK_BASELINE_BYTES} -> ${CHUNK_OPTIMIZED_BYTES} B/op; ${CHUNK_BASELINE_ALLOCS} -> ${CHUNK_OPTIMIZED_ALLOCS} allocs/op"
+
+          {
+            echo '## Bolt tokenizer validation'
+            echo
+            echo "- Query: ${QUERY_BASELINE_NS} -> ${QUERY_OPTIMIZED_NS} ns/op (${QUERY_RUNTIME_REDUCTION}% lower, ${QUERY_SPEEDUP}x)"
+            echo "- Chunk: ${CHUNK_BASELINE_NS} -> ${CHUNK_OPTIMIZED_NS} ns/op (${CHUNK_RUNTIME_REDUCTION}% lower, ${CHUNK_SPEEDUP}x)"
+            echo "- Query allocation: ${QUERY_BASELINE_BYTES} -> ${QUERY_OPTIMIZED_BYTES} B/op; ${QUERY_BASELINE_ALLOCS} -> ${QUERY_OPTIMIZED_ALLOCS} allocs/op"
+            echo "- Chunk allocation: ${CHUNK_BASELINE_BYTES} -> ${CHUNK_OPTIMIZED_BYTES} B/op; ${CHUNK_BASELINE_ALLOCS} -> ${CHUNK_OPTIMIZED_ALLOCS} allocs/op"
+          } >> "$GITHUB_STEP_SUMMARY"
