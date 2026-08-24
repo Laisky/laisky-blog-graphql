@@ -7,7 +7,9 @@ on:
 
 permissions:
   actions: read
+  checks: read
   contents: read
+  pull-requests: read
   statuses: write
 
 jobs:
@@ -18,33 +20,45 @@ jobs:
       VALIDATION_BRANCH: ci/bolt-rag-tokenizer-final-validation-20260823
       VALIDATION_WORKFLOW: Bolt RAG tokenizer final validation
       TARGET_BRANCH: develop
+      PR_NUMBER: '43'
     steps:
-      - name: Publish validation and native workflow states
+      - name: Publish validation, native CI, and PR CodeQL states
         shell: bash
         run: |
           set -euo pipefail
           target_sha=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')
           test -n "$target_sha"
 
-          post_run_state() {
+          post_status() {
+            local context=$1
+            local state=$2
+            local description=$3
+            local url=${4:-}
+            args=(--method POST "repos/${GITHUB_REPOSITORY}/statuses/${target_sha}" \
+              -f state="$state" \
+              -f context="$context" \
+              -f description="$description")
+            if [[ -n "$url" ]]; then
+              args+=(-f target_url="$url")
+            fi
+            gh api "${args[@]}" > /dev/null
+          }
+
+          run_state() {
             local context=$1
             local workflow_name=$2
             local branch=$3
             local run
             run=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs" \
               -f branch="$branch" \
-              -f per_page=50 \
+              -f per_page=100 \
               --jq ".workflow_runs | map(select(.name == \"${workflow_name}\")) | first")
-
             if [[ "$run" == "null" ]]; then
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${target_sha}" \
-                -f state=pending \
-                -f context="$context" \
-                -f description="no ${workflow_name} run is visible yet" > /dev/null
+              post_status "$context" pending "no ${workflow_name} run is visible yet"
               return
             fi
 
-            local run_id status conclusion url state description
+            local run_id status conclusion url state
             run_id=$(jq -r '.id' <<< "$run")
             status=$(jq -r '.status' <<< "$run")
             conclusion=$(jq -r '.conclusion // "pending"' <<< "$run")
@@ -56,15 +70,39 @@ jobs:
                 state=success
               fi
             fi
-            description="${workflow_name}: ${status}/${conclusion}; run ${run_id}"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${target_sha}" \
-              -f state="$state" \
-              -f context="$context" \
-              -f description="$description" \
-              -f target_url="$url" > /dev/null
+            post_status "$context" "$state" "${workflow_name}: ${status}/${conclusion}; run ${run_id}" "$url"
             printf '%s run_id=%s status=%s conclusion=%s url=%s\n' "$context" "$run_id" "$status" "$conclusion" "$url"
           }
 
-          post_run_state 'bolt/validation-monitor' "$VALIDATION_WORKFLOW" "$VALIDATION_BRANCH"
-          post_run_state 'bolt/native-linter-monitor' 'Linter' "$TARGET_BRANCH"
-          post_run_state 'bolt/native-codeql-monitor' 'CodeQL' "$TARGET_BRANCH"
+          run_state 'bolt/validation-monitor' "$VALIDATION_WORKFLOW" "$VALIDATION_BRANCH"
+          run_state 'bolt/native-linter-monitor' 'Linter' "$TARGET_BRANCH"
+
+          pr=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
+          merge_sha=$(jq -r '.merge_commit_sha' <<< "$pr")
+          test -n "$merge_sha"
+          test "$merge_sha" != null
+
+          pr_run=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs" \
+            -f event=pull_request \
+            -f per_page=100 \
+            --jq ".workflow_runs | map(select(.name == \"CodeQL\" and ((.pull_requests | map(.number) | index(${PR_NUMBER})) != null or .head_sha == \"${target_sha}\" or .head_sha == \"${merge_sha}\"))) | first")
+
+          if [[ "$pr_run" == "null" ]]; then
+            check_runs=$(gh api -H 'Accept: application/vnd.github+json' "repos/${GITHUB_REPOSITORY}/commits/${merge_sha}/check-runs")
+            printf 'merge check runs: %s\n' "$(jq -c '[.check_runs[] | {name,status,conclusion,html_url}]' <<< "$check_runs")"
+            post_status 'bolt/pr-codeql-monitor' pending 'no PR-triggered CodeQL run is visible yet' "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}/checks"
+          else
+            run_id=$(jq -r '.id' <<< "$pr_run")
+            status=$(jq -r '.status' <<< "$pr_run")
+            conclusion=$(jq -r '.conclusion // "pending"' <<< "$pr_run")
+            url=$(jq -r '.html_url' <<< "$pr_run")
+            state=pending
+            if [[ "$status" == completed ]]; then
+              state=failure
+              if [[ "$conclusion" == success ]]; then
+                state=success
+              fi
+            fi
+            post_status 'bolt/pr-codeql-monitor' "$state" "CodeQL PR: ${status}/${conclusion}; run ${run_id}" "$url"
+            printf 'bolt/pr-codeql-monitor run_id=%s status=%s conclusion=%s url=%s\n' "$run_id" "$status" "$conclusion" "$url"
+          fi
