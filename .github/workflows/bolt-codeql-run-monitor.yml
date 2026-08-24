@@ -50,3 +50,5 @@ jobs:
             -f description="CodeQL v4: ${status}/${conclusion}; run ${run_id}" \
             -f target_url="$url" > /dev/null
           printf 'run_id=%s status=%s conclusion=%s url=%s\n' "$run_id" "$status" "$conclusion" "$url"
+
+          # This monitor is intentionally rerunnable so a stale pending snapshot can be refreshed.
