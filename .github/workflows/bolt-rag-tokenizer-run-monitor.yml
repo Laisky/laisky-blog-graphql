@@ -77,20 +77,32 @@ jobs:
           run_state 'bolt/validation-monitor' "$VALIDATION_WORKFLOW" "$VALIDATION_BRANCH"
           run_state 'bolt/native-linter-monitor' 'Linter' "$TARGET_BRANCH"
 
+          workflow=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/codeql-analysis.yml")
+          workflow_id=$(jq -r '.id' <<< "$workflow")
+          workflow_state=$(jq -r '.state' <<< "$workflow")
+          workflow_url=$(jq -r '.html_url' <<< "$workflow")
+          state=success
+          if [[ "$workflow_state" != active ]]; then
+            state=failure
+          fi
+          post_status 'bolt/codeql-workflow-state' "$state" "CodeQL workflow state: ${workflow_state}; id ${workflow_id}" "$workflow_url"
+          printf 'CodeQL workflow id=%s state=%s url=%s\n' "$workflow_id" "$workflow_state" "$workflow_url"
+
           pr=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
           merge_sha=$(jq -r '.merge_commit_sha' <<< "$pr")
           test -n "$merge_sha"
           test "$merge_sha" != null
 
-          pr_run=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs" \
+          pr_run=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs" \
             -f event=pull_request \
             -f per_page=100 \
-            --jq ".workflow_runs | map(select(.name == \"CodeQL\" and ((.pull_requests | map(.number) | index(${PR_NUMBER})) != null or .head_sha == \"${target_sha}\" or .head_sha == \"${merge_sha}\"))) | first")
+            --jq ".workflow_runs | map(select((.pull_requests | map(.number) | index(${PR_NUMBER})) != null or .head_sha == \"${target_sha}\" or .head_sha == \"${merge_sha}\")) | first")
 
           if [[ "$pr_run" == "null" ]]; then
             check_runs=$(gh api -H 'Accept: application/vnd.github+json' "repos/${GITHUB_REPOSITORY}/commits/${merge_sha}/check-runs")
-            printf 'merge check runs: %s\n' "$(jq -c '[.check_runs[] | {name,status,conclusion,html_url}]' <<< "$check_runs")"
-            post_status 'bolt/pr-codeql-monitor' pending 'no PR-triggered CodeQL run is visible yet' "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}/checks"
+            check_summary=$(jq -c '[.check_runs[] | {name,status,conclusion,html_url}]' <<< "$check_runs")
+            printf 'merge check runs: %s\n' "$check_summary"
+            post_status 'bolt/pr-codeql-monitor' pending "active CodeQL workflow has no PR run for #${PR_NUMBER}" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}/checks"
           else
             run_id=$(jq -r '.id' <<< "$pr_run")
             status=$(jq -r '.status' <<< "$pr_run")
