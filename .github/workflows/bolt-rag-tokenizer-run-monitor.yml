@@ -1,0 +1,54 @@
+name: Bolt RAG tokenizer run monitor
+
+on:
+  push:
+    branches:
+      - 'ci/bolt-rag-tokenizer-run-monitor-20260823'
+
+permissions:
+  actions: read
+  contents: read
+  statuses: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VALIDATION_BRANCH: ci/bolt-rag-tokenizer-final-validation-20260823
+      VALIDATION_WORKFLOW: Bolt RAG tokenizer final validation
+      TARGET_BRANCH: develop
+    steps:
+      - name: Publish latest validation run state
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')
+          test -n "$target_sha"
+
+          run=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs" \
+            -f branch="$VALIDATION_BRANCH" \
+            -f per_page=20 \
+            --jq ".workflow_runs | map(select(.name == \"${VALIDATION_WORKFLOW}\")) | first")
+          test "$run" != "null"
+
+          run_id=$(jq -r '.id' <<< "$run")
+          status=$(jq -r '.status' <<< "$run")
+          conclusion=$(jq -r '.conclusion // "pending"' <<< "$run")
+          url=$(jq -r '.html_url' <<< "$run")
+
+          state=pending
+          if [[ "$status" == completed ]]; then
+            state=failure
+            if [[ "$conclusion" == success ]]; then
+              state=success
+            fi
+          fi
+
+          description="final validator: ${status}/${conclusion}; run ${run_id}"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${target_sha}" \
+            -f state="$state" \
+            -f context='bolt/validation-monitor' \
+            -f description="$description" \
+            -f target_url="$url" > /dev/null
+          printf 'run_id=%s status=%s conclusion=%s url=%s\n' "$run_id" "$status" "$conclusion" "$url"
