@@ -1,0 +1,46 @@
+name: refresh-mcp-go-sum
+
+on:
+  push:
+    branches:
+      - feat/mcp-protocol-2026-07-28
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-mcp-go-sum
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/mcp-protocol-2026-07-28
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Refresh MCP dependency checksums
+        run: |
+          go mod download github.com/mark3labs/mcp-go@v1.0.0-beta.1
+          grep -F 'github.com/mark3labs/mcp-go v1.0.0-beta.1 ' go.sum
+          grep -F 'github.com/mark3labs/mcp-go v1.0.0-beta.1/go.mod ' go.sum
+
+      - name: Commit go.sum
+        run: |
+          if git diff --quiet -- go.sum; then
+            echo 'go.sum is already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add go.sum
+          git commit -m 'build(deps): refresh mcp-go checksums'
+          git push origin HEAD:feat/mcp-protocol-2026-07-28
