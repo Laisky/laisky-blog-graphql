@@ -9,6 +9,7 @@ The latest finalized MCP protocol revision is `2026-07-28`, published on 2026-07
 This repository serves both revisions on the same Streamable HTTP endpoint:
 
 - `2026-07-28` requests use stateless, self-describing request metadata, `Mcp-*` routing headers, and `server/discover`.
+- Authorization remains request-scoped, so modern stateless requests do not depend on a transport session for identity or tool filtering.
 - Legacy clients continue to negotiate through `initialize` and may use transport session IDs.
 - Protocol selection is per request. The server must not be globally forced into legacy-only or stateless-only mode unless a deployment has a specific compatibility constraint.
 
@@ -27,7 +28,8 @@ The repository-level protocol tests must prove that:
 1. `server/discover` accepts a valid `2026-07-28` request and advertises `2026-07-28` first.
 2. Modern responses do not mint an `Mcp-Session-Id`.
 3. `tools/list` returns the modern `resultType`, cache hints, and the configured tool catalog.
-4. A `2025-11-25` `initialize` request still succeeds.
+4. A modern stateless `tools/list` request still applies authorization-based per-user tool filtering.
+5. A `2025-11-25` `initialize` request still succeeds.
 
 ## Primary sources
 
