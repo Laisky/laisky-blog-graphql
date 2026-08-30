@@ -1,4 +1,4 @@
-name: refresh-mcp-go-sum
+name: validate-mcp-upgrade
 
 on:
   push:
@@ -6,15 +6,14 @@ on:
       - feat/mcp-protocol-2026-07-28
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: refresh-mcp-go-sum
+  group: validate-mcp-upgrade
   cancel-in-progress: true
 
 jobs:
-  refresh:
-    if: github.actor != 'github-actions[bot]'
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
@@ -27,20 +26,16 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Refresh MCP dependency checksums
+      - name: Verify dependency lock
         run: |
           go mod download github.com/mark3labs/mcp-go@v1.0.0-beta.1
-          grep -F 'github.com/mark3labs/mcp-go v1.0.0-beta.1 ' go.sum
-          grep -F 'github.com/mark3labs/mcp-go v1.0.0-beta.1/go.mod ' go.sum
+          git diff --exit-code -- go.mod go.sum
 
-      - name: Commit go.sum
-        run: |
-          if git diff --quiet -- go.sum; then
-            echo 'go.sum is already current.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add go.sum
-          git commit -m 'build(deps): refresh mcp-go checksums'
-          git push origin HEAD:feat/mcp-protocol-2026-07-28
+      - name: Verify formatting
+        run: test -z "$(gofmt -l internal/mcp/protocol_2026_07_28_test.go)"
+
+      - name: Test MCP package
+        run: go test -race -cover ./internal/mcp
+
+      - name: Vet MCP package
+        run: go vet ./internal/mcp
