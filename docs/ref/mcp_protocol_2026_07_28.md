@@ -4,7 +4,7 @@ Last verified: 2026-08-30
 
 ## Status
 
-The newest published MCP protocol revision is `2026-07-28`. It is currently published as a release candidate, while `2025-11-25` remains the latest finalized specification release.
+The latest finalized MCP protocol revision is `2026-07-28`, published on 2026-07-28. The preceding finalized revision is `2025-11-25`.
 
 This repository serves both revisions on the same Streamable HTTP endpoint:
 
@@ -31,7 +31,7 @@ The repository-level protocol tests must prove that:
 
 ## Primary sources
 
-- MCP specification releases: <https://github.com/modelcontextprotocol/modelcontextprotocol/releases>
+- MCP `2026-07-28` release announcement: <https://blog.modelcontextprotocol.io/posts/2026-07-28/>
 - MCP `2026-07-28` changelog: <https://modelcontextprotocol.io/specification/2026-07-28/changelog>
 - Official Go SDK `v1.7.0` release notes: <https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.7.0>
 - `mcp-go v1.0.0-beta.1` release: <https://github.com/mark3labs/mcp-go/releases/tag/v1.0.0-beta.1>
