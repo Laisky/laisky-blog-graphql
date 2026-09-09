@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 
+	ragresolver "github.com/Laisky/laisky-blog-graphql/internal/library/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/library/search"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
@@ -100,6 +101,12 @@ func (r *Resolver) buildMutationResolver() *mutationResolver {
 	if r.args.TelegramSvc != nil {
 		uploadDao = r.args.TelegramSvc.UploadDao
 	}
+	// Keep the interface nil when the RAG service is unavailable so the
+	// resolver can detect it instead of holding a typed nil pointer.
+	var ragService ragresolver.KeyInfoService
+	if r.args.RAGService != nil {
+		ragService = r.args.RAGService
+	}
 	return &mutationResolver{
 		blogMutation: blogMutation{
 			MutationResolver: blog.NewMutationResolver(r.args.BlogSvc),
@@ -117,6 +124,13 @@ func (r *Resolver) buildMutationResolver() *mutationResolver {
 			MutationResolver: search.NewMutationResolver(
 				r.args.WebSearchProvider,
 				r.args.Rdb,
+				r.args.CallLogService,
+			),
+		},
+		ragMutation: ragMutation{
+			MutationResolver: ragresolver.NewMutationResolver(
+				ragService,
+				r.args.RAGSettings,
 				r.args.CallLogService,
 			),
 		},
@@ -233,10 +247,15 @@ type webSearchMutation struct {
 	*search.MutationResolver
 }
 
+type ragMutation struct {
+	*ragresolver.MutationResolver
+}
+
 type mutationResolver struct {
 	blogMutation
 	telegramMutation
 	generalMutation
 	arweaveMutation
 	webSearchMutation
+	ragMutation
 }

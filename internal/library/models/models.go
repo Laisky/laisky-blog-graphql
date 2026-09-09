@@ -32,6 +32,12 @@ type Comment struct {
 	Replies       []*Comment        `json:"replies,omitempty"`
 }
 
+type ExtractKeyInfoResult struct {
+	Query     string           `json:"query"`
+	CreatedAt library.Datetime `json:"created_at"`
+	Contexts  []string         `json:"contexts"`
+}
+
 type GeneralHTMLCrawlerTask struct {
 	TaskID        string            `json:"task_id"`
 	CreatedAt     library.Datetime  `json:"created_at"`

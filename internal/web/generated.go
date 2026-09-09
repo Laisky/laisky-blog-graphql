@@ -137,6 +137,12 @@ type ComplexityRoot struct {
 		Viewers        func(childComplexity int) int
 	}
 
+	ExtractKeyInfoResult struct {
+		Contexts  func(childComplexity int) int
+		CreatedAt func(childComplexity int) int
+		Query     func(childComplexity int) int
+	}
+
 	GeneralHTMLCrawlerTask struct {
 		CreatedAt     func(childComplexity int) int
 		FailedReason  func(childComplexity int) int
@@ -192,6 +198,7 @@ type ComplexityRoot struct {
 		BlogLogin                     func(childComplexity int, account string, password string) int
 		BlogToggleCommentLike         func(childComplexity int, commentID string) int
 		CreateGeneralToken            func(childComplexity int, username string, durationSec int) int
+		ExtractKeyInfo                func(childComplexity int, query string, materials string, topK *int) int
 		GeneralAddHTMLCrawlerTask     func(childComplexity int, url string) int
 		GeneralAddLLMStormTask        func(childComplexity int, prompt string, apiKey string) int
 		TelegramMonitorAlert          func(childComplexity int, typeArg string, token string, msg string) int
@@ -437,6 +444,7 @@ type MutationResolver interface {
 	ArweaveUpload(ctx context.Context, fileB64 string, contentType *string) (*dto.UploadResponse, error)
 	WebSearch(ctx context.Context, query string) (*search.SearchResult, error)
 	WebFetch(ctx context.Context, url string) (*models.WebFetchResult, error)
+	ExtractKeyInfo(ctx context.Context, query string, materials string, topK *int) (*models.ExtractKeyInfoResult, error)
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*model3.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
 	CreateGeneralToken(ctx context.Context, username string, durationSec int) (string, error)
@@ -851,6 +859,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.EmbededTweet.Viewers(childComplexity), true
 
+	case "ExtractKeyInfoResult.contexts":
+		if e.ComplexityRoot.ExtractKeyInfoResult.Contexts == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ExtractKeyInfoResult.Contexts(childComplexity), true
+	case "ExtractKeyInfoResult.created_at":
+		if e.ComplexityRoot.ExtractKeyInfoResult.CreatedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ExtractKeyInfoResult.CreatedAt(childComplexity), true
+	case "ExtractKeyInfoResult.query":
+		if e.ComplexityRoot.ExtractKeyInfoResult.Query == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ExtractKeyInfoResult.Query(childComplexity), true
+
 	case "GeneralHTMLCrawlerTask.created_at":
 		if e.ComplexityRoot.GeneralHTMLCrawlerTask.CreatedAt == nil {
 			break
@@ -1123,6 +1150,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreateGeneralToken(childComplexity, args["username"].(string), args["duration_sec"].(int)), true
+	case "Mutation.ExtractKeyInfo":
+		if e.ComplexityRoot.Mutation.ExtractKeyInfo == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_ExtractKeyInfo_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.ExtractKeyInfo(childComplexity, args["query"].(string), args["materials"].(string), args["top_k"].(*int)), true
 	case "Mutation.GeneralAddHTMLCrawlerTask":
 		if e.ComplexityRoot.Mutation.GeneralAddHTMLCrawlerTask == nil {
 			break
@@ -2281,6 +2319,18 @@ func (ec *executionContext) childFields_EmbededTweet(ctx context.Context, field 
 	return nil, fmt.Errorf("no field named %q was found under type EmbededTweet", field.Name)
 }
 
+func (ec *executionContext) childFields_ExtractKeyInfoResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "query":
+		return ec.fieldContext_ExtractKeyInfoResult_query(ctx, field)
+	case "created_at":
+		return ec.fieldContext_ExtractKeyInfoResult_created_at(ctx, field)
+	case "contexts":
+		return ec.fieldContext_ExtractKeyInfoResult_contexts(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ExtractKeyInfoResult", field.Name)
+}
+
 func (ec *executionContext) childFields_GeneralHTMLCrawlerTask(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "task_id":
@@ -2960,6 +3010,36 @@ func (ec *executionContext) field_Mutation_CreateGeneralToken_args(ctx context.C
 		return nil, err
 	}
 	args["duration_sec"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_ExtractKeyInfo_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "query",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["query"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "materials",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["materials"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "top_k",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["top_k"] = arg2
 	return args, nil
 }
 
@@ -5236,6 +5316,75 @@ func (ec *executionContext) fieldContext_EmbededTweet_viewers(_ context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _ExtractKeyInfoResult_query(ctx context.Context, field graphql.CollectedField, obj *models.ExtractKeyInfoResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ExtractKeyInfoResult_query(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Query, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ExtractKeyInfoResult_query(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ExtractKeyInfoResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ExtractKeyInfoResult_created_at(ctx context.Context, field graphql.CollectedField, obj *models.ExtractKeyInfoResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ExtractKeyInfoResult_created_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.Datetime) graphql.Marshaler {
+			return ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ExtractKeyInfoResult_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ExtractKeyInfoResult", field, false, false, errors.New("field of type Date does not have child fields"))
+}
+
+func (ec *executionContext) _ExtractKeyInfoResult_contexts(ctx context.Context, field graphql.CollectedField, obj *models.ExtractKeyInfoResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ExtractKeyInfoResult_contexts(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Contexts, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ExtractKeyInfoResult_contexts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ExtractKeyInfoResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _GeneralHTMLCrawlerTask_task_id(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -7089,6 +7238,50 @@ func (ec *executionContext) fieldContext_Mutation_WebFetch(ctx context.Context, 
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_WebFetch_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_ExtractKeyInfo(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_ExtractKeyInfo(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().ExtractKeyInfo(ctx, fc.Args["query"].(string), fc.Args["materials"].(string), fc.Args["top_k"].(*int))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.ExtractKeyInfoResult) graphql.Marshaler {
+			return ec.marshalNExtractKeyInfoResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐExtractKeyInfoResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_ExtractKeyInfo(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ExtractKeyInfoResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_ExtractKeyInfo_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -12334,6 +12527,54 @@ func (ec *executionContext) _EmbededTweet(ctx context.Context, sel ast.Selection
 	return out
 }
 
+var extractKeyInfoResultImplementors = []string{"ExtractKeyInfoResult"}
+
+func (ec *executionContext) _ExtractKeyInfoResult(ctx context.Context, sel ast.SelectionSet, obj *models.ExtractKeyInfoResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, extractKeyInfoResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ExtractKeyInfoResult")
+		case "query":
+			out.Values[i] = ec._ExtractKeyInfoResult_query(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._ExtractKeyInfoResult_created_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contexts":
+			out.Values[i] = ec._ExtractKeyInfoResult_contexts(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
 var generalHTMLCrawlerTaskImplementors = []string{"GeneralHTMLCrawlerTask"}
 
 func (ec *executionContext) _GeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, obj *models.GeneralHTMLCrawlerTask) graphql.Marshaler {
@@ -12914,6 +13155,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "WebFetch":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_WebFetch(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "ExtractKeyInfo":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_ExtractKeyInfo(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -15680,6 +15928,20 @@ func (ec *executionContext) marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblo
 	return v
 }
 
+func (ec *executionContext) marshalNExtractKeyInfoResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐExtractKeyInfoResult(ctx context.Context, sel ast.SelectionSet, v models.ExtractKeyInfoResult) graphql.Marshaler {
+	return ec._ExtractKeyInfoResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNExtractKeyInfoResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐExtractKeyInfoResult(ctx context.Context, sel ast.SelectionSet, v *models.ExtractKeyInfoResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ExtractKeyInfoResult(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
 	res, err := graphql.UnmarshalFloatContext(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -16437,6 +16699,24 @@ func (ec *executionContext) marshalOGeneralUser2ᚖgithubᚗcomᚋLaiskyᚋlaisk
 		return graphql.Null
 	}
 	return ec._GeneralUser(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOInt2ᚖint(ctx context.Context, v any) (*int, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := graphql.UnmarshalInt(v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOInt2ᚖint(ctx context.Context, sel ast.SelectionSet, v *int) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	_ = sel
+	_ = ctx
+	res := graphql.MarshalInt(*v)
+	return res
 }
 
 func (ec *executionContext) unmarshalOJSONString2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐJSONString(ctx context.Context, v any) (*library.JSONString, error) {

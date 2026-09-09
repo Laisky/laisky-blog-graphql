@@ -151,6 +151,37 @@ CREATE INDEX idx_mcp_rag_chunks_metadata
 9.  **Assemble Response:** Load chunk text and metadata for the top `topK` rows, preserving rank order.
 10. **Audit Call:** Record parameters, scores, duration, and billing outcome through `recordToolInvocation`.
 
+## GraphQL Exposure
+
+The same capability is published as a GraphQL mutation so HTTP clients that do
+not speak MCP can reuse it.
+
+- **Schema (`internal/web/schema.graphql`):**
+
+  ```graphql
+  type ExtractKeyInfoResult {
+    query: String!
+    created_at: Date!
+    contexts: [String!]!
+  }
+
+  ExtractKeyInfo(query: String!, materials: String!, top_k: Int): ExtractKeyInfoResult!
+  ```
+
+- **Resolver (`internal/library/rag/resolver.go`):** mirrors the MCP tool — same
+  trimming and size validation, same `top_k` bounds, the same
+  `mcpauth.FromContextOrHeader` identity derivation (so a caller sees identical
+  tenant isolation through either surface), the same `PriceExtractKeyInfo`
+  billing charge, a fresh sanitised UUIDv7 `task_id` per call, and a
+  `calllog` entry named `extract_key_info`.
+- **Wiring (`internal/web/resolver.go`):** the mutation is served only when
+  `RAGService` is available (that is, `settings.mcp.tools.extract_key_info.enabled`
+  is true and the MCP database is reachable); otherwise the resolver returns
+  `rag service is not configured` instead of panicking.
+- **Authorization:** the bearer token travels in the standard `Authorization`
+  header of the GraphQL request and doubles as the OpenAI-compatible embeddings
+  key, exactly as in the MCP transport.
+
 ## Error Handling and Logging
 
 - Wrap returned errors with `errors.Wrap` or `errors.Wrapf` to preserve stack traces.

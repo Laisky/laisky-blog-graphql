@@ -230,6 +230,17 @@ The console stores the API key locally (browser `localStorage`) so it can resume
 ```
 
 - **Error Cases:** invalid/missing token, payload too large, `top_k` outside allowed range, billing refusal, or upstream embedding failures.
+- **GraphQL Equivalent:** the same capability is exposed as the `ExtractKeyInfo` mutation on the GraphQL endpoint, for clients that do not speak MCP. It applies the same validation, billing (`PriceExtractKeyInfo`), and tenant isolation, and reads the bearer token from the request `Authorization` header.
+
+```graphql
+mutation {
+  ExtractKeyInfo(query: "who owns billing?", materials: "...", top_k: 5) {
+    query
+    created_at
+    contexts
+  }
+}
+```
 
 ### `mcp_pipe`
 

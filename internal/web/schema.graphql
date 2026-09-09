@@ -37,6 +37,12 @@ type WebFetchResult {
   content: String!
 }
 
+type ExtractKeyInfoResult {
+  query: String!
+  created_at: Date!
+  contexts: [String!]!
+}
+
 type Query {
   Hello: String!
   WhoAmI: BlogUser!
@@ -160,6 +166,12 @@ type Mutation {
   # -------------------------------------
   WebSearch(query: String!): WebSearchResult!
   WebFetch(url: String!): WebFetchResult!
+
+  # -------------------------------------
+  # RAG
+  # -------------------------------------
+  # extract the most relevant context chunks for a query from the provided materials
+  ExtractKeyInfo(query: String!, materials: String!, top_k: Int): ExtractKeyInfoResult!
 
   # -------------------------------------
   # telegram monitor
