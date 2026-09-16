@@ -1,0 +1,89 @@
+name: FileIO race audit
+
+on:
+  push:
+    branches: ['test/fileio-multiclient-race-audit-20260916']
+  pull_request:
+    paths:
+      - 'internal/mcp/files/**'
+      - 'internal/mcp/tools/file*'
+      - '.github/workflows/fileio-race-audit.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fileio-race-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres:
+    name: PostgreSQL / ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [behavior, conflict-audit]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: fileio_test
+          POSTGRES_PASSWORD: fileio_test
+          POSTGRES_DB: fileio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fileio_test -d fileio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      FILEIO_TEST_POSTGRES_DSN: postgres://fileio_test:fileio_test@localhost:5432/fileio_test?sslmode=disable
+      FILEIO_REQUIRE_POSTGRES: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify module and production backend
+        run: |
+          go version
+          go mod download
+          go mod verify
+      - name: Repeated production-lock behavior checks
+        if: matrix.suite == 'behavior'
+        run: go test -race -count=3 -shuffle=on -timeout=5m -v -run '^TestFileIORace' ./internal/mcp/tools
+      - name: Strict client conflict audit (expected red on the reviewed baseline)
+        if: matrix.suite == 'conflict-audit'
+        run: go test -race -tags=fileio_conflict_audit -count=1 -timeout=5m -v -run '^TestFileIOConflictAudit$' ./internal/mcp/tools
+
+  full-go-checks:
+    name: Full Go checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Full repository race and coverage tests
+        run: go test -race -cover -timeout=15m ./...
+      - name: Install repository lint tools
+        if: always()
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run repository make lint
+        if: always()
+        run: make lint
+      - name: Verify custom invariants and formatting
+        if: always()
+        run: |
+          ./.scripts/check_pure_go.sh
+          ./.scripts/check_system_owner.sh
+          git diff --exit-code
