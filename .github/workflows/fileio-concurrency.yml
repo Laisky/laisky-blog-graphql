@@ -1,0 +1,77 @@
+name: FileIO concurrency
+
+on:
+  pull_request:
+    paths:
+      - 'internal/mcp/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'third_party/**'
+      - '.github/workflows/fileio-concurrency.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fileio-concurrency-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  behavior:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg18-trixie
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fileio-test-only
+          POSTGRES_DB: fileio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d fileio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CGO_ENABLED: '1'
+      FILEIO_TEST_POSTGRES_DSN: postgres://postgres:fileio-test-only@127.0.0.1:5432/fileio_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Repeated behavior histories with real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$FILEIO_TEST_POSTGRES_DSN"
+          go version
+          go test -race -shuffle=on -count=3 -timeout=12m -v \
+            ./internal/mcp/files -run '^TestFileIO' 2>&1 | tee fileio-behavior.log
+      - name: Repository race and coverage suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -race -coverprofile=fileio-coverage.out -covermode=atomic \
+            -timeout=15m ./... 2>&1 | tee fileio-suite.log
+      - name: Vet and repository invariants
+        run: |
+          go vet ./internal/mcp/files ./internal/mcp/tools
+          make lint-pure-go lint-system-owner
+          test -z "$(gofmt -l internal/mcp/files/concurrency*_test.go)"
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fileio-concurrency-evidence
+          path: |
+            fileio-behavior.log
+            fileio-suite.log
+            fileio-coverage.out
+          if-no-files-found: warn
+          retention-days: 14
