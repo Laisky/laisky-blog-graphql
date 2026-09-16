@@ -182,7 +182,7 @@ B: write expected_version="file-identity:42" -> VERSION_CONFLICT; no effects
 B: re-read version 43, recompute/merge intended edit, submit against version 43
 ```
 
-Use a structured MCP tool error (`is_error=true`, `code=VERSION_CONFLICT`,
+Use a structured MCP tool error (`isError=true`, `code=VERSION_CONFLICT`,
 `retryable=false` for the unchanged request), with a clear re-read/recompute action.
 A REST adapter can map a failed precondition to HTTP 412. Do not silently rebase
 an old byte offset, strip the precondition, or retry the old full payload using
@@ -294,5 +294,12 @@ complete `make lint` toolchain.
 
 Authoring-environment status: Go formatting/parser checks completed; this
 container has Go 1.23.2, no PostgreSQL, and dependency-network resolution is
-unavailable. No local Go 1.27 test or complete lint success is claimed. Consult
-the PR's actual workflow result and logs for execution evidence.
+unavailable. No local Go 1.27 test or complete lint success is claimed.
+
+Recorded remote execution: commit `0150d6e8190d77f2eb01be60d641a3ed824d5065`,
+[FileIO concurrency run 35160556729](https://github.com/Laisky/laisky-blog-graphql/actions/runs/35160556729).
+The repeated behavioral histories (`-race -shuffle=on -count=3`) and repository
+race/coverage suite both completed successfully. This confirms reproduction of
+the unsafe characterization outcomes as well as the positive storage invariants;
+it does not mean the proposed conflict protocol has been implemented. Consult
+the linked run for its static checks and final workflow conclusion.
