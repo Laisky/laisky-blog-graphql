@@ -3,6 +3,12 @@ name: FileIO race audit
 on:
   push:
     branches: ['test/fileio-multiclient-race-audit-20260916']
+    paths:
+      - 'internal/mcp/files/**'
+      - 'internal/mcp/tools/file*'
+      - '.github/workflows/fileio-race-audit.yml'
+      - 'go.mod'
+      - 'go.sum'
   pull_request:
     paths:
       - 'internal/mcp/files/**'
@@ -75,15 +81,28 @@ jobs:
       - name: Install repository lint tools
         if: always()
         run: |
-          go install golang.org/x/tools/cmd/goimports@latest
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/tools/cmd/goimports@v0.50.0
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
       - name: Run repository make lint
         if: always()
         run: make lint
-      - name: Verify custom invariants and formatting
+      - name: Lint changed code against the reviewed baseline
+        if: always()
+        run: |
+          git fetch --no-tags --depth=1 origin 55c7e4c3acefb72797eccf6d37b0ad831815ad0c
+          golangci-lint run -c .golangci.lint.yml --new-from-rev=55c7e4c3acefb72797eccf6d37b0ad831815ad0c
+      - name: Check vulnerabilities even when full lint fails
+        if: always()
+        run: govulncheck ./...
+      - name: Verify custom invariants
         if: always()
         run: |
           ./.scripts/check_pure_go.sh
           ./.scripts/check_system_owner.sh
-          git diff --exit-code
+      - name: Verify added test formatting
+        if: always()
+        run: git diff --exit-code -- 'internal/mcp/tools/fileio*_test.go' go.mod go.sum
+      - name: Report whole-repository formatter drift
+        if: always()
+        run: git diff --exit-code
