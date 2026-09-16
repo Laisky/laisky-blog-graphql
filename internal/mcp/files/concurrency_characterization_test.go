@@ -12,6 +12,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 )
 
@@ -172,11 +173,15 @@ func TestFileIOMCPCharacterization(t *testing.T) {
 	for _, backend := range []string{"sqlite", "postgres"} {
 		t.Run(backend, func(t *testing.T) {
 			f := newRaceFixture(t, backend, nil)
-			writerA, err := tools.NewFileWriteTool(f.svc[0])
+			pluginA, err := ragplugin.New(f.svc[0])
 			require.NoError(t, err)
-			writerB, err := tools.NewFileWriteTool(f.svc[1])
+			pluginB, err := ragplugin.New(f.svc[1])
 			require.NoError(t, err)
-			reader, err := tools.NewFileReadTool(f.svc[1])
+			writerA, err := tools.NewFileWriteTool(pluginA)
+			require.NoError(t, err)
+			writerB, err := tools.NewFileWriteTool(pluginB)
+			require.NoError(t, err)
+			reader, err := tools.NewFileReadTool(pluginB)
 			require.NoError(t, err)
 			ctx := context.WithValue(f.ctx, ctxkeys.AuthContext, &f.auth)
 			writeArgs := func(content, mode string, offset int64) map[string]any {
