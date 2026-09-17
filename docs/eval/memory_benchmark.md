@@ -37,7 +37,7 @@ go run ./cmd/memory-bench \
 Run the same command with `--plugin=pageindex` and otherwise identical settings for a
 fair comparison.
 
-### Local current-plugin smoke — deterministic CI
+### Local current-plugin smoke — deterministic, opt-in
 
 This mode constructs the real Go plugins against an isolated SQLite-backed file
 service:
@@ -264,19 +264,53 @@ two-sided sign-flip permutation test over per-query nDCG differences.
 - Set a validated minimum score before interpreting retrieval-only abstention.
 - Separate local deterministic results from deployed production results.
 
-## CI
+## CI — optional manual benchmarks
 
-The memory benchmark workflows perform four levels of validation:
+The following evaluation workflows use **only `workflow_dispatch`**. Opening or
+updating a PR does not run them, and their former nightly schedules are removed.
+Benchmark commands, datasets, comparison thresholds, and baselines are unchanged.
 
-1. race, coverage, and vet for `internal/mcp/files`, the real PageIndex plugin, the
-   benchmark harness, and the CLI;
-2. behavior regressions for `SystemFS` UTF-8 persistence, PageIndex tree/catalog
-   durability, synchronous error propagation, and invalid-run reporting;
-3. a pull-request matrix that runs the current RAG and PageIndex implementations,
-   publishes exact scorecards, and compares them with committed local baselines;
-4. scheduled/manual deployed MCP runs when `MCP_BENCH_ENDPOINT` and
-   `MCP_BENCH_AUTHORIZATION` are configured.
+| Workflow | Manual behavior |
+|---|---|
+| `memory-benchmark.yml` | Runs its existing unit/race/coverage/vet job and local RAG/PageIndex regression gates. Deployed MCP jobs run only when `run_live=true` (default: false). |
+| `memory-benchmark-results.yml` | Runs both local plugins and uploads exact reports. Leave `pr_number` blank for artifacts only; set it to publish to that PR. |
+| `memory-benchmark-capture.yml` | Retains its existing manual capture/commit behavior. Replacing existing baselines still requires `replace_baselines=true`. |
+| `eval-nightly.yml` | Runs the existing evaluation harness manually and uploads scorecards. The filename/name is historical; there is no nightly schedule or automatic PR comment. |
 
+No new workflow or job is introduced. The benchmark workflow's bundled unit job is
+also manual; it was not moved into another automatic workflow. Independent `ci`,
+`lint`, and CodeQL configurations are unchanged, including the existing full test
+suite in `lint.yml`. Test sources are not deleted or disabled.
+
+In GitHub, open **Actions**, select the workflow, choose **Run workflow**, and select
+the branch to test. To publish a result to a PR, select that PR's head branch in this
+repository and set `pr_number`. Publishing checks that the report's actual Git SHA
+matches the PR's current head; a wrong branch, outdated head, invalid PR number, or
+fork head is rejected instead of attaching a misleading scorecard. Only matching
+`github-actions[bot]` comments are updated. Reports remain available as artifacts.
+
+Examples after the dispatch configuration is available on the default branch:
+
+```bash
+# Local tests and regression gates; no deployed endpoint calls.
+gh workflow run memory-benchmark.yml --ref YOUR_BRANCH
+
+# Explicitly opt into deployed MCP measurements as well.
+gh workflow run memory-benchmark.yml --ref YOUR_BRANCH -f run_live=true
+
+# Test the current PR head branch and publish its scorecards.
+gh workflow run memory-benchmark-results.yml --ref YOUR_PR_BRANCH -f pr_number=45
+
+# Evaluation only; artifacts are retained, with no automatic PR comments.
+gh workflow run eval-nightly.yml --ref YOUR_BRANCH
+```
+
+GitHub requires a dispatchable workflow on the default branch for manual invocation;
+merge these trigger changes before relying on the new results-workflow dispatch UI.
+Default-branch schedules retain their old behavior until the changes are merged.
+See [GitHub's manual workflow instructions](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
+Explicit deployed runs require `MCP_BENCH_ENDPOINT` and `MCP_BENCH_AUTHORIZATION`.
 The optional reader uses `MEMORY_BENCH_READER_BASE_URL`,
 `MEMORY_BENCH_READER_MODEL`, and `MEMORY_BENCH_READER_API_KEY`. Missing deployed
 secrets produce an explicit skip; CI never substitutes fake production scores.
