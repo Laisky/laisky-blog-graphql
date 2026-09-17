@@ -111,6 +111,7 @@ export function HomePage() {
           icon={<Database className="h-5 w-5" />}
           priceLabel="Free"
           enabled={toolsConfig.extract_key_info}
+          href="/tools/extract_key_info"
         />
       ),
     },

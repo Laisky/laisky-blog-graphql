@@ -1,5 +1,5 @@
 import { Loader2, Play } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,12 @@ const WEB_FETCH_MUTATION = `
 
 export function WebFetchPage() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
+  return <WebFetchWorkspace key={JSON.stringify([apiKey, isToolConsoleLocked])} apiKey={apiKey || ''} isToolConsoleLocked={isToolConsoleLocked} />;
+}
+
+function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; isToolConsoleLocked: boolean }) {
+  const active = useRef<AbortController | null>(null);
+  useEffect(() => () => active.current?.abort(), []);
   const [entries, setEntries] = useState<CallLogEntry[]>([]);
   const [pagination, setPagination] = useState<CallLogListResponse['pagination'] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,21 +98,26 @@ export function WebFetchPage() {
 
   const handleExecute = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!apiKey || isToolConsoleLocked || !url.trim() || isExecuting) return;
+    if (!apiKey || isToolConsoleLocked || !url.trim() || active.current) return;
+
+    const controller = new AbortController();
+    active.current = controller;
 
     setIsExecuting(true);
     setExecError(null);
     setLastResult(null);
 
     try {
-      const data = await fetchGraphQL<WebFetchResponse>(apiKey, WEB_FETCH_MUTATION, { url });
+      const data = await fetchGraphQL<WebFetchResponse>(apiKey, WEB_FETCH_MUTATION, { url }, controller.signal);
+      if (controller.signal.aborted) return;
       setLastResult(data.WebFetch);
       // Refresh logs after execution
       setPage(1);
     } catch (err) {
-      setExecError(err instanceof Error ? err.message : 'Execution failed');
+      if (!controller.signal.aborted) setExecError(err instanceof Error ? err.message : 'Execution failed');
     } finally {
-      setIsExecuting(false);
+      if (active.current === controller) active.current = null;
+      if (!controller.signal.aborted) setIsExecuting(false);
     }
   };
 
@@ -148,7 +159,7 @@ export function WebFetchPage() {
                     disabled={isToolConsoleLocked || isExecuting}
                     className="flex-1"
                   />
-                  <Button type="submit" disabled={isToolConsoleLocked || isExecuting || !url.trim()}>
+                  <Button type="submit" disabled={!apiKey || isToolConsoleLocked || isExecuting || !url.trim()}>
                     {isExecuting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />

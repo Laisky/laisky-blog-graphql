@@ -2,14 +2,13 @@ package search
 
 import (
 	"context"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 )
 
@@ -86,7 +85,11 @@ func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey stri
 			return task.ResultHTML, nil
 		case rlibs.TaskStatusPending,
 			rlibs.TaskStatusRunning:
-			time.Sleep(time.Second)
+			select {
+			case <-ctx.Done():
+				return nil, errors.Wrap(ctx.Err(), "wait for crawler result")
+			case <-time.After(time.Second):
+			}
 			continue
 		case rlibs.TaskStatusFailed:
 			if logger != nil {
@@ -99,8 +102,7 @@ func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey stri
 				}
 				logger.Debug("html crawler task failed", fields...)
 			}
-			return nil, errors.Errorf("task failed at %s for reason %q",
-				*task.FinishedAt, *task.FailedReason)
+			return nil, errors.New("crawler task failed; inspect the task audit record")
 		default:
 			if logger != nil {
 				logger.Debug("html crawler task returned unknown status", zap.String("status", task.Status))
@@ -111,14 +113,7 @@ func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey stri
 }
 
 // sanitizeURLForLog removes query and fragment components before logging a URL.
-// It returns the trimmed original string when parsing fails.
+// It redacts malformed inputs instead of logging their original bytes.
 func sanitizeURLForLog(rawURL string) string {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return strings.TrimSpace(rawURL)
-	}
-
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	return parsed.String()
+	return toolpolicy.URLForLog(rawURL)
 }

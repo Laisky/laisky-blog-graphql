@@ -1,3 +1,5 @@
+import { configuredPublicApiBasePath, publicApiPath } from '@/lib/api-base';
+
 const BEARER_PREFIX = /^Bearer\s+/i;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const MCP_SITE_PREFIX = 'mcp';
@@ -52,7 +54,8 @@ export function resolveCurrentApiBasePath(): string {
  * It accepts a tool name and returns a path formatted as "/tools/{toolName}/".
  */
 export function resolveToolApiBase(toolName: string): string {
-  return `/tools/${toolName}/`;
+  if (!/^[a-z][a-z0-9_]*$/.test(toolName)) throw new Error('Invalid tool name');
+  return publicApiPath(`/tools/${toolName}/`);
 }
 
 /**
@@ -63,6 +66,11 @@ export function resolveMcpEndpoint(): string {
   if (typeof window === 'undefined') {
     return DEFAULT_LOCAL_MCP_ENDPOINT;
   }
+
+  const configured = normalizeConfiguredEndpoint(import.meta.env.VITE_MCP_ENDPOINT_PATH as string | undefined);
+  if (configured) return configured;
+  const publicBase = configuredPublicApiBasePath();
+  if (publicBase !== undefined) return publicBase || '/';
 
   return resolveMcpEndpointByLocation(
     window.location.pathname,

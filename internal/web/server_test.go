@@ -222,7 +222,7 @@ func TestAllowCORS(t *testing.T) {
 				assert.Equal(t, tt.expectedOrigin, w.Header().Get("Access-Control-Allow-Origin"), "CORS origin header mismatch")
 				assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"), "CORS credentials header mismatch")
 				assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS, HEAD", w.Header().Get("Access-Control-Allow-Methods"), "CORS methods header mismatch")
-				assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Headers"), "CORS headers mismatch")
+				assert.Equal(t, toolCORSRequestHeaders, w.Header().Get("Access-Control-Allow-Headers"), "CORS headers mismatch")
 				assert.Equal(t, "86400", w.Header().Get("Access-Control-Max-Age"), "CORS max age header mismatch")
 				assert.Equal(t, "Origin", w.Header().Get("Vary"), "Vary header mismatch")
 			} else {
@@ -258,7 +258,7 @@ func TestAllowCORSEdgeCases(t *testing.T) {
 		// Middleware should respond with generic CORS headers for blank origin preflight
 		assert.Equal(t, http.StatusNoContent, w.Code)
 		assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
-		assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Headers"))
+		assert.Equal(t, toolCORSRequestHeaders, w.Header().Get("Access-Control-Allow-Headers"))
 		assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS, HEAD", w.Header().Get("Access-Control-Allow-Methods"))
 		assert.Equal(t, "86400", w.Header().Get("Access-Control-Max-Age"))
 	})

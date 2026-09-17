@@ -187,7 +187,11 @@ func RunServer(addr string, resolver *Resolver) {
 		resolver.args.AskUserService != nil ||
 		resolver.args.UserRequestService != nil ||
 		resolver.args.RAGService != nil ||
-		resolver.args.MCPFileService != nil) {
+		resolver.args.MCPFileService != nil ||
+		resolver.args.MemoryService != nil ||
+		resolver.args.Rdb != nil ||
+		resolver.args.MCPToolsSettings.MCPPipeEnabled ||
+		resolver.args.MCPToolsSettings.FindToolEnabled) {
 		mcpServer, err := mcp.NewServer(
 			resolver.args.WebSearchProvider,
 			resolver.args.AskUserService,
@@ -441,7 +445,7 @@ func RunServer(addr string, resolver *Resolver) {
 		}
 
 		// Build tools configuration for frontend
-		toolsConfig := gin.H{
+		toolsConfig := map[string]bool{
 			"web_search":       true,
 			"web_fetch":        true,
 			"ask_user":         true,
@@ -460,6 +464,13 @@ func RunServer(addr string, resolver *Resolver) {
 			toolsConfig["memory"] = resolver.args.MCPToolsSettings.MemoryEnabled
 		}
 
+		// These pages call GraphQL directly. MCP tool registration is independent.
+		consoleTools := consoleToolAvailability(toolsConfig, map[string]bool{
+			"web_search":       resolver != nil && resolver.args.WebSearchProvider != nil,
+			"web_fetch":        resolver != nil && resolver.args.Rdb != nil,
+			"extract_key_info": resolver != nil && resolver.args.RAGService != nil,
+		})
+
 		siteConfig := siteConfigs.resolveForRequest(ctx.Request)
 		if siteConfig.PublicBasePath == "" {
 			siteConfig.PublicBasePath = prefix.public
@@ -477,8 +488,10 @@ func RunServer(addr string, resolver *Resolver) {
 		ctx.JSON(http.StatusOK, gin.H{
 			"urlPrefix":          prefix.internal,
 			"publicBasePath":     siteConfig.PublicBasePath,
+			"publicApiBasePath":  prefix.public,
 			"site":               siteConfig,
 			"tools":              toolsConfig,
+			"consoleTools":       consoleTools,
 			"githubOAuthEnabled": blog.IsGithubOAuthConfigured(),
 			"ssoJwt":             ssoJWTInfo,
 		})
@@ -640,7 +653,7 @@ func allowCORS(ctx *gin.Context) {
 	// Set CORS headers
 	if allowedOrigin != "" {
 		ctx.Header("Access-Control-Allow-Origin", allowedOrigin)
-		ctx.Header("Access-Control-Allow-Headers", "*")
+		setToolCORSHeaders(ctx.Writer.Header())
 		ctx.Header("Access-Control-Allow-Credentials", "true")
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400") // 24 hours
@@ -662,7 +675,7 @@ func allowCORS(ctx *gin.Context) {
 		// Handle OPTIONS requests without Origin header (some tools/browsers)
 		logger.Debug("CORS: OPTIONS request without Origin header")
 		ctx.Header("Access-Control-Allow-Origin", "*")
-		ctx.Header("Access-Control-Allow-Headers", "*")
+		setToolCORSHeaders(ctx.Writer.Header())
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400")
 		ctx.AbortWithStatus(http.StatusNoContent)

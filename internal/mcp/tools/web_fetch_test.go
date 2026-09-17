@@ -148,31 +148,22 @@ func TestWebFetchHandleOutputMarkdown(t *testing.T) {
 }
 
 func TestWebFetchHandleOutputMarkdownString(t *testing.T) {
-	var gotOutputMarkdown bool
-
 	tool := mustWebFetchTool(t,
 		func(context.Context) string { return "token" },
-		func(ctx context.Context, apiKey string, price oneapi.Price, reason string) error { return nil },
-		func(ctx context.Context, store *rlibs.DB, url string, apiKey string, outputMarkdown bool) ([]byte, error) {
-			gotOutputMarkdown = outputMarkdown
-			return []byte("ok"), nil
+		func(context.Context, string, oneapi.Price, string) error {
+			t.Fatal("invalid format argument must not be billed")
+			return nil
+		},
+		func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) {
+			t.Fatal("invalid format argument must not invoke the provider")
+			return nil, nil
 		},
 	)
-
-	req := mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Arguments: map[string]any{
-				"url":             "https://example.com",
-				"output_markdown": "true",
-			},
-		},
-	}
-
-	result, err := tool.Handle(context.Background(), req)
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"url": "https://8.8.8.8/", "output_markdown": "true",
+	}}})
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.False(t, result.IsError)
-	require.True(t, gotOutputMarkdown)
+	require.True(t, result.IsError)
 }
 
 func TestWebFetchHandleOutputMarkdownExplicitFalse(t *testing.T) {
@@ -203,32 +194,23 @@ func TestWebFetchHandleOutputMarkdownExplicitFalse(t *testing.T) {
 	require.False(t, gotOutputMarkdown)
 }
 
-func TestWebFetchHandleOutputMarkdownInvalidStringDefaultsTrue(t *testing.T) {
-	var gotOutputMarkdown bool
-
+func TestWebFetchHandleOutputMarkdownRejectsInvalidString(t *testing.T) {
 	tool := mustWebFetchTool(t,
 		func(context.Context) string { return "token" },
-		func(ctx context.Context, apiKey string, price oneapi.Price, reason string) error { return nil },
-		func(ctx context.Context, store *rlibs.DB, url string, apiKey string, outputMarkdown bool) ([]byte, error) {
-			gotOutputMarkdown = outputMarkdown
-			return []byte("ok"), nil
+		func(context.Context, string, oneapi.Price, string) error {
+			t.Fatal("invalid format argument must not be billed")
+			return nil
+		},
+		func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) {
+			t.Fatal("invalid format argument must not invoke the provider")
+			return nil, nil
 		},
 	)
-
-	req := mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Arguments: map[string]any{
-				"url":             "https://example.com",
-				"output_markdown": "unexpected-value",
-			},
-		},
-	}
-
-	result, err := tool.Handle(context.Background(), req)
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"url": "https://8.8.8.8/", "output_markdown": "unexpected-value",
+	}}})
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.False(t, result.IsError)
-	require.True(t, gotOutputMarkdown)
+	require.True(t, result.IsError)
 }
 
 func TestResolveOutputMarkdownArg(t *testing.T) {

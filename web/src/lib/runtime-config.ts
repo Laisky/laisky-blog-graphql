@@ -40,9 +40,14 @@ export interface SsoJwtConfig {
  * RuntimeConfig describes the runtime configuration fetched from the backend.
  */
 export interface RuntimeConfig {
+  // Public API mount; may differ from the site/SPA router base.
+  publicApiBasePath?: string;
   urlPrefix?: string;
   publicBasePath?: string;
+  // MCP tool registration, not a policy for GraphQL.
   tools?: ToolsConfig;
+  // Browser route availability follows the transport each page actually calls.
+  consoleTools?: ToolsConfig;
   site?: RuntimeSiteConfig;
   // githubOAuthEnabled reports whether the backend has GitHub OAuth credentials
   // configured. The SSO login page hides the GitHub sign-in option when this is

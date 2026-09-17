@@ -35,6 +35,7 @@ const consoleItems: ConsoleMenuItem[] = [
   { to: '/tools/get_user_requests', label: 'get_user_requests', toolKey: 'get_user_request' },
   { to: '/tools/web_search', label: 'web_search', toolKey: 'web_search' },
   { to: '/tools/web_fetch', label: 'web_fetch', toolKey: 'web_fetch' },
+  { to: '/tools/extract_key_info', label: 'extract_key_info', toolKey: 'extract_key_info' },
   { to: '/tools/file_io', label: 'file_io', toolKey: 'file_io' },
   { to: '/tools/memory', label: 'memory', toolKey: 'memory' },
 ];

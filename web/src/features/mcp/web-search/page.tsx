@@ -1,5 +1,5 @@
 import { Loader2, Play } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,6 +45,12 @@ const WEB_SEARCH_MUTATION = `
 
 export function WebSearchPage() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
+  return <WebSearchWorkspace key={JSON.stringify([apiKey, isToolConsoleLocked])} apiKey={apiKey || ''} isToolConsoleLocked={isToolConsoleLocked} />;
+}
+
+function WebSearchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; isToolConsoleLocked: boolean }) {
+  const active = useRef<AbortController | null>(null);
+  useEffect(() => () => active.current?.abort(), []);
   const [entries, setEntries] = useState<CallLogEntry[]>([]);
   const [pagination, setPagination] = useState<CallLogListResponse['pagination'] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,21 +112,26 @@ export function WebSearchPage() {
 
   const handleExecute = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!apiKey || isToolConsoleLocked || !query.trim() || isExecuting) return;
+    if (!apiKey || isToolConsoleLocked || !query.trim() || active.current) return;
+
+    const controller = new AbortController();
+    active.current = controller;
 
     setIsExecuting(true);
     setExecError(null);
     setLastResult(null);
 
     try {
-      const data = await fetchGraphQL<WebSearchResponse>(apiKey, WEB_SEARCH_MUTATION, { query });
+      const data = await fetchGraphQL<WebSearchResponse>(apiKey, WEB_SEARCH_MUTATION, { query }, controller.signal);
+      if (controller.signal.aborted) return;
       setLastResult(data.WebSearch);
       // Refresh logs after execution
       setPage(1);
     } catch (err) {
-      setExecError(err instanceof Error ? err.message : 'Execution failed');
+      if (!controller.signal.aborted) setExecError(err instanceof Error ? err.message : 'Execution failed');
     } finally {
-      setIsExecuting(false);
+      if (active.current === controller) active.current = null;
+      if (!controller.signal.aborted) setIsExecuting(false);
     }
   };
 
@@ -162,7 +173,7 @@ export function WebSearchPage() {
                     disabled={isToolConsoleLocked || isExecuting}
                     className="flex-1"
                   />
-                  <Button type="submit" disabled={isToolConsoleLocked || isExecuting || !query.trim()}>
+                  <Button type="submit" disabled={!apiKey || isToolConsoleLocked || isExecuting || !query.trim()}>
                     {isExecuting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -3,13 +3,17 @@ package search
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
@@ -17,151 +21,120 @@ import (
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 )
 
-// MutationResolver is the resolver for mutation.
+// MutationResolver implements the existing GraphQL search and fetch fields.
 type MutationResolver struct {
-	provider   searchlib.Provider
-	rdb        *rlibs.DB
-	calllogger *calllog.Service
+	provider       searchlib.Provider
+	rdb            *rlibs.DB
+	calllogger     *calllog.Service
+	billingChecker func(context.Context, string, oneapi.Price, string) error
+	fetcher        func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error)
+	validateURL    func(context.Context, string) error
 }
 
-// NewMutationResolver is the constructor for MutationResolver.
+// NewMutationResolver constructs a GraphQL adapter over the shared functions.
+// MCP registration switches intentionally do not affect these GraphQL fields.
+// Missing backend dependencies make only the corresponding operation unavailable.
 func NewMutationResolver(provider searchlib.Provider, rdb *rlibs.DB, calllogger *calllog.Service) *MutationResolver {
-	return &MutationResolver{
-		provider:   provider,
-		rdb:        rdb,
-		calllogger: calllogger,
-	}
+	return &MutationResolver{provider: provider, rdb: rdb, calllogger: calllogger,
+		billingChecker: oneapi.CheckUserExternalBilling,
+		fetcher:        searchlib.FetchDynamicURLContent, validateURL: toolpolicy.ValidateFetchURL}
 }
 
-// WebFetch is the resolver for webFetch field.
-func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.WebFetchResult, error) {
-	startAt := time.Now()
-	const outputMarkdown = true
-	logger := gmw.GetLogger(ctx).
-		Named("web_fetch").
-		With(
-			zap.String("url", url),
-			zap.Bool("output_markdown", outputMarkdown),
-		)
-	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
-	if !ok {
-		return nil, errors.New("cannot get gin context from standard context")
+func requestAuth(ctx context.Context) (*mcpauth.Context, error) {
+	var header string
+	if ginCtx, ok := gmw.GetGinCtxFromStdCtx(ctx); ok && ginCtx != nil {
+		header = ginCtx.GetHeader("Authorization")
 	}
-
-	apikey := library.StripBearerPrefix(gctx.GetHeader("Authorization"))
-	if apikey == "" {
-		return nil, errors.New("cannot get apikey")
-	}
-
-	err := oneapi.CheckUserExternalBilling(ctx, apikey, oneapi.PriceWebFetch, "web_fetch")
+	auth, err := mcpauth.FromContextOrHeader(ctx, header)
 	if err != nil {
+		return nil, errors.Wrap(err, "authorize shared tool")
+	}
+	return auth, nil
+}
+func requestLogger(ctx context.Context, name string) logSDK.Logger {
+	logger := gmw.GetLogger(ctx)
+	if logger == nil {
+		logger = logSDK.Shared
+	}
+	return logger.Named(name)
+}
+
+// WebFetch applies the same admission and canonical identity rules as MCP.
+// GraphQL's existing contract returns markdown; the MCP-only format option is
+// not silently added to or simulated through an unrelated GraphQL field.
+func (r *MutationResolver) WebFetch(ctx context.Context, url string) (*models.WebFetchResult, error) {
+	if r.rdb == nil {
+		return nil, errors.New("web_fetch is not available")
+	}
+	auth, err := requestAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	url = strings.TrimSpace(url)
+	if err := r.validateURL(ctx, url); err != nil {
+		return nil, errors.Wrap(err, "invalid fetch input")
+	}
+	startAt := time.Now().UTC()
+	logger := requestLogger(ctx, "web_fetch").With(zap.String("url", toolpolicy.URLForLog(url)))
+	if err := r.billingChecker(ctx, auth.APIKey, oneapi.PriceWebFetch, "web_fetch"); err != nil {
 		return nil, errors.Wrap(err, "check user external billing")
 	}
-
-	logger.Debug("fetch dynamic url content started")
-
-	result, err := searchlib.FetchDynamicURLContent(ctx, r.rdb, url, apikey, outputMarkdown)
-	status := calllog.StatusSuccess
-	var errMsg string
-	if err != nil {
-		status = calllog.StatusError
-		errMsg = err.Error()
-	}
-
-	if r.calllogger != nil {
-		if recordErr := r.calllogger.Record(ctx, calllog.RecordInput{
-			ToolName:     "web_fetch",
-			APIKey:       apikey,
-			Status:       status,
-			Cost:         oneapi.PriceWebFetch.Int(),
-			Duration:     time.Since(startAt),
-			Parameters:   map[string]any{"url": url, "output_markdown": outputMarkdown},
-			ErrorMessage: errMsg,
-			OccurredAt:   startAt,
-		}); recordErr != nil {
-			logger.Warn("record call log", zap.Error(recordErr))
-		}
-	}
-
+	content, err := r.fetcher(ctx, r.rdb, url, auth.APIKey, true)
+	r.record(ctx, logger, auth.APIKey, "web_fetch", oneapi.PriceWebFetch,
+		map[string]any{"url": toolpolicy.URLForLog(url), "output_markdown": true}, startAt, err)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch dynamic url content")
 	}
-
-	logger.Debug("fetch dynamic url content completed", zap.Int("content_len", len(result)))
-	logger.Info("successfully fetch url content")
-	return &models.WebFetchResult{
-		URL:       url,
-		CreatedAt: *library.NewDatetimeFromTime(time.Now()),
-		Content:   string(result),
-	}, nil
+	return &models.WebFetchResult{URL: url, CreatedAt: *library.NewDatetimeFromTime(time.Now().UTC()), Content: string(content)}, nil
 }
 
-// WebSearch is the resolver for webSearch field.
+// WebSearch validates before charging and returns the established GraphQL shape.
 func (r *MutationResolver) WebSearch(ctx context.Context, query string) (*searchlib.SearchResult, error) {
-	startAt := time.Now()
-	logger := gmw.GetLogger(ctx).
-		Named("web_search").
-		With(zap.String("query", query))
-	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
-	if !ok {
-		return nil, errors.New("cannot get gin context from standard context")
+	if r.provider == nil {
+		return nil, errors.New("web_search is not available")
 	}
-
-	apikey := library.StripBearerPrefix(gctx.GetHeader("Authorization"))
-	if apikey == "" {
-		return nil, errors.New("cannot get apikey")
-	}
-
-	err := oneapi.CheckUserExternalBilling(ctx, apikey, oneapi.PriceWebSearch, "web_search")
+	auth, err := requestAuth(ctx)
 	if err != nil {
+		return nil, err
+	}
+	query, err = toolpolicy.Query(query)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid search input")
+	}
+	startAt := time.Now().UTC()
+	logger := requestLogger(ctx, "web_search").With(zap.Int("query_len", len(query)))
+	if err := r.billingChecker(ctx, auth.APIKey, oneapi.PriceWebSearch, "web_search"); err != nil {
 		return nil, errors.Wrap(err, "check user external billing")
 	}
-
-	if r.provider == nil {
-		return nil, errors.New("web search provider is not configured")
-	}
-
 	output, err := r.provider.Search(ctx, query)
-	status := calllog.StatusSuccess
-	var errMsg string
+	if err == nil && output == nil {
+		err = errors.New("search provider returned no result")
+	}
+	params := map[string]any{"query": query}
+	if output != nil {
+		params["engine_name"], params["engine_type"] = output.EngineName, output.EngineType
+	}
+	r.record(ctx, logger, auth.APIKey, "web_search", oneapi.PriceWebSearch, params, startAt, err)
 	if err != nil {
-		status = calllog.StatusError
-		errMsg = err.Error()
+		return nil, errors.Wrap(err, "search provider failed")
 	}
+	return &searchlib.SearchResult{Query: query, CreatedAt: time.Now().UTC(), EngineName: output.EngineName,
+		EngineType: output.EngineType, Results: append([]searchlib.SearchResultItem{}, output.Items...)}, nil
+}
 
-	if r.calllogger != nil {
-		params := map[string]any{"query": query}
-		if output != nil {
-			params["engine_name"] = output.EngineName
-			params["engine_type"] = output.EngineType
-		}
-		if recordErr := r.calllogger.Record(ctx, calllog.RecordInput{
-			ToolName:     "web_search",
-			APIKey:       apikey,
-			Status:       status,
-			Cost:         oneapi.PriceWebSearch.Int(),
-			Duration:     time.Since(startAt),
-			Parameters:   params,
-			ErrorMessage: errMsg,
-			OccurredAt:   startAt,
-		}); recordErr != nil {
-			logger.Warn("record call log", zap.Error(recordErr))
-		}
+// record keeps one resolver-level audit record for each attempted provider call.
+// The GraphQL resolver does not also invoke MCP's billing/audit wrapper.
+func (r *MutationResolver) record(ctx context.Context, logger logSDK.Logger, apiKey, tool string,
+	price oneapi.Price, parameters map[string]any, started time.Time, callErr error) {
+	if r.calllogger == nil {
+		return
 	}
-
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to search for query `%s`", query)
+	status, message := calllog.StatusSuccess, ""
+	if callErr != nil {
+		status, message = calllog.StatusError, callErr.Error()
 	}
-
-	result := &searchlib.SearchResult{
-		Query:      query,
-		CreatedAt:  time.Now(),
-		EngineName: output.EngineName,
-		EngineType: output.EngineType,
+	if err := r.calllogger.Record(ctx, calllog.RecordInput{ToolName: tool, APIKey: apiKey, Status: status,
+		Cost: price.Int(), Duration: time.Since(started), Parameters: parameters, ErrorMessage: message, OccurredAt: started}); err != nil {
+		logger.Warn("record call log", zap.Error(err))
 	}
-
-	result.Results = append(result.Results, output.Items...)
-
-	logger.Info("successfully search", zap.Duration("cost", time.Since(startAt)))
-	return result, nil
 }
