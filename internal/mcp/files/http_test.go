@@ -121,12 +121,20 @@ func TestHTTP_ReadVersion_UTF8(t *testing.T) {
 	require.Equal(t, "hello", resp["content"])
 }
 
-// TestHTTP_ReadVersion_Base64 verifies non-UTF8 content encodes as base64.
+// TestHTTP_ReadVersion_Base64 verifies legacy corrupt history remains recoverable
+// without requiring the current text-only write API to accept invalid UTF-8.
 func TestHTTP_ReadVersion_Base64(t *testing.T) {
 	svc, handler, auth := newHTTPTestEnv(t)
 
 	rawBytes := []byte{0xFF, 0xFE, 0x00, 0x01}
 	_, err := svc.Write(context.Background(), auth, "proj", "/a.bin", string(rawBytes), "utf-8", 0, WriteModeTruncate)
+	require.True(t, IsCode(err, ErrCodeInvalidContent), "%v", err)
+	_, err = svc.Write(context.Background(), auth, "proj", "/a.bin", "seed", "utf-8", 0, WriteModeTruncate)
+	require.NoError(t, err)
+	// Simulate bytes left by a pre-validation server, not a newly permitted write.
+	_, err = svc.db.ExecContext(context.Background(), rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, content_hash = ?
+		WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?`, svc.isPostgres),
+		rawBytes, len(rawBytes), HashFileContent(rawBytes), auth.APIKeyHash, "proj", "/a.bin", "")
 	require.NoError(t, err)
 	_, err = svc.Write(context.Background(), auth, "proj", "/a.bin", "after", "utf-8", 0, WriteModeTruncate)
 	require.NoError(t, err)

@@ -85,6 +85,13 @@ func (s *Service) ensureProjectQuota(ctx context.Context, tx *sql.Tx, apiKeyHash
 
 // resolveDeleteTargets determines which file paths should be deleted.
 func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string, recursive bool) ([]string, error) {
+	// Shared by ordinary Delete and PageIndex DeleteWithSystemState. Check before
+	// either path snapshots content, deletes rows, or changes the plugin catalog.
+	auth := AuthContext{APIKeyHash: apiKeyHash}
+	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
+	if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false); err != nil {
+		return nil, err
+	}
 	owner := systemOwnerFromContext(ctx)
 	if path == "" {
 		return s.listAllFilePaths(ctx, tx, apiKeyHash, project)
