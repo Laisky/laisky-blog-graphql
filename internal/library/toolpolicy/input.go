@@ -179,14 +179,17 @@ func publicAddress(ip netip.Addr) bool {
 	return true
 }
 
-// URLForLog removes all authority credentials, query parameters and fragments.
-// Malformed input is never returned verbatim because it may itself contain a key.
+// URLForLog returns only the HTTP(S) scheme and host (including any port).
+// Paths, including RawPath, may contain bearer tokens and are never logged.
+// Credentials, queries and fragments are also removed; malformed input is never
+// returned verbatim. Use this only for log fields, not as the fetch target.
 func URLForLog(raw string) string {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "[invalid URL]"
 	}
 	parsed.User = nil
+	parsed.Path, parsed.RawPath = "", ""
 	parsed.RawQuery, parsed.Fragment, parsed.RawFragment = "", "", ""
 	parsed.ForceQuery = false
 	return parsed.String()
