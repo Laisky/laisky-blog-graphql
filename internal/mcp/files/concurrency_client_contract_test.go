@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/pageindex"
 	ragplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugins/rag"
