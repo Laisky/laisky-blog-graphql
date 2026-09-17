@@ -49,17 +49,17 @@ func (t *FileReadTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		svc, conditionalCtx, svcErr := conditionalFileService(ctx, t.svc, req, auth, project, path, "", files.FileOperationRead)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
 		result, svcErr := svc.Read(conditionalCtx, auth, project, path, offset, length)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
 		payload := map[string]any{"content": result.Content, "content_encoding": result.ContentEncoding}
 		addFileVersion(payload, result.Version)
 		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error is encoded in the MCP tool result
 		}
 		return toolResult, nil
 	}

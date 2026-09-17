@@ -42,15 +42,15 @@ func (t *FileDeleteTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		svc, conditionalCtx, svcErr := conditionalFileService(ctx, t.svc, req, auth, project, path, "", files.FileOperationDelete)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
 		result, svcErr := svc.Delete(conditionalCtx, auth, project, path, recursive)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
 		toolResult, encodeErr := mcp.NewToolResultJSON(map[string]any{"deleted_count": result.DeletedCount})
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error is encoded in the MCP tool result
 		}
 		return toolResult, nil
 	}

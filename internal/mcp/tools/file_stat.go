@@ -40,13 +40,13 @@ func (t *FileStatTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Stat(ctx, auth, project, path)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
 		payload := map[string]any{"exists": result.Exists, "type": result.Type, "size": result.Size, "created_at": result.CreatedAt, "updated_at": result.UpdatedAt}
 		addFileVersion(payload, result.Version)
 		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error is encoded in the MCP tool result
 		}
 		return toolResult, nil
 	}
