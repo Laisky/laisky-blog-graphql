@@ -22,14 +22,15 @@ func NewFileRenameTool(svc FileService) (*FileRenameTool, error) {
 // Definition returns the MCP metadata for file_rename.
 func (t *FileRenameTool) Definition() mcp.Tool {
 	return mcp.NewTool("file_rename",
-		mcp.WithDescription("Rename a file or directory. Conditional file moves require a source version and protect the destination. File tokens do not authorize conditional directory moves."),
+		mcp.WithDescription("Rename one file using its required source expected_version. Non-overwriting moves require an absent destination. Overwriting moves also require "+
+			"expected_destination_version or destination_must_not_exist=true. Directory moves are not supported by file tokens."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
-		mcp.WithString("from_path", mcp.Required(), mcp.Description("Source file or directory path.")),
-		mcp.WithString("to_path", mcp.Required(), mcp.Description("Destination file or directory path.")),
-		mcp.WithBoolean("overwrite", mcp.Description("When true, replace an existing destination file for file moves.")),
-		expectedFileVersionOption(),
-		mcp.WithString("expected_destination_version", mcp.Description("Expected version of an existing destination; requires expected_version and overwrite=true.")),
-		mcp.WithBoolean("destination_must_not_exist", mcp.Description("Require an absent destination; requires expected_version. Implicit for non-overwriting conditional moves.")),
+		mcp.WithString("from_path", mcp.Required(), mcp.Description("Source file path.")),
+		mcp.WithString("to_path", mcp.Required(), mcp.Description("Destination file path.")),
+		mcp.WithBoolean("overwrite", mcp.Description("When true, a destination version or destination_must_not_exist=true is also required.")),
+		expectedFileVersionOption(true),
+		mcp.WithString("expected_destination_version", mcp.Description("Version of the existing destination; requires overwrite=true.")),
+		mcp.WithBoolean("destination_must_not_exist", mcp.Description("Require an absent destination. Implicit for non-overwriting moves.")),
 		fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false),
 	)
 }

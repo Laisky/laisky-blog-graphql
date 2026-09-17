@@ -22,8 +22,26 @@ import (
 // helpers
 // ---------------------------------------------------------------------------
 
+// behaviorReq supplies nominal conditions for transport mocks, which do not
+// persist files. Missing-condition protocol tests must construct raw requests.
 func behaviorReq(args map[string]any) mcp.CallToolRequest {
-	return mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: args}}
+	requestArgs := make(map[string]any, len(args)+2)
+	for name, value := range args {
+		requestArgs[name] = value
+	}
+	_, hasPath := requestArgs["path"]
+	_, hasSource := requestArgs["from_path"]
+	if hasPath || hasSource {
+		if _, supplied := requestArgs["expected_version"]; !supplied && requestArgs["create_only"] != true {
+			requestArgs["expected_version"] = "00000000000000000000000000000001:1"
+		}
+	}
+	if hasSource && requestArgs["overwrite"] == true {
+		if _, supplied := requestArgs["expected_destination_version"]; !supplied && requestArgs["destination_must_not_exist"] != true {
+			requestArgs["expected_destination_version"] = "00000000000000000000000000000001:1"
+		}
+	}
+	return mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: requestArgs}}
 }
 
 func behaviorAuthCtx() context.Context {
@@ -446,9 +464,9 @@ func TestFileToolsSuccessfulOperations(t *testing.T) {
 	})
 
 	t.Run("file_delete success", func(t *testing.T) {
-		svc := &behaviorFileService{deleteResult: files.DeleteResult{DeletedCount: 3}}
+		svc := &behaviorFileService{deleteResult: files.DeleteResult{DeletedCount: 1}}
 		tool, _ := NewFileDeleteTool(svc)
-		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "path": "/dir", "recursive": true}))
+		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "path": "/f.txt", "recursive": false}))
 		require.NoError(t, err)
 		require.False(t, result.IsError)
 	})
@@ -492,7 +510,7 @@ func TestFileToolsNormalizeMissingLeadingSlash(t *testing.T) {
 	t.Run("file_stat", func(t *testing.T) {
 		svc := &behaviorFileService{statResult: files.StatResult{Exists: true}}
 		tool, err := NewFileStatTool(svc)
-		require.NoError(t, err)
+	require.NoError(t, err)
 
 		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "path": "meta.json"}))
 		require.NoError(t, err)

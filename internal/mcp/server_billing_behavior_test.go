@@ -112,6 +112,9 @@ func (s *behaviorFileService) Start(context.Context) error { return nil }
 // Stop is a no-op for plugin.Plugin compatibility in tests.
 func (s *behaviorFileService) Stop(context.Context) error { return nil }
 
+// SupportsFileVersionPreconditions opts this billing-only mock into the transport contract.
+func (s *behaviorFileService) SupportsFileVersionPreconditions() bool { return true }
+
 func (m *behaviorBillingReporter) reasonCounts() map[string]int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -221,7 +224,7 @@ func TestAllConfiguredFileIOHandlersReportZeroCostBilling(t *testing.T) {
 			handler: func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 				return s.handleFileWrite
 			},
-			args: map[string]any{"project": "graphql", "path": "/a.txt", "content": "hello", "mode": "APPEND"},
+			args: map[string]any{"project": "graphql", "path": "/a.txt", "content": "hello", "mode": "APPEND", "expected_version": "00000000000000000000000000000001:1"},
 		},
 		{
 			name:       "file_delete",
@@ -230,7 +233,7 @@ func TestAllConfiguredFileIOHandlersReportZeroCostBilling(t *testing.T) {
 			handler: func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 				return s.handleFileDelete
 			},
-			args: map[string]any{"project": "graphql", "path": "/a.txt", "recursive": false},
+			args: map[string]any{"project": "graphql", "path": "/a.txt", "recursive": false, "expected_version": "00000000000000000000000000000001:1"},
 		},
 		{
 			name:       "file_rename",
@@ -239,7 +242,7 @@ func TestAllConfiguredFileIOHandlersReportZeroCostBilling(t *testing.T) {
 			handler: func(s *Server) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 				return s.handleFileRename
 			},
-			args: map[string]any{"project": "graphql", "from_path": "/a.txt", "to_path": "/b.txt", "overwrite": true},
+			args: map[string]any{"project": "graphql", "from_path": "/a.txt", "to_path": "/b.txt", "overwrite": true, "expected_version": "00000000000000000000000000000001:1", "expected_destination_version": "00000000000000000000000000000001:1"},
 		},
 		{
 			name:       "file_list",
@@ -319,15 +322,15 @@ func TestMCPPipeComplexNestedBillingForFreeAndPaidSteps(t *testing.T) {
 						map[string]any{"id": "inner", "pipe": map[string]any{
 							"continue_on_error": false,
 							"steps": []any{
-								map[string]any{"id": "write", "tool": "file_write", "args": map[string]any{"project": "graphql", "path": "/a.txt", "content": "hello"}},
+								map[string]any{"id": "write", "tool": "file_write", "args": map[string]any{"project": "graphql", "path": "/a.txt", "content": "hello", "expected_version": "00000000000000000000000000000001:1"}},
 								map[string]any{"id": "refine", "tool": "web_search", "args": map[string]any{"query": "refine"}},
 							},
 						}},
 					}},
-					map[string]any{"id": "rename", "tool": "file_rename", "args": map[string]any{"project": "graphql", "from_path": "/a.txt", "to_path": "/b.txt", "overwrite": true}},
+					map[string]any{"id": "rename", "tool": "file_rename", "args": map[string]any{"project": "graphql", "from_path": "/a.txt", "to_path": "/b.txt", "overwrite": true, "expected_version": "00000000000000000000000000000001:1", "expected_destination_version": "00000000000000000000000000000001:1"}},
 				},
 			}},
-			map[string]any{"id": "delete", "tool": "file_delete", "args": map[string]any{"project": "graphql", "path": "/b.txt"}},
+			map[string]any{"id": "delete", "tool": "file_delete", "args": map[string]any{"project": "graphql", "path": "/b.txt", "expected_version": "00000000000000000000000000000001:1"}},
 		},
 	}))
 	require.NoError(t, handleErr)
@@ -390,7 +393,7 @@ func TestMCPPipeContinueOnErrorReportsEveryFreeFileIOAttempt(t *testing.T) {
 					"continue_on_error": true,
 					"steps": []any{
 						map[string]any{"id": "paid", "tool": "web_search", "args": map[string]any{"query": "keep-going"}},
-						map[string]any{"id": "write", "tool": "file_write", "args": map[string]any{"project": "graphql", "path": "/c.txt", "content": "hello"}},
+						map[string]any{"id": "write", "tool": "file_write", "args": map[string]any{"project": "graphql", "path": "/c.txt", "content": "hello", "expected_version": "00000000000000000000000000000001:1"}},
 						map[string]any{"id": "read3", "tool": "file_read", "args": map[string]any{"project": "graphql", "path": "/c.txt"}},
 					},
 				}},

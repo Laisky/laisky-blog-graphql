@@ -36,8 +36,9 @@ const (
 )
 
 // FilePreconditions carries optimistic concurrency conditions, not authorization.
-// Empty conditions retain the legacy unconditional contract. A file token never
-// represents an entire directory. Retry deduplication is a separate protocol.
+// Public MCP/HTTP mutation adapters require conditions. Empty conditions are
+// limited to initial reads and internal imperative storage calls. A file token
+// never represents an entire directory; retry deduplication is separate.
 type FilePreconditions struct {
 	ExpectedVersion            string
 	CreateOnly                 bool

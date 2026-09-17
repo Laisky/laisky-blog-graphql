@@ -18,9 +18,10 @@ func TestFileRenameMissingAuth(t *testing.T) {
 	require.NoError(t, err)
 
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
-		"project":   "proj",
-		"from_path": "/a.txt",
-		"to_path":   "/b.txt",
+		"project":          "proj",
+		"from_path":        "/a.txt",
+		"to_path":          "/b.txt",
+		"expected_version": "00000000000000000000000000000001:1",
 	}}}
 
 	result, handleErr := tool.Handle(context.Background(), req)
@@ -41,9 +42,10 @@ func TestFileRenameErrorMapping(t *testing.T) {
 	})
 
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
-		"project":   "proj",
-		"from_path": "/a.txt",
-		"to_path":   "/b.txt",
+		"project":          "proj",
+		"from_path":        "/a.txt",
+		"to_path":          "/b.txt",
+		"expected_version": "00000000000000000000000000000001:1",
 	}}}
 
 	result, handleErr := tool.Handle(ctx, req)

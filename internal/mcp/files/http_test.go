@@ -121,7 +121,7 @@ func TestHTTP_ReadVersion_UTF8(t *testing.T) {
 	require.Equal(t, "hello", resp["content"])
 }
 
-// TestHTTP_ReadVersion_Base64 verifies legacy corrupt history remains recoverable
+// TestHTTP_ReadVersion_Base64 verifies recovery of historical non-UTF8 content
 // without requiring the current text-only write API to accept invalid UTF-8.
 func TestHTTP_ReadVersion_Base64(t *testing.T) {
 	svc, handler, auth := newHTTPTestEnv(t)
@@ -192,6 +192,9 @@ func TestHTTP_RestoreVersion_RoundTrip(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, url, body)
 	req.Header.Set("Authorization", httpAuthHeader())
 	req.Header.Set("Content-Type", "application/json")
+	current, err := svc.Read(context.Background(), auth, "proj", "/a.txt", 0, -1)
+	require.NoError(t, err)
+	req.Header.Set("If-Match", `"`+current.Version+`"`)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -222,6 +225,7 @@ func TestHTTP_PutFile_RoundTrip(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/file", body)
 	req.Header.Set("Authorization", httpAuthHeader())
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("If-None-Match", "*")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -234,6 +238,7 @@ func TestHTTP_PutFile_RoundTrip(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPut, "/api/file", body)
 	req.Header.Set("Authorization", httpAuthHeader())
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("If-Match", `"`+read.Version+`"`)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -267,6 +272,7 @@ func TestHTTP_PutFile_OversizedBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/file", bytes.NewReader(encoded))
 	req.Header.Set("Authorization", httpAuthHeader())
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("If-None-Match", "*")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

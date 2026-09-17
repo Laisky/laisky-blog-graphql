@@ -110,7 +110,7 @@ func (h *filesHTTPHandler) handleReadVersion(w http.ResponseWriter, r *http.Requ
 	h.writeJSON(w, map[string]any{"content": content, "content_encoding": encoding, "size": version.Size, "created_at": version.CreatedAt.UTC().Format(time.RFC3339Nano)})
 }
 
-// handleRestoreVersion restores historical bytes, optionally conditioned on the live file.
+// handleRestoreVersion restores historical bytes with a mandatory live-file precondition.
 func (h *filesHTTPHandler) handleRestoreVersion(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -224,6 +224,9 @@ func (h *filesHTTPHandler) writeFileError(w http.ResponseWriter, logger logSDK.L
 			status = http.StatusConflict
 		case ErrCodeVersionConflict:
 			status = http.StatusPreconditionFailed
+		case ErrCodePreconditionRequired:
+			status = http.StatusPreconditionRequired
+			w.Header().Set("Cache-Control", "no-store")
 		case ErrCodeIsDirectory, ErrCodeNotDirectory, ErrCodeInvalidArgument, ErrCodeInvalidPath, ErrCodeInvalidOffset, ErrCodeInvalidQuery, ErrCodeInvalidContent:
 			status = http.StatusBadRequest
 		case ErrCodePayloadTooLarge:

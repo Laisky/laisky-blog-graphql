@@ -22,11 +22,12 @@ func NewFileDeleteTool(svc FileService) (*FileDeleteTool, error) {
 // Definition returns the MCP metadata for file_delete.
 func (t *FileDeleteTool) Definition() mcp.Tool {
 	return mcp.NewTool("file_delete",
-		mcp.WithDescription("Delete a file or directory subtree. expected_version protects a single file only; directory deletion remains an explicit unconditional operation."),
+		mcp.WithDescription("Delete one file using its required expected_version from file_read or file_stat. Recursive directory mutations are not supported by file-version tokens; list "+
+			"and delete individual files with their own versions. The root cannot be deleted."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
-		mcp.WithString("path", mcp.Description("File or directory path; empty string means project root.")),
-		mcp.WithBoolean("recursive", mcp.Description("Delete descendants when target is a directory.")),
-		expectedFileVersionOption(), fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithString("path", mcp.Required(), mcp.Description("Non-root file path to delete.")),
+		mcp.WithBoolean("recursive", mcp.Description("Does not bypass version checks or authorize a directory subtree.")),
+		expectedFileVersionOption(true), fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false),
 	)
 }
 

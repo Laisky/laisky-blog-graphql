@@ -6,13 +6,12 @@ import (
 	"strings"
 )
 
-// conditionalFileHTTPContext accepts one strong If-Match token or If-None-Match: *.
-// Unsupported lists, weak validators, empty fields and multiple headers fail
-// closed instead of degrading to an unconditional mutation.
+// conditionalFileHTTPContext requires one strong If-Match token or
+// If-None-Match: *. It never accepts an unconditional public mutation.
 func conditionalFileHTTPContext(ctx context.Context, r *http.Request, auth AuthContext, project, path string, operation FileOperation) (context.Context, error) {
 	matches, absent := r.Header.Values("If-Match"), r.Header.Values("If-None-Match")
 	if len(matches) == 0 && len(absent) == 0 {
-		return ctx, nil
+		return nil, NewError(ErrCodePreconditionRequired, "If-Match with the file version or If-None-Match: * is required", false)
 	}
 	bad := func() (context.Context, error) {
 		return nil, NewError(ErrCodeInvalidArgument, "use one strong If-Match file version or If-None-Match: *", false)
@@ -35,6 +34,9 @@ func conditionalFileHTTPContext(ctx context.Context, r *http.Request, auth AuthC
 			return bad()
 		}
 		p.CreateOnly = true
+	}
+	if err := RequireClientFilePreconditions(operation, p); err != nil {
+		return nil, err
 	}
 	return WithFilePreconditions(ctx, auth, project, path, operation, p)
 }

@@ -23,7 +23,8 @@ func NewFileWriteTool(svc FileService) (*FileWriteTool, error) {
 // Definition returns the MCP metadata for file_write.
 func (t *FileWriteTool) Definition() mcp.Tool {
 	return mcp.NewTool("file_write",
-		mcp.WithDescription("Write UTF-8 file content and return its committed version. Use expected_version for edits based on a prior read, or create_only for creation. Blind APPEND is not retry-idempotent."),
+		mcp.WithDescription("Write UTF-8 file content and return its committed version. Every call, including APPEND, MUST supply expected_version from a prior read or create_only=true for "+
+			"a new file. Missing conditions fail; stale versions require re-reading and recomputing."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path to write.")),
 		mcp.WithString("content", mcp.Required(), mcp.Description("UTF-8 encoded content.")),
@@ -31,8 +32,8 @@ func (t *FileWriteTool) Definition() mcp.Tool {
 		mcp.WithNumber("offset", mcp.Description("Byte offset for overwrite mode; must not split a UTF-8 character.")),
 		mcp.WithString("mode", mcp.Description("Write mode: APPEND, OVERWRITE, or TRUNCATE.")),
 		expectedFileVersionOption(),
-		mcp.WithBoolean("create_only", mcp.Description("Require no active file at this path. Mutually exclusive with expected_version.")),
-		fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithBoolean("create_only", mcp.Description("Must be true when creating a file without expected_version. Fails if the path exists; mutually exclusive with a version.")),
+		fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false), requireFileWriteSchema(),
 	)
 }
 

@@ -1,9 +1,10 @@
 # FileIO versioned editing
 
-Updated: 2026-09-16. This is the implemented concurrency contract for PR #45.
+Updated: 2026-09-17. This is the mandatory external concurrency contract for PR #45.
 It supplements `mcp_files.md` and the FileIO requirements/architecture manuals;
-its additive version fields and UTF-8 rules supersede their older unversioned
-response examples. It does not change tenant authorization or storage quotas.
+its version fields, mandatory mutation preconditions, and UTF-8 rules supersede
+older unversioned response examples and optional-client-compatibility statements.
+It does not change tenant authorization or storage quotas.
 
 ## Client protocol
 
@@ -45,32 +46,40 @@ old content with a newer version.
 
 | Operation | Condition and behavior |
 | --- | --- |
-| `file_write` | `expected_version` for an existing file, or `create_only=true` for an absent file; mutually exclusive. Applies to APPEND, OVERWRITE, and TRUNCATE. |
+| `file_write` | **Required:** exactly one of `expected_version` for an existing file or `create_only=true` for an absent file. Every mode, including APPEND, follows this rule. The tool schema expresses the alternatives with `oneOf`. |
 | `file_read` | Optional `expected_version`. Subsequent ranges use the first range's version. Changed, missing, or recreated files fail, including empty/EOF reads. |
-| `file_delete` | Optional `expected_version` protects an exact file. A child-file token does not authorize recursive directory deletion. |
-| `file_rename` | Optional source `expected_version`. A non-overwriting conditional move also requires an absent destination. For `overwrite=true`, additionally supply `expected_destination_version` or `destination_must_not_exist=true`. |
+| `file_delete` | **Required:** `expected_version` for an exact file. A child-file token never authorizes recursive directory deletion. |
+| `file_rename` | **Required:** source `expected_version`. A non-overwriting move requires an absent destination. For `overwrite=true`, additionally supply `expected_destination_version` or `destination_must_not_exist=true`. |
 | Historical restore | Condition on the live file's current version; the historical numeric snapshot ID chooses the bytes to restore, not the edit base. |
 
 Rename destination conditions require a source condition and are mutually
 exclusive. A same-path rename checks a supplied condition but does not advance
-revision. File tokens do not provide directory namespace/read-set validation;
-unconditional directory operations retain their old semantics.
+revision. File tokens do not provide directory namespace/read-set validation.
+Public directory-wide mutations reject the request rather than falling back to
+unconditional behavior. List and mutate individual files with their tokens; this
+is not an atomic directory transaction and does not cover new descendants.
 
 Malformed or empty version strings, numeric/null versions, invalid booleans,
 unsupported conditional backends, and contradictory conditions fail with
 `INVALID_ARGUMENT`; they never silently become blind writes. The native RAG
 adapter and PageIndex with its transactional SystemFS support conditions. The
 MCP plugin manager resolves a supporting adapter before calling it. Third-party
-adapters must explicitly advertise and actually enforce the optional capability.
+adapters must explicitly advertise and actually enforce the version-precondition
+capability. Missing mutation intent is `PRECONDITION_REQUIRED` with
+`retryable=false`, before calling the backend. `create_only=false` alone is not
+a precondition. There is no force flag or blind-APPEND compatibility bypass.
+Handlers enforce the contract even when a client caches or ignores tool schemas.
 
 ## HTTP and Go callers
 
 Existing `PUT /api/file` and `POST /api/versions/{id}/restore` accept a single
 strong quoted `If-Match` file token, or `If-None-Match: *` for create-only.
-Conflicts return HTTP 412; malformed conditions return 400. Success includes
-`version` in JSON and the quoted token in `ETag`. Weak validators, token lists,
-multiple condition headers, and `If-Match: *` are deliberately unsupported.
-Use the token from the content snapshot being edited, obtained through FileIO.
+These headers are mandatory. Missing conditions return HTTP 428 with
+`Cache-Control: no-store`; stale tokens return 412; malformed conditions return
+400. Success includes `version` in JSON and the quoted token in `ETag`.
+Weak validators, token lists, multiple condition headers, and `If-Match: *` are
+deliberately unsupported. Use the token from the content snapshot being edited,
+obtained through FileIO.
 
 Go callers can pass `WriteOpts{ExpectedVersion: read.Version}` or
 `WriteOpts{CreateOnly: true}` to `WriteWith`. Other service operations accept a
@@ -78,7 +87,10 @@ context produced by `WithFilePreconditions(ctx, auth, project, canonicalPath,
 operation, conditions)`. Always check its error. The context is scoped to the
 operation, authenticated tenant, project, canonical path, and system owner; use
 it only for that operation. Internal indexing reads and system-state mutations
-do not inherit a user-write precondition.
+do not inherit a user-write precondition. The internal Service methods are
+imperative storage primitives, not an external legacy-client compatibility path.
+Public MCP and HTTP adapters always require conditions for mutations. Internal
+writes continue to advance revisions so stale external tokens are invalidated.
 
 ## Version identity and storage
 
@@ -102,19 +114,49 @@ new version is captured inside the transaction and returned only after commit;
 it is not obtained by a post-commit read that could observe another writer.
 All file/history/outbox changes and revision increments roll back together.
 
-The additive migration backfills identities without changing file content,
-installs the unique identity index and triggers in one transaction, and is
-idempotent. PostgreSQL migration takes an ACCESS EXCLUSIVE table lock; schedule
-startup/migration with this blocking behavior in mind. Existing migration
-privileges must include table alteration, index/trigger/function creation, and
-backfill updates. No new external infrastructure or service is required.
+## Automatic startup migrations
+
+`NewService` automatically calls `RunMigrations` before returning. No separate
+operator migration command is needed. A durable `mcp_file_schema_migrations`
+ledger records completion of the complete FileIO schema step, not merely the
+revision helper. First migration backfills identities without changing bytes,
+installs indexes/triggers and records success in the same transaction.
+
+Completed startups perform a dialect probe and an indexed checkpoint read, then
+return. They do not start a migration transaction, acquire migration locks, touch
+file rows, scan content, rerun backfill, or recreate tables/indexes/triggers.
+PostgreSQL verifies the ledger belongs to the current schema, not another schema
+later in `search_path`. This is bounded metadata work, not literally zero SQL.
+
+When a step is absent, startup opens a transaction, acquires a PostgreSQL
+schema-scoped transaction advisory lock (or reserves the SQLite writer), creates
+the ledger if needed, and rechecks completion before applying changes. Competing
+starters skip schema work after observing the winner's committed marker. All DDL
+helpers use the same transaction/connection; no nested migration transaction is
+opened. Failure/cancellation rolls back both schema work and the marker, fails
+startup, and allows automatic retry at the next startup.
+
+The migration budget is two minutes, subject to earlier caller cancellation.
+A deployment requiring longer initial work must adjust the budget before rollout;
+never record an incomplete migration as successful. First revision installation
+still takes an ACCESS EXCLUSIVE PostgreSQL file-table lock. That initial work
+can block; subsequent completed-startup checks do not take that lock and should
+complete even while another transaction locks the file table exclusively.
+
+Initial schema privileges must permit table alteration, index/trigger/function
+creation and backfill updates. Startup does not grant privileges. Permission or
+connection errors do not masquerade as an absent checkpoint. An unknown newer
+schema version fails closed. Future schema changes must add an ordered numbered
+step, not repurpose a completed one or replay the whole baseline. Manual schema
+drift with a retained marker is not automatically repaired by scanning all
+objects on every startup. No new service, scheduler, or CI is required.
 
 SQLite uses its own writer isolation and may return database busy/snapshot
 errors under simultaneous writers. It does not gain PostgreSQL advisory-lock
 semantics. SQLite functional tests are not evidence of production PostgreSQL
 concurrency; use the PostgreSQL tests for that claim.
 
-## UTF-8 and compatibility
+## UTF-8 and client behavior
 
 Incoming text and the complete resulting file must be valid UTF-8. OVERWRITE
 start/end offsets and read range boundaries cannot split a UTF-8 code point;
@@ -124,19 +166,19 @@ TRUNCATE with valid text can repair an old corrupt file. Historical content's
 existing HTTP base64 recovery path remains available. Binary callers must encode
 their bytes as text; arbitrary binary writes were never the text-only contract.
 
-Old calls without conditions remain explicit blind operations for compatibility.
-They advance revisions but **can still overwrite another client's edit**. Upgrade
-shared-edit clients to send conditions. A blind APPEND can combine independent
-complete records in unspecified serialized order, but retrying it can duplicate
-records. Retrying a conditional APPEND with the same old token cannot append
-again; it returns conflict rather than replaying the first success. Durable
-operation-ID deduplication and automatic merge are not implemented by this change.
+Public calls without mutation conditions are rejected, not supported as legacy
+blind writes. Each APPEND also needs the current `expected_version`, or
+`create_only=true` for initial creation. Retrying a conditional APPEND with the
+same old token cannot append again; it returns conflict rather than replaying
+the first success. Durable operation-ID deduplication and automatic merge remain
+separate protocols and are not implemented by this change.
 
 During rolling deployment, triggers keep old writers' revision updates visible,
 but an old server may ignore new MCP arguments. Route conditional clients only
 to upgraded servers, or wait until all serving instances have been upgraded.
 Do not advertise safe conditional editing on a mixed old/new request fleet.
-The existing UI is not automatically a conditional client.
+The existing UI is not automatically rewritten by this change; integrations
+that omit conditions now fail instead of silently overwriting a file.
 
 After restoring a database to an older point in time, old tokens can recur.
 Before accepting edits against that restored database, invalidate previously
@@ -151,7 +193,12 @@ Tests also cover creation races, 24 same-token contenders, recomputed increments
 rollback/cancellation, precision beyond 2^53, overflow, strict MCP arguments,
 real RAG/PageIndex routing, HTTP conditions, and migration backfill/idempotence.
 The original positive append/mixed-write/namespace/quota histories are retained.
-Only the explicitly named legacy blind-append test still expects duplication.
+The internal imperative-append test is not an external compatibility assertion.
+New regressions exercise missing conditions through real MCP/HTTP adapters;
+serialized schema requirements; migration fast-path SQL allowlists; read-only
+restart; concurrent first startup; rollback/retry; and startup while PostgreSQL
+holds an exclusive file-table lock. Nominal transport/billing mock fixtures supply
+valid conditions; missing-condition tests use raw requests without fixture defaults.
 
 ```bash
 # Use the Go version in go.mod and a disposable PostgreSQL database with pgvector.
@@ -166,7 +213,9 @@ Without the DSN, PostgreSQL cases skip explicitly. Existing repository checks
 can run the ordinary test packages; no additional CI workflow/job is required.
 The initial audit's standalone workflow is removed from the final PR diff.
 See PR #45 for tested commit SHAs and actual check results; commands listed here
-are instructions, not a claim that every check was executed.
+are instructions, not a claim that every check was executed. The earlier PR
+validation predates the mandatory-client/startup-checkpoint follow-up. Do not
+attribute those prior Go/PostgreSQL passes to this later patch.
 
 The suite does not establish multi-process HTTP linearizability, response-loss
 recovery, database failover, directory snapshot safety, or asynchronous index

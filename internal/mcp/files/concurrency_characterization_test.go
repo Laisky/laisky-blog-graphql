@@ -45,7 +45,7 @@ func requireVersionConflict(t *testing.T, err error) {
 }
 
 // TestFileIOVersionRegressions replaces unsafe-outcome characterization with
-// conflict rejection and integrity assertions. Legacy blind writes remain explicit.
+// conflict rejection and integrity assertions. Public mutations require conditions.
 func TestFileIOVersionRegressions(t *testing.T) {
 	for _, backend := range []string{"sqlite", "postgres"} {
 		t.Run(backend, func(t *testing.T) {
@@ -263,9 +263,10 @@ func TestFileIOVersionRegressions(t *testing.T) {
 	}
 }
 
-// TestFileIOLegacyBlindAppendContract documents the intentionally unchanged
-// non-idempotent contract; operation-ID deduplication is not part of version CAS.
-func TestFileIOLegacyBlindAppendContract(t *testing.T) {
+// TestFileIOInternalAppendContract covers an internal imperative storage
+// primitive, not an external compatibility path. MCP/HTTP omissions are rejected
+// by TestFileIOClientPreconditionsMandatory and TestFileIOHTTPRequiresPreconditions.
+func TestFileIOInternalAppendContract(t *testing.T) {
 	f := newRaceFixture(t, "sqlite", nil)
 	for range 2 {
 		f.write(t, 0, "/legacy.log", "record\n", files.WriteModeAppend, 0)

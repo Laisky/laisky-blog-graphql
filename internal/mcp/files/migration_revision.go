@@ -7,23 +7,16 @@ import (
 	errors "github.com/Laisky/errors/v2"
 )
 
-// applyFileRevisionMigration installs one atomic, idempotent schema change.
-// Database triggers maintain revisions for EVERY content/path/lifecycle writer,
-// including older application binaries and internal system-namespace SQL. They
-// do not make an old binary understand a new MCP precondition (see the manual).
-func applyFileRevisionMigration(ctx context.Context, db *sql.DB, isPostgres bool) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return errors.Wrap(err, "begin file revision migration")
-	}
-	defer func() { _ = tx.Rollback() }()
-
+// applyFileRevisionMigration is part of the caller's checkpointed transaction.
+// Database triggers cover every content/path/lifecycle writer. Once recorded in
+// the migration ledger, neither these statements nor their backfill run again.
+func applyFileRevisionMigration(ctx context.Context, tx *sql.Tx, isPostgres bool) error {
 	columns := []struct{ name, definition string }{
 		{"incarnation_id", "TEXT NOT NULL DEFAULT ''"},
 		{"revision", "BIGINT NOT NULL DEFAULT 1 CHECK (revision > 0)"},
 	}
 	if isPostgres {
-		// system_owner-checked: Atomic DDL/backfill covers every namespace.
+		// system_owner-checked: Atomic DDL/backfill covers every namespace, once.
 		if _, err := tx.ExecContext(ctx, `LOCK TABLE mcp_files IN ACCESS EXCLUSIVE MODE`); err != nil {
 			return errors.Wrap(err, "lock revision migration")
 		}
@@ -33,11 +26,6 @@ func applyFileRevisionMigration(ctx context.Context, db *sql.DB, isPostgres bool
 			}
 		}
 	} else {
-		// Reserve SQLite's writer before inspecting schema; avoid a deferred
-		// read-to-write upgrade race between simultaneous service constructors.
-		if _, err := tx.ExecContext(ctx, `UPDATE mcp_files SET size = size WHERE 1 = 0 AND system_owner = ''`); err != nil {
-			return errors.Wrap(err, "reserve sqlite revision migration")
-		}
 		present, err := revisionSQLiteColumns(ctx, tx)
 		if err != nil {
 			return err
@@ -55,9 +43,6 @@ func applyFileRevisionMigration(ctx context.Context, db *sql.DB, isPostgres bool
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return errors.Wrap(err, "install file revision invariants")
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return errors.Wrap(err, "commit file revision migration")
 	}
 	return nil
 }
@@ -87,7 +72,7 @@ func revisionSQLiteColumns(ctx context.Context, tx *sql.Tx) (map[string]bool, er
 func fileRevisionStatements(isPostgres bool) []string {
 	if isPostgres {
 		return []string{
-			// system_owner-checked: Backfill all existing namespaces under the DDL lock; never rewrite an assigned identity.
+			// system_owner-checked: Backfill all namespaces once; never rewrite an assigned identity.
 			`UPDATE mcp_files SET incarnation_id = replace(gen_random_uuid()::text, '-', '') WHERE incarnation_id = ''`,
 			`CREATE UNIQUE INDEX IF NOT EXISTS mcp_files_incarnation_idx ON mcp_files (incarnation_id)`,
 			`CREATE OR REPLACE FUNCTION mcp_file_revision_guard() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -111,7 +96,7 @@ func fileRevisionStatements(isPostgres bool) []string {
 		}
 	}
 	return []string{
-		// system_owner-checked: Backfill all existing namespaces atomically; never rewrite an assigned identity.
+		// system_owner-checked: Backfill all namespaces once; never rewrite an assigned identity.
 		`UPDATE mcp_files SET incarnation_id = lower(hex(randomblob(16))) WHERE incarnation_id = ''`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS mcp_files_incarnation_idx ON mcp_files (incarnation_id)`,
 		`CREATE TRIGGER IF NOT EXISTS mcp_file_revision_insert AFTER INSERT ON mcp_files
