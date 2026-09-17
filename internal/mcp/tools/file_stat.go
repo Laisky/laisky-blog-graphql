@@ -9,9 +9,7 @@ import (
 )
 
 // FileStatTool implements the file_stat MCP tool.
-type FileStatTool struct {
-	svc FileService
-}
+type FileStatTool struct{ svc FileService }
 
 // NewFileStatTool constructs a FileStatTool.
 func NewFileStatTool(svc FileService) (*FileStatTool, error) {
@@ -23,14 +21,11 @@ func NewFileStatTool(svc FileService) (*FileStatTool, error) {
 
 // Definition returns the MCP metadata for file_stat.
 func (t *FileStatTool) Definition() mcp.Tool {
-	return mcp.NewTool(
-		"file_stat",
-		mcp.WithDescription("Return metadata (size, timestamps, permissions) for a file or directory path. Use this to inspect file properties without reading content."),
+	return mcp.NewTool("file_stat",
+		mcp.WithDescription("Return metadata and the live version for a file. Directories have no file version. For editing, use the version returned with file_read content, not a later independent stat."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Description("File path; empty string means project root.")),
-		fileToolPluginOption(),
-		mcp.WithReadOnlyHintAnnotation(true),
-		mcp.WithIdempotentHintAnnotation(true),
+		fileToolPluginOption(), mcp.WithReadOnlyHintAnnotation(true), mcp.WithIdempotentHintAnnotation(true),
 	)
 }
 
@@ -45,18 +40,13 @@ func (t *FileStatTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if auth, ok := fileAuthFromContext(ctx); ok {
 		result, svcErr := t.svc.Stat(ctx, auth, project, path)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // error returned as tool result text
+			return fileToolErrorFromErr(svcErr), nil
 		}
-		payload := map[string]any{
-			"exists":     result.Exists,
-			"type":       result.Type,
-			"size":       result.Size,
-			"created_at": result.CreatedAt,
-			"updated_at": result.UpdatedAt,
-		}
+		payload := map[string]any{"exists": result.Exists, "type": result.Type, "size": result.Size, "created_at": result.CreatedAt, "updated_at": result.UpdatedAt}
+		addFileVersion(payload, result.Version)
 		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
 		}
 		return toolResult, nil
 	}

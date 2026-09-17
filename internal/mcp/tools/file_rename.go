@@ -9,9 +9,7 @@ import (
 )
 
 // FileRenameTool implements the file_rename MCP tool.
-type FileRenameTool struct {
-	svc FileService
-}
+type FileRenameTool struct{ svc FileService }
 
 // NewFileRenameTool constructs a FileRenameTool.
 func NewFileRenameTool(svc FileService) (*FileRenameTool, error) {
@@ -23,15 +21,16 @@ func NewFileRenameTool(svc FileService) (*FileRenameTool, error) {
 
 // Definition returns the MCP metadata for file_rename.
 func (t *FileRenameTool) Definition() mcp.Tool {
-	return mcp.NewTool(
-		"file_rename",
-		mcp.WithDescription("Rename or move a file or directory to a new path. Use this to relocate or change the name of files and folders."),
+	return mcp.NewTool("file_rename",
+		mcp.WithDescription("Rename a file or directory. Conditional file moves require a source version and protect the destination. File tokens do not authorize conditional directory moves."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("from_path", mcp.Required(), mcp.Description("Source file or directory path.")),
 		mcp.WithString("to_path", mcp.Required(), mcp.Description("Destination file or directory path.")),
 		mcp.WithBoolean("overwrite", mcp.Description("When true, replace an existing destination file for file moves.")),
-		fileToolPluginOption(),
-		mcp.WithIdempotentHintAnnotation(false),
+		expectedFileVersionOption(),
+		mcp.WithString("expected_destination_version", mcp.Description("Expected version of an existing destination; requires expected_version and overwrite=true.")),
+		mcp.WithBoolean("destination_must_not_exist", mcp.Description("Require an absent destination; requires expected_version. Implicit for non-overwriting conditional moves.")),
+		fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false),
 	)
 }
 
@@ -49,24 +48,23 @@ func (t *FileRenameTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	fromPath = normalizeFilePath(fromPath)
-	toPath = normalizeFilePath(toPath)
+	fromPath, toPath = normalizeFilePath(fromPath), normalizeFilePath(toPath)
 	overwrite := readBoolArg(req, "overwrite")
 	ctx = withFilePluginOverride(ctx, req)
-
 	if auth, ok := fileAuthFromContext(ctx); ok {
-		result, svcErr := t.svc.Rename(ctx, auth, project, fromPath, toPath, overwrite)
+		svc, conditionalCtx, svcErr := conditionalFileService(ctx, t.svc, req, auth, project, fromPath, toPath, files.FileOperationRename)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // error returned as tool result text
+			return fileToolErrorFromErr(svcErr), nil
 		}
-
-		payload := map[string]any{"moved_count": result.MovedCount}
-		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
+		result, svcErr := svc.Rename(conditionalCtx, auth, project, fromPath, toPath, overwrite)
+		if svcErr != nil {
+			return fileToolErrorFromErr(svcErr), nil
+		}
+		toolResult, encodeErr := mcp.NewToolResultJSON(map[string]any{"moved_count": result.MovedCount})
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
 		}
 		return toolResult, nil
 	}
-
 	return fileToolErrorResult(files.ErrCodePermissionDenied, "missing authorization", false), nil
 }

@@ -22,18 +22,14 @@ type renameMapping struct {
 }
 
 // Rename renames or moves a file path or directory subtree.
-func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool) (RenameResult, error) { //nolint:gocognit // rename involves multiple validation and migration steps
+func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool) (RenameResult, error) {
 	return s.renameWithSystemState(ctx, auth, project, fromPath, toPath, overwrite, "", "", nil)
 }
 
 func (s *Service) renameWithSystemState(
-	ctx context.Context,
-	auth AuthContext,
-	project, fromPath, toPath string,
-	overwrite bool,
-	systemProject, systemOwner string,
-	mutate SystemStateMutator,
-) (RenameResult, error) { //nolint:gocognit // rename involves multiple validation and migration steps
+	ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool,
+	systemProject, systemOwner string, mutate SystemStateMutator,
+) (RenameResult, error) { //nolint:gocognit // rename validates and remaps a transactional subtree
 	if err := s.validateAuth(auth); err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}
@@ -49,40 +45,43 @@ func (s *Service) renameWithSystemState(
 	if fromPath == "" || toPath == "" {
 		return RenameResult{}, errors.WithStack(NewError(ErrCodeInvalidPath, "source and destination paths must be non-root", false))
 	}
-	if fromPath == toPath {
+	conditions := filePreconditionsFromContext(ctx, auth, project, fromPath, FileOperationRename)
+	if fromPath == toPath && conditions.Empty() {
 		return RenameResult{MovedCount: 0}, nil
 	}
-
 	owner := systemOwnerFromContext(ctx)
 	movedCount := 0
 	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
+		if err := s.checkRenamePreconditionsTx(ctx, tx, auth, project, fromPath, toPath, overwrite, conditions); err != nil {
+			return err
+		}
+		// A conditional no-op must still validate its source, but must not bump revision.
+		if fromPath == toPath {
+			return nil
+		}
 		sourceFiles, sourceIsDirectory, err := s.resolveRenameSources(ctx, tx, auth.APIKeyHash, project, fromPath)
 		if err != nil {
 			return err
 		}
-
 		if sourceIsDirectory && strings.HasPrefix(toPath, fromPath+"/") {
 			return NewError(ErrCodeInvalidPath, "destination cannot be within source subtree", false)
 		}
-
 		if err := s.ensureNoParentFile(ctx, tx, auth.APIKeyHash, project, toPath); err != nil {
 			return err
 		}
-
 		mappings, err := buildRenameMappings(sourceFiles, fromPath, toPath, sourceIsDirectory)
 		if err != nil {
 			return err
 		}
-
 		now := s.clock()
 		overwritePaths, err := s.validateRenameDestinations(ctx, tx, auth.APIKeyHash, project, mappings, toPath, sourceIsDirectory, overwrite)
 		if err != nil {
 			return err
 		}
-
 		if len(overwritePaths) > 0 {
 			inClause, inArgs := buildInClause(overwritePaths, s.isPostgres, 6)
-			query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+			query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ?
+    WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
 			args := make([]any, 0, 5+len(inArgs))
 			args = append(args, now, now, auth.APIKeyHash, project, owner)
 			args = append(args, inArgs...)
@@ -90,85 +89,50 @@ func (s *Service) renameWithSystemState(
 				return errors.Wrap(err, "soft delete overwritten destination files")
 			}
 		}
-
 		for _, mapping := range mappings {
 			if _, err := tx.ExecContext(ctx,
 				rebindSQL(`UPDATE mcp_files SET path = ?, updated_at = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
-				mapping.NewPath,
-				now,
-				mapping.ID,
-				owner,
+				mapping.NewPath, now, mapping.ID, owner,
 			); err != nil {
 				return errors.Wrap(err, "apply rename path remap")
 			}
-
 			if _, err := tx.ExecContext(ctx,
 				rebindSQL(`UPDATE mcp_file_versions SET path = ? WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?`, s.isPostgres),
-				mapping.NewPath,
-				auth.APIKeyHash,
-				project,
-				mapping.OldPath,
-				owner,
+				mapping.NewPath, auth.APIKeyHash, project, mapping.OldPath, owner,
 			); err != nil {
 				return errors.Wrap(err, "apply rename version path remap")
 			}
-
 			if owner == "" {
 				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash:    auth.APIKeyHash,
-					Project:       project,
-					FilePath:      mapping.OldPath,
-					Operation:     "DELETE",
-					FileUpdatedAt: &now,
-					Status:        "pending",
-					RetryCount:    0,
-					AvailableAt:   now,
-					CreatedAt:     now,
-					UpdatedAt:     now,
+					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: mapping.OldPath,
+					Operation: "DELETE", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
+					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
 				}); err != nil {
 					return errors.Wrap(err, "enqueue rename delete job")
 				}
-
 				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash:    auth.APIKeyHash,
-					Project:       project,
-					FilePath:      mapping.NewPath,
-					Operation:     "UPSERT",
-					FileUpdatedAt: &now,
-					Status:        "pending",
-					RetryCount:    0,
-					AvailableAt:   now,
-					CreatedAt:     now,
-					UpdatedAt:     now,
+					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: mapping.NewPath,
+					Operation: "UPSERT", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
+					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
 				}); err != nil {
 					return errors.Wrap(err, "enqueue rename upsert job")
 				}
-
 				if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, mapping.NewPath, now); err != nil {
 					return err
 				}
 			}
 		}
-
 		if owner == "" {
 			for _, overwrittenPath := range overwritePaths {
 				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash:    auth.APIKeyHash,
-					Project:       project,
-					FilePath:      overwrittenPath,
-					Operation:     "DELETE",
-					FileUpdatedAt: &now,
-					Status:        "pending",
-					RetryCount:    0,
-					AvailableAt:   now,
-					CreatedAt:     now,
-					UpdatedAt:     now,
+					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: overwrittenPath,
+					Operation: "DELETE", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
+					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
 				}); err != nil {
 					return errors.Wrap(err, "enqueue overwrite delete job")
 				}
 			}
 		}
-
 		if mutate != nil {
 			stateCtx := contextWithSystemOwner(ctx, systemOwner)
 			state, err := s.loadSystemStateTx(stateCtx, tx, systemOwner, systemProject)
@@ -182,28 +146,45 @@ func (s *Service) renameWithSystemState(
 				return err
 			}
 		}
-
 		movedCount = len(mappings)
 		return nil
 	})
 	if err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}
-
 	return RenameResult{MovedCount: movedCount}, nil
 }
 
-// resolveRenameSources resolves source files for a file or directory rename.
+// checkRenamePreconditionsTx checks both names before any lifecycle side effect.
+func (s *Service) checkRenamePreconditionsTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project, fromPath, toPath string, overwrite bool, p FilePreconditions) error {
+	if p.Empty() {
+		return nil
+	}
+	if p.DestinationPath != "" && p.DestinationPath != toPath {
+		return NewError(ErrCodeInvalidArgument, "rename destination does not match its precondition scope", false)
+	}
+	if err := s.checkPathVersionTx(ctx, tx, auth, project, fromPath, p.ExpectedVersion, false); err != nil {
+		return err
+	}
+	if fromPath == toPath {
+		return s.checkPathVersionTx(ctx, tx, auth, project, toPath, p.ExpectedDestinationVersion, p.DestinationMustNotExist)
+	}
+	if overwrite && p.ExpectedDestinationVersion == "" && !p.DestinationMustNotExist {
+		return NewError(ErrCodeInvalidArgument, "conditional overwrite rename requires a destination version or destination_must_not_exist", false)
+	}
+	if !overwrite && p.ExpectedDestinationVersion != "" {
+		return NewError(ErrCodeInvalidArgument, "expected_destination_version requires overwrite=true", false)
+	}
+	return s.checkPathVersionTx(ctx, tx, auth, project, toPath, p.ExpectedDestinationVersion, p.DestinationMustNotExist || !overwrite)
+}
 
+// resolveRenameSources resolves source files for a file or directory rename.
 func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHash, project, fromPath string) ([]renameSourceFile, bool, error) {
 	owner := systemOwnerFromContext(ctx)
 	var exact renameSourceFile
 	err := tx.QueryRowContext(ctx,
 		rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ? LIMIT 1`, s.isPostgres),
-		apiKeyHash,
-		project,
-		fromPath,
-		owner,
+		apiKeyHash, project, fromPath, owner,
 	).Scan(&exact.ID, &exact.Path)
 	if err == nil {
 		return []renameSourceFile{exact}, false, nil
@@ -211,20 +192,15 @@ func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHa
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, errors.Wrap(err, "query rename source file")
 	}
-
 	prefix := buildPathPrefix(fromPath)
 	rows, err := tx.QueryContext(ctx,
 		rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ? ORDER BY path ASC`, s.isPostgres),
-		apiKeyHash,
-		project,
-		prefix,
-		owner,
+		apiKeyHash, project, prefix, owner,
 	)
 	if err != nil {
 		return nil, false, errors.Wrap(err, "query rename source descendants")
 	}
 	defer func() { _ = rows.Close() }()
-
 	var descendants []renameSourceFile
 	for rows.Next() {
 		var row renameSourceFile
@@ -239,7 +215,6 @@ func (s *Service) resolveRenameSources(ctx context.Context, tx *sql.Tx, apiKeyHa
 	if len(descendants) == 0 {
 		return nil, false, NewError(ErrCodeNotFound, "source path not found", false)
 	}
-
 	return descendants, true, nil
 }
 
@@ -257,19 +232,13 @@ func buildRenameMappings(sourceFiles []renameSourceFile, fromPath, toPath string
 		}
 		mappings = append(mappings, renameMapping{ID: source.ID, OldPath: source.Path, NewPath: newPath})
 	}
-
 	return mappings, nil
 }
 
 // validateRenameDestinations checks rename collisions and returns overwrite targets.
 func (s *Service) validateRenameDestinations(
-	ctx context.Context,
-	tx *sql.Tx,
-	apiKeyHash, project string,
-	mappings []renameMapping,
-	toPath string,
-	sourceIsDirectory bool,
-	overwrite bool,
+	ctx context.Context, tx *sql.Tx, apiKeyHash, project string, mappings []renameMapping,
+	toPath string, sourceIsDirectory, overwrite bool,
 ) ([]string, error) {
 	destinationPaths := make([]string, 0, len(mappings))
 	sourcePathByID := make(map[uint64]string, len(mappings))
@@ -282,16 +251,12 @@ func (s *Service) validateRenameDestinations(
 		pathSet[mapping.NewPath] = struct{}{}
 		destinationPaths = append(destinationPaths, mapping.NewPath)
 	}
-
 	owner := systemOwnerFromContext(ctx)
 	if !sourceIsDirectory {
 		var descendantCount int64
 		if err := tx.QueryRowContext(ctx,
 			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-			apiKeyHash,
-			project,
-			buildPathPrefix(toPath),
-			owner,
+			apiKeyHash, project, buildPathPrefix(toPath), owner,
 		).Scan(&descendantCount); err != nil {
 			return nil, errors.Wrap(err, "check destination descendants")
 		}
@@ -299,15 +264,11 @@ func (s *Service) validateRenameDestinations(
 			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
 		}
 	}
-
 	if sourceIsDirectory {
 		var destinationRootFileCount int64
 		if err := tx.QueryRowContext(ctx,
 			rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-			apiKeyHash,
-			project,
-			toPath,
-			owner,
+			apiKeyHash, project, toPath, owner,
 		).Scan(&destinationRootFileCount); err != nil {
 			return nil, errors.Wrap(err, "check destination root collision")
 		}
@@ -315,7 +276,6 @@ func (s *Service) validateRenameDestinations(
 			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
 		}
 	}
-
 	inClause, inArgs := buildInClause(destinationPaths, s.isPostgres, 4)
 	query := rebindSQL(`SELECT id, path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
 	args := make([]any, 0, 3+len(inArgs))
@@ -326,7 +286,6 @@ func (s *Service) validateRenameDestinations(
 		return nil, errors.Wrap(err, "query destination collisions")
 	}
 	defer func() { _ = rows.Close() }()
-
 	var destinationFiles []renameSourceFile
 	for rows.Next() {
 		var row renameSourceFile
@@ -338,21 +297,15 @@ func (s *Service) validateRenameDestinations(
 	if err := rows.Err(); err != nil {
 		return nil, errors.Wrap(err, "iterate destination collisions")
 	}
-
 	overwritePaths := make([]string, 0, len(destinationFiles))
 	for _, destination := range destinationFiles {
-		if sourcePath, ok := sourcePathByID[destination.ID]; ok {
-			if sourcePath == destination.Path {
-				continue
-			}
+		if sourcePath, ok := sourcePathByID[destination.ID]; ok && sourcePath == destination.Path {
+			continue
 		}
-
 		if !overwrite || sourceIsDirectory {
 			return nil, NewError(ErrCodeAlreadyExists, "destination path already exists", false)
 		}
-
 		overwritePaths = append(overwritePaths, destination.Path)
 	}
-
 	return overwritePaths, nil
 }

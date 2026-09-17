@@ -9,9 +9,7 @@ import (
 )
 
 // FileDeleteTool implements the file_delete MCP tool.
-type FileDeleteTool struct {
-	svc FileService
-}
+type FileDeleteTool struct{ svc FileService }
 
 // NewFileDeleteTool constructs a FileDeleteTool.
 func NewFileDeleteTool(svc FileService) (*FileDeleteTool, error) {
@@ -23,14 +21,12 @@ func NewFileDeleteTool(svc FileService) (*FileDeleteTool, error) {
 
 // Definition returns the MCP metadata for file_delete.
 func (t *FileDeleteTool) Definition() mcp.Tool {
-	return mcp.NewTool(
-		"file_delete",
-		mcp.WithDescription("Delete a file or directory subtree. Use this to remove files or recursively delete folders from disk."),
+	return mcp.NewTool("file_delete",
+		mcp.WithDescription("Delete a file or directory subtree. expected_version protects a single file only; directory deletion remains an explicit unconditional operation."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Description("File or directory path; empty string means project root.")),
 		mcp.WithBoolean("recursive", mcp.Description("Delete descendants when target is a directory.")),
-		fileToolPluginOption(),
-		mcp.WithIdempotentHintAnnotation(false),
+		expectedFileVersionOption(), fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false),
 	)
 }
 
@@ -44,14 +40,17 @@ func (t *FileDeleteTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*
 	recursive := readBoolArg(req, "recursive")
 	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {
-		result, svcErr := t.svc.Delete(ctx, auth, project, path, recursive)
+		svc, conditionalCtx, svcErr := conditionalFileService(ctx, t.svc, req, auth, project, path, "", files.FileOperationDelete)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // error returned as tool result text
+			return fileToolErrorFromErr(svcErr), nil
 		}
-		payload := map[string]any{"deleted_count": result.DeletedCount}
-		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
+		result, svcErr := svc.Delete(conditionalCtx, auth, project, path, recursive)
+		if svcErr != nil {
+			return fileToolErrorFromErr(svcErr), nil
+		}
+		toolResult, encodeErr := mcp.NewToolResultJSON(map[string]any{"deleted_count": result.DeletedCount})
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil
 		}
 		return toolResult, nil
 	}

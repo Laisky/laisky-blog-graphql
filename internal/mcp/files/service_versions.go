@@ -29,30 +29,21 @@ func (s *Service) ListVersions(ctx context.Context, auth AuthContext, project, p
 	if path == "" {
 		return nil, errors.WithStack(NewError(ErrCodeInvalidPath, "path is required", false))
 	}
-
 	owner := systemOwnerFromContext(ctx)
 	rows, err := s.db.QueryContext(ctx,
-		rebindSQL(`SELECT id, size, created_at, source_file_id
-			FROM mcp_file_versions
-			WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?
-			ORDER BY created_at DESC, id DESC`, s.isPostgres),
-		auth.APIKeyHash,
-		project,
-		path,
-		owner,
+		rebindSQL(`SELECT id, size, created_at, source_file_id FROM mcp_file_versions
+   WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? ORDER BY created_at DESC, id DESC`, s.isPostgres),
+		auth.APIKeyHash, project, path, owner,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "query file versions")
 	}
 	defer func() { _ = rows.Close() }()
-
 	var versions []FileVersion
 	for rows.Next() {
-		var (
-			row       FileVersion
-			createdAt any
-			sourceID  sql.NullInt64
-		)
+		var row FileVersion
+		var createdAt any
+		var sourceID sql.NullInt64
 		if scanErr := rows.Scan(&row.ID, &row.Size, &createdAt, &sourceID); scanErr != nil {
 			return nil, errors.Wrap(scanErr, "scan file version")
 		}
@@ -60,10 +51,7 @@ func (s *Service) ListVersions(ctx context.Context, auth AuthContext, project, p
 		if parseErr != nil {
 			return nil, errors.Wrap(parseErr, "parse version created_at")
 		}
-		row.CreatedAt = parsedAt
-		row.APIKeyHash = auth.APIKeyHash
-		row.Project = project
-		row.Path = path
+		row.CreatedAt, row.APIKeyHash, row.Project, row.Path = parsedAt, auth.APIKeyHash, project, path
 		if sourceID.Valid {
 			id := uint64(sourceID.Int64)
 			row.SourceFileID = &id
@@ -73,11 +61,10 @@ func (s *Service) ListVersions(ctx context.Context, auth AuthContext, project, p
 	if err := rows.Err(); err != nil {
 		return nil, errors.Wrap(err, "iterate file versions")
 	}
-
 	return versions, nil
 }
 
-// ReadVersion returns the full content of one version.
+// ReadVersion returns the full content of one immutable historical version.
 func (s *Service) ReadVersion(ctx context.Context, auth AuthContext, project, path string, versionID uint64) (FileVersion, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return FileVersion{}, errors.WithStack(err)
@@ -91,23 +78,14 @@ func (s *Service) ReadVersion(ctx context.Context, auth AuthContext, project, pa
 	if path == "" {
 		return FileVersion{}, errors.WithStack(NewError(ErrCodeInvalidPath, "path is required", false))
 	}
-
 	owner := systemOwnerFromContext(ctx)
-	var (
-		row       FileVersion
-		createdAt any
-		sourceID  sql.NullInt64
-	)
+	var row FileVersion
+	var createdAt any
+	var sourceID sql.NullInt64
 	err := s.db.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, content, size, created_at, source_file_id
-			FROM mcp_file_versions
-			WHERE apikey_hash = ? AND project = ? AND path = ? AND id = ? AND system_owner = ?
-			LIMIT 1`, s.isPostgres),
-		auth.APIKeyHash,
-		project,
-		path,
-		versionID,
-		owner,
+		rebindSQL(`SELECT id, content, size, created_at, source_file_id FROM mcp_file_versions
+   WHERE apikey_hash = ? AND project = ? AND path = ? AND id = ? AND system_owner = ? LIMIT 1`, s.isPostgres),
+		auth.APIKeyHash, project, path, versionID, owner,
 	).Scan(&row.ID, &row.Content, &row.Size, &createdAt, &sourceID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -119,10 +97,7 @@ func (s *Service) ReadVersion(ctx context.Context, auth AuthContext, project, pa
 	if parseErr != nil {
 		return FileVersion{}, errors.Wrap(parseErr, "parse version created_at")
 	}
-	row.CreatedAt = parsedAt
-	row.APIKeyHash = auth.APIKeyHash
-	row.Project = project
-	row.Path = path
+	row.CreatedAt, row.APIKeyHash, row.Project, row.Path = parsedAt, auth.APIKeyHash, project, path
 	if sourceID.Valid {
 		id := uint64(sourceID.Int64)
 		row.SourceFileID = &id
@@ -130,9 +105,8 @@ func (s *Service) ReadVersion(ctx context.Context, auth AuthContext, project, pa
 	return row, nil
 }
 
-// RestoreVersion writes the content of versionID as the new current content.
-// The version row is looked up inside the project lock and pinned to (apikey_hash,
-// project, path, id), so concurrent renames or prunes cannot race the restore.
+// RestoreVersion writes historical bytes as a new live revision. An optional
+// restore precondition protects the CURRENT file, not the historical snapshot ID.
 func (s *Service) RestoreVersion(ctx context.Context, auth AuthContext, project, path string, versionID uint64) (WriteResult, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return WriteResult{}, errors.WithStack(err)
@@ -146,21 +120,19 @@ func (s *Service) RestoreVersion(ctx context.Context, auth AuthContext, project,
 	if path == "" {
 		return WriteResult{}, errors.WithStack(NewError(ErrCodeInvalidPath, "path is required", false))
 	}
-
 	owner := systemOwnerFromContext(ctx)
-	var bytesWritten int64
+	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationRestore)
+	var result WriteResult
 	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
+		if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, conditions.CreateOnly); err != nil {
+			return err
+		}
 		var content []byte
 		var size int64
 		err := tx.QueryRowContext(ctx,
 			rebindSQL(`SELECT content, size FROM mcp_file_versions
-				WHERE apikey_hash = ? AND project = ? AND path = ? AND id = ? AND system_owner = ?
-				LIMIT 1`, s.isPostgres),
-			auth.APIKeyHash,
-			project,
-			path,
-			versionID,
-			owner,
+    WHERE apikey_hash = ? AND project = ? AND path = ? AND id = ? AND system_owner = ? LIMIT 1`, s.isPostgres),
+			auth.APIKeyHash, project, path, versionID, owner,
 		).Scan(&content, &size)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -168,22 +140,26 @@ func (s *Service) RestoreVersion(ctx context.Context, auth AuthContext, project,
 			}
 			return errors.Wrap(err, "load version for restore")
 		}
-
 		if err := ValidatePayloadSize(size, s.settings.MaxPayloadBytes); err != nil {
 			return errors.WithStack(err)
 		}
-
-		n, err := s.writeWithinTx(ctx, tx, auth, project, path, content, WriteModeTruncate, 0, size, WriteOpts{SystemOwner: owner})
+		n, err := s.writeWithinTx(ctx, tx, auth, project, path, content, WriteModeTruncate, 0, size, WriteOpts{
+			SystemOwner: owner, ExpectedVersion: conditions.ExpectedVersion, CreateOnly: conditions.CreateOnly,
+		})
 		if err != nil {
 			return err
 		}
-		bytesWritten = n
+		version, err := s.fileVersionTx(ctx, tx, auth, project, path)
+		if err != nil {
+			return err
+		}
+		result = WriteResult{BytesWritten: n, Version: version}
 		return nil
 	})
 	if err != nil {
 		return WriteResult{}, errors.WithStack(err)
 	}
-	return WriteResult{BytesWritten: bytesWritten}, nil
+	return result, nil
 }
 
 // snapshotFileVersionTx inserts a snapshot row representing a file's prior content.
@@ -191,15 +167,8 @@ func (s *Service) snapshotFileVersionTx(ctx context.Context, tx *sql.Tx, apiKeyH
 	owner := systemOwnerFromContext(ctx)
 	if _, err := tx.ExecContext(ctx,
 		rebindSQL(`INSERT INTO mcp_file_versions (apikey_hash, project, path, content, size, created_at, source_file_id, system_owner)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
-		apiKeyHash,
-		project,
-		path,
-		content,
-		size,
-		now,
-		sourceID,
-		owner,
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
+		apiKeyHash, project, path, content, size, now, sourceID, owner,
 	); err != nil {
 		return errors.Wrap(err, "insert file version snapshot")
 	}
@@ -211,27 +180,20 @@ func (s *Service) pruneVersionsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, p
 	owner := systemOwnerFromContext(ctx)
 	rows, err := tx.QueryContext(ctx,
 		rebindSQL(`SELECT id, created_at FROM mcp_file_versions
-			WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?
-			ORDER BY created_at DESC, id DESC`, s.isPostgres),
-		apiKeyHash,
-		project,
-		path,
-		owner,
+   WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? ORDER BY created_at DESC, id DESC`, s.isPostgres),
+		apiKeyHash, project, path, owner,
 	)
 	if err != nil {
 		return errors.Wrap(err, "query versions for prune")
 	}
-
 	type versionRow struct {
 		id        uint64
 		createdAt time.Time
 	}
 	var all []versionRow
 	for rows.Next() {
-		var (
-			id        uint64
-			createdAt any
-		)
+		var id uint64
+		var createdAt any
 		if scanErr := rows.Scan(&id, &createdAt); scanErr != nil {
 			_ = rows.Close()
 			return errors.Wrap(scanErr, "scan version for prune")
@@ -250,22 +212,15 @@ func (s *Service) pruneVersionsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, p
 	if err := rows.Close(); err != nil {
 		return errors.Wrap(err, "close versions cursor for prune")
 	}
-
 	if len(all) == 0 {
 		return nil
 	}
-
 	keep := make(map[uint64]struct{}, len(all))
 	for i, row := range all {
-		if i < versionRetentionTopN {
-			keep[row.id] = struct{}{}
-			continue
-		}
-		if now.Sub(row.createdAt) <= versionRetentionWindow {
+		if i < versionRetentionTopN || now.Sub(row.createdAt) <= versionRetentionWindow {
 			keep[row.id] = struct{}{}
 		}
 	}
-
 	deleteIDs := make([]uint64, 0, len(all))
 	for _, row := range all {
 		if _, ok := keep[row.id]; !ok {
@@ -275,7 +230,6 @@ func (s *Service) pruneVersionsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, p
 	if len(deleteIDs) == 0 {
 		return nil
 	}
-
 	placeholders := make([]string, 0, len(deleteIDs))
 	args := make([]any, 0, 4+len(deleteIDs))
 	args = append(args, apiKeyHash, project, path, owner)
@@ -283,9 +237,7 @@ func (s *Service) pruneVersionsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, p
 		placeholders = append(placeholders, "?")
 		args = append(args, id)
 	}
-
-	query := `DELETE FROM mcp_file_versions
-		WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND id IN (` + strings.Join(placeholders, ",") + `)`
+	query := `DELETE FROM mcp_file_versions WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND id IN (` + strings.Join(placeholders, ",") + `)`
 	if _, err := tx.ExecContext(ctx, rebindSQL(query, s.isPostgres), args...); err != nil {
 		return errors.Wrap(err, "delete pruned versions")
 	}

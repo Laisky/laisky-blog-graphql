@@ -14,6 +14,8 @@ type File struct {
 	UpdatedAt  time.Time
 	Deleted    bool
 	DeletedAt  *time.Time
+	// Version combines a non-reused incarnation with a database-maintained revision.
+	Version string `gorm:"-"`
 	// ContentHash is the SHA-256 of the current stored bytes. It identifies the
 	// content generation used to bind chunks and the file summary together
 	// (docs/proposals/file_search_file_summaries.md §4.2).

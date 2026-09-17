@@ -65,17 +65,22 @@ type StatResult struct {
 	Size      int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// Version identifies a live file; directories and absent paths have no token.
+	Version string
 }
 
-// ReadResult returns the file_read payload.
+// ReadResult returns content and its version from the same database snapshot.
 type ReadResult struct {
 	Content         string
 	ContentEncoding string
+	Version         string
 }
 
-// WriteResult returns the file_write outcome.
+// WriteResult returns the committed file_write outcome.
 type WriteResult struct {
 	BytesWritten int64
+	// Version is captured inside the mutation transaction, not read after commit.
+	Version string
 }
 
 // DeleteResult returns the file_delete outcome.
@@ -99,11 +104,15 @@ type SearchResult struct {
 	Chunks []ChunkEntry
 }
 
-// WriteOpts modulates non-default Write behavior. Zero value preserves today's behavior.
+// WriteOpts modulates non-default Write behavior. Zero value retains blind writes.
 type WriteOpts struct {
 	// SkipRAGIndex suppresses index-job enqueue for this write so the row never
 	// flows through the RAG chunking/embedding pipeline.
 	SkipRAGIndex bool
 	// SystemOwner is populated by SystemFS only; user paths leave it empty.
 	SystemOwner string
+	// ExpectedVersion requires the exact file incarnation and revision read by the caller.
+	ExpectedVersion string
+	// CreateOnly requires an absent file. It is mutually exclusive with ExpectedVersion.
+	CreateOnly bool
 }
