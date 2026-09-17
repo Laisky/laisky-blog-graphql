@@ -12,6 +12,15 @@ export type ReadPayload = {
   version: string;
 };
 
+/** History row IDs select immutable bytes; never convert them to JS numbers. */
+export function requireHistoryID(id: unknown): string {
+  if (typeof id !== 'string' || !/^[1-9][0-9]{0,19}$/.test(id)
+      || (id.length === 20 && id > '18446744073709551615')) {
+    throw new Error('The server must return history IDs as exact positive decimal strings.');
+  }
+  return id;
+}
+
 export function canonicalFilePath(path: string): string {
   const value = path.trim();
   return value && !value.startsWith('/') ? `/${value}` : value;

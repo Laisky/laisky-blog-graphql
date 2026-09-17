@@ -25,6 +25,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcptools "github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
@@ -288,7 +289,11 @@ func RunServer(addr string, resolver *Resolver) {
 			}
 
 			if resolver.args.FilesService != nil {
-				filesMux := files.NewHTTPHandler(resolver.args.FilesService, log.Logger.Named("file_io_http"))
+				filesMux := files.NewHTTPHandler(resolver.args.FilesService, log.Logger.Named("file_io_http"),
+					files.WithHTTPFileWriterResolver(func(ctx context.Context, auth files.AuthContext, project string) (files.FileHTTPWriter, error) {
+						return mcptools.ResolveVersionedFileService(ctx, resolver.args.MCPFileService, auth, project)
+					}),
+				)
 				filesBase := prefix.join("/tools/file_io")
 				stripPrefix := strings.TrimSuffix(filesBase, "/")
 				if stripPrefix == "" {

@@ -14,13 +14,13 @@ import { callFileAPI, callFileTool } from './client';
 import { FileIOIntroduction } from './introduction';
 import { useFileIOInputDefaults, usePersistFileIOInputs, type FileIOPersistedInputs } from './use-file-io-input-storage';
 import { useFileRequestLane, useFileSnapshot } from './use-file-snapshot';
-import { canonicalFilePath, expectedVersion, fileIOErrorMessage, fileSnapshot, ifMatch, renameCondition, requireFileVersion, writeCondition, type FileSnapshot, type ReadPayload } from './version-state';
+import { canonicalFilePath, expectedVersion, fileIOErrorMessage, fileSnapshot, ifMatch, renameCondition, requireFileVersion, requireHistoryID, writeCondition, type FileSnapshot, type ReadPayload } from './version-state';
 
 type FileEntry = { name: string; path: string; type: 'FILE' | 'DIRECTORY'; size: number; created_at: string; updated_at: string };
 type FileListPayload = { entries: FileEntry[]; has_more: boolean };
 type FileStatPayload = FileEntry & { exists: boolean; version?: string };
 type FileWritePayload = { bytes_written: number; version: string };
-type FileVersionEntry = { id: number; size: number; created_at: string };
+type FileVersionEntry = { id: string; size: number; created_at: string };
 type HistoryContent = { content: string; content_encoding: string; size: number; created_at: string };
 type FileSearchChunk = { file_path: string; file_seek_start_bytes: number; file_seek_end_bytes: number; chunk_content: string; score: number };
 type DirCache = Record<string, { entries: FileEntry[]; hasMore: boolean }>;
@@ -133,10 +133,11 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
   const [loadedContent, setLoadedContent] = useState('');
   const [encoding, setEncoding] = useState('utf-8');
   const [versions, setVersions] = useState<FileVersionEntry[]>([]);
-  const [historyId, setHistoryId] = useState<number | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
+  const [metadataWarning, setMetadataWarning] = useState<string | null>(null);
   const [readInfo, setReadInfo] = useState<string | null>(null);
   const previewLane = useFileRequestLane();
   const historyLane = useFileRequestLane();
@@ -219,7 +220,7 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
     setLoadingVersions(true);
     try {
       const payload = await callFileAPI<{ versions: FileVersionEntry[] }>(apiKey, 'GET', '/versions', { query: { project, path } });
-      if (current()) setVersions(payload.versions ?? []);
+      if (current()) setVersions((payload.versions ?? []).map((item) => ({ ...item, id: requireHistoryID(item.id) })));
     } catch (err) { if (current()) setReadError(`History list: ${fileIOErrorMessage(err)}`); }
     finally { if (current()) setLoadingVersions(false); }
   }
@@ -231,7 +232,7 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
     const target = canonicalFilePath(path);
     setPreviewPath(target); setPreviewOpen(true); setBase(null); setPreviewStat(null);
     setDraft(''); setLoadedContent(''); setEncoding('utf-8'); setHistoryId(null); setVersions([]);
-    setReading(true); setReadError(null); setReadInfo(null);
+    setReading(true); setReadError(null); setReadInfo(null); setMetadataWarning(null);
     void loadVersions(target);
     try {
       const payload = await callFileTool<ReadPayload>(apiKey, 'file_read', { project, path: target, offset: 0, length: -1 });
@@ -239,12 +240,16 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
       const snapshot = fileSnapshot(target, payload);
       setBase(snapshot); setDraft(snapshot.content); setLoadedContent(snapshot.content);
       // Metadata is displayed only when it describes the read generation; it is never the edit token.
-      const stat = await callFileTool<FileStatPayload>(apiKey, 'file_stat', { project, path: target });
-      if (current() && stat.version === snapshot.version) setPreviewStat(stat);
+      try {
+        const stat = await callFileTool<FileStatPayload>(apiKey, 'file_stat', { project, path: target });
+        if (current() && stat.version === snapshot.version) setPreviewStat(stat);
+      } catch (err) {
+        if (current()) setMetadataWarning(`Content loaded; optional metadata unavailable: ${fileIOErrorMessage(err)}`);
+      }
     } catch (err) { if (current()) setReadError(fileIOErrorMessage(err)); }
     finally { if (current()) setReading(false); }
   }
-  async function loadHistory(id: number) {
+  async function loadHistory(id: string) {
     if (!base || busy) return;
     if (draft !== loadedContent && !window.confirm('Discard this unsaved draft to preview a historical version?')) return;
     const current = previewLane.begin();
@@ -267,7 +272,7 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
       });
       if (!current()) return;
       const next = fileSnapshot(previewPath, { content, content_encoding: 'utf-8', version: payload.version });
-      setBase(next); setLoadedContent(content); setPreviewStat(null);
+      setBase(next); setLoadedContent(content); setPreviewStat(null); setMetadataWarning(null);
       setReadInfo(`Saved ${payload.bytes_written} bytes. Version: ${next.version}`);
       void loadVersions(previewPath); void loadList();
     }, setReadError);
@@ -282,7 +287,7 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
       });
       if (!current()) return;
       const next = fileSnapshot(previewPath, { content, content_encoding: 'utf-8', version: payload.version });
-      setBase(next); setDraft(content); setLoadedContent(content); setHistoryId(null); setPreviewStat(null);
+      setBase(next); setDraft(content); setLoadedContent(content); setHistoryId(null); setPreviewStat(null); setMetadataWarning(null);
       setReadInfo(`Restored ${payload.bytes_written} bytes as a new live version: ${next.version}`);
       void loadVersions(previewPath); void loadList();
     }, setReadError);
@@ -438,12 +443,13 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
             disabled={!apiKey || !base || busy || reading || encoding !== 'utf-8' || historyId !== null} className="min-h-[360px] font-mono text-sm" />
           {draft !== loadedContent && <p className="text-sm text-amber-600">Unsaved changes</p>}
           <Feedback error={readError} info={readInfo} />
+          {metadataWarning && <p role="note" className="text-xs text-muted-foreground">{metadataWarning}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t bg-muted/20 px-6 py-3">
           <Button variant="outline" size="sm" disabled={!apiKey || busy || reading} onClick={() => void loadPreview(previewPath)}><RefreshCw className="mr-2 h-4 w-4" />Reload latest</Button>
           <History className="h-4 w-4" />
           <select aria-label="File history" value={historyId === null ? 'current' : String(historyId)} disabled={!apiKey || !base || busy || reading || loadingVersions} className={cn(selectClass, 'w-auto')}
-            onChange={(event) => event.target.value === 'current' ? void loadPreview(previewPath) : void loadHistory(Number(event.target.value))}>
+            onChange={(event) => event.target.value === 'current' ? void loadPreview(previewPath) : void loadHistory(event.target.value)}>
             <option value="current">Current</option>{versions.map((item) => <option key={item.id} value={String(item.id)}>{formatTimestamp(item.created_at)} · {item.size} bytes</option>)}
           </select>
           <Button variant="outline" size="sm" disabled={!apiKey || !base || historyId === null || busy || reading || encoding !== 'utf-8'} onClick={() => void restoreVersion()}><History className="mr-2 h-4 w-4" />Restore as latest</Button>

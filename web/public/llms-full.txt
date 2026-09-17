@@ -36,7 +36,13 @@ FileIO tools provide a remote project-scoped filesystem for durable agent contex
 - `file_list`
 - `file_search`
 
-Use `project=graphql` for this repository. File paths are logical workspace paths inside the MCP storage service, not arbitrary host filesystem paths.
+Use `project=graphql` for this repository. This is a namespace value, not the GraphQL transport. File paths are logical workspace paths inside the MCP storage service, not arbitrary host filesystem paths.
+
+For edits, obtain `content` and opaque `version` together from `file_read`, then send `expected_version` with the edit. All write modes, including APPEND, require this token or `create_only=true` for a new file. Delete and rename require a source token; replacing a rename destination also requires its own reviewed token. Directory-wide mutations are not supported by file tokens.
+
+A missing mutation condition returns `PRECONDITION_REQUIRED`. A stale condition returns `VERSION_CONFLICT`; re-read, compare and recompute rather than replacing only the token or retrying unchanged. Versions are strings, not numbers or history IDs. Web editor saves and restores use a strong quoted `If-Match` header and report missing/stale conditions as HTTP 428/412. `tools/list` is the runtime schema authority.
+
+FileIO is exposed through MCP and the Web console's FileIO HTTP endpoints. The GraphQL `/query` and `/query/v2` schema does not currently expose FileIO operations. `ExtractKeyInfo`, blog history and Arweave uploads are different APIs, not alternate FileIO writes.
 
 ### Memory
 

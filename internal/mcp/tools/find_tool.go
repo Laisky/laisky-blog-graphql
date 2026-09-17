@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -396,8 +395,8 @@ func (t *FindToolTool) searchEmbedding(ctx context.Context, apiKey, query string
 // buildResponse constructs the MCP tool result from ranked tool names.
 func (t *FindToolTool) buildResponse(rankedNames []string, refsOnly bool) (*mcp.CallToolResult, error) {
 	// Build name→definition map for quick lookup.
-	toolMap := make(map[string]mcp.Tool, len(t.tools))
 	t.mu.Lock()
+	toolMap := make(map[string]mcp.Tool, len(t.tools))
 	for _, tool := range t.tools {
 		toolMap[tool.Name] = tool
 	}
@@ -433,10 +432,15 @@ func (t *FindToolTool) buildResponse(rankedNames []string, refsOnly bool) (*mcp.
 		if !ok {
 			continue
 		}
+		schema, err := toolInputSchemaJSON(def)
+		if err != nil {
+			t.logger.Error("find_tool encode definition", zap.Error(err))
+			return mcp.NewToolResultError("failed to encode find_tool schema"), nil
+		}
 		results = append(results, map[string]any{
 			"name":        def.Name,
 			"description": def.Description,
-			"inputSchema": def.InputSchema,
+			"inputSchema": schema,
 		})
 	}
 
@@ -511,6 +515,7 @@ func (t *FindToolTool) ensureIndex(ctx context.Context, apiKey string) error {
 // buildToolDocument creates a searchable text representation of a tool definition.
 func buildToolDocument(tool mcp.Tool) string {
 	var sb strings.Builder
+
 	sb.WriteString("Tool: ")
 	sb.WriteString(tool.Name)
 	sb.WriteString("\n")
@@ -520,9 +525,9 @@ func buildToolDocument(tool mcp.Tool) string {
 		sb.WriteString("\n")
 	}
 
-	if len(tool.InputSchema.Properties) > 0 {
+	if len(tool.InputSchema.Properties) > 0 || len(tool.RawInputSchema) > 0 {
 		sb.WriteString("Parameters:\n")
-		schemaBytes, err := json.Marshal(tool.InputSchema)
+		schemaBytes, err := toolInputSchemaJSON(tool)
 		if err == nil {
 			sb.Write(schemaBytes)
 		}
@@ -553,6 +558,7 @@ func isToolNamePattern(query string) bool {
 	if len(query) == 0 {
 		return false
 	}
+
 	hasUnderscore := false
 	for _, ch := range query {
 		if ch == '_' {

@@ -207,7 +207,7 @@
       "post": {
         "operationId": "callGraphql",
         "summary": "Call the GraphQL API",
-        "description": "GraphQL endpoint for the broader laisky-blog backend. Use typed GraphQL operations and bearer authentication where required.",
+        "description": "GraphQL endpoint for the broader laisky-blog backend. This schema does not expose FileIO operations; FileIO uses MCP and its dedicated Web HTTP endpoints. Use typed GraphQL operations and bearer authentication where required.",
         "requestBody": {
           "required": true,
           "content": {

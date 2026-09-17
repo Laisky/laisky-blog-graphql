@@ -32,17 +32,9 @@ func conditionalFileService(ctx context.Context, svc FileService, req mcp.CallTo
 	if err != nil {
 		return nil, ctx, err
 	}
-	if resolver, ok := svc.(interface {
-		Resolve(context.Context, files.AuthContext, string, string) (FileService, error)
-	}); ok {
-		svc, err = resolver.Resolve(ctx, auth, project, "")
-		if err != nil {
-			return nil, ctx, err
-		}
-	}
-	capability, ok := svc.(interface{ SupportsFileVersionPreconditions() bool })
-	if !ok || !capability.SupportsFileVersionPreconditions() {
-		return nil, ctx, files.NewError(files.ErrCodeInvalidArgument, "selected file backend does not support version preconditions", false)
+	svc, err = ResolveVersionedFileService(ctx, svc, auth, project)
+	if err != nil {
+		return nil, ctx, err
 	}
 	return svc, conditionalCtx, nil
 }

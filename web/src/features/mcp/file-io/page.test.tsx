@@ -53,7 +53,7 @@ beforeEach(() => {
     throw new Error(`Unexpected tool ${name}`);
   });
   api.mockImplementation(async (_key, method, path) => {
-    if (method === 'GET' && path === '/versions') return { versions: [{ id: 7, size: 3, created_at: '2026-01-01' }] };
+    if (method === 'GET' && path === '/versions') return { versions: [{ id: '7', size: 3, created_at: '2026-01-01' }] };
     if (method === 'GET') return { ...read('old'), size: 3, created_at: '2026-01-01' };
     return { bytes_written: 5, version: v2 };
   });
@@ -61,6 +61,35 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 describe('FileIO page mandatory version workflow', () => {
+  it('keeps a successful content snapshot editable when optional metadata fails', async () => {
+    const implementation = tool.getMockImplementation()!;
+    tool.mockImplementation((key, name, args) => name === 'file_stat'
+      ? Promise.reject(new Error('metadata temporarily unavailable')) : implementation(key, name, args));
+    render(<FileIOPage />); await openPreview();
+    expect(screen.getByRole('note').textContent).toContain('Content loaded; optional metadata unavailable');
+    expect(screen.queryByRole('alert')).toBeNull();
+    input('File content', 'my edit'); click('Save');
+    await waitFor(() => expect(api).toHaveBeenCalledWith('test-key', 'PUT', '/file', expect.objectContaining({
+      headers: { 'If-Match': `"${v1}"` },
+    })));
+    await screen.findByText(/Saved 5 bytes/);
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+  it('ignores a late metadata failure from the previous file selection', async () => {
+    const delayed = deferred<Record<string, unknown>>();
+    const implementation = tool.getMockImplementation()!;
+    tool.mockImplementation((key, name, args) => name === 'file_stat' && args.path === '/a.txt'
+      ? delayed.promise.then(() => { throw new Error('old metadata failed'); })
+      : name === 'file_read' && args.path === '/b.txt' ? Promise.resolve(read('B', v2)) : implementation(key, name, args));
+    render(<FileIOPage />); click('Refresh list'); await screen.findByRole('button', { name: 'a.txt' });
+    click('a.txt');
+    await waitFor(() => expect(tool).toHaveBeenCalledWith('test-key', 'file_stat', { project: 'p', path: '/a.txt' }));
+    click('b.txt');
+    await waitFor(() => expect((screen.getByLabelText('File content') as HTMLTextAreaElement).value).toBe('B'));
+    await act(async () => delayed.resolve({}));
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
   it('blocks unconditioned writes and explicitly creates with create_only', async () => {
     render(<FileIOPage />);
     input('Target Path', 'new.txt'); input('Write Content (UTF-8)', 'hello');
@@ -113,6 +142,22 @@ describe('FileIO page mandatory version workflow', () => {
     const puts = api.mock.calls.filter((call) => call[1] === 'PUT');
     expect(puts).toHaveLength(2);
     puts.forEach((call) => expect(call[3]?.headers).toEqual({ 'If-Match': `"${v1}"` }));
+  });
+  it('keeps a large history ID exact in preview and restore URLs', async () => {
+    const large = '9007199254740993';
+    const implementation = api.getMockImplementation()!;
+    api.mockImplementation((key, method, path, options) => method === 'GET' && path === '/versions'
+      ? Promise.resolve({ versions: [{ id: large, size: 3, created_at: '2026-01-01' }] })
+      : implementation(key, method, path, options));
+    render(<FileIOPage />); await openPreview();
+    await waitFor(() => expect((screen.getByLabelText('File history') as HTMLSelectElement).disabled).toBe(false));
+    input('File history', large);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('test-key', 'GET', `/versions/${large}/content`, expect.anything()));
+    await waitFor(() => expect(enabled('Restore as latest')).toBe(true));
+    click('Restore as latest');
+    await waitFor(() => expect(api).toHaveBeenCalledWith('test-key', 'POST', `/versions/${large}/restore`, expect.objectContaining({
+      headers: { 'If-Match': `"${v1}"` },
+    })));
   });
   it('restores read-only history against the observed live version, not the history ID', async () => {
     render(<FileIOPage />); await openPreview();

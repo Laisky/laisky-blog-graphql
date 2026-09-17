@@ -103,6 +103,31 @@ Draft inputs may be stored locally, but observed version tokens are not persiste
 or automatically attached to restored text. Changing scope does not undo an
 already submitted server mutation; the new workspace simply ignores its late UI response.
 
+Historical row IDs are also returned as decimal strings by `GET /api/versions`.
+They select immutable history bytes and remain distinct from live CAS tokens.
+The console never converts them through JavaScript numbers, including in restore
+URLs, so adjacent IDs above the safe-integer range cannot alias each other.
+
+## Entrypoint inventory
+
+See [the three-surface audit](fileio_entrypoint_audit.md). FileIO has MCP tools and
+dedicated HTTP editor/history routes. The GraphQL schema does not currently expose
+FileIO queries or mutations, including through `/query/v2`; the `graphql` project
+name in examples is a namespace, not a transport. Unknown GraphQL FileIO fields
+must fail schema validation rather than reach raw storage.
+
+`tools/list`, `find_tool`, and the static MCP server card must publish compatible
+mutation preconditions. The runtime `mcp.Tool` marshaler is authoritative for both
+structured and raw schemas.
+
+The production Web HTTP save and restore routes resolve the same version-aware
+project plugin as MCP. Historical bytes come from the immutable tenant-scoped
+history store; restoration keeps the original live token and validates it in the
+plugin's atomic write, without fetching a newer token. PageIndex side effects
+therefore run for editor saves/restores as well as MCP writes. Plugin resolution
+errors never fall back to raw storage. A standalone storage-only handler remains
+available for explicitly constructed storage tests; it still requires CAS.
+
 ## HTTP and Go callers
 
 Existing `PUT /api/file` and `POST /api/versions/{id}/restore` accept a single
