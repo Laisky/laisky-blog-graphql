@@ -71,9 +71,10 @@ func TestFileWriteMissingAuth(t *testing.T) {
 	require.NoError(t, err)
 
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
-		"project": "proj",
-		"path":    "/a.txt",
-		"content": "data",
+		"project":     "proj",
+		"path":        "/a.txt",
+		"content":     "data",
+		"create_only": true,
 	}}}
 
 	result, handleErr := tool.Handle(context.Background(), req)
@@ -94,9 +95,10 @@ func TestFileWriteErrorMapping(t *testing.T) {
 	})
 
 	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
-		"project": "proj",
-		"path":    "/a.txt",
-		"content": "data",
+		"project":     "proj",
+		"path":        "/a.txt",
+		"content":     "data",
+		"create_only": true,
 	}}}
 
 	result, handleErr := tool.Handle(ctx, req)

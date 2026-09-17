@@ -47,8 +47,7 @@ func (h *filesHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == fileAPIPath && r.Method == http.MethodPut:
 		h.handlePutFile(w, r)
 	default:
-		logger := h.logFromCtx(r.Context())
-		h.writeErrorWithLogger(w, logger, http.StatusNotFound, "resource not found")
+		h.writeErrorWithLogger(w, h.logFromCtx(r.Context()), http.StatusNotFound, "resource not found")
 	}
 }
 
@@ -57,112 +56,79 @@ func (h *filesHTTPHandler) handleListVersions(w http.ResponseWriter, r *http.Req
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	logger := h.logFromCtx(ctx)
-
 	if h.service == nil {
 		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "files service unavailable")
 		return
 	}
-
 	authCtx, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
-
 	query := r.URL.Query()
-	project := query.Get("project")
-	path := query.Get("path")
-
-	versions, err := h.service.ListVersions(ctx, toFilesAuth(authCtx), project, path)
+	versions, err := h.service.ListVersions(ctx, toFilesAuth(authCtx), query.Get("project"), query.Get("path"))
 	if err != nil {
 		h.writeFileError(w, logger, err, "list file versions")
 		return
 	}
-
 	items := make([]map[string]any, 0, len(versions))
 	for _, v := range versions {
-		items = append(items, map[string]any{
-			"id":         v.ID,
-			"size":       v.Size,
-			"created_at": v.CreatedAt.UTC().Format(time.RFC3339Nano),
-		})
+		items = append(items, map[string]any{"id": v.ID, "size": v.Size, "created_at": v.CreatedAt.UTC().Format(time.RFC3339Nano)})
 	}
 	h.writeJSON(w, map[string]any{"versions": items})
 }
 
-// handleReadVersion returns the content of a specific version.
+// handleReadVersion returns the content of a specific historical version.
 func (h *filesHTTPHandler) handleReadVersion(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	logger := h.logFromCtx(ctx)
-
 	if h.service == nil {
 		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "files service unavailable")
 		return
 	}
-
 	versionID, err := parseVersionID(r.URL.Path, "/content")
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	authCtx, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
-
 	query := r.URL.Query()
-	project := query.Get("project")
-	path := query.Get("path")
-
-	version, err := h.service.ReadVersion(ctx, toFilesAuth(authCtx), project, path, versionID)
+	version, err := h.service.ReadVersion(ctx, toFilesAuth(authCtx), query.Get("project"), query.Get("path"), versionID)
 	if err != nil {
 		h.writeFileError(w, logger, err, "read file version")
 		return
 	}
-
-	encoding := "utf-8"
-	var content string
-	if utf8.Valid(version.Content) {
-		content = string(version.Content)
-	} else {
-		encoding = "base64"
-		content = base64.StdEncoding.EncodeToString(version.Content)
+	encoding, content := "utf-8", string(version.Content)
+	if !utf8.Valid(version.Content) {
+		encoding, content = "base64", base64.StdEncoding.EncodeToString(version.Content)
 	}
-
-	h.writeJSON(w, map[string]any{
-		"content":          content,
-		"content_encoding": encoding,
-		"size":             version.Size,
-		"created_at":       version.CreatedAt.UTC().Format(time.RFC3339Nano),
-	})
+	h.writeJSON(w, map[string]any{"content": content, "content_encoding": encoding, "size": version.Size, "created_at": version.CreatedAt.UTC().Format(time.RFC3339Nano)})
 }
 
-// handleRestoreVersion restores a version as the current file content.
+// handleRestoreVersion restores historical bytes with a mandatory live-file precondition.
 func (h *filesHTTPHandler) handleRestoreVersion(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	logger := h.logFromCtx(ctx)
-
 	if h.service == nil {
 		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "files service unavailable")
 		return
 	}
-
 	versionID, err := parseVersionID(r.URL.Path, "/restore")
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	authCtx, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
-
 	var payload struct {
 		Project string `json:"project"`
 		Path    string `json:"path"`
@@ -171,14 +137,19 @@ func (h *filesHTTPHandler) handleRestoreVersion(w http.ResponseWriter, r *http.R
 		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
-
-	result, err := h.service.RestoreVersion(ctx, toFilesAuth(authCtx), payload.Project, payload.Path, versionID)
+	auth := toFilesAuth(authCtx)
+	ctx, err = conditionalFileHTTPContext(ctx, r, auth, payload.Project, payload.Path, FileOperationRestore)
+	if err != nil {
+		h.writeFileError(w, logger, err, "validate restore precondition")
+		return
+	}
+	result, err := h.service.RestoreVersion(ctx, auth, payload.Project, payload.Path, versionID)
 	if err != nil {
 		h.writeFileError(w, logger, err, "restore file version")
 		return
 	}
-
-	h.writeJSON(w, map[string]any{"bytes_written": result.BytesWritten})
+	w.Header().Set("ETag", `"`+result.Version+`"`)
+	h.writeJSON(w, map[string]any{"bytes_written": result.BytesWritten, "version": result.Version})
 }
 
 // handlePutFile saves edited content using TRUNCATE write mode.
@@ -186,18 +157,15 @@ func (h *filesHTTPHandler) handlePutFile(w http.ResponseWriter, r *http.Request)
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	logger := h.logFromCtx(ctx)
-
 	if h.service == nil {
 		h.writeErrorWithLogger(w, logger, http.StatusServiceUnavailable, "files service unavailable")
 		return
 	}
-
 	authCtx, err := askuser.ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		return
 	}
-
 	var payload struct {
 		Project string `json:"project"`
 		Path    string `json:"path"`
@@ -207,21 +175,24 @@ func (h *filesHTTPHandler) handlePutFile(w http.ResponseWriter, r *http.Request)
 		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
-
-	result, err := h.service.Write(ctx, toFilesAuth(authCtx), payload.Project, payload.Path, payload.Content, "utf-8", 0, WriteModeTruncate)
+	auth := toFilesAuth(authCtx)
+	ctx, err = conditionalFileHTTPContext(ctx, r, auth, payload.Project, payload.Path, FileOperationWrite)
+	if err != nil {
+		h.writeFileError(w, logger, err, "validate write precondition")
+		return
+	}
+	result, err := h.service.Write(ctx, auth, payload.Project, payload.Path, payload.Content, "utf-8", 0, WriteModeTruncate)
 	if err != nil {
 		h.writeFileError(w, logger, err, "write file")
 		return
 	}
-
-	h.writeJSON(w, map[string]any{"bytes_written": result.BytesWritten})
+	w.Header().Set("ETag", `"`+result.Version+`"`)
+	h.writeJSON(w, map[string]any{"bytes_written": result.BytesWritten, "version": result.Version})
 }
 
-// parseVersionID extracts the numeric version ID from the URL path.
+// parseVersionID extracts a historical numeric version ID, not a live CAS token.
 func parseVersionID(urlPath, suffix string) (uint64, error) {
-	trimmed := strings.TrimPrefix(urlPath, "/api/versions/")
-	trimmed = strings.TrimSuffix(trimmed, suffix)
-	trimmed = strings.TrimSpace(trimmed)
+	trimmed := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(urlPath, "/api/versions/"), suffix))
 	if trimmed == "" {
 		return 0, errors.New("missing version id")
 	}
@@ -237,12 +208,7 @@ func toFilesAuth(authCtx *askuser.AuthorizationContext) AuthContext {
 	if authCtx == nil {
 		return AuthContext{}
 	}
-	return AuthContext{
-		APIKey:       authCtx.APIKey,
-		APIKeyHash:   authCtx.APIKeyHash,
-		UserID:       authCtx.UserID,
-		UserIdentity: authCtx.UserIdentity,
-	}
+	return AuthContext{APIKey: authCtx.APIKey, APIKeyHash: authCtx.APIKeyHash, UserID: authCtx.UserID, UserIdentity: authCtx.UserIdentity}
 }
 
 // writeFileError converts a service error to an HTTP response.
@@ -254,9 +220,14 @@ func (h *filesHTTPHandler) writeFileError(w http.ResponseWriter, logger logSDK.L
 			status = http.StatusNotFound
 		case ErrCodePermissionDenied:
 			status = http.StatusUnauthorized
-		case ErrCodeAlreadyExists, ErrCodeNotEmpty:
+		case ErrCodeAlreadyExists, ErrCodeNotEmpty, ErrCodeRevisionExhausted:
 			status = http.StatusConflict
-		case ErrCodeIsDirectory, ErrCodeNotDirectory, ErrCodeInvalidArgument, ErrCodeInvalidPath, ErrCodeInvalidOffset, ErrCodeInvalidQuery:
+		case ErrCodeVersionConflict:
+			status = http.StatusPreconditionFailed
+		case ErrCodePreconditionRequired:
+			status = http.StatusPreconditionRequired
+			w.Header().Set("Cache-Control", "no-store")
+		case ErrCodeIsDirectory, ErrCodeNotDirectory, ErrCodeInvalidArgument, ErrCodeInvalidPath, ErrCodeInvalidOffset, ErrCodeInvalidQuery, ErrCodeInvalidContent:
 			status = http.StatusBadRequest
 		case ErrCodePayloadTooLarge:
 			status = http.StatusRequestEntityTooLarge

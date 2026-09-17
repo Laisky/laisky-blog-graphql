@@ -145,7 +145,7 @@ jobs:
               'These numbers are valid regression-smoke baselines for the exact repository fixture, not public benchmark leaderboard claims. '
               'PageIndex uses a deterministic StubLLM so the local run measures production persistence, tree construction, traversal, ranking, and result shaping without provider variance; it does not estimate the quality or latency of a production reasoning model. '
               'Because the fixed reader is disabled, the abstention columns measure retrieval behavior rather than generated-answer hallucination. '
-              'The scheduled `mcp` backend job remains the authoritative end-to-end operational measurement.',
+              'The explicitly requested `mcp` backend job remains the authoritative end-to-end operational measurement.',
               '',
           ]
           destination.write_text('\n'.join(lines))

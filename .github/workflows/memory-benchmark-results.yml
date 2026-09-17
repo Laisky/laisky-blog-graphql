@@ -1,19 +1,18 @@
 name: memory-benchmark-results
 
+# Manual dispatch checks out the full selected ref, including 'go.mod' and
+# 'go.sum'; benchmark runs do not need automatic PR path filters.
 on:
-  pull_request:
-    paths:
-      - 'cmd/memory-bench/**'
-      - 'internal/mcp/memory/benchmark/**'
-      - 'internal/mcp/memory/plugins/**'
-      - 'internal/mcp/files/**'
-      - 'tests/eval/memory_bench_smoke.jsonl'
-      - '.github/workflows/memory-benchmark-results.yml'
-      - 'go.mod'
-      - 'go.sum'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Optional PR to comment on; select its head branch, or leave blank for artifacts only
+        required: false
+        default: ''
+        type: string
 
 concurrency:
-  group: memory-benchmark-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: memory-benchmark-${{ github.workflow }}-${{ github.ref }}-${{ inputs.pr_number }}
   cancel-in-progress: true
 
 permissions:
@@ -31,6 +30,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -58,30 +59,43 @@ jobs:
             --out="docs/eval/runs/${GITHUB_SHA}/${{ matrix.plugin }}"
 
       - name: Publish exact scorecard to PR
+        if: inputs.pr_number != ''
         uses: actions/github-script@v7
         env:
           PLUGIN: ${{ matrix.plugin }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPORT: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/report.json
           SCORECARD: docs/eval/runs/${{ github.sha }}/${{ matrix.plugin }}/scorecard.md
         with:
           script: |
             const fs = require('fs');
             const plugin = process.env.PLUGIN;
+            const input = process.env.PR_NUMBER || '';
+            const issue_number = Number(input);
+            if (!/^[1-9]\d*$/.test(input) || !Number.isSafeInteger(issue_number)) {
+              throw new Error('pr_number must be a positive integer');
+            }
+            const { owner, repo } = context.repo;
+            const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: issue_number });
+            const report = JSON.parse(fs.readFileSync(process.env.REPORT, 'utf8'));
+            if (pull.head.repo?.full_name !== `${owner}/${repo}` || pull.head.sha !== report.run.git_sha) {
+              throw new Error('Select the current PR head branch before publishing; the tested commit must match the PR head');
+            }
             const marker = `<!-- memory-benchmark-scorecard:${plugin} -->`;
             const scorecard = fs.readFileSync(process.env.SCORECARD, 'utf8');
             const method = [
               marker,
               `## Current ${plugin} plugin benchmark`,
+              `Benchmarked commit: ${report.run.git_sha}`,
               '',
               '> Method: real in-process production plugin, isolated SQLite file service, repository synthetic v2 corpus, top-k 5, min-score 0.20, one warm-up, three timed repetitions, concurrency 1, seed 42. PageIndex uses the real tree index/search implementation with deterministic StubLLM; RAG uses the real file service lexical/raw fallback. Local latency is diagnostic, not a production SLO.',
               '',
               scorecard,
             ].join('\n');
-            const { owner, repo } = context.repo;
-            const issue_number = context.payload.pull_request.number;
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number, per_page: 100,
             });
-            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
+            const existing = comments.find(comment => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: method });
             } else {
@@ -89,6 +103,7 @@ jobs:
             }
 
       - name: Upload exact artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: memory-benchmark-pr-${{ matrix.plugin }}-${{ github.sha }}

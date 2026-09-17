@@ -86,9 +86,10 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 	writeResp, err := writeTool.Handle(authCtx, newToolReq(map[string]any{
 		"project": "proj",
 		// The MCP tool layer adds the missing leading slash.
-		"path":    "docs/a.txt",
-		"content": "hello tools",
-		"mode":    "APPEND",
+		"path":        "docs/a.txt",
+		"content":     "hello tools",
+		"mode":        "APPEND",
+		"create_only": true,
 	}))
 	require.NoError(t, err)
 	require.False(t, writeResp.IsError)
@@ -96,9 +97,10 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 	require.Equal(t, 11, asInt(t, writePayload["bytes_written"]))
 
 	renameResp, err := renameTool.Handle(authCtx, newToolReq(map[string]any{
-		"project":   "proj",
-		"from_path": "docs/a.txt",
-		"to_path":   "docs/b.txt",
+		"project":          "proj",
+		"from_path":        "docs/a.txt",
+		"to_path":          "docs/b.txt",
+		"expected_version": writePayload["version"],
 	}))
 	require.NoError(t, err)
 	require.False(t, renameResp.IsError)
@@ -153,9 +155,10 @@ func TestFileToolsEndToEndFlow(t *testing.T) {
 	require.NotEmpty(t, chunks)
 
 	deleteResp, err := deleteTool.Handle(authCtx, newToolReq(map[string]any{
-		"project":   "proj",
-		"path":      "docs/b.txt",
-		"recursive": false,
+		"project":          "proj",
+		"path":             "docs/b.txt",
+		"recursive":        false,
+		"expected_version": readPayload["version"],
 	}))
 	require.NoError(t, err)
 	require.False(t, deleteResp.IsError)
@@ -190,15 +193,17 @@ func TestFileDeleteToolRootWipe(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = writeTool.Handle(authCtx, newToolReq(map[string]any{
-		"project": "proj",
-		"path":    "/a.txt",
-		"content": "one",
+		"project":     "proj",
+		"path":        "/a.txt",
+		"content":     "one",
+		"create_only": true,
 	}))
 	require.NoError(t, err)
 	_, err = writeTool.Handle(authCtx, newToolReq(map[string]any{
-		"project": "proj",
-		"path":    "/b.txt",
-		"content": "two",
+		"project":     "proj",
+		"path":        "/b.txt",
+		"content":     "two",
+		"create_only": true,
 	}))
 	require.NoError(t, err)
 

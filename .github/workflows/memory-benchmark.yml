@@ -1,26 +1,18 @@
 name: memory-benchmark
 
+# Manual dispatch checks out the full selected ref, including 'go.mod' and
+# 'go.sum'; benchmark runs do not need automatic PR path filters.
 on:
-  pull_request:
-    paths:
-      - 'cmd/memory-bench/**'
-      - 'internal/mcp/memory/benchmark/**'
-      - 'internal/mcp/memory/plugins/**'
-      - 'internal/mcp/files/**'
-      - 'tests/eval/memory_bench_smoke.jsonl'
-      - 'docs/eval/baselines/local/**'
-      - 'docs/eval/memory_benchmark.md'
-      - 'docs/ref/agent_memory_benchmarks_2026.md'
-      - '.github/workflows/memory-benchmark.yml'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-  schedule:
-    - cron: '30 4 * * *'
   workflow_dispatch:
+    inputs:
+      run_live:
+        description: Also run deployed MCP benchmarks (uses configured secrets)
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
-  group: memory-benchmark-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: memory-benchmark-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -106,7 +98,7 @@ jobs:
           if-no-files-found: error
 
   live:
-    if: github.event_name != 'pull_request'
+    if: inputs.run_live
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -143,7 +135,7 @@ jobs:
           MEMORY_BENCH_READER_MODEL: ${{ secrets.MEMORY_BENCH_READER_MODEL }}
           MEMORY_BENCH_READER_API_KEY: ${{ secrets.MEMORY_BENCH_READER_API_KEY }}
         run: |
-          echo 'The deployed scheduled run is score-only until an operator adopts a hardware- and environment-specific production baseline.'
+          echo 'The explicitly requested deployed run is score-only until an operator adopts a hardware- and environment-specific production baseline.'
           go run ./cmd/memory-bench \
             --backend=mcp \
             --plugin='${{ matrix.plugin }}' \

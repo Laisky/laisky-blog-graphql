@@ -3,8 +3,10 @@ package files
 import (
 	"context"
 	"database/sql"
+	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	errors "github.com/Laisky/errors/v2"
 )
@@ -14,9 +16,8 @@ func (s *Service) Write(ctx context.Context, auth AuthContext, project, path, co
 	return s.WriteWith(ctx, auth, project, path, content, encoding, offset, mode, WriteOpts{})
 }
 
-// WriteWith applies content using the supplied WriteOpts (proposal §2.6.1, §4.2).
-// The plain Write entry point delegates here with a zero-valued opts to preserve
-// existing behavior.
+// WriteWith applies content and optional version conditions atomically. Zero-valued
+// options retain legacy blind writes; every accepted write still advances revision.
 func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path, content, encoding string, offset int64, mode WriteMode, opts WriteOpts) (WriteResult, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return WriteResult{}, errors.WithStack(err)
@@ -46,34 +47,49 @@ func (s *Service) WriteWith(ctx context.Context, auth AuthContext, project, path
 		return WriteResult{}, errors.WithStack(NewError(ErrCodeInvalidOffset, "truncate requires offset 0", false))
 	}
 
-	payloadBytes := int64(len([]byte(content)))
+	payloadBytes := int64(len(content))
 	if err := ValidatePayloadSize(payloadBytes, s.settings.MaxPayloadBytes); err != nil {
 		return WriteResult{}, errors.WithStack(err)
 	}
-
 	if opts.SystemOwner != "" {
 		ctx = contextWithSystemOwner(ctx, opts.SystemOwner)
 	}
+	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationWrite)
+	if opts.ExpectedVersion != "" || opts.CreateOnly {
+		if !conditions.Empty() && (conditions.ExpectedVersion != opts.ExpectedVersion || conditions.CreateOnly != opts.CreateOnly) {
+			return WriteResult{}, errors.WithStack(NewError(ErrCodeInvalidArgument, "conflicting write conditions", false))
+		}
+		conditions.ExpectedVersion, conditions.CreateOnly = opts.ExpectedVersion, opts.CreateOnly
+	}
+	if !conditions.Empty() {
+		if _, err := WithFilePreconditions(ctx, auth, project, path, FileOperationWrite, conditions); err != nil {
+			return WriteResult{}, errors.WithStack(err)
+		}
+	}
+	opts.ExpectedVersion, opts.CreateOnly = conditions.ExpectedVersion, conditions.CreateOnly
 
-	var bytesWritten int64
+	var result WriteResult
 	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
 		n, err := s.writeWithinTx(ctx, tx, auth, project, path, []byte(content), mode, offset, payloadBytes, opts)
 		if err != nil {
 			return err
 		}
-		bytesWritten = n
+		version, err := s.fileVersionTx(ctx, tx, auth, project, path)
+		if err != nil {
+			return err
+		}
+		result = WriteResult{BytesWritten: n, Version: version}
 		return nil
 	})
 	if err != nil {
 		return WriteResult{}, errors.WithStack(err)
 	}
-
-	return WriteResult{BytesWritten: bytesWritten}, nil
+	return result, nil
 }
 
 // writeWithinTx executes the write pipeline assuming the project lock is held.
-// All snapshot, file upsert, prune, index-job, and credential-store steps live here
-// so that callers such as RestoreVersion can reuse the same atomic flow.
+// Preconditions, content, historical preimage, and indexing outbox share this
+// transaction. The database trigger increments the revision on every write path.
 func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple validation and upsert steps
 	ctx context.Context,
 	tx *sql.Tx,
@@ -90,16 +106,22 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		owner = opts.SystemOwner
 	}
 
+	existing, findErr := s.findActiveFileTx(ctx, tx, auth.APIKeyHash, project, path)
+	if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
+		return 0, errors.Wrap(findErr, "query existing file")
+	}
+	actualVersion := ""
+	if existing != nil {
+		actualVersion = existing.Version
+	}
+	if err := checkFileVersion(actualVersion, opts.ExpectedVersion, opts.CreateOnly); err != nil {
+		return 0, err
+	}
 	if err := s.ensureNoDescendantFile(ctx, tx, auth.APIKeyHash, project, path); err != nil {
 		return 0, err
 	}
 	if err := s.ensureNoParentFile(ctx, tx, auth.APIKeyHash, project, path); err != nil {
 		return 0, err
-	}
-
-	existing, findErr := s.findActiveFileTx(ctx, tx, auth.APIKeyHash, project, path)
-	if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
-		return 0, errors.Wrap(findErr, "query existing file")
 	}
 
 	now := s.clock()
@@ -119,7 +141,6 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 	if err != nil {
 		return 0, err
 	}
-
 	newSize := int64(len(newContent))
 	if err := ValidateFileSize(newSize, s.settings.MaxFileBytes); err != nil {
 		return 0, err
@@ -128,25 +149,13 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		return 0, err
 	}
 
-	// contentHash binds this saved generation to its chunks and summary. It is
-	// recomputed from the complete resulting file so APPEND/OVERWRITE/TRUNCATE and
-	// restore all describe the full content, never only the request delta (§4.2).
+	// Hash the complete generation, never just an APPEND/OVERWRITE request delta.
 	contentHash := HashFileContent(newContent)
-
 	if errors.Is(findErr, sql.ErrNoRows) {
 		if _, err := tx.ExecContext(ctx,
 			rebindSQL(`INSERT INTO mcp_files (apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, system_owner, skip_rag_index, content_hash)
 				VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, NULL, ?, ?, ?)`, s.isPostgres),
-			auth.APIKeyHash,
-			project,
-			path,
-			newContent,
-			newSize,
-			createdAt,
-			now,
-			owner,
-			opts.SkipRAGIndex,
-			contentHash,
+			auth.APIKeyHash, project, path, newContent, newSize, createdAt, now, owner, opts.SkipRAGIndex, contentHash,
 		); err != nil {
 			return 0, errors.Wrap(err, "create file")
 		}
@@ -154,57 +163,50 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 		if err := s.snapshotFileVersionTx(ctx, tx, auth.APIKeyHash, project, path, existing.Content, existing.Size, existing.ID, now); err != nil {
 			return 0, err
 		}
-		// Only the current content_hash is updated here. The previous summary_* row
-		// values are intentionally preserved so the prior complete generation stays
-		// searchable until the worker atomically republishes chunks + summary (§4.2).
-		if _, err := tx.ExecContext(ctx,
-			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = ?, content_hash = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
-			newContent,
-			newSize,
-			now,
-			opts.SkipRAGIndex,
-			contentHash,
-			existing.ID,
-			owner,
-		); err != nil {
+		// Preserve the previous summary until its replacement publishes. The
+		// generation predicate is defense in depth in addition to the project lock.
+		updated, err := tx.ExecContext(ctx,
+			rebindSQL(`UPDATE mcp_files SET content = ?, size = ?, updated_at = ?, deleted = FALSE, deleted_at = NULL, skip_rag_index = ?, content_hash = ?
+				WHERE id = ? AND apikey_hash = ? AND project = ? AND path = ? AND system_owner = ? AND deleted = FALSE
+				AND (incarnation_id || ':' || CAST(revision AS TEXT)) = ?`, s.isPostgres),
+			newContent, newSize, now, opts.SkipRAGIndex, contentHash,
+			existing.ID, auth.APIKeyHash, project, path, owner, existing.Version,
+		)
+		if err != nil {
 			return 0, errors.Wrap(err, "update file")
+		}
+		n, err := updated.RowsAffected()
+		if err != nil {
+			return 0, errors.Wrap(err, "check conditional file update")
+		}
+		if n != 1 {
+			return 0, NewError(ErrCodeVersionConflict, "file changed during mutation; re-read and recompute the edit", false)
 		}
 		if err := s.pruneVersionsTx(ctx, tx, auth.APIKeyHash, project, path, now); err != nil {
 			return 0, err
 		}
 	}
 
-	// Index-job enqueue is gated on user-namespace writes that did not opt out.
-	// System-owner writes never enqueue: their content is consumed by the owning
-	// plugin directly, not by the rag index worker.
+	// Only user-namespace writes that did not opt out enqueue RAG work.
 	if owner == "" && !opts.SkipRAGIndex {
 		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-			APIKeyHash:    auth.APIKeyHash,
-			Project:       project,
-			FilePath:      path,
-			Operation:     "UPSERT",
-			FileUpdatedAt: &now,
-			Status:        "pending",
-			RetryCount:    0,
-			AvailableAt:   now,
-			CreatedAt:     now,
-			UpdatedAt:     now,
-			ContentHash:   contentHash,
+			APIKeyHash: auth.APIKeyHash, Project: project, FilePath: path,
+			Operation: "UPSERT", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
+			AvailableAt: now, CreatedAt: now, UpdatedAt: now, ContentHash: contentHash,
 		}); err != nil {
 			return 0, errors.Wrap(err, "enqueue index job")
 		}
 	}
-
 	if owner == "" {
 		if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, path, now); err != nil {
 			return 0, err
 		}
 	}
-
 	return bytesWritten, nil
 }
 
-// Delete removes a file or directory tree.
+// Delete removes a file or directory tree. A supplied file token protects only
+// an exact file; it can never authorize deleting an implicit directory subtree.
 func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path string, recursive bool) (DeleteResult, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return DeleteResult{}, errors.WithStack(err)
@@ -218,10 +220,13 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	if path == "" {
 		return DeleteResult{}, errors.WithStack(NewError(ErrCodePermissionDenied, "root directory cannot be deleted", false))
 	}
-
 	owner := systemOwnerFromContext(ctx)
+	conditions := filePreconditionsFromContext(ctx, auth, project, path, FileOperationDelete)
 	var deletedCount int
 	err := s.lockProvider.WithProjectLock(ctx, s.db, s.isPostgres, auth.APIKeyHash, project, s.settings.LockTimeout, func(tx *sql.Tx) error {
+		if err := s.checkPathVersionTx(ctx, tx, auth, project, path, conditions.ExpectedVersion, false); err != nil {
+			return err
+		}
 		now := s.clock()
 		paths, err := s.resolveDeleteTargets(ctx, tx, auth.APIKeyHash, project, path, recursive)
 		if err != nil {
@@ -230,7 +235,6 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		if len(paths) == 0 {
 			return errors.WithStack(NewError(ErrCodeNotFound, "path not found", false))
 		}
-
 		snapshots, err := s.loadFilesForSnapshotTx(ctx, tx, auth.APIKeyHash, project, paths)
 		if err != nil {
 			return err
@@ -240,7 +244,6 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 				return err
 			}
 		}
-
 		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ? WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
 		inClause, inArgs := buildInClause(paths, s.isPostgres, 6)
 		args := make([]any, 0, 5+len(inArgs))
@@ -249,32 +252,22 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
 			return errors.Wrap(err, "soft delete files")
 		}
-
 		for _, snap := range snapshots {
 			if err := s.pruneVersionsTx(ctx, tx, auth.APIKeyHash, project, snap.Path, now); err != nil {
 				return err
 			}
 		}
-
 		if owner == "" {
 			for _, p := range paths {
 				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash:    auth.APIKeyHash,
-					Project:       project,
-					FilePath:      p,
-					Operation:     "DELETE",
-					FileUpdatedAt: &now,
-					Status:        "pending",
-					RetryCount:    0,
-					AvailableAt:   now,
-					CreatedAt:     now,
-					UpdatedAt:     now,
+					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: p,
+					Operation: "DELETE", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
+					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
 				}); err != nil {
 					return errors.Wrap(err, "enqueue delete job")
 				}
 			}
 		}
-
 		deletedCount = len(paths)
 		return nil
 	})
@@ -284,312 +277,40 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 	return DeleteResult{DeletedCount: deletedCount}, nil
 }
 
-// applyWriteModeBytes merges raw incoming bytes with existing data per write mode.
+// applyWriteModeBytes merges complete UTF-8 units and rejects corrupt results.
 func applyWriteModeBytes(existing, incoming []byte, offset int64, mode WriteMode) ([]byte, error) {
+	if offset < 0 {
+		return nil, NewError(ErrCodeInvalidOffset, "offset must be >= 0", false)
+	}
+	if !utf8.Valid(incoming) {
+		return nil, NewError(ErrCodeInvalidContent, "content must be valid UTF-8", false)
+	}
+	var result []byte
 	switch mode {
 	case WriteModeAppend:
-		return append(existing, incoming...), nil
+		result = append(existing, incoming...)
 	case WriteModeTruncate:
-		return append([]byte{}, incoming...), nil
+		result = append([]byte{}, incoming...)
 	case WriteModeOverwrite:
 		size := int64(len(existing))
-		if offset > size {
-			return nil, NewError(ErrCodeInvalidOffset, "offset beyond eof", false)
+		if offset > size || int64(len(incoming)) > math.MaxInt64-offset {
+			return nil, NewError(ErrCodeInvalidOffset, "offset beyond eof or range overflow", false)
 		}
-		newLen := int64(len(incoming)) + offset
-		if newLen < size {
-			newLen = size
+		end := offset + int64(len(incoming))
+		if (offset < size && !utf8.RuneStart(existing[offset])) || (end < size && !utf8.RuneStart(existing[end])) {
+			return nil, NewError(ErrCodeInvalidOffset, "overwrite range splits a UTF-8 code point", false)
 		}
-		buf := make([]byte, newLen)
-		copy(buf, existing)
-		copy(buf[offset:], incoming)
-		return buf, nil
+		result = make([]byte, max(end, size))
+		copy(result, existing)
+		copy(result[offset:], incoming)
 	default:
 		return nil, NewError(ErrCodeInvalidOffset, "unsupported write mode", false)
 	}
-}
-
-// ensureNoDescendantFile validates that the target path has no child files.
-func (s *Service) ensureNoDescendantFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
-	var count int64
-	if err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash,
-		project,
-		prefix,
-		owner,
-	).Scan(&count); err != nil {
-		return errors.Wrap(err, "check descendant files")
+	if result == nil {
+		result = []byte{}
 	}
-	if count > 0 {
-		return NewError(ErrCodeIsDirectory, "path has descendant files", false)
+	if !utf8.Valid(result) {
+		return nil, NewError(ErrCodeInvalidContent, "write would produce invalid UTF-8", false)
 	}
-	return nil
-}
-
-// ensureNoParentFile validates that no parent segment is an existing file.
-func (s *Service) ensureNoParentFile(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) error {
-	owner := systemOwnerFromContext(ctx)
-	parents := parentPaths(path)
-	if len(parents) == 0 {
-		return nil
-	}
-	var count int64
-	inClause, inArgs := buildInClause(parents, s.isPostgres, 4)
-	query := rebindSQL(`SELECT COUNT(1) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-	args := make([]any, 0, 3+len(inArgs))
-	args = append(args, apiKeyHash, project, owner)
-	args = append(args, inArgs...)
-	if err := tx.QueryRowContext(ctx, strings.Replace(query, "%s", inClause, 1), args...).Scan(&count); err != nil {
-		return errors.Wrap(err, "check parent files")
-	}
-	if count > 0 {
-		return NewError(ErrCodeNotDirectory, "parent path is a file", false)
-	}
-	return nil
-}
-
-// parentPaths returns all parent segments for a path.
-func parentPaths(path string) []string {
-	trimmed := strings.TrimPrefix(path, "/")
-	if trimmed == "" {
-		return nil
-	}
-	parts := strings.Split(trimmed, "/")
-	if len(parts) <= 1 {
-		return nil
-	}
-	parents := make([]string, 0, len(parts)-1)
-	for i := 1; i < len(parts); i++ {
-		parents = append(parents, "/"+strings.Join(parts[:i], "/"))
-	}
-	return parents
-}
-
-// ensureProjectQuota enforces project storage limits.
-
-func (s *Service) ensureProjectQuota(ctx context.Context, tx *sql.Tx, apiKeyHash, project string, newSize int64, existing *File) error {
-	owner := systemOwnerFromContext(ctx)
-	var total int64
-	if err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT COALESCE(SUM(size), 0) FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash,
-		project,
-		owner,
-	).Scan(&total); err != nil {
-		return errors.Wrap(err, "sum project size")
-	}
-	if existing != nil {
-		total -= existing.Size
-	}
-	if total+newSize > s.settings.MaxProjectBytes {
-		return NewError(ErrCodeQuotaExceeded, "project storage quota exceeded", false)
-	}
-	return nil
-}
-
-// resolveDeleteTargets determines which file paths should be deleted.
-func (s *Service) resolveDeleteTargets(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string, recursive bool) ([]string, error) {
-	owner := systemOwnerFromContext(ctx)
-	if path == "" {
-		return s.listAllFilePaths(ctx, tx, apiKeyHash, project)
-	}
-
-	var foundPath string
-	err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ? LIMIT 1`, s.isPostgres),
-		apiKeyHash,
-		project,
-		path,
-		owner,
-	).Scan(&foundPath)
-	if err == nil {
-		return []string{foundPath}, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, errors.Wrap(err, "query delete target")
-	}
-
-	paths, err := s.listDescendantPaths(ctx, tx, apiKeyHash, project, path)
-	if err != nil {
-		return nil, err
-	}
-	if len(paths) == 0 {
-		return nil, nil
-	}
-	if !recursive {
-		return nil, NewError(ErrCodeNotEmpty, "directory not empty", false)
-	}
-	return paths, nil
-}
-
-// listDescendantPaths returns all active descendant file paths for a directory.
-func (s *Service) listDescendantPaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) ([]string, error) {
-	owner := systemOwnerFromContext(ctx)
-	prefix := buildPathPrefix(path)
-	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND path LIKE ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash,
-		project,
-		prefix,
-		owner,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "query descendant paths")
-	}
-	defer func() { _ = rows.Close() }()
-
-	var paths []string
-	for rows.Next() {
-		var p string
-		if scanErr := rows.Scan(&p); scanErr != nil {
-			return nil, errors.Wrap(scanErr, "scan descendant path")
-		}
-		paths = append(paths, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate descendant paths")
-	}
-	return paths, nil
-}
-
-// listAllFilePaths returns all active file paths in a project.
-func (s *Service) listAllFilePaths(ctx context.Context, tx *sql.Tx, apiKeyHash, project string) ([]string, error) {
-	owner := systemOwnerFromContext(ctx)
-	rows, err := tx.QueryContext(ctx,
-		rebindSQL(`SELECT path FROM mcp_files WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ?`, s.isPostgres),
-		apiKeyHash,
-		project,
-		owner,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "query project paths")
-	}
-	defer func() { _ = rows.Close() }()
-
-	var paths []string
-	for rows.Next() {
-		var p string
-		if scanErr := rows.Scan(&p); scanErr != nil {
-			return nil, errors.Wrap(scanErr, "scan project path")
-		}
-		paths = append(paths, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate project paths")
-	}
-	return paths, nil
-}
-
-// insertIndexJobTx inserts one index queue job in the current transaction.
-func (s *Service) insertIndexJobTx(ctx context.Context, tx *sql.Tx, job FileIndexJob) error {
-	owner := systemOwnerFromContext(ctx)
-	_, err := tx.ExecContext(ctx,
-		rebindSQL(`INSERT INTO mcp_file_index_jobs (apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, system_owner, content_hash, last_error_code, summary_generation_key)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.isPostgres),
-		job.APIKeyHash,
-		job.Project,
-		job.FilePath,
-		job.Operation,
-		job.FileUpdatedAt,
-		job.Status,
-		job.RetryCount,
-		job.AvailableAt,
-		job.CreatedAt,
-		job.UpdatedAt,
-		owner,
-		job.ContentHash,
-		job.LastErrorCode,
-		job.SummaryGenerationKey,
-	)
-	if err != nil {
-		return errors.Wrap(err, "insert index job")
-	}
-	return nil
-}
-
-// loadFilesForSnapshotTx loads non-deleted file rows in batch for snapshotting.
-func (s *Service) loadFilesForSnapshotTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project string, paths []string) ([]File, error) {
-	if len(paths) == 0 {
-		return nil, nil
-	}
-	owner := systemOwnerFromContext(ctx)
-	inClause, inArgs := buildInClause(paths, s.isPostgres, 4)
-	query := rebindSQL(`SELECT id, path, content, size FROM mcp_files
-		WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)
-		ORDER BY path ASC`, s.isPostgres)
-	args := make([]any, 0, 3+len(inArgs))
-	args = append(args, apiKeyHash, project, owner)
-	args = append(args, inArgs...)
-	rows, err := tx.QueryContext(ctx, strings.Replace(query, "%s", inClause, 1), args...)
-	if err != nil {
-		return nil, errors.Wrap(err, "query files for snapshot")
-	}
-	defer func() { _ = rows.Close() }()
-
-	var files []File
-	for rows.Next() {
-		var file File
-		if scanErr := rows.Scan(&file.ID, &file.Path, &file.Content, &file.Size); scanErr != nil {
-			return nil, errors.Wrap(scanErr, "scan file for snapshot")
-		}
-		files = append(files, file)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate files for snapshot")
-	}
-	return files, nil
-}
-
-// findActiveFileTx loads one non-deleted file row in a transaction by path.
-func (s *Service) findActiveFileTx(ctx context.Context, tx *sql.Tx, apiKeyHash, project, path string) (*File, error) {
-	owner := systemOwnerFromContext(ctx)
-	var file File
-	err := tx.QueryRowContext(ctx,
-		rebindSQL(`SELECT id, apikey_hash, project, path, content, size, created_at, updated_at, deleted, deleted_at, content_hash, summary_content_hash, summary_status, summary_generation_key
-		FROM mcp_files
-		WHERE apikey_hash = ? AND project = ? AND path = ? AND deleted = FALSE AND system_owner = ?
-		LIMIT 1`, s.isPostgres),
-		apiKeyHash,
-		project,
-		path,
-		owner,
-	).Scan(
-		&file.ID,
-		&file.APIKeyHash,
-		&file.Project,
-		&file.Path,
-		&file.Content,
-		&file.Size,
-		&file.CreatedAt,
-		&file.UpdatedAt,
-		&file.Deleted,
-		&file.DeletedAt,
-		&file.ContentHash,
-		&file.SummaryContentHash,
-		&file.SummaryStatus,
-		&file.SummaryGenerationKey,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &file, nil
-}
-
-// buildInClause returns a placeholder list and positional args for IN clauses.
-func buildInClause(values []string, isPostgres bool, startIndex int) (string, []any) {
-	placeholders := make([]string, 0, len(values))
-	args := make([]any, 0, len(values))
-	for i, value := range values {
-		if isPostgres {
-			placeholders = append(placeholders, "$"+strconvItoa(startIndex+i))
-		} else {
-			placeholders = append(placeholders, "?")
-		}
-		args = append(args, value)
-	}
-	return strings.Join(placeholders, ","), args
+	return result, nil
 }

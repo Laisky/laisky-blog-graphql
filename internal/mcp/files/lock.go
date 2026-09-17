@@ -22,24 +22,29 @@ func (p DefaultLockProvider) WithProjectLock(ctx context.Context, db *sql.DB, is
 	if db == nil {
 		return errors.New("db is required")
 	}
-
-	tx, err := db.BeginTx(ctx, nil)
+	var options *sql.TxOptions
+	if isPostgres {
+		// Lock acquisition itself is a SELECT. A repeatable-read default could
+		// pin a snapshot before the preceding lock holder commits its revision.
+		options = &sql.TxOptions{Isolation: sql.LevelReadCommitted}
+	}
+	tx, err := db.BeginTx(ctx, options)
 	if err != nil {
 		return errors.Wrap(err, "begin transaction")
 	}
 
 	if err = acquireProjectLock(ctx, tx, isPostgres, apiKeyHash, project, timeout); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			return errors.Wrap(rollbackErr, "rollback lock transaction")
 		}
 		return err
 	}
 
 	if err = fn(tx); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			return errors.Wrap(rollbackErr, "rollback callback transaction")
 		}
-		return err
+		return errors.WithStack(normalizeRevisionError(err))
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -71,7 +76,13 @@ func acquireProjectLock(ctx context.Context, tx *sql.Tx, isPostgres bool, apiKey
 		if time.Now().After(deadline) {
 			return NewError(ErrCodeResourceBusy, "resource busy", true)
 		}
-		time.Sleep(50 * time.Millisecond)
+		timer := time.NewTimer(min(50*time.Millisecond, time.Until(deadline)))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.WithStack(ctx.Err())
+		case <-timer.C:
+		}
 	}
 }
 

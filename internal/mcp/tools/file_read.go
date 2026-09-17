@@ -9,9 +9,7 @@ import (
 )
 
 // FileReadTool implements the file_read MCP tool.
-type FileReadTool struct {
-	svc FileService
-}
+type FileReadTool struct{ svc FileService }
 
 // NewFileReadTool constructs a FileReadTool.
 func NewFileReadTool(svc FileService) (*FileReadTool, error) {
@@ -23,16 +21,14 @@ func NewFileReadTool(svc FileService) (*FileReadTool, error) {
 
 // Definition returns the MCP metadata for file_read.
 func (t *FileReadTool) Definition() mcp.Tool {
-	return mcp.NewTool(
-		"file_read",
-		mcp.WithDescription("Read file content with optional byte offsets. Use this to view, open, or get the contents of a text or binary file from disk."),
+	return mcp.NewTool("file_read",
+		mcp.WithDescription("Read UTF-8 content and its version from one snapshot. Pin subsequent ranges with expected_version to reject mixed-generation reads. Byte ranges must align with UTF-8 characters."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Target project namespace.")),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path to read.")),
 		mcp.WithNumber("offset", mcp.Description("Byte offset to start reading from.")),
 		mcp.WithNumber("length", mcp.Description("Number of bytes to read; -1 reads to EOF.")),
-		fileToolPluginOption(),
-		mcp.WithReadOnlyHintAnnotation(true),
-		mcp.WithIdempotentHintAnnotation(true),
+		expectedFileVersionOption(), fileToolPluginOption(),
+		mcp.WithReadOnlyHintAnnotation(true), mcp.WithIdempotentHintAnnotation(true),
 	)
 }
 
@@ -51,17 +47,19 @@ func (t *FileReadTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	length := readInt64ArgWithDefault(req, "length", -1)
 	ctx = withFilePluginOverride(ctx, req)
 	if auth, ok := fileAuthFromContext(ctx); ok {
-		result, svcErr := t.svc.Read(ctx, auth, project, path, offset, length)
+		svc, conditionalCtx, svcErr := conditionalFileService(ctx, t.svc, req, auth, project, path, "", files.FileOperationRead)
 		if svcErr != nil {
-			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // error returned as tool result text
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
-		payload := map[string]any{
-			"content":          result.Content,
-			"content_encoding": result.ContentEncoding,
+		result, svcErr := svc.Read(conditionalCtx, auth, project, path, offset, length)
+		if svcErr != nil {
+			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
+		payload := map[string]any{"content": result.Content, "content_encoding": result.ContentEncoding}
+		addFileVersion(payload, result.Version)
 		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
 		if encodeErr != nil {
-			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error returned as tool result text
+			return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode response", true), nil //nolint:nilerr // error is encoded in the MCP tool result
 		}
 		return toolResult, nil
 	}
