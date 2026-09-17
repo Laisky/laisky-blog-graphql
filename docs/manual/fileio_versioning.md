@@ -1,6 +1,7 @@
 # FileIO versioned editing
 
-Updated: 2026-09-17. This is the mandatory external concurrency contract for PR #45.
+Updated: 2026-09-17. This is the mandatory external concurrency contract introduced
+in PR #45, including the version-aware browser console follow-up.
 It supplements `mcp_files.md` and the FileIO requirements/architecture manuals;
 its version fields, mandatory mutation preconditions, and UTF-8 rules supersede
 older unversioned response examples and optional-client-compatibility statements.
@@ -69,6 +70,63 @@ capability. Missing mutation intent is `PRECONDITION_REQUIRED` with
 `retryable=false`, before calling the backend. `create_only=false` alone is not
 a precondition. There is no force flag or blind-APPEND compatibility bypass.
 Handlers enforce the contract even when a client caches or ignores tool schemas.
+
+## Browser console
+
+The `/tools/file_io` page implements this contract, not just its documentation:
+
+- **Write:** explicitly choose Create only, or use Read write base and review the
+  returned content before composing an APPEND/OVERWRITE/TRUNCATE request. A successful
+  standalone write clears that form's observed base rather than silently advancing
+  an unchanged APPEND draft and enabling a duplicate submission.
+- **Delete / Rename:** read and review the exact source file first. A rename
+  destination must be absent by default; replacing an existing destination requires
+  reading and reviewing its own version. There is no recursive-directory bypass.
+- **Editor Save:** sends `If-Match` from the content read into the editor. A separate
+  metadata query never replaces that token. After success, the submitted content and
+  returned write version become the new editor base, without a post-save read that
+  could attach another client's version to the draft.
+- **History Restore:** previews are read-only. Restore compares against the live
+  version observed when the file was opened, not the numeric historical snapshot ID.
+  Base64 history remains viewable but cannot be written back as UTF-8 from the editor.
+
+On a conflict, the page keeps the draft and old base; it does not fetch a new token
+and retry. Copy the draft before explicitly reloading, then review/recompute it.
+A reload that discards an unsaved editor draft requires confirmation. Missing
+conditions (428) and stale conditions (412) have separate recovery messages.
+
+Observations are scoped to the API key, project, path and request generation.
+Switching projects/credentials or locking the console resets them. Late responses
+from a previous selection or unmounted scope cannot install content or tokens in
+another workspace. Switching projects with drafts prompts before discarding them.
+Draft inputs may be stored locally, but observed version tokens are not persisted
+or automatically attached to restored text. Changing scope does not undo an
+already submitted server mutation; the new workspace simply ignores its late UI response.
+
+Historical row IDs are also returned as decimal strings by `GET /api/versions`.
+They select immutable history bytes and remain distinct from live CAS tokens.
+The console never converts them through JavaScript numbers, including in restore
+URLs, so adjacent IDs above the safe-integer range cannot alias each other.
+
+## Entrypoint inventory
+
+See [the three-surface audit](fileio_entrypoint_audit.md). FileIO has MCP tools and
+dedicated HTTP editor/history routes. The GraphQL schema does not currently expose
+FileIO queries or mutations, including through `/query/v2`; the `graphql` project
+name in examples is a namespace, not a transport. Unknown GraphQL FileIO fields
+must fail schema validation rather than reach raw storage.
+
+`tools/list`, `find_tool`, and the static MCP server card must publish compatible
+mutation preconditions. The runtime `mcp.Tool` marshaler is authoritative for both
+structured and raw schemas.
+
+The production Web HTTP save and restore routes resolve the same version-aware
+project plugin as MCP. Historical bytes come from the immutable tenant-scoped
+history store; restoration keeps the original live token and validates it in the
+plugin's atomic write, without fetching a newer token. PageIndex side effects
+therefore run for editor saves/restores as well as MCP writes. Plugin resolution
+errors never fall back to raw storage. A standalone storage-only handler remains
+available for explicitly constructed storage tests; it still requires CAS.
 
 ## HTTP and Go callers
 
@@ -177,8 +235,8 @@ During rolling deployment, triggers keep old writers' revision updates visible,
 but an old server may ignore new MCP arguments. Route conditional clients only
 to upgraded servers, or wait until all serving instances have been upgraded.
 Do not advertise safe conditional editing on a mixed old/new request fleet.
-The existing UI is not automatically rewritten by this change; integrations
-that omit conditions now fail instead of silently overwriting a file.
+Deploy the version-aware browser bundle along with the mandatory API contract;
+older cached UI bundles and integrations that omit conditions fail closed.
 
 After restoring a database to an older point in time, old tokens can recur.
 Before accepting edits against that restored database, invalidate previously
@@ -207,15 +265,24 @@ CGO_ENABLED=1 go test -race -shuffle=on -count=3 -timeout=12m -v \
   ./internal/mcp/files -run '^TestFileIO'
 go test -race -cover -timeout=15m ./...
 make lint
+
+# Existing frontend test/build commands, after installing the locked dependencies.
+cd web
+pnpm test -- src/features/mcp/file-io
+pnpm build
 ```
+
+Browser tests cover exact MCP/HTTP conditions, create-only mode, read-token vs
+later stat-token handling, conflict draft preservation, history restoration,
+path/scope changes, late responses, and non-persistence of observed tokens.
+No new CI or automatic benchmark execution is required by the console update.
 
 Without the DSN, PostgreSQL cases skip explicitly. Existing repository checks
 can run the ordinary test packages; no additional CI workflow/job is required.
 The initial audit's standalone workflow is removed from the final PR diff.
-See PR #45 for tested commit SHAs and actual check results; commands listed here
-are instructions, not a claim that every check was executed. The earlier PR
-validation predates the mandatory-client/startup-checkpoint follow-up. Do not
-attribute those prior Go/PostgreSQL passes to this later patch.
+See PR #45 and its console follow-up for tested commit SHAs and actual check
+results; commands listed here are instructions, not claims that every check ran.
+Prior Go/PostgreSQL passes do not validate later browser changes.
 
 The suite does not establish multi-process HTTP linearizability, response-loss
 recovery, database failover, directory snapshot safety, or asynchronous index

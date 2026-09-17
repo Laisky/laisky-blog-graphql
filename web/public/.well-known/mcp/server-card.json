@@ -49,27 +49,41 @@
     },
     {
       "name": "file_read",
-      "description": "Read a project-scoped file from the remote FileIO workspace.",
+      "description": "Read UTF-8 content and its opaque version from one snapshot. Pin subsequent ranges with expected_version; no token is needed for the initial read.",
       "inputSchema": {
         "type": "object",
         "required": ["project", "path"],
         "properties": {
           "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "path": { "type": "string" }
+          "path": { "type": "string" },
+          "expected_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
+          "plugin": { "type": "string", "enum": ["rag", "pageindex", "auto"], "default": "auto" },
+          "offset": { "type": "integer", "minimum": 0 },
+          "length": { "type": "integer", "minimum": -1 }
         }
       }
     },
     {
       "name": "file_write",
-      "description": "Write project-scoped content into the remote FileIO workspace for durable agent context.",
+      "description": "Write UTF-8 content with mandatory expected_version or create_only=true. APPEND also requires a condition. Return the committed version; never blindly retry a stale request.",
       "inputSchema": {
         "type": "object",
         "required": ["project", "path", "content"],
         "properties": {
           "project": { "type": "string" },
           "path": { "type": "string" },
-          "content": { "type": "string" }
-        }
+          "content": { "type": "string" },
+          "expected_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
+          "plugin": { "type": "string", "enum": ["rag", "pageindex", "auto"], "default": "auto" },
+          "create_only": { "type": "boolean", "description": "Require an absent file; mutually exclusive with expected_version." },
+          "content_encoding": { "type": "string", "enum": ["utf-8"] },
+          "mode": { "type": "string", "enum": ["APPEND", "OVERWRITE", "TRUNCATE"] },
+          "offset": { "type": "integer", "minimum": 0 }
+        },
+        "oneOf": [
+          { "required": ["expected_version"], "properties": { "create_only": { "const": false } } },
+          { "required": ["create_only"], "properties": { "create_only": { "const": true } }, "not": { "required": ["expected_version"] } }
+        ]
       }
     },
     {
@@ -100,7 +114,7 @@
     },
     {
       "name": "file_stat",
-      "description": "Inspect metadata for a project-scoped FileIO path before reading, writing, moving, or deleting it.",
+      "description": "Inspect live file metadata and version. For content edits, use the token returned with file_read, not a later stat token.",
       "inputSchema": {
         "type": "object",
         "required": ["project", "path"],
@@ -140,28 +154,33 @@
     },
     {
       "name": "file_delete",
-      "description": "Delete a project-scoped FileIO file or directory after the agent has confirmed the target is correct.",
+      "description": "Delete one reviewed file using expected_version. File tokens do not authorize recursive directory deletion.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "path"],
+        "required": ["project", "path", "expected_version"],
         "properties": {
           "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
           "path": { "type": "string" },
-          "recursive": { "type": "boolean" }
+          "expected_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
+          "plugin": { "type": "string", "enum": ["rag", "pageindex", "auto"], "default": "auto" }
         }
       }
     },
     {
       "name": "file_rename",
-      "description": "Move or rename a project-scoped FileIO file or directory while preserving shared remote context.",
+      "description": "Rename one file using its source expected_version. The destination must be absent, or overwrite=true must include its reviewed expected_destination_version.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "from_path", "to_path"],
+        "required": ["project", "from_path", "to_path", "expected_version"],
         "properties": {
           "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
           "from_path": { "type": "string" },
           "to_path": { "type": "string" },
-          "overwrite": { "type": "boolean" }
+          "overwrite": { "type": "boolean" },
+          "expected_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
+          "plugin": { "type": "string", "enum": ["rag", "pageindex", "auto"], "default": "auto" },
+          "expected_destination_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
+          "destination_must_not_exist": { "type": "boolean", "description": "Require an absent destination. Implicit when overwrite=false; mutually exclusive with expected_destination_version." }
         }
       }
     },

@@ -21,13 +21,20 @@ import (
 )
 
 // NewHTTPHandler constructs an HTTP mux exposing the file_io management APIs.
-func NewHTTPHandler(service *Service, logger logSDK.Logger) http.Handler {
-	return mcpauth.HTTPMiddleware(&filesHTTPHandler{service: service, logger: logger})
+func NewHTTPHandler(service *Service, logger logSDK.Logger, options ...FileHTTPOption) http.Handler {
+	handler := &filesHTTPHandler{service: service, logger: logger}
+	for _, option := range options {
+		if option != nil {
+			option(handler)
+		}
+	}
+	return mcpauth.HTTPMiddleware(handler)
 }
 
 type filesHTTPHandler struct {
-	service *Service
-	logger  logSDK.Logger
+	service        *Service
+	logger         logSDK.Logger
+	writerResolver FileHTTPWriterResolver
 }
 
 const (
@@ -73,7 +80,7 @@ func (h *filesHTTPHandler) handleListVersions(w http.ResponseWriter, r *http.Req
 	}
 	items := make([]map[string]any, 0, len(versions))
 	for _, v := range versions {
-		items = append(items, map[string]any{"id": v.ID, "size": v.Size, "created_at": v.CreatedAt.UTC().Format(time.RFC3339Nano)})
+		items = append(items, map[string]any{"id": strconv.FormatUint(v.ID, 10), "size": v.Size, "created_at": v.CreatedAt.UTC().Format(time.RFC3339Nano)})
 	}
 	h.writeJSON(w, map[string]any{"versions": items})
 }
@@ -143,7 +150,7 @@ func (h *filesHTTPHandler) handleRestoreVersion(w http.ResponseWriter, r *http.R
 		h.writeFileError(w, logger, err, "validate restore precondition")
 		return
 	}
-	result, err := h.service.RestoreVersion(ctx, auth, payload.Project, payload.Path, versionID)
+	result, err := h.restoreHTTPFile(ctx, auth, payload.Project, payload.Path, versionID)
 	if err != nil {
 		h.writeFileError(w, logger, err, "restore file version")
 		return
@@ -181,7 +188,7 @@ func (h *filesHTTPHandler) handlePutFile(w http.ResponseWriter, r *http.Request)
 		h.writeFileError(w, logger, err, "validate write precondition")
 		return
 	}
-	result, err := h.service.Write(ctx, auth, payload.Project, payload.Path, payload.Content, "utf-8", 0, WriteModeTruncate)
+	result, err := h.writeHTTPFile(ctx, auth, payload.Project, payload.Path, payload.Content)
 	if err != nil {
 		h.writeFileError(w, logger, err, "write file")
 		return

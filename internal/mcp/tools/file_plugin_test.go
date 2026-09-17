@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func (s *pluginBehaviorService) Stop(context.Context) error {
 	return nil
 }
 
-// TestFileToolDefinitionsIncludePluginField verifies the additive-only schema change.
+// TestFileToolDefinitionsIncludePluginField checks the schema clients receive, including raw schemas.
 func TestFileToolDefinitionsIncludePluginField(t *testing.T) {
 	t.Parallel()
 
@@ -54,14 +55,20 @@ func TestFileToolDefinitionsIncludePluginField(t *testing.T) {
 
 	for _, tool := range checks {
 		def := tool.Definition()
-		rawProperty, ok := def.InputSchema.Properties["plugin"]
+		encoded, err := toolInputSchemaJSON(def)
+		require.NoError(t, err)
+		var schema struct {
+			Properties map[string]any `json:"properties"`
+		}
+		require.NoError(t, json.Unmarshal(encoded, &schema))
+		rawProperty, ok := schema.Properties["plugin"]
 		require.True(t, ok, def.Name)
 
 		property, ok := rawProperty.(map[string]any)
 		require.True(t, ok, def.Name)
 		require.Equal(t, "string", property["type"])
 		require.Equal(t, "auto", property["default"])
-		require.Equal(t, []string{"rag", "pageindex", "auto"}, property["enum"])
+		require.Equal(t, []any{"rag", "pageindex", "auto"}, property["enum"])
 	}
 }
 

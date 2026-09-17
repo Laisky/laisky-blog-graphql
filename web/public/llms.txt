@@ -11,7 +11,7 @@ Laisky MCP exposes hosted Streamable HTTP MCP tools for agents that need a share
 - Use `web_search` for Google Programmable Search results with URLs, titles, snippets, and timestamps.
 - Use `web_fetch` when a page needs browser rendering before extraction.
 - Use `get_user_request` to receive queued human directives for a task. For this repository, use `task_id=graphql`.
-- Use FileIO tools to store durable project-scoped context that multiple agents can share.
+- Use FileIO tools to store durable project-scoped context that multiple agents can share. Every mutation needs the version returned with the reviewed content, or `create_only=true` for a new file; re-read and recompute on `VERSION_CONFLICT`.
 - Use memory tools to prepare model input before a turn, persist outputs after a turn, run maintenance, and list memory abstracts.
 - Use `extract_key_info` for small RAG-style extraction from supplied materials.
 - Use `find_tool` or the MCP Inspector when you are unsure which tool best fits a job.
