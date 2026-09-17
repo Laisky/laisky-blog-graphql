@@ -1,20 +1,5 @@
-import {
-  ArrowRightLeft,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  FileText,
-  Folder,
-  FolderOpen,
-  History,
-  RefreshCw,
-  Save,
-  Search,
-  ShieldAlert,
-  Trash2,
-  UploadCloud,
-} from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowRightLeft, ChevronDown, ChevronRight, FileText, Folder, FolderOpen, History, RefreshCw, Save, Search, Trash2, UploadCloud } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,1401 +10,446 @@ import { Textarea } from '@/components/ui/textarea';
 import { useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 
-import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
-import { callMcpTool, type CallToolResponse } from '../shared/mcp-api';
-import { useFileIOInputDefaults, usePersistFileIOInputs } from './use-file-io-input-storage';
+import { callFileAPI, callFileTool } from './client';
+import { FileIOIntroduction } from './introduction';
+import { useFileIOInputDefaults, usePersistFileIOInputs, type FileIOPersistedInputs } from './use-file-io-input-storage';
+import { useFileRequestLane, useFileSnapshot } from './use-file-snapshot';
+import { canonicalFilePath, expectedVersion, fileIOErrorMessage, fileSnapshot, ifMatch, renameCondition, requireFileVersion, writeCondition, type FileSnapshot, type ReadPayload } from './version-state';
 
-type FileEntry = {
-  name: string;
-  path: string;
-  type: 'FILE' | 'DIRECTORY';
-  size: number;
-  created_at: string;
-  updated_at: string;
-};
-
-type FileListPayload = {
-  entries: FileEntry[];
-  has_more: boolean;
-};
-
-type FileStatPayload = {
-  exists: boolean;
-  type: 'FILE' | 'DIRECTORY';
-  size: number;
-  created_at: string;
-  updated_at: string;
-};
-
-type FileReadPayload = {
-  content: string;
-  content_encoding: string;
-};
-
-type FileWritePayload = {
-  bytes_written: number;
-};
-
-type FileDeletePayload = {
-  deleted_count: number;
-};
-
-type FileRenamePayload = {
-  moved_count: number;
-};
-
-type FileSearchChunk = {
-  file_path: string;
-  file_seek_start_bytes: number;
-  file_seek_end_bytes: number;
-  chunk_content: string;
-  score: number;
-};
-
-type FileSearchPayload = {
-  chunks: FileSearchChunk[];
-};
-
-type FileVersionEntry = {
-  id: number;
-  size: number;
-  created_at: string;
-};
-
-type FileVersionListPayload = {
-  versions: FileVersionEntry[];
-};
-
-type FileVersionContentPayload = {
-  content: string;
-  content_encoding: string;
-  size: number;
-  created_at: string;
-};
-
-type FileBytesWrittenPayload = {
-  bytes_written: number;
-};
-
-type StructuredToolResponse<T> = CallToolResponse & {
-  structured?: T;
-  structuredContent?: T;
-  structured_content?: T;
-};
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'medium',
-});
-
+type FileEntry = { name: string; path: string; type: 'FILE' | 'DIRECTORY'; size: number; created_at: string; updated_at: string };
+type FileListPayload = { entries: FileEntry[]; has_more: boolean };
+type FileStatPayload = FileEntry & { exists: boolean; version?: string };
+type FileWritePayload = { bytes_written: number; version: string };
+type FileVersionEntry = { id: number; size: number; created_at: string };
+type HistoryContent = { content: string; content_encoding: string; size: number; created_at: string };
+type FileSearchChunk = { file_path: string; file_seek_start_bytes: number; file_seek_end_bytes: number; chunk_content: string; score: number };
+type DirCache = Record<string, { entries: FileEntry[]; hasMore: boolean }>;
 const inputLabelClass = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
+const selectClass = 'h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm disabled:opacity-60';
+const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
 
-function extractStructuredPayload<T>(result: CallToolResponse): T {
-  const structuredResult = result as StructuredToolResponse<T>;
-  const structured = structuredResult.structured ?? structuredResult.structuredContent ?? structuredResult.structured_content;
-  if (structured) {
-    return structured as T;
-  }
-
-  const contentText = result.content?.find((item) => typeof item.text === 'string')?.text;
-  if (!contentText) {
-    throw new Error('Tool response missing structured payload');
-  }
-
-  const parsed = JSON.parse(contentText) as T;
-  return parsed;
-}
-
-function extractToolError(result: CallToolResponse): string {
-  const contentText = result.content?.find((item) => typeof item.text === 'string')?.text;
-  if (!contentText) {
-    return 'Tool execution failed.';
-  }
-  try {
-    const parsed = JSON.parse(contentText) as { message?: string };
-    if (parsed?.message) {
-      return parsed.message;
-    }
-  } catch (error) {
-    if (error instanceof Error) {
-      return error.message;
-    }
-  }
-  return contentText;
-}
-
-function formatTimestamp(value: string): string {
-  if (!value) return '—';
+function formatTimestamp(value: string) {
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return dateFormatter.format(parsed);
+  return Number.isNaN(parsed.getTime()) ? value || '—' : dateFormatter.format(parsed);
 }
-
-function FileTreeNode({
-  entry,
-  level,
-  expandedPaths,
-  dirCache,
-  loadingPaths,
-  onToggle,
-  onSelect,
-  selectedPath,
-  disabled = false,
-}: {
-  entry: FileEntry;
-  level: number;
-  expandedPaths: Set<string>;
-  dirCache: Record<string, { entries: FileEntry[]; hasMore: boolean }>;
-  loadingPaths: Set<string>;
-  onToggle: (entry: FileEntry) => void;
-  onSelect: (entry: FileEntry) => void;
-  selectedPath: string;
-  disabled?: boolean;
+function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  return <div className="space-y-1"><label htmlFor={id} className={inputLabelClass}>{label}</label>{children}</div>;
+}
+function Feedback({ error, info }: { error?: string | null; info?: string | null }) {
+  return <>{error && <p role="alert" className="text-sm text-destructive">{error}</p>}{info && <p role="status" className="break-all text-sm text-emerald-600">{info}</p>}</>;
+}
+function VersionReview({ title, review, disabled, onRead }: {
+  title: string; review: ReturnType<typeof useFileSnapshot>; disabled: boolean; onRead?: () => void;
 }) {
-  const isExpanded = expandedPaths.has(entry.path);
-  const isDirectory = entry.type === 'DIRECTORY';
-  const childrenData = dirCache[entry.path];
-  const isLoading = loadingPaths.has(entry.path);
-  const isSelected = selectedPath === entry.path;
-  const displayName = entry.name || entry.path.split('/').pop() || entry.path;
-
-  return (
-    <div className="select-none">
-      <div
-        className={cn(
-          'flex items-center gap-2 rounded-sm py-1 pr-2 text-sm transition-colors',
-          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-accent/50',
-          isSelected && 'bg-accent font-medium text-accent-foreground'
-        )}
-        style={{ paddingLeft: `${Math.max(4, level * 16)}px` }}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (disabled) {
-            return;
-          }
-
-          if (isDirectory) {
-            onToggle(entry);
-          } else {
-            onSelect(entry);
-          }
-        }}
-      >
-        <div
-          className={cn(
-            'flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground',
-            disabled ? 'cursor-not-allowed' : 'hover:text-foreground'
-          )}
-          onClick={(e) => {
-            if (disabled) {
-              return;
-            }
-
-            if (isDirectory) {
-              e.stopPropagation();
-              onToggle(entry);
-            }
-          }}
-        >
-          {isDirectory ? (
-            isLoading ? (
-              <RefreshCw className="h-3 w-3 animate-spin" />
-            ) : isExpanded ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )
-          ) : (
-            <span className="w-4" />
-          )}
-        </div>
-
-        <div className={cn('flex shrink-0 items-center', isDirectory ? 'text-primary' : 'text-muted-foreground')}>
-          {isDirectory ? (
-            isExpanded ? (
-              <FolderOpen className="h-4 w-4" />
-            ) : (
-              <Folder className="h-4 w-4" />
-            )
-          ) : (
-            <FileText className="h-4 w-4" />
-          )}
-        </div>
-
-        <span className="truncate">{displayName}</span>
-        {/* <span className="ml-auto text-xs text-muted-foreground">{isDirectory ? '' : `${entry.size} B`}</span> */}
-      </div>
-
-      {isExpanded && isDirectory && childrenData && (
-        <div>
-          {childrenData.entries.map((child) => (
-            <FileTreeNode
-              key={child.path}
-              entry={child}
-              level={level + 1}
-              expandedPaths={expandedPaths}
-              dirCache={dirCache}
-              loadingPaths={loadingPaths}
-              onToggle={onToggle}
-              onSelect={onSelect}
-              selectedPath={selectedPath}
-              disabled={disabled}
-            />
-          ))}
-          {childrenData.hasMore && (
-            <div className="py-1 text-xs italic text-muted-foreground" style={{ paddingLeft: `${(level + 1) * 16 + 32}px` }}>
-              ... truncated ...
-            </div>
-          )}
-        </div>
-      )}
-      {isExpanded && isDirectory && !childrenData && !isLoading && (
-        <div className="py-1 text-xs italic text-muted-foreground" style={{ paddingLeft: `${(level + 1) * 16 + 32}px` }}>
-          (Empty)
-        </div>
-      )}
-    </div>
-  );
+  return <div className="space-y-2 rounded-md border border-border/60 p-3">
+    <Button type="button" variant="outline" size="sm" disabled={disabled || review.pending} onClick={onRead ?? (() => void review.load())}>
+      <RefreshCw className={cn('mr-2 h-4 w-4', review.pending && 'animate-spin')} />Read {title}
+    </Button>
+    <p className="break-all text-xs text-muted-foreground">{review.snapshot ? <>Read version: <code>{review.snapshot.version}</code></> : 'Read and review the file to enable this operation.'}</p>
+    {review.snapshot && <details><summary className="cursor-pointer text-xs">Reviewed content</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">{review.snapshot.content}</pre></details>}
+    <Feedback error={review.error} />
+  </div>;
 }
 
+function FileTreeNode({ entry, level, expanded, cache, loading, onToggle, onSelect, selected, disabled }: {
+  entry: FileEntry; level: number; expanded: Set<string>; cache: DirCache; loading: Set<string>;
+  onToggle: (entry: FileEntry) => void; onSelect: (path: string) => void; selected: string; disabled: boolean;
+}) {
+  const directory = entry.type === 'DIRECTORY';
+  const open = expanded.has(entry.path);
+  const children = cache[entry.path];
+  return <div>
+    <button type="button" disabled={disabled} aria-expanded={directory ? open : undefined}
+      className={cn('flex w-full items-center gap-2 rounded-sm py-1 pr-2 text-left text-sm hover:bg-accent/50 disabled:opacity-60', selected === entry.path && 'bg-accent font-medium')}
+      style={{ paddingLeft: `${Math.max(4, level * 16)}px` }} onClick={() => directory ? onToggle(entry) : onSelect(entry.path)}>
+      {directory ? loading.has(entry.path) ? <RefreshCw className="h-4 w-4 animate-spin" /> : open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" /> : <span className="w-4" />}
+      {directory ? open ? <FolderOpen className="h-4 w-4 text-primary" /> : <Folder className="h-4 w-4 text-primary" /> : <FileText className="h-4 w-4" />}
+      <span className="truncate">{entry.name || entry.path}</span>
+    </button>
+    {directory && open && children && <div>{children.entries.map((child) => <FileTreeNode key={child.path} entry={child} level={level + 1} expanded={expanded} cache={cache} loading={loading} onToggle={onToggle} onSelect={onSelect} selected={selected} disabled={disabled} />)}
+      {children.hasMore && <p className="pl-8 text-xs text-muted-foreground">List truncated; browse this prefix with a higher limit.</p>}
+      {!children.entries.length && <p className="pl-8 text-xs text-muted-foreground">(Empty)</p>}
+    </div>}
+  </div>;
+}
+
+function processEntries(basePath: string, entries: FileEntry[]) {
+  const base = basePath === '/' ? '' : basePath.replace(/\/$/, '');
+  const roots: FileEntry[] = [];
+  const cache: DirCache = {};
+  const expanded = new Set<string>();
+  for (const entry of entries) {
+    const parent = entry.path.split('/').slice(0, -1).join('/');
+    if (parent === base) roots.push(entry);
+    else { (cache[parent] ??= { entries: [], hasMore: false }).entries.push(entry); expanded.add(parent); }
+  }
+  const sort = (a: FileEntry, b: FileEntry) => a.type !== b.type ? a.type === 'DIRECTORY' ? -1 : 1 : a.name.localeCompare(b.name);
+  roots.sort(sort);
+  Object.values(cache).forEach((item) => item.entries.sort(sort));
+  return { roots, cache, expanded };
+}
+
+/** Remount request-bound state on tenant, lock, or project changes. Never persist tokens. */
 export function FileIOPage() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
-  const persistedInputs = useFileIOInputDefaults();
-  const [project, setProject] = useState(persistedInputs.project ?? '');
-  const [currentPath, setCurrentPath] = useState(persistedInputs.currentPath ?? '');
-  const [depth, setDepth] = useState(persistedInputs.depth ?? 1);
-  const [limit, setLimit] = useState(persistedInputs.limit ?? 200);
+  const defaults = useFileIOInputDefaults();
+  const [project, setProject] = useState(defaults.project ?? '');
+  const [dirty, setDirty] = useState(false);
+  const scope = JSON.stringify([apiKey, isToolConsoleLocked, project]);
+  return <div className="space-y-8">
+    <FileIOIntroduction />
+    <Field id="file-io-project" label="Project *"><Input id="file-io-project" placeholder="Required" required
+      disabled={isToolConsoleLocked || !apiKey} value={project} onChange={(event) => {
+        if (dirty && !window.confirm('Switch projects and discard the open drafts? Copy them first to keep your changes.')) return;
+        setDirty(false);
+        setProject(event.target.value);
+      }} /></Field>
+    <FileIOWorkspace key={scope} apiKey={isToolConsoleLocked ? '' : apiKey || ''} project={project}
+      defaults={defaults.project === project ? defaults : {}} onDirtyChange={setDirty} />
+  </div>;
+}
 
-  // Tree State
-  const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
-  const [dirCache, setDirCache] = useState<Record<string, { entries: FileEntry[]; hasMore: boolean }>>({});
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
-  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
-
+function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
+  apiKey: string; project: string; defaults: Partial<FileIOPersistedInputs>; onDirtyChange: (dirty: boolean) => void;
+}) {
+  const [currentPath, setCurrentPath] = useState(defaults.currentPath ?? '');
+  const [depth, setDepth] = useState(defaults.depth ?? 1);
+  const [limit, setLimit] = useState(defaults.limit ?? 200);
+  const [roots, setRoots] = useState<FileEntry[]>([]);
+  const [dirCache, setDirCache] = useState<DirCache>({});
+  const [expanded, setExpanded] = useState(new Set<string>());
+  const [loadingPaths, setLoadingPaths] = useState(new Set<string>());
   const [hasMore, setHasMore] = useState(false);
   const [browserError, setBrowserError] = useState<string | null>(null);
-  const [isListing, setIsListing] = useState(false);
+  const [listing, setListing] = useState(false);
+  const listLane = useFileRequestLane();
+  const treeLane = useFileRequestLane();
 
-  const [selectedPath, setSelectedPath] = useState(persistedInputs.selectedPath ?? '');
-  const [selectedStat, setSelectedStat] = useState<FileStatPayload | null>(null);
-  const [selectedContent, setSelectedContent] = useState(persistedInputs.selectedContent ?? '');
+  const [previewPath, setPreviewPath] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [base, setBase] = useState<FileSnapshot | null>(null);
+  const [previewStat, setPreviewStat] = useState<FileStatPayload | null>(null);
+  const [draft, setDraft] = useState('');
+  const [loadedContent, setLoadedContent] = useState('');
+  const [encoding, setEncoding] = useState('utf-8');
+  const [versions, setVersions] = useState<FileVersionEntry[]>([]);
+  const [historyId, setHistoryId] = useState<number | null>(null);
+  const [reading, setReading] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [readInfo, setReadInfo] = useState<string | null>(null);
-  const [isReading, setIsReading] = useState(false);
-  const [isFilePreviewOpen, setIsFilePreviewOpen] = useState(false);
-  const [loadedContent, setLoadedContent] = useState('');
-  const [contentEncoding, setContentEncoding] = useState<string>('utf-8');
-  const [versions, setVersions] = useState<FileVersionEntry[]>([]);
-  const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
-  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
-  const [isSavingFile, setIsSavingFile] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
+  const previewLane = useFileRequestLane();
+  const historyLane = useFileRequestLane();
 
-  const [writePath, setWritePath] = useState(persistedInputs.writePath ?? '');
-  const [writeMode, setWriteMode] = useState<'APPEND' | 'OVERWRITE' | 'TRUNCATE'>(
-    persistedInputs.writeMode === 'OVERWRITE' || persistedInputs.writeMode === 'TRUNCATE' ? persistedInputs.writeMode : 'APPEND'
-  );
-  const [writeOffset, setWriteOffset] = useState(persistedInputs.writeOffset ?? 0);
-  const [writeContent, setWriteContent] = useState(persistedInputs.writeContent ?? '');
+  const [writePath, setWritePath] = useState(defaults.writePath ?? '');
+  const [writeMode, setWriteMode] = useState<'APPEND' | 'OVERWRITE' | 'TRUNCATE'>(defaults.writeMode ?? 'APPEND');
+  const [writeOffset, setWriteOffset] = useState(defaults.writeOffset ?? 0);
+  const [writeContent, setWriteContent] = useState(defaults.writeContent ?? '');
+  const [createOnly, setCreateOnly] = useState(false);
+  const writeReview = useFileSnapshot(apiKey, project, writePath);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [writeInfo, setWriteInfo] = useState<string | null>(null);
-  const [isWriting, setIsWriting] = useState(false);
 
-  const [deletePath, setDeletePath] = useState(persistedInputs.deletePath ?? '');
-  const [deleteRecursive, setDeleteRecursive] = useState(persistedInputs.deleteRecursive ?? false);
+  const [deletePath, setDeletePath] = useState(defaults.deletePath ?? '');
+  const deleteReview = useFileSnapshot(apiKey, project, deletePath);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteInfo, setDeleteInfo] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const [renameFromPath, setRenameFromPath] = useState(persistedInputs.renameFromPath ?? '');
-  const [renameToPath, setRenameToPath] = useState(persistedInputs.renameToPath ?? '');
-  const [renameOverwrite, setRenameOverwrite] = useState(persistedInputs.renameOverwrite ?? false);
+  const [renameFromPath, setRenameFromPath] = useState(defaults.renameFromPath ?? '');
+  const [renameToPath, setRenameToPath] = useState(defaults.renameToPath ?? '');
+  const [renameOverwrite, setRenameOverwrite] = useState(defaults.renameOverwrite ?? false);
+  const sourceReview = useFileSnapshot(apiKey, project, renameFromPath);
+  const targetReview = useFileSnapshot(apiKey, project, renameToPath);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameInfo, setRenameInfo] = useState<string | null>(null);
-  const [isRenaming, setIsRenaming] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState(persistedInputs.searchQuery ?? '');
-  const [searchPrefix, setSearchPrefix] = useState(persistedInputs.searchPrefix ?? '');
-  const [searchLimit, setSearchLimit] = useState(persistedInputs.searchLimit ?? 5);
+  const [searchQuery, setSearchQuery] = useState(defaults.searchQuery ?? '');
+  const [searchPrefix, setSearchPrefix] = useState(defaults.searchPrefix ?? '');
+  const [searchLimit, setSearchLimit] = useState(defaults.searchLimit ?? 5);
   const [searchResults, setSearchResults] = useState<FileSearchChunk[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const searchLane = useFileRequestLane();
+  const mutationLane = useFileRequestLane();
+  const mutationGate = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const unavailable = !apiKey || !project.trim();
+  useEffect(() => { onDirtyChange(draft !== loadedContent || writeContent.length > 0); }, [draft, loadedContent, writeContent, onDirtyChange]);
 
-  const [isDescriptionCollapsed, setIsDescriptionCollapsed] = useState(() => {
-    if (typeof localStorage === 'undefined') return false;
-    return localStorage.getItem('mcp_file_io_description_collapsed') === 'true';
-  });
+  // Persist drafts/paths only. Restored text is never paired with a fresh token automatically.
+  usePersistFileIOInputs({ project, currentPath, depth, limit, selectedPath: previewPath, selectedContent: draft,
+    writePath, writeMode, writeOffset, writeContent, deletePath, deleteRecursive: false,
+    renameFromPath, renameToPath, renameOverwrite, searchQuery, searchPrefix, searchLimit });
 
-  usePersistFileIOInputs({
-    project,
-    currentPath,
-    depth,
-    limit,
-    selectedPath,
-    selectedContent,
-    writePath,
-    writeMode,
-    writeOffset,
-    writeContent,
-    deletePath,
-    deleteRecursive,
-    renameFromPath,
-    renameToPath,
-    renameOverwrite,
-    searchQuery,
-    searchPrefix,
-    searchLimit,
-  });
-
-  useEffect(() => {
-    if (!apiKey || isToolConsoleLocked) {
-      setRootEntries([]);
-      setDirCache({});
-      setExpandedPaths(new Set());
-      setLoadingPaths(new Set());
-      setHasMore(false);
-      setBrowserError(null);
-      setSelectedPath('');
-      setSelectedStat(null);
-      setSelectedContent('');
-      setLoadedContent('');
-      setContentEncoding('utf-8');
-      setReadError(null);
-      setReadInfo(null);
-      setIsReading(false);
-      setIsFilePreviewOpen(false);
-      setVersions([]);
-      setSelectedVersionId(null);
-      setIsLoadingVersions(false);
-      setIsSavingFile(false);
-      setIsRestoring(false);
-      setSearchResults([]);
-      setSearchError(null);
-    }
-  }, [apiKey, isToolConsoleLocked]);
-
-  // Helper to process flat list into tree structure
-  function processEntries(basePath: string, rawEntries: FileEntry[]) {
-    const normBase = basePath === '/' ? '' : basePath.replace(/\/$/, '');
-    const roots: FileEntry[] = [];
-    const newCache: Record<string, { entries: FileEntry[]; hasMore: boolean }> = {};
-    const newExpanded = new Set<string>();
-
-    const sorter = (a: FileEntry, b: FileEntry) => {
-      if (a.type !== b.type) return a.type === 'DIRECTORY' ? -1 : 1;
-      return (a.name || a.path).localeCompare(b.name || b.path);
-    };
-
-    rawEntries.forEach((entry) => {
-      // Determine parent
-      // Assuming Unix paths
-      const parts = entry.path.split('/');
-      const parent = parts.length > 1 ? parts.slice(0, parts.length - 1).join('/') : '/';
-      // Fix for root entries usually having parent '' or '/' depending directly on path str
-
-      // Heuristic: If entry.path starts with normBase + '/', it is inside.
-      // The parent is the directory containing it.
-
-      if (parent === normBase || (normBase === '' && parent === '') || (normBase === '' && parent === '/')) {
-        roots.push(entry);
-      } else {
-        if (!newCache[parent]) {
-          newCache[parent] = { entries: [], hasMore: false };
-        }
-        newCache[parent].entries.push(entry);
-        // Auto-expand if we receive explicit children
-        newExpanded.add(parent);
-      }
-    });
-
-    roots.sort(sorter);
-    Object.values(newCache).forEach((val) => {
-      val.entries.sort(sorter);
-    });
-
-    return { roots, newCache, newExpanded };
+  async function mutate(action: (current: () => boolean) => Promise<void>, report: (message: string) => void) {
+    if (unavailable || mutationGate.current) return;
+    mutationGate.current = true;
+    const current = mutationLane.begin();
+    setBusy(true);
+    try { await action(current); } catch (err) { if (current()) report(fileIOErrorMessage(err)); }
+    finally { mutationGate.current = false; if (current()) setBusy(false); }
   }
-
-  async function callTool<T>(toolName: string, args: Record<string, unknown>) {
-    if (!apiKey || isToolConsoleLocked) {
-      throw new Error('API key is required');
-    }
-    const result = await callMcpTool(apiKey, toolName, args);
-    if (result.isError) {
-      throw new Error(extractToolError(result));
-    }
-    return extractStructuredPayload<T>(result);
-  }
-
-  async function callFileIOApi<T>(
-    method: 'GET' | 'POST' | 'PUT',
-    path: string,
-    options: { query?: Record<string, string>; body?: unknown } = {}
-  ): Promise<T> {
-    if (!apiKey || isToolConsoleLocked) {
-      throw new Error('API key is required');
-    }
-    const authorization = buildAuthorizationHeader(apiKey);
-    if (!authorization) {
-      throw new Error('API key is required');
-    }
-    const apiBasePath = resolveToolApiBase('file_io');
-    let url = `${apiBasePath}api${path}`;
-    if (options.query) {
-      const params = new URLSearchParams(options.query);
-      url = `${url}?${params.toString()}`;
-    }
-    const headers: Record<string, string> = {
-      Authorization: authorization,
-      'Cache-Control': 'no-store',
-      Pragma: 'no-cache',
-    };
-    if (options.body !== undefined) {
-      headers['Content-Type'] = 'application/json';
-    }
-    const response = await fetch(url, {
-      method,
-      headers,
-      cache: 'no-store',
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-    });
-
-    if (!response.ok) {
-      let message = response.statusText || `HTTP ${response.status}`;
-      try {
-        const text = await response.text();
-        if (text) {
-          try {
-            const parsed = JSON.parse(text) as { error?: string };
-            if (parsed?.error) {
-              message = parsed.error;
-            } else {
-              message = text;
-            }
-          } catch {
-            message = text;
-          }
-        }
-      } catch {
-        // ignore body read failures
-      }
-      throw new Error(message);
-    }
-
-    return (await response.json()) as T;
-  }
-
-  async function loadVersions(targetPath: string) {
-    if (!project || !targetPath) {
-      setVersions([]);
-      return;
-    }
-    setIsLoadingVersions(true);
+  async function loadList() {
+    const current = listLane.begin();
+    treeLane.cancel();
+    setLoadingPaths(new Set());
+    setBrowserError(null); setListing(true);
     try {
-      const payload = await callFileIOApi<FileVersionListPayload>('GET', '/versions', {
-        query: { project, path: targetPath },
-      });
-      setVersions(payload.versions ?? []);
-    } catch (error) {
-      setVersions([]);
-      setReadError(error instanceof Error ? error.message : 'Failed to list versions.');
-    } finally {
-      setIsLoadingVersions(false);
-    }
+      const path = canonicalFilePath(currentPath);
+      const payload = await callFileTool<FileListPayload>(apiKey, 'file_list', { project, path: path === '/' ? '' : path, depth, limit });
+      if (!current()) return;
+      const data = processEntries(path, payload.entries ?? []);
+      setRoots(data.roots); setDirCache(data.cache); setExpanded(data.expanded); setHasMore(Boolean(payload.has_more));
+    } catch (err) { if (current()) setBrowserError(fileIOErrorMessage(err)); }
+    finally { if (current()) setListing(false); }
   }
-
-  async function loadList(pathOverride?: string) {
-    const listPath = pathOverride ?? currentPath;
-    setBrowserError(null);
-    setIsListing(true);
-    try {
-      // Force depth 1 if loading root for tree view?
-      // User might want deep load. Let's respect state.depth for ROOT refresh,
-      // but toggle relies on fetchChildren (depth 1).
-
-      const payload = await callTool<FileListPayload>('file_list', {
-        project,
-        path: listPath,
-        depth,
-        limit,
-      });
-
-      const { roots, newCache, newExpanded } = processEntries(listPath, payload.entries ?? []);
-
-      setCurrentPath(listPath);
-      setRootEntries(roots);
-      // Merge cache instead of replace? No, root load implies reset of view usually?
-      // Actually, if we refresh root, we might want to keep existing known subdirs if valid?
-      // For safety, let's reset cache for consistency with "Refresh".
-      setDirCache((prev) => ({ ...prev, ...newCache }));
-      setExpandedPaths((prev) => {
-        const next = new Set(prev);
-        newExpanded.forEach((p) => next.add(p));
-        return next;
-      });
-      setHasMore(Boolean(payload.has_more));
-    } catch (error) {
-      setBrowserError(error instanceof Error ? error.message : 'Failed to list files.');
-      setRootEntries([]);
-      setHasMore(false);
-    } finally {
-      setIsListing(false);
-    }
-  }
-
   async function toggleFolder(entry: FileEntry) {
-    if (expandedPaths.has(entry.path)) {
-      const next = new Set(expandedPaths);
-      next.delete(entry.path);
-      setExpandedPaths(next);
-      return;
-    }
-
-    // Expand
-    setExpandedPaths((prev) => new Set(prev).add(entry.path));
-
-    // Check if loaded
-    if (dirCache[entry.path]) {
-      return;
-    }
-
-    // Fetch
+    if (expanded.has(entry.path)) { setExpanded((prev) => { const next = new Set(prev); next.delete(entry.path); return next; }); return; }
+    setExpanded((prev) => new Set(prev).add(entry.path));
+    if (dirCache[entry.path]) return;
+    const current = treeLane.begin(entry.path);
     setLoadingPaths((prev) => new Set(prev).add(entry.path));
     try {
-      const payload = await callTool<FileListPayload>('file_list', {
-        project,
-        path: entry.path,
-        depth: 1, // Always shallow fetch for expand
-        limit: 200, // Reasonable limit
-      });
-
-      // Process just this folder
-      // The entries returned are children of entry.path
-      const sorted = (payload.entries ?? []).sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'DIRECTORY' ? -1 : 1;
-        return (a.name || a.path).localeCompare(b.name || b.path);
-      });
-
-      setDirCache((prev) => ({
-        ...prev,
-        [entry.path]: { entries: sorted, hasMore: payload.has_more },
-      }));
-    } catch (error) {
-      // Show error? For now just console or toggle back?
-      console.error('Failed to load folder', error);
-      setExpandedPaths((prev) => {
-        const next = new Set(prev);
-        next.delete(entry.path);
-        return next;
-      });
-      setBrowserError(`Failed to load ${entry.name}`);
-    } finally {
-      setLoadingPaths((prev) => {
-        const next = new Set(prev);
-        next.delete(entry.path);
-        return next;
-      });
-    }
+      const payload = await callFileTool<FileListPayload>(apiKey, 'file_list', { project, path: entry.path, depth: 1, limit });
+      if (current()) setDirCache((prev) => ({ ...prev, [entry.path]: { entries: payload.entries ?? [], hasMore: payload.has_more } }));
+    } catch (err) { if (current()) setBrowserError(fileIOErrorMessage(err)); }
+    finally { if (current()) setLoadingPaths((prev) => { const next = new Set(prev); next.delete(entry.path); return next; }); }
   }
-
-  async function loadFile(targetPath: string) {
-    setSelectedPath(targetPath);
-    setReadError(null);
-    setReadInfo(null);
-    setSelectedVersionId(null);
-    setIsReading(true);
+  async function loadVersions(path: string) {
+    const current = historyLane.begin();
+    setLoadingVersions(true);
     try {
-      const statPayload = await callTool<FileStatPayload>('file_stat', { project, path: targetPath });
-      setSelectedStat(statPayload);
-      if (statPayload.type === 'FILE') {
-        const readPayload = await callTool<FileReadPayload>('file_read', {
-          project,
-          path: targetPath,
-          offset: 0,
-          length: -1,
-        });
-        const content = readPayload.content ?? '';
-        setSelectedContent(content);
-        setLoadedContent(content);
-        setContentEncoding(readPayload.content_encoding || 'utf-8');
-      } else {
-        setSelectedContent('');
-        setLoadedContent('');
-        setContentEncoding('utf-8');
-      }
-    } catch (error) {
-      setReadError(error instanceof Error ? error.message : 'Failed to read file.');
-    } finally {
-      setIsReading(false);
-    }
+      const payload = await callFileAPI<{ versions: FileVersionEntry[] }>(apiKey, 'GET', '/versions', { query: { project, path } });
+      if (current()) setVersions(payload.versions ?? []);
+    } catch (err) { if (current()) setReadError(`History list: ${fileIOErrorMessage(err)}`); }
+    finally { if (current()) setLoadingVersions(false); }
   }
-
-  async function loadVersionContent(versionId: number) {
-    if (!project || !selectedPath) return;
-    setReadError(null);
-    setReadInfo(null);
-    setIsReading(true);
+  async function loadPreview(path: string) {
+    if (busy || unavailable) return;
+    if (draft !== loadedContent && !window.confirm('Discard this unsaved draft and read the current file? Copy it first to keep your changes.')) return;
+    const current = previewLane.begin();
+    historyLane.cancel();
+    const target = canonicalFilePath(path);
+    setPreviewPath(target); setPreviewOpen(true); setBase(null); setPreviewStat(null);
+    setDraft(''); setLoadedContent(''); setEncoding('utf-8'); setHistoryId(null); setVersions([]);
+    setReading(true); setReadError(null); setReadInfo(null);
+    void loadVersions(target);
     try {
-      const payload = await callFileIOApi<FileVersionContentPayload>('GET', `/versions/${versionId}/content`, {
-        query: { project, path: selectedPath },
-      });
-      const content = payload.content ?? '';
-      setSelectedContent(content);
-      setLoadedContent(content);
-      setContentEncoding(payload.content_encoding || 'utf-8');
-      setSelectedVersionId(versionId);
-    } catch (error) {
-      setReadError(error instanceof Error ? error.message : 'Failed to load version.');
-    } finally {
-      setIsReading(false);
-    }
+      const payload = await callFileTool<ReadPayload>(apiKey, 'file_read', { project, path: target, offset: 0, length: -1 });
+      if (!current()) return;
+      const snapshot = fileSnapshot(target, payload);
+      setBase(snapshot); setDraft(snapshot.content); setLoadedContent(snapshot.content);
+      // Metadata is displayed only when it describes the read generation; it is never the edit token.
+      const stat = await callFileTool<FileStatPayload>(apiKey, 'file_stat', { project, path: target });
+      if (current() && stat.version === snapshot.version) setPreviewStat(stat);
+    } catch (err) { if (current()) setReadError(fileIOErrorMessage(err)); }
+    finally { if (current()) setReading(false); }
   }
-
+  async function loadHistory(id: number) {
+    if (!base || busy) return;
+    if (draft !== loadedContent && !window.confirm('Discard this unsaved draft to preview a historical version?')) return;
+    const current = previewLane.begin();
+    setReading(true); setReadError(null); setReadInfo(null);
+    try {
+      const payload = await callFileAPI<HistoryContent>(apiKey, 'GET', `/versions/${id}/content`, { query: { project, path: previewPath } });
+      if (!current()) return;
+      setDraft(payload.content); setLoadedContent(payload.content); setEncoding(payload.content_encoding); setHistoryId(id);
+      // Keep base untouched: restore must compare against the live file observed when opened.
+    } catch (err) { if (current()) setReadError(fileIOErrorMessage(err)); }
+    finally { if (current()) setReading(false); }
+  }
   async function saveFile() {
-    if (!project || !selectedPath) return;
-    setReadError(null);
-    setReadInfo(null);
-    setIsSavingFile(true);
-    try {
-      const payload = await callFileIOApi<FileBytesWrittenPayload>('PUT', '/file', {
-        body: { project, path: selectedPath, content: selectedContent },
+    if (!base || historyId !== null || reading || encoding !== 'utf-8') return;
+    setReadError(null); setReadInfo(null);
+    const content = draft;
+    await mutate(async (current) => {
+      const payload = await callFileAPI<FileWritePayload>(apiKey, 'PUT', '/file', {
+        body: { project, path: previewPath, content }, headers: ifMatch(base, previewPath),
       });
-      setReadInfo(`Saved ${payload.bytes_written} bytes.`);
-      await loadFile(selectedPath);
-      await loadVersions(selectedPath);
-    } catch (error) {
-      setReadError(error instanceof Error ? error.message : 'Failed to save file.');
-    } finally {
-      setIsSavingFile(false);
-    }
+      if (!current()) return;
+      const next = fileSnapshot(previewPath, { content, content_encoding: 'utf-8', version: payload.version });
+      setBase(next); setLoadedContent(content); setPreviewStat(null);
+      setReadInfo(`Saved ${payload.bytes_written} bytes. Version: ${next.version}`);
+      void loadVersions(previewPath); void loadList();
+    }, setReadError);
   }
-
   async function restoreVersion() {
-    if (!project || !selectedPath || selectedVersionId === null) return;
-    setReadError(null);
-    setReadInfo(null);
-    setIsRestoring(true);
-    try {
-      const payload = await callFileIOApi<FileBytesWrittenPayload>('POST', `/versions/${selectedVersionId}/restore`, {
-        body: { project, path: selectedPath },
+    if (!base || historyId === null || reading || encoding !== 'utf-8') return;
+    setReadError(null); setReadInfo(null);
+    const content = loadedContent;
+    await mutate(async (current) => {
+      const payload = await callFileAPI<FileWritePayload>(apiKey, 'POST', `/versions/${historyId}/restore`, {
+        body: { project, path: previewPath }, headers: ifMatch(base, previewPath),
       });
-      setReadInfo(`Restored version (${payload.bytes_written} bytes).`);
-      await loadFile(selectedPath);
-      await loadVersions(selectedPath);
-    } catch (error) {
-      setReadError(error instanceof Error ? error.message : 'Failed to restore version.');
-    } finally {
-      setIsRestoring(false);
-    }
+      if (!current()) return;
+      const next = fileSnapshot(previewPath, { content, content_encoding: 'utf-8', version: payload.version });
+      setBase(next); setDraft(content); setLoadedContent(content); setHistoryId(null); setPreviewStat(null);
+      setReadInfo(`Restored ${payload.bytes_written} bytes as a new live version: ${next.version}`);
+      void loadVersions(previewPath); void loadList();
+    }, setReadError);
   }
-
   async function submitWrite() {
-    setWriteError(null);
-    setWriteInfo(null);
-    setIsWriting(true);
-    try {
-      const payload = await callTool<FileWritePayload>('file_write', {
-        project,
-        path: writePath,
-        content: writeContent,
-        content_encoding: 'utf-8',
-        offset: writeOffset,
-        mode: writeMode,
+    setWriteError(null); setWriteInfo(null);
+    await mutate(async (current) => {
+      const payload = await callFileTool<FileWritePayload>(apiKey, 'file_write', {
+        project, path: canonicalFilePath(writePath), content: writeContent, content_encoding: 'utf-8', offset: writeOffset, mode: writeMode,
+        ...writeCondition(writeReview.snapshot, writePath, createOnly),
       });
-      setWriteInfo(`Wrote ${payload.bytes_written} bytes.`);
-      if (writePath) {
-        setSelectedPath(writePath);
-        await loadFile(writePath);
-      }
-      await loadList();
-    } catch (error) {
-      setWriteError(error instanceof Error ? error.message : 'Failed to write file.');
-    } finally {
-      setIsWriting(false);
-    }
+      if (!current()) return;
+      setWriteInfo(`Wrote ${payload.bytes_written} bytes. Version: ${requireFileVersion(payload.version)}`);
+      writeReview.clear(); // Do not advance an APPEND draft's base and accidentally submit it again.
+      void loadList();
+    }, setWriteError);
   }
-
   async function submitDelete() {
-    setDeleteError(null);
-    setDeleteInfo(null);
-    setIsDeleting(true);
-    try {
-      const payload = await callTool<FileDeletePayload>('file_delete', {
-        project,
-        path: deletePath,
-        recursive: deleteRecursive,
+    setDeleteError(null); setDeleteInfo(null);
+    await mutate(async (current) => {
+      const payload = await callFileTool<{ deleted_count: number }>(apiKey, 'file_delete', {
+        project, path: canonicalFilePath(deletePath), expected_version: expectedVersion(deleteReview.snapshot, deletePath),
       });
-      setDeleteInfo(`Deleted ${payload.deleted_count} item(s).`);
-      if (deletePath === selectedPath) {
-        setSelectedPath('');
-        setSelectedContent('');
-        setSelectedStat(null);
-      }
-      await loadList();
-    } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : 'Failed to delete path.');
-    } finally {
-      setIsDeleting(false);
-    }
+      if (!current()) return;
+      deleteReview.clear(); setDeleteInfo(`Deleted ${payload.deleted_count} file(s).`);
+      if (canonicalFilePath(deletePath) === previewPath) setReadError('This file was deleted. Any open draft is retained, but its old version cannot be saved.');
+      void loadList();
+    }, setDeleteError);
   }
-
-  async function submitSearch() {
-    setSearchError(null);
-    setIsSearching(true);
-    setSearchResults([]);
-    try {
-      const payload = await callTool<FileSearchPayload>('file_search', {
-        project,
-        query: searchQuery,
-        path_prefix: searchPrefix,
-        limit: searchLimit,
-      });
-      setSearchResults(payload.chunks ?? []);
-    } catch (error) {
-      setSearchError(error instanceof Error ? error.message : 'Failed to search.');
-    } finally {
-      setIsSearching(false);
-    }
-  }
-
   async function submitRename() {
-    setRenameError(null);
-    setRenameInfo(null);
-    setIsRenaming(true);
-    try {
-      const payload = await callTool<FileRenamePayload>('file_rename', {
-        project,
-        from_path: renameFromPath,
-        to_path: renameToPath,
-        overwrite: renameOverwrite,
+    setRenameError(null); setRenameInfo(null);
+    await mutate(async (current) => {
+      const payload = await callFileTool<{ moved_count: number }>(apiKey, 'file_rename', {
+        project, from_path: canonicalFilePath(renameFromPath), to_path: canonicalFilePath(renameToPath),
+        ...renameCondition(sourceReview.snapshot, renameFromPath, renameToPath, renameOverwrite, targetReview.snapshot),
       });
-      setRenameInfo(`Moved ${payload.moved_count} item(s).`);
-      if (selectedPath && selectedPath === renameFromPath) {
-        setSelectedPath(renameToPath);
-      }
-      if (writePath === renameFromPath) {
-        setWritePath(renameToPath);
-      }
-      if (deletePath === renameFromPath) {
-        setDeletePath(renameToPath);
-      }
-      if (renameToPath) {
-        await loadFile(renameToPath);
-      }
-      await loadList();
-    } catch (error) {
-      setRenameError(error instanceof Error ? error.message : 'Failed to rename path.');
-    } finally {
-      setIsRenaming(false);
-    }
+      if (!current()) return;
+      sourceReview.clear(); targetReview.clear(); setRenameInfo(`Moved ${payload.moved_count} file(s). Read the destination to obtain its new version.`);
+      if (canonicalFilePath(renameFromPath) === previewPath || canonicalFilePath(renameToPath) === previewPath) setReadError('This path was changed by the rename. Copy your draft before reloading the live file.');
+      void loadList();
+    }, setRenameError);
+  }
+  async function submitSearch() {
+    const current = searchLane.begin();
+    setSearchError(null); setSearching(true);
+    try {
+      const payload = await callFileTool<{ chunks: FileSearchChunk[] }>(apiKey, 'file_search', {
+        project, query: searchQuery, path_prefix: canonicalFilePath(searchPrefix), limit: searchLimit,
+      });
+      if (current()) setSearchResults(payload.chunks ?? []);
+    } catch (err) { if (current()) setSearchError(fileIOErrorMessage(err)); }
+    finally { if (current()) setSearching(false); }
   }
 
-  function openFilePreview(targetPath: string) {
-    if (isToolConsoleLocked) {
-      return;
-    }
-
-    setIsFilePreviewOpen(true);
-    setVersions([]);
-    setSelectedVersionId(null);
-    void loadFile(targetPath);
-    void loadVersions(targetPath);
-  }
-
-  const selectedIsDirectory = selectedStat?.type === 'DIRECTORY';
-  const isProjectMissing = project.trim().length === 0;
-
-  return (
-    <div className="space-y-8">
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest text-primary">
-            <FolderOpen className="h-4 w-4" />
-            <span>FileIO Console</span>
+  return <>
+    <fieldset disabled={!apiKey || busy} className="m-0 min-w-0 space-y-8 border-0 p-0">
+      <Card className="border border-border/60 bg-card">
+        <CardHeader><CardTitle className="text-xl">Workspace Browser</CardTitle><CardDescription>Browse files. Opening a file loads its content and edit version together.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field id="file-io-current-path" label="Path Prefix"><Input id="file-io-current-path" placeholder="Empty means root (/)" value={currentPath} onChange={(event) => { listLane.cancel(); treeLane.cancel(); setListing(false); setCurrentPath(event.target.value); setRoots([]); setDirCache({}); }} /></Field>
+            <Field id="file-io-depth" label="Browse Depth"><Input id="file-io-depth" type="number" value={depth} min={0} onChange={(event) => setDepth(Number(event.target.value))} /></Field>
+            <Field id="file-io-list-limit" label="List Limit"><Input id="file-io-list-limit" type="number" value={limit} min={1} onChange={(event) => setLimit(Number(event.target.value))} /></Field>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              const next = !isDescriptionCollapsed;
-              setIsDescriptionCollapsed(next);
-              localStorage.setItem('mcp_file_io_description_collapsed', String(next));
-            }}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            {isDescriptionCollapsed ? (
-              <>
-                Show Introduction <ChevronDown className="ml-2 h-4 w-4" />
-              </>
-            ) : (
-              <>
-                Hide Introduction <ChevronUp className="ml-2 h-4 w-4" />
-              </>
-            )}
-          </Button>
-        </div>
-
-        {!isDescriptionCollapsed && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="space-y-2">
-              <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">file_io</h1>
-              <p className="max-w-4xl text-lg leading-relaxed text-muted-foreground">
-                The <strong>FileIO</strong> system provides a centralized, remote filesystem via Remote MCP, designed to function as shared
-                context and persistent memory for distributed AI agents. By offering project-scoped file access, it enables different agents
-                to collaborate, read, and maintain a consistent state across tasks.
-              </p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
-                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
-                  <span className="font-mono text-sm text-primary">file_write</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Create or update files with support for append, overwrite, and truncate modes.
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
-                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
-                  <span className="font-mono text-sm text-primary">file_read</span>
-                </div>
-                <p className="text-sm text-muted-foreground">Read file contents with optional byte-range support for partial reads.</p>
-              </div>
-
-              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
-                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
-                  <span className="font-mono text-sm text-primary">file_list</span>
-                </div>
-                <p className="text-sm text-muted-foreground">Browse directory structures and discover files within the project scope.</p>
-              </div>
-
-              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
-                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
-                  <span className="font-mono text-sm text-primary">file_stat</span>
-                </div>
-                <p className="text-sm text-muted-foreground">Inspect metadata such as file size, type, and modification timestamps.</p>
-              </div>
-
-              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
-                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
-                  <span className="font-mono text-sm text-primary">file_search</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Perform semantic or hybrid searches across file contents to retrieve relevant context.
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
-                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
-                  <span className="font-mono text-sm text-primary">file_delete</span>
-                </div>
-                <p className="text-sm text-muted-foreground">Remove specific files or recursively delete directory subtrees.</p>
-              </div>
-
-              <div className="rounded-lg border border-border/50 bg-card/50 p-4 transition-colors hover:border-border hover:bg-card">
-                <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
-                  <span className="font-mono text-sm text-primary">file_rename</span>
-                </div>
-                <p className="text-sm text-muted-foreground">Rename or move files and directory trees with explicit overwrite control.</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              Detailed user manual:
-              <a
-                href="https://github.com/Laisky/laisky-blog-graphql/blob/master/docs/manual/mcp_files.md"
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-primary underline decoration-primary/30 underline-offset-4 transition-colors hover:decoration-primary"
-              >
-                docs/manual/mcp_files.md
-              </a>
-            </div>
+          <div className="flex items-center gap-3"><Button onClick={() => void loadList()} disabled={unavailable || listing}><RefreshCw className={cn('mr-2 h-4 w-4', listing && 'animate-spin')} />Refresh list</Button>{hasMore && <Badge variant="secondary">List truncated</Badge>}</div>
+          <Feedback error={browserError} />
+          <div className="max-h-[480px] overflow-y-auto rounded-lg border border-border/60 bg-muted/30 p-2">
+            {!roots.length ? <p className="text-sm text-muted-foreground">No entries yet. Load a project to see files.</p> : roots.map((entry) => <FileTreeNode key={entry.path} entry={entry} level={0} expanded={expanded} cache={dirCache} loading={loadingPaths}
+              onToggle={(item) => void toggleFolder(item)} onSelect={(path) => {
+                void loadPreview(path);
+                writeReview.clear(); deleteReview.clear(); sourceReview.clear();
+                setWritePath(path); setDeletePath(path); setRenameFromPath(path);
+              }} selected={previewPath} disabled={!apiKey || busy} />)}
           </div>
-        )}
-      </section>
+        </CardContent>
+      </Card>
 
-      <fieldset disabled={isToolConsoleLocked} className="m-0 min-w-0 space-y-8 border-0 p-0">
-        <Card className="border border-border/60 bg-card">
-          <CardHeader>
-            <CardTitle className="text-xl">Workspace Browser</CardTitle>
-            <CardDescription>Browse project paths and load file content.</CardDescription>
-          </CardHeader>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card><CardHeader><CardTitle className="text-xl">Write</CardTitle><CardDescription>Create explicitly, or read and review a base before editing.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
+            <Field id="file-io-write-path" label="Target Path"><Input id="file-io-write-path" placeholder="/path/to/file" value={writePath} onChange={(event) => { writeReview.clear(); setWritePath(event.target.value); }} /></Field>
+            <label htmlFor="file-io-create-only" className="flex items-center gap-2 text-sm"><input id="file-io-create-only" type="checkbox" checked={createOnly} onChange={(event) => { writeReview.clear(); setCreateOnly(event.target.checked); }} />Create only (fail if the file exists)</label>
+            {!createOnly && <VersionReview title="write base" review={writeReview} disabled={unavailable || !writePath} onRead={() => {
+              if (writeContent && !window.confirm('Reading a new base keeps your draft. Review the returned content and recompute the draft before writing. Continue?')) return;
+              void writeReview.load();
+            }} />}
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <label htmlFor="file-io-project" className={cn(inputLabelClass, isProjectMissing && 'text-destructive')}>
-                  Project <span className={cn('font-semibold', isProjectMissing ? 'text-destructive' : 'text-muted-foreground')}>*</span>
-                </label>
-                <Input
-                  id="file-io-project"
-                  placeholder="Required"
-                  required
-                  aria-required="true"
-                  className={cn(isProjectMissing && 'border-destructive/70 focus-visible:ring-destructive/40')}
-                  value={project}
-                  onChange={(event) => setProject(event.target.value)}
-                />
-                {isProjectMissing && <p className="text-xs font-medium text-destructive">Required field</p>}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-current-path" className={inputLabelClass}>
-                  Path Prefix
-                </label>
-                <Input
-                  id="file-io-current-path"
-                  placeholder="Empty means root (/)"
-                  value={currentPath}
-                  onChange={(event) => setCurrentPath(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-depth" className={inputLabelClass}>
-                  Browse Depth
-                </label>
-                <Input
-                  id="file-io-depth"
-                  placeholder="0 or greater"
-                  type="number"
-                  value={depth}
-                  onChange={(event) => setDepth(Number(event.target.value))}
-                  min={0}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-list-limit" className={inputLabelClass}>
-                  List Limit
-                </label>
-                <Input
-                  id="file-io-list-limit"
-                  placeholder="1 or greater"
-                  type="number"
-                  value={limit}
-                  onChange={(event) => setLimit(Number(event.target.value))}
-                  min={1}
-                />
-              </div>
+              <Field id="file-io-write-mode" label="Write Mode"><select id="file-io-write-mode" className={selectClass} value={writeMode} onChange={(event) => setWriteMode(event.target.value as typeof writeMode)}><option>APPEND</option><option>OVERWRITE</option><option>TRUNCATE</option></select></Field>
+              <Field id="file-io-write-offset" label="Offset (UTF-8 bytes)"><Input id="file-io-write-offset" type="number" min={0} value={writeOffset} disabled={writeMode !== 'OVERWRITE'} onChange={(event) => setWriteOffset(Number(event.target.value))} /></Field>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" onClick={() => loadList()} disabled={!project || isListing}>
-                <RefreshCw className={cn('mr-2 h-4 w-4', isListing && 'animate-spin')} />
-                Refresh list
-              </Button>
-              {hasMore && <Badge variant="secondary">List truncated</Badge>}
-              {browserError && <span className="text-sm text-destructive">{browserError}</span>}
-            </div>
-            <div className="rounded-lg border border-border/60 bg-muted/30">
-              <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                <span>Entries</span>
-                <span>{rootEntries.length} root item(s)</span>
-              </div>
-              <div className="max-h-[480px] overflow-y-auto px-1 py-1">
-                {rootEntries.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">No entries yet. Load a project to see files.</div>
-                ) : (
-                  <div className="space-y-[1px]">
-                    {rootEntries.map((entry) => (
-                      <FileTreeNode
-                        key={entry.path}
-                        entry={entry}
-                        level={0}
-                        expandedPaths={expandedPaths}
-                        dirCache={dirCache}
-                        loadingPaths={loadingPaths}
-                        onToggle={toggleFolder}
-                        onSelect={(e) => {
-                          openFilePreview(e.path);
-                          setWritePath(e.path);
-                          setDeletePath(e.path);
-                          setRenameFromPath(e.path);
-                        }}
-                        selectedPath={selectedPath}
-                        disabled={isToolConsoleLocked}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <Field id="file-io-write-content" label="Write Content (UTF-8)"><Textarea id="file-io-write-content" rows={8} value={writeContent} onChange={(event) => setWriteContent(event.target.value)} /></Field>
+            <p className="text-xs text-muted-foreground">APPEND also requires a version. Offsets must not split a UTF-8 character. Saved drafts never carry a reusable version across page reloads.</p>
+            <Button onClick={() => void submitWrite()} disabled={unavailable || !writePath || (!createOnly && !writeReview.snapshot) || writeReview.pending}><UploadCloud className="mr-2 h-4 w-4" />Write</Button>
+            <Feedback error={writeError} info={writeInfo} />
           </CardContent>
         </Card>
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Card className="border border-border/60 bg-card">
-            <CardHeader>
-              <CardTitle className="text-xl">Write</CardTitle>
-              <CardDescription>Append or overwrite file content.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1">
-                <label htmlFor="file-io-write-path" className={inputLabelClass}>
-                  Target Path
-                </label>
-                <Input
-                  id="file-io-write-path"
-                  placeholder="/path/to/file"
-                  value={writePath}
-                  onChange={(event) => setWritePath(event.target.value)}
-                />
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-1">
-                  <label htmlFor="file-io-write-mode" className={inputLabelClass}>
-                    Write Mode
-                  </label>
-                  <select
-                    id="file-io-write-mode"
-                    value={writeMode}
-                    onChange={(event) => setWriteMode(event.target.value as 'APPEND' | 'OVERWRITE' | 'TRUNCATE')}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none"
-                  >
-                    <option value="APPEND">APPEND</option>
-                    <option value="OVERWRITE">OVERWRITE</option>
-                    <option value="TRUNCATE">TRUNCATE</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label htmlFor="file-io-write-offset" className={inputLabelClass}>
-                    Write Offset (bytes)
-                  </label>
-                  <Input
-                    id="file-io-write-offset"
-                    type="number"
-                    placeholder="0"
-                    value={writeOffset}
-                    onChange={(event) => setWriteOffset(Number(event.target.value))}
-                    min={0}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-write-content" className={inputLabelClass}>
-                  Write Content (UTF-8)
-                </label>
-                <Textarea
-                  id="file-io-write-content"
-                  rows={8}
-                  value={writeContent}
-                  onChange={(event) => setWriteContent(event.target.value)}
-                  placeholder="Enter UTF-8 content to write."
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="button" onClick={submitWrite} disabled={!project || !writePath || isWriting}>
-                  <UploadCloud className={cn('mr-2 h-4 w-4', isWriting && 'animate-bounce')} />
-                  Write
-                </Button>
-                {writeInfo && <span className="text-sm text-emerald-600">{writeInfo}</span>}
-                {writeError && <span className="text-sm text-destructive">{writeError}</span>}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border/60 bg-card">
-            <CardHeader>
-              <CardTitle className="text-xl">Rename</CardTitle>
-              <CardDescription>Rename or move a file or directory path.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1">
-                <label htmlFor="file-io-rename-from" className={inputLabelClass}>
-                  Source Path
-                </label>
-                <Input
-                  id="file-io-rename-from"
-                  placeholder="/path/to/source"
-                  value={renameFromPath}
-                  onChange={(event) => setRenameFromPath(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-rename-to" className={inputLabelClass}>
-                  Destination Path
-                </label>
-                <Input
-                  id="file-io-rename-to"
-                  placeholder="/path/to/destination"
-                  value={renameToPath}
-                  onChange={(event) => setRenameToPath(event.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <span className={inputLabelClass}>Rename Options</span>
-                <label htmlFor="file-io-rename-overwrite" className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    id="file-io-rename-overwrite"
-                    type="checkbox"
-                    checked={renameOverwrite}
-                    onChange={(event) => setRenameOverwrite(event.target.checked)}
-                    className="h-4 w-4 rounded border-border"
-                  />
-                  Overwrite destination file when supported
-                </label>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="button" onClick={submitRename} disabled={!project || !renameFromPath || !renameToPath || isRenaming}>
-                  <ArrowRightLeft className={cn('mr-2 h-4 w-4', isRenaming && 'animate-pulse')} />
-                  Rename
-                </Button>
-                {renameInfo && <span className="text-sm text-emerald-600">{renameInfo}</span>}
-                {renameError && <span className="text-sm text-destructive">{renameError}</span>}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border/60 bg-card">
-            <CardHeader>
-              <CardTitle className="text-xl">Delete</CardTitle>
-              <CardDescription>Remove files or directories.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1">
-                <label htmlFor="file-io-delete-path" className={inputLabelClass}>
-                  Path To Delete
-                </label>
-                <Input
-                  id="file-io-delete-path"
-                  placeholder="/path/to/file-or-directory"
-                  value={deletePath}
-                  onChange={(event) => setDeletePath(event.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <span className={inputLabelClass}>Delete Options</span>
-                <label htmlFor="file-io-delete-recursive" className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    id="file-io-delete-recursive"
-                    type="checkbox"
-                    checked={deleteRecursive}
-                    onChange={(event) => setDeleteRecursive(event.target.checked)}
-                    className="h-4 w-4 rounded border-border"
-                  />
-                  Recursive delete
-                </label>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="button" variant="destructive" onClick={submitDelete} disabled={!project || !deletePath || isDeleting}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </Button>
-                {deleteInfo && <span className="text-sm text-emerald-600">{deleteInfo}</span>}
-                {deleteError && <span className="text-sm text-destructive">{deleteError}</span>}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="border border-border/60 bg-card">
-          <CardHeader>
-            <CardTitle className="text-xl">Search</CardTitle>
-            <CardDescription>Run hybrid file_search across indexed content.</CardDescription>
-          </CardHeader>
+        <Card><CardHeader><CardTitle className="text-xl">Rename</CardTitle><CardDescription>Move a single file; protect both source and destination.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="space-y-1">
-                <label htmlFor="file-io-search-query" className={inputLabelClass}>
-                  Search Query
-                </label>
-                <Input
-                  id="file-io-search-query"
-                  placeholder="Keywords or question"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-search-prefix" className={inputLabelClass}>
-                  Path Prefix
-                </label>
-                <Input
-                  id="file-io-search-prefix"
-                  placeholder="Optional directory filter"
-                  value={searchPrefix}
-                  onChange={(event) => setSearchPrefix(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="file-io-search-limit" className={inputLabelClass}>
-                  Result Limit
-                </label>
-                <Input
-                  id="file-io-search-limit"
-                  type="number"
-                  placeholder="1 - 20"
-                  min={1}
-                  max={20}
-                  value={searchLimit}
-                  onChange={(event) => setSearchLimit(Number(event.target.value))}
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" onClick={submitSearch} disabled={!project || !searchQuery || isSearching}>
-                <Search className={cn('mr-2 h-4 w-4', isSearching && 'animate-pulse')} />
-                Search
-              </Button>
-              {searchError && (
-                <span className="inline-flex items-center gap-2 text-sm text-destructive">
-                  <ShieldAlert className="h-4 w-4" />
-                  {searchError}
-                </span>
-              )}
-            </div>
-            <div className="rounded-lg border border-border/60 bg-muted/30">
-              <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                <span>Results</span>
-                <span>{searchResults.length} chunk(s)</span>
-              </div>
-              <div className="space-y-4 px-4 py-3">
-                {searchResults.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No results yet.</div>
-                ) : (
-                  searchResults.map((chunk) => (
-                    <div
-                      key={`${chunk.file_path}-${chunk.file_seek_start_bytes}`}
-                      className="rounded-md border border-border/60 bg-card p-3"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-foreground">{chunk.file_path}</span>
-                        <Badge variant="secondary">Score {chunk.score.toFixed(3)}</Badge>
-                      </div>
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        Bytes {chunk.file_seek_start_bytes} - {chunk.file_seek_end_bytes}
-                      </div>
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">{chunk.chunk_content}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+            <Field id="file-io-rename-from" label="Source Path"><Input id="file-io-rename-from" value={renameFromPath} onChange={(event) => { sourceReview.clear(); setRenameFromPath(event.target.value); }} /></Field>
+            <VersionReview title="source" review={sourceReview} disabled={unavailable || !renameFromPath} />
+            <Field id="file-io-rename-to" label="Destination Path"><Input id="file-io-rename-to" value={renameToPath} onChange={(event) => { targetReview.clear(); setRenameToPath(event.target.value); }} /></Field>
+            <label htmlFor="file-io-rename-overwrite" className="flex items-center gap-2 text-sm"><input id="file-io-rename-overwrite" type="checkbox" checked={renameOverwrite} onChange={(event) => { targetReview.clear(); setRenameOverwrite(event.target.checked); }} />Replace an existing destination using its version</label>
+            {renameOverwrite ? <VersionReview title="destination" review={targetReview} disabled={unavailable || !renameToPath} /> : <p className="text-xs text-muted-foreground">The destination must not exist. Directory moves are not supported.</p>}
+            <Button onClick={() => void submitRename()} disabled={unavailable || !renameToPath || !sourceReview.snapshot || sourceReview.pending || (renameOverwrite && (!targetReview.snapshot || targetReview.pending))}><ArrowRightLeft className="mr-2 h-4 w-4" />Rename</Button>
+            <Feedback error={renameError} info={renameInfo} />
           </CardContent>
         </Card>
-      </fieldset>
-
-      <Dialog open={isFilePreviewOpen} onOpenChange={setIsFilePreviewOpen}>
-        <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col overflow-hidden p-0">
-          <DialogHeader className="border-b border-border/60 px-6 py-4">
-            <DialogTitle className="truncate text-left">File Preview</DialogTitle>
-            <DialogDescription className="break-all text-left">{selectedPath || 'No file selected'}</DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
-              {isReading && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  Loading file content...
-                </div>
-              )}
-              {!isReading && selectedStat && (
-                <div className="grid gap-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span>Type</span>
-                    <span className="font-medium text-foreground">{selectedStat.type}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span>Size</span>
-                    <span className="font-medium text-foreground">{selectedStat.size} bytes</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span>Created</span>
-                    <span className="font-medium text-foreground">{formatTimestamp(selectedStat.created_at)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span>Updated</span>
-                    <span className="font-medium text-foreground">{formatTimestamp(selectedStat.updated_at)}</span>
-                  </div>
-                </div>
-              )}
-              {!isReading && contentEncoding === 'base64' && (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-                  Binary content not previewable.
-                </div>
-              )}
-              {!isReading && (
-                <Textarea
-                  value={selectedContent}
-                  onChange={(event) => setSelectedContent(event.target.value)}
-                  rows={18}
-                  disabled={selectedIsDirectory || contentEncoding === 'base64'}
-                  placeholder={selectedIsDirectory ? 'Directory selected.' : 'File content will appear here.'}
-                  className="min-h-[420px] font-mono text-sm"
-                />
-              )}
-            </div>
-            <div className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                {!selectedIsDirectory && contentEncoding !== 'base64' && selectedContent !== loadedContent && (
-                  <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                    <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    Unsaved changes
-                  </span>
-                )}
-                {readError && <span className="text-destructive">{readError}</span>}
-                {readInfo && <span className="text-emerald-600">{readInfo}</span>}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2">
-                  <History className="h-4 w-4 text-muted-foreground" />
-                  <select
-                    value={selectedVersionId === null ? 'current' : String(selectedVersionId)}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (value === 'current') {
-                        if (selectedPath) {
-                          void loadFile(selectedPath);
-                        }
-                      } else {
-                        const id = Number(value);
-                        if (!Number.isNaN(id)) {
-                          void loadVersionContent(id);
-                        }
-                      }
-                    }}
-                    disabled={!selectedPath || selectedIsDirectory || isLoadingVersions || isSavingFile || isRestoring || isReading}
-                    className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground shadow-sm focus:border-ring focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <option value="current">Current</option>
-                    {versions.map((version) => (
-                      <option key={version.id} value={String(version.id)}>
-                        {formatTimestamp(version.created_at)} · {version.size} bytes
-                      </option>
-                    ))}
-                  </select>
-                  {isLoadingVersions && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void restoreVersion()}
-                  disabled={selectedVersionId === null || !selectedPath || selectedIsDirectory || isSavingFile || isRestoring || isReading}
-                >
-                  {isRestoring ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}
-                  Restore as latest
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void saveFile()}
-                  disabled={
-                    !selectedPath ||
-                    selectedIsDirectory ||
-                    contentEncoding === 'base64' ||
-                    selectedContent === loadedContent ||
-                    isSavingFile ||
-                    isRestoring ||
-                    isReading
-                  }
-                >
-                  {isSavingFile ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save
-                </Button>
-              </div>
-            </div>
+        <Card><CardHeader><CardTitle className="text-xl">Delete</CardTitle><CardDescription>Read and review the exact file before deleting it.</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <Field id="file-io-delete-path" label="Path To Delete"><Input id="file-io-delete-path" placeholder="/path/to/file" value={deletePath} onChange={(event) => { deleteReview.clear(); setDeletePath(event.target.value); }} /></Field>
+            <VersionReview title="delete target" review={deleteReview} disabled={unavailable || !deletePath} />
+            <p className="text-xs text-muted-foreground">Single-file deletion only. A file version does not protect a whole directory; recursive directory deletion is unavailable.</p>
+            <Button variant="destructive" onClick={() => void submitDelete()} disabled={unavailable || !deleteReview.snapshot || deleteReview.pending}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+            <Feedback error={deleteError} info={deleteInfo} />
+          </CardContent>
+        </Card>
+      </div>
+      <Card><CardHeader><CardTitle className="text-xl">Search</CardTitle><CardDescription>Search indexed content; read the live file before editing a result.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field id="file-io-search-query" label="Search Query"><Input id="file-io-search-query" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></Field>
+            <Field id="file-io-search-prefix" label="Path Prefix"><Input id="file-io-search-prefix" value={searchPrefix} onChange={(event) => setSearchPrefix(event.target.value)} /></Field>
+            <Field id="file-io-search-limit" label="Result Limit"><Input id="file-io-search-limit" type="number" min={1} max={20} value={searchLimit} onChange={(event) => setSearchLimit(Number(event.target.value))} /></Field>
           </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+          <Button onClick={() => void submitSearch()} disabled={unavailable || !searchQuery || searching}><Search className="mr-2 h-4 w-4" />Search</Button>
+          <Feedback error={searchError} />
+          <div className="space-y-3">{!searchResults.length ? <p className="text-sm text-muted-foreground">No results yet.</p> : searchResults.map((chunk) => <div key={`${chunk.file_path}-${chunk.file_seek_start_bytes}`} className="rounded-md border p-3">
+            <div className="flex justify-between gap-2"><Button variant="link" onClick={() => void loadPreview(chunk.file_path)}>{chunk.file_path}</Button><Badge variant="secondary">Score {chunk.score.toFixed(3)}</Badge></div>
+            <p className="text-xs text-muted-foreground">Bytes {chunk.file_seek_start_bytes} - {chunk.file_seek_end_bytes}</p><p className="mt-2 whitespace-pre-wrap text-sm">{chunk.chunk_content}</p>
+          </div>)}</div>
+        </CardContent>
+      </Card>
+    </fieldset>
+
+    <Dialog open={previewOpen} onOpenChange={(open) => {
+      if (busy) return;
+      if (!open && draft !== loadedContent && !window.confirm('Close this unsaved draft? Copy it first to keep your changes.')) return;
+      if (!open) { previewLane.cancel(); historyLane.cancel(); }
+      setPreviewOpen(open);
+    }}>
+      <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col overflow-hidden p-0">
+        <DialogHeader className="border-b border-border/60 px-6 py-4"><DialogTitle>File Preview</DialogTitle><DialogDescription className="break-all">{previewPath || 'No file selected'}</DialogDescription></DialogHeader>
+        <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
+          {reading && <p className="text-sm text-muted-foreground">Loading file content...</p>}
+          {base && <div className="space-y-1 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <p className="break-all">Live edit base: <code>{base.version}</code></p>
+            <p>Read size: {new TextEncoder().encode(base.content).length} bytes</p>
+            {previewStat && <p>Created: {formatTimestamp(previewStat.created_at)} · Updated: {formatTimestamp(previewStat.updated_at)}</p>}
+            {historyId !== null && <p>Historical snapshot #{historyId} (read-only). Restore checks the live edit base above, not the history ID.</p>}
+          </div>}
+          {encoding !== 'utf-8' && <p className="text-sm text-amber-600">Historical binary content is shown encoded and cannot be saved or restored as UTF-8.</p>}
+          <Textarea aria-label="File content" value={draft} onChange={(event) => setDraft(event.target.value)} rows={18}
+            disabled={!apiKey || !base || busy || reading || encoding !== 'utf-8' || historyId !== null} className="min-h-[360px] font-mono text-sm" />
+          {draft !== loadedContent && <p className="text-sm text-amber-600">Unsaved changes</p>}
+          <Feedback error={readError} info={readInfo} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t bg-muted/20 px-6 py-3">
+          <Button variant="outline" size="sm" disabled={!apiKey || busy || reading} onClick={() => void loadPreview(previewPath)}><RefreshCw className="mr-2 h-4 w-4" />Reload latest</Button>
+          <History className="h-4 w-4" />
+          <select aria-label="File history" value={historyId === null ? 'current' : String(historyId)} disabled={!apiKey || !base || busy || reading || loadingVersions} className={cn(selectClass, 'w-auto')}
+            onChange={(event) => event.target.value === 'current' ? void loadPreview(previewPath) : void loadHistory(Number(event.target.value))}>
+            <option value="current">Current</option>{versions.map((item) => <option key={item.id} value={String(item.id)}>{formatTimestamp(item.created_at)} · {item.size} bytes</option>)}
+          </select>
+          <Button variant="outline" size="sm" disabled={!apiKey || !base || historyId === null || busy || reading || encoding !== 'utf-8'} onClick={() => void restoreVersion()}><History className="mr-2 h-4 w-4" />Restore as latest</Button>
+          <Button size="sm" disabled={!apiKey || !base || historyId !== null || draft === loadedContent || busy || reading || encoding !== 'utf-8'} onClick={() => void saveFile()}><Save className="mr-2 h-4 w-4" />Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  </>;
 }
