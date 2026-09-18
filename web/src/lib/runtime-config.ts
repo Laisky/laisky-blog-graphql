@@ -1,3 +1,5 @@
+import type { ToolPrice } from './tool-pricing';
+
 /**
  * ToolsConfig describes which MCP tools are available for the current site.
  */
@@ -40,6 +42,8 @@ export interface SsoJwtConfig {
  * RuntimeConfig describes the runtime configuration fetched from the backend.
  */
 export interface RuntimeConfig {
+  // Configured per-call prices, independent of exposure, authorization or receipts.
+  pricing?: Record<string, ToolPrice>;
   // Public API mount; may differ from the site/SPA router base.
   publicApiBasePath?: string;
   urlPrefix?: string;

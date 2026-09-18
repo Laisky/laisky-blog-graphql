@@ -71,10 +71,12 @@ Important outstanding differences remain and prevent claiming full G06 acceptanc
   provider record. Dedicated HTTP management calls do not use the MCP wrapper.
 - A billing timeout can have an unknown remote outcome. Do not automatically
   replay it, assert “uncharged,” or infer a refund from a failed provider result.
-- The existing homepage extraction card's “Free” label does not agree with the
-  $0.002 code default; deployment pricing metadata and UI need a separately
-  validated source of truth. This continuation does not claim that UI warning
-  is resolved.
+- Configured per-call prices now come from `oneapi.SharedToolPrices()` through
+  runtime `pricing` metadata. The homepage validates exact decimal strings for
+  search, fetch and extraction; missing data is not presented as free. This fixes
+  the duplicate UI tariff, not billing receipts or unknown consume outcomes.
+  Targeted behavior evidence and outstanding full-application acceptance are in
+  [the follow-up ledger](pr49_followup_20260918.md).
 
 ## Privacy follow-up implemented here
 

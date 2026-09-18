@@ -11,6 +11,25 @@ export function encodeMcpHeader(value: string): string {
   return `=?base64?${btoa(binary)}?=`;
 }
 
+// These bounds match internal/web/tool_cors.go. Count only dynamic names for
+// the 100-header limit, but include fixed unsafe names in the 8192-byte budget.
+const MAX_MIRRORED_HEADERS = 100;
+const MAX_PREFLIGHT_NAME_BYTES = 8192;
+const MODERN_UNSAFE_REQUEST_HEADERS = [
+  'authorization', 'content-type', 'mcp-method', 'mcp-name', 'mcp-protocol-version',
+];
+
+/** validateHeaderBudget rejects a tool whose possible request cannot pass CORS. */
+function validateHeaderBudget(bindings: HeaderBinding[]): void {
+  if (bindings.length > MAX_MIRRORED_HEADERS) throw new Error('MCP mirrored header count exceeds the server limit');
+  // Names are ASCII tchar tokens. Fetch lowercases/deduplicates/sorts unsafe
+  // names and joins them with commas, WITHOUT spaces. Accept's fixed value is
+  // safelisted; modern calls do not carry Mcp-Session-Id.
+  const names = [...MODERN_UNSAFE_REQUEST_HEADERS, ...bindings.map((binding) => binding.name.toLowerCase())];
+  const bytes = [...new Set(names)].sort().join(',').length;
+  if (bytes > MAX_PREFLIGHT_NAME_BYTES) throw new Error('MCP mirrored header name budget exceeds the server limit');
+}
+
 /** headerBindings validates annotations before a tool can be exposed or called. */
 export function headerBindings(schema: unknown): HeaderBinding[] {
   if (!schema || typeof schema !== 'object' || Array.isArray(schema)) throw new Error('MCP tool inputSchema must be an object');
@@ -46,6 +65,7 @@ export function headerBindings(schema: unknown): HeaderBinding[] {
     }
   }
   visit(schema, [], true, 0);
+  validateHeaderBudget(bindings);
   return bindings;
 }
 

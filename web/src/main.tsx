@@ -61,7 +61,7 @@ async function bootstrap() {
   createRoot(container).render(
     <StrictMode>
       <ThemeProvider>
-        <ToolsConfigProvider config={toolsConfig}>
+        <ToolsConfigProvider config={toolsConfig} prices={runtimeConfig?.pricing}>
           <ApiKeyProvider>
             <RouterProvider router={router} />
           </ApiKeyProvider>

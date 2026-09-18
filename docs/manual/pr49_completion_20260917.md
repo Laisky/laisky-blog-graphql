@@ -44,9 +44,10 @@ production mutation, benchmark dispatch, merge or deployment was used.
 | G07 | A Go 1.27 upgrade and dependency downloads were attempted; independent available tests were executed. | Still open. Go 1.27, full repository/race/lint, PostgreSQL, GraphQL HTTP, React/Vitest and the production frontend build were not executed successfully. |
 | G08 | Dedicated HTTP registration is outside the MCP factory/success branch. The application owns shared human-request holds. | Source and actual-handler tests are included; dependency-ready Go execution is still required. |
 
-Checked implementation must not be confused with accepted deployment. Only G04's
-bounded client implementation can be marked implemented-and-target-tested here;
-its application-level acceptance is still part of G07.
+Checked implementation must not be confused with accepted deployment. G04's
+bounded client implementation has targeted tests, and G06 has targeted catalog-
+helper and logging-copy redaction coverage. Both still lack the application-level
+acceptance listed under G07; G06's other reconciliation work also remains open.
 
 ## Behavior-first evidence
 

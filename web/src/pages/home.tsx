@@ -19,7 +19,8 @@ import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToolsConfig } from '@/lib/tools-config-context';
+import { useToolPrices, useToolsConfig } from '@/lib/tools-config-context';
+import { toolPriceLabel } from '@/lib/tool-pricing';
 import { cn } from '@/lib/utils';
 
 /**
@@ -28,6 +29,7 @@ import { cn } from '@/lib/utils';
  */
 export function HomePage() {
   const toolsConfig = useToolsConfig();
+  const prices = useToolPrices();
   const endpoint = typeof window === 'undefined' ? 'https://mcp.laisky.com' : window.location.origin;
 
   const toolCards = [
@@ -53,7 +55,7 @@ export function HomePage() {
           title="web_search"
           description="Google Programmable Search queries to retrieve relevant web results."
           icon={<Search className="h-5 w-5" />}
-          priceLabel="$0.005/call"
+          priceLabel={toolPriceLabel(prices, 'web_search')}
           enabled={toolsConfig.web_search}
           href="/tools/web_search"
         />
@@ -67,7 +69,7 @@ export function HomePage() {
           title="web_fetch"
           description="Fetch and render dynamic web pages using a headless browser."
           icon={<Globe className="h-5 w-5" />}
-          priceLabel="$0.0001/call"
+          priceLabel={toolPriceLabel(prices, 'web_fetch')}
           enabled={toolsConfig.web_fetch}
           href="/tools/web_fetch"
         />
@@ -109,7 +111,7 @@ export function HomePage() {
           title="extract_key_info"
           description="RAG capability: chunk text and retrieve context using vector embeddings."
           icon={<Database className="h-5 w-5" />}
-          priceLabel="Free"
+          priceLabel={toolPriceLabel(prices, 'extract_key_info')}
           enabled={toolsConfig.extract_key_info}
           href="/tools/extract_key_info"
         />

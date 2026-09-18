@@ -164,6 +164,10 @@ blockers. New code is not proof of an executed Go integration test. In particula
 G01/G03 require real gqlgen output, G05 requires crawler-side verification, and
 G07 still requires the configured dependency/toolchain environment.
 
+The [2026-09-18 follow-up](pr49_followup_20260918.md) adds catalog/preflight
+budget regressions, configured-price display and the reviewer disposition.
+These targeted checks do not close the full G02/G04/G06/G07/G08 acceptance.
+
 ## Scope and rollout
 
 No CI workflow/job/step, benchmark trigger, dependency, lockfile, database

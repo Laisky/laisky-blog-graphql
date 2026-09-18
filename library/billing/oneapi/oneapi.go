@@ -28,8 +28,9 @@ func (p Price) Int() int {
 	return int(p)
 }
 
+// USD converts a dollar amount to the existing rounded-up billing quota units.
 func USD(num float64) Price {
-	return Price(math.Ceil(num * 500000))
+	return Price(math.Ceil(num * quotaUnitsPerUSD))
 }
 
 var (

@@ -24,6 +24,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
+	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -410,6 +411,7 @@ func RunServer(addr string, resolver *Resolver) {
 			"tools":              toolsConfig,
 			"consoleTools":       consoleTools,
 			"interfaces":         catalog,
+			"pricing":            oneapi.SharedToolPrices(),
 			"githubOAuthEnabled": blog.IsGithubOAuthConfigured(),
 			"ssoJwt":             ssoJWTInfo,
 		})
@@ -621,7 +623,7 @@ func evaluateCORSOrigin(origin string) (allowed bool, host string, reason string
 	return allowed, host, reason, nil
 }
 
-// classifyCORSHost reports whether a hostname matches the supported production or development origin allowlist.
+// classifyCORSHost reports whether a hostname matches the supported production or development allowlist.
 // Parameters: host is the lowercase hostname extracted from the Origin header.
 // Returns: allowed reports whether the host is trusted, and reason describes the matched allow or deny rule.
 func classifyCORSHost(host string) (allowed bool, reason string) {
