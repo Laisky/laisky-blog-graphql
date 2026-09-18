@@ -238,7 +238,10 @@ func (r *MutationResolver) MemoryAfterTurn(ctx context.Context, input models.Mem
 	if err != nil {
 		return nil, err
 	}
-	request := afterTurnRequest(input)
+	request, err := afterTurnRequest(input)
+	if err != nil {
+		return nil, err
+	}
 	startAt := time.Now().UTC()
 	log := logger(ctx, "memory_after_turn").With(zap.String(fieldProject, request.Project),
 		zap.String("session_id", request.SessionID), zap.String("turn_id", request.TurnID))

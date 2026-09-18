@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 )
@@ -123,13 +124,29 @@ func admitFetchURL(ctx context.Context, raw string, lookup ipLookup) (Admission,
 // admittedAddresses returns the canonical public addresses for a host, or an
 // error when any answer is not admissible. A literal address pins itself.
 func admittedAddresses(ctx context.Context, host string, lookup ipLookup) ([]string, error) {
+	if ctx == nil {
+		return nil, invalid("url", "context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, errors.WithStack(err)
+	}
 	if literal, err := netip.ParseAddr(host); err == nil {
 		if !publicAddress(literal) {
 			return nil, invalid("url", "non-public addresses are not allowed")
 		}
 		return []string{literal.Unmap().String()}, nil
 	}
-	resolved, err := lookup(ctx, host)
+	// Address capture and every reported hop need their own bound, even when
+	// the caller supplies no deadline. WithTimeout preserves an earlier one.
+	lookupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	resolved, err := lookup(lookupCtx, host)
+	if parentErr := ctx.Err(); parentErr != nil {
+		return nil, errors.WithStack(parentErr)
+	}
+	if lookupCtx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
+		return nil, invalid("url", "hostname resolution timed out")
+	}
 	if err != nil {
 		return nil, invalid("url", "hostname cannot be resolved")
 	}

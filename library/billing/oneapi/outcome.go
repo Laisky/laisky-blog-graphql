@@ -74,16 +74,23 @@ func (e *BillingError) Error() string {
 
 // ClassifyBillingOutcome extracts the outcome from a consume error.
 //
-// An error without a classification resolves to BillingUnknown rather than
-// BillingDenied: an unrecognized failure is not evidence that nothing was
-// charged, and treating it as a denial would silently understate usage.
+// An error without a recognized classification, including an invalid typed
+// outcome, resolves to BillingUnknown rather than BillingDenied. An unrecognized
+// failure is not evidence that nothing was charged; treating it as a denial
+// would silently understate usage.
 func ClassifyBillingOutcome(err error) BillingOutcome {
 	if err == nil {
 		return BillingAccepted
 	}
 	var typed *BillingError
 	if errors.As(err, &typed) && typed != nil {
-		return typed.Outcome
+		switch typed.Outcome {
+		case BillingAccepted, BillingDenied, BillingUnknown, BillingNotAttempted:
+			return typed.Outcome
+		default:
+			// An unknown enum is not evidence that a consume did not happen.
+			return BillingUnknown
+		}
 	}
 	return BillingUnknown
 }

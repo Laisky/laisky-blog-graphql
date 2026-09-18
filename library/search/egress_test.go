@@ -13,23 +13,18 @@ import (
 )
 
 // TestLoadEgressSettingsDefaults pins the shipped defaults: a bounded redirect
-// budget, no subresource egress, and an unverified crawl that is flagged rather
-// than rejected until the operator opts in.
+// budget, no subresource egress, and mandatory renderer evidence unless the
+// operator explicitly selects the unsafe compatibility mode.
 func TestLoadEgressSettingsDefaults(t *testing.T) {
-	gconfig.Shared.Set(configKeyMaxRedirects, 0)
-	gconfig.Shared.Set(configKeyAllowSubresources, false)
-	gconfig.Shared.Set(configKeyRequireVerified, false)
-	t.Cleanup(func() {
-		gconfig.Shared.Set(configKeyMaxRedirects, 0)
-		gconfig.Shared.Set(configKeyAllowSubresources, false)
-		gconfig.Shared.Set(configKeyRequireVerified, false)
-	})
+	original := gconfig.Shared
+	gconfig.Shared = gconfig.New()
+	t.Cleanup(func() { gconfig.Shared = original })
 
 	settings := LoadEgressSettings()
 	require.Equal(t, defaultMaxRedirects, settings.MaxRedirects)
 	require.False(t, settings.AllowSubresources,
 		"subresource egress must be off unless an operator enables it")
-	require.False(t, settings.RequireVerified)
+	require.True(t, settings.RequireVerified, "missing configuration must fail closed")
 
 	gconfig.Shared.Set(configKeyMaxRedirects, 2)
 	gconfig.Shared.Set(configKeyRequireVerified, true)
@@ -75,7 +70,7 @@ func TestVerifyRenderedEgressFailsClosedOnViolation(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("an unverified crawl is flagged by default", func(t *testing.T) {
+	t.Run("explicit unsafe compatibility accepts an unverified crawl", func(t *testing.T) {
 		require.NoError(t, verifyRenderedEgress(context.Background(), logger,
 			EgressSettings{MaxRedirects: 1, RequireVerified: false}, policy, nil))
 	})

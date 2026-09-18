@@ -69,13 +69,26 @@ renderer did not report, so nothing was checked.
 | --- | --- | --- |
 | `settings.mcp.tools.web_fetch.egress.max_redirects` | `5` | Redirect budget published to the renderer and enforced on the reported chain. |
 | `settings.mcp.tools.web_fetch.egress.allow_subresources` | `false` | Whether the renderer may load page subresources. |
-| `settings.mcp.tools.web_fetch.egress.require_verified` | `false` | When true, a render result with no reported chain is rejected. |
+| `settings.mcp.tools.web_fetch.egress.require_verified` | `true` | When true, a render result with no reported chain is rejected. |
 
-`require_verified` defaults to false so an existing renderer keeps working: the
-policy is published and any reported chain is verified, but an unreported crawl
-is logged as unverified rather than failed. **Enable it once the renderer
-reports its chain.** Until then, an unreported crawl is exactly that —
-unverified — and this document does not claim otherwise.
+`require_verified` defaults to **true even when the key is absent**. A successful
+renderer response with a missing or empty request chain fails with
+`ErrEgressUnverified`; its body is not returned to MCP, GraphQL or the browser.
+This deliberately breaks compatibility with renderers that omit their evidence.
+Upgrade and verify the renderer before rollout rather than silently accepting
+unverified results.
+
+An operator may explicitly set the option to `false` for an unsafe legacy
+compatibility mode. That mode logs the missing evidence, is **not** an egress
+safety guarantee, and is never selected merely because configuration is missing.
+A reported policy violation is rejected regardless of this setting. Existing
+explicit `false` deployment overrides must be removed or changed to `true` to
+adopt the secure default.
+
+Every DNS lookup, including address capture after validation and reported-hop
+verification, has a ten-second child deadline that respects an earlier caller
+deadline. Parent cancellation is preserved. This is a per-lookup budget, not a
+ten-second total budget for the entire render/redirect chain.
 
 ## What is verified and what is not
 
@@ -88,8 +101,8 @@ Verified in this repository, with behavior tests:
   (`library/search/egress_test.go`).
 - A reported chain that leaves the admitted origin, rebinds the host, or exceeds
   the budget fails closed before any body is returned.
-- An unreported chain is classified as unverified, and `require_verified`
-  rejects it.
+- An unreported chain is classified as unverified and rejected by default; only
+  an explicit unsafe compatibility override accepts it.
 
 **Not verified here:** the renderer itself. This repository does not contain the
 crawler, so nothing in it can prove that the renderer pins its sockets, bounds

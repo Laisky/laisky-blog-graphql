@@ -12,9 +12,9 @@ import (
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 )
 
-// Egress configuration keys. The defaults keep the current renderer working:
-// the policy is published and the reported chain is verified, but a renderer
-// that reports nothing is only flagged, not rejected, until an operator opts in.
+// Egress configuration keys. Missing renderer evidence is rejected by default.
+// An operator can explicitly opt out for a legacy renderer, but that mode is
+// unverified and must not be represented as egress protection.
 const (
 	configKeyMaxRedirects      = "settings.mcp.tools.web_fetch.egress.max_redirects"
 	configKeyAllowSubresources = "settings.mcp.tools.web_fetch.egress.allow_subresources"
@@ -32,8 +32,8 @@ type EgressSettings struct {
 	// AllowSubresources permits page subresource loads.
 	AllowSubresources bool
 	// RequireVerified rejects a render result that carries no request chain.
-	// Enable it once the renderer reports its chain; until then an unreported
-	// crawl is recorded as unverified rather than silently treated as safe.
+	// It defaults to true. An explicit false permits unverified legacy results
+	// and is an unsafe compatibility choice, not proof of a safe crawl.
 	RequireVerified bool
 }
 
@@ -42,7 +42,10 @@ func LoadEgressSettings() EgressSettings {
 	settings := EgressSettings{
 		MaxRedirects:      gconfig.Shared.GetInt(configKeyMaxRedirects),
 		AllowSubresources: gconfig.Shared.GetBool(configKeyAllowSubresources),
-		RequireVerified:   gconfig.Shared.GetBool(configKeyRequireVerified),
+		RequireVerified:   true,
+	}
+	if gconfig.Shared.IsSet(configKeyRequireVerified) {
+		settings.RequireVerified = gconfig.Shared.GetBool(configKeyRequireVerified)
 	}
 	if settings.MaxRedirects <= 0 {
 		settings.MaxRedirects = defaultMaxRedirects
@@ -64,8 +67,8 @@ func crawlerEgressPolicy(policy toolpolicy.EgressPolicy) *rlibs.CrawlerEgressPol
 //
 // A policy violation always fails the fetch: a redirect into a private address
 // or a rebound host must not return a body to the caller. An absent chain is a
-// different condition — nothing was checked — so it fails only when the
-// operator has required verification, and is logged either way.
+// different condition — nothing was checked — and fails under the secure
+// default. Only an explicit unsafe compatibility setting may accept it.
 func verifyRenderedEgress(ctx context.Context, logger logSDK.Logger, settings EgressSettings,
 	policy toolpolicy.EgressPolicy, chain []string,
 ) error {

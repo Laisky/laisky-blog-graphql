@@ -193,8 +193,15 @@ func beforeTurnRequest(input models.MemoryBeforeTurnInput) (mcpmemory.BeforeTurn
 	return request, nil
 }
 
-// afterTurnRequest builds the shared persistence request with MCP's defaults.
-func afterTurnRequest(input models.MemoryAfterTurnInput) mcpmemory.AfterTurnRequest {
+// afterTurnRequest validates input boundaries before building the shared
+// persistence request. Negative indexes are invalid, not omitted defaults.
+func afterTurnRequest(input models.MemoryAfterTurnInput) (mcpmemory.AfterTurnRequest, error) {
+	if input.CurrentInputStart != nil && *input.CurrentInputStart < 0 {
+		return mcpmemory.AfterTurnRequest{}, invalidArgument("current_input_start cannot be negative")
+	}
+	if input.CurrentInputCount != nil && *input.CurrentInputCount < 0 {
+		return mcpmemory.AfterTurnRequest{}, invalidArgument("current_input_count cannot be negative")
+	}
 	request := mcpmemory.AfterTurnRequest{
 		Project:           stringOrDefault(input.Project, defaultMemoryProject),
 		SessionID:         stringOrDefault(input.SessionID, defaultMemorySessionID),
@@ -204,13 +211,13 @@ func afterTurnRequest(input models.MemoryAfterTurnInput) mcpmemory.AfterTurnRequ
 		InputItems:        requestItems(input.InputItems),
 		OutputItems:       requestItems(input.OutputItems),
 	}
-	if input.CurrentInputStart != nil && *input.CurrentInputStart > 0 {
+	if input.CurrentInputStart != nil {
 		request.CurrentInputStart = *input.CurrentInputStart
 	}
-	if input.CurrentInputCount != nil && *input.CurrentInputCount > 0 {
+	if input.CurrentInputCount != nil {
 		request.CurrentInputCount = *input.CurrentInputCount
 	}
-	return request
+	return request, nil
 }
 
 // sessionRequest builds the shared session-scoped request with MCP's defaults.
