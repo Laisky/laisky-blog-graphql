@@ -38,13 +38,14 @@ function Field({ id, label, children }: { id: string; label: string; children: R
 function Feedback({ error, info }: { error?: string | null; info?: string | null }) {
   return <>{error && <p role="alert" className="text-sm text-destructive">{error}</p>}{info && <p role="status" className="break-all text-sm text-emerald-600">{info}</p>}</>;
 }
-function VersionReview({ title, review, disabled, onRead }: {
-  title: string; review: ReturnType<typeof useFileSnapshot>; disabled: boolean; onRead?: () => void;
+function VersionReview({ title, review, disabled, onRead, note }: {
+  title: string; review: ReturnType<typeof useFileSnapshot>; disabled: boolean; onRead?: () => void; note?: ReactNode;
 }) {
   return <div className="space-y-2 rounded-md border border-border/60 p-3">
     <Button type="button" variant="outline" size="sm" disabled={disabled || review.pending} onClick={onRead ?? (() => void review.load())}>
       <RefreshCw className={cn('mr-2 h-4 w-4', review.pending && 'animate-spin')} />Read {title}
     </Button>
+    {note && <p className="text-xs text-muted-foreground">{note}</p>}
     <p className="break-all text-xs text-muted-foreground">{review.snapshot ? <>Read version: <code>{review.snapshot.version}</code></> : 'Read and review the file to enable this operation.'}</p>
     {review.snapshot && <details><summary className="cursor-pointer text-xs">Reviewed content</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">{review.snapshot.content}</pre></details>}
     <Feedback error={review.error} />
@@ -172,6 +173,8 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
   const searchLane = useFileRequestLane();
   const mutationLane = useFileRequestLane();
   const mutationGate = useRef(false);
+  // The write-base warning is guidance, not a gate: confirm once per session, then stay out of the way.
+  const writeBaseWarned = useRef(false);
   const [busy, setBusy] = useState(false);
   const unavailable = !apiKey || !project.trim();
   useEffect(() => { onDirtyChange(draft !== loadedContent || writeContent.length > 0); }, [draft, loadedContent, writeContent, onDirtyChange]);
@@ -370,10 +373,15 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
           <CardContent className="space-y-4">
             <Field id="file-io-write-path" label="Target Path"><Input id="file-io-write-path" placeholder="/path/to/file" value={writePath} onChange={(event) => { writeReview.clear(); setWritePath(event.target.value); }} /></Field>
             <label htmlFor="file-io-create-only" className="flex items-center gap-2 text-sm"><input id="file-io-create-only" type="checkbox" checked={createOnly} onChange={(event) => { writeReview.clear(); setCreateOnly(event.target.checked); }} />Create only (fail if the file exists)</label>
-            {!createOnly && <VersionReview title="write base" review={writeReview} disabled={unavailable || !writePath} onRead={() => {
-              if (writeContent && !window.confirm('Reading a new base keeps your draft. Review the returned content and recompute the draft before writing. Continue?')) return;
-              void writeReview.load();
-            }} />}
+            {!createOnly && <VersionReview title="write base" review={writeReview} disabled={unavailable || !writePath}
+              note={writeContent ? 'Reading a new base keeps your draft. Review the returned content and recompute the draft before writing.' : null}
+              onRead={() => {
+                if (writeContent && !writeBaseWarned.current) {
+                  if (!window.confirm('Reading a new base keeps your draft. Review the returned content and recompute the draft before writing. Continue?')) return;
+                  writeBaseWarned.current = true;
+                }
+                void writeReview.load();
+              }} />}
             <div className="grid gap-3 md:grid-cols-2">
               <Field id="file-io-write-mode" label="Write Mode"><select id="file-io-write-mode" className={selectClass} value={writeMode} onChange={(event) => setWriteMode(event.target.value as typeof writeMode)}><option>APPEND</option><option>OVERWRITE</option><option>TRUNCATE</option></select></Field>
               <Field id="file-io-write-offset" label="Offset (UTF-8 bytes)"><Input id="file-io-write-offset" type="number" min={0} value={writeOffset} disabled={writeMode !== 'OVERWRITE'} onChange={(event) => setWriteOffset(Number(event.target.value))} /></Field>

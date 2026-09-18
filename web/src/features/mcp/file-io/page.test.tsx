@@ -110,6 +110,23 @@ describe('FileIO page mandatory version workflow', () => {
     await waitFor(() => expect(enabled('Write')).toBe(false));
     expect((screen.getByLabelText('Write Content (UTF-8)') as HTMLTextAreaElement).value).toBe('hello');
   });
+  it('confirms the write-base warning once per session instead of on every read', async () => {
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValueOnce(false);
+    render(<FileIOPage />);
+    input('Target Path', '/a.txt'); input('Write Content (UTF-8)', 'my edit');
+    click('Read write base');
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(tool.mock.calls.filter((call) => call[1] === 'file_read')).toHaveLength(0);
+    click('Read write base');
+    await waitFor(() => expect(enabled('Write')).toBe(true));
+    expect(confirm).toHaveBeenCalledTimes(2);
+    click('Read write base');
+    await waitFor(() => expect(tool.mock.calls.filter((call) => call[1] === 'file_read')).toHaveLength(2));
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect((screen.getByLabelText('Write Content (UTF-8)') as HTMLTextAreaElement).value).toBe('my edit');
+    expect(screen.getByText(/Reading a new base keeps your draft/)).toBeTruthy();
+  });
   it('preserves a rejected MCP draft and never silently reloads/retries', async () => {
     render(<FileIOPage />);
     input('Target Path', '/a.txt'); click('Read write base');
