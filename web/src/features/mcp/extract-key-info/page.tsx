@@ -20,6 +20,7 @@ export function ExtractKeyInfoPage() {
   return <ExtractionForm key={JSON.stringify([apiKey, enabled])} apiKey={apiKey || ''} enabled={enabled} />;
 }
 
+/** ExtractionForm runs one extract_key_info request and renders the returned context chunks. */
 function ExtractionForm({ apiKey, enabled }: { apiKey: string; enabled: boolean }) {
   const [query, setQuery] = useState('');
   const [materials, setMaterials] = useState('');

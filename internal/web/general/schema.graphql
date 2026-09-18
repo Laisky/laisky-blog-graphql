@@ -22,6 +22,24 @@ type GeneralLLMStormTask {
   runner: String!
 }
 
+# GeneralCrawlerEgressPolicy is the connection contract the renderer must
+# enforce for one crawl. Request admission happens on the server, but the
+# connection happens on the renderer host, so the admitted addresses travel with
+# the task. A renderer that resolves `host` again instead of connecting to
+# `addresses` reopens the DNS-rebinding window an admission-time lookup cannot
+# close on its own.
+type GeneralCrawlerEgressPolicy {
+  # host is the only hostname this task may resolve.
+  host: String!
+  # addresses are the only addresses the renderer may connect to for host.
+  addresses: [String!]!
+  # max_redirects bounds the hops after the initial request; 0 allows none.
+  # Every hop must be reported back so the server can re-admit it.
+  max_redirects: Int!
+  # allow_subresources permits loading page subresources.
+  allow_subresources: Boolean!
+}
+
 type GeneralHTMLCrawlerTask {
   task_id: String!
   created_at: Date!
@@ -30,6 +48,9 @@ type GeneralHTMLCrawlerTask {
   finished_at: Date
   url: String!
   result_html_b64: String
+  # egress is absent for a task queued without admission metadata. A renderer
+  # that receives no policy must refuse the crawl rather than assume it is safe.
+  egress: GeneralCrawlerEgressPolicy
 }
 
 type OneapiQuota {

@@ -9,6 +9,7 @@ import (
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
@@ -510,7 +511,7 @@ func TestFileToolsNormalizeMissingLeadingSlash(t *testing.T) {
 	t.Run("file_stat", func(t *testing.T) {
 		svc := &behaviorFileService{statResult: files.StatResult{Exists: true}}
 		tool, err := NewFileStatTool(svc)
-	require.NoError(t, err)
+		require.NoError(t, err)
 
 		result, err := tool.Handle(ctx, behaviorReq(map[string]any{"project": "p", "path": "meta.json"}))
 		require.NoError(t, err)
@@ -747,35 +748,45 @@ func TestWebSearchEmptyResults(t *testing.T) {
 // web_fetch: output_markdown variants
 // ---------------------------------------------------------------------------
 
+// TestWebFetchOutputMarkdownVariants pins the strict boolean contract the tool
+// actually uses. web_fetch advertises output_markdown as a JSON boolean, so
+// string and numeric look-alikes are rejected instead of being coerced; only
+// an omitted or explicitly null value selects the documented default.
 func TestWebFetchOutputMarkdownVariants(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		value    any
-		expected bool
+		name      string
+		value     any
+		present   bool
+		expected  bool
+		expectErr bool
 	}{
-		{"bool true", true, true},
-		{"bool false", false, false},
-		{"string true", "true", true},
-		{"string false", "false", false},
-		{"string yes", "yes", true},
-		{"string no", "no", false},
-		{"string 0", "0", false},
-		{"string 1", "1", true},
-		{"float64 0", float64(0), false},
-		{"float64 1", float64(1), true},
-		{"nil defaults true", nil, true},
+		{name: "bool true", value: true, present: true, expected: true},
+		{name: "bool false", value: false, present: true, expected: false},
+		{name: "omitted defaults true", expected: true},
+		{name: "explicit null defaults true", value: nil, present: true, expected: true},
+		{name: "string true rejected", value: "true", present: true, expectErr: true},
+		{name: "string false rejected", value: "false", present: true, expectErr: true},
+		{name: "string yes rejected", value: "yes", present: true, expectErr: true},
+		{name: "float64 zero rejected", value: float64(0), present: true, expectErr: true},
+		{name: "float64 one rejected", value: float64(1), present: true, expectErr: true},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			args := map[string]any{"url": "https://example.com"}
-			if tc.value != nil {
+			if tc.present {
 				args["output_markdown"] = tc.value
 			}
-			require.Equal(t, tc.expected, resolveOutputMarkdownArg(args))
+			got, err := toolpolicy.OptionalBool(args, "output_markdown", true)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, got)
 		})
 	}
 }
@@ -784,29 +795,32 @@ func TestWebFetchOutputMarkdownVariants(t *testing.T) {
 // sanitizeURLForLog
 // ---------------------------------------------------------------------------
 
+// TestSanitizeURLForLog pins the shared redaction contract: log fields keep only
+// the scheme, host and port. Paths can carry bearer tokens, so they are dropped
+// with the query and fragment, and malformed input is never echoed verbatim.
 func TestSanitizeURLForLog(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name     string
 		input    string
-		contains string
-		excludes string
+		expected string
 	}{
-		{"strips query", "https://example.com/path?key=secret", "https://example.com/path", "secret"},
-		{"strips fragment", "https://example.com/path#section", "https://example.com/path", "#section"},
-		{"trims whitespace", "  https://example.com  ", "https://example.com", ""},
-		{"invalid URL passthrough", "not-a-url", "not-a-url", ""},
+		{"strips query", "https://example.com/path?key=secret", "https://example.com"},
+		{"strips fragment", "https://example.com/path#section", "https://example.com"},
+		{"strips path token", "https://example.com/v1/reset/tok_abc123", "https://example.com"},
+		{"strips encoded path token", "https://example.com/v1%2Ftok_abc123", "https://example.com"},
+		{"keeps port", "http://example.com:8443/path", "http://example.com:8443"},
+		{"strips credentials", "https://user:pass@example.com/path", "https://example.com"},
+		{"trims whitespace", "  https://example.com  ", "https://example.com"},
+		{"redacts malformed input", "not-a-url", "[invalid URL]"},
+		{"redacts unsupported scheme", "file:///etc/passwd", "[invalid URL]"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			result := sanitizeURLForLog(tc.input)
-			require.Contains(t, result, tc.contains)
-			if tc.excludes != "" {
-				require.NotContains(t, result, tc.excludes)
-			}
+			require.Equal(t, tc.expected, sanitizeURLForLog(tc.input))
 		})
 	}
 }

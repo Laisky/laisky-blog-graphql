@@ -1,0 +1,298 @@
+# FileIO and memory published on GraphQL.
+#
+# GraphQL, MCP and the dedicated HTTP routes are peer interfaces over the same
+# shared services. None of them owns or gates another: these fields stay in the
+# schema regardless of MCP tool registration, and they fail with a clean error
+# when the underlying service is not configured.
+#
+# The mutation contract is identical to MCP: every content mutation must carry
+# either expected_version from a prior read/stat or create_only=true. A missing
+# precondition is rejected; it never downgrades to a blind write.
+
+# BigInt carries exact 64-bit byte counts and offsets as decimal strings,
+# because GraphQL Int is 32-bit and JSON numbers lose precision above 2^53.
+scalar BigInt
+
+enum FileIOEntryType {
+  FILE
+  DIRECTORY
+}
+
+enum FileIOWriteMode {
+  APPEND
+  OVERWRITE
+  TRUNCATE
+}
+
+# MemoryPlugin selects the per-call memory backend, matching the MCP `plugin`
+# argument. AUTO follows the server default.
+enum MemoryPlugin {
+  AUTO
+  RAG
+  PAGEINDEX
+}
+
+type FileIOStatResult {
+  exists: Boolean!
+  type: FileIOEntryType!
+  size: BigInt!
+  created_at: Date
+  updated_at: Date
+  # version is the live CAS token. Directories and absent paths have none.
+  version: String
+}
+
+type FileIOReadResult {
+  content: String!
+  content_encoding: String!
+  version: String
+}
+
+type FileIOEntry {
+  name: String!
+  path: String!
+  type: FileIOEntryType!
+  size: BigInt!
+  created_at: Date!
+  updated_at: Date!
+}
+
+type FileIOListResult {
+  entries: [FileIOEntry!]!
+  has_more: Boolean!
+}
+
+type FileIOChunk {
+  # project is populated only for cross-project searches (project = "*").
+  project: String
+  file_path: String!
+  file_seek_start_bytes: BigInt!
+  file_seek_end_bytes: BigInt!
+  is_full_file: Boolean!
+  chunk_content: String!
+  file_summary: String
+  score: Float!
+}
+
+type FileIOSearchResult {
+  chunks: [FileIOChunk!]!
+}
+
+type FileIOWriteResult {
+  bytes_written: BigInt!
+  version: String
+}
+
+type FileIODeleteResult {
+  deleted_count: Int!
+}
+
+type FileIORenameResult {
+  moved_count: Int!
+}
+
+type FileIOHistoryEntry {
+  # id is an immutable snapshot identifier, never a live version token.
+  id: String!
+  size: BigInt!
+  created_at: Date!
+}
+
+type FileIOHistoryPage {
+  versions: [FileIOHistoryEntry!]!
+  has_more: Boolean!
+  next_cursor: String
+}
+
+type FileIOHistoryContent {
+  history_id: String!
+  content: String!
+  # content_encoding is base64 for retained non-UTF-8 bytes, utf-8 otherwise.
+  content_encoding: String!
+  size: BigInt!
+  created_at: Date!
+}
+
+type MemoryMetadataEntry {
+  key: String!
+  value: String!
+}
+
+input MemoryMetadataEntryInput {
+  key: String!
+  value: String!
+}
+
+type MemoryContentPart {
+  type: String!
+  text: String
+  image_url: String
+  file_id: String
+  filename: String
+}
+
+input MemoryContentPartInput {
+  type: String!
+  text: String
+  image_url: String
+  file_id: String
+  filename: String
+}
+
+# MemoryResponseItem mirrors one Responses-API conversation item, the same shape
+# the MCP memory tools accept and return.
+type MemoryResponseItem {
+  type: String!
+  role: String
+  content: [MemoryContentPart!]!
+  call_id: String
+  output: String
+  # metadata is a stable key-ordered projection of the item metadata map.
+  metadata: [MemoryMetadataEntry!]!
+}
+
+input MemoryResponseItemInput {
+  type: String!
+  role: String
+  content: [MemoryContentPartInput!]
+  call_id: String
+  output: String
+  metadata: [MemoryMetadataEntryInput!]
+}
+
+type MemoryBeforeTurnResult {
+  input_items: [MemoryResponseItem!]!
+  recall_fact_ids: [String!]!
+  recall_insight_ids: [String!]!
+  context_token_count: Int!
+}
+
+type MemoryDirectorySummary {
+  path: String!
+  abstract: String!
+  updated_at: String!
+  has_overview: Boolean!
+}
+
+type MemoryDirectoryListing {
+  summaries: [MemoryDirectorySummary!]!
+}
+
+type MemoryAck {
+  ok: Boolean!
+}
+
+input MemoryBeforeTurnInput {
+  project: String
+  session_id: String
+  turn_id: String
+  user_id: String
+  plugin: MemoryPlugin = AUTO
+  conversation_items: [MemoryResponseItemInput!]
+  current_input_start: Int
+  current_input_count: Int
+  current_input: [MemoryResponseItemInput!]
+  # current_input_text is the single-user-message convenience form; the server
+  # converts it into one user input_text item when current_input is absent.
+  current_input_text: String
+  base_instructions: String
+  max_input_tok: Int
+}
+
+input MemoryAfterTurnInput {
+  project: String
+  session_id: String
+  turn_id: String
+  user_id: String
+  plugin: MemoryPlugin = AUTO
+  conversation_items: [MemoryResponseItemInput!]
+  current_input_start: Int
+  current_input_count: Int
+  input_items: [MemoryResponseItemInput!]
+  output_items: [MemoryResponseItemInput!]
+}
+
+extend type Query {
+  # -------------------------------------
+  # FileIO
+  # -------------------------------------
+  FileStat(project: String!, path: String!, plugin: MemoryPlugin = AUTO): FileIOStatResult!
+  FileRead(
+    project: String!
+    path: String!
+    offset: BigInt = "0"
+    length: BigInt = "-1"
+    # expected_version pins a range read to one content generation.
+    expected_version: String
+    plugin: MemoryPlugin = AUTO
+  ): FileIOReadResult!
+  FileList(project: String!, path: String! = "", depth: Int, limit: Int, plugin: MemoryPlugin = AUTO): FileIOListResult!
+  FileSearch(project: String!, query: String!, path_prefix: String! = "", limit: Int, plugin: MemoryPlugin = AUTO): FileIOSearchResult!
+  FileListVersions(project: String!, path: String!, limit: Int, before_id: String): FileIOHistoryPage!
+  FileReadVersion(project: String!, path: String!, history_id: String!): FileIOHistoryContent!
+
+  # -------------------------------------
+  # memory
+  # -------------------------------------
+  MemoryListDirWithAbstract(
+    project: String
+    session_id: String
+    path: String! = ""
+    depth: Int
+    limit: Int
+    plugin: MemoryPlugin = AUTO
+  ): MemoryDirectoryListing!
+}
+
+extend type Mutation {
+  # -------------------------------------
+  # FileIO
+  # -------------------------------------
+  FileWrite(
+    project: String!
+    path: String!
+    content: String!
+    content_encoding: String! = "utf-8"
+    offset: BigInt = "0"
+    mode: FileIOWriteMode! = APPEND
+    # Supply expected_version from a prior read, or create_only for a new file.
+    # They are mutually exclusive and one of them is mandatory.
+    expected_version: String
+    create_only: Boolean
+    plugin: MemoryPlugin = AUTO
+  ): FileIOWriteResult!
+  FileDelete(
+    project: String!
+    path: String!
+    recursive: Boolean! = false
+    expected_version: String!
+    plugin: MemoryPlugin = AUTO
+  ): FileIODeleteResult!
+  FileRename(
+    project: String!
+    from_path: String!
+    to_path: String!
+    overwrite: Boolean! = false
+    expected_version: String!
+    expected_destination_version: String
+    destination_must_not_exist: Boolean
+    plugin: MemoryPlugin = AUTO
+  ): FileIORenameResult!
+  # FileRestoreVersion selects immutable bytes with history_id but requires the
+  # ORIGINAL live expected_version, or create_only when the path is absent.
+  FileRestoreVersion(
+    project: String!
+    path: String!
+    history_id: String!
+    expected_version: String
+    create_only: Boolean
+    plugin: MemoryPlugin = AUTO
+  ): FileIOWriteResult!
+
+  # -------------------------------------
+  # memory
+  # -------------------------------------
+  MemoryBeforeTurn(input: MemoryBeforeTurnInput!): MemoryBeforeTurnResult!
+  MemoryAfterTurn(input: MemoryAfterTurnInput!): MemoryAck!
+  MemoryRunMaintenance(project: String, session_id: String, plugin: MemoryPlugin = AUTO): MemoryAck!
+}

@@ -55,7 +55,7 @@ func (t *FileReadTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		if svcErr != nil {
 			return fileToolErrorFromErr(svcErr), nil //nolint:nilerr // service error is encoded in the MCP tool result
 		}
-		payload := map[string]any{"content": result.Content, "content_encoding": result.ContentEncoding}
+		payload := map[string]any{contentKey: result.Content, "content_encoding": result.ContentEncoding}
 		addFileVersion(payload, result.Version)
 		toolResult, encodeErr := mcp.NewToolResultJSON(payload)
 		if encodeErr != nil {

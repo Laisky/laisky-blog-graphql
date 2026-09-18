@@ -17,11 +17,20 @@ import (
 // MaxQueryBytes bounds shared search and extraction query input before billing.
 const MaxQueryBytes = 16 << 10
 
+// The only fetch schemes this policy admits. Declared once so admission, the
+// log redactor and the egress policy cannot accept different sets.
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
+)
+
 // InputError describes invalid input without echoing credentials or request bodies.
 type InputError struct{ Field, Reason string }
 
 // Error implements the error interface without including the original input.
-func (e *InputError) Error() string      { return e.Field + " " + e.Reason }
+func (e *InputError) Error() string { return e.Field + " " + e.Reason }
+
+// invalid builds an InputError without echoing the rejected input.
 func invalid(field, reason string) error { return &InputError{Field: field, Reason: reason} }
 
 // Query normalizes and validates a query identically for MCP and GraphQL callers.
@@ -96,6 +105,8 @@ func ValidateFetchURL(ctx context.Context, raw string) error {
 
 type ipLookup func(context.Context, string) ([]net.IPAddr, error)
 
+// validateFetchURL is ValidateFetchURL with an injectable resolver, so a test
+// can pin a decision to a known DNS answer.
 func validateFetchURL(ctx context.Context, raw string, lookup ipLookup) error {
 	if ctx == nil {
 		return invalid("url", "context is required")
@@ -110,7 +121,7 @@ func validateFetchURL(ctx context.Context, raw string, lookup ipLookup) error {
 	if err != nil {
 		return invalid("url", "malformed URL")
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+	if parsed.Scheme != schemeHTTP && parsed.Scheme != schemeHTTPS {
 		return invalid("url", "only http and https are allowed")
 	}
 	if parsed.Opaque != "" || parsed.User != nil || parsed.Hostname() == "" || strings.Contains(parsed.Hostname(), "%") {
@@ -166,6 +177,9 @@ func validateFetchURL(ctx context.Context, raw string, lookup ipLookup) error {
 	return nil
 }
 
+// publicAddress reports whether an address is globally routable. Loopback,
+// private, link-local and the reserved/benchmark ranges are all rejected, so a
+// renderer cannot be steered at infrastructure the caller does not own.
 func publicAddress(ip netip.Addr) bool {
 	ip = ip.Unmap()
 	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
@@ -185,7 +199,7 @@ func publicAddress(ip netip.Addr) bool {
 // returned verbatim. Use this only for log fields, not as the fetch target.
 func URLForLog(raw string) string {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != schemeHTTP && parsed.Scheme != schemeHTTPS) {
 		return "[invalid URL]"
 	}
 	parsed.User = nil

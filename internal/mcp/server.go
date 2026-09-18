@@ -19,6 +19,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
@@ -133,7 +134,7 @@ func NewServer(
 	userRequestService *userrequests.Service,
 	ragService *rag.Service,
 	ragSettings rag.Settings,
-	fileService tools.FileService,
+	fileService mcpplugin.Plugin,
 	memoryService *mcpmemory.Service,
 	rdb *rlibs.DB,
 	callLogger callRecorder,
@@ -167,10 +168,9 @@ func NewServer(
 
 	serverLogger := logger.Named("mcp")
 	billingReporter := externalBillingReporter(oneapi.CheckUserExternalBilling)
-	trackedBillingReporter := func(ctx context.Context, apiKey string, price oneapi.Price, toolName string) error {
-		markBillingAttempted(ctx)
-		return billingReporter(ctx, apiKey, price, toolName)
-	}
+	// Every paid tool shares this reporter, so the classification happens once
+	// instead of each tool remembering to record it.
+	trackedBillingReporter := trackBillingOutcome(billingReporter)
 
 	streamable := srv.NewStreamableHTTPServer(
 		mcpServer,

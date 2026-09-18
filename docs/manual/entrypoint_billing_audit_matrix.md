@@ -23,26 +23,35 @@ backend indexing/model resources can still have operational cost.
 | Operation | MCP / wrapper price | GraphQL | Browser transport | Audit path |
 | --- | --- | --- | --- | --- |
 | Web search | `web_search`, $0.005 | `WebSearch`, same price | GraphQL | M / Q |
-| Rendered fetch | `web_fetch`, $0.0001 | `WebFetch`, same price, Markdown only | GraphQL | M / Q |
+| Rendered fetch | `web_fetch`, $0.0001 | `WebFetch`, same price, `output_markdown` selectable | GraphQL | M / Q |
 | Context extraction | `extract_key_info`, $0.002 | `ExtractKeyInfo`, same price | GraphQL | M / Q |
 | Semantic/lexical tool discovery | `find_tool`, $0.002 for every mode in current handler | GraphQL has its own schema introspection | Inspector/MCP | M |
 | Pipeline orchestration | `mcp_pipe`, zero; child tools bill separately | No field | Inspector/MCP | M on parent and each child |
-| File metadata | `file_stat`, zero | Not implemented | MCP | M |
-| File content read | `file_read`, zero | Not implemented | MCP | M |
-| File content write | `file_write`, zero | Not implemented | MCP form; HTTP editor | M / H |
-| File deletion | `file_delete`, zero | Not implemented | MCP | M |
-| File rename | `file_rename`, zero | Not implemented | MCP | M |
-| File listing | `file_list`, zero | Not implemented | MCP | M |
-| File search | `file_search`, zero | Not implemented | MCP | M |
-| History metadata | `file_list_versions`, zero | Not implemented | HTTP history dialog | M / H |
-| History content | `file_read_version`, zero | Not implemented | HTTP history dialog | M / H |
-| History restore | `file_restore_version`, zero | Not implemented | HTTP history dialog | M / H |
-| Memory recall | `memory_before_turn`, zero | Not implemented | MCP | M |
-| Memory persistence | `memory_after_turn`, zero | Not implemented | MCP | M |
-| Memory maintenance | `memory_run_maintenance`, zero | Not implemented | MCP | M |
-| Memory directory summary | `memory_list_dir_with_abstract`, zero | Not implemented | MCP | M |
+| File metadata | `file_stat`, zero | `FileStat`, zero | MCP | M / Q |
+| File content read | `file_read`, zero | `FileRead`, zero | MCP | M / Q |
+| File content write | `file_write`, zero | `FileWrite`, zero | MCP form; HTTP editor | M / Q / H |
+| File deletion | `file_delete`, zero | `FileDelete`, zero | MCP | M / Q |
+| File rename | `file_rename`, zero | `FileRename`, zero | MCP | M / Q |
+| File listing | `file_list`, zero | `FileList`, zero | MCP | M / Q |
+| File search | `file_search`, zero | `FileSearch`, zero | MCP | M / Q |
+| History metadata | `file_list_versions`, zero | `FileListVersions`, zero | HTTP history dialog | M / Q / H |
+| History content | `file_read_version`, zero | `FileReadVersion`, zero | HTTP history dialog | M / Q / H |
+| History restore | `file_restore_version`, zero | `FileRestoreVersion`, zero | HTTP history dialog | M / Q / H |
+| Memory recall | `memory_before_turn`, zero | `MemoryBeforeTurn`, zero | MCP | M / Q |
+| Memory persistence | `memory_after_turn`, zero | `MemoryAfterTurn`, zero | MCP | M / Q |
+| Memory maintenance | `memory_run_maintenance`, zero | `MemoryRunMaintenance`, zero | MCP | M / Q |
+| Memory directory summary | `memory_list_dir_with_abstract`, zero | `MemoryListDirWithAbstract`, zero | MCP | M / Q |
 | Ask human | `ask_user`, zero | No field | HTTP human-response UI | M / H; different roles |
 | Consume queued directive | `get_user_request`, zero | No field | HTTP queue-management UI | M / H; producer and consumer differ |
+
+GraphQL FileIO and memory reach the same services through the same
+client-precondition gate (`internal/mcp/tools.ConditionalFileService`) and the
+same project-selected plugin routing as MCP, so a mutation without
+`expected_version` or `create_only` is refused on every interface. The GraphQL
+fields stay in the schema regardless of `settings.mcp.tools.*`; each one reports
+`SEARCH_BACKEND_ERROR` when its own backend is absent. Byte counts, offsets and
+history identifiers use the `BigInt` scalar or decimal strings, because
+GraphQL's `Int` is 32-bit.
 
 Dedicated FileIO routes are `GET /tools/file_io/api/versions`,
 `GET /tools/file_io/api/versions/{id}/content`, `PUT /tools/file_io/api/file`, and
@@ -58,25 +67,53 @@ The named billing “checker” posts `phase=single` and `add_used_quota` to
 fetch and extraction call it before the provider. No new billing calls or
 refund behavior are added by this continuation.
 
-Important outstanding differences remain and prevent claiming full G06 acceptance:
+### Billing-outcome contract
 
-- MCP currently records zero local `Cost` on a tool/provider failure, even after
-  a successful positive consume; GraphQL records its price after an attempted
-  provider call regardless of provider success. Local logs alone are therefore
-  not a reliable receipt or refund ledger. Fixing this requires an explicit
-  accepted/denied/unknown billing-outcome contract and tests, not simply changing
-  the displayed cost to match the other transport.
-- MCP can emit a zero-cost centralized audit for invocations that did not reach
-  billing. GraphQL early validation/auth/billing failures return before its local
-  provider record. Dedicated HTTP management calls do not use the MCP wrapper.
-- A billing timeout can have an unknown remote outcome. Do not automatically
-  replay it, assert “uncharged,” or infer a refund from a failed provider result.
-- Configured per-call prices now come from `oneapi.SharedToolPrices()` through
-  runtime `pricing` metadata. The homepage validates exact decimal strings for
-  search, fetch and extraction; missing data is not presented as free. This fixes
-  the duplicate UI tariff, not billing receipts or unknown consume outcomes.
-  Targeted behavior evidence and outstanding full-application acceptance are in
-  [the follow-up ledger](pr49_followup_20260918.md).
+`oneapi.CheckUserExternalBilling` now returns a classified `*oneapi.BillingError`
+instead of an opaque wrapped error, so every caller can tell the three cases
+apart. `oneapi.ClassifyBillingOutcome` reads the classification through any
+wrapping, and an unrecognized error resolves to `unknown` rather than `denied`,
+because an unrecognized failure is not evidence that nothing was charged.
+
+| Outcome | Remote condition | `Charged()` | Recorded `Cost` | Safe to retry |
+| --- | --- | --- | --- | --- |
+| `accepted` | HTTP 200 | yes | configured price | no; already applied |
+| `denied` | HTTP 4xx — invalid key, exhausted balance, rate limited | no | 0 | yes, by a later explicit action |
+| `unknown` | timeout, transport failure, HTTP 5xx | yes | configured price, flagged indeterminate | **no**; may already be applied |
+| `not_attempted` | request never left this process | no | 0 | yes |
+
+Both interfaces record the outcome in the existing `parameters` JSONB column
+under the reserved `_billing` key (`calllog.BillingMetadataKey`), so no schema
+migration is required. The recorded `Cost` follows the **billing** outcome, not
+the tool result:
+
+- An accepted consume followed by a provider failure stays charged. Previously
+  MCP recorded zero here, which hid a real charge and made the local log
+  unusable for reconciliation.
+- A denied consume records zero on both interfaces.
+- An unresolved consume records the price **and** `indeterminate: true`. Such a
+  row is not a receipt; it requires manual reconciliation against the billing
+  service. It is never presented as free and is never replayed automatically.
+- A request that failed before billing records `not_attempted` with the
+  configured price for reference and a zero cost.
+
+GraphQL now also writes an audit row when billing denies or cannot be resolved.
+Previously it returned before its local record, so a denial left no trace at all
+while MCP recorded one.
+
+Configured per-call prices come from `oneapi.SharedToolPrices()` through runtime
+`pricing` metadata. The homepage validates exact decimal strings; missing data is
+shown as unknown, never as free.
+
+### Still outstanding
+
+- Dedicated HTTP management calls do not use the MCP wrapper and are audited by
+  their own handlers.
+- Reconciling an `unknown` row against the billing service is an operational
+  procedure, not an automated one. Nothing in this repository issues a refund or
+  re-posts a consume.
+- Per-user authorization and live backend health remain outside the runtime
+  `interfaces` catalog, which describes configured adapters only.
 
 ## Privacy follow-up implemented here
 

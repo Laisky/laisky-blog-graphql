@@ -4,11 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
-	"github.com/stretchr/testify/require"
 )
 
 type contractProvider struct {
@@ -55,12 +56,12 @@ func TestGraphQLRejectsInvalidUnavailableAndUnauthenticatedBeforeBilling(t *test
 	require.Error(t, err)
 	_, err = resolver.WebSearch(context.Background(), "valid")
 	require.Error(t, err)
-	_, err = resolver.WebFetch(contractContext(t), "http://127.0.0.1/private")
+	_, err = resolver.WebFetch(contractContext(t), "http://127.0.0.1/private", nil)
 	require.Error(t, err)
 	resolver.provider, resolver.rdb = nil, nil
 	_, err = resolver.WebSearch(contractContext(t), "valid")
 	require.Error(t, err)
-	_, err = resolver.WebFetch(contractContext(t), "https://8.8.8.8/")
+	_, err = resolver.WebFetch(contractContext(t), "https://8.8.8.8/", nil)
 	require.Error(t, err)
 	require.Zero(t, charges)
 	require.Zero(t, provider.calls)
@@ -81,7 +82,7 @@ func TestGraphQLFetchUsesNormalizedIdentityOnce(t *testing.T) {
 		require.True(t, markdown)
 		return []byte("hello"), nil
 	}
-	result, err := resolver.WebFetch(contractContext(t), "  https://8.8.8.8/  ")
+	result, err := resolver.WebFetch(contractContext(t), "  https://8.8.8.8/  ", nil)
 	require.NoError(t, err)
 	require.Equal(t, "hello", result.Content)
 	require.Equal(t, 1, charges)

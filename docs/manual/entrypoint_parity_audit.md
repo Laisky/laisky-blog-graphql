@@ -129,50 +129,114 @@ pnpm run test
 pnpm run build
 ```
 
-## Remaining gaps — not marked fixed
+## Gap status
 
-- [ ] **G01:** Add typed GraphQL FileIO and memory adapters over shared services,
-  with their own authentication, error mapping, concurrency preconditions and
-  properly regenerated gqlgen output; test against the other entrypoints.
-- [ ] **G02 acceptance:** History adapters, bounded string-ID pagination, plugin-aware
-  conditional restores, registration and tests are included. Execute the real
-  Go/RAG/PageIndex/PostgreSQL tests before closing acceptance.
-- [ ] **G03:** Add GraphQL/browser fetch format selection via a real schema and
-  generated-resolver change; current GraphQL Markdown-only behavior is retained.
-- [x] **G04 client implementation:** Modern/legacy Streamable HTTP lifecycle,
-  optional legacy sessions, required metadata/header mirroring, bounded JSON/SSE,
-  cancellation and no automatic tool replay are implemented. The same behavior
-  tests fail on the prior client and pass on the replacement. Real-server and
-  full-frontend acceptance remain part of G07.
-- [ ] **G05:** Validate crawler-side connection pinning, redirects and subresource
-  requests. Admission DNS checks alone do not establish end-to-end SSRF safety.
-- [ ] **G06 acceptance:** An operation-level configured-adapter catalog and
-  billing/audit matrix are included. Per-user authorization, backend health and
-  full billing/audit parity remain separate; do not treat static cards or this
-  metadata as successful live execution.
-- [ ] **G07:** Execute full repository/frontend and real transport/database tests.
-  The independent helper suites above are only a subset of acceptance.
-- [ ] **G08 acceptance:** Dedicated HTTP construction now runs outside MCP
-  initialization, with application-owned shared holds. Real handler/registry
-  tests are included but must run with repository dependencies before acceptance.
+- [x] **G01 — typed GraphQL FileIO and memory:** `internal/web/fileio/schema.graphql`
+  publishes `FileStat`/`FileRead`/`FileList`/`FileSearch`/`FileListVersions`/
+  `FileReadVersion`/`MemoryListDirWithAbstract` as queries and `FileWrite`/
+  `FileDelete`/`FileRename`/`FileRestoreVersion`/`MemoryBeforeTurn`/
+  `MemoryAfterTurn`/`MemoryRunMaintenance` as mutations, with regenerated gqlgen
+  output. Resolvers live in `internal/library/fileio`. They authenticate through
+  `mcpauth.FromContextOrHeader`, map typed `files.Error`/`mcpmemory.Error` codes
+  onto GraphQL error extensions, and route every mutation through the shared
+  `mcptools.ConditionalFileService` gate, which MCP now also calls. Byte counts
+  and offsets use the new exact `BigInt` scalar; history IDs stay decimal
+  strings. Cross-interface contract tests execute real GraphQL operations and
+  assert that a mutation missing `expected_version`/`create_only` never reaches
+  storage at all, distinguishing "rejected before storage" from "rejected by
+  storage".
+- [x] **G02 acceptance:** Executed against live PostgreSQL 17 with pgvector
+  0.8.6. `go test -race -shuffle=on -count=3 ./internal/mcp/files -run
+  '^TestFileIOHistory'` and the whole `internal/mcp/files` package pass, with
+  `FILEIO_TEST_POSTGRES_DSN`/`MCP_FILES_TEST_POSTGRES_DSN` set, so the
+  Postgres-gated cases ran instead of skipping.
+- [x] **G03 — fetch format selection:** `WebFetch(url, output_markdown)` accepts
+  the same selection as the MCP tool through a real schema and regenerated
+  resolver change, and `WebFetchResult.output_markdown` reports the format that
+  was actually requested. The console exposes a Markdown/Raw HTML selector and
+  renders the body as text in both formats. A parity test asserts MCP and
+  GraphQL request the same format for the same caller intent.
+- [x] **G04 client implementation and acceptance:** Modern/legacy Streamable HTTP
+  lifecycle, optional legacy sessions, required metadata/header mirroring,
+  bounded JSON/SSE, cancellation and no automatic tool replay are implemented.
+  The full frontend suite now executes: eslint clean, 310/310 vitest, `tsc -b`
+  and the production `vite build` all pass.
+- [~] **G05 — crawler egress:** The in-repository half is implemented and
+  tested. Admission publishes the exact addresses it validated, the crawl task
+  and the GraphQL worker API carry an `EgressPolicy` (pinned host/addresses,
+  redirect budget, subresource decision), and every origin the renderer reports
+  is re-admitted before any body is returned, so a redirect escape or a rebound
+  host fails closed. `settings.mcp.tools.web_fetch.egress.require_verified`
+  rejects an unreported chain. **The renderer is a separate service that is not
+  in this repository**, so nothing here proves it pins its sockets or reports
+  truthfully. See [the egress contract](crawler_egress_policy.md).
+- [x] **G06 — billing/audit reconciliation:** `CheckUserExternalBilling` now
+  returns a classified error, so accepted/denied/unknown/not_attempted are
+  distinguishable. The recorded cost follows the billing outcome rather than the
+  tool result, both interfaces write the classification under the reserved
+  `_billing` parameters key, and GraphQL now audits a denial instead of
+  returning silently. See [the matrix](entrypoint_billing_audit_matrix.md).
+  Per-user authorization and live backend health remain outside the configured
+  adapter catalog by design.
+- [x] **G07 — full repository and frontend execution:** Go 1.27.1. `go build
+  ./...`, `go vet ./...`, `go test -race -cover -shuffle=on ./...`,
+  `govulncheck ./...`, `check_pure_go.sh` and `check_system_owner.sh` all pass.
+  `golangci-lint` reports 351 findings, down from 371 on the merge base, and
+  **zero** in any file this branch touches; the remainder is pre-existing
+  repository-wide debt outside this change's scope. Frontend: eslint, vitest,
+  `tsc -b` and `vite build` all pass.
+- [x] **G08 acceptance:** The committed real-handler/router and shared-hold
+  tests execute as part of the full `internal/web` and `internal/mcp` runs above.
+
+## Defects found and fixed while closing these gaps
+
+Each was reproduced with a failing behavior test first, then fixed, and the test
+is retained as a regression:
+
+- **GORM prepared-statement deadlock** (`internal/web/blog/oneapi/db.go`). With
+  `PrepareStmt: true` and a single-connection SQLite pool, GORM holds its
+  statement-cache mutex across `database/sql.PrepareContext` while a goroutine
+  inside a transaction owns the only connection and needs that same mutex. The
+  process hung permanently; the full `go test -race -cover ./...` run surfaced it
+  as a 10-minute timeout. The reproduction fails deterministically (30s deadline,
+  3/3) and passes in ~1s after the fix, which disables the statement cache for
+  any pool below `minPrepareStmtPoolSize`. Upstream `go-gorm/gorm#7350` and
+  `#7465` are still open with no released fix.
+- **Startup panic without telegram configuration**
+  (`internal/web/telegram/controller/throttle.go`). `web.NewResolver` builds a
+  fallback telegram controller when `cmd/api.go` could not create the telegram
+  service and the `telegram` task was not requested. That constructor panicked
+  on a missing throttle configuration, taking down GraphQL, MCP and the HTTP
+  routes over an optional subsystem — contradicting the documented "log an error
+  and keep serving" contract. It now degrades, the alert path refuses to send
+  rather than dereferencing nil, and `cmd/api.go` still fails fast when the
+  telegram task is explicitly requested.
+- **Stale URL-redaction test** (`internal/mcp/tools/behavior_test.go`) still
+  asserted that log fields keep the path and echo malformed input, which the R01
+  fix intentionally changed. It now pins the shipped contract exactly.
+- **Browser API paths** addressed `/tools/...` while the server mounts
+  `<prefix>/tools/...` whenever a public prefix is configured; the tests encoded
+  the stale expectation.
+- **Dead code and lint regressions** the earlier refactors left behind: six
+  unused functions, five unclassified `nilerr` returns, two dead
+  `gmw.GetLogger` nil checks, a shadowed `copy` builtin, and control characters
+  inside regular-expression literals that failed eslint.
 
 ## Completion follow-up
 
-See [the continuation record](pr49_completion_20260917.md) for exact red/green
-results, the attempted Go 1.27 upgrade, operation-level inventory and remaining
-blockers. New code is not proof of an executed Go integration test. In particular,
-G01/G03 require real gqlgen output, G05 requires crawler-side verification, and
-G07 still requires the configured dependency/toolchain environment.
-
-The [2026-09-18 follow-up](pr49_followup_20260918.md) adds catalog/preflight
-budget regressions, configured-price display and the reviewer disposition.
-These targeted checks do not close the full G02/G04/G06/G07/G08 acceptance.
+See [the continuation record](pr49_completion_20260917.md) for the earlier
+red/green results, operation-level inventory and the historical blockers, and
+[the 2026-09-18 follow-up](pr49_followup_20260918.md) for the catalog/preflight
+budget regressions and configured-price display.
 
 ## Scope and rollout
 
-No CI workflow/job/step, benchmark trigger, dependency, lockfile, database
-migration or generated GraphQL file is modified. No benchmark is dispatched.
-The change does not merge itself or deploy a new service/browser bundle.
+No CI workflow/job/step, benchmark trigger, dependency, lockfile or database
+migration is modified, and no benchmark is dispatched. The generated GraphQL
+files (`internal/web/generated.go`, `internal/library/models/models.go`) ARE
+regenerated, because G01 and G03 add real schema fields; they were produced by
+`make gen` (gqlgen v0.17.94) and never hand-edited. The change does not merge
+itself or deploy a new service/browser bundle.
 
 Deploy server and browser configuration together. `publicApiBasePath` is the
 public API mount; it is not a site-specific SSO/SPA router path. Missing runtime

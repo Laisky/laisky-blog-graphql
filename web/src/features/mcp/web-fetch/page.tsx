@@ -16,24 +16,31 @@ interface WebFetchResponse {
     url: string;
     created_at: string;
     content: string;
+    output_markdown: boolean;
   };
 }
 
+// output_markdown is the same selection the MCP web_fetch tool accepts. The
+// server echoes the format it actually requested, so the rendered body is
+// always labelled with what it really is.
 const WEB_FETCH_MUTATION = `
-  mutation WebFetch($url: String!) {
-    WebFetch(url: $url) {
+  mutation WebFetch($url: String!, $output_markdown: Boolean) {
+    WebFetch(url: $url, output_markdown: $output_markdown) {
       url
       created_at
       content
+      output_markdown
     }
   }
 `;
 
+/** WebFetchPage is the web_fetch console route. It remounts the workspace when the API key or lock state changes so no stale result survives. */
 export function WebFetchPage() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
   return <WebFetchWorkspace key={JSON.stringify([apiKey, isToolConsoleLocked])} apiKey={apiKey || ''} isToolConsoleLocked={isToolConsoleLocked} />;
 }
 
+/** WebFetchWorkspace holds the fetch form, the output-format selection and the usage history for one API key. */
 function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; isToolConsoleLocked: boolean }) {
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => active.current?.abort(), []);
@@ -46,6 +53,7 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
 
   // Tool execution state
   const [url, setUrl] = useState('');
+  const [outputMarkdown, setOutputMarkdown] = useState(true);
   const [isExecuting, setIsExecuting] = useState(false);
   const [lastResult, setLastResult] = useState<WebFetchResponse['WebFetch'] | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
@@ -108,7 +116,12 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
     setLastResult(null);
 
     try {
-      const data = await fetchGraphQL<WebFetchResponse>(apiKey, WEB_FETCH_MUTATION, { url }, controller.signal);
+      const data = await fetchGraphQL<WebFetchResponse>(
+        apiKey,
+        WEB_FETCH_MUTATION,
+        { url, output_markdown: outputMarkdown },
+        controller.signal
+      );
       if (controller.signal.aborted) return;
       setLastResult(data.WebFetch);
       // Refresh logs after execution
@@ -174,13 +187,48 @@ function WebFetchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; is
                   </Button>
                 </div>
 
+                <fieldset className="space-y-2" disabled={isToolConsoleLocked || isExecuting}>
+                  <legend className="text-sm font-medium text-foreground">Output format</legend>
+                  <div className="flex flex-wrap gap-4">
+                    {(
+                      [
+                        { value: true, label: 'Markdown', hint: 'Converted from the rendered page.' },
+                        { value: false, label: 'Raw HTML', hint: 'The rendered document body, unconverted.' },
+                      ] as const
+                    ).map((option) => (
+                      <label key={String(option.value)} className="flex items-start gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="web-fetch-output-format"
+                          aria-label={option.label}
+                          className="mt-1"
+                          checked={outputMarkdown === option.value}
+                          onChange={() => setOutputMarkdown(option.value)}
+                          disabled={isToolConsoleLocked || isExecuting}
+                        />
+                        <span>
+                          <span className="font-medium text-foreground">{option.label}</span>
+                          <span className="block text-xs text-muted-foreground">{option.hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+
                 {execError && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{execError}</div>}
 
                 {lastResult && (
                   <div className="mt-6 space-y-4">
-                    <h3 className="text-sm font-medium text-foreground">Fetched Content:</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium text-foreground">Fetched Content:</h3>
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {lastResult.output_markdown ? 'Markdown' : 'Raw HTML'}
+                      </Badge>
+                    </div>
+                    {/* The body is untrusted remote content. It is rendered as
+                        text in both formats and is never injected as markup. */}
                     <div className="max-h-[600px] overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-4">
-                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-muted-foreground">
+                      <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-muted-foreground">
                         {lastResult.content}
                       </pre>
                     </div>

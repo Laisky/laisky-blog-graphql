@@ -410,8 +410,8 @@ func (t *FindToolTool) buildResponse(rankedNames []string, refsOnly bool) (*mcp.
 				continue
 			}
 			refs = append(refs, map[string]any{
-				"type":      "tool_reference",
-				"tool_name": name,
+				schemaTypeKey: "tool_reference",
+				"tool_name":   name,
 			})
 		}
 		payload := map[string]any{

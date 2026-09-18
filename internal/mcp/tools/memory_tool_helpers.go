@@ -27,7 +27,7 @@ const (
 // memoryResponseItemSchema returns a permissive JSON schema for one Responses-style item.
 func memoryResponseItemSchema() map[string]any {
 	return map[string]any{
-		"type":                 "object",
+		schemaTypeKey:          "object",
 		"additionalProperties": true,
 	}
 }
@@ -151,11 +151,11 @@ func normalizeCurrentInputArgument(value any) (any, error) {
 // It accepts plain user text and returns a single Responses-style message item.
 func buildCurrentInputTextItem(text string) map[string]any {
 	return map[string]any{
-		"type": "message",
-		"role": "user",
-		"content": []map[string]any{{
-			"type": "input_text",
-			"text": text,
+		schemaTypeKey: itemTypeMessage,
+		"role":        "user",
+		contentKey: []map[string]any{{
+			schemaTypeKey: "input_text",
+			"text":        text,
 		}},
 	}
 }
@@ -169,7 +169,7 @@ func memoryToolErrorResult(code mcpmemory.ErrorCode, message string, retryable b
 func memoryToolErrorResultWithExtras(code mcpmemory.ErrorCode, message string, retryable bool, extras map[string]any) *mcp.CallToolResult {
 	payload := map[string]any{
 		"code":      string(code),
-		"message":   message,
+		messageKey:  message,
 		"retryable": retryable,
 	}
 	for key, value := range extras {

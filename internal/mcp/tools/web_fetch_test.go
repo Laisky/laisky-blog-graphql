@@ -9,6 +9,7 @@ import (
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -213,26 +214,38 @@ func TestWebFetchHandleOutputMarkdownRejectsInvalidString(t *testing.T) {
 	require.True(t, result.IsError)
 }
 
+// TestResolveOutputMarkdownArg covers the shared strict decoder the tool uses.
+// output_markdown is advertised as a JSON boolean, so only a boolean is
+// accepted; an omitted or null value selects the advertised default.
 func TestResolveOutputMarkdownArg(t *testing.T) {
 	t.Parallel()
 
 	testcases := []struct {
-		name     string
-		args     any
-		expected bool
+		name      string
+		args      map[string]any
+		expected  bool
+		expectErr bool
 	}{
-		{name: "missing arguments defaults true", args: nil, expected: true},
+		{name: "missing arguments defaults true", args: map[string]any{}, expected: true},
 		{name: "missing field defaults true", args: map[string]any{"url": "https://example.com"}, expected: true},
+		{name: "explicit null defaults true", args: map[string]any{"output_markdown": nil}, expected: true},
 		{name: "bool false respected", args: map[string]any{"output_markdown": false}, expected: false},
-		{name: "string false respected", args: map[string]any{"output_markdown": "false"}, expected: false},
-		{name: "zero respected", args: map[string]any{"output_markdown": 0}, expected: false},
-		{name: "garbage defaults true", args: map[string]any{"output_markdown": []string{"nope"}}, expected: true},
+		{name: "bool true respected", args: map[string]any{"output_markdown": true}, expected: true},
+		{name: "string false rejected", args: map[string]any{"output_markdown": "false"}, expectErr: true},
+		{name: "zero rejected", args: map[string]any{"output_markdown": 0}, expectErr: true},
+		{name: "garbage rejected", args: map[string]any{"output_markdown": []string{"nope"}}, expectErr: true},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.expected, resolveOutputMarkdownArg(tc.args))
+			got, err := toolpolicy.OptionalBool(tc.args, "output_markdown", true)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, got)
 		})
 	}
 }
@@ -267,7 +280,7 @@ func TestValidateFetchURL(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := validateFetchURL(tc.url)
+			err := toolpolicy.ValidateFetchURL(context.Background(), tc.url)
 			if tc.wantErr {
 				require.Error(t, err, "expected error for url %q", tc.url)
 			} else {

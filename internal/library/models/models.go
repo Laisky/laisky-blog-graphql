@@ -38,14 +38,99 @@ type ExtractKeyInfoResult struct {
 	Contexts  []string         `json:"contexts"`
 }
 
+type FileIOChunk struct {
+	Project            *string        `json:"project,omitempty"`
+	FilePath           string         `json:"file_path"`
+	FileSeekStartBytes library.BigInt `json:"file_seek_start_bytes"`
+	FileSeekEndBytes   library.BigInt `json:"file_seek_end_bytes"`
+	IsFullFile         bool           `json:"is_full_file"`
+	ChunkContent       string         `json:"chunk_content"`
+	FileSummary        *string        `json:"file_summary,omitempty"`
+	Score              float64        `json:"score"`
+}
+
+type FileIODeleteResult struct {
+	DeletedCount int `json:"deleted_count"`
+}
+
+type FileIOEntry struct {
+	Name      string           `json:"name"`
+	Path      string           `json:"path"`
+	Type      FileIOEntryType  `json:"type"`
+	Size      library.BigInt   `json:"size"`
+	CreatedAt library.Datetime `json:"created_at"`
+	UpdatedAt library.Datetime `json:"updated_at"`
+}
+
+type FileIOHistoryContent struct {
+	HistoryID       string           `json:"history_id"`
+	Content         string           `json:"content"`
+	ContentEncoding string           `json:"content_encoding"`
+	Size            library.BigInt   `json:"size"`
+	CreatedAt       library.Datetime `json:"created_at"`
+}
+
+type FileIOHistoryEntry struct {
+	ID        string           `json:"id"`
+	Size      library.BigInt   `json:"size"`
+	CreatedAt library.Datetime `json:"created_at"`
+}
+
+type FileIOHistoryPage struct {
+	Versions   []*FileIOHistoryEntry `json:"versions"`
+	HasMore    bool                  `json:"has_more"`
+	NextCursor *string               `json:"next_cursor,omitempty"`
+}
+
+type FileIOListResult struct {
+	Entries []*FileIOEntry `json:"entries"`
+	HasMore bool           `json:"has_more"`
+}
+
+type FileIOReadResult struct {
+	Content         string  `json:"content"`
+	ContentEncoding string  `json:"content_encoding"`
+	Version         *string `json:"version,omitempty"`
+}
+
+type FileIORenameResult struct {
+	MovedCount int `json:"moved_count"`
+}
+
+type FileIOSearchResult struct {
+	Chunks []*FileIOChunk `json:"chunks"`
+}
+
+type FileIOStatResult struct {
+	Exists    bool              `json:"exists"`
+	Type      FileIOEntryType   `json:"type"`
+	Size      library.BigInt    `json:"size"`
+	CreatedAt *library.Datetime `json:"created_at,omitempty"`
+	UpdatedAt *library.Datetime `json:"updated_at,omitempty"`
+	Version   *string           `json:"version,omitempty"`
+}
+
+type FileIOWriteResult struct {
+	BytesWritten library.BigInt `json:"bytes_written"`
+	Version      *string        `json:"version,omitempty"`
+}
+
+type GeneralCrawlerEgressPolicy struct {
+	Host              string   `json:"host"`
+	Addresses         []string `json:"addresses"`
+	MaxRedirects      int      `json:"max_redirects"`
+	AllowSubresources bool     `json:"allow_subresources"`
+}
+
 type GeneralHTMLCrawlerTask struct {
-	TaskID        string            `json:"task_id"`
-	CreatedAt     library.Datetime  `json:"created_at"`
-	Status        string            `json:"status"`
-	FailedReason  *string           `json:"failed_reason,omitempty"`
-	FinishedAt    *library.Datetime `json:"finished_at,omitempty"`
-	URL           string            `json:"url"`
-	ResultHTMLB64 *string           `json:"result_html_b64,omitempty"`
+	TaskID        string                      `json:"task_id"`
+	CreatedAt     library.Datetime            `json:"created_at"`
+	Status        string                      `json:"status"`
+	FailedReason  *string                     `json:"failed_reason,omitempty"`
+	FinishedAt    *library.Datetime           `json:"finished_at,omitempty"`
+	URL           string                      `json:"url"`
+	ResultHTMLB64 *string                     `json:"result_html_b64,omitempty"`
+	Egress        *GeneralCrawlerEgressPolicy `json:"egress,omitempty"`
 }
 
 type GeneralLLMStormTask struct {
@@ -74,6 +159,100 @@ type GithubOAuthLoginResponse struct {
 
 type GithubOAuthStartResponse struct {
 	AuthorizeURL string `json:"authorize_url"`
+}
+
+type MemoryAck struct {
+	Ok bool `json:"ok"`
+}
+
+type MemoryAfterTurnInput struct {
+	Project           *string                    `json:"project,omitempty"`
+	SessionID         *string                    `json:"session_id,omitempty"`
+	TurnID            *string                    `json:"turn_id,omitempty"`
+	UserID            *string                    `json:"user_id,omitempty"`
+	Plugin            *MemoryPlugin              `json:"plugin,omitempty"`
+	ConversationItems []*MemoryResponseItemInput `json:"conversation_items,omitempty"`
+	CurrentInputStart *int                       `json:"current_input_start,omitempty"`
+	CurrentInputCount *int                       `json:"current_input_count,omitempty"`
+	InputItems        []*MemoryResponseItemInput `json:"input_items,omitempty"`
+	OutputItems       []*MemoryResponseItemInput `json:"output_items,omitempty"`
+}
+
+type MemoryBeforeTurnInput struct {
+	Project           *string                    `json:"project,omitempty"`
+	SessionID         *string                    `json:"session_id,omitempty"`
+	TurnID            *string                    `json:"turn_id,omitempty"`
+	UserID            *string                    `json:"user_id,omitempty"`
+	Plugin            *MemoryPlugin              `json:"plugin,omitempty"`
+	ConversationItems []*MemoryResponseItemInput `json:"conversation_items,omitempty"`
+	CurrentInputStart *int                       `json:"current_input_start,omitempty"`
+	CurrentInputCount *int                       `json:"current_input_count,omitempty"`
+	CurrentInput      []*MemoryResponseItemInput `json:"current_input,omitempty"`
+	CurrentInputText  *string                    `json:"current_input_text,omitempty"`
+	BaseInstructions  *string                    `json:"base_instructions,omitempty"`
+	MaxInputTok       *int                       `json:"max_input_tok,omitempty"`
+}
+
+type MemoryBeforeTurnResult struct {
+	InputItems        []*MemoryResponseItem `json:"input_items"`
+	RecallFactIds     []string              `json:"recall_fact_ids"`
+	RecallInsightIds  []string              `json:"recall_insight_ids"`
+	ContextTokenCount int                   `json:"context_token_count"`
+}
+
+type MemoryContentPart struct {
+	Type     string  `json:"type"`
+	Text     *string `json:"text,omitempty"`
+	ImageURL *string `json:"image_url,omitempty"`
+	FileID   *string `json:"file_id,omitempty"`
+	Filename *string `json:"filename,omitempty"`
+}
+
+type MemoryContentPartInput struct {
+	Type     string  `json:"type"`
+	Text     *string `json:"text,omitempty"`
+	ImageURL *string `json:"image_url,omitempty"`
+	FileID   *string `json:"file_id,omitempty"`
+	Filename *string `json:"filename,omitempty"`
+}
+
+type MemoryDirectoryListing struct {
+	Summaries []*MemoryDirectorySummary `json:"summaries"`
+}
+
+type MemoryDirectorySummary struct {
+	Path        string `json:"path"`
+	Abstract    string `json:"abstract"`
+	UpdatedAt   string `json:"updated_at"`
+	HasOverview bool   `json:"has_overview"`
+}
+
+type MemoryMetadataEntry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type MemoryMetadataEntryInput struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type MemoryResponseItem struct {
+	Type     string                 `json:"type"`
+	Role     *string                `json:"role,omitempty"`
+	Content  []*MemoryContentPart   `json:"content"`
+	CallID   *string                `json:"call_id,omitempty"`
+	Output   *string                `json:"output,omitempty"`
+	Metadata []*MemoryMetadataEntry `json:"metadata"`
+}
+
+type MemoryResponseItemInput struct {
+	Type     string                      `json:"type"`
+	Role     *string                     `json:"role,omitempty"`
+	Content  []*MemoryContentPartInput   `json:"content,omitempty"`
+	CallID   *string                     `json:"call_id,omitempty"`
+	Output   *string                     `json:"output,omitempty"`
+	Metadata []*MemoryMetadataEntryInput `json:"metadata,omitempty"`
 }
 
 type Mutation struct {
@@ -163,9 +342,10 @@ type UserResendActiveEmailResponse struct {
 }
 
 type WebFetchResult struct {
-	URL       string           `json:"url"`
-	CreatedAt library.Datetime `json:"created_at"`
-	Content   string           `json:"content"`
+	URL            string           `json:"url"`
+	CreatedAt      library.Datetime `json:"created_at"`
+	Content        string           `json:"content"`
+	OutputMarkdown bool             `json:"output_markdown"`
 }
 
 type BlogPostType string
@@ -225,6 +405,118 @@ func (e BlogPostType) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type FileIOEntryType string
+
+const (
+	FileIOEntryTypeFile      FileIOEntryType = "FILE"
+	FileIOEntryTypeDirectory FileIOEntryType = "DIRECTORY"
+)
+
+var AllFileIOEntryType = []FileIOEntryType{
+	FileIOEntryTypeFile,
+	FileIOEntryTypeDirectory,
+}
+
+func (e FileIOEntryType) IsValid() bool {
+	switch e {
+	case FileIOEntryTypeFile, FileIOEntryTypeDirectory:
+		return true
+	}
+	return false
+}
+
+func (e FileIOEntryType) String() string {
+	return string(e)
+}
+
+func (e *FileIOEntryType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = FileIOEntryType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid FileIOEntryType", str)
+	}
+	return nil
+}
+
+func (e FileIOEntryType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *FileIOEntryType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e FileIOEntryType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type FileIOWriteMode string
+
+const (
+	FileIOWriteModeAppend    FileIOWriteMode = "APPEND"
+	FileIOWriteModeOverwrite FileIOWriteMode = "OVERWRITE"
+	FileIOWriteModeTruncate  FileIOWriteMode = "TRUNCATE"
+)
+
+var AllFileIOWriteMode = []FileIOWriteMode{
+	FileIOWriteModeAppend,
+	FileIOWriteModeOverwrite,
+	FileIOWriteModeTruncate,
+}
+
+func (e FileIOWriteMode) IsValid() bool {
+	switch e {
+	case FileIOWriteModeAppend, FileIOWriteModeOverwrite, FileIOWriteModeTruncate:
+		return true
+	}
+	return false
+}
+
+func (e FileIOWriteMode) String() string {
+	return string(e)
+}
+
+func (e *FileIOWriteMode) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = FileIOWriteMode(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid FileIOWriteMode", str)
+	}
+	return nil
+}
+
+func (e FileIOWriteMode) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *FileIOWriteMode) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e FileIOWriteMode) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type Language string
 
 const (
@@ -275,6 +567,63 @@ func (e *Language) UnmarshalJSON(b []byte) error {
 }
 
 func (e Language) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type MemoryPlugin string
+
+const (
+	MemoryPluginAuto      MemoryPlugin = "AUTO"
+	MemoryPluginRag       MemoryPlugin = "RAG"
+	MemoryPluginPageindex MemoryPlugin = "PAGEINDEX"
+)
+
+var AllMemoryPlugin = []MemoryPlugin{
+	MemoryPluginAuto,
+	MemoryPluginRag,
+	MemoryPluginPageindex,
+}
+
+func (e MemoryPlugin) IsValid() bool {
+	switch e {
+	case MemoryPluginAuto, MemoryPluginRag, MemoryPluginPageindex:
+		return true
+	}
+	return false
+}
+
+func (e MemoryPlugin) String() string {
+	return string(e)
+}
+
+func (e *MemoryPlugin) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = MemoryPlugin(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid MemoryPlugin", str)
+	}
+	return nil
+}
+
+func (e MemoryPlugin) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *MemoryPlugin) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e MemoryPlugin) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

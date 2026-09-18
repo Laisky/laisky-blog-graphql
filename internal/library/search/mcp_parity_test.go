@@ -81,7 +81,7 @@ func TestFetchAdmissionAcrossMCPAndGraphQL(t *testing.T) {
 		tool, err := tools.NewWebFetchTool(rdb, log.Logger, func(context.Context) string { return "sk-contract-test-only" }, billing, fetcher)
 		require.NoError(t, err)
 		ctx := contractContext(t)
-		_, err = resolver.WebFetch(ctx, url)
+		_, err = resolver.WebFetch(ctx, url, nil)
 		require.Error(t, err)
 		result, err := tool.Handle(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"url": url}}})
 		require.NoError(t, err)

@@ -14,29 +14,12 @@ import (
 // backend. New tool definitions are not a trust boundary: missing conditions fail
 // even when a client caches an old schema or ignores the current one.
 func conditionalFileService(ctx context.Context, svc FileService, req mcp.CallToolRequest, auth files.AuthContext, project, path, destination string, operation files.FileOperation) (FileService, context.Context, error) {
-	if operation == files.FileOperationDelete && path == "" {
-		return nil, ctx, files.NewError(files.ErrCodePermissionDenied, "root directory cannot be deleted", false)
-	}
 	p, err := parseFilePreconditions(req, operation)
 	if err != nil {
 		return nil, ctx, err
 	}
-	if err := files.RequireClientFilePreconditions(operation, p); err != nil {
-		return nil, ctx, err
-	}
-	if p.Empty() { // Initial read only; no mutation can pass this branch.
-		return svc, ctx, nil
-	}
-	p.DestinationPath = destination
-	conditionalCtx, err := files.WithFilePreconditions(ctx, auth, project, path, operation, p)
-	if err != nil {
-		return nil, ctx, err
-	}
-	svc, err = ResolveVersionedFileService(ctx, svc, auth, project)
-	if err != nil {
-		return nil, ctx, err
-	}
-	return svc, conditionalCtx, nil
+	// The gate itself is transport-independent so GraphQL cannot diverge from MCP.
+	return ConditionalFileService(ctx, svc, auth, project, path, destination, operation, p)
 }
 
 // parseFilePreconditions rejects null, numeric, empty, malformed and
@@ -47,13 +30,13 @@ func parseFilePreconditions(req mcp.CallToolRequest, operation files.FileOperati
 	if !ok {
 		return p, nil
 	}
-	for _, name := range []string{"expected_version", "create_only", "expected_destination_version", "destination_must_not_exist"} {
+	for _, name := range []string{expectedVersionKey, createOnlyKey, expectedDestinationVersionKey, "destination_must_not_exist"} {
 		raw, present := args[name]
 		if !present {
 			continue
 		}
 		switch name {
-		case "expected_version", "expected_destination_version":
+		case expectedVersionKey, expectedDestinationVersionKey:
 			value, ok := raw.(string)
 			if !ok || value == "" {
 				return p, files.NewError(files.ErrCodeInvalidArgument, name+" must be a non-empty opaque version string", false)
@@ -61,7 +44,7 @@ func parseFilePreconditions(req mcp.CallToolRequest, operation files.FileOperati
 			if err := files.ValidateFileVersion(value); err != nil {
 				return p, err
 			}
-			if name == "expected_destination_version" {
+			if name == expectedDestinationVersionKey {
 				if operation != files.FileOperationRename {
 					return p, files.NewError(files.ErrCodeInvalidArgument, name+" is only valid for rename", false)
 				}
@@ -69,7 +52,7 @@ func parseFilePreconditions(req mcp.CallToolRequest, operation files.FileOperati
 			} else {
 				p.ExpectedVersion = value
 			}
-		case "create_only":
+		case createOnlyKey:
 			value, ok := raw.(bool)
 			if !ok || operation != files.FileOperationWrite {
 				return p, files.NewError(files.ErrCodeInvalidArgument, "create_only must be a boolean on file_write", false)
@@ -89,6 +72,8 @@ func parseFilePreconditions(req mcp.CallToolRequest, operation files.FileOperati
 	return p, nil
 }
 
+// expectedFileVersionOption declares the expected_version argument, including
+// the exact incarnation:revision pattern clients must send.
 func expectedFileVersionOption(required ...bool) mcp.ToolOption {
 	opts := []mcp.PropertyOption{
 		mcp.Description("Opaque version returned with file_read content (or file_stat for lifecycle operations). " +
@@ -98,7 +83,7 @@ func expectedFileVersionOption(required ...bool) mcp.ToolOption {
 	if len(required) > 0 && required[0] {
 		opts = append(opts, mcp.Required())
 	}
-	return mcp.WithString("expected_version", opts...)
+	return mcp.WithString(expectedVersionKey, opts...)
 }
 
 // requireFileWriteSchema publishes the alternative preconditions as an actual
@@ -106,11 +91,11 @@ func expectedFileVersionOption(required ...bool) mcp.ToolOption {
 func requireFileWriteSchema() mcp.ToolOption {
 	return func(tool *mcp.Tool) {
 		schema := map[string]any{
-			"type": "object", "properties": tool.InputSchema.Properties, "required": tool.InputSchema.Required,
+			schemaTypeKey: "object", schemaPropertiesKey: tool.InputSchema.Properties, schemaRequiredKey: tool.InputSchema.Required,
 			"oneOf": []any{
-				map[string]any{"required": []string{"expected_version"}, "properties": map[string]any{"create_only": map[string]any{"const": false}}},
-				map[string]any{"required": []string{"create_only"}, "properties": map[string]any{"create_only": map[string]any{"const": true}},
-					"not": map[string]any{"required": []string{"expected_version"}}},
+				map[string]any{schemaRequiredKey: []string{expectedVersionKey}, schemaPropertiesKey: map[string]any{createOnlyKey: map[string]any{"const": false}}},
+				map[string]any{schemaRequiredKey: []string{createOnlyKey}, schemaPropertiesKey: map[string]any{createOnlyKey: map[string]any{"const": true}},
+					"not": map[string]any{schemaRequiredKey: []string{expectedVersionKey}}},
 			},
 		}
 		encoded, err := json.Marshal(schema)
@@ -124,6 +109,8 @@ func requireFileWriteSchema() mcp.ToolOption {
 	}
 }
 
+// addFileVersion attaches a live version token to a tool response, omitting it
+// when the operation produced none.
 func addFileVersion(payload map[string]any, version string) {
 	if version != "" {
 		payload["version"] = version

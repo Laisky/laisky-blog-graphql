@@ -15,5 +15,6 @@ func interfaceSourcesFromResolver(resolver *Resolver, registered []string) inter
 	source.AskUser = resolver.args.AskUserService != nil
 	source.UserRequests = resolver.args.UserRequestService != nil
 	source.CallLogs = resolver.args.CallLogService != nil
+	source.Memory = resolver.args.MemoryService != nil
 	return source
 }

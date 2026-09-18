@@ -66,7 +66,7 @@ func (t *FileHistoryTool) Definition() mcp.Tool {
 			options = append(options,
 				mcp.WithDescription("Restore immutable history as a new live revision. Supply the ORIGINAL current-file expected_version, or create_only=true when absent. "+
 					"A conflict has no write effect; re-read and review, never silently update the token. Uses the selected project plugin."),
-				expectedFileVersionOption(), mcp.WithBoolean("create_only", mcp.Description("Restore only if the live path does not exist.")),
+				expectedFileVersionOption(), mcp.WithBoolean(createOnlyKey, mcp.Description("Restore only if the live path does not exist.")),
 				fileToolPluginOption(), mcp.WithReadOnlyHintAnnotation(false), mcp.WithDestructiveHintAnnotation(true), requireFileWriteSchema())
 		}
 	}
@@ -81,11 +81,11 @@ func (t *FileHistoryTool) Handle(ctx context.Context, req mcp.CallToolRequest) (
 	}
 	project, err := req.RequireString("project")
 	if err != nil {
-		return fileToolErrorResult(files.ErrCodeInvalidArgument, "project is required", false), nil
+		return fileToolErrorResult(files.ErrCodeInvalidArgument, "project is required", false), nil //nolint:nilerr // argument error is encoded in the MCP tool result
 	}
 	path, err := req.RequireString("path")
 	if err != nil {
-		return fileToolErrorResult(files.ErrCodeInvalidArgument, "path is required", false), nil
+		return fileToolErrorResult(files.ErrCodeInvalidArgument, "path is required", false), nil //nolint:nilerr // argument error is encoded in the MCP tool result
 	}
 	path = normalizeFilePath(path)
 	if err := files.ValidateProject(project); err != nil {
@@ -102,7 +102,7 @@ func (t *FileHistoryTool) Handle(ctx context.Context, req mcp.CallToolRequest) (
 	}
 	rawID, err := req.RequireString("history_id")
 	if err != nil {
-		return fileToolErrorResult(files.ErrCodeInvalidArgument, "history_id must be a decimal string", false), nil
+		return fileToolErrorResult(files.ErrCodeInvalidArgument, "history_id must be a decimal string", false), nil //nolint:nilerr // argument error is encoded in the MCP tool result
 	}
 	id, err := files.ParseHistoryID(rawID)
 	if err != nil {
@@ -134,7 +134,7 @@ func (t *FileHistoryTool) Handle(ctx context.Context, req mcp.CallToolRequest) (
 		content, encoding = base64.StdEncoding.EncodeToString(snapshot.Content), "base64"
 	}
 	return historyToolJSON(map[string]any{
-		"history_id": strconv.FormatUint(snapshot.ID, 10), "content": content, "content_encoding": encoding,
+		"history_id": strconv.FormatUint(snapshot.ID, 10), contentKey: content, "content_encoding": encoding,
 		"size": snapshot.Size, "created_at": snapshot.CreatedAt.UTC(),
 	})
 }
@@ -143,7 +143,7 @@ func (t *FileHistoryTool) Handle(ctx context.Context, req mcp.CallToolRequest) (
 func (t *FileHistoryTool) list(ctx context.Context, req mcp.CallToolRequest, auth files.AuthContext, project, path string) (*mcp.CallToolResult, error) {
 	limit, err := toolpolicy.OptionalInt(req.GetArguments(), "limit", 50, 1, 200)
 	if err != nil {
-		return fileToolErrorResult(files.ErrCodeInvalidArgument, "limit must be an integer between 1 and 200", false), nil
+		return fileToolErrorResult(files.ErrCodeInvalidArgument, "limit must be an integer between 1 and 200", false), nil //nolint:nilerr // argument error is encoded in the MCP tool result
 	}
 	var before uint64
 	if raw, present := req.GetArguments()["before_id"]; present {
@@ -167,7 +167,7 @@ func (t *FileHistoryTool) list(ctx context.Context, req mcp.CallToolRequest, aut
 func historyToolJSON(payload any) (*mcp.CallToolResult, error) {
 	result, err := mcp.NewToolResultJSON(payload)
 	if err != nil {
-		return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode file history response", false), nil
+		return fileToolErrorResult(files.ErrCodeSearchBackend, "failed to encode file history response", false), nil //nolint:nilerr // encode error is encoded in the MCP tool result
 	}
 	return result, nil
 }

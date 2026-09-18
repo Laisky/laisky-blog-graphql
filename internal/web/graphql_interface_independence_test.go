@@ -42,7 +42,7 @@ func TestGraphQLFieldsIgnoreMCPRegistrationFlags(t *testing.T) {
 		mutation := (&Resolver{args: args}).buildMutationResolver()
 		_, err := mutation.WebSearch(ctx, " \t ")
 		require.ErrorContains(t, err, "query cannot be empty", "MCP enabled=%v", enabled)
-		_, err = mutation.WebFetch(ctx, "http://127.0.0.1/private")
+		_, err = mutation.WebFetch(ctx, "http://127.0.0.1/private", nil)
 		require.ErrorContains(t, err, "non-public", "MCP enabled=%v", enabled)
 		_, err = mutation.ExtractKeyInfo(ctx, "", "materials", nil)
 		require.ErrorContains(t, err, "query cannot be empty", "MCP enabled=%v", enabled)

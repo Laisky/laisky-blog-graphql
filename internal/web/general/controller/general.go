@@ -32,6 +32,7 @@ var (
 	httpcli *http.Client
 )
 
+// init wires the package-level resolver instance used by the generated schema.
 func init() {
 	var err error
 	if httpcli, err = gutils.NewHTTPClient(
@@ -50,6 +51,7 @@ type Type struct {
 	LocksResolver *LocksResolver
 }
 
+// New builds the general subgraph resolver set.
 func New() *Type {
 	return &Type{
 		LocksResolver: new(LocksResolver),
@@ -58,6 +60,7 @@ func New() *Type {
 
 var Instance *Type
 
+// Initialize constructs the package-level resolver instance at startup.
 func Initialize(ctx context.Context) {
 	service.Initialize(ctx)
 
@@ -89,10 +92,12 @@ const (
 // query resolver
 // =================
 
+// Lock resolves the current holder and expiry of one named lock.
 func (r *QueryResolver) Lock(ctx context.Context, name string) (*model.Lock, error) {
 	return service.Instance.LoadLockByName(ctx, name)
 }
 
+// LockPermissions resolves which lock-name prefixes each user may acquire.
 func (r *QueryResolver) LockPermissions(ctx context.Context, username string) (users []*models.GeneralUser, err error) {
 	logger := gmw.GetLogger(ctx).Named("lock_permissions")
 	logger.Debug("LockPermissions", zap.String("username", username))
@@ -284,6 +289,7 @@ func (r *LocksResolver) ExpiresAt(ctx context.Context,
 // mutations
 // ============================
 
+// validateLockName reports whether the owner may acquire this lock name.
 func validateLockName(ownerName, lockName string) (ok bool) {
 	for _, prefix := range gconfig.Shared.GetStringSlice(
 		"settings.general.locks.user_prefix_map." + ownerName) {
@@ -295,6 +301,7 @@ func validateLockName(ownerName, lockName string) (ok bool) {
 	return false
 }
 
+// newGeneralLLMStormTask converts a queued storm task into its GraphQL shape.
 func newGeneralLLMStormTask(task *rlibs.LLMStormTask) (*models.GeneralLLMStormTask, error) {
 	if task == nil {
 		return nil, errors.New("llm storm task is nil")
@@ -332,6 +339,8 @@ func newGeneralLLMStormTask(task *rlibs.LLMStormTask) (*models.GeneralLLMStormTa
 	return result, nil
 }
 
+// newGeneralHTMLCrawlerTask converts a queued crawl into its GraphQL shape,
+// including the egress policy the renderer must enforce.
 func newGeneralHTMLCrawlerTask(task *rlibs.HTMLCrawlerTask) (*models.GeneralHTMLCrawlerTask, error) {
 	if task == nil {
 		return nil, errors.New("html crawler task is nil")
@@ -359,6 +368,19 @@ func newGeneralHTMLCrawlerTask(task *rlibs.HTMLCrawlerTask) (*models.GeneralHTML
 		result.ResultHTMLB64 = &encoded
 	}
 
+	// The policy is published only when admission produced one. A nil policy
+	// stays nil so a renderer can tell "unpinned" from "pinned to nothing".
+	if task.Egress != nil {
+		addresses := make([]string, len(task.Egress.Addresses))
+		copy(addresses, task.Egress.Addresses)
+		result.Egress = &models.GeneralCrawlerEgressPolicy{
+			Host:              task.Egress.Host,
+			Addresses:         addresses,
+			MaxRedirects:      task.Egress.MaxRedirects,
+			AllowSubresources: task.Egress.AllowSubresources,
+		}
+	}
+
 	return result, nil
 }
 
@@ -371,6 +393,8 @@ token (`general` in cookie):
 		"exp": 4701974400
 	}
 */
+// validateAndGetGCPUser authenticates the caller against the `general` cookie
+// token and returns the authorized user name.
 func validateAndGetGCPUser(ctx context.Context) (userName string, err error) {
 	var token string
 	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)

@@ -9,7 +9,7 @@ func consoleToolAvailability(mcpTools, graphqlTools map[string]bool) map[string]
 	for name, enabled := range mcpTools {
 		console[name] = enabled
 	}
-	for _, name := range []string{"web_search", "web_fetch", "extract_key_info"} {
+	for _, name := range []string{toolNameWebSearch, toolNameWebFetch, toolNameExtractKeyInfo} {
 		console[name] = graphqlTools[name]
 	}
 	return console

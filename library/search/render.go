@@ -20,43 +20,50 @@ import (
 // When apiKey is not empty and outputMarkdown is true, it converts the fetched HTML body
 // to markdown. If conversion fails, it returns the raw HTML body unchanged.
 //
+// The crawl carries the connection policy request admission produced, and the
+// origins the renderer reports are re-admitted before any body is returned, so
+// a redirect escape or a rebound host fails closed after the fact.
+//
 //nolint:gocognit // complex but straightforward state-machine loop
 func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey string, outputMarkdown bool) ([]byte, error) {
-	logger := gmw.GetLogger(ctx)
-	if logger != nil {
-		logger = logger.Named("fetch_dynamic_url_content").With(
-			zap.String("url", sanitizeURLForLog(url)),
-			zap.Bool("output_markdown", outputMarkdown),
-		)
-		logger.Debug("submitting html crawler task")
+	// gmw.GetLogger always returns a usable logger, so no nil guard is needed.
+	logger := gmw.GetLogger(ctx).Named("fetch_dynamic_url_content").With(
+		zap.String("url", sanitizeURLForLog(url)),
+		zap.Bool("output_markdown", outputMarkdown),
+	)
+	logger.Debug("submitting html crawler task")
+
+	// Re-run admission here so the pinned addresses belong to this crawl, not
+	// to whatever an earlier caller validated. This is the same policy the
+	// entry points already applied, so an admitted URL cannot be rejected now.
+	admission, err := toolpolicy.AdmitFetchURL(ctx, url)
+	if err != nil {
+		logger.Debug("fetch target is not admissible", zap.Error(err))
+		return nil, errors.Wrap(err, "admit fetch target")
 	}
+	egressSettings := LoadEgressSettings()
+	policy := admission.Policy(egressSettings.MaxRedirects, egressSettings.AllowSubresources)
 
 	// submit task
-	taskID, err := rdb.AddHTMLCrawlerTaskWithOptions(ctx, url, apiKey, outputMarkdown)
+	taskID, err := rdb.AddHTMLCrawlerTaskWithEgress(ctx, url, apiKey, outputMarkdown, crawlerEgressPolicy(policy))
 	if err != nil {
-		if logger != nil {
-			logger.Debug("submit html crawler task failed", zap.Error(err))
-		}
+		logger.Debug("submit html crawler task failed", zap.Error(err))
 		return nil, errors.Wrap(err, "submit task")
 	}
 
-	if logger != nil {
-		logger = logger.With(zap.String("task_id", taskID))
-		logger.Debug("submitted html crawler task")
-	}
+	logger = logger.With(zap.String("task_id", taskID))
+	logger.Debug("submitted html crawler task")
 
 	// fetch task result
 	lastStatus := ""
 	for {
 		task, err := rdb.GetHTMLCrawlerTaskResult(ctx, taskID)
 		if err != nil {
-			if logger != nil {
-				logger.Debug("get html crawler task result failed", zap.Error(err))
-			}
+			logger.Debug("get html crawler task result failed", zap.Error(err))
 			return nil, errors.Wrap(err, "get task result")
 		}
 
-		if logger != nil && task.Status != lastStatus {
+		if task.Status != lastStatus {
 			logger.Debug("html crawler task status updated",
 				zap.String("status", task.Status),
 				zap.Bool("task_output_markdown", task.OutputMarkdown),
@@ -66,21 +73,24 @@ func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey stri
 
 		switch task.Status {
 		case rlibs.TaskStatusSuccess:
+			// Nothing is returned to the caller before the reported chain is
+			// re-admitted, so a renderer that escaped the policy cannot
+			// exfiltrate a private response body.
+			if egressErr := verifyRenderedEgress(ctx, logger, egressSettings, policy, task.RequestChain); egressErr != nil {
+				logger.Error("rejecting crawler result", zap.Error(egressErr))
+				return nil, egressErr
+			}
 			if task.OutputMarkdown && outputMarkdown {
-				if logger != nil {
-					logger.Debug("html crawler task completed with markdown",
-						zap.Int("content_len", len(task.ResultMarkdown)),
-					)
-				}
+				logger.Debug("html crawler task completed with markdown",
+					zap.Int("content_len", len(task.ResultMarkdown)),
+				)
 				return task.ResultMarkdown, nil
 			}
 
-			if logger != nil {
-				logger.Debug("html crawler task completed with html",
-					zap.Int("content_len", len(task.ResultHTML)),
-					zap.Bool("task_output_markdown", task.OutputMarkdown),
-				)
-			}
+			logger.Debug("html crawler task completed with html",
+				zap.Int("content_len", len(task.ResultHTML)),
+				zap.Bool("task_output_markdown", task.OutputMarkdown),
+			)
 
 			return task.ResultHTML, nil
 		case rlibs.TaskStatusPending,
@@ -92,21 +102,17 @@ func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey stri
 			}
 			continue
 		case rlibs.TaskStatusFailed:
-			if logger != nil {
-				fields := []zap.Field{}
-				if task.FailedReason != nil {
-					fields = append(fields, zap.String("failed_reason", *task.FailedReason))
-				}
-				if task.FinishedAt != nil {
-					fields = append(fields, zap.Time("finished_at", *task.FinishedAt))
-				}
-				logger.Debug("html crawler task failed", fields...)
+			fields := []zap.Field{}
+			if task.FailedReason != nil {
+				fields = append(fields, zap.String("failed_reason", *task.FailedReason))
 			}
+			if task.FinishedAt != nil {
+				fields = append(fields, zap.Time("finished_at", *task.FinishedAt))
+			}
+			logger.Debug("html crawler task failed", fields...)
 			return nil, errors.New("crawler task failed; inspect the task audit record")
 		default:
-			if logger != nil {
-				logger.Debug("html crawler task returned unknown status", zap.String("status", task.Status))
-			}
+			logger.Debug("html crawler task returned unknown status", zap.String("status", task.Status))
 			return nil, errors.Errorf("unknown task status %q", task.Status)
 		}
 	}

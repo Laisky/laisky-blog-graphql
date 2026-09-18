@@ -43,8 +43,60 @@ func TestInterfaceCatalogReportsHistoryAndWriterSeparately(t *testing.T) {
 	if !strings.Contains(catalog.Scope, "not authorization") {
 		t.Fatal("configuration scope is ambiguous")
 	}
-	if _, exists := catalog.GraphQL["FileRead"]; exists {
-		t.Fatal("invented an unimplemented GraphQL field")
+	// FileIO is now published on GraphQL as a peer interface, so the field must
+	// exist. Its availability still follows the backend it needs, not MCP tool
+	// registration: history-only storage without a version-aware writer cannot
+	// serve a read or a mutation, but can serve history metadata.
+	writerBacked, exists := catalog.GraphQL["FileRead"]
+	if !exists {
+		t.Fatal("GraphQL FileIO field inventory is missing FileRead")
+	}
+	if writerBacked {
+		t.Fatal("a read was advertised without a version-aware writer backend")
+	}
+	if !catalog.GraphQL["FileListVersions"] || !catalog.GraphQL["FileReadVersion"] {
+		t.Fatal("history-backed GraphQL fields were hidden even though storage is configured")
+	}
+	if catalog.GraphQL["FileWrite"] || catalog.GraphQL["FileRestoreVersion"] {
+		t.Fatal("a mutation was advertised without a version-aware writer backend")
+	}
+	// Memory has its own backend; storage alone must not advertise it.
+	for _, field := range []string{"MemoryBeforeTurn", "MemoryAfterTurn",
+		"MemoryRunMaintenance", "MemoryListDirWithAbstract"} {
+		if catalog.GraphQL[field] {
+			t.Fatalf("%s was advertised without a memory service", field)
+		}
+	}
+}
+
+// TestGraphQLFileIOAvailabilityIsIndependentOfMCPRegistration keeps the peer
+// relationship honest: switching every MCP file tool off must not remove the
+// GraphQL fields, and registering them must not add a GraphQL field that has
+// no backend.
+func TestGraphQLFileIOAvailabilityIsIndependentOfMCPRegistration(t *testing.T) {
+	withoutMCP := buildInterfaceCatalog(interfaceSources{Files: true, FileWriter: true, Memory: true})
+	for _, field := range []string{"FileStat", "FileRead", "FileList", "FileSearch",
+		"FileWrite", "FileDelete", "FileRename", "FileRestoreVersion",
+		"MemoryBeforeTurn", "MemoryListDirWithAbstract"} {
+		if !withoutMCP.GraphQL[field] {
+			t.Fatalf("%s disappeared because no MCP tool was registered", field)
+		}
+	}
+	if mcpToolGroups(withoutMCP)["file_io"] || mcpToolGroups(withoutMCP)["memory"] {
+		t.Fatal("unregistered MCP tools were advertised as available")
+	}
+	// The console follows whichever transport can actually serve the page.
+	if !consoleGroups(withoutMCP)["file_io"] || !consoleGroups(withoutMCP)["memory"] {
+		t.Fatal("a page backed only by GraphQL was hidden")
+	}
+
+	withMCPOnly := buildInterfaceCatalog(interfaceSources{MCP: []string{
+		"file_stat", "file_read", "file_write", "file_delete", "file_rename", "file_list", "file_search",
+	}})
+	for _, field := range []string{"FileStat", "FileWrite"} {
+		if withMCPOnly.GraphQL[field] {
+			t.Fatalf("%s was advertised with no backend just because an MCP tool exists", field)
+		}
 	}
 }
 

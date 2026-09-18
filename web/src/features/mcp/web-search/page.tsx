@@ -43,11 +43,13 @@ const WEB_SEARCH_MUTATION = `
   }
 `;
 
+/** WebSearchPage is the web_search console route. It remounts the workspace when the API key or lock state changes so no stale result survives. */
 export function WebSearchPage() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
   return <WebSearchWorkspace key={JSON.stringify([apiKey, isToolConsoleLocked])} apiKey={apiKey || ''} isToolConsoleLocked={isToolConsoleLocked} />;
 }
 
+/** WebSearchWorkspace holds the query form, the results and the usage history for one API key. */
 function WebSearchWorkspace({ apiKey, isToolConsoleLocked }: { apiKey: string; isToolConsoleLocked: boolean }) {
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => active.current?.abort(), []);

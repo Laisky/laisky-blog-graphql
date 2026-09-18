@@ -40,6 +40,7 @@ const consoleItems: ConsoleMenuItem[] = [
   { to: '/tools/memory', label: 'memory', toolKey: 'memory' },
 ];
 
+/** AppLayout is the shell every console page renders inside: header, navigation and the routed outlet. */
 export function AppLayout() {
   const location = useLocation();
   const toolsConfig = useToolsConfig();
@@ -226,6 +227,7 @@ function ApiKeyAliasSwitcher() {
   );
 }
 
+/** NavItem renders one top-level navigation link with its active state. */
 function NavItem({ to, label }: { to: string; label: string }) {
   return (
     <NavLink
@@ -248,6 +250,7 @@ interface ConsoleMenuProps {
   isActive: boolean;
 }
 
+/** ConsoleMenu renders the per-tool console dropdown, listing only the tools this deployment actually serves. */
 function ConsoleMenu({ items, isActive }: ConsoleMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);

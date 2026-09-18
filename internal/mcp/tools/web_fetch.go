@@ -142,7 +142,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	)
 
 	payload := map[string]any{
-		"content": string(content),
+		contentKey: string(content),
 	}
 
 	toolResult, err := mcp.NewToolResultJSON(payload)
@@ -152,60 +152,6 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 
 	return toolResult, nil
-}
-
-// resolveOutputMarkdownArg returns whether web_fetch should return markdown.
-// It defaults to true and only returns false when the caller explicitly provides
-// a false-like value for output_markdown.
-func resolveOutputMarkdownArg(arguments any) bool {
-	args, ok := arguments.(map[string]any)
-	if !ok {
-		return true
-	}
-
-	raw, ok := args["output_markdown"]
-	if !ok {
-		return true
-	}
-
-	return parseExplicitFalseBool(raw)
-}
-
-// parseExplicitFalseBool parses optional boolean-like values from MCP JSON arguments.
-// It defaults to true and returns false only when the value explicitly represents false.
-func parseExplicitFalseBool(raw any) bool {
-	switch v := raw.(type) {
-	case bool:
-		return v
-	case string:
-		s := strings.TrimSpace(strings.ToLower(v))
-		switch s {
-		case "false", "0", "no", "n", "off":
-			return false
-		case "", "true", "1", "yes", "y", "on":
-			return true
-		default:
-			return true
-		}
-	case float64:
-		// MCP JSON numbers decode into float64
-		return v != 0
-	case int:
-		return v != 0
-	case int64:
-		return v != 0
-	case uint64:
-		return v != 0
-	default:
-		return true
-	}
-}
-
-// validateFetchURL checks that the URL uses an allowed scheme (http/https)
-// and does not target private, loopback, or link-local IP addresses to
-// prevent Server-Side Request Forgery (SSRF) attacks.
-func validateFetchURL(rawURL string) error {
-	return toolpolicy.ValidateFetchURL(context.Background(), rawURL)
 }
 
 // sanitizeURLForLog removes query and fragment components from a URL before

@@ -8,6 +8,7 @@ import (
 	srv "github.com/mark3labs/mcp-go/server"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 )
@@ -31,7 +32,7 @@ func WithUserRequestHoldManager(manager *userrequests.HoldManager) ServerOption 
 }
 
 // registerFileHistoryTools applies the same audit/billing wrapper and discovery registration as other tools.
-func (s *Server) registerFileHistoryTools(server *srv.MCPServer, writer tools.FileService, reader files.HistoryReader) error {
+func (s *Server) registerFileHistoryTools(server *srv.MCPServer, writer mcpplugin.Plugin, reader files.HistoryReader) error {
 	if reader == nil {
 		return nil
 	}

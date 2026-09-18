@@ -38,11 +38,13 @@ describe('fetchCallLogs', () => {
     vi.restoreAllMocks();
   });
 
+  // The prefixed mount is the only route registered when a public prefix is
+  // configured; see internal/web/tool_http_routes.go.
   it('uses the current pathname whenever it builds the API URL', async () => {
     await fetchCallLogs('test-key', {});
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/tools/call_log/api/logs',
+      '/mcp/tools/call_log/api/logs',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
       })
@@ -50,6 +52,14 @@ describe('fetchCallLogs', () => {
 
     fetchMock.mockClear();
     fetchMock.mockResolvedValue(createCallLogResponse());
+    window.history.replaceState({}, '', '/mcp/tools/call_log');
+
+    await fetchCallLogs('test-key', { page: 2, pageSize: 50 });
+
+    expect(fetchMock).toHaveBeenCalledWith('/mcp/tools/call_log/api/logs?page=2&page_size=50', expect.any(Object));
+  });
+
+  it('uses the root alias when the deployment has no public prefix', async () => {
     window.history.replaceState({}, '', '/tools/call_log');
 
     await fetchCallLogs('test-key', { page: 2, pageSize: 50 });

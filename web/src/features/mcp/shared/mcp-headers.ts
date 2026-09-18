@@ -1,11 +1,22 @@
 /** HeaderBinding records a validated, statically reachable x-mcp-header property. */
 export type HeaderBinding = { path: string[]; name: string; type: 'string' | 'integer' | 'boolean' };
 
+/** isFieldValueSafe reports whether every code point is a tab or printable ASCII.
+ * Expressed with explicit code points because control characters inside a regular
+ * expression literal read as typos and are rejected by lint. */
+function isFieldValueSafe(value: string): boolean {
+  for (const codePoint of value) {
+    const code = codePoint.codePointAt(0) ?? 0;
+    if (code !== 0x09 && (code < 0x20 || code > 0x7e)) return false;
+  }
+  return true;
+}
+
 /** encodeMcpHeader mirrors UTF-8 values without header injection or sentinel ambiguity. */
 export function encodeMcpHeader(value: string): string {
   const bytes = new TextEncoder().encode(value);
   if (new TextDecoder().decode(bytes) !== value) throw new Error('MCP header value contains an unpaired surrogate');
-  if (/^[\x09\x20-\x7e]*$/.test(value) && value.trim() === value && !(value.startsWith('=?base64?') && value.endsWith('?='))) return value;
+  if (isFieldValueSafe(value) && value.trim() === value && !(value.startsWith('=?base64?') && value.endsWith('?='))) return value;
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return `=?base64?${btoa(binary)}?=`;

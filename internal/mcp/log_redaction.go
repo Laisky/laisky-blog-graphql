@@ -8,6 +8,10 @@ import (
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 )
 
+// redactedContentKey is the field name the shared file redactors key on. It is
+// declared once so every redaction site uses the same field.
+const redactedContentKey = "content"
+
 // redactMCPBody redacts sensitive file content fields from MCP payloads.
 func redactMCPBody(raw string) string {
 	if raw == "" {
@@ -72,15 +76,15 @@ func redactMCPMap(input map[string]any) map[string]any {
 		output["url"] = toolpolicy.URLForLog(text)
 	}
 
-	if _, ok := output["content"]; ok {
-		output["content"] = files.RedactToolArguments("file_read", map[string]any{"content": output["content"]})["content"]
+	if _, ok := output[redactedContentKey]; ok {
+		output[redactedContentKey] = files.RedactToolArguments("file_read", map[string]any{redactedContentKey: output[redactedContentKey]})[redactedContentKey]
 	}
 	if _, ok := output["chunk_content"]; ok {
-		output["chunk_content"] = files.RedactToolArguments("file_search", map[string]any{"content": output["chunk_content"]})["content"]
+		output["chunk_content"] = files.RedactToolArguments("file_search", map[string]any{redactedContentKey: output["chunk_content"]})[redactedContentKey]
 	}
 	// file_summary is response metadata that must never reach logs or audits (§7.2).
 	if _, ok := output["file_summary"]; ok {
-		output["file_summary"] = files.RedactToolArguments("file_search", map[string]any{"content": output["file_summary"]})["content"]
+		output["file_summary"] = files.RedactToolArguments("file_search", map[string]any{redactedContentKey: output["file_summary"]})[redactedContentKey]
 	}
 	return output
 }
@@ -99,14 +103,14 @@ func redactNamedToolArguments(name string, args map[string]any) map[string]any {
 	redacted := files.RedactToolArguments(name, args)
 	redacted = mcpmemory.RedactToolArguments(name, redacted)
 	if name == "extract_key_info" {
-		copy := make(map[string]any, len(redacted))
+		cloned := make(map[string]any, len(redacted))
 		for key, value := range redacted {
-			copy[key] = value
+			cloned[key] = value
 		}
-		if value, ok := copy["materials"]; ok {
-			copy["materials"] = files.RedactToolArguments("file_write", map[string]any{"content": value})["content"]
+		if value, ok := cloned["materials"]; ok {
+			cloned["materials"] = files.RedactToolArguments("file_write", map[string]any{redactedContentKey: value})[redactedContentKey]
 		}
-		return copy
+		return cloned
 	}
 	return redacted
 }

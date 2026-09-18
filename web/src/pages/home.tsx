@@ -250,6 +250,7 @@ Accept: application/json, text/event-stream`}</code>
   );
 }
 
+/** ResourceLink renders one documentation or endpoint reference on the homepage. */
 function ResourceLink({ href, title, description }: { href: string; title: string; description: string }) {
   return (
     <a href={href} className="group rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/30">
@@ -265,6 +266,8 @@ function ResourceLink({ href, title, description }: { href: string; title: strin
   );
 }
 
+/** ToolCard renders one operation card: its name, description, configured price
+ * badge and the console route that serves it. */
 function ToolCard({
   title,
   description,

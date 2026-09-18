@@ -15,6 +15,7 @@ const descriptions = [
   ['file_rename', 'Move one file with its source version. Require an absent destination, or protect an existing destination with its own version.'],
 ];
 
+/** FileIOIntroduction explains the FileIO contract, including the mandatory version preconditions, before the workspace loads. */
 export function FileIOIntroduction() {
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('mcp_file_io_description_collapsed') === 'true'; } catch { return false; }

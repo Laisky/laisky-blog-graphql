@@ -23,6 +23,7 @@ type baseTask struct {
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 }
 
+// newBaseTask seeds the shared identifier, creation time and pending status.
 func newBaseTask() baseTask {
 	return baseTask{
 		TaskID:    gutils.UUID7(),
@@ -87,6 +88,24 @@ func NewLLMStormTask(prompt, apikey string) *LLMStormTask {
 	}
 }
 
+// CrawlerEgressPolicy is the connection contract the renderer must enforce.
+//
+// Request admission happens on this server, but the connection happens on the
+// renderer host. Without carrying the admitted addresses the renderer resolves
+// the name again and can reach a different address, so the admission-time DNS
+// check alone does not prevent rebinding, redirect escapes, or subresource
+// egress. The field names mirror internal/library/toolpolicy.EgressPolicy.
+type CrawlerEgressPolicy struct {
+	// Host is the only hostname this task may resolve.
+	Host string `json:"host"`
+	// Addresses are the only addresses the renderer may connect to for Host.
+	Addresses []string `json:"addresses"`
+	// MaxRedirects bounds the hops after the initial request; 0 allows none.
+	MaxRedirects int `json:"max_redirects"`
+	// AllowSubresources permits loading page subresources.
+	AllowSubresources bool `json:"allow_subresources"`
+}
+
 // HTMLCrawlerTask is a task for crawling HTML pages.
 type HTMLCrawlerTask struct {
 	baseTask
@@ -96,6 +115,15 @@ type HTMLCrawlerTask struct {
 	APIKey string `json:"api_key,omitempty"`
 	// OutputMarkdown indicates whether the fetched HTML should be converted to markdown
 	OutputMarkdown bool `json:"output_markdown,omitempty"`
+	// Egress is the connection policy the renderer must enforce. It is absent
+	// for a task submitted without admission metadata, which leaves the crawl
+	// unpinned; a renderer that receives no policy must refuse or be treated as
+	// unverified rather than assumed safe.
+	Egress *CrawlerEgressPolicy `json:"egress,omitempty"`
+	// RequestChain is the ordered list of origins the renderer actually
+	// contacted, starting with the original request. The server re-admits every
+	// entry, so a renderer that omits it leaves its egress unverified.
+	RequestChain []string `json:"request_chain,omitempty"`
 	// ResultHTML is the raw fetched HTML body, always present no matter OutputMarkdown is true or false
 	ResultHTML []byte `json:"result_html,omitempty"`
 	// ResultMarkdown if OutputMarkdown is true, the fetched HTML body converted to markdown
@@ -131,10 +159,18 @@ func NewHTMLCrawlerTask(url string) *HTMLCrawlerTask {
 // apiKey may be empty. When outputMarkdown is true and apiKey is not empty, the task runner may
 // convert the fetched HTML body to markdown. Callers can pass false to keep returning raw HTML.
 func NewHTMLCrawlerTaskWithOptions(url, apiKey string, outputMarkdown bool) *HTMLCrawlerTask {
+	return NewHTMLCrawlerTaskWithEgress(url, apiKey, outputMarkdown, nil)
+}
+
+// NewHTMLCrawlerTaskWithEgress creates a task that carries the admitted
+// connection policy, so the renderer can pin its connections instead of
+// resolving the hostname a second time.
+func NewHTMLCrawlerTaskWithEgress(url, apiKey string, outputMarkdown bool, egress *CrawlerEgressPolicy) *HTMLCrawlerTask {
 	return &HTMLCrawlerTask{
 		baseTask:       newBaseTask(),
 		Url:            url,
 		APIKey:         apiKey,
 		OutputMarkdown: outputMarkdown,
+		Egress:         egress,
 	}
 }

@@ -40,6 +40,8 @@ type urlPrefixConfig struct {
 	public   string
 }
 
+// newURLPrefixConfig resolves the internal mount prefix and the public prefix
+// a reverse proxy exposes. They differ when a proxy strips or adds a path.
 func newURLPrefixConfig() urlPrefixConfig {
 	rawInternal := strings.TrimSpace(gconfig.Shared.GetString("settings.web.url_prefix"))
 	internal := normalizeBasePath(rawInternal)
@@ -56,6 +58,7 @@ func newURLPrefixConfig() urlPrefixConfig {
 	return urlPrefixConfig{internal: internal, public: public}
 }
 
+// join prefixes an absolute server path with the internal mount prefix.
 func (c urlPrefixConfig) join(path string) string {
 	if path == "" {
 		if c.internal == "" {
@@ -80,6 +83,8 @@ func (c urlPrefixConfig) join(path string) string {
 	return c.internal + path
 }
 
+// rootVariants lists every path that addresses the deployment root, so both
+// the internal and the public prefix resolve to the same handler.
 func (c urlPrefixConfig) rootVariants() []string {
 	add := func(set map[string]struct{}, values ...string) {
 		for _, v := range values {
@@ -111,6 +116,7 @@ func (c urlPrefixConfig) rootVariants() []string {
 	return result
 }
 
+// matches reports whether a request path falls under either prefix.
 func (c urlPrefixConfig) matches(path string) bool {
 	if path == "" || !strings.HasPrefix(path, "/") {
 		return false
@@ -136,6 +142,7 @@ func (c urlPrefixConfig) matches(path string) bool {
 	return false
 }
 
+// display renders an empty prefix as "/" for logging.
 func (c urlPrefixConfig) display(value string) string {
 	if value == "" {
 		return "/"
@@ -244,7 +251,6 @@ func RunServer(addr string, resolver *Resolver) {
 				serveMCPTransportRoot(ctx, mcpHandler)
 			}
 			server.Any("/.well-known/mcp", mcpDiscoveryHandler)
-
 		}
 	} else {
 		searchNil := resolver != nil && resolver.args.WebSearchProvider == nil
@@ -404,16 +410,16 @@ func RunServer(addr string, resolver *Resolver) {
 		}
 
 		ctx.JSON(http.StatusOK, gin.H{
-			"urlPrefix":          prefix.internal,
-			"publicBasePath":     siteConfig.PublicBasePath,
-			"publicApiBasePath":  prefix.public,
-			"site":               siteConfig,
-			"tools":              toolsConfig,
-			"consoleTools":       consoleTools,
-			"interfaces":         catalog,
-			"pricing":            oneapi.SharedToolPrices(),
-			"githubOAuthEnabled": blog.IsGithubOAuthConfigured(),
-			"ssoJwt":             ssoJWTInfo,
+			"urlPrefix":                prefix.internal,
+			"publicBasePath":           siteConfig.PublicBasePath,
+			"publicApiBasePath":        prefix.public,
+			"site":                     siteConfig,
+			"tools":                    toolsConfig,
+			"consoleTools":             consoleTools,
+			runtimeConfigInterfacesKey: catalog,
+			"pricing":                  oneapi.SharedToolPrices(),
+			"githubOAuthEnabled":       blog.IsGithubOAuthConfigured(),
+			"ssoJwt":                   ssoJWTInfo,
 		})
 	}
 
@@ -464,6 +470,8 @@ func RunServer(addr string, resolver *Resolver) {
 	log.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))
 }
 
+// serveMCPTransportRoot dispatches a request to the MCP streamable transport
+// mounted at the deployment root.
 func serveMCPTransportRoot(ctx *gin.Context, handler http.Handler) {
 	if ctx == nil || ctx.Request == nil {
 		return
@@ -484,6 +492,8 @@ func serveMCPTransportRoot(ctx *gin.Context, handler http.Handler) {
 	handler.ServeHTTP(ctx.Writer, req)
 }
 
+// shouldServeFrontend reports whether a request should receive the SPA shell
+// rather than an API response.
 func shouldServeFrontend(r *http.Request) bool {
 	if r == nil {
 		return false
@@ -510,6 +520,7 @@ func shouldServeFrontend(r *http.Request) bool {
 	return false
 }
 
+// registerAgentAPIProbeRoutes publishes the agent discovery probe endpoints.
 func registerAgentAPIProbeRoutes(router gin.IRouter) {
 	handler := newAgentAPIProbeHandler()
 	for _, route := range []string{"/api", "/api/v1", "/v1", "/v2", "/agent/auth"} {
@@ -517,6 +528,8 @@ func registerAgentAPIProbeRoutes(router gin.IRouter) {
 	}
 }
 
+// newAgentAPIProbeHandler answers agent capability probes with the configured
+// endpoint metadata.
 func newAgentAPIProbeHandler() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		ctx.Header("Allow", "GET, HEAD, OPTIONS, POST")
@@ -538,6 +551,7 @@ func newAgentAPIProbeHandler() gin.HandlerFunc {
 	}
 }
 
+// allowCORS applies the shared cross-origin headers for browser clients.
 func allowCORS(ctx *gin.Context) {
 	logger := ginMw.GetLogger(ctx).Named("cors")
 	origin := strings.TrimSpace(ctx.Request.Header.Get("Origin"))
@@ -751,6 +765,8 @@ func classifyGraphQLClientError(errMsg string) (isClientSideErr bool, reason str
 	return false, "server_error"
 }
 
+// allowUnprefixedAsset reports whether a static asset may also be served from
+// the unprefixed root, which keeps bundled asset URLs working behind a proxy.
 func allowUnprefixedAsset(path string) bool {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {
