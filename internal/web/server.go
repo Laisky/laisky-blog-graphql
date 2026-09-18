@@ -22,10 +22,6 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-	mcptools "github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
@@ -183,6 +179,13 @@ func RunServer(addr string, resolver *Resolver) {
 
 	registerOneapiProxyRoutes(server, prefix)
 
+	// Shared application state exists independently of transport registration.
+	var activeMCP *mcp.Server
+	var sharedHolds *userrequests.HoldManager
+	if resolver != nil && resolver.args.UserRequestService != nil {
+		sharedHolds = userrequests.NewHoldManager(resolver.args.UserRequestService, log.Logger.Named("hold_manager"), nil)
+	}
+
 	if resolver != nil && (resolver.args.WebSearchProvider != nil ||
 		resolver.args.AskUserService != nil ||
 		resolver.args.UserRequestService != nil ||
@@ -192,6 +195,10 @@ func RunServer(addr string, resolver *Resolver) {
 		resolver.args.Rdb != nil ||
 		resolver.args.MCPToolsSettings.MCPPipeEnabled ||
 		resolver.args.MCPToolsSettings.FindToolEnabled) {
+		options := []mcp.ServerOption{mcp.WithUserRequestHoldManager(sharedHolds)}
+		if resolver.args.FilesService != nil {
+			options = append(options, mcp.WithFileHistoryReader(resolver.args.FilesService))
+		}
 		mcpServer, err := mcp.NewServer(
 			resolver.args.WebSearchProvider,
 			resolver.args.AskUserService,
@@ -204,10 +211,12 @@ func RunServer(addr string, resolver *Resolver) {
 			resolver.args.CallLogService,
 			resolver.args.MCPToolsSettings,
 			log.Logger,
+			options...,
 		)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
+			activeMCP = mcpServer
 			if resolver.args.UserRequestImages != nil {
 				mcpServer.AttachImageIssuer(resolver.args.UserRequestImages)
 			}
@@ -235,85 +244,6 @@ func RunServer(addr string, resolver *Resolver) {
 			}
 			server.Any("/.well-known/mcp", mcpDiscoveryHandler)
 
-			if resolver.args.AskUserService != nil {
-				askUserMux := askuser.NewHTTPHandler(resolver.args.AskUserService, log.Logger.Named("ask_user_http"))
-				askUserBase := prefix.join("/tools/ask_user")
-				askUserHandler := gin.WrapH(askUserMux)
-				server.Any(askUserBase, askUserHandler)
-				askUserWildcard := prefix.join("/tools/ask_user/*path")
-				stripPrefix := strings.TrimSuffix(askUserBase, "/")
-				if stripPrefix == "" {
-					stripPrefix = "/"
-				}
-				server.Any(askUserWildcard, gin.WrapH(http.StripPrefix(stripPrefix, askUserMux)))
-				if prefix.public == "" {
-					server.Any("/tools/ask_user", askUserHandler)
-					server.Any("/tools/ask_user/*path", gin.WrapH(http.StripPrefix("/tools/ask_user", askUserMux)))
-				}
-			}
-
-			if resolver.args.CallLogService != nil {
-				callLogMux := calllog.NewHTTPHandler(resolver.args.CallLogService, log.Logger.Named("call_log_http"))
-				callLogBase := prefix.join("/tools/call_log")
-				stripPrefix := strings.TrimSuffix(callLogBase, "/")
-				if stripPrefix == "" {
-					stripPrefix = "/"
-				}
-				callLogHandler := gin.WrapH(http.StripPrefix(stripPrefix, callLogMux))
-
-				apiBase := prefix.join("/tools/call_log/api")
-				server.Any(apiBase, callLogHandler)
-				server.Any(apiBase+"/*path", callLogHandler)
-
-				if prefix.public == "" {
-					server.Any("/tools/call_log/api", gin.WrapH(http.StripPrefix("/tools/call_log", callLogMux)))
-					server.Any("/tools/call_log/api/*path", gin.WrapH(http.StripPrefix("/tools/call_log", callLogMux)))
-				}
-			}
-
-			if resolver.args.UserRequestService != nil {
-				// Combined handler that routes to either user requests or saved commands based on path
-				// The HoldManager is obtained from the MCP server to share state with the get_user_request tool
-				combinedMux := userrequests.NewCombinedHTTPHandlerWithImages(resolver.args.UserRequestService, mcpServer.HoldManager(), resolver.args.UserRequestImages, log.Logger.Named("user_requests_http"), mcpServer.AvailableToolNames)
-				userReqBase := prefix.join("/tools/get_user_requests")
-				stripPrefix := strings.TrimSuffix(userReqBase, "/")
-				if stripPrefix == "" {
-					stripPrefix = "/"
-				}
-				userReqHandler := gin.WrapH(http.StripPrefix(stripPrefix, combinedMux))
-
-				apiBase := prefix.join("/tools/get_user_requests/api")
-				server.Any(apiBase, userReqHandler)
-				server.Any(apiBase+"/*path", userReqHandler)
-
-				if prefix.public == "" {
-					server.Any("/tools/get_user_requests/api", gin.WrapH(http.StripPrefix("/tools/get_user_requests", combinedMux)))
-					server.Any("/tools/get_user_requests/api/*path", gin.WrapH(http.StripPrefix("/tools/get_user_requests", combinedMux)))
-				}
-			}
-
-			if resolver.args.FilesService != nil {
-				filesMux := files.NewHTTPHandler(resolver.args.FilesService, log.Logger.Named("file_io_http"),
-					files.WithHTTPFileWriterResolver(func(ctx context.Context, auth files.AuthContext, project string) (files.FileHTTPWriter, error) {
-						return mcptools.ResolveVersionedFileService(ctx, resolver.args.MCPFileService, auth, project)
-					}),
-				)
-				filesBase := prefix.join("/tools/file_io")
-				stripPrefix := strings.TrimSuffix(filesBase, "/")
-				if stripPrefix == "" {
-					stripPrefix = "/"
-				}
-				filesHandler := gin.WrapH(http.StripPrefix(stripPrefix, filesMux))
-
-				apiBase := prefix.join("/tools/file_io/api")
-				server.Any(apiBase, filesHandler)
-				server.Any(apiBase+"/*path", filesHandler)
-
-				if prefix.public == "" {
-					server.Any("/tools/file_io/api", gin.WrapH(http.StripPrefix("/tools/file_io", filesMux)))
-					server.Any("/tools/file_io/api/*path", gin.WrapH(http.StripPrefix("/tools/file_io", filesMux)))
-				}
-			}
 		}
 	} else {
 		searchNil := resolver != nil && resolver.args.WebSearchProvider == nil
@@ -327,6 +257,15 @@ func RunServer(addr string, resolver *Resolver) {
 			zap.String("internal_prefix", prefix.display(prefix.internal)),
 		)
 	}
+
+	registeredToolNames := func() []string {
+		if activeMCP == nil {
+			return []string{}
+		}
+		return activeMCP.AvailableToolNames()
+	}
+	// The HTTP registrar is outside both the MCP factory and its success branch.
+	registerToolHTTPRoutes(server, prefix, resolver, sharedHolds, registeredToolNames)
 
 	server.Any("/health", func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "hello, world")
@@ -444,32 +383,10 @@ func RunServer(addr string, resolver *Resolver) {
 			return
 		}
 
-		// Build tools configuration for frontend
-		toolsConfig := map[string]bool{
-			"web_search":       true,
-			"web_fetch":        true,
-			"ask_user":         true,
-			"get_user_request": true,
-			"extract_key_info": true,
-			"file_io":          true,
-			"memory":           false,
-		}
-		if resolver != nil {
-			toolsConfig["web_search"] = resolver.args.MCPToolsSettings.WebSearchEnabled
-			toolsConfig["web_fetch"] = resolver.args.MCPToolsSettings.WebFetchEnabled
-			toolsConfig["ask_user"] = resolver.args.MCPToolsSettings.AskUserEnabled
-			toolsConfig["get_user_request"] = resolver.args.MCPToolsSettings.GetUserRequestEnabled
-			toolsConfig["extract_key_info"] = resolver.args.MCPToolsSettings.ExtractKeyInfoEnabled
-			toolsConfig["file_io"] = resolver.args.MCPToolsSettings.FileIOEnabled
-			toolsConfig["memory"] = resolver.args.MCPToolsSettings.MemoryEnabled
-		}
-
-		// These pages call GraphQL directly. MCP tool registration is independent.
-		consoleTools := consoleToolAvailability(toolsConfig, map[string]bool{
-			"web_search":       resolver != nil && resolver.args.WebSearchProvider != nil,
-			"web_fetch":        resolver != nil && resolver.args.Rdb != nil,
-			"extract_key_info": resolver != nil && resolver.args.RAGService != nil,
-		})
+		// Report independently configured adapters, not flags or static examples.
+		catalog := buildInterfaceCatalog(interfaceSourcesFromResolver(resolver, registeredToolNames()))
+		toolsConfig := mcpToolGroups(catalog)
+		consoleTools := consoleGroups(catalog)
 
 		siteConfig := siteConfigs.resolveForRequest(ctx.Request)
 		if siteConfig.PublicBasePath == "" {
@@ -492,6 +409,7 @@ func RunServer(addr string, resolver *Resolver) {
 			"site":               siteConfig,
 			"tools":              toolsConfig,
 			"consoleTools":       consoleTools,
+			"interfaces":         catalog,
 			"githubOAuthEnabled": blog.IsGithubOAuthConfigured(),
 			"ssoJwt":             ssoJWTInfo,
 		})
@@ -653,11 +571,11 @@ func allowCORS(ctx *gin.Context) {
 	// Set CORS headers
 	if allowedOrigin != "" {
 		ctx.Header("Access-Control-Allow-Origin", allowedOrigin)
-		setToolCORSHeaders(ctx.Writer.Header())
+		setToolCORSHeaders(ctx.Writer.Header(), ctx.GetHeader("Access-Control-Request-Headers"))
 		ctx.Header("Access-Control-Allow-Credentials", "true")
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400") // 24 hours
-		ctx.Header("Vary", "Origin")                  // Indicate that the response varies based on the Origin header
+		ctx.Writer.Header().Add("Vary", "Origin")     // Indicate that the response varies based on the Origin header
 
 		if ctx.Request.Method == http.MethodOptions {
 			logger.Debug("CORS: handling preflight request", zap.String("origin", origin))
@@ -675,7 +593,7 @@ func allowCORS(ctx *gin.Context) {
 		// Handle OPTIONS requests without Origin header (some tools/browsers)
 		logger.Debug("CORS: OPTIONS request without Origin header")
 		ctx.Header("Access-Control-Allow-Origin", "*")
-		setToolCORSHeaders(ctx.Writer.Header())
+		setToolCORSHeaders(ctx.Writer.Header(), ctx.GetHeader("Access-Control-Request-Headers"))
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400")
 		ctx.AbortWithStatus(http.StatusNoContent)

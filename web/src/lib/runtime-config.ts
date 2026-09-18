@@ -44,7 +44,14 @@ export interface RuntimeConfig {
   publicApiBasePath?: string;
   urlPrefix?: string;
   publicBasePath?: string;
-  // MCP tool registration, not a policy for GraphQL.
+  // Registered shared-tool adapters only; not per-user authorization or backend health.
+  interfaces?: {
+    scope: string;
+    mcp: Record<string, boolean>;
+    graphql: Record<string, boolean>;
+    http: Record<string, boolean>;
+  };
+  // Actual MCP registration, not a policy for GraphQL.
   tools?: ToolsConfig;
   // Browser route availability follows the transport each page actually calls.
   consoleTools?: ToolsConfig;

@@ -23,7 +23,7 @@ The earlier candidate proposal to reuse MCP switches across interfaces is
 `internal/web/resolver.go` is unchanged. The shared RAG service's own configuration
 is distinct from `MCPToolsSettings.ExtractKeyInfoEnabled`.
 
-The runtime response retains `tools` for the MCP flags and adds `consoleTools`
+The runtime response retains `tools` for the actual MCP registry and `consoleTools`
 for browser navigation. Search, fetch and extraction pages use configured
 GraphQL dependency availability, regardless of those MCP flags. Pages that
 actually invoke MCP, such as FileIO and memory, still need that transport for
@@ -39,7 +39,7 @@ fallback to MCP flags to determine availability of GraphQL pages.
 | Rendered fetch | `web_fetch` | `WebFetch` | Page calls GraphQL. Shared pre-billing URL admission; GraphQL currently always requests Markdown, while MCP can select HTML. |
 | Context extraction | `extract_key_info` | `ExtractKeyInfo` | New dedicated GraphQL page, router entry, menu item and homepage link; server owns size/top-K limits. |
 | FileIO content/lifecycle | Seven FileIO tools | No fields yet | Browser uses MCP for file operations and separate HTTP for editor/history. Version-aware behavior and plugin routing were added by the preceding PRs. |
-| File history | No history tools yet | No fields yet | Existing dedicated HTTP list/content/restore and version-aware browser dialog. |
+| File history | `file_list_versions`, `file_read_version`, `file_restore_version` | No fields yet | Bounded MCP metadata paging and condition-protected plugin restore; existing HTTP/browser history remains available. Go integration acceptance is still pending. |
 | Memory lifecycle | Four memory tools | No fields yet | Existing page calls MCP; GraphQL coverage remains an open capability gap. |
 | Human directives | Agent receives/consumes through MCP | No equivalent fields | Human queue-management UI uses HTTP. Producing and consuming directives are intentionally different roles. |
 | Tool discovery/pipelines | `tools/list`, `find_tool`, `mcp_pipe` | GraphQL introspection describes its own fields | MCP Inspector is available; transport-specific discovery need not use the same envelope. |
@@ -75,7 +75,7 @@ acceptance or production deployment.
 - [x] **I07 — Fetch admission parity:** both adapters use the same bounded,
   cancellation-aware URL/DNS admission before billing. Reject non-HTTP(S), URL
   credentials, local/non-public addresses and ambiguous numeric host forms.
-- [x] **I08 — Fetch lifecycle/logging:** URL logging removes userinfo/query/fragment
+- [x] **I08 — Fetch lifecycle/logging:** URL logging removes userinfo/path/query/fragment
   and redacts malformed inputs. Crawler waiting observes cancellation; failed
   tasks with missing failure metadata no longer require pointer dereferences.
 - [x] **I09 — Deployment paths:** introduce the explicit `publicApiBasePath` and
@@ -105,7 +105,7 @@ switches on/off and confirms invalid inputs reach shared validation, rather than
 being rejected by an unrelated transport gate; it runs before billable effects.
 It is not a generated GraphQL HTTP end-to-end test.
 
-| Validation actually executed for this revision | Result |
+| Original implementation validation (`718c653`); continuation results are linked below | Result |
 | --- | --- |
 | Shared toolpolicy package, Go 1.23.2 `-race -count=3` | PASS |
 | Independent availability and CORS helpers/tests, standalone Go `-race -count=3` | PASS |
@@ -134,23 +134,35 @@ pnpm run build
 - [ ] **G01:** Add typed GraphQL FileIO and memory adapters over shared services,
   with their own authentication, error mapping, concurrency preconditions and
   properly regenerated gqlgen output; test against the other entrypoints.
-- [ ] **G02:** Add MCP file-history list/read/restore tools over the existing
-  historical services, keeping history IDs distinct from current edit tokens.
+- [ ] **G02 acceptance:** History adapters, bounded string-ID pagination, plugin-aware
+  conditional restores, registration and tests are included. Execute the real
+  Go/RAG/PageIndex/PostgreSQL tests before closing acceptance.
 - [ ] **G03:** Add GraphQL/browser fetch format selection via a real schema and
   generated-resolver change; current GraphQL Markdown-only behavior is retained.
-- [ ] **G04:** Complete browser MCP transport lifecycle coverage: initialized
-  notification, optional session handling, protocol headers, JSON/SSE responses,
-  and safe recovery without unintended side effects.
+- [x] **G04 client implementation:** Modern/legacy Streamable HTTP lifecycle,
+  optional legacy sessions, required metadata/header mirroring, bounded JSON/SSE,
+  cancellation and no automatic tool replay are implemented. The same behavior
+  tests fail on the prior client and pass on the replacement. Real-server and
+  full-frontend acceptance remain part of G07.
 - [ ] **G05:** Validate crawler-side connection pinning, redirects and subresource
   requests. Admission DNS checks alone do not establish end-to-end SSRF safety.
-- [ ] **G06:** Complete live-capability discovery, feature parity and billing/audit
-  matrices across every operation; the static public card is not a runtime
-  availability guarantee.
+- [ ] **G06 acceptance:** An operation-level configured-adapter catalog and
+  billing/audit matrix are included. Per-user authorization, backend health and
+  full billing/audit parity remain separate; do not treat static cards or this
+  metadata as successful live execution.
 - [ ] **G07:** Execute full repository/frontend and real transport/database tests.
   The independent helper suites above are only a subset of acceptance.
-- [ ] **G08:** Decouple legacy dedicated HTTP route construction from successful
-  MCP server construction. This change does not add a flag gate to HTTP, but the
-  pre-existing outer initialization dependency still deserves separate coverage.
+- [ ] **G08 acceptance:** Dedicated HTTP construction now runs outside MCP
+  initialization, with application-owned shared holds. Real handler/registry
+  tests are included but must run with repository dependencies before acceptance.
+
+## Completion follow-up
+
+See [the continuation record](pr49_completion_20260917.md) for exact red/green
+results, the attempted Go 1.27 upgrade, operation-level inventory and remaining
+blockers. New code is not proof of an executed Go integration test. In particular,
+G01/G03 require real gqlgen output, G05 requires crawler-side verification, and
+G07 still requires the configured dependency/toolchain environment.
 
 ## Scope and rollout
 

@@ -14,8 +14,6 @@ import (
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -200,9 +198,7 @@ func (s *Server) recordToolInvocation(ctx context.Context, toolName string, apiK
 		return
 	}
 
-	params := cloneArguments(args)
-	params = files.RedactToolArguments(toolName, params)
-	params = mcpmemory.RedactToolArguments(toolName, params)
+	params := redactToolAuditParameters(toolName, args)
 	status := calllog.StatusSuccess
 	errorMessage := ""
 

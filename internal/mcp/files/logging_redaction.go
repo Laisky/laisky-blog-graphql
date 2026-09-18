@@ -4,13 +4,16 @@ import "fmt"
 
 // FileToolNames enumerates the tool identifiers that handle file content.
 var FileToolNames = map[string]struct{}{
-	"file_stat":   {},
-	"file_read":   {},
-	"file_write":  {},
-	"file_delete": {},
-	"file_rename": {},
-	"file_list":   {},
-	"file_search": {},
+	"file_stat":            {},
+	"file_read":            {},
+	"file_write":           {},
+	"file_delete":          {},
+	"file_rename":          {},
+	"file_list":            {},
+	"file_search":          {},
+	"file_list_versions":   {},
+	"file_read_version":    {},
+	"file_restore_version": {},
 }
 
 // RedactToolArguments removes sensitive payloads from tool arguments.

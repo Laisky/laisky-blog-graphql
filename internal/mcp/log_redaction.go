@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
 )
@@ -14,12 +15,12 @@ func redactMCPBody(raw string) string {
 	}
 	var payload any
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return raw
+		return `{"redacted":true,"reason":"invalid JSON payload"}`
 	}
 	redacted := redactMCPValue(payload)
 	out, err := json.Marshal(redacted)
 	if err != nil {
-		return raw
+		return `{"redacted":true,"reason":"unencodable log payload"}`
 	}
 	return string(out)
 }
@@ -48,19 +49,27 @@ func redactMCPMap(input map[string]any) map[string]any {
 	}
 
 	method, _ := output["method"].(string)
-	if method == "call_tool" {
+	if method == "call_tool" || method == "tools/call" {
 		params, _ := output["params"].(map[string]any)
-		toolName, _ := params["tool_name"].(string)
-		if _, ok := files.FileToolNames[toolName]; ok {
-			if args, ok := params["arguments"].(map[string]any); ok {
-				params["arguments"] = files.RedactToolArguments(toolName, args)
-			}
+		nameKey := "name"
+		if method == "call_tool" {
+			nameKey = "tool_name"
 		}
-		if _, ok := mcpmemory.ToolNames[toolName]; ok {
-			if args, ok := params["arguments"].(map[string]any); ok {
-				params["arguments"] = mcpmemory.RedactToolArguments(toolName, args)
-			}
+		name, _ := params[nameKey].(string)
+		if args, ok := params["arguments"].(map[string]any); ok {
+			params["arguments"] = redactNamedToolArguments(name, args)
 		}
+	}
+	// Pipeline steps use tool/args instead of method/params. Nested pipes have
+	// already been visited recursively, and require the same content policy.
+	if name, ok := output["tool"].(string); ok {
+		if args, ok := output["args"].(map[string]any); ok {
+			output["args"] = redactNamedToolArguments(name, args)
+		}
+	}
+	if value, ok := output["url"]; ok {
+		text, _ := value.(string)
+		output["url"] = toolpolicy.URLForLog(text)
 	}
 
 	if _, ok := output["content"]; ok {
@@ -83,4 +92,30 @@ func redactHookPayload(payload any) string {
 		return ""
 	}
 	return redactMCPBody(string(data))
+}
+
+// redactNamedToolArguments applies content policy to either transport's tool-shaped object.
+func redactNamedToolArguments(name string, args map[string]any) map[string]any {
+	redacted := files.RedactToolArguments(name, args)
+	redacted = mcpmemory.RedactToolArguments(name, redacted)
+	if name == "extract_key_info" {
+		copy := make(map[string]any, len(redacted))
+		for key, value := range redacted {
+			copy[key] = value
+		}
+		if value, ok := copy["materials"]; ok {
+			copy["materials"] = files.RedactToolArguments("file_write", map[string]any{"content": value})["content"]
+		}
+		return copy
+	}
+	return redacted
+}
+
+// redactToolAuditParameters reuses recursive request redaction before persistent call logging.
+// Only the logging copy is transformed; real operation arguments remain unchanged.
+func redactToolAuditParameters(name string, args map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	return redactMCPMap(redactNamedToolArguments(name, args))
 }

@@ -139,7 +139,14 @@ func NewServer(
 	callLogger callRecorder,
 	toolsSettings ToolsSettings,
 	logger logSDK.Logger,
+	options ...ServerOption,
 ) (*Server, error) {
+	shared := sharedServerServices{}
+	for _, option := range options {
+		if option != nil {
+			option(&shared)
+		}
+	}
 	if searchProvider == nil && askUserService == nil && userRequestService == nil && ragService == nil && fileService == nil && memoryService == nil && rdb == nil && !toolsSettings.MCPPipeEnabled && !toolsSettings.FindToolEnabled {
 		return nil, errors.New("at least one MCP capability must be enabled")
 	}
@@ -268,8 +275,11 @@ func NewServer(
 	}
 
 	if userRequestService != nil && toolsSettings.GetUserRequestEnabled {
-		// Create HoldManager for this user request service
-		holdMgr := userrequests.NewHoldManager(userRequestService, serverLogger.Named("hold_manager"), nil)
+		// The application owns holds when HTTP and MCP share the user-request service.
+		holdMgr := shared.holds
+		if holdMgr == nil {
+			holdMgr = userrequests.NewHoldManager(userRequestService, serverLogger.Named("hold_manager"), nil)
+		}
 		s.holdManager = holdMgr
 
 		getUserRequestTool, err := tools.NewGetUserRequestTool(
@@ -354,6 +364,9 @@ func NewServer(
 		}
 		s.fileSearch = fileSearchTool
 		s.registerTool(mcpServer, fileSearchTool.Definition(), s.handleFileSearch)
+		if err := s.registerFileHistoryTools(mcpServer, fileService, shared.history); err != nil {
+			return nil, err
+		}
 	} else if fileService != nil && !toolsSettings.FileIOEnabled {
 		serverLogger.Info("file tools disabled by configuration")
 	}

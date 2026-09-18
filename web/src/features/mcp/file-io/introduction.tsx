@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 const descriptions = [
   ['file_write', 'APPEND, OVERWRITE and TRUNCATE all require expected_version, or create_only=true for a new file.'],
   ['file_read', 'Returns content and its version together. Pin subsequent byte ranges with expected_version.'],
+  ['file_list_versions', 'List retained history with string IDs and bounded before_id pagination.'],
+  ['file_read_version', 'Read immutable historical bytes. Check content_encoding before interpreting legacy binary content.'],
+  ['file_restore_version', 'Restore history with the original live expected_version, or create_only=true after deletion. History IDs do not authorize overwriting.'],
   ['file_list', 'Browse project files and directories. Listing entries is not a file-edit snapshot.'],
   ['file_stat', 'Inspect metadata and the current file version. Do not pair a later stat version with earlier read content.'],
   ['file_search', 'Find relevant indexed content. Read the live file before editing; search chunks are not an edit base.'],
@@ -54,6 +57,7 @@ export function FileIOIntroduction() {
             <p>Read the file; use its actual returned version with your edit (the token below is illustrative):</p>
             <pre className="overflow-x-auto rounded bg-muted p-3">{JSON.stringify({ name: 'file_read', arguments: { project: 'notes', path: '/state.json', offset: 0, length: -1 } }, null, 2)}</pre>
             <pre className="overflow-x-auto rounded bg-muted p-3">{JSON.stringify({ name: 'file_write', arguments: { project: 'notes', path: '/state.json', mode: 'TRUNCATE', content: '{"count":1}', expected_version: '76c3e40a3c4b4f5d9c2617d1b8094593:42' } }, null, 2)}</pre>
+            <p>MCP history tools use <code>history_id</code> as an exact decimal string. To restore, also supply the original live <code>expected_version</code>, or <code>create_only=true</code> for an absent path. List pages use <code>next_cursor</code> as the next <code>before_id</code>.</p>
             <p>Editor saves and historical restores send <code>If-Match: "&lt;live-file-version&gt;"</code>. The history ID selects the old bytes; it never substitutes for the live version.</p>
           </div>
         </details>
