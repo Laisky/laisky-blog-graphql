@@ -296,7 +296,7 @@ func TestMCPPipeComplexNestedBillingForFreeAndPaidSteps(t *testing.T) {
 		func(_ context.Context) string { return "sk-pipe" },
 		func(ctx context.Context, _ string, _ oneapi.Price, _ string) error {
 			preflightCalls++
-			markBillingAttempted(ctx)
+			markBillingOutcome(ctx, oneapi.BillingAccepted)
 			return nil
 		},
 	)
@@ -372,7 +372,7 @@ func TestMCPPipeContinueOnErrorReportsEveryFreeFileIOAttempt(t *testing.T) {
 		func(_ context.Context) string { return "sk-pipe" },
 		func(ctx context.Context, _ string, _ oneapi.Price, _ string) error {
 			preflightCalls++
-			markBillingAttempted(ctx)
+			markBillingOutcome(ctx, oneapi.BillingAccepted)
 			return nil
 		},
 	)

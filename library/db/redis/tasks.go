@@ -53,8 +53,18 @@ func (db *DB) AddHTMLCrawlerTask(ctx context.Context, url string) (taskID string
 }
 
 // AddHTMLCrawlerTaskWithOptions adds a new HTMLCrawlerTask to the queue with extra fields.
+// It submits no egress policy; prefer AddHTMLCrawlerTaskWithEgress so the
+// renderer can pin its connections to the admitted addresses.
 func (db *DB) AddHTMLCrawlerTaskWithOptions(ctx context.Context, url, apiKey string, outputMarkdown bool) (taskID string, err error) {
-	task := NewHTMLCrawlerTaskWithOptions(url, apiKey, outputMarkdown)
+	return db.AddHTMLCrawlerTaskWithEgress(ctx, url, apiKey, outputMarkdown, nil)
+}
+
+// AddHTMLCrawlerTaskWithEgress queues a crawl together with the connection
+// policy request admission produced for it.
+func (db *DB) AddHTMLCrawlerTaskWithEgress(ctx context.Context, url, apiKey string,
+	outputMarkdown bool, egress *CrawlerEgressPolicy,
+) (taskID string, err error) {
+	task := NewHTMLCrawlerTaskWithEgress(url, apiKey, outputMarkdown, egress)
 	payload, err := task.ToString()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to serialize task using ToString")

@@ -35,6 +35,9 @@ FileIO tools provide a remote project-scoped filesystem for durable agent contex
 - `file_rename`
 - `file_list`
 - `file_search`
+- `file_list_versions`
+- `file_read_version`
+- `file_restore_version`
 
 Use `project=graphql` for this repository. This is a namespace value, not the GraphQL transport. File paths are logical workspace paths inside the MCP storage service, not arbitrary host filesystem paths.
 
@@ -43,6 +46,10 @@ For edits, obtain `content` and opaque `version` together from `file_read`, then
 A missing mutation condition returns `PRECONDITION_REQUIRED`. A stale condition returns `VERSION_CONFLICT`; re-read, compare and recompute rather than replacing only the token or retrying unchanged. Versions are strings, not numbers or history IDs. Web editor saves and restores use a strong quoted `If-Match` header and report missing/stale conditions as HTTP 428/412. `tools/list` is the runtime schema authority.
 
 FileIO is exposed through MCP and the Web console's FileIO HTTP endpoints. The GraphQL `/query` and `/query/v2` schema does not currently expose FileIO operations. `ExtractKeyInfo`, blog history and Arweave uploads are different APIs, not alternate FileIO writes.
+
+History listing is bounded (default 50, maximum 200). Pass `next_cursor` as `before_id` to continue toward older retained rows. `history_id` selects immutable bytes and remains a decimal string. A restore separately requires the ORIGINAL live `expected_version`, or `create_only=true` for an absent path; it never substitutes a newer token. Legacy non-UTF-8 history is returned as base64, not silently repaired.
+
+The public server card is illustrative. Use authenticated `tools/list` for callable tools; runtime `interfaces` metadata describes configured adapters, not per-user authorization or backend health.
 
 ### Memory
 
@@ -63,7 +70,13 @@ Use memory when the same task spans turns or when multiple agents need concise d
 
 All MCP calls require `Authorization: Bearer <api key>`. A token may optionally include an identity prefix before `@`, such as `user:agent@sk-example`, to bind user and AI identities. See `/auth.md` for the complete agent walkthrough.
 
-## Example Initialize Request
+## Browser transport and protocol generations
+
+The browser first probes the supported 2026-07-28 Streamable HTTP protocol using `server/discover`, sends protocol/client metadata on each request, and validates the authorized `tools/list` catalog before calls. Required routing and annotated argument headers match the body. This generation does not use sessions or an initialize handshake.
+
+For a legacy Streamable HTTP server, the client negotiates via `initialize`, accepts optional session IDs, and sends `notifications/initialized` before operations. Both paths handle JSON and request-scoped SSE. A possibly committed tool call is never re-POSTed automatically after a network failure, expired session, mismatched schema or incomplete stream. Refresh state and retry explicitly.
+
+## Legacy initialize example
 
 ```json
 {

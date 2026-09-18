@@ -14,6 +14,9 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
+	gqlparser "github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/arweave/dto"
 	dto1 "github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
@@ -23,8 +26,6 @@ import (
 	model1 "github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model"
 	"github.com/Laisky/laisky-blog-graphql/library"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
-	gqlparser "github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // region    ***************************** api!.gotpl *****************************
@@ -143,8 +144,93 @@ type ComplexityRoot struct {
 		Query     func(childComplexity int) int
 	}
 
+	FileIOChunk struct {
+		ChunkContent       func(childComplexity int) int
+		FilePath           func(childComplexity int) int
+		FileSeekEndBytes   func(childComplexity int) int
+		FileSeekStartBytes func(childComplexity int) int
+		FileSummary        func(childComplexity int) int
+		IsFullFile         func(childComplexity int) int
+		Project            func(childComplexity int) int
+		Score              func(childComplexity int) int
+	}
+
+	FileIODeleteResult struct {
+		DeletedCount func(childComplexity int) int
+	}
+
+	FileIOEntry struct {
+		CreatedAt func(childComplexity int) int
+		Name      func(childComplexity int) int
+		Path      func(childComplexity int) int
+		Size      func(childComplexity int) int
+		Type      func(childComplexity int) int
+		UpdatedAt func(childComplexity int) int
+	}
+
+	FileIOHistoryContent struct {
+		Content         func(childComplexity int) int
+		ContentEncoding func(childComplexity int) int
+		CreatedAt       func(childComplexity int) int
+		HistoryID       func(childComplexity int) int
+		Size            func(childComplexity int) int
+	}
+
+	FileIOHistoryEntry struct {
+		CreatedAt func(childComplexity int) int
+		ID        func(childComplexity int) int
+		Size      func(childComplexity int) int
+	}
+
+	FileIOHistoryPage struct {
+		HasMore    func(childComplexity int) int
+		NextCursor func(childComplexity int) int
+		Versions   func(childComplexity int) int
+	}
+
+	FileIOListResult struct {
+		Entries func(childComplexity int) int
+		HasMore func(childComplexity int) int
+	}
+
+	FileIOReadResult struct {
+		Content         func(childComplexity int) int
+		ContentEncoding func(childComplexity int) int
+		Version         func(childComplexity int) int
+	}
+
+	FileIORenameResult struct {
+		MovedCount func(childComplexity int) int
+	}
+
+	FileIOSearchResult struct {
+		Chunks func(childComplexity int) int
+	}
+
+	FileIOStatResult struct {
+		CreatedAt func(childComplexity int) int
+		Exists    func(childComplexity int) int
+		Size      func(childComplexity int) int
+		Type      func(childComplexity int) int
+		UpdatedAt func(childComplexity int) int
+		Version   func(childComplexity int) int
+	}
+
+	FileIOWriteResult struct {
+		BytesWritten func(childComplexity int) int
+		Version      func(childComplexity int) int
+	}
+
+	GeneralCrawlerEgressPolicy struct {
+		Addresses         func(childComplexity int) int
+		AllowSubresources func(childComplexity int) int
+		Host              func(childComplexity int) int
+		MaxRedirects      func(childComplexity int) int
+	}
+
 	GeneralHTMLCrawlerTask struct {
 		CreatedAt     func(childComplexity int) int
+		Egress        func(childComplexity int) int
 		FailedReason  func(childComplexity int) int
 		FinishedAt    func(childComplexity int) int
 		ResultHTMLB64 func(childComplexity int) int
@@ -187,6 +273,50 @@ type ComplexityRoot struct {
 		OwnerID   func(childComplexity int) int
 	}
 
+	MemoryAck struct {
+		Ok func(childComplexity int) int
+	}
+
+	MemoryBeforeTurnResult struct {
+		ContextTokenCount func(childComplexity int) int
+		InputItems        func(childComplexity int) int
+		RecallFactIds     func(childComplexity int) int
+		RecallInsightIds  func(childComplexity int) int
+	}
+
+	MemoryContentPart struct {
+		FileID   func(childComplexity int) int
+		Filename func(childComplexity int) int
+		ImageURL func(childComplexity int) int
+		Text     func(childComplexity int) int
+		Type     func(childComplexity int) int
+	}
+
+	MemoryDirectoryListing struct {
+		Summaries func(childComplexity int) int
+	}
+
+	MemoryDirectorySummary struct {
+		Abstract    func(childComplexity int) int
+		HasOverview func(childComplexity int) int
+		Path        func(childComplexity int) int
+		UpdatedAt   func(childComplexity int) int
+	}
+
+	MemoryMetadataEntry struct {
+		Key   func(childComplexity int) int
+		Value func(childComplexity int) int
+	}
+
+	MemoryResponseItem struct {
+		CallID   func(childComplexity int) int
+		Content  func(childComplexity int) int
+		Metadata func(childComplexity int) int
+		Output   func(childComplexity int) int
+		Role     func(childComplexity int) int
+		Type     func(childComplexity int) int
+	}
+
 	Mutation struct {
 		AcquireLock                   func(childComplexity int, lockName string, durationSec int, isRenewal *bool) int
 		ArweaveUpload                 func(childComplexity int, fileB64 string, contentType *string) int
@@ -199,8 +329,15 @@ type ComplexityRoot struct {
 		BlogToggleCommentLike         func(childComplexity int, commentID string) int
 		CreateGeneralToken            func(childComplexity int, username string, durationSec int) int
 		ExtractKeyInfo                func(childComplexity int, query string, materials string, topK *int) int
+		FileDelete                    func(childComplexity int, project string, path string, recursive bool, expectedVersion string, plugin *models.MemoryPlugin) int
+		FileRename                    func(childComplexity int, project string, fromPath string, toPath string, overwrite bool, expectedVersion string, expectedDestinationVersion *string, destinationMustNotExist *bool, plugin *models.MemoryPlugin) int
+		FileRestoreVersion            func(childComplexity int, project string, path string, historyID string, expectedVersion *string, createOnly *bool, plugin *models.MemoryPlugin) int
+		FileWrite                     func(childComplexity int, project string, path string, content string, contentEncoding string, offset *library.BigInt, mode models.FileIOWriteMode, expectedVersion *string, createOnly *bool, plugin *models.MemoryPlugin) int
 		GeneralAddHTMLCrawlerTask     func(childComplexity int, url string) int
 		GeneralAddLLMStormTask        func(childComplexity int, prompt string, apiKey string) int
+		MemoryAfterTurn               func(childComplexity int, input models.MemoryAfterTurnInput) int
+		MemoryBeforeTurn              func(childComplexity int, input models.MemoryBeforeTurnInput) int
+		MemoryRunMaintenance          func(childComplexity int, project *string, sessionID *string, plugin *models.MemoryPlugin) int
 		TelegramMonitorAlert          func(childComplexity int, typeArg string, token string, msg string) int
 		UserActive                    func(childComplexity int, token string) int
 		UserChangePassword            func(childComplexity int, currentPassword string, newPassword string) int
@@ -221,7 +358,7 @@ type ComplexityRoot struct {
 		UserStartPasskeyLogin         func(childComplexity int, redirectTo *string, turnstileToken *string) int
 		UserStartPasskeyRegistration  func(childComplexity int, label string) int
 		UserStartTOTPSetup            func(childComplexity int) int
-		WebFetch                      func(childComplexity int, url string) int
+		WebFetch                      func(childComplexity int, url string, outputMarkdown *bool) int
 		WebSearch                     func(childComplexity int, query string) int
 	}
 
@@ -260,12 +397,19 @@ type ComplexityRoot struct {
 		BlogPosts                    func(childComplexity int, page *models.Pagination, tag string, categoryURL *string, length int, name string, regexp string, language models.Language) int
 		BlogTags                     func(childComplexity int) int
 		BlogTwitterCard              func(childComplexity int, name string, language models.Language) int
+		FileList                     func(childComplexity int, project string, path string, depth *int, limit *int, plugin *models.MemoryPlugin) int
+		FileListVersions             func(childComplexity int, project string, path string, limit *int, beforeID *string) int
+		FileRead                     func(childComplexity int, project string, path string, offset *library.BigInt, length *library.BigInt, expectedVersion *string, plugin *models.MemoryPlugin) int
+		FileReadVersion              func(childComplexity int, project string, path string, historyID string) int
+		FileSearch                   func(childComplexity int, project string, query string, pathPrefix string, limit *int, plugin *models.MemoryPlugin) int
+		FileStat                     func(childComplexity int, project string, path string, plugin *models.MemoryPlugin) int
 		GeneralGetHTMLCrawlerTask    func(childComplexity int) int
 		GeneralGetLLMStormTaskResult func(childComplexity int, taskID string) int
 		GetBlogPostSeries            func(childComplexity int, page *models.Pagination, key string) int
 		Hello                        func(childComplexity int) int
 		Lock                         func(childComplexity int, name string) int
 		LockPermissions              func(childComplexity int, username string) int
+		MemoryListDirWithAbstract    func(childComplexity int, project *string, sessionID *string, path string, depth *int, limit *int, plugin *models.MemoryPlugin) int
 		TelegramAlertTypes           func(childComplexity int, page *models.Pagination, name string) int
 		TelegramMonitorUsers         func(childComplexity int, page *models.Pagination, name string) int
 		TwitterStatues               func(childComplexity int, page *models.Pagination, tweetID string, username string, viewerID string, sort *models.Sort, topic string, regexp string) int
@@ -356,9 +500,10 @@ type ComplexityRoot struct {
 	}
 
 	WebFetchResult struct {
-		Content   func(childComplexity int) int
-		CreatedAt func(childComplexity int) int
-		URL       func(childComplexity int) int
+		Content        func(childComplexity int) int
+		CreatedAt      func(childComplexity int) int
+		OutputMarkdown func(childComplexity int) int
+		URL            func(childComplexity int) int
 	}
 
 	WebSearchResult struct {
@@ -443,13 +588,20 @@ type MutationResolver interface {
 	BlogAmendPost(ctx context.Context, post models.NewBlogPost, language models.Language) (*model.Post, error)
 	ArweaveUpload(ctx context.Context, fileB64 string, contentType *string) (*dto.UploadResponse, error)
 	WebSearch(ctx context.Context, query string) (*search.SearchResult, error)
-	WebFetch(ctx context.Context, url string) (*models.WebFetchResult, error)
+	WebFetch(ctx context.Context, url string, outputMarkdown *bool) (*models.WebFetchResult, error)
 	ExtractKeyInfo(ctx context.Context, query string, materials string, topK *int) (*models.ExtractKeyInfoResult, error)
 	TelegramMonitorAlert(ctx context.Context, typeArg string, token string, msg string) (*model3.AlertTypes, error)
 	AcquireLock(ctx context.Context, lockName string, durationSec int, isRenewal *bool) (bool, error)
 	CreateGeneralToken(ctx context.Context, username string, durationSec int) (string, error)
 	GeneralAddLLMStormTask(ctx context.Context, prompt string, apiKey string) (string, error)
 	GeneralAddHTMLCrawlerTask(ctx context.Context, url string) (string, error)
+	FileWrite(ctx context.Context, project string, path string, content string, contentEncoding string, offset *library.BigInt, mode models.FileIOWriteMode, expectedVersion *string, createOnly *bool, plugin *models.MemoryPlugin) (*models.FileIOWriteResult, error)
+	FileDelete(ctx context.Context, project string, path string, recursive bool, expectedVersion string, plugin *models.MemoryPlugin) (*models.FileIODeleteResult, error)
+	FileRename(ctx context.Context, project string, fromPath string, toPath string, overwrite bool, expectedVersion string, expectedDestinationVersion *string, destinationMustNotExist *bool, plugin *models.MemoryPlugin) (*models.FileIORenameResult, error)
+	FileRestoreVersion(ctx context.Context, project string, path string, historyID string, expectedVersion *string, createOnly *bool, plugin *models.MemoryPlugin) (*models.FileIOWriteResult, error)
+	MemoryBeforeTurn(ctx context.Context, input models.MemoryBeforeTurnInput) (*models.MemoryBeforeTurnResult, error)
+	MemoryAfterTurn(ctx context.Context, input models.MemoryAfterTurnInput) (*models.MemoryAck, error)
+	MemoryRunMaintenance(ctx context.Context, project *string, sessionID *string, plugin *models.MemoryPlugin) (*models.MemoryAck, error)
 }
 type QueryResolver interface {
 	Hello(ctx context.Context) (string, error)
@@ -473,6 +625,13 @@ type QueryResolver interface {
 	GeneralGetLLMStormTaskResult(ctx context.Context, taskID string) (*models.GeneralLLMStormTask, error)
 	GeneralGetHTMLCrawlerTask(ctx context.Context) (*models.GeneralHTMLCrawlerTask, error)
 	ValidateOneapiAPIKey(ctx context.Context, apiKey string) (*models.OneapiQuota, error)
+	FileStat(ctx context.Context, project string, path string, plugin *models.MemoryPlugin) (*models.FileIOStatResult, error)
+	FileRead(ctx context.Context, project string, path string, offset *library.BigInt, length *library.BigInt, expectedVersion *string, plugin *models.MemoryPlugin) (*models.FileIOReadResult, error)
+	FileList(ctx context.Context, project string, path string, depth *int, limit *int, plugin *models.MemoryPlugin) (*models.FileIOListResult, error)
+	FileSearch(ctx context.Context, project string, query string, pathPrefix string, limit *int, plugin *models.MemoryPlugin) (*models.FileIOSearchResult, error)
+	FileListVersions(ctx context.Context, project string, path string, limit *int, beforeID *string) (*models.FileIOHistoryPage, error)
+	FileReadVersion(ctx context.Context, project string, path string, historyID string) (*models.FileIOHistoryContent, error)
+	MemoryListDirWithAbstract(ctx context.Context, project *string, sessionID *string, path string, depth *int, limit *int, plugin *models.MemoryPlugin) (*models.MemoryDirectoryListing, error)
 }
 type TelegramAlertTypeResolver interface {
 	ID(ctx context.Context, obj *model3.AlertTypes) (string, error)
@@ -878,12 +1037,301 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.ExtractKeyInfoResult.Query(childComplexity), true
 
+	case "FileIOChunk.chunk_content":
+		if e.ComplexityRoot.FileIOChunk.ChunkContent == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOChunk.ChunkContent(childComplexity), true
+	case "FileIOChunk.file_path":
+		if e.ComplexityRoot.FileIOChunk.FilePath == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOChunk.FilePath(childComplexity), true
+	case "FileIOChunk.file_seek_end_bytes":
+		if e.ComplexityRoot.FileIOChunk.FileSeekEndBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOChunk.FileSeekEndBytes(childComplexity), true
+	case "FileIOChunk.file_seek_start_bytes":
+		if e.ComplexityRoot.FileIOChunk.FileSeekStartBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOChunk.FileSeekStartBytes(childComplexity), true
+	case "FileIOChunk.file_summary":
+		if e.ComplexityRoot.FileIOChunk.FileSummary == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOChunk.FileSummary(childComplexity), true
+	case "FileIOChunk.is_full_file":
+		if e.ComplexityRoot.FileIOChunk.IsFullFile == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOChunk.IsFullFile(childComplexity), true
+	case "FileIOChunk.project":
+		if e.ComplexityRoot.FileIOChunk.Project == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOChunk.Project(childComplexity), true
+	case "FileIOChunk.score":
+		if e.ComplexityRoot.FileIOChunk.Score == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOChunk.Score(childComplexity), true
+
+	case "FileIODeleteResult.deleted_count":
+		if e.ComplexityRoot.FileIODeleteResult.DeletedCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIODeleteResult.DeletedCount(childComplexity), true
+
+	case "FileIOEntry.created_at":
+		if e.ComplexityRoot.FileIOEntry.CreatedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOEntry.CreatedAt(childComplexity), true
+	case "FileIOEntry.name":
+		if e.ComplexityRoot.FileIOEntry.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOEntry.Name(childComplexity), true
+	case "FileIOEntry.path":
+		if e.ComplexityRoot.FileIOEntry.Path == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOEntry.Path(childComplexity), true
+	case "FileIOEntry.size":
+		if e.ComplexityRoot.FileIOEntry.Size == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOEntry.Size(childComplexity), true
+	case "FileIOEntry.type":
+		if e.ComplexityRoot.FileIOEntry.Type == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOEntry.Type(childComplexity), true
+	case "FileIOEntry.updated_at":
+		if e.ComplexityRoot.FileIOEntry.UpdatedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOEntry.UpdatedAt(childComplexity), true
+
+	case "FileIOHistoryContent.content":
+		if e.ComplexityRoot.FileIOHistoryContent.Content == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryContent.Content(childComplexity), true
+	case "FileIOHistoryContent.content_encoding":
+		if e.ComplexityRoot.FileIOHistoryContent.ContentEncoding == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryContent.ContentEncoding(childComplexity), true
+	case "FileIOHistoryContent.created_at":
+		if e.ComplexityRoot.FileIOHistoryContent.CreatedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryContent.CreatedAt(childComplexity), true
+	case "FileIOHistoryContent.history_id":
+		if e.ComplexityRoot.FileIOHistoryContent.HistoryID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryContent.HistoryID(childComplexity), true
+	case "FileIOHistoryContent.size":
+		if e.ComplexityRoot.FileIOHistoryContent.Size == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryContent.Size(childComplexity), true
+
+	case "FileIOHistoryEntry.created_at":
+		if e.ComplexityRoot.FileIOHistoryEntry.CreatedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryEntry.CreatedAt(childComplexity), true
+	case "FileIOHistoryEntry.id":
+		if e.ComplexityRoot.FileIOHistoryEntry.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryEntry.ID(childComplexity), true
+	case "FileIOHistoryEntry.size":
+		if e.ComplexityRoot.FileIOHistoryEntry.Size == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryEntry.Size(childComplexity), true
+
+	case "FileIOHistoryPage.has_more":
+		if e.ComplexityRoot.FileIOHistoryPage.HasMore == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryPage.HasMore(childComplexity), true
+	case "FileIOHistoryPage.next_cursor":
+		if e.ComplexityRoot.FileIOHistoryPage.NextCursor == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryPage.NextCursor(childComplexity), true
+	case "FileIOHistoryPage.versions":
+		if e.ComplexityRoot.FileIOHistoryPage.Versions == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOHistoryPage.Versions(childComplexity), true
+
+	case "FileIOListResult.entries":
+		if e.ComplexityRoot.FileIOListResult.Entries == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOListResult.Entries(childComplexity), true
+	case "FileIOListResult.has_more":
+		if e.ComplexityRoot.FileIOListResult.HasMore == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOListResult.HasMore(childComplexity), true
+
+	case "FileIOReadResult.content":
+		if e.ComplexityRoot.FileIOReadResult.Content == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOReadResult.Content(childComplexity), true
+	case "FileIOReadResult.content_encoding":
+		if e.ComplexityRoot.FileIOReadResult.ContentEncoding == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOReadResult.ContentEncoding(childComplexity), true
+	case "FileIOReadResult.version":
+		if e.ComplexityRoot.FileIOReadResult.Version == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOReadResult.Version(childComplexity), true
+
+	case "FileIORenameResult.moved_count":
+		if e.ComplexityRoot.FileIORenameResult.MovedCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIORenameResult.MovedCount(childComplexity), true
+
+	case "FileIOSearchResult.chunks":
+		if e.ComplexityRoot.FileIOSearchResult.Chunks == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOSearchResult.Chunks(childComplexity), true
+
+	case "FileIOStatResult.created_at":
+		if e.ComplexityRoot.FileIOStatResult.CreatedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOStatResult.CreatedAt(childComplexity), true
+	case "FileIOStatResult.exists":
+		if e.ComplexityRoot.FileIOStatResult.Exists == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOStatResult.Exists(childComplexity), true
+	case "FileIOStatResult.size":
+		if e.ComplexityRoot.FileIOStatResult.Size == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOStatResult.Size(childComplexity), true
+	case "FileIOStatResult.type":
+		if e.ComplexityRoot.FileIOStatResult.Type == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOStatResult.Type(childComplexity), true
+	case "FileIOStatResult.updated_at":
+		if e.ComplexityRoot.FileIOStatResult.UpdatedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOStatResult.UpdatedAt(childComplexity), true
+	case "FileIOStatResult.version":
+		if e.ComplexityRoot.FileIOStatResult.Version == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOStatResult.Version(childComplexity), true
+
+	case "FileIOWriteResult.bytes_written":
+		if e.ComplexityRoot.FileIOWriteResult.BytesWritten == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOWriteResult.BytesWritten(childComplexity), true
+	case "FileIOWriteResult.version":
+		if e.ComplexityRoot.FileIOWriteResult.Version == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FileIOWriteResult.Version(childComplexity), true
+
+	case "GeneralCrawlerEgressPolicy.addresses":
+		if e.ComplexityRoot.GeneralCrawlerEgressPolicy.Addresses == nil {
+			break
+		}
+
+		return e.ComplexityRoot.GeneralCrawlerEgressPolicy.Addresses(childComplexity), true
+	case "GeneralCrawlerEgressPolicy.allow_subresources":
+		if e.ComplexityRoot.GeneralCrawlerEgressPolicy.AllowSubresources == nil {
+			break
+		}
+
+		return e.ComplexityRoot.GeneralCrawlerEgressPolicy.AllowSubresources(childComplexity), true
+	case "GeneralCrawlerEgressPolicy.host":
+		if e.ComplexityRoot.GeneralCrawlerEgressPolicy.Host == nil {
+			break
+		}
+
+		return e.ComplexityRoot.GeneralCrawlerEgressPolicy.Host(childComplexity), true
+	case "GeneralCrawlerEgressPolicy.max_redirects":
+		if e.ComplexityRoot.GeneralCrawlerEgressPolicy.MaxRedirects == nil {
+			break
+		}
+
+		return e.ComplexityRoot.GeneralCrawlerEgressPolicy.MaxRedirects(childComplexity), true
+
 	case "GeneralHTMLCrawlerTask.created_at":
 		if e.ComplexityRoot.GeneralHTMLCrawlerTask.CreatedAt == nil {
 			break
 		}
 
 		return e.ComplexityRoot.GeneralHTMLCrawlerTask.CreatedAt(childComplexity), true
+	case "GeneralHTMLCrawlerTask.egress":
+		if e.ComplexityRoot.GeneralHTMLCrawlerTask.Egress == nil {
+			break
+		}
+
+		return e.ComplexityRoot.GeneralHTMLCrawlerTask.Egress(childComplexity), true
 	case "GeneralHTMLCrawlerTask.failed_reason":
 		if e.ComplexityRoot.GeneralHTMLCrawlerTask.FailedReason == nil {
 			break
@@ -1040,6 +1488,151 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Lock.OwnerID(childComplexity), true
 
+	case "MemoryAck.ok":
+		if e.ComplexityRoot.MemoryAck.Ok == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryAck.Ok(childComplexity), true
+
+	case "MemoryBeforeTurnResult.context_token_count":
+		if e.ComplexityRoot.MemoryBeforeTurnResult.ContextTokenCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryBeforeTurnResult.ContextTokenCount(childComplexity), true
+	case "MemoryBeforeTurnResult.input_items":
+		if e.ComplexityRoot.MemoryBeforeTurnResult.InputItems == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryBeforeTurnResult.InputItems(childComplexity), true
+	case "MemoryBeforeTurnResult.recall_fact_ids":
+		if e.ComplexityRoot.MemoryBeforeTurnResult.RecallFactIds == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryBeforeTurnResult.RecallFactIds(childComplexity), true
+	case "MemoryBeforeTurnResult.recall_insight_ids":
+		if e.ComplexityRoot.MemoryBeforeTurnResult.RecallInsightIds == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryBeforeTurnResult.RecallInsightIds(childComplexity), true
+
+	case "MemoryContentPart.file_id":
+		if e.ComplexityRoot.MemoryContentPart.FileID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryContentPart.FileID(childComplexity), true
+	case "MemoryContentPart.filename":
+		if e.ComplexityRoot.MemoryContentPart.Filename == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryContentPart.Filename(childComplexity), true
+	case "MemoryContentPart.image_url":
+		if e.ComplexityRoot.MemoryContentPart.ImageURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryContentPart.ImageURL(childComplexity), true
+	case "MemoryContentPart.text":
+		if e.ComplexityRoot.MemoryContentPart.Text == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryContentPart.Text(childComplexity), true
+	case "MemoryContentPart.type":
+		if e.ComplexityRoot.MemoryContentPart.Type == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryContentPart.Type(childComplexity), true
+
+	case "MemoryDirectoryListing.summaries":
+		if e.ComplexityRoot.MemoryDirectoryListing.Summaries == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryDirectoryListing.Summaries(childComplexity), true
+
+	case "MemoryDirectorySummary.abstract":
+		if e.ComplexityRoot.MemoryDirectorySummary.Abstract == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryDirectorySummary.Abstract(childComplexity), true
+	case "MemoryDirectorySummary.has_overview":
+		if e.ComplexityRoot.MemoryDirectorySummary.HasOverview == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryDirectorySummary.HasOverview(childComplexity), true
+	case "MemoryDirectorySummary.path":
+		if e.ComplexityRoot.MemoryDirectorySummary.Path == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryDirectorySummary.Path(childComplexity), true
+	case "MemoryDirectorySummary.updated_at":
+		if e.ComplexityRoot.MemoryDirectorySummary.UpdatedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryDirectorySummary.UpdatedAt(childComplexity), true
+
+	case "MemoryMetadataEntry.key":
+		if e.ComplexityRoot.MemoryMetadataEntry.Key == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryMetadataEntry.Key(childComplexity), true
+	case "MemoryMetadataEntry.value":
+		if e.ComplexityRoot.MemoryMetadataEntry.Value == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryMetadataEntry.Value(childComplexity), true
+
+	case "MemoryResponseItem.call_id":
+		if e.ComplexityRoot.MemoryResponseItem.CallID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryResponseItem.CallID(childComplexity), true
+	case "MemoryResponseItem.content":
+		if e.ComplexityRoot.MemoryResponseItem.Content == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryResponseItem.Content(childComplexity), true
+	case "MemoryResponseItem.metadata":
+		if e.ComplexityRoot.MemoryResponseItem.Metadata == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryResponseItem.Metadata(childComplexity), true
+	case "MemoryResponseItem.output":
+		if e.ComplexityRoot.MemoryResponseItem.Output == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryResponseItem.Output(childComplexity), true
+	case "MemoryResponseItem.role":
+		if e.ComplexityRoot.MemoryResponseItem.Role == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryResponseItem.Role(childComplexity), true
+	case "MemoryResponseItem.type":
+		if e.ComplexityRoot.MemoryResponseItem.Type == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MemoryResponseItem.Type(childComplexity), true
+
 	case "Mutation.AcquireLock":
 		if e.ComplexityRoot.Mutation.AcquireLock == nil {
 			break
@@ -1161,6 +1754,50 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.ExtractKeyInfo(childComplexity, args["query"].(string), args["materials"].(string), args["top_k"].(*int)), true
+	case "Mutation.FileDelete":
+		if e.ComplexityRoot.Mutation.FileDelete == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_FileDelete_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.FileDelete(childComplexity, args["project"].(string), args["path"].(string), args["recursive"].(bool), args["expected_version"].(string), args["plugin"].(*models.MemoryPlugin)), true
+	case "Mutation.FileRename":
+		if e.ComplexityRoot.Mutation.FileRename == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_FileRename_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.FileRename(childComplexity, args["project"].(string), args["from_path"].(string), args["to_path"].(string), args["overwrite"].(bool), args["expected_version"].(string), args["expected_destination_version"].(*string), args["destination_must_not_exist"].(*bool), args["plugin"].(*models.MemoryPlugin)), true
+	case "Mutation.FileRestoreVersion":
+		if e.ComplexityRoot.Mutation.FileRestoreVersion == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_FileRestoreVersion_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.FileRestoreVersion(childComplexity, args["project"].(string), args["path"].(string), args["history_id"].(string), args["expected_version"].(*string), args["create_only"].(*bool), args["plugin"].(*models.MemoryPlugin)), true
+	case "Mutation.FileWrite":
+		if e.ComplexityRoot.Mutation.FileWrite == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_FileWrite_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.FileWrite(childComplexity, args["project"].(string), args["path"].(string), args["content"].(string), args["content_encoding"].(string), args["offset"].(*library.BigInt), args["mode"].(models.FileIOWriteMode), args["expected_version"].(*string), args["create_only"].(*bool), args["plugin"].(*models.MemoryPlugin)), true
 	case "Mutation.GeneralAddHTMLCrawlerTask":
 		if e.ComplexityRoot.Mutation.GeneralAddHTMLCrawlerTask == nil {
 			break
@@ -1183,6 +1820,39 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.GeneralAddLLMStormTask(childComplexity, args["prompt"].(string), args["api_key"].(string)), true
+	case "Mutation.MemoryAfterTurn":
+		if e.ComplexityRoot.Mutation.MemoryAfterTurn == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_MemoryAfterTurn_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.MemoryAfterTurn(childComplexity, args["input"].(models.MemoryAfterTurnInput)), true
+	case "Mutation.MemoryBeforeTurn":
+		if e.ComplexityRoot.Mutation.MemoryBeforeTurn == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_MemoryBeforeTurn_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.MemoryBeforeTurn(childComplexity, args["input"].(models.MemoryBeforeTurnInput)), true
+	case "Mutation.MemoryRunMaintenance":
+		if e.ComplexityRoot.Mutation.MemoryRunMaintenance == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_MemoryRunMaintenance_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.MemoryRunMaintenance(childComplexity, args["project"].(*string), args["session_id"].(*string), args["plugin"].(*models.MemoryPlugin)), true
 	case "Mutation.TelegramMonitorAlert":
 		if e.ComplexityRoot.Mutation.TelegramMonitorAlert == nil {
 			break
@@ -1403,7 +2073,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Mutation.WebFetch(childComplexity, args["url"].(string)), true
+		return e.ComplexityRoot.Mutation.WebFetch(childComplexity, args["url"].(string), args["output_markdown"].(*bool)), true
 	case "Mutation.WebSearch":
 		if e.ComplexityRoot.Mutation.WebSearch == nil {
 			break
@@ -1560,6 +2230,72 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.BlogTwitterCard(childComplexity, args["name"].(string), args["language"].(models.Language)), true
+	case "Query.FileList":
+		if e.ComplexityRoot.Query.FileList == nil {
+			break
+		}
+
+		args, err := ec.field_Query_FileList_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.FileList(childComplexity, args["project"].(string), args["path"].(string), args["depth"].(*int), args["limit"].(*int), args["plugin"].(*models.MemoryPlugin)), true
+	case "Query.FileListVersions":
+		if e.ComplexityRoot.Query.FileListVersions == nil {
+			break
+		}
+
+		args, err := ec.field_Query_FileListVersions_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.FileListVersions(childComplexity, args["project"].(string), args["path"].(string), args["limit"].(*int), args["before_id"].(*string)), true
+	case "Query.FileRead":
+		if e.ComplexityRoot.Query.FileRead == nil {
+			break
+		}
+
+		args, err := ec.field_Query_FileRead_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.FileRead(childComplexity, args["project"].(string), args["path"].(string), args["offset"].(*library.BigInt), args["length"].(*library.BigInt), args["expected_version"].(*string), args["plugin"].(*models.MemoryPlugin)), true
+	case "Query.FileReadVersion":
+		if e.ComplexityRoot.Query.FileReadVersion == nil {
+			break
+		}
+
+		args, err := ec.field_Query_FileReadVersion_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.FileReadVersion(childComplexity, args["project"].(string), args["path"].(string), args["history_id"].(string)), true
+	case "Query.FileSearch":
+		if e.ComplexityRoot.Query.FileSearch == nil {
+			break
+		}
+
+		args, err := ec.field_Query_FileSearch_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.FileSearch(childComplexity, args["project"].(string), args["query"].(string), args["path_prefix"].(string), args["limit"].(*int), args["plugin"].(*models.MemoryPlugin)), true
+	case "Query.FileStat":
+		if e.ComplexityRoot.Query.FileStat == nil {
+			break
+		}
+
+		args, err := ec.field_Query_FileStat_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.FileStat(childComplexity, args["project"].(string), args["path"].(string), args["plugin"].(*models.MemoryPlugin)), true
 	case "Query.GeneralGetHTMLCrawlerTask":
 		if e.ComplexityRoot.Query.GeneralGetHTMLCrawlerTask == nil {
 			break
@@ -1617,6 +2353,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.LockPermissions(childComplexity, args["username"].(string)), true
+	case "Query.MemoryListDirWithAbstract":
+		if e.ComplexityRoot.Query.MemoryListDirWithAbstract == nil {
+			break
+		}
+
+		args, err := ec.field_Query_MemoryListDirWithAbstract_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.MemoryListDirWithAbstract(childComplexity, args["project"].(*string), args["session_id"].(*string), args["path"].(string), args["depth"].(*int), args["limit"].(*int), args["plugin"].(*models.MemoryPlugin)), true
 	case "Query.TelegramAlertTypes":
 		if e.ComplexityRoot.Query.TelegramAlertTypes == nil {
 			break
@@ -1990,6 +2737,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.WebFetchResult.CreatedAt(childComplexity), true
+	case "WebFetchResult.output_markdown":
+		if e.ComplexityRoot.WebFetchResult.OutputMarkdown == nil {
+			break
+		}
+
+		return e.ComplexityRoot.WebFetchResult.OutputMarkdown(childComplexity), true
 	case "WebFetchResult.url":
 		if e.ComplexityRoot.WebFetchResult.URL == nil {
 			break
@@ -2055,6 +2808,11 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	ec := newExecutionContext(opCtx, e, make(chan graphql.DeferredResult))
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
+		ec.unmarshalInputMemoryAfterTurnInput,
+		ec.unmarshalInputMemoryBeforeTurnInput,
+		ec.unmarshalInputMemoryContentPartInput,
+		ec.unmarshalInputMemoryMetadataEntryInput,
+		ec.unmarshalInputMemoryResponseItemInput,
 		ec.unmarshalInputNewBlogPost,
 		ec.unmarshalInputPagination,
 		ec.unmarshalInputSort,
@@ -2132,7 +2890,7 @@ func newExecutionContext(
 	}
 }
 
-//go:embed "schema.graphql" "twitter/schema.graphql" "blog/schema.graphql" "telegram/schema.graphql" "general/schema.graphql" "arweave/schema.graphql"
+//go:embed "schema.graphql" "twitter/schema.graphql" "blog/schema.graphql" "telegram/schema.graphql" "general/schema.graphql" "arweave/schema.graphql" "fileio/schema.graphql"
 var sourcesFS embed.FS
 
 func sourceData(filename string) string {
@@ -2150,6 +2908,7 @@ var sources = []*ast.Source{
 	{Name: "telegram/schema.graphql", Input: sourceData("telegram/schema.graphql"), BuiltIn: false},
 	{Name: "general/schema.graphql", Input: sourceData("general/schema.graphql"), BuiltIn: false},
 	{Name: "arweave/schema.graphql", Input: sourceData("arweave/schema.graphql"), BuiltIn: false},
+	{Name: "fileio/schema.graphql", Input: sourceData("fileio/schema.graphql"), BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
@@ -2331,6 +3090,174 @@ func (ec *executionContext) childFields_ExtractKeyInfoResult(ctx context.Context
 	return nil, fmt.Errorf("no field named %q was found under type ExtractKeyInfoResult", field.Name)
 }
 
+func (ec *executionContext) childFields_FileIOChunk(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "project":
+		return ec.fieldContext_FileIOChunk_project(ctx, field)
+	case "file_path":
+		return ec.fieldContext_FileIOChunk_file_path(ctx, field)
+	case "file_seek_start_bytes":
+		return ec.fieldContext_FileIOChunk_file_seek_start_bytes(ctx, field)
+	case "file_seek_end_bytes":
+		return ec.fieldContext_FileIOChunk_file_seek_end_bytes(ctx, field)
+	case "is_full_file":
+		return ec.fieldContext_FileIOChunk_is_full_file(ctx, field)
+	case "chunk_content":
+		return ec.fieldContext_FileIOChunk_chunk_content(ctx, field)
+	case "file_summary":
+		return ec.fieldContext_FileIOChunk_file_summary(ctx, field)
+	case "score":
+		return ec.fieldContext_FileIOChunk_score(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOChunk", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIODeleteResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "deleted_count":
+		return ec.fieldContext_FileIODeleteResult_deleted_count(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIODeleteResult", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOEntry(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "name":
+		return ec.fieldContext_FileIOEntry_name(ctx, field)
+	case "path":
+		return ec.fieldContext_FileIOEntry_path(ctx, field)
+	case "type":
+		return ec.fieldContext_FileIOEntry_type(ctx, field)
+	case "size":
+		return ec.fieldContext_FileIOEntry_size(ctx, field)
+	case "created_at":
+		return ec.fieldContext_FileIOEntry_created_at(ctx, field)
+	case "updated_at":
+		return ec.fieldContext_FileIOEntry_updated_at(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOEntry", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOHistoryContent(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "history_id":
+		return ec.fieldContext_FileIOHistoryContent_history_id(ctx, field)
+	case "content":
+		return ec.fieldContext_FileIOHistoryContent_content(ctx, field)
+	case "content_encoding":
+		return ec.fieldContext_FileIOHistoryContent_content_encoding(ctx, field)
+	case "size":
+		return ec.fieldContext_FileIOHistoryContent_size(ctx, field)
+	case "created_at":
+		return ec.fieldContext_FileIOHistoryContent_created_at(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOHistoryContent", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOHistoryEntry(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "id":
+		return ec.fieldContext_FileIOHistoryEntry_id(ctx, field)
+	case "size":
+		return ec.fieldContext_FileIOHistoryEntry_size(ctx, field)
+	case "created_at":
+		return ec.fieldContext_FileIOHistoryEntry_created_at(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOHistoryEntry", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOHistoryPage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "versions":
+		return ec.fieldContext_FileIOHistoryPage_versions(ctx, field)
+	case "has_more":
+		return ec.fieldContext_FileIOHistoryPage_has_more(ctx, field)
+	case "next_cursor":
+		return ec.fieldContext_FileIOHistoryPage_next_cursor(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOHistoryPage", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOListResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "entries":
+		return ec.fieldContext_FileIOListResult_entries(ctx, field)
+	case "has_more":
+		return ec.fieldContext_FileIOListResult_has_more(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOListResult", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOReadResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "content":
+		return ec.fieldContext_FileIOReadResult_content(ctx, field)
+	case "content_encoding":
+		return ec.fieldContext_FileIOReadResult_content_encoding(ctx, field)
+	case "version":
+		return ec.fieldContext_FileIOReadResult_version(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOReadResult", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIORenameResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "moved_count":
+		return ec.fieldContext_FileIORenameResult_moved_count(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIORenameResult", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOSearchResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "chunks":
+		return ec.fieldContext_FileIOSearchResult_chunks(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOSearchResult", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOStatResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "exists":
+		return ec.fieldContext_FileIOStatResult_exists(ctx, field)
+	case "type":
+		return ec.fieldContext_FileIOStatResult_type(ctx, field)
+	case "size":
+		return ec.fieldContext_FileIOStatResult_size(ctx, field)
+	case "created_at":
+		return ec.fieldContext_FileIOStatResult_created_at(ctx, field)
+	case "updated_at":
+		return ec.fieldContext_FileIOStatResult_updated_at(ctx, field)
+	case "version":
+		return ec.fieldContext_FileIOStatResult_version(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOStatResult", field.Name)
+}
+
+func (ec *executionContext) childFields_FileIOWriteResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "bytes_written":
+		return ec.fieldContext_FileIOWriteResult_bytes_written(ctx, field)
+	case "version":
+		return ec.fieldContext_FileIOWriteResult_version(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FileIOWriteResult", field.Name)
+}
+
+func (ec *executionContext) childFields_GeneralCrawlerEgressPolicy(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "host":
+		return ec.fieldContext_GeneralCrawlerEgressPolicy_host(ctx, field)
+	case "addresses":
+		return ec.fieldContext_GeneralCrawlerEgressPolicy_addresses(ctx, field)
+	case "max_redirects":
+		return ec.fieldContext_GeneralCrawlerEgressPolicy_max_redirects(ctx, field)
+	case "allow_subresources":
+		return ec.fieldContext_GeneralCrawlerEgressPolicy_allow_subresources(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type GeneralCrawlerEgressPolicy", field.Name)
+}
+
 func (ec *executionContext) childFields_GeneralHTMLCrawlerTask(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "task_id":
@@ -2347,6 +3274,8 @@ func (ec *executionContext) childFields_GeneralHTMLCrawlerTask(ctx context.Conte
 		return ec.fieldContext_GeneralHTMLCrawlerTask_url(ctx, field)
 	case "result_html_b64":
 		return ec.fieldContext_GeneralHTMLCrawlerTask_result_html_b64(ctx, field)
+	case "egress":
+		return ec.fieldContext_GeneralHTMLCrawlerTask_egress(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type GeneralHTMLCrawlerTask", field.Name)
 }
@@ -2417,6 +3346,94 @@ func (ec *executionContext) childFields_Lock(ctx context.Context, field graphql.
 		return ec.fieldContext_Lock_expires_at(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Lock", field.Name)
+}
+
+func (ec *executionContext) childFields_MemoryAck(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "ok":
+		return ec.fieldContext_MemoryAck_ok(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MemoryAck", field.Name)
+}
+
+func (ec *executionContext) childFields_MemoryBeforeTurnResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "input_items":
+		return ec.fieldContext_MemoryBeforeTurnResult_input_items(ctx, field)
+	case "recall_fact_ids":
+		return ec.fieldContext_MemoryBeforeTurnResult_recall_fact_ids(ctx, field)
+	case "recall_insight_ids":
+		return ec.fieldContext_MemoryBeforeTurnResult_recall_insight_ids(ctx, field)
+	case "context_token_count":
+		return ec.fieldContext_MemoryBeforeTurnResult_context_token_count(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MemoryBeforeTurnResult", field.Name)
+}
+
+func (ec *executionContext) childFields_MemoryContentPart(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "type":
+		return ec.fieldContext_MemoryContentPart_type(ctx, field)
+	case "text":
+		return ec.fieldContext_MemoryContentPart_text(ctx, field)
+	case "image_url":
+		return ec.fieldContext_MemoryContentPart_image_url(ctx, field)
+	case "file_id":
+		return ec.fieldContext_MemoryContentPart_file_id(ctx, field)
+	case "filename":
+		return ec.fieldContext_MemoryContentPart_filename(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MemoryContentPart", field.Name)
+}
+
+func (ec *executionContext) childFields_MemoryDirectoryListing(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "summaries":
+		return ec.fieldContext_MemoryDirectoryListing_summaries(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MemoryDirectoryListing", field.Name)
+}
+
+func (ec *executionContext) childFields_MemoryDirectorySummary(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "path":
+		return ec.fieldContext_MemoryDirectorySummary_path(ctx, field)
+	case "abstract":
+		return ec.fieldContext_MemoryDirectorySummary_abstract(ctx, field)
+	case "updated_at":
+		return ec.fieldContext_MemoryDirectorySummary_updated_at(ctx, field)
+	case "has_overview":
+		return ec.fieldContext_MemoryDirectorySummary_has_overview(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MemoryDirectorySummary", field.Name)
+}
+
+func (ec *executionContext) childFields_MemoryMetadataEntry(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "key":
+		return ec.fieldContext_MemoryMetadataEntry_key(ctx, field)
+	case "value":
+		return ec.fieldContext_MemoryMetadataEntry_value(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MemoryMetadataEntry", field.Name)
+}
+
+func (ec *executionContext) childFields_MemoryResponseItem(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "type":
+		return ec.fieldContext_MemoryResponseItem_type(ctx, field)
+	case "role":
+		return ec.fieldContext_MemoryResponseItem_role(ctx, field)
+	case "content":
+		return ec.fieldContext_MemoryResponseItem_content(ctx, field)
+	case "call_id":
+		return ec.fieldContext_MemoryResponseItem_call_id(ctx, field)
+	case "output":
+		return ec.fieldContext_MemoryResponseItem_output(ctx, field)
+	case "metadata":
+		return ec.fieldContext_MemoryResponseItem_metadata(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MemoryResponseItem", field.Name)
 }
 
 func (ec *executionContext) childFields_OneapiQuota(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -2629,6 +3646,8 @@ func (ec *executionContext) childFields_WebFetchResult(ctx context.Context, fiel
 		return ec.fieldContext_WebFetchResult_created_at(ctx, field)
 	case "content":
 		return ec.fieldContext_WebFetchResult_content(ctx, field)
+	case "output_markdown":
+		return ec.fieldContext_WebFetchResult_output_markdown(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type WebFetchResult", field.Name)
 }
@@ -3043,6 +4062,254 @@ func (ec *executionContext) field_Mutation_ExtractKeyInfo_args(ctx context.Conte
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_FileDelete_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "recursive",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["recursive"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "expected_version",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["expected_version"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg4
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_FileRename_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "from_path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["from_path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "to_path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["to_path"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "overwrite",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["overwrite"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "expected_version",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["expected_version"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "expected_destination_version",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["expected_destination_version"] = arg5
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "destination_must_not_exist",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["destination_must_not_exist"] = arg6
+	arg7, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg7
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_FileRestoreVersion_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "history_id",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["history_id"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "expected_version",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["expected_version"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "create_only",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["create_only"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg5
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_FileWrite_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "content",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["content"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "content_encoding",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["content_encoding"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "offset",
+		func(ctx context.Context, v any) (*library.BigInt, error) {
+			return ec.unmarshalOBigInt2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["offset"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "mode",
+		func(ctx context.Context, v any) (models.FileIOWriteMode, error) {
+			return ec.unmarshalNFileIOWriteMode2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteMode(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["mode"] = arg5
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "expected_version",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["expected_version"] = arg6
+	arg7, err := graphql.ProcessArgField(ctx, rawArgs, "create_only",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["create_only"] = arg7
+	arg8, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg8
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_GeneralAddHTMLCrawlerTask_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -3076,6 +4343,64 @@ func (ec *executionContext) field_Mutation_GeneralAddLLMStormTask_args(ctx conte
 		return nil, err
 	}
 	args["api_key"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_MemoryAfterTurn_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
+		func(ctx context.Context, v any) (models.MemoryAfterTurnInput, error) {
+			return ec.unmarshalNMemoryAfterTurnInput2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryAfterTurnInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_MemoryBeforeTurn_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
+		func(ctx context.Context, v any) (models.MemoryBeforeTurnInput, error) {
+			return ec.unmarshalNMemoryBeforeTurnInput2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryBeforeTurnInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_MemoryRunMaintenance_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "session_id",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["session_id"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg2
 	return args, nil
 }
 
@@ -3518,6 +4843,14 @@ func (ec *executionContext) field_Mutation_WebFetch_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["url"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "output_markdown",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["output_markdown"] = arg1
 	return args, nil
 }
 
@@ -3685,6 +5018,250 @@ func (ec *executionContext) field_Query_BlogTwitterCard_args(ctx context.Context
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_FileListVersions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "before_id",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["before_id"] = arg3
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_FileList_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "depth",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["depth"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg4
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_FileReadVersion_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "history_id",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["history_id"] = arg2
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_FileRead_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "offset",
+		func(ctx context.Context, v any) (*library.BigInt, error) {
+			return ec.unmarshalOBigInt2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["offset"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "length",
+		func(ctx context.Context, v any) (*library.BigInt, error) {
+			return ec.unmarshalOBigInt2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["length"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "expected_version",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["expected_version"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg5
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_FileSearch_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "query",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["query"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "path_prefix",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path_prefix"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg4
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_FileStat_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_GeneralGetLLMStormTaskResult_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -3746,6 +5323,60 @@ func (ec *executionContext) field_Query_Lock_args(ctx context.Context, rawArgs m
 		return nil, err
 	}
 	args["name"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_MemoryListDirWithAbstract_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "project",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["project"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "session_id",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["session_id"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "path",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["path"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "depth",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["depth"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "plugin",
+		func(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+			return ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plugin"] = arg5
 	return args, nil
 }
 
@@ -5385,6 +7016,1068 @@ func (ec *executionContext) fieldContext_ExtractKeyInfoResult_contexts(_ context
 	return graphql.NewScalarFieldContext("ExtractKeyInfoResult", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _FileIOChunk_project(ctx context.Context, field graphql.CollectedField, obj *models.FileIOChunk) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOChunk_project(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Project, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOChunk_project(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOChunk", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOChunk_file_path(ctx context.Context, field graphql.CollectedField, obj *models.FileIOChunk) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOChunk_file_path(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FilePath, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOChunk_file_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOChunk", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOChunk_file_seek_start_bytes(ctx context.Context, field graphql.CollectedField, obj *models.FileIOChunk) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOChunk_file_seek_start_bytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FileSeekStartBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.BigInt) graphql.Marshaler {
+			return ec.marshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOChunk_file_seek_start_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOChunk", field, false, false, errors.New("field of type BigInt does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOChunk_file_seek_end_bytes(ctx context.Context, field graphql.CollectedField, obj *models.FileIOChunk) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOChunk_file_seek_end_bytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FileSeekEndBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.BigInt) graphql.Marshaler {
+			return ec.marshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOChunk_file_seek_end_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOChunk", field, false, false, errors.New("field of type BigInt does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOChunk_is_full_file(ctx context.Context, field graphql.CollectedField, obj *models.FileIOChunk) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOChunk_is_full_file(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.IsFullFile, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOChunk_is_full_file(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOChunk", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOChunk_chunk_content(ctx context.Context, field graphql.CollectedField, obj *models.FileIOChunk) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOChunk_chunk_content(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ChunkContent, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOChunk_chunk_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOChunk", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOChunk_file_summary(ctx context.Context, field graphql.CollectedField, obj *models.FileIOChunk) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOChunk_file_summary(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FileSummary, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOChunk_file_summary(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOChunk", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOChunk_score(ctx context.Context, field graphql.CollectedField, obj *models.FileIOChunk) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOChunk_score(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Score, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOChunk_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOChunk", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _FileIODeleteResult_deleted_count(ctx context.Context, field graphql.CollectedField, obj *models.FileIODeleteResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIODeleteResult_deleted_count(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DeletedCount, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIODeleteResult_deleted_count(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIODeleteResult", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOEntry_name(ctx context.Context, field graphql.CollectedField, obj *models.FileIOEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOEntry_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOEntry_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOEntry_path(ctx context.Context, field graphql.CollectedField, obj *models.FileIOEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOEntry_path(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Path, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOEntry_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOEntry_type(ctx context.Context, field graphql.CollectedField, obj *models.FileIOEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOEntry_type(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Type, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v models.FileIOEntryType) graphql.Marshaler {
+			return ec.marshalNFileIOEntryType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOEntryType(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOEntry_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOEntry", field, false, false, errors.New("field of type FileIOEntryType does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOEntry_size(ctx context.Context, field graphql.CollectedField, obj *models.FileIOEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOEntry_size(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Size, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.BigInt) graphql.Marshaler {
+			return ec.marshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOEntry_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOEntry", field, false, false, errors.New("field of type BigInt does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOEntry_created_at(ctx context.Context, field graphql.CollectedField, obj *models.FileIOEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOEntry_created_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.Datetime) graphql.Marshaler {
+			return ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOEntry_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOEntry", field, false, false, errors.New("field of type Date does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOEntry_updated_at(ctx context.Context, field graphql.CollectedField, obj *models.FileIOEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOEntry_updated_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.UpdatedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.Datetime) graphql.Marshaler {
+			return ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOEntry_updated_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOEntry", field, false, false, errors.New("field of type Date does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryContent_history_id(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryContent) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryContent_history_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.HistoryID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryContent_history_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryContent", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryContent_content(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryContent) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryContent_content(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Content, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryContent_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryContent", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryContent_content_encoding(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryContent) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryContent_content_encoding(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ContentEncoding, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryContent_content_encoding(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryContent", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryContent_size(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryContent) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryContent_size(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Size, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.BigInt) graphql.Marshaler {
+			return ec.marshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryContent_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryContent", field, false, false, errors.New("field of type BigInt does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryContent_created_at(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryContent) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryContent_created_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.Datetime) graphql.Marshaler {
+			return ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryContent_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryContent", field, false, false, errors.New("field of type Date does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryEntry_id(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryEntry_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryEntry_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryEntry_size(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryEntry_size(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Size, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.BigInt) graphql.Marshaler {
+			return ec.marshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryEntry_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryEntry", field, false, false, errors.New("field of type BigInt does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryEntry_created_at(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryEntry_created_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.Datetime) graphql.Marshaler {
+			return ec.marshalNDate2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryEntry_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryEntry", field, false, false, errors.New("field of type Date does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryPage_versions(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryPage_versions(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Versions, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*models.FileIOHistoryEntry) graphql.Marshaler {
+			return ec.marshalNFileIOHistoryEntry2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryEntryᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryPage_versions(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FileIOHistoryPage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOHistoryEntry(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FileIOHistoryPage_has_more(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryPage_has_more(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.HasMore, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryPage_has_more(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryPage", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOHistoryPage_next_cursor(ctx context.Context, field graphql.CollectedField, obj *models.FileIOHistoryPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOHistoryPage_next_cursor(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.NextCursor, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOHistoryPage_next_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOHistoryPage", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOListResult_entries(ctx context.Context, field graphql.CollectedField, obj *models.FileIOListResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOListResult_entries(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Entries, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*models.FileIOEntry) graphql.Marshaler {
+			return ec.marshalNFileIOEntry2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOEntryᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOListResult_entries(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FileIOListResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOEntry(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FileIOListResult_has_more(ctx context.Context, field graphql.CollectedField, obj *models.FileIOListResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOListResult_has_more(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.HasMore, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOListResult_has_more(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOListResult", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOReadResult_content(ctx context.Context, field graphql.CollectedField, obj *models.FileIOReadResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOReadResult_content(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Content, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOReadResult_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOReadResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOReadResult_content_encoding(ctx context.Context, field graphql.CollectedField, obj *models.FileIOReadResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOReadResult_content_encoding(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ContentEncoding, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOReadResult_content_encoding(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOReadResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOReadResult_version(ctx context.Context, field graphql.CollectedField, obj *models.FileIOReadResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOReadResult_version(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Version, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOReadResult_version(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOReadResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIORenameResult_moved_count(ctx context.Context, field graphql.CollectedField, obj *models.FileIORenameResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIORenameResult_moved_count(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.MovedCount, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIORenameResult_moved_count(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIORenameResult", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOSearchResult_chunks(ctx context.Context, field graphql.CollectedField, obj *models.FileIOSearchResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOSearchResult_chunks(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Chunks, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*models.FileIOChunk) graphql.Marshaler {
+			return ec.marshalNFileIOChunk2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOChunkᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOSearchResult_chunks(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FileIOSearchResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOChunk(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FileIOStatResult_exists(ctx context.Context, field graphql.CollectedField, obj *models.FileIOStatResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOStatResult_exists(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Exists, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOStatResult_exists(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOStatResult", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOStatResult_type(ctx context.Context, field graphql.CollectedField, obj *models.FileIOStatResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOStatResult_type(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Type, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v models.FileIOEntryType) graphql.Marshaler {
+			return ec.marshalNFileIOEntryType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOEntryType(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOStatResult_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOStatResult", field, false, false, errors.New("field of type FileIOEntryType does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOStatResult_size(ctx context.Context, field graphql.CollectedField, obj *models.FileIOStatResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOStatResult_size(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Size, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.BigInt) graphql.Marshaler {
+			return ec.marshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOStatResult_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOStatResult", field, false, false, errors.New("field of type BigInt does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOStatResult_created_at(ctx context.Context, field graphql.CollectedField, obj *models.FileIOStatResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOStatResult_created_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *library.Datetime) graphql.Marshaler {
+			return ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOStatResult_created_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOStatResult", field, false, false, errors.New("field of type Date does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOStatResult_updated_at(ctx context.Context, field graphql.CollectedField, obj *models.FileIOStatResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOStatResult_updated_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.UpdatedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *library.Datetime) graphql.Marshaler {
+			return ec.marshalODate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐDatetime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOStatResult_updated_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOStatResult", field, false, false, errors.New("field of type Date does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOStatResult_version(ctx context.Context, field graphql.CollectedField, obj *models.FileIOStatResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOStatResult_version(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Version, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOStatResult_version(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOStatResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOWriteResult_bytes_written(ctx context.Context, field graphql.CollectedField, obj *models.FileIOWriteResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOWriteResult_bytes_written(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.BytesWritten, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v library.BigInt) graphql.Marshaler {
+			return ec.marshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOWriteResult_bytes_written(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOWriteResult", field, false, false, errors.New("field of type BigInt does not have child fields"))
+}
+
+func (ec *executionContext) _FileIOWriteResult_version(ctx context.Context, field graphql.CollectedField, obj *models.FileIOWriteResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FileIOWriteResult_version(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Version, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_FileIOWriteResult_version(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FileIOWriteResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _GeneralCrawlerEgressPolicy_host(ctx context.Context, field graphql.CollectedField, obj *models.GeneralCrawlerEgressPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_GeneralCrawlerEgressPolicy_host(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Host, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_GeneralCrawlerEgressPolicy_host(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("GeneralCrawlerEgressPolicy", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _GeneralCrawlerEgressPolicy_addresses(ctx context.Context, field graphql.CollectedField, obj *models.GeneralCrawlerEgressPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_GeneralCrawlerEgressPolicy_addresses(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Addresses, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_GeneralCrawlerEgressPolicy_addresses(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("GeneralCrawlerEgressPolicy", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _GeneralCrawlerEgressPolicy_max_redirects(ctx context.Context, field graphql.CollectedField, obj *models.GeneralCrawlerEgressPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_GeneralCrawlerEgressPolicy_max_redirects(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.MaxRedirects, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_GeneralCrawlerEgressPolicy_max_redirects(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("GeneralCrawlerEgressPolicy", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _GeneralCrawlerEgressPolicy_allow_subresources(ctx context.Context, field graphql.CollectedField, obj *models.GeneralCrawlerEgressPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_GeneralCrawlerEgressPolicy_allow_subresources(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AllowSubresources, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_GeneralCrawlerEgressPolicy_allow_subresources(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("GeneralCrawlerEgressPolicy", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _GeneralHTMLCrawlerTask_task_id(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5544,6 +8237,38 @@ func (ec *executionContext) _GeneralHTMLCrawlerTask_result_html_b64(ctx context.
 }
 func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_result_html_b64(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("GeneralHTMLCrawlerTask", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _GeneralHTMLCrawlerTask_egress(ctx context.Context, field graphql.CollectedField, obj *models.GeneralHTMLCrawlerTask) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_GeneralHTMLCrawlerTask_egress(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Egress, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.GeneralCrawlerEgressPolicy) graphql.Marshaler {
+			return ec.marshalOGeneralCrawlerEgressPolicy2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralCrawlerEgressPolicy(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_GeneralHTMLCrawlerTask_egress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "GeneralHTMLCrawlerTask",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_GeneralCrawlerEgressPolicy(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _GeneralLLMStormTask_task_id(ctx context.Context, field graphql.CollectedField, obj *models.GeneralLLMStormTask) (ret graphql.Marshaler) {
@@ -5990,6 +8715,571 @@ func (ec *executionContext) _Lock_expires_at(ctx context.Context, field graphql.
 }
 func (ec *executionContext) fieldContext_Lock_expires_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Lock", field, true, true, errors.New("field of type Date does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryAck_ok(ctx context.Context, field graphql.CollectedField, obj *models.MemoryAck) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryAck_ok(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Ok, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryAck_ok(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryAck", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryBeforeTurnResult_input_items(ctx context.Context, field graphql.CollectedField, obj *models.MemoryBeforeTurnResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryBeforeTurnResult_input_items(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.InputItems, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*models.MemoryResponseItem) graphql.Marshaler {
+			return ec.marshalNMemoryResponseItem2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryBeforeTurnResult_input_items(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MemoryBeforeTurnResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MemoryResponseItem(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MemoryBeforeTurnResult_recall_fact_ids(ctx context.Context, field graphql.CollectedField, obj *models.MemoryBeforeTurnResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryBeforeTurnResult_recall_fact_ids(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RecallFactIds, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryBeforeTurnResult_recall_fact_ids(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryBeforeTurnResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryBeforeTurnResult_recall_insight_ids(ctx context.Context, field graphql.CollectedField, obj *models.MemoryBeforeTurnResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryBeforeTurnResult_recall_insight_ids(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RecallInsightIds, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryBeforeTurnResult_recall_insight_ids(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryBeforeTurnResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryBeforeTurnResult_context_token_count(ctx context.Context, field graphql.CollectedField, obj *models.MemoryBeforeTurnResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryBeforeTurnResult_context_token_count(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ContextTokenCount, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryBeforeTurnResult_context_token_count(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryBeforeTurnResult", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryContentPart_type(ctx context.Context, field graphql.CollectedField, obj *models.MemoryContentPart) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryContentPart_type(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Type, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryContentPart_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryContentPart", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryContentPart_text(ctx context.Context, field graphql.CollectedField, obj *models.MemoryContentPart) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryContentPart_text(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Text, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryContentPart_text(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryContentPart", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryContentPart_image_url(ctx context.Context, field graphql.CollectedField, obj *models.MemoryContentPart) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryContentPart_image_url(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ImageURL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryContentPart_image_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryContentPart", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryContentPart_file_id(ctx context.Context, field graphql.CollectedField, obj *models.MemoryContentPart) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryContentPart_file_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FileID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryContentPart_file_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryContentPart", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryContentPart_filename(ctx context.Context, field graphql.CollectedField, obj *models.MemoryContentPart) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryContentPart_filename(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Filename, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryContentPart_filename(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryContentPart", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryDirectoryListing_summaries(ctx context.Context, field graphql.CollectedField, obj *models.MemoryDirectoryListing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryDirectoryListing_summaries(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Summaries, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*models.MemoryDirectorySummary) graphql.Marshaler {
+			return ec.marshalNMemoryDirectorySummary2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectorySummaryᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryDirectoryListing_summaries(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MemoryDirectoryListing",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MemoryDirectorySummary(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MemoryDirectorySummary_path(ctx context.Context, field graphql.CollectedField, obj *models.MemoryDirectorySummary) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryDirectorySummary_path(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Path, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryDirectorySummary_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryDirectorySummary", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryDirectorySummary_abstract(ctx context.Context, field graphql.CollectedField, obj *models.MemoryDirectorySummary) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryDirectorySummary_abstract(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Abstract, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryDirectorySummary_abstract(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryDirectorySummary", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryDirectorySummary_updated_at(ctx context.Context, field graphql.CollectedField, obj *models.MemoryDirectorySummary) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryDirectorySummary_updated_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.UpdatedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryDirectorySummary_updated_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryDirectorySummary", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryDirectorySummary_has_overview(ctx context.Context, field graphql.CollectedField, obj *models.MemoryDirectorySummary) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryDirectorySummary_has_overview(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.HasOverview, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryDirectorySummary_has_overview(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryDirectorySummary", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryMetadataEntry_key(ctx context.Context, field graphql.CollectedField, obj *models.MemoryMetadataEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryMetadataEntry_key(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Key, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryMetadataEntry_key(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryMetadataEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryMetadataEntry_value(ctx context.Context, field graphql.CollectedField, obj *models.MemoryMetadataEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryMetadataEntry_value(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Value, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryMetadataEntry_value(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryMetadataEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryResponseItem_type(ctx context.Context, field graphql.CollectedField, obj *models.MemoryResponseItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryResponseItem_type(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Type, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryResponseItem_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryResponseItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryResponseItem_role(ctx context.Context, field graphql.CollectedField, obj *models.MemoryResponseItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryResponseItem_role(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Role, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryResponseItem_role(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryResponseItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryResponseItem_content(ctx context.Context, field graphql.CollectedField, obj *models.MemoryResponseItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryResponseItem_content(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Content, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*models.MemoryContentPart) graphql.Marshaler {
+			return ec.marshalNMemoryContentPart2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPartᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryResponseItem_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MemoryResponseItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MemoryContentPart(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MemoryResponseItem_call_id(ctx context.Context, field graphql.CollectedField, obj *models.MemoryResponseItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryResponseItem_call_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CallID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryResponseItem_call_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryResponseItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryResponseItem_output(ctx context.Context, field graphql.CollectedField, obj *models.MemoryResponseItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryResponseItem_output(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Output, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryResponseItem_output(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MemoryResponseItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MemoryResponseItem_metadata(ctx context.Context, field graphql.CollectedField, obj *models.MemoryResponseItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MemoryResponseItem_metadata(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Metadata, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*models.MemoryMetadataEntry) graphql.Marshaler {
+			return ec.marshalNMemoryMetadataEntry2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryMetadataEntryᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MemoryResponseItem_metadata(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MemoryResponseItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MemoryMetadataEntry(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Mutation_BlogCreatePost(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -7210,7 +10500,7 @@ func (ec *executionContext) _Mutation_WebFetch(ctx context.Context, field graphq
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().WebFetch(ctx, fc.Args["url"].(string))
+			return ec.Resolvers.Mutation().WebFetch(ctx, fc.Args["url"].(string), fc.Args["output_markdown"].(*bool))
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *models.WebFetchResult) graphql.Marshaler {
@@ -7502,6 +10792,314 @@ func (ec *executionContext) fieldContext_Mutation_GeneralAddHTMLCrawlerTask(ctx 
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_GeneralAddHTMLCrawlerTask_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_FileWrite(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_FileWrite(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().FileWrite(ctx, fc.Args["project"].(string), fc.Args["path"].(string), fc.Args["content"].(string), fc.Args["content_encoding"].(string), fc.Args["offset"].(*library.BigInt), fc.Args["mode"].(models.FileIOWriteMode), fc.Args["expected_version"].(*string), fc.Args["create_only"].(*bool), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIOWriteResult) graphql.Marshaler {
+			return ec.marshalNFileIOWriteResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_FileWrite(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOWriteResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_FileWrite_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_FileDelete(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_FileDelete(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().FileDelete(ctx, fc.Args["project"].(string), fc.Args["path"].(string), fc.Args["recursive"].(bool), fc.Args["expected_version"].(string), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIODeleteResult) graphql.Marshaler {
+			return ec.marshalNFileIODeleteResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIODeleteResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_FileDelete(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIODeleteResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_FileDelete_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_FileRename(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_FileRename(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().FileRename(ctx, fc.Args["project"].(string), fc.Args["from_path"].(string), fc.Args["to_path"].(string), fc.Args["overwrite"].(bool), fc.Args["expected_version"].(string), fc.Args["expected_destination_version"].(*string), fc.Args["destination_must_not_exist"].(*bool), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIORenameResult) graphql.Marshaler {
+			return ec.marshalNFileIORenameResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIORenameResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_FileRename(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIORenameResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_FileRename_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_FileRestoreVersion(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_FileRestoreVersion(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().FileRestoreVersion(ctx, fc.Args["project"].(string), fc.Args["path"].(string), fc.Args["history_id"].(string), fc.Args["expected_version"].(*string), fc.Args["create_only"].(*bool), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIOWriteResult) graphql.Marshaler {
+			return ec.marshalNFileIOWriteResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_FileRestoreVersion(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOWriteResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_FileRestoreVersion_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_MemoryBeforeTurn(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_MemoryBeforeTurn(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().MemoryBeforeTurn(ctx, fc.Args["input"].(models.MemoryBeforeTurnInput))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.MemoryBeforeTurnResult) graphql.Marshaler {
+			return ec.marshalNMemoryBeforeTurnResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryBeforeTurnResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_MemoryBeforeTurn(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MemoryBeforeTurnResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_MemoryBeforeTurn_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_MemoryAfterTurn(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_MemoryAfterTurn(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().MemoryAfterTurn(ctx, fc.Args["input"].(models.MemoryAfterTurnInput))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.MemoryAck) graphql.Marshaler {
+			return ec.marshalNMemoryAck2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryAck(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_MemoryAfterTurn(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MemoryAck(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_MemoryAfterTurn_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_MemoryRunMaintenance(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_MemoryRunMaintenance(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().MemoryRunMaintenance(ctx, fc.Args["project"].(*string), fc.Args["session_id"].(*string), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.MemoryAck) graphql.Marshaler {
+			return ec.marshalNMemoryAck2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryAck(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_MemoryRunMaintenance(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MemoryAck(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_MemoryRunMaintenance_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -8586,6 +12184,314 @@ func (ec *executionContext) fieldContext_Query_ValidateOneapiApiKey(ctx context.
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_ValidateOneapiApiKey_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_FileStat(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_FileStat(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().FileStat(ctx, fc.Args["project"].(string), fc.Args["path"].(string), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIOStatResult) graphql.Marshaler {
+			return ec.marshalNFileIOStatResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOStatResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_FileStat(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOStatResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_FileStat_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_FileRead(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_FileRead(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().FileRead(ctx, fc.Args["project"].(string), fc.Args["path"].(string), fc.Args["offset"].(*library.BigInt), fc.Args["length"].(*library.BigInt), fc.Args["expected_version"].(*string), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIOReadResult) graphql.Marshaler {
+			return ec.marshalNFileIOReadResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOReadResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_FileRead(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOReadResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_FileRead_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_FileList(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_FileList(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().FileList(ctx, fc.Args["project"].(string), fc.Args["path"].(string), fc.Args["depth"].(*int), fc.Args["limit"].(*int), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIOListResult) graphql.Marshaler {
+			return ec.marshalNFileIOListResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOListResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_FileList(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOListResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_FileList_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_FileSearch(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_FileSearch(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().FileSearch(ctx, fc.Args["project"].(string), fc.Args["query"].(string), fc.Args["path_prefix"].(string), fc.Args["limit"].(*int), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIOSearchResult) graphql.Marshaler {
+			return ec.marshalNFileIOSearchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOSearchResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_FileSearch(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOSearchResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_FileSearch_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_FileListVersions(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_FileListVersions(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().FileListVersions(ctx, fc.Args["project"].(string), fc.Args["path"].(string), fc.Args["limit"].(*int), fc.Args["before_id"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIOHistoryPage) graphql.Marshaler {
+			return ec.marshalNFileIOHistoryPage2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryPage(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_FileListVersions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOHistoryPage(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_FileListVersions_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_FileReadVersion(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_FileReadVersion(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().FileReadVersion(ctx, fc.Args["project"].(string), fc.Args["path"].(string), fc.Args["history_id"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.FileIOHistoryContent) graphql.Marshaler {
+			return ec.marshalNFileIOHistoryContent2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryContent(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_FileReadVersion(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FileIOHistoryContent(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_FileReadVersion_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_MemoryListDirWithAbstract(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_MemoryListDirWithAbstract(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().MemoryListDirWithAbstract(ctx, fc.Args["project"].(*string), fc.Args["session_id"].(*string), fc.Args["path"].(string), fc.Args["depth"].(*int), fc.Args["limit"].(*int), fc.Args["plugin"].(*models.MemoryPlugin))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *models.MemoryDirectoryListing) graphql.Marshaler {
+			return ec.marshalNMemoryDirectoryListing2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectoryListing(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_MemoryListDirWithAbstract(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MemoryDirectoryListing(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_MemoryListDirWithAbstract_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -9926,6 +13832,29 @@ func (ec *executionContext) fieldContext_WebFetchResult_content(_ context.Contex
 	return graphql.NewScalarFieldContext("WebFetchResult", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _WebFetchResult_output_markdown(ctx context.Context, field graphql.CollectedField, obj *models.WebFetchResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_WebFetchResult_output_markdown(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.OutputMarkdown, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_WebFetchResult_output_markdown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("WebFetchResult", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _WebSearchResult_query(ctx context.Context, field graphql.CollectedField, obj *search.SearchResult) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -11177,6 +15106,374 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 // endregion **************************** field.gotpl *****************************
 
 // region    **************************** input.gotpl *****************************
+
+func (ec *executionContext) unmarshalInputMemoryAfterTurnInput(ctx context.Context, obj any) (models.MemoryAfterTurnInput, error) {
+	var it models.MemoryAfterTurnInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	if _, present := asMap["plugin"]; !present {
+		asMap["plugin"] = "AUTO"
+	}
+
+	fieldsInOrder := [...]string{"project", "session_id", "turn_id", "user_id", "plugin", "conversation_items", "current_input_start", "current_input_count", "input_items", "output_items"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "project":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("project"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Project = data
+		case "session_id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("session_id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SessionID = data
+		case "turn_id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("turn_id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.TurnID = data
+		case "user_id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("user_id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UserID = data
+		case "plugin":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("plugin"))
+			data, err := ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Plugin = data
+		case "conversation_items":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("conversation_items"))
+			data, err := ec.unmarshalOMemoryResponseItemInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ConversationItems = data
+		case "current_input_start":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("current_input_start"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CurrentInputStart = data
+		case "current_input_count":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("current_input_count"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CurrentInputCount = data
+		case "input_items":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("input_items"))
+			data, err := ec.unmarshalOMemoryResponseItemInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.InputItems = data
+		case "output_items":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("output_items"))
+			data, err := ec.unmarshalOMemoryResponseItemInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OutputItems = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputMemoryBeforeTurnInput(ctx context.Context, obj any) (models.MemoryBeforeTurnInput, error) {
+	var it models.MemoryBeforeTurnInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	if _, present := asMap["plugin"]; !present {
+		asMap["plugin"] = "AUTO"
+	}
+
+	fieldsInOrder := [...]string{"project", "session_id", "turn_id", "user_id", "plugin", "conversation_items", "current_input_start", "current_input_count", "current_input", "current_input_text", "base_instructions", "max_input_tok"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "project":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("project"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Project = data
+		case "session_id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("session_id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SessionID = data
+		case "turn_id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("turn_id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.TurnID = data
+		case "user_id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("user_id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UserID = data
+		case "plugin":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("plugin"))
+			data, err := ec.unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Plugin = data
+		case "conversation_items":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("conversation_items"))
+			data, err := ec.unmarshalOMemoryResponseItemInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ConversationItems = data
+		case "current_input_start":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("current_input_start"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CurrentInputStart = data
+		case "current_input_count":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("current_input_count"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CurrentInputCount = data
+		case "current_input":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("current_input"))
+			data, err := ec.unmarshalOMemoryResponseItemInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CurrentInput = data
+		case "current_input_text":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("current_input_text"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CurrentInputText = data
+		case "base_instructions":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("base_instructions"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.BaseInstructions = data
+		case "max_input_tok":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("max_input_tok"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxInputTok = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputMemoryContentPartInput(ctx context.Context, obj any) (models.MemoryContentPartInput, error) {
+	var it models.MemoryContentPartInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"type", "text", "image_url", "file_id", "filename"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "type":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("type"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Type = data
+		case "text":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("text"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Text = data
+		case "image_url":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("image_url"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ImageURL = data
+		case "file_id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("file_id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.FileID = data
+		case "filename":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("filename"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Filename = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputMemoryMetadataEntryInput(ctx context.Context, obj any) (models.MemoryMetadataEntryInput, error) {
+	var it models.MemoryMetadataEntryInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"key", "value"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "key":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("key"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Key = data
+		case "value":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("value"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Value = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputMemoryResponseItemInput(ctx context.Context, obj any) (models.MemoryResponseItemInput, error) {
+	var it models.MemoryResponseItemInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"type", "role", "content", "call_id", "output", "metadata"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "type":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("type"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Type = data
+		case "role":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("role"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Role = data
+		case "content":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("content"))
+			data, err := ec.unmarshalOMemoryContentPartInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPartInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Content = data
+		case "call_id":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("call_id"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CallID = data
+		case "output":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("output"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Output = data
+		case "metadata":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("metadata"))
+			data, err := ec.unmarshalOMemoryMetadataEntryInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryMetadataEntryInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Metadata = data
+		}
+	}
+	return it, nil
+}
 
 func (ec *executionContext) unmarshalInputNewBlogPost(ctx context.Context, obj any) (models.NewBlogPost, error) {
 	var it models.NewBlogPost
@@ -12575,6 +16872,660 @@ func (ec *executionContext) _ExtractKeyInfoResult(ctx context.Context, sel ast.S
 	return out
 }
 
+var fileIOChunkImplementors = []string{"FileIOChunk"}
+
+func (ec *executionContext) _FileIOChunk(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOChunk) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOChunkImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOChunk")
+		case "project":
+			out.Values[i] = ec._FileIOChunk_project(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "file_path":
+			out.Values[i] = ec._FileIOChunk_file_path(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "file_seek_start_bytes":
+			out.Values[i] = ec._FileIOChunk_file_seek_start_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "file_seek_end_bytes":
+			out.Values[i] = ec._FileIOChunk_file_seek_end_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "is_full_file":
+			out.Values[i] = ec._FileIOChunk_is_full_file(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "chunk_content":
+			out.Values[i] = ec._FileIOChunk_chunk_content(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "file_summary":
+			out.Values[i] = ec._FileIOChunk_file_summary(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "score":
+			out.Values[i] = ec._FileIOChunk_score(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIODeleteResultImplementors = []string{"FileIODeleteResult"}
+
+func (ec *executionContext) _FileIODeleteResult(ctx context.Context, sel ast.SelectionSet, obj *models.FileIODeleteResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIODeleteResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIODeleteResult")
+		case "deleted_count":
+			out.Values[i] = ec._FileIODeleteResult_deleted_count(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOEntryImplementors = []string{"FileIOEntry"}
+
+func (ec *executionContext) _FileIOEntry(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOEntry) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOEntryImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOEntry")
+		case "name":
+			out.Values[i] = ec._FileIOEntry_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "path":
+			out.Values[i] = ec._FileIOEntry_path(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "type":
+			out.Values[i] = ec._FileIOEntry_type(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._FileIOEntry_size(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._FileIOEntry_created_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updated_at":
+			out.Values[i] = ec._FileIOEntry_updated_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOHistoryContentImplementors = []string{"FileIOHistoryContent"}
+
+func (ec *executionContext) _FileIOHistoryContent(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOHistoryContent) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOHistoryContentImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOHistoryContent")
+		case "history_id":
+			out.Values[i] = ec._FileIOHistoryContent_history_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "content":
+			out.Values[i] = ec._FileIOHistoryContent_content(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "content_encoding":
+			out.Values[i] = ec._FileIOHistoryContent_content_encoding(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._FileIOHistoryContent_size(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._FileIOHistoryContent_created_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOHistoryEntryImplementors = []string{"FileIOHistoryEntry"}
+
+func (ec *executionContext) _FileIOHistoryEntry(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOHistoryEntry) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOHistoryEntryImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOHistoryEntry")
+		case "id":
+			out.Values[i] = ec._FileIOHistoryEntry_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._FileIOHistoryEntry_size(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._FileIOHistoryEntry_created_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOHistoryPageImplementors = []string{"FileIOHistoryPage"}
+
+func (ec *executionContext) _FileIOHistoryPage(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOHistoryPage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOHistoryPageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOHistoryPage")
+		case "versions":
+			out.Values[i] = ec._FileIOHistoryPage_versions(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "has_more":
+			out.Values[i] = ec._FileIOHistoryPage_has_more(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "next_cursor":
+			out.Values[i] = ec._FileIOHistoryPage_next_cursor(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOListResultImplementors = []string{"FileIOListResult"}
+
+func (ec *executionContext) _FileIOListResult(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOListResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOListResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOListResult")
+		case "entries":
+			out.Values[i] = ec._FileIOListResult_entries(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "has_more":
+			out.Values[i] = ec._FileIOListResult_has_more(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOReadResultImplementors = []string{"FileIOReadResult"}
+
+func (ec *executionContext) _FileIOReadResult(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOReadResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOReadResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOReadResult")
+		case "content":
+			out.Values[i] = ec._FileIOReadResult_content(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "content_encoding":
+			out.Values[i] = ec._FileIOReadResult_content_encoding(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "version":
+			out.Values[i] = ec._FileIOReadResult_version(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIORenameResultImplementors = []string{"FileIORenameResult"}
+
+func (ec *executionContext) _FileIORenameResult(ctx context.Context, sel ast.SelectionSet, obj *models.FileIORenameResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIORenameResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIORenameResult")
+		case "moved_count":
+			out.Values[i] = ec._FileIORenameResult_moved_count(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOSearchResultImplementors = []string{"FileIOSearchResult"}
+
+func (ec *executionContext) _FileIOSearchResult(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOSearchResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOSearchResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOSearchResult")
+		case "chunks":
+			out.Values[i] = ec._FileIOSearchResult_chunks(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOStatResultImplementors = []string{"FileIOStatResult"}
+
+func (ec *executionContext) _FileIOStatResult(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOStatResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOStatResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOStatResult")
+		case "exists":
+			out.Values[i] = ec._FileIOStatResult_exists(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "type":
+			out.Values[i] = ec._FileIOStatResult_type(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._FileIOStatResult_size(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "created_at":
+			out.Values[i] = ec._FileIOStatResult_created_at(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "updated_at":
+			out.Values[i] = ec._FileIOStatResult_updated_at(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "version":
+			out.Values[i] = ec._FileIOStatResult_version(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var fileIOWriteResultImplementors = []string{"FileIOWriteResult"}
+
+func (ec *executionContext) _FileIOWriteResult(ctx context.Context, sel ast.SelectionSet, obj *models.FileIOWriteResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, fileIOWriteResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FileIOWriteResult")
+		case "bytes_written":
+			out.Values[i] = ec._FileIOWriteResult_bytes_written(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "version":
+			out.Values[i] = ec._FileIOWriteResult_version(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var generalCrawlerEgressPolicyImplementors = []string{"GeneralCrawlerEgressPolicy"}
+
+func (ec *executionContext) _GeneralCrawlerEgressPolicy(ctx context.Context, sel ast.SelectionSet, obj *models.GeneralCrawlerEgressPolicy) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, generalCrawlerEgressPolicyImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("GeneralCrawlerEgressPolicy")
+		case "host":
+			out.Values[i] = ec._GeneralCrawlerEgressPolicy_host(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "addresses":
+			out.Values[i] = ec._GeneralCrawlerEgressPolicy_addresses(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "max_redirects":
+			out.Values[i] = ec._GeneralCrawlerEgressPolicy_max_redirects(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allow_subresources":
+			out.Values[i] = ec._GeneralCrawlerEgressPolicy_allow_subresources(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
 var generalHTMLCrawlerTaskImplementors = []string{"GeneralHTMLCrawlerTask"}
 
 func (ec *executionContext) _GeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, obj *models.GeneralHTMLCrawlerTask) graphql.Marshaler {
@@ -12619,6 +17570,11 @@ func (ec *executionContext) _GeneralHTMLCrawlerTask(ctx context.Context, sel ast
 			}
 		case "result_html_b64":
 			out.Values[i] = ec._GeneralHTMLCrawlerTask_result_html_b64(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "egress":
+			out.Values[i] = ec._GeneralHTMLCrawlerTask_egress(ctx, field, obj)
 			if out.Values[i] == graphql.RequiredNull {
 				out.Invalids++
 			}
@@ -12936,6 +17892,352 @@ func (ec *executionContext) _Lock(ctx context.Context, sel ast.SelectionSet, obj
 	return out
 }
 
+var memoryAckImplementors = []string{"MemoryAck"}
+
+func (ec *executionContext) _MemoryAck(ctx context.Context, sel ast.SelectionSet, obj *models.MemoryAck) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, memoryAckImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MemoryAck")
+		case "ok":
+			out.Values[i] = ec._MemoryAck_ok(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var memoryBeforeTurnResultImplementors = []string{"MemoryBeforeTurnResult"}
+
+func (ec *executionContext) _MemoryBeforeTurnResult(ctx context.Context, sel ast.SelectionSet, obj *models.MemoryBeforeTurnResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, memoryBeforeTurnResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MemoryBeforeTurnResult")
+		case "input_items":
+			out.Values[i] = ec._MemoryBeforeTurnResult_input_items(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recall_fact_ids":
+			out.Values[i] = ec._MemoryBeforeTurnResult_recall_fact_ids(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recall_insight_ids":
+			out.Values[i] = ec._MemoryBeforeTurnResult_recall_insight_ids(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "context_token_count":
+			out.Values[i] = ec._MemoryBeforeTurnResult_context_token_count(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var memoryContentPartImplementors = []string{"MemoryContentPart"}
+
+func (ec *executionContext) _MemoryContentPart(ctx context.Context, sel ast.SelectionSet, obj *models.MemoryContentPart) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, memoryContentPartImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MemoryContentPart")
+		case "type":
+			out.Values[i] = ec._MemoryContentPart_type(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "text":
+			out.Values[i] = ec._MemoryContentPart_text(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "image_url":
+			out.Values[i] = ec._MemoryContentPart_image_url(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "file_id":
+			out.Values[i] = ec._MemoryContentPart_file_id(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "filename":
+			out.Values[i] = ec._MemoryContentPart_filename(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var memoryDirectoryListingImplementors = []string{"MemoryDirectoryListing"}
+
+func (ec *executionContext) _MemoryDirectoryListing(ctx context.Context, sel ast.SelectionSet, obj *models.MemoryDirectoryListing) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, memoryDirectoryListingImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MemoryDirectoryListing")
+		case "summaries":
+			out.Values[i] = ec._MemoryDirectoryListing_summaries(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var memoryDirectorySummaryImplementors = []string{"MemoryDirectorySummary"}
+
+func (ec *executionContext) _MemoryDirectorySummary(ctx context.Context, sel ast.SelectionSet, obj *models.MemoryDirectorySummary) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, memoryDirectorySummaryImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MemoryDirectorySummary")
+		case "path":
+			out.Values[i] = ec._MemoryDirectorySummary_path(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "abstract":
+			out.Values[i] = ec._MemoryDirectorySummary_abstract(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updated_at":
+			out.Values[i] = ec._MemoryDirectorySummary_updated_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "has_overview":
+			out.Values[i] = ec._MemoryDirectorySummary_has_overview(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var memoryMetadataEntryImplementors = []string{"MemoryMetadataEntry"}
+
+func (ec *executionContext) _MemoryMetadataEntry(ctx context.Context, sel ast.SelectionSet, obj *models.MemoryMetadataEntry) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, memoryMetadataEntryImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MemoryMetadataEntry")
+		case "key":
+			out.Values[i] = ec._MemoryMetadataEntry_key(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "value":
+			out.Values[i] = ec._MemoryMetadataEntry_value(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
+var memoryResponseItemImplementors = []string{"MemoryResponseItem"}
+
+func (ec *executionContext) _MemoryResponseItem(ctx context.Context, sel ast.SelectionSet, obj *models.MemoryResponseItem) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, memoryResponseItemImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferredFieldSet := graphql.NewFieldSet(nil)
+	deferLabelToView := make(map[string]*graphql.FieldSetView)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MemoryResponseItem")
+		case "type":
+			out.Values[i] = ec._MemoryResponseItem_type(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "role":
+			out.Values[i] = ec._MemoryResponseItem_role(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "content":
+			out.Values[i] = ec._MemoryResponseItem_content(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "call_id":
+			out.Values[i] = ec._MemoryResponseItem_call_id(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "output":
+			out.Values[i] = ec._MemoryResponseItem_output(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "metadata":
+			out.Values[i] = ec._MemoryResponseItem_metadata(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferLabelToView), math.MaxInt32)))
+
+	ec.ProcessDeferredGroup(graphql.DeferredGroup{
+		Defers:   deferLabelToView,
+		Path:     graphql.GetPath(ctx),
+		FieldSet: deferredFieldSet,
+		Context:  ctx,
+	})
+
+	return out
+}
+
 var mutationImplementors = []string{"Mutation"}
 
 func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -13197,6 +18499,55 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "GeneralAddHTMLCrawlerTask":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_GeneralAddHTMLCrawlerTask(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "FileWrite":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_FileWrite(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "FileDelete":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_FileDelete(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "FileRename":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_FileRename(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "FileRestoreVersion":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_FileRestoreVersion(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "MemoryBeforeTurn":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_MemoryBeforeTurn(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "MemoryAfterTurn":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_MemoryAfterTurn(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "MemoryRunMaintenance":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_MemoryRunMaintenance(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -13912,6 +19263,160 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_ValidateOneapiApiKey(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "FileStat":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_FileStat(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "FileRead":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_FileRead(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "FileList":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_FileList(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "FileSearch":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_FileSearch(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "FileListVersions":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_FileListVersions(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "FileReadVersion":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_FileReadVersion(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "MemoryListDirWithAbstract":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_MemoryListDirWithAbstract(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -15178,6 +20683,11 @@ func (ec *executionContext) _WebFetchResult(ctx context.Context, sel ast.Selecti
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "output_markdown":
+			out.Values[i] = ec._WebFetchResult_output_markdown(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -15748,6 +21258,16 @@ func (ec *executionContext) marshalNArweaveUploadResponse2ᚖgithubᚗcomᚋLais
 	return ec._ArweaveUploadResponse(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx context.Context, v any) (library.BigInt, error) {
+	var res library.BigInt
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNBigInt2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx context.Context, sel ast.SelectionSet, v library.BigInt) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory(ctx context.Context, sel ast.SelectionSet, v []*model.Category) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
@@ -15942,6 +21462,230 @@ func (ec *executionContext) marshalNExtractKeyInfoResult2ᚖgithubᚗcomᚋLaisk
 	return ec._ExtractKeyInfoResult(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNFileIOChunk2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOChunkᚄ(ctx context.Context, sel ast.SelectionSet, v []*models.FileIOChunk) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNFileIOChunk2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOChunk(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNFileIOChunk2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOChunk(ctx context.Context, sel ast.SelectionSet, v *models.FileIOChunk) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOChunk(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIODeleteResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIODeleteResult(ctx context.Context, sel ast.SelectionSet, v models.FileIODeleteResult) graphql.Marshaler {
+	return ec._FileIODeleteResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIODeleteResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIODeleteResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIODeleteResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIODeleteResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIOEntry2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*models.FileIOEntry) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNFileIOEntry2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOEntry(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNFileIOEntry2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOEntry(ctx context.Context, sel ast.SelectionSet, v *models.FileIOEntry) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOEntry(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNFileIOEntryType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOEntryType(ctx context.Context, v any) (models.FileIOEntryType, error) {
+	var res models.FileIOEntryType
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFileIOEntryType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOEntryType(ctx context.Context, sel ast.SelectionSet, v models.FileIOEntryType) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNFileIOHistoryContent2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryContent(ctx context.Context, sel ast.SelectionSet, v models.FileIOHistoryContent) graphql.Marshaler {
+	return ec._FileIOHistoryContent(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIOHistoryContent2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryContent(ctx context.Context, sel ast.SelectionSet, v *models.FileIOHistoryContent) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOHistoryContent(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIOHistoryEntry2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*models.FileIOHistoryEntry) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNFileIOHistoryEntry2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryEntry(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNFileIOHistoryEntry2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryEntry(ctx context.Context, sel ast.SelectionSet, v *models.FileIOHistoryEntry) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOHistoryEntry(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIOHistoryPage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryPage(ctx context.Context, sel ast.SelectionSet, v models.FileIOHistoryPage) graphql.Marshaler {
+	return ec._FileIOHistoryPage(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIOHistoryPage2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryPage(ctx context.Context, sel ast.SelectionSet, v *models.FileIOHistoryPage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOHistoryPage(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIOListResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOListResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOListResult) graphql.Marshaler {
+	return ec._FileIOListResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIOListResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOListResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOListResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOListResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIOReadResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOReadResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOReadResult) graphql.Marshaler {
+	return ec._FileIOReadResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIOReadResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOReadResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOReadResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOReadResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIORenameResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIORenameResult(ctx context.Context, sel ast.SelectionSet, v models.FileIORenameResult) graphql.Marshaler {
+	return ec._FileIORenameResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIORenameResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIORenameResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIORenameResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIORenameResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIOSearchResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOSearchResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOSearchResult) graphql.Marshaler {
+	return ec._FileIOSearchResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIOSearchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOSearchResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOSearchResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOSearchResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFileIOStatResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOStatResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOStatResult) graphql.Marshaler {
+	return ec._FileIOStatResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIOStatResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOStatResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOStatResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOStatResult(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNFileIOWriteMode2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteMode(ctx context.Context, v any) (models.FileIOWriteMode, error) {
+	var res models.FileIOWriteMode
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFileIOWriteMode2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteMode(ctx context.Context, sel ast.SelectionSet, v models.FileIOWriteMode) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNFileIOWriteResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOWriteResult) graphql.Marshaler {
+	return ec._FileIOWriteResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNFileIOWriteResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOWriteResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FileIOWriteResult(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
 	res, err := graphql.UnmarshalFloatContext(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -16092,6 +21836,177 @@ func (ec *executionContext) marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblo
 		return graphql.Null
 	}
 	return ec._Lock(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNMemoryAck2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryAck(ctx context.Context, sel ast.SelectionSet, v models.MemoryAck) graphql.Marshaler {
+	return ec._MemoryAck(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNMemoryAck2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryAck(ctx context.Context, sel ast.SelectionSet, v *models.MemoryAck) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MemoryAck(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNMemoryAfterTurnInput2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryAfterTurnInput(ctx context.Context, v any) (models.MemoryAfterTurnInput, error) {
+	res, err := ec.unmarshalInputMemoryAfterTurnInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalNMemoryBeforeTurnInput2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryBeforeTurnInput(ctx context.Context, v any) (models.MemoryBeforeTurnInput, error) {
+	res, err := ec.unmarshalInputMemoryBeforeTurnInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMemoryBeforeTurnResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryBeforeTurnResult(ctx context.Context, sel ast.SelectionSet, v models.MemoryBeforeTurnResult) graphql.Marshaler {
+	return ec._MemoryBeforeTurnResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNMemoryBeforeTurnResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryBeforeTurnResult(ctx context.Context, sel ast.SelectionSet, v *models.MemoryBeforeTurnResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MemoryBeforeTurnResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNMemoryContentPart2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPartᚄ(ctx context.Context, sel ast.SelectionSet, v []*models.MemoryContentPart) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMemoryContentPart2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPart(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNMemoryContentPart2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPart(ctx context.Context, sel ast.SelectionSet, v *models.MemoryContentPart) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MemoryContentPart(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNMemoryContentPartInput2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPartInput(ctx context.Context, v any) (*models.MemoryContentPartInput, error) {
+	res, err := ec.unmarshalInputMemoryContentPartInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMemoryDirectoryListing2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectoryListing(ctx context.Context, sel ast.SelectionSet, v models.MemoryDirectoryListing) graphql.Marshaler {
+	return ec._MemoryDirectoryListing(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNMemoryDirectoryListing2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectoryListing(ctx context.Context, sel ast.SelectionSet, v *models.MemoryDirectoryListing) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MemoryDirectoryListing(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNMemoryDirectorySummary2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectorySummaryᚄ(ctx context.Context, sel ast.SelectionSet, v []*models.MemoryDirectorySummary) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMemoryDirectorySummary2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectorySummary(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNMemoryDirectorySummary2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectorySummary(ctx context.Context, sel ast.SelectionSet, v *models.MemoryDirectorySummary) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MemoryDirectorySummary(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNMemoryMetadataEntry2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryMetadataEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*models.MemoryMetadataEntry) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMemoryMetadataEntry2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryMetadataEntry(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNMemoryMetadataEntry2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryMetadataEntry(ctx context.Context, sel ast.SelectionSet, v *models.MemoryMetadataEntry) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MemoryMetadataEntry(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNMemoryMetadataEntryInput2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryMetadataEntryInput(ctx context.Context, v any) (*models.MemoryMetadataEntryInput, error) {
+	res, err := ec.unmarshalInputMemoryMetadataEntryInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMemoryResponseItem2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemᚄ(ctx context.Context, sel ast.SelectionSet, v []*models.MemoryResponseItem) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMemoryResponseItem2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItem(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNMemoryResponseItem2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItem(ctx context.Context, sel ast.SelectionSet, v *models.MemoryResponseItem) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MemoryResponseItem(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNMemoryResponseItemInput2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemInput(ctx context.Context, v any) (*models.MemoryResponseItemInput, error) {
+	res, err := ec.unmarshalInputMemoryResponseItemInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐNewBlogPost(ctx context.Context, v any) (models.NewBlogPost, error) {
@@ -16591,6 +22506,22 @@ func (ec *executionContext) marshalOArweaveItem2ᚕgithubᚗcomᚋLaiskyᚋlaisk
 	return ret
 }
 
+func (ec *executionContext) unmarshalOBigInt2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx context.Context, v any) (*library.BigInt, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(library.BigInt)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOBigInt2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚐBigInt(ctx context.Context, sel ast.SelectionSet, v *library.BigInt) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
+}
+
 func (ec *executionContext) marshalOBlogCategory2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐCategory(ctx context.Context, sel ast.SelectionSet, v *model.Category) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -16694,6 +22625,13 @@ func (ec *executionContext) marshalOEmbededTweet2ᚖgithubᚗcomᚋLaiskyᚋlais
 	return ec._EmbededTweet(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalOGeneralCrawlerEgressPolicy2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralCrawlerEgressPolicy(ctx context.Context, sel ast.SelectionSet, v *models.GeneralCrawlerEgressPolicy) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._GeneralCrawlerEgressPolicy(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalOGeneralUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralUser(ctx context.Context, sel ast.SelectionSet, v *models.GeneralUser) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -16733,6 +22671,73 @@ func (ec *executionContext) marshalOJSONString2ᚖgithubᚗcomᚋLaiskyᚋlaisky
 		return graphql.Null
 	}
 	return v
+}
+
+func (ec *executionContext) unmarshalOMemoryContentPartInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPartInputᚄ(ctx context.Context, v any) ([]*models.MemoryContentPartInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	vSlice := graphql.CoerceList(v)
+	var err error
+	res := make([]*models.MemoryContentPartInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNMemoryContentPartInput2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPartInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) unmarshalOMemoryMetadataEntryInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryMetadataEntryInputᚄ(ctx context.Context, v any) ([]*models.MemoryMetadataEntryInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	vSlice := graphql.CoerceList(v)
+	var err error
+	res := make([]*models.MemoryMetadataEntryInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNMemoryMetadataEntryInput2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryMetadataEntryInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) unmarshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx context.Context, v any) (*models.MemoryPlugin, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(models.MemoryPlugin)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOMemoryPlugin2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryPlugin(ctx context.Context, sel ast.SelectionSet, v *models.MemoryPlugin) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
+}
+
+func (ec *executionContext) unmarshalOMemoryResponseItemInput2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemInputᚄ(ctx context.Context, v any) ([]*models.MemoryResponseItemInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	vSlice := graphql.CoerceList(v)
+	var err error
+	res := make([]*models.MemoryResponseItemInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNMemoryResponseItemInput2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryResponseItemInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
 }
 
 func (ec *executionContext) unmarshalOPagination2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPagination(ctx context.Context, v any) (*models.Pagination, error) {

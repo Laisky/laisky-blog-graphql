@@ -35,6 +35,9 @@ type WebFetchResult {
   url: String!
   created_at: Date!
   content: String!
+  # output_markdown reports the format that was actually requested from the
+  # renderer, so a client never has to guess how to interpret content.
+  output_markdown: Boolean!
 }
 
 type ExtractKeyInfoResult {
@@ -165,7 +168,10 @@ type Mutation {
   # WebSearch
   # -------------------------------------
   WebSearch(query: String!): WebSearchResult!
-  WebFetch(url: String!): WebFetchResult!
+  # output_markdown selects the rendered format. Omitting it (or passing null)
+  # keeps the established Markdown default; false returns the raw HTML body.
+  # This is the same selection the MCP web_fetch tool accepts.
+  WebFetch(url: String!, output_markdown: Boolean): WebFetchResult!
 
   # -------------------------------------
   # RAG

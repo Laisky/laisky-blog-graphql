@@ -73,6 +73,7 @@ var apiCMD = &cobra.Command{
 	},
 }
 
+// init registers the api subcommand on the root command.
 func init() {
 	rootCMD.AddCommand(apiCMD)
 }
@@ -266,6 +267,17 @@ func runAPI() error {
 				zap.Error(err))
 			args.TelegramSvc = nil
 		} else {
+			// The alert rate limiter is required for telegram alerting. When the
+			// task is explicitly requested, a configuration that cannot build it
+			// must abort startup instead of silently disabling alerts.
+			if throttleErr := telegramCtl.ValidateTelegramThrottleConfig(ctx); throttleErr != nil {
+				if telegramTaskRequested {
+					return errors.Wrap(throttleErr,
+						"telegram alert throttle configuration is invalid (required because 'telegram' task is enabled)")
+				}
+				logger.Error("telegram alert throttle configuration is invalid; telegram alerting stays disabled",
+					zap.Error(throttleErr))
+			}
 			args.TelegramCtl = telegramCtl.NewTelegram(ctx, args.TelegramSvc)
 		}
 	} else {
@@ -534,7 +546,7 @@ func runAPI() error {
 						return errors.Errorf("shadow live plugin %q is not registered", shadowSettings.LivePlugin)
 					}
 					if shadowPlugin == nil {
-						return errors.Errorf("shadow shadow plugin %q is not registered", shadowSettings.ShadowPlugin)
+						return errors.Errorf("shadow plugin %q is not registered", shadowSettings.ShadowPlugin)
 					}
 
 					recorder, recErr := mcpplugin.NewJSONLRecorder(shadowSettings.RecorderPath)

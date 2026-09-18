@@ -36,21 +36,57 @@ type Options struct {
 	ConnMaxLifetime   time.Duration
 }
 
+// minPrepareStmtPoolSize is the smallest connection pool that may also cache
+// prepared statements.
+//
+// GORM holds its prepared-statement cache mutex while database/sql prepares a
+// statement, and that preparation needs a pooled connection. A goroutine
+// already inside a transaction owns a connection and then needs the same mutex,
+// so with too few connections the two resources deadlock permanently
+// (go-gorm/gorm#7350 and #7465, both still open as of 2026; GORM's own docs say
+// nothing about the pool interaction). A single-connection pool can always
+// reach the cycle, so the cache is disabled there. For the multi-connection
+// drivers the pool must stay larger than the peak number of concurrent
+// in-transaction requests, which is why lowering MaxOpenConns to the floor also
+// turns the cache off rather than trading a hang for throughput.
+const minPrepareStmtPoolSize = 2
+
+// poolSizeFor resolves the effective pool bounds before the connection opens,
+// so the prepared-statement decision is made from the pool that will exist.
+func poolSizeFor(isSQLite bool, opts Options) (maxIdle, maxOpen int, err error) {
+	if isSQLite {
+		// SQLite is single-writer; one connection also keeps WAL access serial.
+		return 1, 1, nil
+	}
+	maxIdle, maxOpen = opts.MaxIdleConns, opts.MaxOpenConns
+	if maxIdle <= 0 {
+		maxIdle = defaultMaxIdleConns
+	}
+	if maxOpen <= 0 {
+		maxOpen = defaultMaxOpenConns
+	}
+	if maxIdle > maxOpen {
+		return 0, 0, errors.New("oneapi max idle connections exceeds max open connections")
+	}
+	return maxIdle, maxOpen, nil
+}
+
 // NewDB opens and verifies a PostgreSQL, MySQL, or SQLite connection without
 // logging its sensitive DSN.
 func NewDB(ctx context.Context, opts Options) (*gorm.DB, error) {
 	driver := strings.ToLower(strings.TrimSpace(opts.Driver))
+	isSQLiteDriver := driver == "sqlite"
+	maxIdleConns, maxOpenConns, err := poolSizeFor(isSQLiteDriver, opts)
+	if err != nil {
+		return nil, err
+	}
 	gormConfig := &gorm.Config{
-		PrepareStmt:    true,
+		PrepareStmt:    maxOpenConns >= minPrepareStmtPoolSize,
 		TranslateError: true,
 		Logger:         gormlogger.Default.LogMode(gormlogger.Silent),
 	}
 
-	var (
-		db       *gorm.DB
-		err      error
-		isSQLite bool
-	)
+	var db *gorm.DB
 	switch driver {
 	case "postgres", "postgresql":
 		dsn := strings.TrimSpace(opts.DSN)
@@ -68,7 +104,6 @@ func NewDB(ctx context.Context, opts Options) (*gorm.DB, error) {
 		}
 		db, err = gorm.Open(mysql.Open(dsn), gormConfig)
 	case "sqlite":
-		isSQLite = true
 		path := strings.TrimSpace(opts.SQLitePath)
 		if path == "" {
 			return nil, errors.New("oneapi sqlite path is empty")
@@ -94,25 +129,9 @@ func NewDB(ctx context.Context, opts Options) (*gorm.DB, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "get oneapi sql database")
 	}
-	if isSQLite {
-		sqlDB.SetMaxIdleConns(1)
-		sqlDB.SetMaxOpenConns(1)
-	} else {
-		maxIdle := opts.MaxIdleConns
-		if maxIdle <= 0 {
-			maxIdle = defaultMaxIdleConns
-		}
-		maxOpen := opts.MaxOpenConns
-		if maxOpen <= 0 {
-			maxOpen = defaultMaxOpenConns
-		}
-		if maxIdle > maxOpen {
-			_ = sqlDB.Close()
-			return nil, errors.New("oneapi max idle connections exceeds max open connections")
-		}
-		sqlDB.SetMaxIdleConns(maxIdle)
-		sqlDB.SetMaxOpenConns(maxOpen)
-	}
+	// The bounds were resolved before opening so PrepareStmt matches this pool.
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetMaxOpenConns(maxOpenConns)
 	lifetime := opts.ConnMaxLifetime
 	if lifetime <= 0 {
 		lifetime = defaultConnMaxLifetime
@@ -128,6 +147,8 @@ func NewDB(ctx context.Context, opts Options) (*gorm.DB, error) {
 	return db, nil
 }
 
+// normalizeMySQLDSN converts a mysql:// URL into the go-sql-driver DSN form and
+// ensures the settings the schema relies on are present.
 func normalizeMySQLDSN(dsn string) (string, error) {
 	if dsn == "" {
 		return "", errors.New("oneapi mysql dsn is empty")
@@ -167,6 +188,7 @@ func normalizeMySQLDSN(dsn string) (string, error) {
 	return config.FormatDSN(), nil
 }
 
+// hasDSNQueryKey reports whether a DSN already sets the given query parameter.
 func hasDSNQueryKey(dsn string, key string) bool {
 	queryOffset := strings.IndexByte(dsn, '?')
 	if queryOffset < 0 {

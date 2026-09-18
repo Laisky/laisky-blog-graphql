@@ -22,12 +22,9 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
-	mcptools "github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
+	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -43,6 +40,8 @@ type urlPrefixConfig struct {
 	public   string
 }
 
+// newURLPrefixConfig resolves the internal mount prefix and the public prefix
+// a reverse proxy exposes. They differ when a proxy strips or adds a path.
 func newURLPrefixConfig() urlPrefixConfig {
 	rawInternal := strings.TrimSpace(gconfig.Shared.GetString("settings.web.url_prefix"))
 	internal := normalizeBasePath(rawInternal)
@@ -59,6 +58,7 @@ func newURLPrefixConfig() urlPrefixConfig {
 	return urlPrefixConfig{internal: internal, public: public}
 }
 
+// join prefixes an absolute server path with the internal mount prefix.
 func (c urlPrefixConfig) join(path string) string {
 	if path == "" {
 		if c.internal == "" {
@@ -83,6 +83,8 @@ func (c urlPrefixConfig) join(path string) string {
 	return c.internal + path
 }
 
+// rootVariants lists every path that addresses the deployment root, so both
+// the internal and the public prefix resolve to the same handler.
 func (c urlPrefixConfig) rootVariants() []string {
 	add := func(set map[string]struct{}, values ...string) {
 		for _, v := range values {
@@ -114,6 +116,7 @@ func (c urlPrefixConfig) rootVariants() []string {
 	return result
 }
 
+// matches reports whether a request path falls under either prefix.
 func (c urlPrefixConfig) matches(path string) bool {
 	if path == "" || !strings.HasPrefix(path, "/") {
 		return false
@@ -139,6 +142,7 @@ func (c urlPrefixConfig) matches(path string) bool {
 	return false
 }
 
+// display renders an empty prefix as "/" for logging.
 func (c urlPrefixConfig) display(value string) string {
 	if value == "" {
 		return "/"
@@ -183,11 +187,26 @@ func RunServer(addr string, resolver *Resolver) {
 
 	registerOneapiProxyRoutes(server, prefix)
 
+	// Shared application state exists independently of transport registration.
+	var activeMCP *mcp.Server
+	var sharedHolds *userrequests.HoldManager
+	if resolver != nil && resolver.args.UserRequestService != nil {
+		sharedHolds = userrequests.NewHoldManager(resolver.args.UserRequestService, log.Logger.Named("hold_manager"), nil)
+	}
+
 	if resolver != nil && (resolver.args.WebSearchProvider != nil ||
 		resolver.args.AskUserService != nil ||
 		resolver.args.UserRequestService != nil ||
 		resolver.args.RAGService != nil ||
-		resolver.args.MCPFileService != nil) {
+		resolver.args.MCPFileService != nil ||
+		resolver.args.MemoryService != nil ||
+		resolver.args.Rdb != nil ||
+		resolver.args.MCPToolsSettings.MCPPipeEnabled ||
+		resolver.args.MCPToolsSettings.FindToolEnabled) {
+		options := []mcp.ServerOption{mcp.WithUserRequestHoldManager(sharedHolds)}
+		if resolver.args.FilesService != nil {
+			options = append(options, mcp.WithFileHistoryReader(resolver.args.FilesService))
+		}
 		mcpServer, err := mcp.NewServer(
 			resolver.args.WebSearchProvider,
 			resolver.args.AskUserService,
@@ -200,10 +219,12 @@ func RunServer(addr string, resolver *Resolver) {
 			resolver.args.CallLogService,
 			resolver.args.MCPToolsSettings,
 			log.Logger,
+			options...,
 		)
 		if err != nil {
 			log.Logger.Error("init mcp server", zap.Error(err))
 		} else {
+			activeMCP = mcpServer
 			if resolver.args.UserRequestImages != nil {
 				mcpServer.AttachImageIssuer(resolver.args.UserRequestImages)
 			}
@@ -230,86 +251,6 @@ func RunServer(addr string, resolver *Resolver) {
 				serveMCPTransportRoot(ctx, mcpHandler)
 			}
 			server.Any("/.well-known/mcp", mcpDiscoveryHandler)
-
-			if resolver.args.AskUserService != nil {
-				askUserMux := askuser.NewHTTPHandler(resolver.args.AskUserService, log.Logger.Named("ask_user_http"))
-				askUserBase := prefix.join("/tools/ask_user")
-				askUserHandler := gin.WrapH(askUserMux)
-				server.Any(askUserBase, askUserHandler)
-				askUserWildcard := prefix.join("/tools/ask_user/*path")
-				stripPrefix := strings.TrimSuffix(askUserBase, "/")
-				if stripPrefix == "" {
-					stripPrefix = "/"
-				}
-				server.Any(askUserWildcard, gin.WrapH(http.StripPrefix(stripPrefix, askUserMux)))
-				if prefix.public == "" {
-					server.Any("/tools/ask_user", askUserHandler)
-					server.Any("/tools/ask_user/*path", gin.WrapH(http.StripPrefix("/tools/ask_user", askUserMux)))
-				}
-			}
-
-			if resolver.args.CallLogService != nil {
-				callLogMux := calllog.NewHTTPHandler(resolver.args.CallLogService, log.Logger.Named("call_log_http"))
-				callLogBase := prefix.join("/tools/call_log")
-				stripPrefix := strings.TrimSuffix(callLogBase, "/")
-				if stripPrefix == "" {
-					stripPrefix = "/"
-				}
-				callLogHandler := gin.WrapH(http.StripPrefix(stripPrefix, callLogMux))
-
-				apiBase := prefix.join("/tools/call_log/api")
-				server.Any(apiBase, callLogHandler)
-				server.Any(apiBase+"/*path", callLogHandler)
-
-				if prefix.public == "" {
-					server.Any("/tools/call_log/api", gin.WrapH(http.StripPrefix("/tools/call_log", callLogMux)))
-					server.Any("/tools/call_log/api/*path", gin.WrapH(http.StripPrefix("/tools/call_log", callLogMux)))
-				}
-			}
-
-			if resolver.args.UserRequestService != nil {
-				// Combined handler that routes to either user requests or saved commands based on path
-				// The HoldManager is obtained from the MCP server to share state with the get_user_request tool
-				combinedMux := userrequests.NewCombinedHTTPHandlerWithImages(resolver.args.UserRequestService, mcpServer.HoldManager(), resolver.args.UserRequestImages, log.Logger.Named("user_requests_http"), mcpServer.AvailableToolNames)
-				userReqBase := prefix.join("/tools/get_user_requests")
-				stripPrefix := strings.TrimSuffix(userReqBase, "/")
-				if stripPrefix == "" {
-					stripPrefix = "/"
-				}
-				userReqHandler := gin.WrapH(http.StripPrefix(stripPrefix, combinedMux))
-
-				apiBase := prefix.join("/tools/get_user_requests/api")
-				server.Any(apiBase, userReqHandler)
-				server.Any(apiBase+"/*path", userReqHandler)
-
-				if prefix.public == "" {
-					server.Any("/tools/get_user_requests/api", gin.WrapH(http.StripPrefix("/tools/get_user_requests", combinedMux)))
-					server.Any("/tools/get_user_requests/api/*path", gin.WrapH(http.StripPrefix("/tools/get_user_requests", combinedMux)))
-				}
-			}
-
-			if resolver.args.FilesService != nil {
-				filesMux := files.NewHTTPHandler(resolver.args.FilesService, log.Logger.Named("file_io_http"),
-					files.WithHTTPFileWriterResolver(func(ctx context.Context, auth files.AuthContext, project string) (files.FileHTTPWriter, error) {
-						return mcptools.ResolveVersionedFileService(ctx, resolver.args.MCPFileService, auth, project)
-					}),
-				)
-				filesBase := prefix.join("/tools/file_io")
-				stripPrefix := strings.TrimSuffix(filesBase, "/")
-				if stripPrefix == "" {
-					stripPrefix = "/"
-				}
-				filesHandler := gin.WrapH(http.StripPrefix(stripPrefix, filesMux))
-
-				apiBase := prefix.join("/tools/file_io/api")
-				server.Any(apiBase, filesHandler)
-				server.Any(apiBase+"/*path", filesHandler)
-
-				if prefix.public == "" {
-					server.Any("/tools/file_io/api", gin.WrapH(http.StripPrefix("/tools/file_io", filesMux)))
-					server.Any("/tools/file_io/api/*path", gin.WrapH(http.StripPrefix("/tools/file_io", filesMux)))
-				}
-			}
 		}
 	} else {
 		searchNil := resolver != nil && resolver.args.WebSearchProvider == nil
@@ -323,6 +264,15 @@ func RunServer(addr string, resolver *Resolver) {
 			zap.String("internal_prefix", prefix.display(prefix.internal)),
 		)
 	}
+
+	registeredToolNames := func() []string {
+		if activeMCP == nil {
+			return []string{}
+		}
+		return activeMCP.AvailableToolNames()
+	}
+	// The HTTP registrar is outside both the MCP factory and its success branch.
+	registerToolHTTPRoutes(server, prefix, resolver, sharedHolds, registeredToolNames)
 
 	server.Any("/health", func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "hello, world")
@@ -440,25 +390,10 @@ func RunServer(addr string, resolver *Resolver) {
 			return
 		}
 
-		// Build tools configuration for frontend
-		toolsConfig := gin.H{
-			"web_search":       true,
-			"web_fetch":        true,
-			"ask_user":         true,
-			"get_user_request": true,
-			"extract_key_info": true,
-			"file_io":          true,
-			"memory":           false,
-		}
-		if resolver != nil {
-			toolsConfig["web_search"] = resolver.args.MCPToolsSettings.WebSearchEnabled
-			toolsConfig["web_fetch"] = resolver.args.MCPToolsSettings.WebFetchEnabled
-			toolsConfig["ask_user"] = resolver.args.MCPToolsSettings.AskUserEnabled
-			toolsConfig["get_user_request"] = resolver.args.MCPToolsSettings.GetUserRequestEnabled
-			toolsConfig["extract_key_info"] = resolver.args.MCPToolsSettings.ExtractKeyInfoEnabled
-			toolsConfig["file_io"] = resolver.args.MCPToolsSettings.FileIOEnabled
-			toolsConfig["memory"] = resolver.args.MCPToolsSettings.MemoryEnabled
-		}
+		// Report independently configured adapters, not flags or static examples.
+		catalog := buildInterfaceCatalog(interfaceSourcesFromResolver(resolver, registeredToolNames()))
+		toolsConfig := mcpToolGroups(catalog)
+		consoleTools := consoleGroups(catalog)
 
 		siteConfig := siteConfigs.resolveForRequest(ctx.Request)
 		if siteConfig.PublicBasePath == "" {
@@ -475,12 +410,16 @@ func RunServer(addr string, resolver *Resolver) {
 		}
 
 		ctx.JSON(http.StatusOK, gin.H{
-			"urlPrefix":          prefix.internal,
-			"publicBasePath":     siteConfig.PublicBasePath,
-			"site":               siteConfig,
-			"tools":              toolsConfig,
-			"githubOAuthEnabled": blog.IsGithubOAuthConfigured(),
-			"ssoJwt":             ssoJWTInfo,
+			"urlPrefix":                prefix.internal,
+			"publicBasePath":           siteConfig.PublicBasePath,
+			"publicApiBasePath":        prefix.public,
+			"site":                     siteConfig,
+			"tools":                    toolsConfig,
+			"consoleTools":             consoleTools,
+			runtimeConfigInterfacesKey: catalog,
+			"pricing":                  oneapi.SharedToolPrices(),
+			"githubOAuthEnabled":       blog.IsGithubOAuthConfigured(),
+			"ssoJwt":                   ssoJWTInfo,
 		})
 	}
 
@@ -531,6 +470,8 @@ func RunServer(addr string, resolver *Resolver) {
 	log.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))
 }
 
+// serveMCPTransportRoot dispatches a request to the MCP streamable transport
+// mounted at the deployment root.
 func serveMCPTransportRoot(ctx *gin.Context, handler http.Handler) {
 	if ctx == nil || ctx.Request == nil {
 		return
@@ -551,6 +492,8 @@ func serveMCPTransportRoot(ctx *gin.Context, handler http.Handler) {
 	handler.ServeHTTP(ctx.Writer, req)
 }
 
+// shouldServeFrontend reports whether a request should receive the SPA shell
+// rather than an API response.
 func shouldServeFrontend(r *http.Request) bool {
 	if r == nil {
 		return false
@@ -577,6 +520,7 @@ func shouldServeFrontend(r *http.Request) bool {
 	return false
 }
 
+// registerAgentAPIProbeRoutes publishes the agent discovery probe endpoints.
 func registerAgentAPIProbeRoutes(router gin.IRouter) {
 	handler := newAgentAPIProbeHandler()
 	for _, route := range []string{"/api", "/api/v1", "/v1", "/v2", "/agent/auth"} {
@@ -584,6 +528,8 @@ func registerAgentAPIProbeRoutes(router gin.IRouter) {
 	}
 }
 
+// newAgentAPIProbeHandler answers agent capability probes with the configured
+// endpoint metadata.
 func newAgentAPIProbeHandler() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		ctx.Header("Allow", "GET, HEAD, OPTIONS, POST")
@@ -605,6 +551,7 @@ func newAgentAPIProbeHandler() gin.HandlerFunc {
 	}
 }
 
+// allowCORS applies the shared cross-origin headers for browser clients.
 func allowCORS(ctx *gin.Context) {
 	logger := ginMw.GetLogger(ctx).Named("cors")
 	origin := strings.TrimSpace(ctx.Request.Header.Get("Origin"))
@@ -640,11 +587,11 @@ func allowCORS(ctx *gin.Context) {
 	// Set CORS headers
 	if allowedOrigin != "" {
 		ctx.Header("Access-Control-Allow-Origin", allowedOrigin)
-		ctx.Header("Access-Control-Allow-Headers", "*")
+		setToolCORSHeaders(ctx.Writer.Header(), ctx.GetHeader("Access-Control-Request-Headers"))
 		ctx.Header("Access-Control-Allow-Credentials", "true")
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400") // 24 hours
-		ctx.Header("Vary", "Origin")                  // Indicate that the response varies based on the Origin header
+		ctx.Writer.Header().Add("Vary", "Origin")     // Indicate that the response varies based on the Origin header
 
 		if ctx.Request.Method == http.MethodOptions {
 			logger.Debug("CORS: handling preflight request", zap.String("origin", origin))
@@ -662,7 +609,7 @@ func allowCORS(ctx *gin.Context) {
 		// Handle OPTIONS requests without Origin header (some tools/browsers)
 		logger.Debug("CORS: OPTIONS request without Origin header")
 		ctx.Header("Access-Control-Allow-Origin", "*")
-		ctx.Header("Access-Control-Allow-Headers", "*")
+		setToolCORSHeaders(ctx.Writer.Header(), ctx.GetHeader("Access-Control-Request-Headers"))
 		ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 		ctx.Header("Access-Control-Max-Age", "86400")
 		ctx.AbortWithStatus(http.StatusNoContent)
@@ -690,7 +637,7 @@ func evaluateCORSOrigin(origin string) (allowed bool, host string, reason string
 	return allowed, host, reason, nil
 }
 
-// classifyCORSHost reports whether a hostname matches the supported production or development origin allowlist.
+// classifyCORSHost reports whether a hostname matches the supported production or development allowlist.
 // Parameters: host is the lowercase hostname extracted from the Origin header.
 // Returns: allowed reports whether the host is trusted, and reason describes the matched allow or deny rule.
 func classifyCORSHost(host string) (allowed bool, reason string) {
@@ -818,6 +765,8 @@ func classifyGraphQLClientError(errMsg string) (isClientSideErr bool, reason str
 	return false, "server_error"
 }
 
+// allowUnprefixedAsset reports whether a static asset may also be served from
+// the unprefixed root, which keeps bundled asset URLs working behind a proxy.
 func allowUnprefixedAsset(path string) bool {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {

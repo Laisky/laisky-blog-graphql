@@ -14,6 +14,8 @@ import { UserRequestsPage } from '@/features/mcp/user-requests/page';
 import { WebFetchPage } from '@/features/mcp/web-fetch/page';
 import { WebSearchPage } from '@/features/mcp/web-search/page';
 import { ApiKeyProvider } from '@/lib/api-key-context';
+import { configurePublicApiBasePath } from '@/lib/api-base';
+import { ExtractKeyInfoPage } from '@/features/mcp/extract-key-info/page';
 import { defaultToolsConfig, loadRuntimeConfig, type SsoJwtConfig, type ToolsConfig } from '@/lib/runtime-config';
 import { applySiteBranding } from '@/lib/site-branding';
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
@@ -33,12 +35,13 @@ type RouterKind = 'mcp' | 'sso';
  */
 async function bootstrap() {
   const runtimeConfig = await loadRuntimeConfig();
+  configurePublicApiBasePath(runtimeConfig?.publicApiBasePath);
   const routeContext = resolveRouteContext(
     window.location.pathname,
     runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL,
     runtimeConfig?.site?.router
   );
-  const toolsConfig: ToolsConfig = runtimeConfig?.tools ?? defaultToolsConfig;
+  const toolsConfig: ToolsConfig = runtimeConfig?.consoleTools ?? defaultToolsConfig;
   const turnstileSiteKey = runtimeConfig?.site?.turnstileSiteKey;
   // Hide the GitHub sign-in option unless the backend reports it configured, so
   // users never click through to a "github oauth client is not configured" error.
@@ -58,7 +61,7 @@ async function bootstrap() {
   createRoot(container).render(
     <StrictMode>
       <ThemeProvider>
-        <ToolsConfigProvider config={toolsConfig}>
+        <ToolsConfigProvider config={toolsConfig} prices={runtimeConfig?.pricing}>
           <ApiKeyProvider>
             <RouterProvider router={router} />
           </ApiKeyProvider>
@@ -94,6 +97,7 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled
         { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
         { path: 'tools/web_search', element: <WebSearchPage /> },
         { path: 'tools/web_fetch', element: <WebFetchPage /> },
+        { path: 'tools/extract_key_info', element: <ExtractKeyInfoPage /> },
         { path: 'tools/file_io', element: <FileIOPage /> },
         { path: 'tools/memory', element: <MemoryPage /> },
         { path: 'tools/call_log', element: <CallLogPage /> },

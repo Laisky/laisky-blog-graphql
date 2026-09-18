@@ -10,6 +10,7 @@ schema:
   - ./internal/web/telegram/schema.graphql
   - ./internal/web/general/schema.graphql
   - ./internal/web/arweave/schema.graphql
+  - ./internal/web/fileio/schema.graphql
 exec:
   filename: ./internal/web/generated.go
 model:
@@ -27,6 +28,8 @@ models:
     model: github.com/Laisky/laisky-blog-graphql/library.QuotedString
   JSONString:
     model: github.com/Laisky/laisky-blog-graphql/library.JSONString
+  BigInt:
+    model: github.com/Laisky/laisky-blog-graphql/library.BigInt
   # twitter
   Tweet:
     model: github.com/Laisky/laisky-blog-graphql/internal/web/twitter/model.Tweet

@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
@@ -11,6 +10,7 @@ import (
 	"github.com/Laisky/zap"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 )
@@ -64,7 +64,7 @@ func (t *WebSearchTool) Definition() mcp.Tool {
 		mcp.WithString(
 			"query",
 			mcp.Required(),
-			mcp.Description("Plain text search query."),
+			mcp.Description("Plain text search query; trimmed, non-empty, at most 16384 UTF-8 bytes."),
 		),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithIdempotentHintAnnotation(true),
@@ -79,9 +79,9 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return mcp.NewToolResultError("query cannot be empty"), nil
+	query, err = toolpolicy.Query(query)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	start := time.Now().UTC()
@@ -108,6 +108,10 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 	}
 
+	if output == nil {
+		return mcp.NewToolResultError("search provider returned no result"), nil
+	}
+
 	t.logger.Debug("web_search completed",
 		zap.Int("query_len", len(query)),
 		zap.Int("results_count", len(output.Items)),
@@ -117,7 +121,7 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 	)
 
 	response := searchlib.SimplifiedSearchResult{
-		Results: output.Items,
+		Results: append([]searchlib.SearchResultItem{}, output.Items...),
 	}
 
 	toolResult, err := mcp.NewToolResultJSON(response)

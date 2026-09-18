@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 
+	fileioresolver "github.com/Laisky/laisky-blog-graphql/internal/library/fileio"
 	ragresolver "github.com/Laisky/laisky-blog-graphql/internal/library/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/library/search"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
@@ -10,8 +11,8 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpmemory "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory"
+	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
-	mcptools "github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	arweave "github.com/Laisky/laisky-blog-graphql/internal/web/arweave/controller"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
@@ -46,7 +47,7 @@ type ResolverArgs struct {
 	UserRequestService *userrequests.Service
 	UserRequestImages  *userrequests.ImageManager
 	FilesService       *files.Service
-	MCPFileService     mcptools.FileService
+	MCPFileService     mcpplugin.Plugin
 	MemoryService      *mcpmemory.Service
 	RAGService         *rag.Service
 	RAGSettings        rag.Settings
@@ -75,6 +76,8 @@ func NewResolver(args ResolverArgs) *Resolver {
 	return r
 }
 
+// buildQueryResolver assembles every read-side subgraph resolver once at
+// startup, so Query() stays a cheap getter.
 func (r *Resolver) buildQueryResolver() *queryResolver {
 	return &queryResolver{
 		twitterQuery: twitterQuery{
@@ -89,9 +92,29 @@ func (r *Resolver) buildQueryResolver() *queryResolver {
 		genaralQuery: genaralQuery{
 			QueryResolver: general.QueryResolver{},
 		},
+		fileioQuery: fileioQuery{
+			QueryResolver: &fileioresolver.QueryResolver{Resolver: r.fileioResolver()},
+		},
 	}
 }
 
+// fileioResolver builds the shared FileIO/memory adapter. Each dependency is
+// optional and checked independently, so a deployment without one of them still
+// serves the remaining fields instead of removing them from the schema.
+func (r *Resolver) fileioResolver() *fileioresolver.Resolver {
+	var memory fileioresolver.MemoryService
+	if r.args.MemoryService != nil {
+		memory = r.args.MemoryService
+	}
+	var history files.HistoryReader
+	if r.args.FilesService != nil {
+		history = r.args.FilesService
+	}
+	return fileioresolver.NewResolver(r.args.MCPFileService, history, memory, r.args.CallLogService)
+}
+
+// buildMutationResolver assembles every write-side subgraph resolver once at
+// startup, so Mutation() stays a cheap getter.
 func (r *Resolver) buildMutationResolver() *mutationResolver {
 	// Arweave uploads ride on the Telegram service's UploadDao, so the
 	// arweave mutation resolver can only be wired when TelegramSvc is
@@ -134,6 +157,9 @@ func (r *Resolver) buildMutationResolver() *mutationResolver {
 				r.args.CallLogService,
 			),
 		},
+		fileioMutation: fileioMutation{
+			MutationResolver: &fileioresolver.MutationResolver{Resolver: r.fileioResolver()},
+		},
 	}
 }
 
@@ -145,49 +171,65 @@ func (r *Resolver) Mutation() MutationResolver { return r.mutationResolver }
 
 // twitter
 
+// Tweet returns the field resolver for the Tweet type.
 func (r *Resolver) Tweet() TweetResolver {
 	return twitter.Instance.TweetResolver
 }
+
+// TwitterUser returns the field resolver for the TwitterUser type.
 func (r *Resolver) TwitterUser() TwitterUserResolver {
 	return twitter.Instance.TwitterUserResolver
 }
 
+// EmbededTweet returns the field resolver for the EmbededTweet type.
 func (r *Resolver) EmbededTweet() EmbededTweetResolver {
 	return twitter.Instance.EmbededTweetResolver
 }
 
 // blog
 
+// BlogPost returns the field resolver for the BlogPost type.
 func (r *Resolver) BlogPost() BlogPostResolver {
 	return r.args.BlogCtl.PostResolver
 }
+
+// BlogUser returns the field resolver for the BlogUser type.
 func (r *Resolver) BlogUser() BlogUserResolver {
 	return r.args.BlogCtl.UserResolver
 }
+
+// BlogPostSeries returns the field resolver for the BlogPostSeries type.
 func (r *Resolver) BlogPostSeries() BlogPostSeriesResolver {
 	return r.args.BlogCtl.PostSeriesResolver
 }
+
+// ArweaveItem returns the field resolver for the ArweaveItem type.
 func (r *Resolver) ArweaveItem() ArweaveItemResolver {
 	return r.args.BlogCtl.ArweaveItemResolver
 }
 
 // web search
 
+// WebSearchResult returns the field resolver for the WebSearchResult type.
 func (r *Resolver) WebSearchResult() WebSearchResultResolver {
 	return new(search.WebSearchResultResolver)
 }
 
 // telegram
 
+// TelegramAlertType returns the field resolver for the TelegramAlertType type.
 func (r *Resolver) TelegramAlertType() TelegramAlertTypeResolver {
 	return r.telegramCtl.TelegramAlertTypeResolver
 }
+
+// TelegramMonitorUser returns the field resolver for the TelegramMonitorUser type.
 func (r *Resolver) TelegramMonitorUser() TelegramMonitorUserResolver {
 	return r.telegramCtl.TelegramMonitorUserResolver
 }
 
 // general
 
+// Lock returns the field resolver for the Lock type.
 func (r *Resolver) Lock() LockResolver {
 	return general.Instance.LocksResolver
 }
@@ -212,13 +254,19 @@ type genaralQuery struct {
 	general.QueryResolver
 }
 
+type fileioQuery struct {
+	*fileioresolver.QueryResolver
+}
+
 type queryResolver struct {
 	twitterQuery
 	blogQuery
 	telegramQuery
 	genaralQuery
+	fileioQuery
 }
 
+// Hello is an unauthenticated liveness field for the GraphQL endpoint.
 func (r *queryResolver) Hello(ctx context.Context) (string, error) {
 	return "hello, world", nil
 }
@@ -251,6 +299,10 @@ type ragMutation struct {
 	*ragresolver.MutationResolver
 }
 
+type fileioMutation struct {
+	*fileioresolver.MutationResolver
+}
+
 type mutationResolver struct {
 	blogMutation
 	telegramMutation
@@ -258,4 +310,5 @@ type mutationResolver struct {
 	arweaveMutation
 	webSearchMutation
 	ragMutation
+	fileioMutation
 }

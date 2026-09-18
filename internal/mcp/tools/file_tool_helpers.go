@@ -12,7 +12,29 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
+)
+
+// Shared field names used across tool responses and JSON Schema fragments.
+// Declared once so the redaction, encoding and schema paths cannot drift.
+const (
+	// contentKey carries file or page bytes.
+	contentKey = "content"
+	// messageKey carries a human-readable diagnostic in a tool error payload.
+	messageKey = "message"
+	// createOnlyKey is the alternative to expected_version for a new file.
+	createOnlyKey = "create_only"
+	// schemaPropertiesKey is the JSON Schema object-properties keyword.
+	schemaPropertiesKey = "properties"
+	// schemaTypeKey is the JSON Schema type keyword.
+	schemaTypeKey = "type"
+	// schemaRequiredKey is the JSON Schema required-properties keyword.
+	schemaRequiredKey = "required"
+	// expectedVersionKey is the live CAS token argument.
+	expectedVersionKey = "expected_version"
+	// expectedDestinationVersionKey is the rename destination's CAS token.
+	expectedDestinationVersionKey = "expected_destination_version"
+	// itemTypeMessage is the Responses-API conversation item type.
+	itemTypeMessage = "message"
 )
 
 // normalizeFilePath adds the canonical leading slash to a non-root path.
@@ -43,17 +65,17 @@ func fileAuthFromContext(ctx context.Context) (files.AuthContext, bool) {
 	return *value, true
 }
 
-// fileToolLoggerFromContext returns a request-scoped logger when available.
+// fileToolLoggerFromContext returns a request-scoped logger.
 // It accepts a context and returns the logger to use for tool diagnostics.
+// A logger stored under the MCP context key wins, because an MCP invocation
+// carries its own per-request logger; gmw.GetLogger then always yields a usable
+// logger, falling back to the shared one.
 func fileToolLoggerFromContext(ctx context.Context) logSDK.Logger {
-	if ctxLogger := gmw.GetLogger(ctx); ctxLogger != nil {
-		return ctxLogger
-	}
 	if ctxLogger, ok := ctx.Value(ctxkeys.Logger).(logSDK.Logger); ok && ctxLogger != nil {
 		return ctxLogger
 	}
 
-	return log.Logger.Named("mcp_file_tools")
+	return gmw.GetLogger(ctx)
 }
 
 // fileToolErrorResult builds a structured MCP error response for file tools.
@@ -65,7 +87,7 @@ func fileToolErrorResult(code files.ErrorCode, message string, retryable bool) *
 func fileToolErrorResultWithExtras(code files.ErrorCode, message string, retryable bool, extras map[string]any) *mcp.CallToolResult {
 	payload := map[string]any{
 		"code":      string(code),
-		"message":   message,
+		messageKey:  message,
 		"retryable": retryable,
 	}
 	for key, value := range extras {
@@ -104,6 +126,7 @@ func fileToolErrorFromErr(err error) *mcp.CallToolResult {
 	return fileToolErrorResult(files.ErrCodeSearchBackend, "internal error", true)
 }
 
+// containsString reports whether target appears in values.
 func containsString(values []string, target string) bool {
 	for _, v := range values {
 		if v == target {

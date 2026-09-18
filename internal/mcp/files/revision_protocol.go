@@ -55,9 +55,9 @@ func (p FilePreconditions) Empty() bool {
 type filePreconditionKey struct{}
 
 type scopedFilePreconditions struct {
-	operation                       FileOperation
+	operation                        FileOperation
 	apiKeyHash, project, path, owner string
-	conditions                      FilePreconditions
+	conditions                       FilePreconditions
 }
 
 // ValidateFileVersion validates the opaque incarnation:revision token without
@@ -120,6 +120,27 @@ func WithFilePreconditions(ctx context.Context, auth AuthContext, project, path 
 	}), nil
 }
 
+// ScopedFilePreconditions returns the conditions attached to this exact
+// operation, together with whether any were attached at all.
+//
+// A memory backend outside this package is still a storage implementation and
+// must honor the caller's concurrency intent, so this accessor is exported for
+// plugins and adapters. The scope check is identical to the internal one: a
+// condition placed on a different tenant, project, path or operation is never
+// visible here, so a backend cannot accidentally apply someone else's token.
+func ScopedFilePreconditions(ctx context.Context, auth AuthContext, project, path string,
+	operation FileOperation,
+) (FilePreconditions, bool) {
+	scoped, ok := ctx.Value(filePreconditionKey{}).(scopedFilePreconditions)
+	if !ok || scoped.operation != operation || scoped.apiKeyHash != auth.APIKeyHash ||
+		scoped.project != project || scoped.path != path || scoped.owner != systemOwnerFromContext(ctx) {
+		return FilePreconditions{}, false
+	}
+	return scoped.conditions, true
+}
+
+// filePreconditionsFromContext returns the conditions scoped to this exact
+// tenant, project, path and operation, or the zero value when none apply.
 func filePreconditionsFromContext(ctx context.Context, auth AuthContext, project, path string, operation FileOperation) FilePreconditions {
 	p, ok := ctx.Value(filePreconditionKey{}).(scopedFilePreconditions)
 	if !ok || p.operation != operation || p.apiKeyHash != auth.APIKeyHash || p.project != project || p.path != path || p.owner != systemOwnerFromContext(ctx) {
@@ -128,6 +149,8 @@ func filePreconditionsFromContext(ctx context.Context, auth AuthContext, project
 	return p.conditions
 }
 
+// checkFileVersion compares a live version against the caller's condition and
+// reports a conflict rather than overwriting a changed file.
 func checkFileVersion(actual, expected string, createOnly bool) error {
 	if (expected != "" && actual != expected) || (createOnly && actual != "") {
 		return NewError(ErrCodeVersionConflict, "file version changed; re-read the file and recompute the edit before retrying", false)
@@ -135,6 +158,8 @@ func checkFileVersion(actual, expected string, createOnly bool) error {
 	return nil
 }
 
+// fileVersionTx reads the live incarnation:revision token inside the mutation
+// transaction, so the compared version cannot change before the write commits.
 func (s *Service) fileVersionTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project, path string) (string, error) {
 	var version string
 	err := tx.QueryRowContext(ctx, rebindSQL(`SELECT incarnation_id || ':' || CAST(revision AS TEXT)
@@ -146,6 +171,8 @@ func (s *Service) fileVersionTx(ctx context.Context, tx *sql.Tx, auth AuthContex
 	return version, nil
 }
 
+// checkPathVersionTx enforces the caller condition against the live row inside
+// the transaction, returning a conflict instead of overwriting a changed file.
 func (s *Service) checkPathVersionTx(ctx context.Context, tx *sql.Tx, auth AuthContext, project, path, expected string, createOnly bool) error {
 	if expected == "" && !createOnly {
 		return nil
@@ -157,6 +184,8 @@ func (s *Service) checkPathVersionTx(ctx context.Context, tx *sql.Tx, auth AuthC
 	return checkFileVersion(actual, expected, createOnly)
 }
 
+// normalizeRevisionError maps a storage-level revision failure onto the shared
+// typed error codes.
 func normalizeRevisionError(err error) error {
 	if err != nil && strings.Contains(err.Error(), "FILEIO_REVISION_EXHAUSTED") {
 		return NewError(ErrCodeRevisionExhausted, "file revision exhausted; mutation was not committed", false)

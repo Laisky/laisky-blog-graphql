@@ -19,9 +19,14 @@
       "description": "Search the public web with Google Programmable Search and return structured URL, title, snippet, and timestamp results.",
       "inputSchema": {
         "type": "object",
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "properties": {
-          "query": { "type": "string", "description": "Plain text search query." }
+          "query": {
+            "type": "string",
+            "description": "Plain text search query."
+          }
         }
       }
     },
@@ -30,10 +35,17 @@
       "description": "Fetch and render a dynamic web page, optionally returning markdown suitable for agent context.",
       "inputSchema": {
         "type": "object",
-        "required": ["url"],
+        "required": [
+          "url"
+        ],
         "properties": {
-          "url": { "type": "string", "format": "uri" },
-          "output_markdown": { "type": "boolean" }
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "output_markdown": {
+            "type": "boolean"
+          }
         }
       }
     },
@@ -43,7 +55,10 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "task_id": { "type": "string", "description": "Queue isolation key. Use graphql for this repository." }
+          "task_id": {
+            "type": "string",
+            "description": "Queue isolation key. Use graphql for this repository."
+          }
         }
       }
     },
@@ -52,14 +67,40 @@
       "description": "Read UTF-8 content and its opaque version from one snapshot. Pin subsequent ranges with expected_version; no token is needed for the initial read.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "path"],
+        "required": [
+          "project",
+          "path"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "path": { "type": "string" },
-          "expected_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
-          "plugin": { "type": "string", "enum": ["rag", "pageindex", "auto"], "default": "auto" },
-          "offset": { "type": "integer", "minimum": 0 },
-          "length": { "type": "integer", "minimum": -1 }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "path": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$",
+            "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT."
+          },
+          "plugin": {
+            "type": "string",
+            "enum": [
+              "rag",
+              "pageindex",
+              "auto"
+            ],
+            "default": "auto"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length": {
+            "type": "integer",
+            "minimum": -1
+          }
         }
       }
     },
@@ -68,21 +109,84 @@
       "description": "Write UTF-8 content with mandatory expected_version or create_only=true. APPEND also requires a condition. Return the committed version; never blindly retry a stale request.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "path", "content"],
+        "required": [
+          "project",
+          "path",
+          "content"
+        ],
         "properties": {
-          "project": { "type": "string" },
-          "path": { "type": "string" },
-          "content": { "type": "string" },
-          "expected_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
-          "plugin": { "type": "string", "enum": ["rag", "pageindex", "auto"], "default": "auto" },
-          "create_only": { "type": "boolean", "description": "Require an absent file; mutually exclusive with expected_version." },
-          "content_encoding": { "type": "string", "enum": ["utf-8"] },
-          "mode": { "type": "string", "enum": ["APPEND", "OVERWRITE", "TRUNCATE"] },
-          "offset": { "type": "integer", "minimum": 0 }
+          "project": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$",
+            "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT."
+          },
+          "plugin": {
+            "type": "string",
+            "enum": [
+              "rag",
+              "pageindex",
+              "auto"
+            ],
+            "default": "auto"
+          },
+          "create_only": {
+            "type": "boolean",
+            "description": "Require an absent file; mutually exclusive with expected_version."
+          },
+          "content_encoding": {
+            "type": "string",
+            "enum": [
+              "utf-8"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "APPEND",
+              "OVERWRITE",
+              "TRUNCATE"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
         },
         "oneOf": [
-          { "required": ["expected_version"], "properties": { "create_only": { "const": false } } },
-          { "required": ["create_only"], "properties": { "create_only": { "const": true } }, "not": { "required": ["expected_version"] } }
+          {
+            "required": [
+              "expected_version"
+            ],
+            "properties": {
+              "create_only": {
+                "const": false
+              }
+            }
+          },
+          {
+            "required": [
+              "create_only"
+            ],
+            "properties": {
+              "create_only": {
+                "const": true
+              }
+            },
+            "not": {
+              "required": [
+                "expected_version"
+              ]
+            }
+          }
         ]
       }
     },
@@ -91,11 +195,21 @@
       "description": "Recall server-side memory and prepare model input before an agent turn.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "session_id", "current_input"],
+        "required": [
+          "project",
+          "session_id",
+          "current_input"
+        ],
         "properties": {
-          "project": { "type": "string" },
-          "session_id": { "type": "string" },
-          "current_input": { "type": "string" }
+          "project": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "current_input": {
+            "type": "string"
+          }
         }
       }
     },
@@ -104,11 +218,22 @@
       "description": "Chunk supplied materials, rank them for a query with retrieval techniques, and return the most relevant context passages.",
       "inputSchema": {
         "type": "object",
-        "required": ["query", "materials"],
+        "required": [
+          "query",
+          "materials"
+        ],
         "properties": {
-          "query": { "type": "string" },
-          "materials": { "type": "string" },
-          "top_k": { "type": "integer", "minimum": 1, "maximum": 20 }
+          "query": {
+            "type": "string"
+          },
+          "materials": {
+            "type": "string"
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
         }
       }
     },
@@ -117,10 +242,18 @@
       "description": "Inspect live file metadata and version. For content edits, use the token returned with file_read, not a later stat token.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "path"],
+        "required": [
+          "project",
+          "path"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "path": { "type": "string" }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "path": {
+            "type": "string"
+          }
         }
       }
     },
@@ -129,12 +262,26 @@
       "description": "List files and directories under a project-scoped FileIO path with configurable traversal depth.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "path"],
+        "required": [
+          "project",
+          "path"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "path": { "type": "string" },
-          "depth": { "type": "integer", "minimum": 0 },
-          "limit": { "type": "integer", "minimum": 1 }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "path": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       }
     },
@@ -143,12 +290,25 @@
       "description": "Search project-scoped FileIO memory for relevant files or chunks using the configured memory backend.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "query"],
+        "required": [
+          "project",
+          "query"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "query": { "type": "string" },
-          "path_prefix": { "type": "string" },
-          "limit": { "type": "integer", "minimum": 1 }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "query": {
+            "type": "string"
+          },
+          "path_prefix": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       }
     },
@@ -157,12 +317,33 @@
       "description": "Delete one reviewed file using expected_version. File tokens do not authorize recursive directory deletion.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "path", "expected_version"],
+        "required": [
+          "project",
+          "path",
+          "expected_version"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "path": { "type": "string" },
-          "expected_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
-          "plugin": { "type": "string", "enum": ["rag", "pageindex", "auto"], "default": "auto" }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "path": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$",
+            "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT."
+          },
+          "plugin": {
+            "type": "string",
+            "enum": [
+              "rag",
+              "pageindex",
+              "auto"
+            ],
+            "default": "auto"
+          }
         }
       }
     },
@@ -171,16 +352,49 @@
       "description": "Rename one file using its source expected_version. The destination must be absent, or overwrite=true must include its reviewed expected_destination_version.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "from_path", "to_path", "expected_version"],
+        "required": [
+          "project",
+          "from_path",
+          "to_path",
+          "expected_version"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "from_path": { "type": "string" },
-          "to_path": { "type": "string" },
-          "overwrite": { "type": "boolean" },
-          "expected_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
-          "plugin": { "type": "string", "enum": ["rag", "pageindex", "auto"], "default": "auto" },
-          "expected_destination_version": { "type": "string", "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$", "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT." },
-          "destination_must_not_exist": { "type": "boolean", "description": "Require an absent destination. Implicit when overwrite=false; mutually exclusive with expected_destination_version." }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "from_path": {
+            "type": "string"
+          },
+          "to_path": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "expected_version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$",
+            "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT."
+          },
+          "plugin": {
+            "type": "string",
+            "enum": [
+              "rag",
+              "pageindex",
+              "auto"
+            ],
+            "default": "auto"
+          },
+          "expected_destination_version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$",
+            "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT."
+          },
+          "destination_must_not_exist": {
+            "type": "boolean",
+            "description": "Require an absent destination. Implicit when overwrite=false; mutually exclusive with expected_destination_version."
+          }
         }
       }
     },
@@ -189,11 +403,25 @@
       "description": "Search the live MCP tool catalog by keyword or semantic intent when an agent is unsure which tool to call.",
       "inputSchema": {
         "type": "object",
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "properties": {
-          "query": { "type": "string" },
-          "mode": { "type": "string", "enum": ["auto", "regex", "bm25", "embedding"] },
-          "return_references_only": { "type": "boolean" }
+          "query": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "regex",
+              "bm25",
+              "embedding"
+            ]
+          },
+          "return_references_only": {
+            "type": "boolean"
+          }
         }
       }
     },
@@ -202,10 +430,19 @@
       "description": "Execute a controlled sequence of MCP tool calls with variable substitution for multi-step agent workflows.",
       "inputSchema": {
         "type": "object",
-        "required": ["steps"],
+        "required": [
+          "steps"
+        ],
         "properties": {
-          "steps": { "type": "array", "items": { "type": "object" } },
-          "vars": { "type": "object" }
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "vars": {
+            "type": "object"
+          }
         }
       }
     },
@@ -214,12 +451,26 @@
       "description": "Persist useful outcomes after an agent turn so future agents can reuse project knowledge.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "session_id", "current_input", "assistant_response"],
+        "required": [
+          "project",
+          "session_id",
+          "current_input",
+          "assistant_response"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "session_id": { "type": "string" },
-          "current_input": { "type": "string" },
-          "assistant_response": { "type": "string" }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "current_input": {
+            "type": "string"
+          },
+          "assistant_response": {
+            "type": "string"
+          }
         }
       }
     },
@@ -228,11 +479,21 @@
       "description": "Run maintenance over stored project memory to compact, refresh, or clean durable agent context.",
       "inputSchema": {
         "type": "object",
-        "required": ["project"],
+        "required": [
+          "project"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "path_prefix": { "type": "string" },
-          "limit": { "type": "integer", "minimum": 1 }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "path_prefix": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       }
     },
@@ -241,13 +502,148 @@
       "description": "List memory directory entries with abstracts so an agent can choose relevant context without reading every file.",
       "inputSchema": {
         "type": "object",
-        "required": ["project", "path"],
+        "required": [
+          "project",
+          "path"
+        ],
         "properties": {
-          "project": { "type": "string", "description": "Project namespace. Use graphql for this repository." },
-          "path": { "type": "string" },
-          "depth": { "type": "integer", "minimum": 0 }
+          "project": {
+            "type": "string",
+            "description": "Project namespace. Use graphql for this repository."
+          },
+          "path": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       }
+    },
+    {
+      "name": "file_list_versions",
+      "description": "List retained immutable history, newest ID first; pass next_cursor as before_id. Metadata only, with tenant/project/path isolation.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "project",
+          "path"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "before_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "description": "Exact positive decimal history ID (maximum 9223372036854775807), never a live file version."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        }
+      }
+    },
+    {
+      "name": "file_read_version",
+      "description": "Read immutable history. Legacy binary bytes use content_encoding=base64. History IDs are not live edit tokens.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "project",
+          "path",
+          "history_id"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "history_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "description": "Exact positive decimal history ID (maximum 9223372036854775807), never a live file version."
+          }
+        }
+      }
+    },
+    {
+      "name": "file_restore_version",
+      "description": "Restore old bytes as a new live generation through the selected project plugin. Require the original expected_version or create_only=true; do not auto-retry conflicts.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "project",
+          "path",
+          "history_id"
+        ],
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "history_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$",
+            "description": "Exact positive decimal history ID (maximum 9223372036854775807), never a live file version."
+          },
+          "expected_version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$"
+          },
+          "create_only": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "rag",
+              "pageindex"
+            ],
+            "default": "auto"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "expected_version"
+            ],
+            "properties": {
+              "create_only": {
+                "const": false
+              }
+            }
+          },
+          {
+            "required": [
+              "create_only"
+            ],
+            "properties": {
+              "create_only": {
+                "const": true
+              }
+            },
+            "not": {
+              "required": [
+                "expected_version"
+              ]
+            }
+          }
+        ]
+      }
     }
-  ]
+  ],
+  "catalogScope": "Representative schemas; use authenticated tools/list for the current callable catalog."
 }

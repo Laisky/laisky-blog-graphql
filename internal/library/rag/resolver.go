@@ -15,6 +15,7 @@ import (
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	ragsvc "github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
@@ -89,7 +90,11 @@ func (r *MutationResolver) ExtractKeyInfo(ctx context.Context,
 		return nil, errors.New("rag service is not configured")
 	}
 
-	query = strings.TrimSpace(query)
+	normalizedQuery, queryErr := toolpolicy.Query(query)
+	if queryErr != nil {
+		return nil, errors.Wrap(queryErr, "invalid extraction input")
+	}
+	query = normalizedQuery
 	materials = strings.TrimSpace(materials)
 	if query == "" {
 		return nil, errors.New("query cannot be empty")

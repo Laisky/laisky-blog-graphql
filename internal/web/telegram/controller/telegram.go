@@ -25,6 +25,11 @@ import (
 // reflects the actual return site rather than this var declaration.
 var errTelegramServiceUnavailable = errors.New("telegram service not initialized")
 
+// errTelegramThrottleUnavailable is returned when the alert rate limiter could
+// not be built from configuration. Alerting is refused rather than sent
+// unthrottled, and startup is not aborted for an optional subsystem.
+var errTelegramThrottleUnavailable = errors.New("telegram alert throttle is not configured")
+
 // AlertTypeResolver alert type resolver
 type AlertTypeResolver struct {
 	svc service.Interface
@@ -65,6 +70,9 @@ type Telegram struct {
 	TelegramMonitorUserResolver *UserResolver
 }
 
+// NewTelegram builds the telegram GraphQL resolvers and installs the alert
+// rate limiter for this process. A nil service is allowed: each resolver method
+// then returns errTelegramServiceUnavailable instead of dereferencing it.
 func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 	setupTelegramThrottle(ctx)
 	return &Telegram{
@@ -92,6 +100,7 @@ func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 // 	}
 // }
 
+// TelegramMonitorUsers resolves the paged monitored-user list.
 func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 	page *models.Pagination,
 	name string) ([]*model.MonitorUsers, error) {
@@ -105,6 +114,8 @@ func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 	}
 	return r.svc.LoadUsers(ctx, cfg)
 }
+
+// TelegramAlertTypes resolves the paged alert-type list.
 func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 	page *models.Pagination,
 	name string) ([]*model.AlertTypes, error) {
@@ -125,21 +136,30 @@ func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 func (t *UserResolver) ID(ctx context.Context, obj *model.MonitorUsers) (string, error) {
 	return obj.ID.Hex(), nil
 }
+
+// CreatedAt resolves the monitored user's creation timestamp.
 func (t *UserResolver) CreatedAt(ctx context.Context,
 	obj *model.MonitorUsers,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.CreatedAt), nil
 }
+
+// ModifiedAt resolves the monitored user's last-modified timestamp.
 func (t *UserResolver) ModifiedAt(ctx context.Context,
 	obj *model.MonitorUsers,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
+
+// TelegramID resolves the monitored user's Telegram numeric ID as a string,
+// because the value exceeds the range of a GraphQL Int.
 func (t *UserResolver) TelegramID(ctx context.Context,
 	obj *model.MonitorUsers,
 ) (string, error) {
 	return strconv.FormatInt(int64(obj.UID), 10), nil
 }
+
+// SubAlerts resolves the alert types this monitored user subscribes to.
 func (t *UserResolver) SubAlerts(ctx context.Context,
 	obj *model.MonitorUsers,
 ) ([]*model.AlertTypes, error) {
@@ -149,21 +169,28 @@ func (t *UserResolver) SubAlerts(ctx context.Context,
 	return t.svc.LoadAlertTypesByUser(ctx, obj)
 }
 
+// ID resolves the alert type's hex object identifier.
 func (t *AlertTypeResolver) ID(ctx context.Context,
 	obj *model.AlertTypes,
 ) (string, error) {
 	return obj.ID.Hex(), nil
 }
+
+// CreatedAt resolves the alert type's creation timestamp.
 func (t *AlertTypeResolver) CreatedAt(ctx context.Context,
 	obj *model.AlertTypes,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.CreatedAt), nil
 }
+
+// ModifiedAt resolves the alert type's last-modified timestamp.
 func (t *AlertTypeResolver) ModifiedAt(ctx context.Context,
 	obj *model.AlertTypes,
 ) (*library.Datetime, error) {
 	return library.NewDatetimeFromTime(obj.ModifiedAt), nil
 }
+
+// SubUsers resolves the monitored users subscribed to this alert type.
 func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 	obj *model.AlertTypes,
 ) ([]*model.MonitorUsers, error) {
@@ -177,6 +204,8 @@ func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 // mutations
 // ============================
 
+// TelegramMonitorAlert pushes one throttled alert message. It refuses the send
+// when the alert rate limiter is not configured, rather than bypassing it.
 func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	typeArg string,
 	token string,
@@ -185,6 +214,13 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
 	}
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_alert")
+	// The limiter is absent when telegram throttling was never configured or is
+	// unusable. Refuse the alert instead of dereferencing nil or, worse, pushing
+	// unlimited alerts because the guard was skipped.
+	if telegramRatelimiter == nil {
+		logger.Error("telegram alert throttle is not configured; refusing to send")
+		return nil, errors.WithStack(errTelegramThrottleUnavailable)
+	}
 	if !telegramRatelimiter.Allow(typeArg) { //nolint:contextcheck // Allow is a rate-limiter check that does not need request context
 		// logger.Warn("deny by throttle", zap.String("type", typeArg))
 		return nil, errors.Errorf("deny by throttle")

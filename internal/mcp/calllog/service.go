@@ -44,6 +44,33 @@ type DB interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// BillingMetadataKey is the reserved parameters key that carries the billing
+// outcome for one invocation.
+//
+// It lives inside the existing JSONB parameters column rather than a new
+// column, so no migration is required and every interface writes the same
+// shape. The leading underscore keeps it out of the tool-argument namespace: a
+// tool may have an argument named "billing", but not one named "_billing".
+const BillingMetadataKey = "_billing"
+
+// BillingMetadata records what the billing call actually resolved to.
+//
+// The audit row is only a receipt when Indeterminate is false and Outcome is
+// "accepted". An "unknown" outcome means the remote consume may or may not have
+// been applied, and the row must be reconciled manually rather than read as a
+// charge or a refund.
+type BillingMetadata struct {
+	// Outcome is "accepted", "denied", "unknown" or "not_attempted".
+	Outcome string `json:"outcome"`
+	// Price is the configured per-call price in quota units, regardless of
+	// whether it was posted. It documents what the operation would cost.
+	Price int `json:"price"`
+	// Charged reports whether Price must be treated as possibly posted.
+	Charged bool `json:"charged"`
+	// Indeterminate marks a row that is not a receipt.
+	Indeterminate bool `json:"indeterminate"`
+}
+
 // RecordInput captures the information required to persist a tool invocation.
 type RecordInput struct {
 	ToolName     string
@@ -55,6 +82,10 @@ type RecordInput struct {
 	Parameters   map[string]any
 	ErrorMessage string
 	OccurredAt   time.Time
+	// Billing describes the billing outcome. When set, it is merged into the
+	// persisted parameters under BillingMetadataKey and it decides Cost, so one
+	// interface cannot record a denial as a charge while another records zero.
+	Billing *BillingMetadata
 }
 
 // ListOptions configures the result set returned by List.
@@ -145,7 +176,23 @@ func (s *Service) Record(ctx context.Context, input RecordInput) error {
 	}
 
 	keyHash, keyPrefix := normalizeAPIKey(input.APIKey)
-	payload, err := json.Marshal(input.Parameters)
+	cost, parameters := input.Cost, input.Parameters
+	if input.Billing != nil {
+		// The outcome, not the caller, decides the recorded cost. A denied or
+		// unattempted consume posted nothing; an accepted or undetermined one
+		// must show the configured price.
+		cost = 0
+		if input.Billing.Charged {
+			cost = input.Billing.Price
+		}
+		merged := make(map[string]any, len(parameters)+1)
+		for key, value := range parameters {
+			merged[key] = value
+		}
+		merged[BillingMetadataKey] = input.Billing
+		parameters = merged
+	}
+	payload, err := json.Marshal(parameters)
 	if err != nil {
 		return errors.Wrap(err, "marshal call log parameters")
 	}
@@ -162,7 +209,7 @@ func (s *Service) Record(ctx context.Context, input RecordInput) error {
 		APIKeyHash:     keyHash,
 		KeyPrefix:      keyPrefix,
 		Status:         status,
-		Cost:           input.Cost,
+		Cost:           cost,
 		CostUnit:       costUnit,
 		DurationMillis: input.Duration.Milliseconds(),
 		Parameters:     payload,
@@ -384,6 +431,7 @@ func runMigrations(ctx context.Context, db DB) error {
 
 var _ DB = (*pgxpool.Pool)(nil)
 
+// mapSortField translates an API sort field onto its database column.
 func mapSortField(field string) string {
 	switch strings.ToLower(strings.TrimSpace(field)) {
 	case sortFieldCost:
@@ -395,6 +443,8 @@ func mapSortField(field string) string {
 	}
 }
 
+// normalizeAPIKey derives the stored key hash and the display prefix. The raw
+// key itself is never persisted.
 func normalizeAPIKey(apiKey string) (hash string, prefix string) {
 	trimmed := strings.TrimSpace(apiKey)
 	if trimmed == "" {

@@ -11,6 +11,7 @@ import (
 	"github.com/Laisky/zap"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
@@ -65,7 +66,7 @@ func (t *ExtractKeyInfoTool) Definition() mcp.Tool {
 		mcp.WithString(
 			"query",
 			mcp.Required(),
-			mcp.Description("User question or query."),
+			mcp.Description("User question or query; trimmed, non-empty, at most 16384 UTF-8 bytes."),
 		),
 		mcp.WithString(
 			"materials",
@@ -74,7 +75,10 @@ func (t *ExtractKeyInfoTool) Definition() mcp.Tool {
 		),
 		mcp.WithNumber(
 			"top_k",
-			mcp.Description("Maximum number of contexts to return."),
+			mcp.Description("Maximum number of contexts to return; must be an integer."),
+			func(property map[string]any) {
+				property["type"], property["minimum"], property["maximum"] = "integer", 1, t.settings.TopKLimit
+			},
 		),
 	)
 }
@@ -90,7 +94,10 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	query = strings.TrimSpace(query)
+	query, err = toolpolicy.Query(query)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 	materials = strings.TrimSpace(materials)
 	if query == "" {
 		return mcp.NewToolResultError("query cannot be empty"), nil
@@ -108,9 +115,12 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("failed to initialize request"), nil
 	}
 
-	topK := t.settings.TopKDefault
-	if rawTopK, ok := findTopK(req.Params.Arguments); ok {
-		topK = rawTopK
+	if _, present := req.GetArguments()["topK"]; present {
+		return mcp.NewToolResultError("use top_k, not topK"), nil
+	}
+	topK, err := toolpolicy.OptionalInt(req.GetArguments(), "top_k", t.settings.TopKDefault, 1, t.settings.TopKLimit)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 	if topK <= 0 || topK > t.settings.TopKLimit {
 		return mcp.NewToolResultError(fmt.Sprintf("top_k must be between 1 and %d", t.settings.TopKLimit)), nil
@@ -143,6 +153,9 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("failed to extract key information"), nil
 	}
 
+	if contexts == nil {
+		contexts = []string{}
+	}
 	payload := map[string]any{
 		"contexts": contexts,
 	}
@@ -154,45 +167,4 @@ func (t *ExtractKeyInfoTool) Handle(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	return result, nil
-}
-
-func findTopK(arguments any) (int, bool) {
-	args, ok := arguments.(map[string]any)
-	if !ok {
-		return 0, false
-	}
-	candidates := []string{"top_k", "topK"}
-	for _, key := range candidates {
-		if value, ok := args[key]; ok {
-			if parsed, ok := toInt(value); ok {
-				return parsed, true
-			}
-		}
-	}
-	return 0, false
-}
-
-func toInt(value any) (int, bool) {
-	switch v := value.(type) {
-	case int:
-		return v, true
-	case int32:
-		return int(v), true
-	case int64:
-		return int(v), true
-	case float64:
-		return int(v), true
-	case float32:
-		return int(v), true
-	case string:
-		trimmed := strings.TrimSpace(v)
-		if trimmed == "" {
-			return 0, false
-		}
-		var parsed int
-		if _, err := fmt.Sscanf(trimmed, "%d", &parsed); err == nil {
-			return parsed, true
-		}
-	}
-	return 0, false
 }

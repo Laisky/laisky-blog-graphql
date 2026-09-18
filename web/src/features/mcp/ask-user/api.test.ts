@@ -33,12 +33,28 @@ describe('ask_user API helpers', () => {
     vi.restoreAllMocks();
   });
 
-  it('uses the updated pathname for listRequests and submitAnswer', async () => {
+  // internal/web/tool_http_routes.go mounts the handler at <prefix>/tools/<name>,
+  // and only adds the unprefixed alias when the public prefix is empty. A page
+  // served under /mcp must therefore address /mcp/tools/ask_user/api/....
+  it('addresses the mounted route for the prefixed deployment', async () => {
     await listRequests('test-key');
-    expect(fetchMock).toHaveBeenCalledWith('/tools/ask_user/api/requests', expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith('/mcp/tools/ask_user/api/requests', expect.any(Object));
 
     fetchMock.mockClear();
     fetchMock.mockResolvedValue(createListResponse());
+    window.history.replaceState({}, '', '/mcp/tools/ask_user');
+
+    await listRequests('test-key');
+    expect(fetchMock).toHaveBeenCalledWith('/mcp/tools/ask_user/api/requests', expect.any(Object));
+
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValue(createOkResponse());
+
+    await submitAnswer('test-key', 'req-1', 'answer');
+    expect(fetchMock).toHaveBeenCalledWith('/mcp/tools/ask_user/api/requests/req-1', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('addresses the root alias when the deployment has no public prefix', async () => {
     window.history.replaceState({}, '', '/tools/ask_user');
 
     await listRequests('test-key');

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
@@ -28,8 +29,9 @@ func (p Price) Int() int {
 	return int(p)
 }
 
+// USD converts a dollar amount to the existing rounded-up billing quota units.
 func USD(num float64) Price {
-	return Price(math.Ceil(num * 500000))
+	return Price(math.Ceil(num * quotaUnitsPerUSD))
 }
 
 var (
@@ -71,12 +73,15 @@ func CheckUserExternalBilling(ctx context.Context,
 			"add_used_quota": cost,
 			"add_reason":     costReason,
 		}); err != nil {
-		return errors.Wrap(err, "marshal request body")
+		// Nothing left this process, so nothing can have been charged.
+		return errors.Wrap(&BillingError{Outcome: BillingNotAttempted,
+			Reason: "encode consume request"}, "marshal request body")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		BillingAPI+"/api/token/consume", &reqBody)
 	if err != nil {
-		return errors.Wrap(err, "push cost to external billing api")
+		return errors.Wrap(&BillingError{Outcome: BillingNotAttempted,
+			Reason: "build consume request"}, "push cost to external billing api")
 	}
 	if token := library.StripBearerPrefix(apikey); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -85,20 +90,43 @@ func CheckUserExternalBilling(ctx context.Context,
 
 	resp, err := http.DefaultClient.Do(req) //nolint: bodyclose
 	if err != nil {
-		return errors.Wrap(err, "do request")
+		// A transport failure or timeout cannot distinguish "never delivered"
+		// from "applied but the response was lost", so the outcome is
+		// undetermined. Never infer that nothing was charged.
+		return errors.Wrap(&BillingError{Outcome: BillingUnknown,
+			Reason: "consume request did not complete"}, "do request")
 	}
 	defer gutils.LogErr(resp.Body.Close, logger)
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return errors.Wrap(err, "read body")
+		outcome := billingOutcomeForStatus(resp.StatusCode)
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBillingErrorBodyBytes))
+		if readErr != nil {
+			// The status already classified the outcome; an unreadable body
+			// must not downgrade a denial into an unknown state.
+			return errors.Wrap(&BillingError{Outcome: outcome, Status: resp.StatusCode,
+				Reason: "consume rejected; response body unreadable"}, "read body")
 		}
-
-		return errors.Errorf("push cost to external billing api failed [%d]%s",
-			resp.StatusCode, string(respBody))
+		return errors.WithStack(&BillingError{Outcome: outcome, Status: resp.StatusCode,
+			Reason: boundedBillingReason(string(respBody))})
 	}
 	logger.Info("push cost to external billing api success",
 		zap.Int("cost", cost.Int()))
 	return nil
+}
+
+// maxBillingErrorBodyBytes bounds how much of a remote error body is retained,
+// so a hostile or verbose billing service cannot inflate logs and audit rows.
+const maxBillingErrorBodyBytes = 512
+
+// boundedBillingReason normalizes a remote error body into a short reason.
+func boundedBillingReason(body string) string {
+	reason := strings.TrimSpace(body)
+	if reason == "" {
+		return "consume rejected without a reason"
+	}
+	if len(reason) > 200 {
+		reason = reason[:200]
+	}
+	return reason
 }

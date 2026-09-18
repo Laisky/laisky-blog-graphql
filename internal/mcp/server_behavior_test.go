@@ -325,17 +325,33 @@ func TestNilCallLoggerDoesNotPanic(t *testing.T) {
 func TestRecordToolInvocationCostTracking(t *testing.T) {
 	t.Parallel()
 
-	t.Run("success records base cost", func(t *testing.T) {
+	// The recorded cost follows the classified billing outcome, not the tool
+	// result. See TestRecordToolInvocationFollowsBillingOutcome for the full
+	// outcome matrix; these cases pin the status and message handling.
+	t.Run("success after an accepted consume records base cost", func(t *testing.T) {
 		recorder := &behaviorRecorder{}
 		s := &Server{callLogger: recorder, logger: log.Logger}
-		s.recordToolInvocation(context.Background(), "web_search", "sk-test", nil, time.Now(), time.Second, 42, mcpgo.NewToolResultText("ok"), nil)
+		ctx := withBillingAttemptTracking(context.Background())
+		markBillingOutcome(ctx, oneapi.BillingAccepted)
+		s.recordToolInvocation(ctx, "web_search", "sk-test", nil, time.Now(), time.Second, 42, mcpgo.NewToolResultText("ok"), nil)
 
 		require.Len(t, recorder.records, 1)
 		require.Equal(t, calllog.StatusSuccess, recorder.last().Status)
 		require.Equal(t, 42, recorder.last().Cost)
 	})
 
-	t.Run("error zeroes cost", func(t *testing.T) {
+	t.Run("success without any consume records no cost", func(t *testing.T) {
+		recorder := &behaviorRecorder{}
+		s := &Server{callLogger: recorder, logger: log.Logger}
+		s.recordToolInvocation(context.Background(), "file_read", "sk-test", nil, time.Now(), time.Second, 42, mcpgo.NewToolResultText("ok"), nil)
+
+		require.Len(t, recorder.records, 1)
+		require.Equal(t, calllog.StatusSuccess, recorder.last().Status)
+		require.Equal(t, 0, recorder.last().Cost,
+			"an invocation that never billed cannot have spent quota")
+	})
+
+	t.Run("a handler error keeps the status and message", func(t *testing.T) {
 		recorder := &behaviorRecorder{}
 		s := &Server{callLogger: recorder, logger: log.Logger}
 		s.recordToolInvocation(context.Background(), "web_search", "sk-test", nil, time.Now(), time.Second, 42, nil, goerrors.New("fail"))
@@ -345,7 +361,7 @@ func TestRecordToolInvocationCostTracking(t *testing.T) {
 		require.Equal(t, 0, recorder.last().Cost)
 	})
 
-	t.Run("tool error result zeroes cost", func(t *testing.T) {
+	t.Run("tool error result keeps the status and message", func(t *testing.T) {
 		recorder := &behaviorRecorder{}
 		s := &Server{callLogger: recorder, logger: log.Logger}
 		s.recordToolInvocation(context.Background(), "web_search", "sk-test", nil, time.Now(), time.Second, 42, mcpgo.NewToolResultError("oops"), nil)
@@ -461,26 +477,27 @@ func TestArgumentsMapBehavior(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Test: cloneArguments creates independent copy
+// Test: audit redaction copies instead of mutating the real arguments
 // ---------------------------------------------------------------------------
 
-func TestCloneArgumentsBehavior(t *testing.T) {
+func TestRedactToolAuditParametersDoesNotMutateArguments(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nil input", func(t *testing.T) {
-		require.Nil(t, cloneArguments(nil))
+		require.Nil(t, redactToolAuditParameters("file_write", nil))
 	})
 
 	t.Run("empty map", func(t *testing.T) {
-		require.Nil(t, cloneArguments(map[string]any{}))
+		require.Empty(t, redactToolAuditParameters("file_write", map[string]any{}))
 	})
 
-	t.Run("mutation on clone does not affect original", func(t *testing.T) {
-		original := map[string]any{"a": "1", "b": "2"}
-		cloned := cloneArguments(original)
-		cloned["c"] = "3"
-		require.NotContains(t, original, "c")
-		require.Contains(t, cloned, "c")
+	t.Run("redaction leaves the operation arguments untouched", func(t *testing.T) {
+		original := map[string]any{"project": "p", "path": "/a", "content": "secret payload"}
+		redacted := redactToolAuditParameters("file_write", original)
+		require.Equal(t, "secret payload", original["content"], "the real write arguments must not be rewritten")
+		require.NotEqual(t, "secret payload", redacted["content"], "the logging copy must not carry file content")
+		redacted["injected"] = true
+		require.NotContains(t, original, "injected")
 	})
 }
 
@@ -890,7 +907,7 @@ func TestPaidToolSkipsZeroCostBillingAfterPreflight(t *testing.T) {
 		func(_ context.Context) string { return "sk-key" },
 		func(ctx context.Context, _ string, _ oneapi.Price, _ string) error {
 			preflightCalls++
-			markBillingAttempted(ctx)
+			markBillingOutcome(ctx, oneapi.BillingAccepted)
 			return nil
 		},
 	)
@@ -915,7 +932,7 @@ func TestMCPPipeNestedInvocationsKeepSeparateBillingTracking(t *testing.T) {
 		func(_ context.Context) string { return "sk-key" },
 		func(ctx context.Context, _ string, _ oneapi.Price, _ string) error {
 			preflightCalls++
-			markBillingAttempted(ctx)
+			markBillingOutcome(ctx, oneapi.BillingAccepted)
 			return nil
 		},
 	)
