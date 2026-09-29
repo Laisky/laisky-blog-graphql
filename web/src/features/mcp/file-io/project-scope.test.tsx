@@ -37,7 +37,8 @@ describe('FileIO page project and credential boundaries', () => {
     expect(screen.getByRole('option', { name: 'a-private' })).toBeTruthy();
     auth.apiKey = 'key-b'; auth.sessionId += 1; view.rerender(<FileIOPage />);
     expect(field('Project *').value).toBe('shared'); expect(field('Write Content (UTF-8)').value).toBe('b-draft');
-    expect(screen.queryByRole('option')).toBeNull(); expect(screen.queryByDisplayValue('a-draft')).toBeNull();
+    expect(screen.queryByRole('listbox', { name: 'Existing projects' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'a-private' })).toBeNull(); expect(screen.queryByDisplayValue('a-draft')).toBeNull();
     fireEvent.focus(field('Project *')); await tick();
     expect(screen.queryByRole('option', { name: 'a-private' })).toBeNull();
     expect(screen.getByRole('option', { name: 'b-private' })).toBeTruthy();
@@ -48,7 +49,8 @@ describe('FileIO page project and credential boundaries', () => {
     const view = render(<FileIOPage />); fireEvent.focus(field('Project *')); await tick();
     auth.isToolConsoleLocked = true; view.rerender(<FileIOPage />);
     expect(field('Project *').disabled).toBe(true); expect(field('Project *').value).toBe('');
-    expect(field('Write Content (UTF-8)').value).toBe(''); expect(screen.queryByRole('option')).toBeNull();
+    expect(field('Write Content (UTF-8)').value).toBe(''); expect(screen.queryByRole('listbox', { name: 'Existing projects' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'a-private' })).toBeNull();
     expect(window.localStorage.getItem(fileIOInputStorageKey('key-a')!)).toContain('a-draft');
     auth.isToolConsoleLocked = false; view.rerender(<FileIOPage />);
     expect(field('Project *').value).toBe('a-private'); expect(field('Write Content (UTF-8)').value).toBe('a-draft');
