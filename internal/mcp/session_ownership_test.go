@@ -46,9 +46,9 @@ func TestMCPReviewLegacySessionOwnership(t *testing.T) {
 						t.Run(method, func(t *testing.T) {
 							before := calls.Load()
 							response := sendSDKWireRequest(t, s.Handler(), reviewSessionMessage(method), headers)
+							require.Equal(t, before, calls.Load(), "rejected requests must have zero tool side effects")
 							require.GreaterOrEqual(t, response.Code, 400, response.Body.String())
 							require.Less(t, response.Code, 500)
-							require.Equal(t, before, calls.Load(), "rejected requests must have zero tool side effects")
 							require.NotContains(t, response.Body.String(), "owner effect")
 						})
 					}
@@ -134,6 +134,8 @@ func newReviewSessionServer(t *testing.T) *Server {
 	require.NoError(t, err)
 	s, err := NewServer(nil, nil, preferences, nil, rag.Settings{}, nil, nil, nil, nil, ToolsSettings{MCPPipeEnabled: true}, glog.Shared)
 	require.NoError(t, err)
+	// Synthetic tool calls must not emit even zero-cost events to real billing.
+	s.billingReporter = nil
 	return s
 }
 
@@ -171,7 +173,7 @@ func assertReviewCatalog(t *testing.T, handler http.Handler, headers http.Header
 	require.Equal(t, pipeVisible, toolListContains(catalog, "mcp_pipe"))
 }
 
-// reviewSessionMessage creates requests with no production or paid tool dependencies.
+// reviewSessionMessage creates requests using only a synthetic leaf tool.
 func reviewSessionMessage(method string) map[string]any {
 	message := map[string]any{"jsonrpc": "2.0", "method": method}
 	if method != "notifications/initialized" {
