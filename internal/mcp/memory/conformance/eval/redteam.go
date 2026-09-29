@@ -131,10 +131,10 @@ func RunPromptInjectionSuite(ctx context.Context, p mcpplugin.Plugin, attacks []
 	if p == nil {
 		return InjectionReport{}, errors.New("plugin is nil")
 	}
-	auth := files.AuthContext{APIKey: "redteam", APIKeyHash: "redteam", UserIdentity: "user:redteam"}
+	auth := files.AuthContext{APIKey: evalRedteam, APIKeyHash: evalRedteam, UserIdentity: "user:redteam"}
 	rep := InjectionReport{}
 	for _, a := range attacks {
-		res, err := p.Search(ctx, auth, "redteam", a.Payload, "", 10)
+		res, err := p.Search(ctx, auth, evalRedteam, a.Payload, "", 10)
 		if err != nil {
 			rep.Records = append(rep.Records, InjectionRecord{ID: a.ID, Description: a.Description, Blocked: true, Note: "search returned error: " + err.Error()})
 			rep.NumBlocked++

@@ -3,6 +3,8 @@ package pageindex
 import (
 	"context"
 	"strings"
+
+	errors "github.com/Laisky/errors/v2"
 )
 
 // runMarkdown builds a header-driven tree and optionally summarizes leaves.
@@ -55,7 +57,7 @@ func (idx *Indexer) summarizeMarkdownNodes(ctx context.Context, nodes []*Node, b
 			}
 			resp, err := idx.callLLM(ctx, Request{Input: userInput(prompt)}, budget, stats)
 			if err != nil {
-				if err == ErrBudgetExceeded {
+				if errors.Is(err, ErrBudgetExceeded) {
 					return nil
 				}
 				return err

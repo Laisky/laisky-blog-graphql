@@ -53,6 +53,9 @@ func (s *Service) ListVersions(ctx context.Context, auth AuthContext, project, p
 		}
 		row.CreatedAt, row.APIKeyHash, row.Project, row.Path = parsedAt, auth.APIKeyHash, project, path
 		if sourceID.Valid {
+			if sourceID.Int64 < 0 {
+				return nil, errors.New("invalid negative source file ID")
+			}
 			id := uint64(sourceID.Int64)
 			row.SourceFileID = &id
 		}
@@ -99,6 +102,9 @@ func (s *Service) ReadVersion(ctx context.Context, auth AuthContext, project, pa
 	}
 	row.CreatedAt, row.APIKeyHash, row.Project, row.Path = parsedAt, auth.APIKeyHash, project, path
 	if sourceID.Valid {
+		if sourceID.Int64 < 0 {
+			return FileVersion{}, errors.New("invalid negative source file ID")
+		}
 		id := uint64(sourceID.Int64)
 		row.SourceFileID = &id
 	}
@@ -186,6 +192,7 @@ func (s *Service) pruneVersionsTx(ctx context.Context, tx *sql.Tx, apiKeyHash, p
 	if err != nil {
 		return errors.Wrap(err, "query versions for prune")
 	}
+	defer func() { _ = rows.Close() }()
 	type versionRow struct {
 		id        uint64
 		createdAt time.Time

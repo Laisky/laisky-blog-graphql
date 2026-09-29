@@ -249,10 +249,6 @@ func isPublicIP(ip net.IP) bool {
 	if ip.Equal(net.ParseIP("fd00:ec2::254")) {
 		return false
 	}
-	// Block IPv4-mapped IPv6 for private ranges.
-	if v4 := ip.To4(); v4 != nil {
-		ip = v4
-	}
 	return true
 }
 

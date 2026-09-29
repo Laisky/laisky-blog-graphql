@@ -32,7 +32,7 @@ func TestPageIndexPersistsAndSearchesThroughRealSystemFS(t *testing.T) {
 	require.NoError(t, err)
 	service, err := files.NewService(db, settings, nil, nil, protector, newLocalCredentialStore(), nil, nil, nil)
 	require.NoError(t, err)
-	plugin, err := newLocalPageIndex(service)
+	plugin, err := newLocalPageIndex(t.Context(), service)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, plugin.Stop(context.Background())) }()
 

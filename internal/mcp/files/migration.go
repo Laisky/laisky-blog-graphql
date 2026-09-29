@@ -12,8 +12,8 @@ import (
 // systemOwnerTables enumerates every mcp_files-family table that carries a
 // system_owner column under proposal §2.6.3.
 var systemOwnerTables = []string{
-	"mcp_files", "mcp_file_chunks", "mcp_file_chunk_embeddings",
-	"mcp_file_chunk_bm25", "mcp_file_index_jobs", "mcp_file_versions",
+	tableMcpFiles, tableMcpFileChunks, "mcp_file_chunk_embeddings",
+	"mcp_file_chunk_bm25", tableMcpFileIndexJobs, "mcp_file_versions",
 }
 
 // migrateFileSchema applies the baseline and revision schema inside the startup
@@ -90,7 +90,7 @@ func applySkipRAGIndexColumn(ctx context.Context, db migrationExecutor, isPostgr
 		}
 		return nil
 	}
-	return applyAddColumnIfMissing(ctx, db, "mcp_files", "skip_rag_index",
+	return applyAddColumnIfMissing(ctx, db, tableMcpFiles, "skip_rag_index",
 		`ALTER TABLE mcp_files ADD COLUMN skip_rag_index BOOLEAN NOT NULL DEFAULT 0`)
 }
 
@@ -106,21 +106,21 @@ type fileSummaryColumnSpec struct {
 // fileSummaryColumns are the additive, idempotent columns introduced by the
 // file-level summary contract. All defaults are constant for SQLite ADD COLUMN.
 var fileSummaryColumns = []fileSummaryColumnSpec{
-	{"mcp_files", "content_hash", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_files", "file_summary", "TEXT NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_files", "summary_content_hash", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_files", "summary_word_count", "INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"},
-	{"mcp_files", "summary_source", "VARCHAR(32) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_files", "summary_model", "VARCHAR(128) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_files", "summary_prompt_version", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_files", "summary_generation_key", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_files", "summary_status", "VARCHAR(16) NOT NULL DEFAULT 'pending'", "TEXT NOT NULL DEFAULT 'pending'"},
-	{"mcp_files", "summary_updated_at", "TIMESTAMPTZ", "DATETIME"},
-	{"mcp_files", "summary_error_code", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_file_chunks", "file_content_hash", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_file_index_jobs", "content_hash", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_file_index_jobs", "last_error_code", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
-	{"mcp_file_index_jobs", "summary_generation_key", "VARCHAR(64) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"},
+	{tableMcpFiles, "content_hash", requiredHashColumn, requiredTextColumn},
+	{tableMcpFiles, "file_summary", requiredTextColumn, requiredTextColumn},
+	{tableMcpFiles, "summary_content_hash", requiredHashColumn, requiredTextColumn},
+	{tableMcpFiles, "summary_word_count", "INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"},
+	{tableMcpFiles, "summary_source", "VARCHAR(32) NOT NULL DEFAULT ''", requiredTextColumn},
+	{tableMcpFiles, "summary_model", "VARCHAR(128) NOT NULL DEFAULT ''", requiredTextColumn},
+	{tableMcpFiles, "summary_prompt_version", requiredHashColumn, requiredTextColumn},
+	{tableMcpFiles, "summary_generation_key", requiredHashColumn, requiredTextColumn},
+	{tableMcpFiles, "summary_status", "VARCHAR(16) NOT NULL DEFAULT 'pending'", "TEXT NOT NULL DEFAULT 'pending'"},
+	{tableMcpFiles, "summary_updated_at", "TIMESTAMPTZ", "DATETIME"},
+	{tableMcpFiles, "summary_error_code", requiredHashColumn, requiredTextColumn},
+	{tableMcpFileChunks, "file_content_hash", requiredHashColumn, requiredTextColumn},
+	{tableMcpFileIndexJobs, "content_hash", requiredHashColumn, requiredTextColumn},
+	{tableMcpFileIndexJobs, "last_error_code", requiredHashColumn, requiredTextColumn},
+	{tableMcpFileIndexJobs, "summary_generation_key", requiredHashColumn, requiredTextColumn},
 }
 
 // applyFileSummaryColumns adds the file-summary columns idempotently on Postgres and SQLite.

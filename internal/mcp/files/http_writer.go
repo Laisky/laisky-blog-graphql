@@ -50,7 +50,7 @@ func (h *filesHTTPHandler) writeHTTPFile(ctx context.Context, auth AuthContext, 
 		}
 		writer = resolved
 	}
-	return writer.Write(ctx, auth, project, path, content, "utf-8", 0, WriteModeTruncate)
+	return writer.Write(ctx, auth, project, path, content, encodingUTF8, 0, WriteModeTruncate)
 }
 
 func (h *filesHTTPHandler) restoreHTTPFile(ctx context.Context, auth AuthContext, project, path string, id uint64) (WriteResult, error) {

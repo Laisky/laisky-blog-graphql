@@ -15,14 +15,14 @@ import (
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 )
 
-// GoldSpan describes a labelled page-range gold span for the long-doc subset.
+// GoldSpan describes a labeled page-range gold span for the long-doc subset.
 type GoldSpan struct {
 	DocID    string `json:"doc_id"`
 	PageFrom int    `json:"page_from"`
 	PageTo   int    `json:"page_to"`
 }
 
-// RetrievalQuery is one labelled tuple drawn from memory-bench-internal-v1.
+// RetrievalQuery is one labeled tuple drawn from memory-bench-internal-v1.
 type RetrievalQuery struct {
 	ID         string     `json:"id"`
 	Query      string     `json:"query"`
@@ -148,13 +148,13 @@ func NDCGAtK(retrieved, gold []string, k int) float64 {
 	return dcg / idcg
 }
 
-// LoadRetrievalQueries parses *.jsonl labelled tuples from disk.
-func LoadRetrievalQueries(path string) ([]RetrievalQuery, error) {
+// LoadRetrievalQueries parses *.jsonl labeled tuples from disk.
+func LoadRetrievalQueries(path string) (_ []RetrievalQuery, retErr error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, errors.Wrapf(err, "open retrieval golden %s", path)
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, errors.Wrap(f.Close(), "close file")) }()
 
 	var out []RetrievalQuery
 	scanner := bufio.NewScanner(f)
@@ -189,7 +189,7 @@ func RunRetrievalEval(ctx context.Context, p mcpplugin.Plugin, queries []Retriev
 	}
 	project := opts.Project
 	if project == "" {
-		project = "eval-harness"
+		project = evalEvalHarness
 	}
 
 	report := RetrievalReport{}

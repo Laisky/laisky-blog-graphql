@@ -60,7 +60,7 @@ func (d *Upload) GetFilesCol() *mongoLib.Collection {
 
 func (d *Upload) ResetUser(ctx context.Context, telegramUID int64) error {
 	_, err := d.GetUsersCol().
-		DeleteOne(ctx, bson.M{"telegram_uid": telegramUID})
+		DeleteOne(ctx, bson.M{fieldTelegramUid: telegramUID})
 	if err != nil {
 		return errors.Wrap(err, "reset user")
 	}
@@ -70,7 +70,7 @@ func (d *Upload) ResetUser(ctx context.Context, telegramUID int64) error {
 
 func (d *Upload) IsUserHasPermToUpload(ctx context.Context, telegramUID int64) (bool, error) {
 	cnt, err := d.GetUsersCol().
-		CountDocuments(ctx, bson.M{"telegram_uid": telegramUID})
+		CountDocuments(ctx, bson.M{fieldTelegramUid: telegramUID})
 	if err != nil {
 		return false, errors.Wrap(err, "count user")
 	}
@@ -81,7 +81,7 @@ func (d *Upload) IsUserHasPermToUpload(ctx context.Context, telegramUID int64) (
 func (d *Upload) GetUser(ctx context.Context, telegramUID int64) (user *model.UploadUser, err error) {
 	user = new(model.UploadUser)
 	err = d.GetUsersCol().
-		FindOne(ctx, bson.M{"telegram_uid": telegramUID}).
+		FindOne(ctx, bson.M{fieldTelegramUid: telegramUID}).
 		Decode(user)
 	if err != nil {
 		return nil, errors.Wrapf(err, "get user by telegram uid %d", telegramUID)
@@ -98,16 +98,16 @@ func (d *Upload) SaveOneapiUser(ctx context.Context, telegramUID int64, oneapiKe
 
 	_, err := d.GetUsersCol().
 		UpdateOne(ctx,
-			bson.M{"telegram_uid": telegramUID},
+			bson.M{fieldTelegramUid: telegramUID},
 			bson.M{
-				"$set": bson.M{
+				mongoSet: bson.M{
 					"updated_at":   time.Now(),
 					"oneapi_key":   oneapiKey,
 					"billing_type": model.UploadBillingTypeOneapi,
 				},
-				"$setOnInsert": bson.M{
-					"created_at":   time.Now(),
-					"telegram_uid": telegramUID,
+				mongoSetOnInsert: bson.M{
+					fieldCreatedAt:   time.Now(),
+					fieldTelegramUid: telegramUID,
 				},
 			},
 			options.Update().SetUpsert(true),
@@ -154,10 +154,10 @@ func (d *Upload) UploadFileWithTelegramUID(ctx context.Context,
 
 		_, err = d.db.GetCol(colUploadFiles).
 			InsertOne(ctx, bson.M{
-				"created_at":   time.Now(),
-				"file_id":      fileID,
-				"file_size":    len(cnt),
-				"telegram_uid": uid,
+				fieldCreatedAt:   time.Now(),
+				"file_id":        fileID,
+				"file_size":      len(cnt),
+				fieldTelegramUid: uid,
 			})
 		if err != nil {
 			logger.Error("save uploaded arweave file info", zap.Error(err))

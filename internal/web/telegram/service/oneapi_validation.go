@@ -27,9 +27,7 @@ func (s *Telegram) validateOneAPIToken(ctx context.Context, key string) (string,
 	}
 
 	logger := gmw.GetLogger(ctx)
-	if logger != nil {
-		logger.Debug("validating oneapi token", zap.String("token_mask", maskToken(sanitized)))
-	}
+	logger.Debug("validating oneapi token", zap.String("token_mask", maskToken(sanitized)))
 
 	endpoint := strings.TrimSuffix(oneapi.BillingAPI, "/") + oneapiTokenPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -82,9 +80,7 @@ func (s *Telegram) validateOneAPIToken(ctx context.Context, key string) (string,
 		return "", errors.Errorf("oneapi validation failed: %s", msg)
 	}
 
-	if logger != nil {
-		logger.Debug("oneapi token validated", zap.String("token_mask", maskToken(sanitized)))
-	}
+	logger.Debug("oneapi token validated", zap.String("token_mask", maskToken(sanitized)))
 
 	return sanitized, nil
 }

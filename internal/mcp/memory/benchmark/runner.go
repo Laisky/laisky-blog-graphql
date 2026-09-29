@@ -37,6 +37,10 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 		return nil, errors.Wrap(err, "normalize benchmark dataset")
 	}
 	config = normalizeRunConfig(config)
+	configHash, err := runConfigHash(config)
+	if err != nil {
+		return nil, err
+	}
 	startedAt := time.Now().UTC()
 	if config.Project == "" {
 		prefix := normalizedDataset.SHA256
@@ -98,7 +102,7 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 			Seed: config.Seed, IndexTimeoutMS: config.IndexTimeout.Milliseconds(),
 			PollIntervalMS: config.PollInterval.Milliseconds(), ProtocolVersion: config.ProtocolVersion,
 			ReaderModel: config.ReaderModel, ReaderPrompt: readerPromptVersion(r.answerer),
-			ConfigSHA256: runConfigHash(config), GoVersion: runtime.Version(),
+			ConfigSHA256: configHash, GoVersion: runtime.Version(),
 			GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Hostname: hostname,
 		},
 		Dataset: DatasetMetadata{
@@ -128,7 +132,7 @@ func (r *Runner) Run(ctx context.Context, dataset Dataset, config RunConfig) (*R
 
 func normalizeRunConfig(config RunConfig) RunConfig {
 	if config.Backend == "" {
-		config.Backend = "mcp"
+		config.Backend = benchmarkMcp
 	}
 	if config.Plugin == "" {
 		config.Plugin = "rag"
@@ -151,7 +155,7 @@ func normalizeRunConfig(config RunConfig) RunConfig {
 	if config.PollInterval <= 0 {
 		config.PollInterval = 250 * time.Millisecond
 	}
-	if config.ProtocolVersion == "" && config.Backend == "mcp" {
+	if config.ProtocolVersion == "" && config.Backend == benchmarkMcp {
 		config.ProtocolVersion = DefaultProtocolVersion
 	}
 	return config
@@ -366,21 +370,31 @@ func hasRelevant(query Query, hits []SearchHit) bool {
 	return false
 }
 
-func runConfigHash(config RunConfig) string {
+func runConfigHash(config RunConfig) (string, error) {
 	stable := struct {
-		Backend, Plugin, ProtocolVersion, ReaderModel string
-		TopK, Concurrency, Warmup, Repetitions        int
-		MinScore                                      float64
-		Seed                                          int64
-		IndexTimeoutMS, PollIntervalMS                int64
+		Backend         string  `json:"Backend"`
+		Plugin          string  `json:"Plugin"`
+		ProtocolVersion string  `json:"ProtocolVersion"`
+		ReaderModel     string  `json:"ReaderModel"`
+		TopK            int     `json:"TopK"`
+		Concurrency     int     `json:"Concurrency"`
+		Warmup          int     `json:"Warmup"`
+		Repetitions     int     `json:"Repetitions"`
+		MinScore        float64 `json:"MinScore"`
+		Seed            int64   `json:"Seed"`
+		IndexTimeoutMS  int64   `json:"IndexTimeoutMS"`
+		PollIntervalMS  int64   `json:"PollIntervalMS"`
 	}{
 		config.Backend, config.Plugin, config.ProtocolVersion, config.ReaderModel,
 		config.TopK, config.Concurrency, config.Warmup, config.Repetitions,
 		config.MinScore, config.Seed, config.IndexTimeout.Milliseconds(), config.PollInterval.Milliseconds(),
 	}
-	raw, _ := json.Marshal(stable)
+	raw, err := json.Marshal(stable)
+	if err != nil {
+		return "", errors.Wrap(err, "encode benchmark configuration")
+	}
 	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func readerPromptVersion(answerer Answerer) string {

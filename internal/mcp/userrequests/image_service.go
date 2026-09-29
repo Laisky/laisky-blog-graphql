@@ -444,6 +444,7 @@ func (s *Service) GCExpiredImageRefs(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, errors.Wrap(err, "select expired images")
 	}
+	defer func() { _ = rows.Close() }()
 	expiredIDs := make([]string, 0)
 	for rows.Next() {
 		var id string

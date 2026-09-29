@@ -161,7 +161,14 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 		return nil, ErrBudgetExceeded
 	}
 	if req.PromptHash == [32]byte{} {
-		req.PromptHash = HashRequest(req)
+		if req.Model == "" {
+			req.Model = idx.cfg.LLM.IndexingModel
+		}
+		hash, err := HashRequest(req)
+		if err != nil {
+			return nil, err
+		}
+		req.PromptHash = hash
 	}
 	if cached, ok, err := idx.cache.Get(req.PromptHash); err == nil && ok {
 		stats.addCached()
@@ -251,8 +258,8 @@ func parseSimpleAnswer(raw, key string) string {
 		return "no"
 	}
 	v = strings.ToLower(strings.TrimSpace(v))
-	if strings.HasPrefix(v, "yes") {
-		return "yes"
+	if strings.HasPrefix(v, affirmativeAnswer) {
+		return affirmativeAnswer
 	}
 	return "no"
 }
@@ -269,7 +276,7 @@ func extractJSONField(raw, key string) string {
 				return t
 			case bool:
 				if t {
-					return "yes"
+					return affirmativeAnswer
 				}
 				return "no"
 			}
@@ -285,9 +292,7 @@ func stripCodeFence(s string) string {
 		if idx > 0 {
 			t = t[idx+1:]
 		}
-		if strings.HasSuffix(t, "```") {
-			t = t[:len(t)-3]
-		}
+		t = strings.TrimSuffix(t, "```")
 	}
 	return strings.TrimSpace(t)
 }

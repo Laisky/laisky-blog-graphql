@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -57,7 +58,7 @@ func newFrontendSPAHandler(logger logSDK.Logger, defaultBase string) http.Handle
 	}
 
 	indexPath := filepath.Join(distDir, "index.html")
-	indexBytes, err := os.ReadFile(indexPath)
+	indexBytes, err := readFrontendIndex(distDir)
 	if err != nil {
 		logger.Warn("read frontend index", zap.Error(err), zap.String("path", indexPath))
 		return nil
@@ -74,6 +75,31 @@ func newFrontendSPAHandler(logger logSDK.Logger, defaultBase string) http.Handle
 		base:   basePath,
 		logger: logger,
 	}
+}
+
+// readFrontendIndex prevents the cached entry document from escaping the asset root.
+func readFrontendIndex(root string) (content []byte, retErr error) {
+	file, err := os.OpenInRoot(root, "index.html")
+	if err != nil {
+		return nil, errors.Wrap(err, "open frontend index within root")
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			retErr = errors.Join(retErr, errors.Wrap(err, "close frontend index"))
+		}
+	}()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, errors.Wrap(err, "stat frontend index")
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("frontend index must be a regular file")
+	}
+	content, err = io.ReadAll(file)
+	if err != nil {
+		return nil, errors.Wrap(err, "read frontend index")
+	}
+	return content, nil
 }
 
 func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -116,16 +142,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fsPath := filepath.Join(h.root, clean) //nolint:gosec // G703: path traversal prevented by filepath.Clean and ".." check above
-	info, err := os.Stat(fsPath)
-	if err == nil && !info.IsDir() {
-		switch {
-		case strings.HasSuffix(clean, ".md"):
-			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		case staticContentType(clean) != "":
-			w.Header().Set("Content-Type", staticContentType(clean))
-		}
-		http.ServeFile(w, r, fsPath)
+	if h.serveAsset(w, r, clean, staticContentType(clean), false) {
 		return
 	}
 
@@ -153,29 +170,43 @@ func (h *spaHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// serveMarkdownFile serves a root-confined Markdown asset when it exists.
 func (h *spaHandler) serveMarkdownFile(w http.ResponseWriter, r *http.Request, clean string) bool {
-	fsPath := filepath.Join(h.root, clean) //nolint:gosec // G703: clean is a fixed internal asset name
-	info, err := os.Stat(fsPath)
-	if err != nil || info.IsDir() {
-		return false
-	}
-
-	setAgentDiscoveryHeaders(w)
-	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	w.Header().Add("Vary", "Accept")
-	http.ServeFile(w, r, fsPath)
-	return true
+	return h.serveAsset(w, r, clean, "text/markdown; charset=utf-8", true)
 }
 
+// serveJSONFile serves a root-confined discovery document when it exists.
 func (h *spaHandler) serveJSONFile(w http.ResponseWriter, r *http.Request, clean string) bool {
-	fsPath := filepath.Join(h.root, clean) //nolint:gosec // G703: clean is a fixed internal asset name
-	info, err := os.Stat(fsPath)
-	if err != nil || info.IsDir() {
+	return h.serveAsset(w, r, clean, "application/json; charset=utf-8", false)
+}
+
+// serveAsset opens within the distribution root and serves that exact handle.
+// OpenInRoot rejects symlink escapes as well as traversal during concurrent renames.
+func (h *spaHandler) serveAsset(w http.ResponseWriter, r *http.Request, name, contentType string, discovery bool) bool {
+	file, err := os.OpenInRoot(h.root, name)
+	if err != nil {
 		return false
 	}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	http.ServeFile(w, r, fsPath)
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			h.logger.Warn("close frontend asset", zap.Error(closeErr))
+		}
+	}()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	if discovery {
+		setAgentDiscoveryHeaders(w)
+		w.Header().Add("Vary", "Accept")
+	}
+	if contentType == "" && strings.HasSuffix(name, ".md") {
+		contentType = "text/markdown; charset=utf-8"
+	}
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 	return true
 }
 

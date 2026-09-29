@@ -445,7 +445,9 @@ func runAPI() error {
 		if userSvc != nil {
 			args.UserRequestService = userSvc
 			if imageManager, imgErr := buildUserRequestImageManager(ctx, userSvc, logger.Named("user_requests_images")); imgErr != nil {
-				logger.Warn("user_requests image support unavailable", zap.Error(imgErr))
+				if !errors.Is(imgErr, userrequests.ErrImageFeatureDisabled) {
+					logger.Warn("user_requests image support unavailable", zap.Error(imgErr))
+				}
 			} else if imageManager != nil {
 				args.UserRequestImages = imageManager
 				userSvc.StartImageGCWorker(ctx)
@@ -480,7 +482,7 @@ func runAPI() error {
 			embedder := rag.NewOpenAIEmbedder(filesSettings.EmbeddingBaseURL, filesSettings.EmbeddingModel, nil,
 				rag.WithLogger(logger.Named("files_embedder")))
 			rerankClient := files.NewCohereRerankClient(filesSettings.Search.RerankEndpoint, filesSettings.Search.RerankModel, filesSettings.Search.RerankTimeout)
-			fileSvc, err := files.NewService(mcpDB.DB, filesSettings, embedder, rerankClient, credential, credStore, logger.Named("mcp_files"), nil, nil)
+			fileSvc, err := files.NewServiceWithContext(ctx, mcpDB.DB, filesSettings, embedder, rerankClient, credential, credStore, logger.Named("mcp_files"), nil, nil)
 			if err != nil {
 				logger.Warn("file service unavailable", zap.Error(err))
 			} else {

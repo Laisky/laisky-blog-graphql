@@ -99,7 +99,7 @@ func (p *Plugin) Capabilities() mcpplugin.Capabilities {
 
 // Start opens the bbolt cache and wires the searcher.
 func (p *Plugin) Start(ctx context.Context) error {
-	if !p.cfg.Enabled() {
+	if !p.cfg.Enabled() && p.indexer == nil {
 		return errors.New("pageindex disabled (llm.api_key empty)")
 	}
 	if p.indexer == nil {

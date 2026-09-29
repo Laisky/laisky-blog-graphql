@@ -184,7 +184,8 @@ func (h *httpHandler) writeJSON(w http.ResponseWriter, payload any) {
 // logFromCtx extracts a context-aware logger from the context.
 // Falls back to the handler's logger or a shared logger if context logger is unavailable.
 func (h *httpHandler) logFromCtx(ctx context.Context) logSDK.Logger {
-	if logger := gmw.GetLogger(ctx); logger != nil {
+	if ctx != nil {
+		logger := gmw.GetLogger(ctx)
 		return logger.Named("call_log_http")
 	}
 	if h.logger != nil {

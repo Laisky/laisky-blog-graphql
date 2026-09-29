@@ -100,19 +100,19 @@ func (s *Blog) BlogComments(ctx context.Context,
 
 	// find post
 	post := new(model.Post)
-	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{fieldPostName: postName}).Decode(post)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check post existence")
 	}
 
 	// Build filter for approved comments on this post
 	filter := bson.M{
-		"post_id":     post.ID,
-		"is_approved": true,
+		fieldPostId:     post.ID,
+		fieldIsApproved: true,
 	}
 
 	// Configure sorting
-	sortOpts := bson.D{{Key: "created_at", Value: -1}} // Default: newest first
+	sortOpts := bson.D{{Key: fieldCreatedAt, Value: -1}} // Default: newest first
 	if sort != nil {
 		sortDir := -1 // DESC by default
 		if sort.Order == models.SortOrderAsc {
@@ -167,15 +167,15 @@ func (s *Blog) BlogCommentCount(ctx context.Context, postName string) (int, erro
 
 	// get post
 	post := new(model.Post)
-	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{fieldPostName: postName}).Decode(post)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to check post existence")
 	}
 
 	// Count approved comments - use the correct collection
 	count, err := s.dao.GetPostCommentCol().CountDocuments(ctx, bson.M{
-		"post_id":     post.ID,
-		"is_approved": true,
+		fieldPostId:     post.ID,
+		fieldIsApproved: true,
 	})
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to count comments")
@@ -211,7 +211,7 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 
 	// Verify that post exists
 	post := new(model.Post)
-	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{fieldPostName: postName}).Decode(post)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check post existence")
 	}
@@ -259,8 +259,8 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 			// Verify that parent comment exists and belongs to the same post
 			var parentComment model.Comment
 			err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{
-				"_id":     parentObjID,
-				"post_id": post.ID,
+				fieldDocumentID: parentObjID,
+				fieldPostId:     post.ID,
 			}).Decode(&parentComment)
 
 			if err != nil {
@@ -283,7 +283,7 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 	// Log the new comment
 	logger := gmw.GetLogger(ctx).Named("blog_create_comment")
 	logger.Info("new comment created",
-		zap.String("post_id", post.ID.Hex()),
+		zap.String(fieldPostId, post.ID.Hex()),
 		zap.String("comment_id", comment.ID.Hex()),
 		zap.String("author", authorName))
 
@@ -305,7 +305,7 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 
 	// Check if comment exists
 	var comment model.Comment
-	err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{"_id": commentObjID}).Decode(&comment)
+	err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{fieldDocumentID: commentObjID}).Decode(&comment)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.New("comment not found")
@@ -331,11 +331,11 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 		}
 
 		// Increment likes count
-		update := bson.M{"$inc": bson.M{"likes": 1}}
+		update := bson.M{"$inc": bson.M{fieldLikes: 1}}
 		var updatedComment model.Comment
 		err = s.dao.GetPostCommentCol().FindOneAndUpdate(
 			ctx,
-			bson.M{"_id": commentObjID},
+			bson.M{fieldDocumentID: commentObjID},
 			update,
 			options.FindOneAndUpdate().SetReturnDocument(options.After),
 		).Decode(&updatedComment)
@@ -350,17 +350,17 @@ func (s *Blog) BlogToggleCommentLike(ctx context.Context, commentID string) (*mo
 	}
 
 	// User has already liked this comment - remove the like
-	_, err = s.dao.GetPostCommentLike().DeleteOne(ctx, bson.M{"_id": like.ID})
+	_, err = s.dao.GetPostCommentLike().DeleteOne(ctx, bson.M{fieldDocumentID: like.ID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to delete like")
 	}
 
 	// Decrement likes count
-	update := bson.M{"$inc": bson.M{"likes": -1}}
+	update := bson.M{"$inc": bson.M{fieldLikes: -1}}
 	var updatedComment model.Comment
 	err = s.dao.GetPostCommentCol().FindOneAndUpdate(
 		ctx,
-		bson.M{"_id": commentObjID},
+		bson.M{fieldDocumentID: commentObjID},
 		update,
 		options.FindOneAndUpdate().SetReturnDocument(options.After),
 	).Decode(&updatedComment)
@@ -398,8 +398,8 @@ func (s *Blog) BlogApproveComment(ctx context.Context, commentID string) (*model
 	var updatedComment model.Comment
 	err = s.dao.GetPostCommentCol().FindOneAndUpdate(
 		ctx,
-		bson.M{"_id": commentObjID},
-		bson.M{"$set": bson.M{"is_approved": true, "updated_at": gutils.Clock.GetUTCNow()}},
+		bson.M{fieldDocumentID: commentObjID},
+		bson.M{mongoSet: bson.M{fieldIsApproved: true, "updated_at": gutils.Clock.GetUTCNow()}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After),
 	).Decode(&updatedComment)
 
@@ -442,7 +442,7 @@ func (s *Blog) BlogDeleteComment(ctx context.Context, commentID string) (*models
 
 	// Get the comment before deletion
 	var comment model.Comment
-	err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{"_id": commentObjID}).Decode(&comment)
+	err = s.dao.GetPostCommentCol().FindOne(ctx, bson.M{fieldDocumentID: commentObjID}).Decode(&comment)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.New("comment not found")
@@ -463,7 +463,7 @@ func (s *Blog) BlogDeleteComment(ctx context.Context, commentID string) (*models
 		}
 
 		// Delete the comment
-		_, err = s.dao.GetPostCommentCol().DeleteOne(sc, bson.M{"_id": commentObjID})
+		_, err = s.dao.GetPostCommentCol().DeleteOne(sc, bson.M{fieldDocumentID: commentObjID})
 		if err != nil {
 			return errors.Wrap(err, "failed to delete comment")
 		}

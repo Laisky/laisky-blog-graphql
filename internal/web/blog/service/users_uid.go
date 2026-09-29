@@ -28,7 +28,7 @@ func (s *Blog) LoadUserByUID(ctx context.Context, uid string) (user *model.User,
 	}
 
 	user = &model.User{}
-	result := s.dao.GetUsersCol().FindOne(ctx, bson.D{{Key: "uid", Value: uid}})
+	result := s.dao.GetUsersCol().FindOne(ctx, bson.D{{Key: fieldUid, Value: uid}})
 	if err = result.Decode(user); err != nil {
 		return nil, errors.Wrap(err, "decode user by uid")
 	}
@@ -63,15 +63,15 @@ func (s *Blog) EnsureUserUID(ctx context.Context, user *model.User) (*model.User
 	uid := gutils.UUID7()
 	now := gutils.Clock.GetUTCNow()
 	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
-		"_id": user.ID,
+		fieldDocumentID: user.ID,
 		"$or": []bson.M{
-			{"uid": bson.M{"$exists": false}},
-			{"uid": ""},
+			{fieldUid: bson.M{"$exists": false}},
+			{fieldUid: ""},
 		},
 	}, bson.M{
-		"$set": bson.M{
-			"uid":               uid,
-			"post_modified_gmt": now,
+		mongoSet: bson.M{
+			fieldUid:             uid,
+			fieldPostModifiedGmt: now,
 		},
 	})
 	if err != nil {
@@ -84,7 +84,7 @@ func (s *Blog) EnsureUserUID(ctx context.Context, user *model.User) (*model.User
 	}
 
 	reloaded := &model.User{}
-	if err = s.dao.GetUsersCol().FindOne(ctx, bson.M{"_id": user.ID}).Decode(reloaded); err != nil {
+	if err = s.dao.GetUsersCol().FindOne(ctx, bson.M{fieldDocumentID: user.ID}).Decode(reloaded); err != nil {
 		return nil, errors.Wrapf(err, "reload user %s after uid race", user.ID.Hex())
 	}
 	if strings.TrimSpace(reloaded.UID) == "" {

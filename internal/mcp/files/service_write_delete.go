@@ -191,7 +191,7 @@ func (s *Service) writeWithinTx( //nolint:gocognit // write involves multiple va
 	if owner == "" && !opts.SkipRAGIndex {
 		if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 			APIKeyHash: auth.APIKeyHash, Project: project, FilePath: path,
-			Operation: "UPSERT", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
+			Operation: indexOperationUpsert, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
 			AvailableAt: now, CreatedAt: now, UpdatedAt: now, ContentHash: contentHash,
 		}); err != nil {
 			return 0, errors.Wrap(err, "enqueue index job")
@@ -261,7 +261,7 @@ func (s *Service) Delete(ctx context.Context, auth AuthContext, project, path st
 			for _, p := range paths {
 				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
 					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: p,
-					Operation: "DELETE", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
+					Operation: indexOperationDelete, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
 					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
 				}); err != nil {
 					return errors.Wrap(err, "enqueue delete job")

@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 const okResponseJSON = `{
@@ -107,7 +109,9 @@ func TestOpenAILLMRetryAfterHonored(t *testing.T) {
 func TestStubLLMPlumbing(t *testing.T) {
 	stub := NewStubLLM()
 	stub.SetDefault(JSONResponse(map[string]string{"answer": "yes"}))
-	resp, err := stub.Respond(context.Background(), Request{Input: []InputItem{{Role: "user", Content: "x"}}, PromptHash: HashRequest(Request{Input: []InputItem{{Role: "user", Content: "x"}}})})
+	hash, err := HashRequest(Request{Input: []InputItem{{Role: "user", Content: "x"}}})
+	require.NoError(t, err)
+	resp, err := stub.Respond(context.Background(), Request{Input: []InputItem{{Role: "user", Content: "x"}}, PromptHash: hash})
 	if err != nil {
 		t.Fatal(err)
 	}

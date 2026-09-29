@@ -18,7 +18,6 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
 	"github.com/openai/openai-go/shared/constant"
 	"golang.org/x/time/rate"
 )
@@ -31,8 +30,8 @@ type LLM interface {
 
 // InputItem mirrors a Responses-API input message.
 type InputItem struct {
-	Role    string
-	Content string
+	Role    string `json:"Role"`
+	Content string `json:"Content"`
 }
 
 // Request is a single LLM call.
@@ -56,9 +55,9 @@ type Response struct {
 
 // Usage tracks token billing.
 type Usage struct {
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
+	InputTokens  int `json:"InputTokens"`
+	OutputTokens int `json:"OutputTokens"`
+	TotalTokens  int `json:"TotalTokens"`
 }
 
 // LLMConfig configures the openaiLLM constructor.
@@ -132,7 +131,7 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 		model = l.model
 	}
 	params := responses.ResponseNewParams{
-		Model: shared.ResponsesModel(model),
+		Model: model,
 		Input: responses.ResponseNewParamsInputUnion{
 			OfInputItemList: buildInput(req.Input),
 		},
@@ -246,16 +245,22 @@ func buildInput(items []InputItem) responses.ResponseInputParam {
 }
 
 // HashRequest derives the cache key for req. Schema is hashed verbatim.
-func HashRequest(req Request) [32]byte {
+func HashRequest(req Request) ([32]byte, error) {
 	model := req.Model
-	body, _ := json.Marshal(req.Input)
+	body, err := json.Marshal(req.Input)
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "encode request input")
+	}
 	params := struct {
 		MaxOut      int     `json:"max_out_tokens"`
 		Temperature float32 `json:"temperature"`
 		SchemaName  string  `json:"schema_name,omitempty"`
 	}{req.MaxOutTokens, req.Temperature, req.SchemaName}
-	pbytes, _ := json.Marshal(params)
-	return CacheKey(model, string(body), req.Schema, pbytes)
+	pbytes, err := json.Marshal(params)
+	if err != nil {
+		return [32]byte{}, errors.Wrap(err, "encode request parameters")
+	}
+	return CacheKey(model, string(body), req.Schema, pbytes), nil
 }
 
 // Compile-time guards.

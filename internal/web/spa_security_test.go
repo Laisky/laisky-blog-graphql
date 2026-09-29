@@ -46,3 +46,34 @@ func TestSPARootBoundary(t *testing.T) {
 	require.Equal(t, http.StatusPartialContent, w.Code)
 	require.Equal(t, "public", w.Body.String())
 }
+
+// TestSPAIndexRootBoundary applies the same boundary to the cached entry document.
+func TestSPAIndexRootBoundary(t *testing.T) {
+	for _, escaped := range []bool{true, false} {
+		t.Run(map[bool]string{true: "external", false: "internal"}[escaped], func(t *testing.T) {
+			root := t.TempDir()
+			target := filepath.Join(root, "entry.html")
+			if escaped {
+				target = filepath.Join(t.TempDir(), "private.html")
+			}
+			require.NoError(t, os.WriteFile(target, []byte("entry document"), 0o600))
+			linkTarget := target
+			if !escaped {
+				linkTarget = filepath.Base(target)
+			}
+			require.NoError(t, os.Symlink(linkTarget, filepath.Join(root, "index.html")))
+			t.Setenv(frontendDistEnvKey, root)
+			t.Setenv("VITE_DEV_URL", "")
+			handler := newFrontendSPAHandler(glog.Shared, "")
+			if escaped {
+				require.Nil(t, handler)
+				return
+			}
+			require.NotNil(t, handler)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+			require.Equal(t, http.StatusOK, response.Code)
+			require.Equal(t, "entry document", response.Body.String())
+		})
+	}
+}

@@ -116,8 +116,8 @@ func LoadSettings() Settings {
 			CandidateDocs: intOr(settingsPrefix+".tree_query.candidate_docs", 5),
 		},
 		PDF: PDFSettings{
-			TextParser:    stringOr(settingsPrefix+".pdf.text_parser", "pdfcpu"),
-			OutlineParser: stringOr(settingsPrefix+".pdf.outline_parser", "pdfcpu"),
+			TextParser:    stringOr(settingsPrefix+".pdf.text_parser", parserPdfcpu),
+			OutlineParser: stringOr(settingsPrefix+".pdf.outline_parser", parserPdfcpu),
 		},
 	}
 }

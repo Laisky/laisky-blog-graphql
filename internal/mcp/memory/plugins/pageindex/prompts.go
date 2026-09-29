@@ -171,7 +171,8 @@ const promptDetectPageIndex = `
 const promptTOCTransformer = `
     You are given a table of contents, You job is to transform the whole table of content into a JSON format included table_of_contents.
 
-    structure is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    structure is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first ` +
+	`subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
 
     The response should be in the following JSON format:
     {
@@ -195,7 +196,8 @@ const promptTOCIndexExtractor = `
 
     The provided pages contains tags like <physical_index_X> and <physical_index_X> to indicate the physical location of the page X.
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index ` +
+	`1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
 
     The response should be in the following JSON format:
     [
@@ -249,7 +251,8 @@ Given Structure
 const promptGenerateTOCInit = `
     You are an expert in extracting hierarchical tree structure, your task is to generate the tree structure of the document.
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index ` +
+	`1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
 
     For the title, you need to extract the original title from the text, only fix the space inconsistency.
 
@@ -278,7 +281,8 @@ const promptGenerateTOCContinue = `
     You are given a tree structure of the previous part and the text of the current part.
     Your task is to continue the tree structure from the previous part to include the current part.
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index ` +
+	`1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
 
     For the title, you need to extract the original title from the text, only fix the space inconsistency.
 

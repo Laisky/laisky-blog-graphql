@@ -57,8 +57,8 @@ const (
 
 var (
 	commentSortFields = map[string]string{
-		"created_at": "created_at",
-		"likes":      "likes",
+		fieldCreatedAt: fieldCreatedAt,
+		fieldLikes:     fieldLikes,
 	}
 )
 
@@ -223,12 +223,12 @@ func sanitizePostType(ptype string) (string, error) {
 func sanitizeCommentSortField(field string) string {
 	trimmed := strings.ToLower(strings.TrimSpace(field))
 	if trimmed == "" {
-		return "created_at"
+		return fieldCreatedAt
 	}
 	if mapped, ok := commentSortFields[trimmed]; ok {
 		return mapped
 	}
-	return "created_at"
+	return fieldCreatedAt
 }
 
 // sanitizeEmail trims and validates an email address string, returning the sanitized email or an error.
@@ -279,7 +279,7 @@ func sanitizeAuthorName(name string) (string, error) {
 // sanitizeUserAccount validates a user account identifier and returns the sanitized value or an error.
 // It accepts the raw account string and returns the sanitized account.
 func sanitizeUserAccount(account string) (string, error) {
-	trimmed, err := sanitizeRequiredText(account, maxUserAccountLength, "account")
+	trimmed, err := sanitizeRequiredText(account, maxUserAccountLength, fieldAccount)
 	if err != nil {
 		return "", err
 	}

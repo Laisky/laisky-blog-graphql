@@ -50,6 +50,11 @@ type ShadowPlugin struct {
 	shutdownOnce sync.Once
 	shutdown     chan struct{}
 	inflight     sync.WaitGroup
+	lifecycleMu  sync.Mutex
+	stopping     bool
+	stopMu       sync.Mutex
+	stopped      bool
+	stopErr      error
 }
 
 // NewShadowPlugin validates the config and returns a wrapper plugin.
@@ -123,37 +128,68 @@ func (s *ShadowPlugin) Start(ctx context.Context) error {
 }
 
 // Stop signals shutdown, waits for in-flight shadow ops up to drainGrace
-// (cancelling any still-running ops once the grace period expires), then
+// (canceling any still-running ops once the grace period expires), then
 // stops shadow and live in reverse order.
+// A timed-out Stop leaves the recorder open until a later Stop can safely drain
+// the work. It must never close resources underneath an active shadow callback.
 func (s *ShadowPlugin) Stop(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() {
-		s.inflight.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(s.drainGrace):
-		s.logger.Warn("shadow plugin drain grace exceeded", zap.Duration("grace", s.drainGrace))
-		s.shutdownOnce.Do(func() { close(s.shutdown) })
-		<-done
+	s.stopMu.Lock()
+	defer s.stopMu.Unlock()
+	if s.stopped {
+		return s.stopErr
+	}
+	s.lifecycleMu.Lock()
+	s.stopping = true
+	s.lifecycleMu.Unlock()
+	if err := s.drainShadow(ctx); err != nil {
+		return err
 	}
 	s.shutdownOnce.Do(func() { close(s.shutdown) })
+	s.stopErr = errors.Join(
+		errors.Wrap(s.shadow.Stop(ctx), "stop shadow plugin"),
+		errors.Wrap(s.live.Stop(ctx), "stop live plugin"),
+		errors.Wrap(s.rec.Close(), "close shadow recorder"),
+	)
+	s.stopped = true
+	return s.stopErr
+}
 
-	var firstErr error
-	if err := s.shadow.Stop(ctx); err != nil {
-		s.logger.Warn("shadow plugin stop failed", zap.String("plugin", s.shadow.Name()), zap.Error(err))
+// drainShadow allows a grace period and then cancels active and queued work.
+func (s *ShadowPlugin) drainShadow(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() { s.inflight.Wait(); close(done) }()
+	grace := time.NewTimer(s.drainGrace)
+	defer grace.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		s.shutdownOnce.Do(func() { close(s.shutdown) })
+		return errors.Wrap(ctx.Err(), "drain shadow operations")
+	case <-grace.C:
+		s.shutdownOnce.Do(func() { close(s.shutdown) })
 	}
-	if err := s.live.Stop(ctx); err != nil {
-		firstErr = errors.Wrap(err, "stop live plugin")
+	deadline := time.NewTimer(s.opTimeout)
+	defer deadline.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return errors.Wrap(ctx.Err(), "drain canceled shadow operations")
+	case <-deadline.C:
+		return errors.New("shadow operations did not stop after cancellation")
 	}
-	if err := s.rec.Close(); err != nil {
-		if firstErr != nil {
-			return errors.Wrapf(firstErr, "close recorder: %v", err)
-		}
-		firstErr = errors.Wrap(err, "close recorder")
+}
+
+// beginShadow serializes WaitGroup.Add against Stop's transition to draining.
+func (s *ShadowPlugin) beginShadow() bool {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.stopping {
+		return false
 	}
-	return firstErr
+	s.inflight.Add(1)
+	return true
 }
 
 // Stat forwards to live; reads are not part of §7.8 scoring.
@@ -180,7 +216,7 @@ func (s *ShadowPlugin) Write(ctx context.Context, auth files.AuthContext, projec
 		return res, err
 	}
 
-	s.fireMutation("write", project, path, liveDur, func(opCtx context.Context) error {
+	s.fireMutation(ctx, "write", project, path, liveDur, func(opCtx context.Context) error {
 		_, e := s.shadow.Write(opCtx, auth, project, path, content, contentEncoding, offset, mode)
 		return e
 	})
@@ -196,7 +232,7 @@ func (s *ShadowPlugin) Delete(ctx context.Context, auth files.AuthContext, proje
 		return res, err
 	}
 
-	s.fireMutation("delete", project, path, liveDur, func(opCtx context.Context) error {
+	s.fireMutation(ctx, "delete", project, path, liveDur, func(opCtx context.Context) error {
 		_, e := s.shadow.Delete(opCtx, auth, project, path, recursive)
 		return e
 	})
@@ -212,7 +248,7 @@ func (s *ShadowPlugin) Rename(ctx context.Context, auth files.AuthContext, proje
 		return res, err
 	}
 
-	s.fireMutation("rename", project, fromPath, liveDur, func(opCtx context.Context) error {
+	s.fireMutation(ctx, "rename", project, fromPath, liveDur, func(opCtx context.Context) error {
 		_, e := s.shadow.Rename(opCtx, auth, project, fromPath, toPath, overwrite)
 		return e
 	})
@@ -225,25 +261,23 @@ func (s *ShadowPlugin) Search(ctx context.Context, auth files.AuthContext, proje
 	liveRes, liveErr := s.live.Search(ctx, auth, project, query, pathPrefix, limit)
 	liveDur := time.Since(liveStart)
 
-	s.fireSearch(auth, project, query, pathPrefix, limit, liveRes, liveErr, liveDur)
+	s.fireSearch(ctx, auth, project, query, pathPrefix, limit, liveRes, liveErr, liveDur)
 	return liveRes, liveErr
 }
 
 // fireMutation runs a bounded, fire-and-forget shadow mutation.
-func (s *ShadowPlugin) fireMutation(op, project, path string, liveDur time.Duration, run func(context.Context) error) {
-	select {
-	case <-s.shutdown:
-		s.recordMutation(op, project, path, liveDur, 0, "", "shadow: shutdown")
+func (s *ShadowPlugin) fireMutation(ctx context.Context, op, project, path string, liveDur time.Duration, run func(context.Context) error) {
+	if !s.beginShadow() {
 		return
-	default:
 	}
 
-	s.inflight.Add(1)
 	go func() {
 		defer s.inflight.Done()
 
-		semCtx, semCancel := context.WithTimeout(context.Background(), s.opTimeout)
+		semCtx, semCancel := context.WithTimeout(context.WithoutCancel(ctx), s.opTimeout)
 		defer semCancel()
+		stopWaiting := s.watchShutdown(semCancel)
+		defer stopWaiting()
 		if err := s.sem.Acquire(semCtx, 1); err != nil {
 			s.logger.Warn("shadow semaphore acquire failed",
 				zap.String("op", op),
@@ -256,7 +290,7 @@ func (s *ShadowPlugin) fireMutation(op, project, path string, liveDur time.Durat
 		}
 		defer s.sem.Release(1)
 
-		opCtx, cancel := context.WithTimeout(context.Background(), s.opTimeout)
+		opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.opTimeout)
 		defer cancel()
 		stop := s.watchShutdown(cancel)
 		defer stop()
@@ -279,20 +313,18 @@ func (s *ShadowPlugin) fireMutation(op, project, path string, liveDur time.Durat
 }
 
 // fireSearch runs a bounded, fire-and-forget shadow Search and records the pair.
-func (s *ShadowPlugin) fireSearch(auth files.AuthContext, project, query, pathPrefix string, limit int, liveRes files.SearchResult, liveErr error, liveDur time.Duration) {
-	select {
-	case <-s.shutdown:
-		s.recordSearch(project, query, pathPrefix, limit, liveRes, files.SearchResult{}, liveDur, 0, liveErr, errors.New("shadow: shutdown"))
+func (s *ShadowPlugin) fireSearch(ctx context.Context, auth files.AuthContext, project, query, pathPrefix string, limit int, liveRes files.SearchResult, liveErr error, liveDur time.Duration) {
+	if !s.beginShadow() {
 		return
-	default:
 	}
 
-	s.inflight.Add(1)
 	go func() {
 		defer s.inflight.Done()
 
-		semCtx, semCancel := context.WithTimeout(context.Background(), s.opTimeout)
+		semCtx, semCancel := context.WithTimeout(context.WithoutCancel(ctx), s.opTimeout)
 		defer semCancel()
+		stopWaiting := s.watchShutdown(semCancel)
+		defer stopWaiting()
 		if err := s.sem.Acquire(semCtx, 1); err != nil {
 			s.logger.Warn("shadow semaphore acquire failed",
 				zap.String("op", "search"),
@@ -304,7 +336,7 @@ func (s *ShadowPlugin) fireSearch(auth files.AuthContext, project, query, pathPr
 		}
 		defer s.sem.Release(1)
 
-		opCtx, cancel := context.WithTimeout(context.Background(), s.opTimeout)
+		opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.opTimeout)
 		defer cancel()
 		stop := s.watchShutdown(cancel)
 		defer stop()

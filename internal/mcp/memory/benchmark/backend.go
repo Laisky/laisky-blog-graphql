@@ -43,7 +43,7 @@ func NewPluginBackend(plugin mcpplugin.Plugin, auth files.AuthContext, backendNa
 		return nil, errors.New("benchmark auth api key hash is required")
 	}
 	if strings.TrimSpace(backendName) == "" {
-		backendName = "plugin"
+		backendName = benchmarkPlugin
 	}
 	return &PluginBackend{plugin: plugin, auth: auth, name: backendName}, nil
 }
@@ -55,7 +55,7 @@ func (b *PluginBackend) Name() string { return b.name }
 func (b *PluginBackend) Write(ctx context.Context, project string, document Document) error {
 	encoding := document.ContentEncoding
 	if encoding == "" {
-		encoding = "utf-8"
+		encoding = encodingUTF8
 	}
 	_, err := b.plugin.Write(ctx, b.auth, project, document.Path, document.Content, encoding, 0, files.WriteModeTruncate)
 	if err != nil {
@@ -117,17 +117,17 @@ func NewMCPBackend(ctx context.Context, client *MCPClient, plugin string) (*MCPB
 }
 
 // Name returns the deployed MCP backend identifier.
-func (b *MCPBackend) Name() string { return "mcp" }
+func (b *MCPBackend) Name() string { return benchmarkMcp }
 
 // Write calls the public file_write MCP tool.
 func (b *MCPBackend) Write(ctx context.Context, project string, document Document) error {
 	encoding := document.ContentEncoding
 	if encoding == "" {
-		encoding = "utf-8"
+		encoding = encodingUTF8
 	}
 	_, err := b.client.CallTool(ctx, "file_write", map[string]any{
-		"project": project, "path": document.Path, "content": document.Content,
-		"content_encoding": encoding, "mode": string(files.WriteModeTruncate), "plugin": b.plugin,
+		benchmarkProject: project, "path": document.Path, benchmarkContent: document.Content,
+		"content_encoding": encoding, "mode": string(files.WriteModeTruncate), benchmarkPlugin: b.plugin,
 	})
 	return errors.Wrapf(err, "MCP file_write %s", document.Path)
 }
@@ -135,8 +135,8 @@ func (b *MCPBackend) Write(ctx context.Context, project string, document Documen
 // Search calls the public file_search MCP tool.
 func (b *MCPBackend) Search(ctx context.Context, project string, query Query, limit int) ([]SearchHit, error) {
 	payload, err := b.client.CallTool(ctx, "file_search", map[string]any{
-		"project": project, "query": query.Text, "path_prefix": query.PathPrefix,
-		"limit": limit, "plugin": b.plugin,
+		benchmarkProject: project, "query": query.Text, "path_prefix": query.PathPrefix,
+		"limit": limit, benchmarkPlugin: b.plugin,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "MCP file_search %s", query.ID)
@@ -168,7 +168,7 @@ func (b *MCPBackend) Search(ctx context.Context, project string, query Query, li
 // Delete calls the public file_delete MCP tool.
 func (b *MCPBackend) Delete(ctx context.Context, project, path string, recursive bool) error {
 	_, err := b.client.CallTool(ctx, "file_delete", map[string]any{
-		"project": project, "path": path, "recursive": recursive, "plugin": b.plugin,
+		benchmarkProject: project, "path": path, "recursive": recursive, benchmarkPlugin: b.plugin,
 	})
 	return errors.Wrapf(err, "MCP file_delete %s", path)
 }
@@ -202,7 +202,7 @@ func NewLocalPluginBackend(ctx context.Context, pluginName string) (Backend, err
 		return nil, errors.Wrap(err, "construct local benchmark credential protector")
 	}
 	credentialStore := newLocalCredentialStore()
-	fileService, err := files.NewService(db, fileSettings, nil, nil, credentialProtector, credentialStore, nil, nil, nil)
+	fileService, err := files.NewServiceWithContext(ctx, db, fileSettings, nil, nil, credentialProtector, credentialStore, nil, nil, nil)
 	if err != nil {
 		_ = db.Close()
 		return nil, errors.Wrap(err, "construct local file service")
@@ -217,7 +217,7 @@ func NewLocalPluginBackend(ctx context.Context, pluginName string) (Backend, err
 	case mcpplugin.DefaultPluginRAG:
 		plugin, err = ragplugin.New(fileService)
 	case mcpplugin.DefaultPluginPageIndex:
-		plugin, err = newLocalPageIndex(fileService)
+		plugin, err = newLocalPageIndex(ctx, fileService)
 	default:
 		err = errors.Errorf("unsupported local memory plugin %q", pluginName)
 	}
@@ -243,7 +243,7 @@ func (b *localPluginBackend) Close(ctx context.Context) error {
 	return errors.WithStack(dbErr)
 }
 
-func newLocalPageIndex(fileService *files.Service) (mcpplugin.Plugin, error) {
+func newLocalPageIndex(ctx context.Context, fileService *files.Service) (mcpplugin.Plugin, error) {
 	systemFS, err := fileService.SystemNamespace("pageindex")
 	if err != nil {
 		return nil, errors.Wrap(err, "construct pageindex system namespace")
@@ -255,7 +255,7 @@ func newLocalPageIndex(fileService *files.Service) (mcpplugin.Plugin, error) {
 			Cache: pageindexplugin.CacheSettings{Enabled: false},
 		},
 		LLM: pageindexplugin.LLMSettings{
-			IndexingModel: "gpt-5.4-mini", RetrieveModel: "gpt-5.4-mini", APIKey: "deterministic-local-stub",
+			IndexingModel: "gpt-5.4-mini", RetrieveModel: "gpt-5.4-mini",
 		},
 		Algo: pageindexplugin.AlgoSettings{
 			TocCheckPageNum: 20, MaxPageNumEachNode: 10, MaxTokenNumEachNode: 20_000,
@@ -280,7 +280,7 @@ func newLocalPageIndex(fileService *files.Service) (mcpplugin.Plugin, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "construct pageindex plugin")
 	}
-	if err := plugin.Start(context.Background()); err != nil {
+	if err := plugin.Start(ctx); err != nil {
 		return nil, errors.Wrap(err, "start pageindex plugin")
 	}
 	return plugin, nil

@@ -29,7 +29,7 @@ const (
 
 var (
 	tweetSortFields = map[string]string{
-		"created_at": "created_at",
+		fieldCreatedAt: fieldCreatedAt,
 	}
 )
 
@@ -133,12 +133,12 @@ func sanitizePagination(page int, size int) (int, int, error) {
 func sanitizeTweetSortField(field string) string {
 	trimmed := strings.ToLower(strings.TrimSpace(field))
 	if trimmed == "" {
-		return "created_at"
+		return fieldCreatedAt
 	}
 	if mapped, ok := tweetSortFields[trimmed]; ok {
 		return mapped
 	}
-	return "created_at"
+	return fieldCreatedAt
 }
 
 // sanitizeTweetSortOrder validates the sort order string and returns a normalized order or an error.

@@ -117,7 +117,7 @@ func (w *IndexWorker) claimJobs(ctx context.Context) ([]FileIndexJob, error) {
 	// into the chunking/embedding pipeline.
 	query := "SELECT id, apikey_hash, project, file_path, operation, file_updated_at, status, retry_count, available_at, created_at, updated_at, content_hash, last_error_code, summary_generation_key " +
 		"FROM mcp_file_index_jobs WHERE status = ? AND available_at <= ? AND system_owner = ? ORDER BY id ASC LIMIT ?"
-	args := []any{"pending", now, "", batch}
+	args := []any{indexStatusPending, now, "", batch}
 	if svc.isPostgres {
 		query += " FOR UPDATE SKIP LOCKED"
 	}
@@ -195,9 +195,9 @@ func (w *IndexWorker) processJob(ctx context.Context, job FileIndexJob) error {
 	svc := w.svc
 	var err error
 	switch job.Operation {
-	case "UPSERT":
+	case indexOperationUpsert:
 		err = svc.processUpsertJob(ctx, job)
-	case "DELETE":
+	case indexOperationDelete:
 		err = svc.processDeleteJob(ctx, job)
 	case "SUMMARY_REFRESH":
 		// The refresh handler owns its terminal state (done/waiting_auth/retry) so it
@@ -281,7 +281,7 @@ func (w *IndexWorker) handleSummaryRefreshRetry(ctx context.Context, job FileInd
 	svc.summaryRefreshOutcome(ctx, "rag", "retry", errorCode)
 	_, execErr := svc.db.ExecContext(ctx,
 		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, retry_count = ?, available_at = ?, updated_at = ?, last_error_code = ? WHERE id = ? AND system_owner = ?`, svc.isPostgres),
-		"pending",
+		indexStatusPending,
 		job.RetryCount+1,
 		next,
 		svc.clock(),
@@ -322,7 +322,7 @@ func (w *IndexWorker) handleJobError(ctx context.Context, job FileIndexJob, err 
 		rebindSQL(`UPDATE mcp_file_index_jobs
 		SET status = ?, retry_count = ?, available_at = ?, updated_at = ?
 		WHERE id = ? AND system_owner = ?`, svc.isPostgres),
-		"pending",
+		indexStatusPending,
 		job.RetryCount+1,
 		next,
 		svc.clock(),

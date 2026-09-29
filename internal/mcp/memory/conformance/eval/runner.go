@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,7 +17,7 @@ import (
 )
 
 // allSuites is the canonical suite list; nil/empty Suites in RunConfig means all.
-var allSuites = []string{"retrieval", "ragas", "public", "ops", "redteam"}
+var allSuites = []string{evalRetrieval, evalRagas, "public", "ops", evalRedteam}
 
 // RunConfig parameterizes a full eval run.
 type RunConfig struct {
@@ -53,6 +54,7 @@ type RunResult struct {
 // datasets are reported as "missing" and translated to `n/a` cells in the
 // scorecard, never a hard error.
 func Run(ctx context.Context, cfg RunConfig, w io.Writer) (*RunResult, error) {
+	var logBuffer bytes.Buffer
 	if cfg.Plugin == nil {
 		return nil, errors.New("plugin is nil")
 	}
@@ -80,21 +82,21 @@ func Run(ctx context.Context, cfg RunConfig, w io.Writer) (*RunResult, error) {
 		},
 	}
 
-	auth := files.AuthContext{APIKey: "eval-harness", APIKeyHash: "eval-harness", UserIdentity: "user:eval-harness"}
+	auth := files.AuthContext{APIKey: evalEvalHarness, APIKeyHash: evalEvalHarness, UserIdentity: "user:eval-harness"}
 
-	if _, ok := suiteSet["retrieval"]; ok {
+	if _, ok := suiteSet[evalRetrieval]; ok {
 		path := filepath.Join(cfg.GoldenDir, "memory-bench-internal-v1.jsonl")
 		queries, err := LoadRetrievalQueries(path)
 		switch {
 		case errors.Is(err, os.ErrNotExist), isMissing(err):
-			logSuiteStatus(w, &result.Logs, "retrieval", "missing", path)
-			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: "retrieval", Status: "missing"})
-			result.Scorecard.RetrievalStatus = "skipped"
+			logSuiteStatus(&logBuffer, &result.Logs, evalRetrieval, evalMissing, path)
+			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: evalRetrieval, Status: evalMissing})
+			result.Scorecard.RetrievalStatus = evalSkipped
 		case err != nil:
 			return nil, errors.Wrap(err, "load retrieval queries")
 		default:
-			logSuiteStatus(w, &result.Logs, "retrieval", fmt.Sprintf("%d queries", len(queries)), path)
-			rep, runErr := RunRetrievalEval(ctx, cfg.Plugin, queries, RetrievalOpts{Project: "eval-harness", Auth: auth, K: 10})
+			logSuiteStatus(&logBuffer, &result.Logs, evalRetrieval, fmt.Sprintf("%d queries", len(queries)), path)
+			rep, runErr := RunRetrievalEval(ctx, cfg.Plugin, queries, RetrievalOpts{Project: evalEvalHarness, Auth: auth, K: 10})
 			if runErr != nil {
 				return nil, errors.Wrap(runErr, "retrieval suite")
 			}
@@ -102,42 +104,42 @@ func Run(ctx context.Context, cfg RunConfig, w io.Writer) (*RunResult, error) {
 			result.Scorecard.RetrievalStatus = "ok"
 			for _, q := range rep.Queries {
 				payload := map[string]any{
-					"recall@10":  q.Recall10,
-					"ndcg@10":    q.NDCG10,
-					"mrr":        q.MRR,
-					"hit@5":      q.Hit5,
-					"long_doc":   q.LongDoc,
-					"latency_ms": q.LatencyMS,
+					metricRecallAt10: q.Recall10,
+					metricNDCGAt10:   q.NDCG10,
+					evalMrr:          q.MRR,
+					metricHitAt5:     q.Hit5,
+					"long_doc":       q.LongDoc,
+					"latency_ms":     q.LatencyMS,
 				}
-				result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: "retrieval", QueryID: q.QueryID, Payload: payload})
+				result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: evalRetrieval, QueryID: q.QueryID, Payload: payload})
 			}
 		}
 	}
 
-	if _, ok := suiteSet["ragas"]; ok {
+	if _, ok := suiteSet[evalRagas]; ok {
 		path := filepath.Join(cfg.GoldenDir, "memory-bench-ragas-v1.jsonl")
 		samples, err := LoadRAGASSamples(path)
 		switch {
 		case errors.Is(err, os.ErrNotExist), isMissing(err):
-			logSuiteStatus(w, &result.Logs, "ragas", "missing", path)
-			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: "ragas", Status: "missing"})
+			logSuiteStatus(&logBuffer, &result.Logs, evalRagas, evalMissing, path)
+			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: evalRagas, Status: evalMissing})
 			result.Scorecard.RAGAS = skippedRAGASReport()
 		case err != nil:
 			return nil, errors.Wrap(err, "load ragas samples")
 		default:
-			logSuiteStatus(w, &result.Logs, "ragas", fmt.Sprintf("%d samples", len(samples)), path)
+			logSuiteStatus(&logBuffer, &result.Logs, evalRagas, fmt.Sprintf("%d samples", len(samples)), path)
 			rep, runErr := RunRAGASEval(ctx, cfg.Judge, cfg.EmbeddingClient, samples, RAGASOpts{Model: "gpt-4o-mini", MaxOutTokens: 512})
 			if runErr != nil {
 				return nil, errors.Wrap(runErr, "ragas suite")
 			}
 			result.Scorecard.RAGAS = rep
-			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: "ragas", Payload: map[string]any{
-				"faithfulness":            rep.Faithfulness.Mean,
-				"context_recall":          rep.ContextRecall.Mean,
-				"context_precision":       rep.ContextPrecision.Mean,
-				"answer_correctness":      rep.AnswerCorrectness.Mean,
-				"answer_relevancy":        rep.AnswerRelevancy.Mean,
-				"context_entities_recall": rep.ContextEntitiesRecall.Mean,
+			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: evalRagas, Payload: map[string]any{
+				evalFaithfulness:          rep.Faithfulness.Mean,
+				evalContextRecall:         rep.ContextRecall.Mean,
+				evalContextPrecision:      rep.ContextPrecision.Mean,
+				evalAnswerCorrectness:     rep.AnswerCorrectness.Mean,
+				evalAnswerRelevancy:       rep.AnswerRelevancy.Mean,
+				evalContextEntitiesRecall: rep.ContextEntitiesRecall.Mean,
 			}})
 		}
 	}
@@ -149,12 +151,12 @@ func Run(ctx context.Context, cfg RunConfig, w io.Writer) (*RunResult, error) {
 		scores, err := loadPublicScores(captured)
 		switch {
 		case errors.Is(err, os.ErrNotExist):
-			logSuiteStatus(w, &result.Logs, "public", "missing", captured)
-			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: "public", Status: "missing"})
+			logSuiteStatus(&logBuffer, &result.Logs, "public", evalMissing, captured)
+			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: "public", Status: evalMissing})
 		case err != nil:
 			return nil, errors.Wrap(err, "load public scores")
 		default:
-			logSuiteStatus(w, &result.Logs, "public", "captured", captured)
+			logSuiteStatus(&logBuffer, &result.Logs, "public", "captured", captured)
 			result.Scorecard.Public = scores
 		}
 	}
@@ -164,13 +166,13 @@ func Run(ctx context.Context, cfg RunConfig, w io.Writer) (*RunResult, error) {
 		queries, err := loadOpsQueries(path)
 		switch {
 		case errors.Is(err, os.ErrNotExist):
-			logSuiteStatus(w, &result.Logs, "ops", "missing", path)
-			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: "ops", Status: "missing"})
-			result.Scorecard.OpsStatus = "skipped"
+			logSuiteStatus(&logBuffer, &result.Logs, "ops", evalMissing, path)
+			result.RawPerQuery = append(result.RawPerQuery, PerQueryRecord{Suite: "ops", Status: evalMissing})
+			result.Scorecard.OpsStatus = evalSkipped
 		case err != nil:
 			return nil, errors.Wrap(err, "load ops queries")
 		default:
-			logSuiteStatus(w, &result.Logs, "ops", fmt.Sprintf("%d queries", len(queries)), path)
+			logSuiteStatus(&logBuffer, &result.Logs, "ops", fmt.Sprintf("%d queries", len(queries)), path)
 			rep, runErr := RunOpsProbe(ctx, cfg.Plugin, queries, 1, nil)
 			if runErr != nil {
 				return nil, errors.Wrap(runErr, "ops probe")
@@ -180,9 +182,9 @@ func Run(ctx context.Context, cfg RunConfig, w io.Writer) (*RunResult, error) {
 		}
 	}
 
-	if _, ok := suiteSet["redteam"]; ok {
+	if _, ok := suiteSet[evalRedteam]; ok {
 		attacks := OWASPAttacks2026V1()
-		logSuiteStatus(w, &result.Logs, "redteam", fmt.Sprintf("%d attacks (placeholders)", len(attacks)), "")
+		logSuiteStatus(&logBuffer, &result.Logs, evalRedteam, fmt.Sprintf("%d attacks (placeholders)", len(attacks)), "")
 		rep, runErr := RunPromptInjectionSuite(ctx, cfg.Plugin, attacks)
 		if runErr != nil {
 			return nil, errors.Wrap(runErr, "redteam suite")
@@ -192,19 +194,17 @@ func Run(ctx context.Context, cfg RunConfig, w io.Writer) (*RunResult, error) {
 		result.Scorecard.Adversarial.Status = "ok"
 	}
 
-	if cfg.OutDir != "" {
-		if err := writeArtifacts(cfg.OutDir, result); err != nil {
-			return nil, errors.Wrap(err, "write artifacts")
-		}
+	if err := writeRunOutputs(cfg.OutDir, result, w, &logBuffer); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
 
-func logSuiteStatus(w io.Writer, logs *[]string, suite, status, path string) {
+func logSuiteStatus(w *bytes.Buffer, logs *[]string, suite, status, path string) {
 	line := fmt.Sprintf("eval suite=%s status=%s path=%s", suite, status, path)
 	*logs = append(*logs, line)
 	if w != nil {
-		fmt.Fprintln(w, line)
+		w.WriteString(line + "\n")
 	}
 }
 
@@ -220,7 +220,7 @@ func isMissing(err error) bool {
 }
 
 func skippedRAGASReport() RAGASReport {
-	skip := RAGASMetricStats{Status: "skipped"}
+	skip := RAGASMetricStats{Status: evalSkipped}
 	return RAGASReport{
 		Faithfulness:          skip,
 		ContextPrecision:      skip,
@@ -231,12 +231,12 @@ func skippedRAGASReport() RAGASReport {
 	}
 }
 
-func loadPublicScores(path string) (map[string]float64, error) {
+func loadPublicScores(path string) (_ map[string]float64, retErr error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, errors.Wrap(f.Close(), "close file")) }()
 	var out map[string]float64
 	if err := json.NewDecoder(f).Decode(&out); err != nil {
 		return nil, errors.Wrap(err, "decode public scores")
@@ -298,4 +298,20 @@ func writeArtifacts(dir string, result *RunResult) error {
 		}
 	}
 	return rf.Close()
+}
+
+// writeRunOutputs reports output failures before a run can be reported as successful.
+func writeRunOutputs(outDir string, result *RunResult, w io.Writer, logBuffer *bytes.Buffer) error {
+	if w != nil {
+		if _, err := io.Copy(w, logBuffer); err != nil {
+			return errors.Wrap(err, "write evaluation diagnostics")
+		}
+	}
+	if outDir != "" {
+		if err := writeArtifacts(outDir, result); err != nil {
+			return errors.Wrap(err, "write artifacts")
+		}
+	}
+
+	return nil
 }

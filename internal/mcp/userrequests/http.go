@@ -146,8 +146,8 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		"pending":        serializeRequestsWithPresign(ctx, pending, h.imageManager, logger),
 		"consumed":       serializeRequestsWithPresign(ctx, consumed, h.imageManager, logger),
 		"total_consumed": totalConsumed,
-		"user_id":        auth.UserIdentity,
-		"key_hint":       auth.KeySuffix,
+		fieldUserId:      auth.UserIdentity,
+		fieldKeyHint:     auth.KeySuffix,
 	}
 
 	h.writeJSON(w, response)
@@ -326,11 +326,11 @@ func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
 
 	if h.imageManager == nil || !h.imageManager.Settings().Enabled {
 		h.writeJSON(w, map[string]any{
-			"user_identity": auth.UserIdentity,
-			"used_bytes":    0,
-			"quota_bytes":   0,
-			"object_count":  0,
-			"ttl_days":      0,
+			fieldUserIdentity: auth.UserIdentity,
+			"used_bytes":      0,
+			"quota_bytes":     0,
+			"object_count":    0,
+			"ttl_days":        0,
 		})
 		return
 	}
@@ -342,11 +342,11 @@ func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeJSON(w, map[string]any{
-		"user_identity": usage.UserIdentity,
-		"used_bytes":    usage.UsedBytes,
-		"quota_bytes":   usage.QuotaBytes,
-		"object_count":  usage.ObjectCount,
-		"ttl_days":      usage.TTLDays,
+		fieldUserIdentity: usage.UserIdentity,
+		"used_bytes":      usage.UsedBytes,
+		"quota_bytes":     usage.QuotaBytes,
+		"object_count":    usage.ObjectCount,
+		"ttl_days":        usage.TTLDays,
 	})
 }
 
@@ -388,7 +388,7 @@ func (h *httpHandler) handleDeleteOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeJSON(w, map[string]any{"deleted": true})
+	h.writeJSON(w, map[string]any{fieldDeleted: true})
 }
 
 func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
@@ -418,7 +418,7 @@ func (h *httpHandler) handleDeleteAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeJSON(w, map[string]any{"deleted": deleted})
+	h.writeJSON(w, map[string]any{fieldDeleted: deleted})
 }
 
 func (h *httpHandler) handleDeleteConsumed(w http.ResponseWriter, r *http.Request) {
@@ -460,7 +460,7 @@ func (h *httpHandler) handleDeleteConsumed(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	h.writeJSON(w, map[string]any{"deleted": deleted})
+	h.writeJSON(w, map[string]any{fieldDeleted: deleted})
 }
 
 func (h *httpHandler) handleDeleteAllPending(w http.ResponseWriter, r *http.Request) {
@@ -490,7 +490,7 @@ func (h *httpHandler) handleDeleteAllPending(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.writeJSON(w, map[string]any{"deleted": deleted})
+	h.writeJSON(w, map[string]any{fieldDeleted: deleted})
 }
 
 func (h *httpHandler) handleReorder(w http.ResponseWriter, r *http.Request) {
@@ -546,7 +546,7 @@ func (h *httpHandler) writeErrorWithLogger(w http.ResponseWriter, logger logSDK.
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": message}) //nolint:errchkjson // best-effort error response
+	_ = json.NewEncoder(w).Encode(map[string]any{fieldError: message}) //nolint:errchkjson // best-effort error response
 }
 
 func (h *httpHandler) writeJSON(w http.ResponseWriter, payload any) {
@@ -559,7 +559,8 @@ func (h *httpHandler) writeJSON(w http.ResponseWriter, payload any) {
 // logFromCtx extracts a context-aware logger from the context.
 // Falls back to the handler's logger or a shared logger if context logger is unavailable.
 func (h *httpHandler) logFromCtx(ctx context.Context) logSDK.Logger {
-	if logger := gmw.GetLogger(ctx); logger != nil {
+	if ctx != nil {
+		logger := gmw.GetLogger(ctx)
 		return logger.Named("user_requests_http")
 	}
 	if h != nil && h.logger != nil {
@@ -578,14 +579,14 @@ func serializeRequests(input []Request) []map[string]any {
 
 func serializeRequest(req Request) map[string]any {
 	payload := map[string]any{
-		"id":            req.ID.String(),
-		"content":       req.Content,
-		"status":        req.Status,
-		"task_id":       req.TaskID,
-		"created_at":    req.CreatedAt,
-		"updated_at":    req.UpdatedAt,
-		"consumed_at":   req.ConsumedAt,
-		"user_identity": req.UserIdentity,
+		"id":              req.ID.String(),
+		"content":         req.Content,
+		"status":          req.Status,
+		"task_id":         req.TaskID,
+		"created_at":      req.CreatedAt,
+		"updated_at":      req.UpdatedAt,
+		"consumed_at":     req.ConsumedAt,
+		fieldUserIdentity: req.UserIdentity,
 	}
 	return payload
 }

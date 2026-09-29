@@ -11,7 +11,7 @@ import (
 func TestAttachmentErrorIndex(t *testing.T) {
 	for _, tc := range []struct {
 		message string
-		want int
+		want    int
 	}{
 		{"attachment index 0: decode failed", 0},
 		{"upload: attachment index 12: decode failed", 12},

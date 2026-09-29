@@ -33,7 +33,7 @@ type FileChunk struct {
 
 // TableName returns the database table name.
 func (FileChunk) TableName() string {
-	return "mcp_file_chunks"
+	return tableMcpFileChunks
 }
 
 // FileChunkEmbedding stores vector embeddings for a chunk.
@@ -90,5 +90,5 @@ type FileIndexJob struct {
 
 // TableName returns the database table name.
 func (FileIndexJob) TableName() string {
-	return "mcp_file_index_jobs"
+	return tableMcpFileIndexJobs
 }

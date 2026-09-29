@@ -63,7 +63,7 @@ func parsePluginLine(line string, out *Scorecard) {
 	}
 	if len(parts) == 2 {
 		runID := strings.TrimSpace(parts[1])
-		if runID == "n/a" {
+		if runID == metricUnavailable {
 			return
 		}
 		bits := strings.SplitN(runID, ":", 2)
@@ -90,10 +90,10 @@ func splitGoldenLine(line string) (string, string, bool) {
 // runs of whitespace. The template aligns columns with spaces, never tabs.
 func splitKeyValue(line string) (string, string) {
 	known := []string{
-		"recall@10", "ndcg@10 (long-doc)", "ndcg@10", "mrr", "hit@5",
-		"faithfulness", "context_recall", "context_precision",
-		"answer_correctness", "answer_relevancy", "context_entities_recall",
-		"financebench-150", "longmemeval_s (overall + 7 cats)", "beam-1m (200, 6 cats)",
+		metricRecallAt10, "ndcg@10 (long-doc)", metricNDCGAt10, evalMrr, metricHitAt5,
+		evalFaithfulness, evalContextRecall, evalContextPrecision,
+		evalAnswerCorrectness, evalAnswerRelevancy, evalContextEntitiesRecall,
+		evalFinancebench150, "longmemeval_s (overall + 7 cats)", "beam-1m (200, 6 cats)",
 		"file_search p50/p95/p99 (ms)", "file_write→searchable p95 (ms)",
 		"tokens_in/out per search (mean,p95)", "$ per 1K searches @ <model>",
 		"index throughput (pages/min/worker)", "cold-p95 - warm-p95 (ms)",
@@ -127,7 +127,7 @@ func assignCell(section, key, value string, out *Scorecard) error {
 }
 
 func parseFloatCell(value string) (float64, bool) {
-	if value == "" || value == "n/a" {
+	if value == "" || value == metricUnavailable {
 		return 0, false
 	}
 	f, err := strconv.ParseFloat(value, 64)
@@ -140,18 +140,18 @@ func parseFloatCell(value string) (float64, bool) {
 func assignRetrieval(key, value string, out *Scorecard) error {
 	f, ok := parseFloatCell(value)
 	if !ok {
-		out.RetrievalStatus = "skipped"
+		out.RetrievalStatus = evalSkipped
 		return nil
 	}
 	out.Retrieval.Overall.NumQueries = 1
 	switch key {
-	case "recall@10":
+	case metricRecallAt10:
 		out.Retrieval.Overall.Recall10 = f
-	case "ndcg@10":
+	case metricNDCGAt10:
 		out.Retrieval.Overall.NDCG10 = f
-	case "mrr":
+	case evalMrr:
 		out.Retrieval.Overall.MRR = f
-	case "hit@5":
+	case metricHitAt5:
 		out.Retrieval.Overall.Hit5 = f
 	case "ndcg@10 (long-doc)":
 		out.Retrieval.LongDoc.NDCG10 = f
@@ -162,22 +162,22 @@ func assignRetrieval(key, value string, out *Scorecard) error {
 
 func assignRagas(key, value string, out *Scorecard) error {
 	f, ok := parseFloatCell(value)
-	stats := RAGASMetricStats{Status: "skipped"}
+	stats := RAGASMetricStats{Status: evalSkipped}
 	if ok {
 		stats = RAGASMetricStats{N: 1, Mean: f, P95: f, Status: "ok"}
 	}
 	switch key {
-	case "faithfulness":
+	case evalFaithfulness:
 		out.RAGAS.Faithfulness = stats
-	case "context_recall":
+	case evalContextRecall:
 		out.RAGAS.ContextRecall = stats
-	case "context_precision":
+	case evalContextPrecision:
 		out.RAGAS.ContextPrecision = stats
-	case "answer_correctness":
+	case evalAnswerCorrectness:
 		out.RAGAS.AnswerCorrectness = stats
-	case "answer_relevancy":
+	case evalAnswerRelevancy:
 		out.RAGAS.AnswerRelevancy = stats
-	case "context_entities_recall":
+	case evalContextEntitiesRecall:
 		out.RAGAS.ContextEntitiesRecall = stats
 	}
 	return nil
@@ -189,8 +189,8 @@ func assignPublic(key, value string, out *Scorecard) error {
 		return nil
 	}
 	switch key {
-	case "financebench-150":
-		out.Public["financebench-150"] = f
+	case evalFinancebench150:
+		out.Public[evalFinancebench150] = f
 	case "longmemeval_s (overall + 7 cats)":
 		out.Public["longmemeval_s"] = f
 	case "beam-1m (200, 6 cats)":
@@ -200,8 +200,8 @@ func assignPublic(key, value string, out *Scorecard) error {
 }
 
 func assignOps(key, value string, out *Scorecard) error {
-	if value == "n/a" {
-		out.OpsStatus = "skipped"
+	if value == metricUnavailable {
+		out.OpsStatus = evalSkipped
 		return nil
 	}
 	switch key {
@@ -229,8 +229,8 @@ func assignAdversarial(key, value string, out *Scorecard) error {
 			out.Adversarial.PromptInjectionTotal = denom
 		}
 	case "cross_tenant_hits":
-		if value == "n/a" {
-			out.Adversarial.Status = "skipped"
+		if value == metricUnavailable {
+			out.Adversarial.Status = evalSkipped
 			return nil
 		}
 		v, _ := strconv.Atoi(value)
@@ -242,7 +242,7 @@ func assignAdversarial(key, value string, out *Scorecard) error {
 			out.Adversarial.SupersessionTotal = denom
 		}
 	case "gdpr_delete_recall_ms_p95":
-		if value == "n/a" {
+		if value == metricUnavailable {
 			return nil
 		}
 		v, _ := strconv.ParseInt(value, 10, 64)
@@ -256,7 +256,7 @@ func assignAdversarial(key, value string, out *Scorecard) error {
 }
 
 func parseFracCell(value string) (int, int, bool) {
-	if value == "" || value == "n/a" {
+	if value == "" || value == metricUnavailable {
 		return 0, 0, false
 	}
 	bits := strings.SplitN(value, "/", 2)

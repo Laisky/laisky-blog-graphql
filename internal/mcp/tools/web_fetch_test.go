@@ -25,7 +25,7 @@ func TestWebFetchHandleMissingAPIKey(t *testing.T) {
 	req := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Arguments: map[string]any{
-				"url": "https://example.com",
+				"url": "https://1.1.1.1",
 			},
 		},
 	}
@@ -60,7 +60,7 @@ func TestWebFetchHandleBillingError(t *testing.T) {
 	req := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Arguments: map[string]any{
-				"url": "https://example.com",
+				"url": "https://1.1.1.1",
 			},
 		},
 	}
@@ -88,7 +88,7 @@ func TestWebFetchHandleSuccess(t *testing.T) {
 		},
 		func(ctx context.Context, store *rlibs.DB, url string, apiKey string, outputMarkdown bool) ([]byte, error) {
 			fetchCalls++
-			require.Equal(t, "https://example.com", url)
+			require.Equal(t, "https://1.1.1.1", url)
 			require.Equal(t, "token", apiKey)
 			require.True(t, outputMarkdown)
 			return []byte("<html>ok</html>"), nil
@@ -98,7 +98,7 @@ func TestWebFetchHandleSuccess(t *testing.T) {
 	req := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Arguments: map[string]any{
-				"url": "https://example.com",
+				"url": "https://1.1.1.1",
 			},
 		},
 	}
@@ -135,7 +135,7 @@ func TestWebFetchHandleOutputMarkdown(t *testing.T) {
 	req := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Arguments: map[string]any{
-				"url":             "https://example.com",
+				"url":             "https://1.1.1.1",
 				"output_markdown": true,
 			},
 		},
@@ -182,7 +182,7 @@ func TestWebFetchHandleOutputMarkdownExplicitFalse(t *testing.T) {
 	req := mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Arguments: map[string]any{
-				"url":             "https://example.com",
+				"url":             "https://1.1.1.1",
 				"output_markdown": false,
 			},
 		},
@@ -227,7 +227,7 @@ func TestResolveOutputMarkdownArg(t *testing.T) {
 		expectErr bool
 	}{
 		{name: "missing arguments defaults true", args: map[string]any{}, expected: true},
-		{name: "missing field defaults true", args: map[string]any{"url": "https://example.com"}, expected: true},
+		{name: "missing field defaults true", args: map[string]any{"url": "https://1.1.1.1"}, expected: true},
 		{name: "explicit null defaults true", args: map[string]any{"output_markdown": nil}, expected: true},
 		{name: "bool false respected", args: map[string]any{"output_markdown": false}, expected: false},
 		{name: "bool true respected", args: map[string]any{"output_markdown": true}, expected: true},
@@ -250,6 +250,8 @@ func TestResolveOutputMarkdownArg(t *testing.T) {
 	}
 }
 
+// TestValidateFetchURL uses public literal addresses without any external DNS.
+// Resolver failures, mixed/private DNS answers and cancellation are covered in toolpolicy.
 func TestValidateFetchURL(t *testing.T) {
 	t.Parallel()
 
@@ -258,8 +260,8 @@ func TestValidateFetchURL(t *testing.T) {
 		url     string
 		wantErr bool
 	}{
-		{name: "valid https", url: "https://example.com", wantErr: false},
-		{name: "valid http", url: "http://example.com/page", wantErr: false},
+		{name: "valid https", url: "https://1.1.1.1", wantErr: false},
+		{name: "valid http", url: "http://1.1.1.1/page", wantErr: false},
 		{name: "blocked file scheme", url: "file:///etc/passwd", wantErr: true},
 		{name: "blocked ftp scheme", url: "ftp://example.com/file", wantErr: true},
 		{name: "blocked gopher scheme", url: "gopher://evil.com", wantErr: true},
@@ -274,7 +276,6 @@ func TestValidateFetchURL(t *testing.T) {
 		{name: "unspecified 0.0.0.0", url: "http://0.0.0.0/", wantErr: true},
 		{name: "ipv6 loopback", url: "http://[::1]/admin", wantErr: true},
 		{name: "no hostname", url: "http:///path", wantErr: true},
-		{name: "unresolvable host", url: "http://this-host-does-not-exist-12345.invalid/", wantErr: true},
 	}
 
 	for _, tc := range tests {

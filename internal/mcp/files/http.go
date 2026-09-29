@@ -118,7 +118,7 @@ func (h *filesHTTPHandler) handleReadVersion(w http.ResponseWriter, r *http.Requ
 		h.writeFileError(w, logger, err, "read file version")
 		return
 	}
-	encoding, content := "utf-8", string(version.Content)
+	encoding, content := encodingUTF8, string(version.Content)
 	if !utf8.Valid(version.Content) {
 		encoding, content = "base64", base64.StdEncoding.EncodeToString(version.Content)
 	}
@@ -250,6 +250,8 @@ func (h *filesHTTPHandler) writeFileError(w http.ResponseWriter, logger logSDK.L
 			status = http.StatusInsufficientStorage
 		case ErrCodeRateLimited:
 			status = http.StatusTooManyRequests
+		case ErrCodeSearchBackend:
+			status = http.StatusInternalServerError
 		case ErrCodeResourceBusy:
 			status = http.StatusConflict
 		}
@@ -282,7 +284,8 @@ func (h *filesHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
 
 // logFromCtx returns a context-aware logger for the handler.
 func (h *filesHTTPHandler) logFromCtx(ctx context.Context) logSDK.Logger {
-	if logger := gmw.GetLogger(ctx); logger != nil {
+	if ctx != nil {
+		logger := gmw.GetLogger(ctx)
 		return logger.Named("files_http")
 	}
 	if h != nil && h.logger != nil {

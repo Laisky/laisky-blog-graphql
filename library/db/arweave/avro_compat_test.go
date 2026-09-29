@@ -50,3 +50,17 @@ func TestLegacyAvroRejectsMalformedLengths(t *testing.T) {
 	_, err := utils.DeserializeTags1([]byte{2, 2})
 	require.Error(t, err, "a string length without string data must be rejected")
 }
+
+// TestLegacyAvroRejectsTrailingData protects the exact single-record boundary.
+func TestLegacyAvroRejectsTrailingData(t *testing.T) {
+	tags := []types.Tag{{Name: "a", Value: "b"}}
+	encoded, err := utils.SerializeTags1(tags)
+	require.NoError(t, err)
+	for _, suffix := range [][]byte{{0}, {1, 2}, encoded} {
+		_, err := utils.DeserializeTags1(append(append([]byte{}, encoded...), suffix...))
+		require.Error(t, err)
+	}
+	decoded, err := utils.DeserializeTags1(nil)
+	require.NoError(t, err)
+	require.Empty(t, decoded)
+}

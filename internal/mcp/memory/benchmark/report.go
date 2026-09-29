@@ -88,7 +88,8 @@ func WriteScorecard(builder *bytes.Buffer, report *Report, comparison *Compariso
 	fmt.Fprintf(builder, "- **Backend:** `%s`\n", markdownEscape(report.Run.Backend))
 	fmt.Fprintf(builder, "- **Dataset:** `%s` (`%s`, SHA-256 `%s`)\n", markdownEscape(report.Dataset.Name), markdownEscape(report.Dataset.Version), markdownEscape(report.Dataset.SHA256))
 	fmt.Fprintf(builder, "- **Plugin:** `%s`\n", markdownEscape(report.Run.Plugin))
-	fmt.Fprintf(builder, "- **Configuration:** top-k `%d`, min-score `%.4f`, concurrency `%d`, warm-up `%d`, repetitions `%d`, seed `%d`\n", report.Run.TopK, report.Run.MinScore, report.Run.Concurrency, report.Run.Warmup, report.Run.Repetitions, report.Run.Seed)
+	fmt.Fprintf(builder, "- **Configuration:** top-k `%d`, min-score `%.4f`, concurrency `%d`, warm-up `%d`, repetitions `%d`, seed `%d`\n",
+		report.Run.TopK, report.Run.MinScore, report.Run.Concurrency, report.Run.Warmup, report.Run.Repetitions, report.Run.Seed)
 	fmt.Fprintf(builder, "- **Config SHA-256:** `%s`\n", markdownEscape(report.Run.ConfigSHA256))
 	if report.Run.ReaderModel != "" {
 		fmt.Fprintf(builder, "- **Fixed reader:** `%s` with prompt `%s`\n", markdownEscape(report.Run.ReaderModel), markdownEscape(report.Run.ReaderPrompt))

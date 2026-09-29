@@ -217,7 +217,7 @@ func parseFlags() cliConfig {
 	flag.IntVar(&cfg.warmup, "warmup", 1, "Untimed warm-up searches per query.")
 	flag.IntVar(&cfg.repetitions, "repetitions", 3, "Timed search repetitions per query.")
 	flag.Int64Var(&cfg.seed, "seed", 42, "Deterministic seed recorded in metadata and used by statistical tests.")
-	flag.DurationVar(&cfg.indexTimeout, "index-timeout", 30*time.Second, "Maximum wait for labelled evidence to become searchable; zero disables polling.")
+	flag.DurationVar(&cfg.indexTimeout, "index-timeout", 30*time.Second, "Maximum wait for labeled evidence to become searchable; zero disables polling.")
 	flag.DurationVar(&cfg.pollInterval, "poll-interval", 500*time.Millisecond, "Polling interval while waiting for indexing.")
 	flag.DurationVar(&cfg.runTimeout, "run-timeout", 30*time.Minute, "Overall run deadline.")
 	flag.BoolVar(&cfg.cleanup, "cleanup", true, "Delete benchmark documents after the run.")

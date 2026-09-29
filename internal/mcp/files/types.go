@@ -101,7 +101,7 @@ type ListResult struct {
 
 // SearchResult returns the file_search outcome.
 type SearchResult struct {
-	Chunks []ChunkEntry
+	Chunks []ChunkEntry `json:"Chunks"`
 }
 
 // WriteOpts modulates non-default Write behavior. Zero value retains blind writes.

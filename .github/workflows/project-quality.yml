@@ -29,7 +29,7 @@ jobs:
           mkdir -p /tmp/project-quality /tmp/quality-tools
           go version > /tmp/project-quality/versions.txt
           go install golang.org/x/tools/cmd/goimports@v0.50.0
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           cd /tmp/quality-tools
           curl --retry 3 -fsSLO https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz
           curl --retry 3 -fsSLO https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-checksums.txt
@@ -42,29 +42,29 @@ jobs:
           git archive HEAD | gzip > /tmp/project-quality/source.tar.gz
           golangci-lint version >> /tmp/project-quality/versions.txt
           govulncheck -version >> /tmp/project-quality/versions.txt
-      - name: Full repository lint
+      - name: Structured uncapped diagnostics on exact checkout
+        run: |
+          golangci-lint run -c .golangci.lint.yml --timeout 10m \
+            --max-issues-per-linter=0 --max-same-issues=0 \
+            --output.json.path=/tmp/project-quality/lint.json \
+            > /tmp/project-quality/lint-structured.log 2>&1
+      - name: Reachable Go vulnerability scan on exact checkout
+        if: ${{ !cancelled() }}
+        run: govulncheck -show verbose ./... > /tmp/project-quality/vulnerabilities-symbol.log 2>&1
+      - name: Imported-package vulnerability scan on exact checkout
+        if: ${{ !cancelled() }}
+        run: govulncheck -scan package -show verbose ./... > /tmp/project-quality/vulnerabilities-package.log 2>&1
+      - name: Full repository lint without rewriting source
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           make lint 2>&1 | tee /tmp/project-quality/lint.log
-      - name: Structured uncapped diagnostics
-        if: ${{ !cancelled() }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path('.golangci.lint.yml').read_text()
-          text = text.replace('  formats:\n', '  formats:\n    json:\n      path: /tmp/project-quality/lint.json\n', 1)
-          Path('/tmp/project-quality/lint-config.yml').write_text(text)
-          PY
-          golangci-lint run -c /tmp/project-quality/lint-config.yml > /tmp/project-quality/lint-structured.log 2>&1
-      - name: Reachable Go vulnerability scan
-        if: ${{ !cancelled() }}
-        run: govulncheck -show verbose ./... > /tmp/project-quality/vulnerabilities-symbol.log 2>&1
-      - name: Imported-package vulnerability scan
-        if: ${{ !cancelled() }}
-        run: govulncheck -scan package -show verbose ./... > /tmp/project-quality/vulnerabilities-package.log 2>&1
       - name: Capture any unintended source mutation
         if: always()
-        run: git diff > /tmp/project-quality/format.patch
+        run: |
+          git diff > /tmp/project-quality/format.patch
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

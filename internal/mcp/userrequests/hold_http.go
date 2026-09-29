@@ -61,10 +61,10 @@ func (h *holdHTTPHandler) handleGetHold(w http.ResponseWriter, r *http.Request) 
 
 	state := h.holdManager.GetHoldState(auth.APIKeyHash, taskID)
 	h.writeJSON(w, map[string]any{
-		"active":         state.Active,
-		"waiting":        state.Waiting,
-		"expires_at":     nullableTime(state.ExpiresAt),
-		"remaining_secs": remainingSecs(state),
+		fieldActive:        state.Active,
+		fieldWaiting:       state.Waiting,
+		fieldExpiresAt:     nullableTime(state.ExpiresAt),
+		fieldRemainingSecs: remainingSecs(state),
 	})
 }
 
@@ -92,10 +92,10 @@ func (h *holdHTTPHandler) handleSetHold(w http.ResponseWriter, r *http.Request) 
 	)
 
 	h.writeJSON(w, map[string]any{
-		"active":         state.Active,
-		"waiting":        state.Waiting,
-		"expires_at":     nullableTime(state.ExpiresAt),
-		"remaining_secs": remainingSecs(state),
+		fieldActive:        state.Active,
+		fieldWaiting:       state.Waiting,
+		fieldExpiresAt:     nullableTime(state.ExpiresAt),
+		fieldRemainingSecs: remainingSecs(state),
 	})
 }
 
@@ -120,10 +120,10 @@ func (h *holdHTTPHandler) handleReleaseHold(w http.ResponseWriter, r *http.Reque
 	logger.Info("hold released via HTTP", zap.String("user", auth.UserIdentity), zap.String("task_id", taskID))
 
 	h.writeJSON(w, map[string]any{
-		"active":         false,
-		"waiting":        false,
-		"expires_at":     nil,
-		"remaining_secs": 0,
+		fieldActive:        false,
+		fieldWaiting:       false,
+		fieldExpiresAt:     nil,
+		fieldRemainingSecs: 0,
 	})
 }
 
@@ -136,7 +136,7 @@ func (h *holdHTTPHandler) writeErrorWithLogger(w http.ResponseWriter, logger log
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": message}) //nolint:errchkjson // best-effort error response
+	_ = json.NewEncoder(w).Encode(map[string]any{fieldError: message}) //nolint:errchkjson // best-effort error response
 }
 
 func (h *holdHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
@@ -149,7 +149,8 @@ func (h *holdHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
 // logFromCtx extracts a context-aware logger from the context.
 // Falls back to the handler's logger or a shared logger if context logger is unavailable.
 func (h *holdHTTPHandler) logFromCtx(ctx context.Context) logSDK.Logger {
-	if logger := gmw.GetLogger(ctx); logger != nil {
+	if ctx != nil {
+		logger := gmw.GetLogger(ctx)
 		return logger.Named("hold_http")
 	}
 	if h != nil && h.logger != nil {
