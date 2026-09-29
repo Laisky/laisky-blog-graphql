@@ -1,0 +1,59 @@
+name: MCP dependency refresh evidence
+
+on:
+  push:
+    branches: ['codex/mcp-sdk-20260929']
+    paths: ['.github/workflows/mcp-dependency-refresh.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Refresh compatible Go module versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mcp-upgrade-evidence
+          go version | tee /tmp/mcp-upgrade-evidence/go-version.txt
+          go list -m all > /tmp/mcp-upgrade-evidence/modules-before.txt
+          go get -u ./... 2>&1 | tee /tmp/mcp-upgrade-evidence/go-get.log
+          go get github.com/mark3labs/mcp-go@v1.1.1
+          go mod tidy
+          go mod verify
+          go list -m all > /tmp/mcp-upgrade-evidence/modules-after.txt
+          git diff -- go.mod go.sum > /tmp/mcp-upgrade-evidence/dependencies.patch
+      - name: Capture updated sources and module files
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p /tmp/mcp-upgrade-evidence
+          tar --exclude=.git -czf /tmp/mcp-upgrade-evidence/source.tar.gz .
+          cp go.mod go.sum /tmp/mcp-upgrade-evidence/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcp-dependency-refresh
+          path: /tmp/mcp-upgrade-evidence/
+          retention-days: 7
+      - name: Run Go behavior and race tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -race -cover -timeout 5m ./... 2>&1 | tee /tmp/mcp-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcp-refresh-tests
+          path: /tmp/mcp-tests.log
+          retention-days: 7
