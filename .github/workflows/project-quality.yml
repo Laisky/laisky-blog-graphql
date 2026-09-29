@@ -1,0 +1,114 @@
+name: project-quality
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Install quality tools
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/project-quality /tmp/quality-tools
+          go version > /tmp/project-quality/versions.txt
+          go install golang.org/x/tools/cmd/goimports@v0.50.0
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          cd /tmp/quality-tools
+          curl --retry 3 -fsSLO https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz
+          curl --retry 3 -fsSLO https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-checksums.txt
+          sha256sum --check --ignore-missing golangci-lint-2.14.0-checksums.txt
+          tar -xzf golangci-lint-2.14.0-linux-amd64.tar.gz
+          echo /tmp/quality-tools/golangci-lint-2.14.0-linux-amd64 >> "$GITHUB_PATH"
+      - name: Snapshot exact reviewed source
+        run: |
+          git rev-parse HEAD > /tmp/project-quality/commit.txt
+          git archive HEAD | gzip > /tmp/project-quality/source.tar.gz
+          golangci-lint version >> /tmp/project-quality/versions.txt
+          govulncheck -version >> /tmp/project-quality/versions.txt
+      - name: Full repository lint
+        run: |
+          set -euo pipefail
+          make lint 2>&1 | tee /tmp/project-quality/lint.log
+      - name: Structured uncapped diagnostics
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.golangci.lint.yml').read_text()
+          text = text.replace('  formats:\n', '  formats:\n    json:\n      path: /tmp/project-quality/lint.json\n', 1)
+          Path('/tmp/project-quality/lint-config.yml').write_text(text)
+          PY
+          golangci-lint run -c /tmp/project-quality/lint-config.yml > /tmp/project-quality/lint-structured.log 2>&1
+      - name: Reachable Go vulnerability scan
+        if: ${{ !cancelled() }}
+        run: govulncheck -show verbose ./... > /tmp/project-quality/vulnerabilities-symbol.log 2>&1
+      - name: Imported-package vulnerability scan
+        if: ${{ !cancelled() }}
+        run: govulncheck -scan package -show verbose ./... > /tmp/project-quality/vulnerabilities-package.log 2>&1
+      - name: Capture any unintended source mutation
+        if: always()
+        run: git diff > /tmp/project-quality/format.patch
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: project-quality-go
+          path: /tmp/project-quality/
+          retention-days: 7
+          if-no-files-found: error
+
+  frontend-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Frontend lint
+        if: ${{ !cancelled() }}
+        run: pnpm lint
+      - name: Frontend behavior tests
+        if: ${{ !cancelled() }}
+        run: pnpm test
+      - name: Production build
+        if: ${{ !cancelled() }}
+        run: pnpm build
+      - name: Audit all dependency severities
+        if: ${{ !cancelled() }}
+        run: pnpm audit --json > /tmp/project-quality-frontend-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: project-quality-frontend
+          path: /tmp/project-quality-frontend-audit.json
+          retention-days: 7
+          if-no-files-found: error
