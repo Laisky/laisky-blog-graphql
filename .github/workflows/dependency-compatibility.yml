@@ -39,7 +39,10 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
       - name: MCP wire protocol acceptance
-        run: go test -race -count=1 -v ./internal/mcp -run 'TestMCPStableSDK|TestServerSupportsMCPProtocol|TestServerKeepsLegacyMCP'
+        run: go test -race -count=1 -timeout 5m -v ./internal/mcp -run 'TestMCPStableSDK|TestServerSupportsMCPProtocol|TestServerKeepsLegacyMCP'
+      - name: MCP session ownership regression (20 race runs)
+        if: ${{ !cancelled() }}
+        run: go test -race -count=20 -timeout 5m ./internal/mcp -run TestMCPReview
       - name: Full Go behavior and race tests
         if: ${{ !cancelled() }}
         run: go test -race -cover -timeout 5m ./...

@@ -8,16 +8,20 @@ The latest finalized MCP protocol revision is `2026-07-28`. This repository
 already implemented that wire revision with `mcp-go v1.0.0-beta.1`; the September
 upgrade moves to the stable `v1.1.1` release, published on 2026-09-23. It is a
 stabilization and dependency-compatibility update, not a new protocol rollout.
+The PR review also reproduced and repaired a legacy session ownership boundary;
+that application fix is distinct from the dependency version change.
 
 The same Streamable HTTP endpoint serves modern and legacy clients:
 
 - Modern requests carry protocol/client metadata and `Mcp-Method` / `Mcp-Name`
   routing headers. They use `server/discover` without an initialize handshake
   or transport session ID.
-- Tool catalogs remain request-authorized. Modern results preserve `resultType`,
-  `ttlMs` and private cache scope, including after user preference filtering.
+- Tool catalogs use only the current request's credentials. Modern results
+  preserve `resultType`, `ttlMs` and private cache scope, including after user
+  preference filtering. A legacy session ID never supplies an identity.
 - Legacy clients negotiate with `initialize`, send `notifications/initialized`,
-  and may use transport session IDs. The acceptance matrix includes
+  and use the returned transport session ID. Authenticated sessions are bound
+  to the same API key on every request. The acceptance matrix includes
   `2025-03-26`, `2025-06-18` and `2025-11-25`.
 
 ## Implementation decision
@@ -29,8 +33,25 @@ transport lifecycle handling, task error handling and schema property order.
 Migrating the application to a different SDK is unnecessary for this update.
 
 Do not add `WithStateLess(true)` globally. The SDK selects modern stateless
-behavior per request while preserving legacy session compatibility. Keep
-identity normalization and tool-preference filtering in the request path.
+behavior per request while preserving legacy sessions. Keep identity
+normalization and tool-preference filtering in the request path, with no
+session-to-credential cache or missing-credential fallback.
+
+### Legacy client rollout
+
+After rollout, authenticated legacy clients must initialize a new session and
+send the same API key on POST requests, notifications, GET and DELETE. Previously
+issued unsigned IDs are intentionally rejected for authenticated requests.
+Changing credentials, including upgrading an anonymous connection to an
+authenticated one, requires reinitialization. Do not automatically replay a
+state-changing tool call while recovering a session.
+
+Session proofs bind a random nonce to the request credential with domain-separated
+HMAC-SHA256. They do not replace tool-level authorization or billing, and DELETE
+cleans up transport state rather than maintaining a durable revocation list.
+Modern requests remain stateless; anonymous public discovery remains available.
+See [session ownership](pr51_session_isolation_2026_09_29.md) for the complete
+security contract, compatibility boundary and regression matrix.
 
 SDK support is not an application feature declaration: this change does not
 add persistent task storage, an OAuth authorization server, sampling,
@@ -42,10 +63,10 @@ refresh.
 
 ## Acceptance matrix
 
-`internal/mcp/protocol_2026_07_28_test.go` and
-`internal/mcp/protocol_sdk_upgrade_test.go` exercise the production HTTP handler.
-They use raw JSON-RPC requests rather than relying on an SDK client to make
-both sides agree on the same accidental behavior.
+`internal/mcp/protocol_2026_07_28_test.go`,
+`internal/mcp/protocol_sdk_upgrade_test.go` and the `TestMCPReview` suites exercise
+the production HTTP handler. They use raw JSON-RPC requests rather than relying
+on an SDK client to make both sides agree on the same accidental behavior.
 
 | Contract | Evidence |
 | --- | --- |
@@ -56,11 +77,14 @@ both sides agree on the same accidental behavior.
 | Unsupported version | `TestMCPStableSDKRejectsUnknownVersion`; asserts the wire code `-32022` |
 | Alternating caller identities | `TestMCPStableSDKCatalogIsolation`; A/B/A/B must not reuse the other caller's preferences |
 | Legacy initialize, notification and tools/list | `TestMCPStableSDKLegacyRoundTrips` for three protocol revisions |
+| Legacy session ownership, tampering, canonical credentials and replica independence | `TestMCPReview` suites; 20 race-enabled repetitions in PR CI |
+| Modern requests never inherit legacy identity; modern GET/DELETE remain unsupported | `TestMCPReviewModernCatalogNeverInheritsSessionIdentity` and `TestMCPReviewModernHTTPMethodsStayUnsupported` |
 
 Run the full regression suite, not only the protocol subset:
 
 ```sh
 go mod verify
+go test -race -count=20 -timeout 5m ./internal/mcp -run TestMCPReview
 go test -race -cover -timeout 5m ./...
 go build ./...
 go vet ./...
