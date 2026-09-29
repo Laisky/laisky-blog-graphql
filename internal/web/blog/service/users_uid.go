@@ -28,7 +28,7 @@ func (s *Blog) LoadUserByUID(ctx context.Context, uid string) (user *model.User,
 	}
 
 	user = &model.User{}
-	result := s.dao.GetUsersCol().FindOne(ctx, bson.D{{Key: fieldUid, Value: uid}})
+	result := s.dao.GetUsersCol().FindOne(ctx, userUIDFilter{UID: uid})
 	if err = result.Decode(user); err != nil {
 		return nil, errors.Wrap(err, "decode user by uid")
 	}
@@ -84,7 +84,7 @@ func (s *Blog) EnsureUserUID(ctx context.Context, user *model.User) (*model.User
 	}
 
 	reloaded := &model.User{}
-	if err = s.dao.GetUsersCol().FindOne(ctx, bson.M{fieldDocumentID: user.ID}).Decode(reloaded); err != nil {
+	if err = s.dao.GetUsersCol().FindOne(ctx, documentIDFilter{ID: user.ID}).Decode(reloaded); err != nil {
 		return nil, errors.Wrapf(err, "reload user %s after uid race", user.ID.Hex())
 	}
 	if strings.TrimSpace(reloaded.UID) == "" {

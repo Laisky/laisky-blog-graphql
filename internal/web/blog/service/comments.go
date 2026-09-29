@@ -100,7 +100,7 @@ func (s *Blog) BlogComments(ctx context.Context,
 
 	// find post
 	post := new(model.Post)
-	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{fieldPostName: postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, postNameFilter{Name: postName}).Decode(post)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check post existence")
 	}
@@ -167,7 +167,7 @@ func (s *Blog) BlogCommentCount(ctx context.Context, postName string) (int, erro
 
 	// get post
 	post := new(model.Post)
-	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{fieldPostName: postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, postNameFilter{Name: postName}).Decode(post)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to check post existence")
 	}
@@ -211,7 +211,7 @@ func (s *Blog) BlogCreateComment(ctx context.Context,
 
 	// Verify that post exists
 	post := new(model.Post)
-	err = s.dao.GetPostsCol().FindOne(ctx, bson.M{fieldPostName: postName}).Decode(post)
+	err = s.dao.GetPostsCol().FindOne(ctx, postNameFilter{Name: postName}).Decode(post)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check post existence")
 	}

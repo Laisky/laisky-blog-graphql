@@ -335,7 +335,7 @@ func (s *Blog) UserRegister(ctx context.Context,
 
 	// check duplicate
 	existedUser := new(model.User)
-	err = col.FindOne(ctx, bson.M{fieldAccount: account}).Decode(existedUser)
+	err = col.FindOne(ctx, userAccountFilter{Account: account}).Decode(existedUser)
 	if err != nil {
 		if !errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.Wrapf(err, "find user %q", account)
@@ -370,7 +370,7 @@ func (s *Blog) UserActive(ctx context.Context, account, activeToken string) (u *
 	}
 
 	user := new(model.User)
-	if err = col.FindOne(ctx, bson.M{fieldAccount: account}).Decode(user); err != nil {
+	if err = col.FindOne(ctx, userAccountFilter{Account: account}).Decode(user); err != nil {
 		return nil, errors.Wrapf(err, "find user %q", account)
 	}
 

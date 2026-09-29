@@ -468,7 +468,7 @@ func (s *Blog) LoadUserByID(ctx context.Context, uid primitive.ObjectID) (user *
 	}
 
 	user = &model.User{}
-	result := s.dao.GetUsersCol().FindOne(ctx, bson.D{{Key: fieldDocumentID, Value: uid}})
+	result := s.dao.GetUsersCol().FindOne(ctx, documentIDFilter{ID: uid})
 	if err = result.Decode(user); err != nil {
 		return nil, errors.Wrap(err, "decode user")
 	}
@@ -489,7 +489,7 @@ func (s *Blog) LoadCategoryByID(ctx context.Context, cateid primitive.ObjectID) 
 
 	cate = &model.Category{}
 	if err = s.dao.GetCategoriesCol().
-		FindOne(ctx, bson.D{{Key: fieldDocumentID, Value: cateid}}).
+		FindOne(ctx, documentIDFilter{ID: cateid}).
 		Decode(cate); err != nil {
 		return nil, errors.Wrapf(err, "get category by id %s", cateid.Hex())
 	}
@@ -555,7 +555,7 @@ func (s *Blog) IsNameExists(ctx context.Context, name string) (bool, error) {
 		return false, errors.New("post name is empty")
 	}
 
-	n, err := s.dao.GetPostsCol().CountDocuments(ctx, bson.D{{Key: fieldPostName, Value: name}})
+	n, err := s.dao.GetPostsCol().CountDocuments(ctx, postNameFilter{Name: name})
 	if err != nil {
 		s.logger.Error("try to count post_name got error", zap.Error(err))
 		return false, errors.Wrapf(err, "try to count post_name `%s` got error", name)
@@ -658,7 +658,7 @@ func (s *Blog) UpdatePostCategory(ctx context.Context, name, category string) (p
 	}
 
 	p = new(model.Post)
-	if err = s.dao.GetPostsCol().FindOne(ctx, bson.M{fieldPostName: name}).Decode(p); err != nil {
+	if err = s.dao.GetPostsCol().FindOne(ctx, postNameFilter{Name: name}).Decode(p); err != nil {
 		return nil, errors.Wrapf(err, "load post by name `%s`", name)
 	}
 
@@ -702,7 +702,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	if _, ok := supporttedTypes[typeArg]; !ok {
 		return nil, errors.Errorf("type `%v` not supportted", typeArg)
 	}
-	if err = s.dao.GetPostsCol().FindOne(ctx, bson.M{fieldPostName: name}).Decode(p); err != nil {
+	if err = s.dao.GetPostsCol().FindOne(ctx, postNameFilter{Name: name}).Decode(p); err != nil {
 		if mongoSDK.NotFound(err) {
 			return nil, errors.Wrap(err, "post not exists")
 		}

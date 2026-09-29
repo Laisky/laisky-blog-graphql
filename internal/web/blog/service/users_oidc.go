@@ -70,7 +70,7 @@ func (s *Blog) FindUserByAccount(ctx context.Context, account string) (*model.Us
 	}
 
 	user := new(model.User)
-	if err = s.dao.GetUsersCol().FindOne(ctx, bson.M{fieldAccount: account}).Decode(user); err != nil {
+	if err = s.dao.GetUsersCol().FindOne(ctx, userAccountFilter{Account: account}).Decode(user); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.WithStack(mongo.ErrNoDocuments)
 		}

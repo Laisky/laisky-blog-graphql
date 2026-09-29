@@ -63,7 +63,7 @@ func (s *Type) LoadThreadByTweetID(ctx context.Context, id string) (tweets []*mo
 	}
 	tweet := &model.Tweet{}
 	if err = s.tweetDao.GetTweetCol().
-		FindOne(ctx, bson.M{fieldIdStr: id}).
+		FindOne(ctx, tweetIDFilter{ID: id}).
 		Decode(tweet); err != nil {
 		return nil, errors.Wrapf(err, "load tweet `%s`", id)
 	}
@@ -140,7 +140,7 @@ func (s *Type) loadTweetsRecur(ctx context.Context,
 
 		tweet = &model.Tweet{}
 		if err = s.tweetDao.GetTweetCol().
-			FindOne(ctx, bson.M{fieldIdStr: nextID}).
+			FindOne(ctx, tweetIDFilter{ID: nextID}).
 			Decode(tweet); err != nil {
 			if mongo.NotFound(err) {
 				break
@@ -162,7 +162,7 @@ func (s *Type) LoadTweetByTwitterID(ctx context.Context, id string) (tweet *mode
 	}
 	tweet = &model.Tweet{}
 	if err = s.tweetDao.GetTweetCol().
-		FindOne(ctx, bson.M{fieldIdStr: id}).
+		FindOne(ctx, tweetIDFilter{ID: id}).
 		Decode(tweet); mongo.NotFound(err) {
 		logger.Debug("tweet not found", zap.String("id", id))
 		tweet = new(model.Tweet)
@@ -182,7 +182,7 @@ func (s *Type) LoadUserByID(ctx context.Context, id string) (user *model.User, e
 	}
 	user = new(model.User)
 	if err = s.tweetDao.GetUserCol().
-		FindOne(ctx, bson.M{fieldIdStr: id}).
+		FindOne(ctx, tweetIDFilter{ID: id}).
 		Decode(user); mongo.NotFound(err) {
 		logger.Debug("tweet not found", zap.String("id", id))
 		return nil, errors.Errorf("user `%s` not found", id)

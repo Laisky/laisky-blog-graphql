@@ -89,7 +89,7 @@ func (s *Blog) RequestEmailVerificationCode(ctx context.Context, account string,
 	}
 
 	col := s.dao.GetEmailVerificationCodesCol()
-	if _, err = col.DeleteMany(ctx, bson.M{fieldAccount: account, fieldPurpose: purpose}); err != nil {
+	if _, err = col.DeleteMany(ctx, verificationIdentityFilter{Account: account, Purpose: purpose}); err != nil {
 		return errors.Wrap(err, "delete previous email verification codes")
 	}
 	if _, err = col.InsertOne(ctx, challenge); err != nil {
