@@ -30,7 +30,7 @@ func (requestSessionIDResolver) ResolveSessionIdManager(r *http.Request) srv.Ses
 	if err != nil {
 		return &publicSessionIDManager{}
 	}
-	return &credentialSessionIDManager{key: sha256.Sum256([]byte(auth.APIKey))}
+	return &credentialSessionIDManager{key: []byte(auth.APIKey)}
 }
 
 // publicSessionIDManager retains anonymous legacy discovery without allowing
@@ -48,12 +48,12 @@ func (s *publicSessionIDManager) Terminate(sessionID string) (bool, error) {
 }
 
 // credentialSessionIDManager authenticates an opaque session nonce with a
-// domain-separated HMAC. Only a digest of the current request's API key is held;
-// neither the key nor its digest is serialized into the session ID.
+// domain-separated HMAC keyed by the current request's API key. The key is held
+// only for this request and is never serialized into the session ID.
 // As with the SDK's previous stateless-generating manager, deletion cleans up
 // transport state but is not durable token revocation.
 type credentialSessionIDManager struct {
-	key [sha256.Size]byte
+	key []byte
 }
 
 var _ srv.SessionIdManager = (*credentialSessionIDManager)(nil)
@@ -92,7 +92,7 @@ func (s *credentialSessionIDManager) Terminate(sessionID string) (bool, error) {
 
 // signature returns a constant-size, domain-separated authenticator for a nonce.
 func (s *credentialSessionIDManager) signature(nonce string) []byte {
-	mac := hmac.New(sha256.New, s.key[:])
+	mac := hmac.New(sha256.New, s.key)
 	_, _ = mac.Write([]byte(sessionMACDomain))
 	_, _ = mac.Write([]byte(nonce))
 	return mac.Sum(nil)
