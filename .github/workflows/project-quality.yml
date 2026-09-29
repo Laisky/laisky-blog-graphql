@@ -36,6 +36,8 @@ jobs:
           sha256sum --check --ignore-missing golangci-lint-2.14.0-checksums.txt
           tar -xzf golangci-lint-2.14.0-linux-amd64.tar.gz
           echo /tmp/quality-tools/golangci-lint-2.14.0-linux-amd64 >> "$GITHUB_PATH"
+      - name: Verify formatting gate never rewrites dirty source
+        run: ./.scripts/check_go_format_test.sh
       - name: Snapshot exact reviewed source
         run: |
           git rev-parse HEAD > /tmp/project-quality/commit.txt
