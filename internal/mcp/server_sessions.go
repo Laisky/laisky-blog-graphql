@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	srv "github.com/mark3labs/mcp-go/server"
 
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
@@ -95,4 +96,31 @@ func (s *credentialSessionIDManager) signature(nonce string) []byte {
 	_, _ = mac.Write([]byte(sessionMACDomain))
 	_, _ = mac.Write([]byte(nonce))
 	return mac.Sum(nil)
+}
+
+// withLegacySessionOwnership checks non-POST session ownership before the SDK.
+// The SDK validates POST sessions through the resolver, but GET can reuse cached
+// sessions without Validate and DELETE maps Terminate errors to HTTP 500.
+func withLegacySessionOwnership(next http.Handler) http.Handler {
+	if next == nil {
+		return nil
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		version := r.Header.Get(mcpgo.HeaderProtocolVersion)
+		sessionID := r.Header.Get(mcpgo.HeaderSessionID)
+		if (r.Method != http.MethodGet && r.Method != http.MethodDelete) ||
+			mcpgo.IsModernProtocol(version) || sessionID == "" {
+			// Preserve the SDK's method/version errors and sessionless behavior.
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		manager := (requestSessionIDResolver{}).ResolveSessionIdManager(r)
+		terminated, err := manager.Validate(sessionID)
+		if err != nil || terminated {
+			http.Error(w, "Invalid MCP session; initialize a new session with the current credential", http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

@@ -13,7 +13,8 @@ const authSourceNone = "none"
 
 // withAuthorizationHeaderNormalization normalizes backward-compatible query
 // API key authentication into the Authorization header so downstream code can
-// consistently rely on a single auth channel.
+// consistently rely on a single auth channel. It also guards legacy GET/DELETE
+// session ownership before those methods enter the SDK.
 //
 // Parameters:
 //   - next: downstream HTTP handler.
@@ -26,6 +27,7 @@ func withAuthorizationHeaderNormalization(next http.Handler, logger logSDK.Logge
 		return nil
 	}
 
+	next = withLegacySessionOwnership(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader, source := resolveRequestAuthorizationHeader(r)
 		if source == "query_apikey" && strings.TrimSpace(r.Header.Get("Authorization")) == "" {
