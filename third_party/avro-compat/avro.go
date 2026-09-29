@@ -1,11 +1,11 @@
-// Package avro adapts goar's legacy tag-codec API to the fixed v2 implementation.
-// It contains no v1 decoder code. Keep this surface minimal so unexpected new
+// Package avro adapts goar's legacy tag-codec API to the maintained v2 implementation.
+// It contains no hamba decoder code. Keep this surface minimal so unexpected new
 // upstream API usage fails compilation rather than silently selecting old code.
 package avro
 
-import avrov2 "github.com/hamba/avro/v2"
+import avrov2 "github.com/iskorotkov/avro/v2"
 
-// Schema is the v2 schema used by the compatibility entry points.
+// Schema is the maintained v2 schema used by the compatibility entry points.
 type Schema = avrov2.Schema
 
 // Parse delegates schema parsing to avro v2.

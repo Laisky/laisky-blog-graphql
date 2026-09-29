@@ -5,6 +5,7 @@ on:
     paths: ['.github/workflows/quality-dependency-prep.yml']
 permissions:
   contents: read
+  actions: read
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -23,66 +24,47 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Resolve fixed Go implementations
+      - uses: actions/download-artifact@v4
+        with:
+          name: quality-dependency-prepared
+          run-id: 36616545960
+          github-token: ${{ github.token }}
+          path: /tmp/previous-quality-deps
+      - name: Retain validated frontend locks and migrate to maintained codec
         run: |
           set -euo pipefail
           mkdir -p /tmp/quality-deps
-          go mod edit -replace github.com/hamba/avro=./third_party/avro-compat
-          go get github.com/hamba/avro/v2@v2.31.0 google.golang.org/grpc@v1.85.0-dev.0.20260825072537-93e31b48545e
+          cp /tmp/previous-quality-deps/updated/go.mod go.mod
+          cp /tmp/previous-quality-deps/updated/go.sum go.sum
+          cp /tmp/previous-quality-deps/updated/web/package.json web/package.json
+          cp /tmp/previous-quality-deps/updated/web/pnpm-lock.yaml web/pnpm-lock.yaml
+          go get github.com/iskorotkov/avro/v2@v2.34.0
           go mod tidy
           go mod verify
-          go mod why -m github.com/hamba/avro > /tmp/quality-deps/avro-why.txt
-          go list -deps ./... > /tmp/quality-deps/packages.txt
           go build ./...
-      - name: Resolve frontend fixes within compatible major lines
-        if: ${{ !cancelled() }}
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          path = Path('web/package.json')
-          p = json.loads(path.read_text())
-          p['devDependencies']['vitest'] = '^4.1.11'
-          p['devDependencies']['vite'] = '^7.3.5'
-          p['devDependencies']['postcss'] = '^8.5.23'
-          p['dependencies']['react-router-dom'] = '^7.18.2'
-          fixes = {
-            '@babel/core@<7.29.6':'^7.29.6', '@hono/node-server@<1.19.15':'^1.19.15',
-            '@humanfs/node@<0.16.8':'^0.16.8', 'ajv@>=6 <6.14.0':'^6.14.0',
-            'baseline-browser-mapping@<2.11.0':'^2.11.0', 'body-parser@>=2 <2.3.0':'^2.3.0',
-            'brace-expansion@>=1 <1.1.18':'^1.1.18', 'brace-expansion@>=2 <2.1.4':'^2.1.4',
-            'browserslist@<4.28.7':'^4.28.7', 'fast-uri@>=3 <3.1.7':'^3.1.7',
-            'flatted@<3.4.2':'^3.4.2', 'form-data@>=4 <4.0.6':'^4.0.6',
-            'hono@>=4 <4.13.5':'^4.13.5', 'ip-address@>=10 <10.5.1':'^10.5.1',
-            'js-yaml@>=4 <4.3.2':'^4.3.2', 'minimatch@>=3 <3.1.4':'^3.1.4',
-            'minimatch@>=9 <9.0.7':'^9.0.7', 'minimatch@>=10 <10.2.3':'^10.2.3',
-            'nanoid@>=3 <3.3.18':'^3.3.18', 'picomatch@>=2 <2.3.2':'^2.3.2',
-            'picomatch@>=4 <4.0.4':'^4.0.4', 'postcss@>=8 <8.5.23':'^8.5.23',
-            'postcss-selector-parser@>=6 <6.1.3':'^6.1.3', 'qs@>=6 <6.16.0':'^6.16.0',
-            'react-router@>=7 <7.18.2':'^7.18.2', 'rollup@>=4 <4.59.0':'^4.59.0',
-            'vite@>=6 <6.4.3':'^6.4.3', 'vite@>=7 <7.3.5':'^7.3.5',
-            'ws@>=8 <8.21.0':'^8.21.0', 'yaml@>=2 <2.8.3':'^2.8.3'
-          }
-          p.setdefault('pnpm', {})['overrides'] = fixes
-          path.write_text(json.dumps(p, indent=2)+'\n')
-          PY
-          cd web
-          pnpm update
-      - name: Frontend lint and compatibility
+          go test -race -count=1 -timeout 1m ./library/db/arweave
+          go list -deps ./... > /tmp/quality-deps/packages.txt
+          if grep -E '^github.com/hamba/avro/v2($|/)|^golang.org/x/crypto/openpgp($|/)' /tmp/quality-deps/packages.txt; then
+            echo 'An abandoned vulnerable implementation remains imported' >&2
+            exit 1
+          fi
+      - name: Frontend compatibility
         if: ${{ !cancelled() }}
         run: |
           cd web
+          pnpm install --frozen-lockfile
           pnpm lint
           pnpm test
           pnpm build
       - name: Audit all frontend severities
         if: ${{ !cancelled() }}
         run: cd web && pnpm audit --json > /tmp/quality-deps/frontend-audit.json
-      - name: Audit fixed imported Go packages
+      - name: Audit imported Go packages and reachable symbols
         if: ${{ !cancelled() }}
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck -scan package -show verbose ./... > /tmp/quality-deps/go-audit.txt 2>&1
+          govulncheck ./... > /tmp/quality-deps/go-symbol-audit.txt 2>&1
       - name: Capture reviewed outputs
         if: always()
         run: |
@@ -111,7 +93,7 @@ jobs:
         with:
           name: quality-dependency-prepared
           path: /tmp/quality-deps
-      - name: Publish only validated lockfile paths without overwriting concurrent work
+      - name: Publish validated locks without overwriting concurrent work
         env:
           EXPECTED_SHA: ${{ github.sha }}
         run: |
