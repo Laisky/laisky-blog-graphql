@@ -53,12 +53,15 @@ type pdfBackend struct {
 }
 
 // PageCount returns the document's total page count.
-func (p *pdfBackend) PageCount(_ context.Context, data []byte) (int, error) {
+func (p *pdfBackend) PageCount(ctx context.Context, data []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, errors.Wrap(err, "pdf page count canceled")
+	}
 	rs := bytes.NewReader(data)
 	switch p.text {
 	case "pdfcpu":
-		// pdfcpu's stable counter is PageCount(rs, conf).
-		n, err := pdfapi.PageCount(rs, nil)
+		// Forward the request lifetime to pdfcpu, including cancellation.
+		n, err := pdfapi.PageCount(ctx, rs, nil)
 		if err != nil {
 			return 0, errors.Wrap(err, "pdfcpu page count")
 		}
@@ -92,7 +95,10 @@ func (p *pdfBackend) PagesText(_ context.Context, data []byte) ([]string, error)
 }
 
 // Outline returns the recursive bookmark tree.
-func (p *pdfBackend) Outline(_ context.Context, data []byte) ([]Bookmark, error) {
+func (p *pdfBackend) Outline(ctx context.Context, data []byte) ([]Bookmark, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, errors.Wrap(err, "pdf outline canceled")
+	}
 	if p.outline == "dslipak" {
 		return nil, errors.New("outline not supported by dslipak parser")
 	}
@@ -106,9 +112,12 @@ func (p *pdfBackend) Outline(_ context.Context, data []byte) ([]Bookmark, error)
 		return nil, errors.Wrap(err, "open temp pdf")
 	}
 	defer f.Close()
-	bms, err := pdfapi.Bookmarks(f, nil)
+	bms, err := pdfapi.Bookmarks(ctx, f, nil)
 	if err != nil {
-		// pdfcpu returns errors when the PDF lacks an outline. Treat that as no outline.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, errors.Wrap(ctxErr, "pdf outline canceled")
+		}
+		// Preserve the existing no-outline fallback, but never swallow cancellation.
 		return nil, nil
 	}
 	return convertBookmarks(bms), nil

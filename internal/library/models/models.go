@@ -388,7 +388,7 @@ func (e *BlogPostType) UnmarshalGQL(v any) error {
 }
 
 func (e BlogPostType) MarshalGQL(w io.Writer) {
-	fmt.Fprint(w, strconv.Quote(e.String()))
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
 func (e *BlogPostType) UnmarshalJSON(b []byte) error {
@@ -443,7 +443,7 @@ func (e *FileIOEntryType) UnmarshalGQL(v any) error {
 }
 
 func (e FileIOEntryType) MarshalGQL(w io.Writer) {
-	fmt.Fprint(w, strconv.Quote(e.String()))
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
 func (e *FileIOEntryType) UnmarshalJSON(b []byte) error {
@@ -500,7 +500,7 @@ func (e *FileIOWriteMode) UnmarshalGQL(v any) error {
 }
 
 func (e FileIOWriteMode) MarshalGQL(w io.Writer) {
-	fmt.Fprint(w, strconv.Quote(e.String()))
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
 func (e *FileIOWriteMode) UnmarshalJSON(b []byte) error {
@@ -555,7 +555,7 @@ func (e *Language) UnmarshalGQL(v any) error {
 }
 
 func (e Language) MarshalGQL(w io.Writer) {
-	fmt.Fprint(w, strconv.Quote(e.String()))
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
 func (e *Language) UnmarshalJSON(b []byte) error {
@@ -612,7 +612,7 @@ func (e *MemoryPlugin) UnmarshalGQL(v any) error {
 }
 
 func (e MemoryPlugin) MarshalGQL(w io.Writer) {
-	fmt.Fprint(w, strconv.Quote(e.String()))
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
 func (e *MemoryPlugin) UnmarshalJSON(b []byte) error {
@@ -667,7 +667,7 @@ func (e *SortOrder) UnmarshalGQL(v any) error {
 }
 
 func (e SortOrder) MarshalGQL(w io.Writer) {
-	fmt.Fprint(w, strconv.Quote(e.String()))
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
 func (e *SortOrder) UnmarshalJSON(b []byte) error {

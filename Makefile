@@ -6,7 +6,7 @@ install:
 
 .PHONY: gen
 gen:
-	GQLGEN_DEBUG=1 GQLGEN_TRACE=1 go run github.com/99designs/gqlgen@v0.17.94 generate
+	GQLGEN_DEBUG=1 GQLGEN_TRACE=1 go run -mod=mod github.com/99designs/gqlgen generate
 
 .PHONY: test
 test:

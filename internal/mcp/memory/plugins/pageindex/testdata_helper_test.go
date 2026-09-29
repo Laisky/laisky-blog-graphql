@@ -2,6 +2,7 @@ package pageindex
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,7 @@ func loadSamplePDF(t *testing.T) []byte {
 			return
 		}
 		var buf bytes.Buffer
-		if err := pdfapi.Create(nil, strings.NewReader(minimalPDFJSON), &buf, nil); err != nil {
+		if err := pdfapi.Create(context.Background(), nil, strings.NewReader(minimalPDFJSON), &buf, nil); err != nil {
 			samplePDFErr = err
 			return
 		}
@@ -52,7 +53,7 @@ func loadSamplePDF(t *testing.T) []byte {
 		samplePDFBytes = buf.Bytes()
 	})
 	if samplePDFErr != nil {
-		t.Skipf("could not generate sample.pdf: %v", samplePDFErr)
+		t.Fatalf("could not generate sample.pdf: %v", samplePDFErr)
 	}
 	return samplePDFBytes
 }
