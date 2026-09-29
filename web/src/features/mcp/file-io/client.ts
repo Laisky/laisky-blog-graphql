@@ -26,12 +26,12 @@ export async function callFileTool<T>(apiKey: string, name: string, args: Record
 }
 
 export async function callFileAPI<T>(apiKey: string, method: 'GET' | 'PUT' | 'POST', path: string,
-  options: { query?: Record<string, string>; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
+  options: { query?: Record<string, string>; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}): Promise<T> {
   const authorization = buildAuthorizationHeader(apiKey);
   if (!authorization) throw new Error('API key is required.');
   const url = `${resolveToolApiBase('file_io')}api${path}${options.query ? `?${new URLSearchParams(options.query)}` : ''}`;
   const response = await fetch(url, {
-    method, cache: 'no-store',
+    method, cache: 'no-store', signal: options.signal,
     headers: {
       ...options.headers, Authorization: authorization, 'Cache-Control': 'no-store', Pragma: 'no-cache',
       ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
