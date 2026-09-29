@@ -1,0 +1,106 @@
+diff --git a/Makefile b/Makefile
+index cbb5ff7..b8f6bc5 100644
+--- a/Makefile
++++ b/Makefile
+@@ -6,7 +6,7 @@ install:
+ 
+ .PHONY: gen
+ gen:
+-	GQLGEN_DEBUG=1 GQLGEN_TRACE=1 go run github.com/99designs/gqlgen@v0.17.94 generate
++	GQLGEN_DEBUG=1 GQLGEN_TRACE=1 go run -mod=mod github.com/99designs/gqlgen generate
+ 
+ .PHONY: test
+ test:
+diff --git a/internal/mcp/calllog/service_test.go b/internal/mcp/calllog/service_test.go
+index 77d891b..66f97fb 100644
+--- a/internal/mcp/calllog/service_test.go
++++ b/internal/mcp/calllog/service_test.go
+@@ -7,7 +7,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/google/uuid"
+-	"github.com/pashagolub/pgxmock/v4"
++	"github.com/pashagolub/pgxmock/v5"
+ 	"github.com/stretchr/testify/require"
+ )
+ 
+diff --git a/internal/mcp/memory/plugins/pageindex/pdf_parser.go b/internal/mcp/memory/plugins/pageindex/pdf_parser.go
+index 4d923f7..e4fc3ef 100644
+--- a/internal/mcp/memory/plugins/pageindex/pdf_parser.go
++++ b/internal/mcp/memory/plugins/pageindex/pdf_parser.go
+@@ -53,12 +53,15 @@ type pdfBackend struct {
+ }
+ 
+ // PageCount returns the document's total page count.
+-func (p *pdfBackend) PageCount(_ context.Context, data []byte) (int, error) {
++func (p *pdfBackend) PageCount(ctx context.Context, data []byte) (int, error) {
++	if err := ctx.Err(); err != nil {
++		return 0, errors.Wrap(err, "pdf page count canceled")
++	}
+ 	rs := bytes.NewReader(data)
+ 	switch p.text {
+ 	case "pdfcpu":
+-		// pdfcpu's stable counter is PageCount(rs, conf).
+-		n, err := pdfapi.PageCount(rs, nil)
++		// Forward the request lifetime to pdfcpu, including cancellation.
++		n, err := pdfapi.PageCount(ctx, rs, nil)
+ 		if err != nil {
+ 			return 0, errors.Wrap(err, "pdfcpu page count")
+ 		}
+@@ -92,7 +95,10 @@ func (p *pdfBackend) PagesText(_ context.Context, data []byte) ([]string, error)
+ }
+ 
+ // Outline returns the recursive bookmark tree.
+-func (p *pdfBackend) Outline(_ context.Context, data []byte) ([]Bookmark, error) {
++func (p *pdfBackend) Outline(ctx context.Context, data []byte) ([]Bookmark, error) {
++	if err := ctx.Err(); err != nil {
++		return nil, errors.Wrap(err, "pdf outline canceled")
++	}
+ 	if p.outline == "dslipak" {
+ 		return nil, errors.New("outline not supported by dslipak parser")
+ 	}
+@@ -106,9 +112,12 @@ func (p *pdfBackend) Outline(_ context.Context, data []byte) ([]Bookmark, error)
+ 		return nil, errors.Wrap(err, "open temp pdf")
+ 	}
+ 	defer f.Close()
+-	bms, err := pdfapi.Bookmarks(f, nil)
++	bms, err := pdfapi.Bookmarks(ctx, f, nil)
+ 	if err != nil {
+-		// pdfcpu returns errors when the PDF lacks an outline. Treat that as no outline.
++		if ctxErr := ctx.Err(); ctxErr != nil {
++			return nil, errors.Wrap(ctxErr, "pdf outline canceled")
++		}
++		// Preserve the existing no-outline fallback, but never swallow cancellation.
+ 		return nil, nil
+ 	}
+ 	return convertBookmarks(bms), nil
+diff --git a/internal/mcp/memory/plugins/pageindex/testdata_helper_test.go b/internal/mcp/memory/plugins/pageindex/testdata_helper_test.go
+index b4c24b1..7111003 100644
+--- a/internal/mcp/memory/plugins/pageindex/testdata_helper_test.go
++++ b/internal/mcp/memory/plugins/pageindex/testdata_helper_test.go
+@@ -2,6 +2,7 @@ package pageindex
+ 
+ import (
+ 	"bytes"
++	"context"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+@@ -37,7 +38,7 @@ func loadSamplePDF(t *testing.T) []byte {
+ 			return
+ 		}
+ 		var buf bytes.Buffer
+-		if err := pdfapi.Create(nil, strings.NewReader(minimalPDFJSON), &buf, nil); err != nil {
++		if err := pdfapi.Create(context.Background(), nil, strings.NewReader(minimalPDFJSON), &buf, nil); err != nil {
+ 			samplePDFErr = err
+ 			return
+ 		}
+@@ -52,7 +53,7 @@ func loadSamplePDF(t *testing.T) []byte {
+ 		samplePDFBytes = buf.Bytes()
+ 	})
+ 	if samplePDFErr != nil {
+-		t.Skipf("could not generate sample.pdf: %v", samplePDFErr)
++		t.Fatalf("could not generate sample.pdf: %v", samplePDFErr)
+ 	}
+ 	return samplePDFBytes
+ }
