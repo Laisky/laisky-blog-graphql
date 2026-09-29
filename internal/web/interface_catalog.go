@@ -46,6 +46,7 @@ func buildInterfaceCatalog(source interfaceSources) interfaceCatalog {
 			"MemoryRunMaintenance": source.Memory, "MemoryListDirWithAbstract": source.Memory,
 		},
 		HTTP: map[string]bool{
+			"GET /tools/file_io/api/projects":               source.Files,
 			"GET /tools/file_io/api/versions":               source.Files,
 			"GET /tools/file_io/api/versions/{id}/content":  source.Files,
 			"PUT /tools/file_io/api/file":                   source.Files && source.FileWriter,

@@ -28,7 +28,13 @@ func NewHTTPHandler(service *Service, logger logSDK.Logger, options ...FileHTTPO
 			option(handler)
 		}
 	}
-	return mcpauth.HTTPMiddleware(handler)
+	authenticated := mcpauth.HTTPMiddleware(handler)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Apply before authentication so errors cannot be cached across credentials either.
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Add("Vary", "Authorization")
+		authenticated.ServeHTTP(w, r)
+	})
 }
 
 type filesHTTPHandler struct {
@@ -45,6 +51,8 @@ const (
 // ServeHTTP routes requests for the file_io management endpoints.
 func (h *filesHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == projectsAPIPath && r.Method == http.MethodGet:
+		h.handleListProjects(w, r)
 	case r.URL.Path == versionsAPIPath && r.Method == http.MethodGet:
 		h.handleListVersions(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/versions/") && strings.HasSuffix(r.URL.Path, "/content") && r.Method == http.MethodGet:
