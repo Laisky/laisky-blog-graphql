@@ -1,0 +1,68 @@
+name: PR51 security evidence
+
+on:
+  push:
+    branches: ['codex/mcp-sdk-20260929']
+    paths: ['.github/workflows/pr51-security-evidence.yml']
+
+permissions:
+  contents: read
+  checks: read
+  security-events: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read exact-check annotations and open repository alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json, os, pathlib, urllib.request, urllib.parse, urllib.error
+          root = pathlib.Path('/tmp/pr51-security')
+          root.mkdir()
+          base = 'https://api.github.com/repos/Laisky/laisky-blog-graphql/'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+          def read(name, endpoint, accept=None):
+              request_headers = dict(headers)
+              if accept:
+                  request_headers['Accept'] = accept
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(base + endpoint, headers=request_headers), timeout=60) as response:
+                      data = json.load(response)
+                  (root / (name + '.json')).write_text(json.dumps(data, indent=2))
+                  return data
+              except urllib.error.HTTPError as error:
+                  (root / (name + '-error.json')).write_text(json.dumps({'status': error.code, 'endpoint': endpoint}))
+                  print(name, 'HTTP', error.code)
+                  return None
+          annotations = read('annotations', 'check-runs/109671848439/annotations?per_page=100')
+          if annotations is None:
+              raise RuntimeError('Cannot retrieve the known failed-check annotations')
+          for item in annotations:
+              print(json.dumps({key: item.get(key) for key in ['path', 'start_line', 'end_line', 'title', 'message']}, ensure_ascii=True))
+          refs = {'all': None, 'master': 'refs/heads/master', 'pr-merge': 'refs/pull/51/merge', 'pr-head': 'refs/pull/51/head'}
+          for name, ref in refs.items():
+              for page in range(1, 21):
+                  query = {'state': 'open', 'per_page': 100, 'page': page}
+                  if ref:
+                      query['ref'] = ref
+                  alerts = read('alerts-' + name + '-' + str(page), 'code-scanning/alerts?' + urllib.parse.urlencode(query))
+                  if not isinstance(alerts, list) or len(alerts) < 100:
+                      break
+          for name, ref in [('merge', 'refs/pull/51/merge'), ('head', 'refs/pull/51/head')]:
+              analyses = read('analyses-' + name, 'code-scanning/analyses?' + urllib.parse.urlencode({'ref': ref, 'per_page': 10}))
+              if not isinstance(analyses, list):
+                  continue
+              for analysis in analyses:
+                  if analysis.get('commit_sha') == '50a13eb88824b2179f62384975f04c23ca3e1b1d' and analysis.get('tool', {}).get('name') == 'CodeQL':
+                      read('sarif-' + str(analysis['id']), 'code-scanning/analyses/' + str(analysis['id']), 'application/sarif+json')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr51-security-evidence
+          path: /tmp/pr51-security/
+          retention-days: 7
+          if-no-files-found: error
