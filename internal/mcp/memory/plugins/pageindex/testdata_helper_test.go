@@ -3,8 +3,6 @@ package pageindex
 import (
 	"bytes"
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -14,11 +12,10 @@ import (
 
 // minimalPDFJSON describes a 3-page PDF that pdfcpu can render via api.Create.
 const minimalPDFJSON = `{
-  "header": { "title": "pageindex sample", "author": "test" },
   "pages": {
-    "1": {"content": {"text": [{"value": "Hello world page one. This document is a sample for the pageindex plugin tests.", "font": {"name": "Helvetica","size": 12}, "position": [50, 700]}]}},
-    "2": {"content": {"text": [{"value": "Page two body covers methods of the test fixture.", "font": {"name": "Helvetica","size": 12}, "position": [50, 700]}]}},
-    "3": {"content": {"text": [{"value": "Page three body has the conclusion paragraph.", "font": {"name": "Helvetica","size": 12}, "position": [50, 700]}]}}
+    "1": {"content": {"text": [{"value": "Hello world page one. This document is a sample for the pageindex plugin tests.", "font": {"name": "Helvetica","size": 12}, "pos": [50, 700]}]}},
+    "2": {"content": {"text": [{"value": "Page two body covers methods of the test fixture.", "font": {"name": "Helvetica","size": 12}, "pos": [50, 700]}]}},
+    "3": {"content": {"text": [{"value": "Page three body has the conclusion paragraph.", "font": {"name": "Helvetica","size": 12}, "pos": [50, 700]}]}}
   }
 }`
 
@@ -28,25 +25,13 @@ var (
 	samplePDFErr   error
 )
 
-// loadSamplePDF lazily renders or reads the test PDF in testdata/.
+// loadSamplePDF renders a fresh in-memory fixture once per test process.
+// Never reuse an on-disk PDF: stale fixtures can hide generator regressions.
 func loadSamplePDF(t *testing.T) []byte {
 	t.Helper()
 	samplePDFOnce.Do(func() {
-		path := filepath.Join("testdata", "sample.pdf")
-		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
-			samplePDFBytes = data
-			return
-		}
 		var buf bytes.Buffer
 		if err := pdfapi.Create(context.Background(), nil, strings.NewReader(minimalPDFJSON), &buf, nil); err != nil {
-			samplePDFErr = err
-			return
-		}
-		if err := os.MkdirAll("testdata", 0o755); err != nil {
-			samplePDFErr = err
-			return
-		}
-		if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 			samplePDFErr = err
 			return
 		}
