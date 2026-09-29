@@ -1,0 +1,103 @@
+name: Mongo query review preparation
+
+on:
+  push:
+    branches: ['codex/mcp-sdk-20260929']
+    paths: ['.github/workflows/mongo-query-review.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mongodb:
+        image: mongo:8.0
+        ports: ['27017:27017']
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      MONGO_QUERY_TEST_URI: mongodb://127.0.0.1:27017
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Establish pre-refactor behavior (rule out injection false positives)
+        run: |
+          mkdir -p /tmp/mongo-review
+          go test -race -count=1 -v -timeout 5m ./internal/web/blog/service ./internal/web/twitter/service -run TestMongo 2>&1 | tee /tmp/mongo-review/baseline.log
+      - name: Replace dynamic containers with reviewed fixed BSON shapes
+        shell: python
+        run: |
+          from pathlib import Path
+          changes = {
+            'internal/web/blog/service/comments.go': [('bson.M{fieldPostName: postName}', 'postNameFilter{Name: postName}', 3)],
+            'internal/web/blog/service/email_verification.go': [('bson.M{fieldAccount: account, fieldPurpose: purpose}', 'verificationIdentityFilter{Account: account, Purpose: purpose}', 1)],
+            'internal/web/blog/service/posts.go': [('bson.D{{Key: fieldDocumentID, Value: uid}}', 'documentIDFilter{ID: uid}', 1), ('bson.D{{Key: fieldDocumentID, Value: cateid}}', 'documentIDFilter{ID: cateid}', 1), ('bson.D{{Key: fieldPostName, Value: name}}', 'postNameFilter{Name: name}', 1), ('bson.M{fieldPostName: name}', 'postNameFilter{Name: name}', 2)],
+            'internal/web/blog/service/users.go': [('bson.M{fieldAccount: account}', 'userAccountFilter{Account: account}', 2)],
+            'internal/web/blog/service/users_oidc.go': [('bson.M{fieldAccount: account}', 'userAccountFilter{Account: account}', 1)],
+            'internal/web/blog/service/users_uid.go': [('bson.D{{Key: fieldUid, Value: uid}}', 'userUIDFilter{UID: uid}', 1), ('bson.M{fieldDocumentID: user.ID}', 'documentIDFilter{ID: user.ID}', 1)],
+            'internal/web/twitter/service/service.go': [('bson.M{fieldIdStr: id}', 'tweetIDFilter{ID: id}', 3), ('bson.M{fieldIdStr: nextID}', 'tweetIDFilter{ID: nextID}', 1)]
+          }
+          for name, replacements in changes.items():
+            path = Path(name)
+            text = path.read_text()
+            for old, new, expected in replacements:
+              if text.count(old) != expected:
+                raise RuntimeError('Source changed: ' + name)
+              text = text.replace(old, new)
+            path.write_text(text)
+          Path('/tmp/mongo-review/paths.txt').write_text('\n'.join(sorted(changes)) + '\n')
+      - name: Verify candidate without changing dependency locks
+        run: |
+          set -euo pipefail
+          xargs gofmt -w < /tmp/mongo-review/paths.txt
+          go test -race -count=3 -v -timeout 5m ./internal/web/blog/service ./internal/web/twitter/service -run TestMongo 2>&1 | tee /tmp/mongo-review/candidate.log
+          go test -race -cover -timeout 5m ./... > /tmp/mongo-review/full-tests.log 2>&1
+          go vet ./...
+          git diff --exit-code -- go.mod go.sum
+          git diff --name-only | sort > /tmp/mongo-review/changed.txt
+          diff -u /tmp/mongo-review/paths.txt /tmp/mongo-review/changed.txt
+          git diff --binary > /tmp/mongo-review/candidate.patch
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mongo-query-review
+          path: /tmp/mongo-review/
+          retention-days: 7
+
+  publish:
+    needs: prepare
+    if: github.ref == 'refs/heads/codex/mcp-sdk-20260929'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: mongo-query-review
+          path: /tmp/mongo-review
+      - name: Publish only the seven tested source files, without force
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git apply --index /tmp/mongo-review/candidate.patch
+          git diff --cached --name-only | sort > /tmp/changed.txt
+          printf '%s\n' internal/web/blog/service/comments.go internal/web/blog/service/email_verification.go internal/web/blog/service/posts.go internal/web/blog/service/users.go internal/web/blog/service/users_oidc.go internal/web/blog/service/users_uid.go internal/web/twitter/service/service.go | sort > /tmp/allowed.txt
+          diff -u /tmp/allowed.txt /tmp/changed.txt
+          test "$(git ls-remote origin refs/heads/codex/mcp-sdk-20260929 | cut -f1)" = "$EXPECTED_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'refactor(mongo): encode identity queries with fixed BSON types'
+          git push origin HEAD:refs/heads/codex/mcp-sdk-20260929
