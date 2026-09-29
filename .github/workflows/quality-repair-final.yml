@@ -86,13 +86,15 @@ jobs:
           go mod verify
           ./.scripts/check_go_format.sh
           git diff --check
-      - name: Capture exact allowlisted repair
+      - name: Capture exact allowlisted repair including already staged deletions
         shell: python
         run: |
           import json, pathlib, subprocess
           output = pathlib.Path('/tmp/final-quality')
-          paths = json.loads((output / 'allowlist.json').read_text())
-          subprocess.run(['git', 'add', '-A', '--', *paths], check=True)
+          allowed = set(json.loads((output / 'allowlist.json').read_text()))
+          subprocess.run(['git', 'add', '-A'], check=True)
+          changed = set(filter(None, subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z']).decode().split('\0')))
+          assert changed.issubset(allowed), 'Refusing any unreviewed source path'
           (output / 'candidate.patch').write_bytes(subprocess.check_output(['git', 'diff', '--cached', '--binary']))
           (output / 'candidate-tree.txt').write_bytes(subprocess.check_output(['git', 'write-tree']))
       - uses: actions/upload-artifact@v4
