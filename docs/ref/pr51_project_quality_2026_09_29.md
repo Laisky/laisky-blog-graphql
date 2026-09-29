@@ -7,8 +7,8 @@ lint findings as existing debt. Those findings are now fixed, not grandfathered.
 The earlier dependency and session reports remain historical evidence; they are
 not the current quality verdict.
 
-- Runtime repair commit: `9c642e683f9b99d1b98eacbcb707ac6a3ea667ab`.
-- Accepted source tree: `9ee695d5fedf9d0c3785e3c3a7be056c9973acbe`.
+- Initial project-wide runtime repair commit: `9c642e683f9b99d1b98eacbcb707ac6a3ea667ab`.
+- Initial project-wide source tree: `9ee695d5fedf9d0c3785e3c3a7be056c9973acbe`.
 - [Candidate acceptance](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36638208283/job/109643948422)
   passed full race/coverage tests, 20 session-test repetitions, full `make lint`,
   uncapped structured lint, build, imported-package vulnerability scanning, module
@@ -67,6 +67,44 @@ place, including negative side-effect assertions and 20 race-enabled repetitions
 The static-file and Avro defects were reproduced in the recovered baseline; the
 cached-index escape and credential logging were separately tested red before
 repair. Ordinary positive-control cases remain in the same suites.
+
+## Follow-up: MongoDB query alerts
+
+The post-cleanup CodeQL run reported 15 query-taint alerts in blog comments,
+post/user lookup, verification-code deletion and Twitter lookup. They are not
+counted as 15 confirmed injection vulnerabilities: the affected values are
+already strings or ObjectIDs under fixed BSON keys, and the driver does not
+parse those string values as JSON query operators.
+
+The follow-up first tested the unchanged production queries against MongoDB 8.0.
+The tests-only revision `1faa6a820388ce88e476d90d2503849dfc0b1dfd` passed the
+[real MongoDB contract job](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36646209044).
+Operator-shaped strings did not select the canary record, and positive lookups
+still returned it. This rules out the alleged injection for the exercised paths;
+it is not a blanket claim about every possible database query.
+
+The query representation is then narrowed to fixed, local BSON struct types.
+Each type accepts only the intended scalar values; callers cannot add operator
+keys. Fields have no `omitempty`, so empty input never turns an identity filter
+into an unrestricted empty filter. ObjectIDs stay ObjectIDs and Twitter IDs
+remain strings, including leading zeros. Existing normalization, authorization,
+pagination and update documents are unchanged. No CodeQL exclusions, taint
+barriers or warning suppressions were introduced.
+
+Retained tests compare the real driver's BSON serialization to independently
+specified pre-refactor filters, including empty, Unicode, null-byte and
+operator-shaped values. The dedicated `mongo-query-contract` PR job requires a
+working disposable MongoDB instance and repeats the race-enabled tests three
+times. It exercises production lookups/comment/category boundaries and verifies
+that an account-and-purpose deletion retains both other accounts and other
+purposes. Local runs without the explicit database URI may skip the integration
+test; CI always supplies it, and a connection failure fails the job.
+
+The [controlled comparison](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36646206339)
+preserves pre-refactor and candidate logs plus the exact source patch. Final-head
+CodeQL and all four PR workflow results are recorded in the PR discussion. The
+temporary source-preparation workflow is removed from the delivered tree; only
+the read-only MongoDB acceptance job remains.
 
 ## Dependencies and security interpretation
 

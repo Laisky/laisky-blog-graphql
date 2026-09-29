@@ -54,10 +54,17 @@ func decodeFilter(t *testing.T, filter any) bson.M {
 // queryContractDB adapts only the test database to the application's DAO boundary.
 type queryContractDB struct{ db *mongo.Database }
 
+// GetCol returns a collection from the isolated test database.
 func (d queryContractDB) GetCol(name string) *mongo.Collection { return d.db.Collection(name) }
-func (d queryContractDB) CurrentDB() *mongo.Database           { return d.db }
-func (d queryContractDB) DB(name string) *mongo.Database       { return d.db.Client().Database(name) }
-func (d queryContractDB) Close(context.Context) error         { return nil }
+
+// CurrentDB returns the database owned by this test.
+func (d queryContractDB) CurrentDB() *mongo.Database { return d.db }
+
+// DB returns a database using the same test client.
+func (d queryContractDB) DB(name string) *mongo.Database { return d.db.Client().Database(name) }
+
+// Close leaves client cleanup to the test that owns its lifetime.
+func (d queryContractDB) Close(context.Context) error { return nil }
 
 // TestMongoQueryIntegration exercises production read/mutation boundaries on an
 // ephemeral database. CI supplies the URI explicitly; a configured DB must work.
@@ -74,8 +81,10 @@ func TestMongoQueryIntegration(t *testing.T) {
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
 		defer stop()
-		require.NoError(t, db.Drop(cleanup))
-		require.NoError(t, client.Disconnect(cleanup))
+		dropErr := db.Drop(cleanup)
+		disconnectErr := client.Disconnect(cleanup)
+		require.NoError(t, dropErr)
+		require.NoError(t, disconnectErr)
 	})
 	require.NoError(t, client.Ping(ctx, nil))
 	s := &Blog{logger: glog.Shared, dao: dao.New(glog.Shared, queryContractDB{db: db}, nil)}
