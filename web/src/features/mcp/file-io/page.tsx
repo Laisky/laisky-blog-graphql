@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 
 import { callFileAPI, callFileTool } from './client';
 import { FileIOIntroduction } from './introduction';
+import { ProjectPicker } from './project-picker';
 import { useFileIOInputDefaults, usePersistFileIOInputs, type FileIOPersistedInputs } from './use-file-io-input-storage';
 import { useFileRequestLane, useFileSnapshot } from './use-file-snapshot';
 import { canonicalFilePath, expectedVersion, fileIOErrorMessage, fileSnapshot, ifMatch, renameCondition, requireFileVersion, requireHistoryID, writeCondition, type FileSnapshot, type ReadPayload } from './version-state';
@@ -90,24 +91,35 @@ function processEntries(basePath: string, entries: FileEntry[]) {
   return { roots, cache, expanded };
 }
 
-/** Remount request-bound state on tenant, lock, or project changes. Never persist tokens. */
+/** FileIOPage resets all browser state on credential, lock, or session changes. */
 export function FileIOPage() {
-  const { apiKey, isToolConsoleLocked } = useApiKey();
-  const defaults = useFileIOInputDefaults();
-  const [project, setProject] = useState(defaults.project ?? '');
-  const [dirty, setDirty] = useState(false);
-  const scope = JSON.stringify([apiKey, isToolConsoleLocked, project]);
+  const { apiKey, isToolConsoleLocked, sessionId } = useApiKey();
   return <div className="space-y-8">
     <FileIOIntroduction />
-    <Field id="file-io-project" label="Project *"><Input id="file-io-project" placeholder="Required" required
-      disabled={isToolConsoleLocked || !apiKey} value={project} onChange={(event) => {
-        if (dirty && !window.confirm('Switch projects and discard the open drafts? Copy them first to keep your changes.')) return;
-        setDirty(false);
-        setProject(event.target.value);
-      }} /></Field>
-    <FileIOWorkspace key={scope} apiKey={isToolConsoleLocked ? '' : apiKey || ''} project={project}
-      defaults={defaults.project === project ? defaults : {}} onDirtyChange={setDirty} />
+    <FileIOAccountScope key={JSON.stringify([apiKey, isToolConsoleLocked, sessionId])}
+      apiKey={isToolConsoleLocked ? '' : apiKey || ''} />
   </div>;
+}
+
+/** FileIOAccountScope binds the project selector and every workspace draft to one credential. */
+function FileIOAccountScope({ apiKey }: { apiKey: string }) {
+  const defaults = useFileIOInputDefaults(apiKey);
+  const [project, setProject] = useState(defaults.project ?? '');
+  const [dirty, setDirty] = useState(false);
+  const [restoreDefaults, setRestoreDefaults] = useState(true);
+  return <>
+    <Field id="file-io-project" label="Project *"><ProjectPicker id="file-io-project" apiKey={apiKey}
+      disabled={!apiKey} value={project} onChange={(next) => {
+        if (next === project) return true;
+        if (dirty && !window.confirm('Switch projects and discard the open drafts? Copy them first to keep your changes.')) return false;
+        setDirty(false);
+        setRestoreDefaults(false);
+        setProject(next);
+        return true;
+      }} /></Field>
+    <FileIOWorkspace key={project} apiKey={apiKey} project={project}
+      defaults={restoreDefaults && defaults.project === project ? defaults : {}} onDirtyChange={setDirty} />
+  </>;
 }
 
 function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
@@ -182,7 +194,7 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
   // Persist drafts/paths only. Restored text is never paired with a fresh token automatically.
   usePersistFileIOInputs({ project, currentPath, depth, limit, selectedPath: previewPath, selectedContent: draft,
     writePath, writeMode, writeOffset, writeContent, deletePath, deleteRecursive: false,
-    renameFromPath, renameToPath, renameOverwrite, searchQuery, searchPrefix, searchLimit });
+    renameFromPath, renameToPath, renameOverwrite, searchQuery, searchPrefix, searchLimit }, apiKey);
 
   async function mutate(action: (current: () => boolean) => Promise<void>, report: (message: string) => void) {
     if (unavailable || mutationGate.current) return;
@@ -367,7 +379,6 @@ function FileIOWorkspace({ apiKey, project, defaults, onDirtyChange }: {
           </div>
         </CardContent>
       </Card>
-
       <div className="grid gap-6 lg:grid-cols-3">
         <Card><CardHeader><CardTitle className="text-xl">Write</CardTitle><CardDescription>Create explicitly, or read and review a base before editing.</CardDescription></CardHeader>
           <CardContent className="space-y-4">

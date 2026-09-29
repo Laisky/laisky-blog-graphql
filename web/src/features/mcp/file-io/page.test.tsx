@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileIOPage } from './page';
 import { callFileAPI, callFileTool } from './client';
 import { FileIORequestError } from './version-state';
+import { fileIOInputStorageKey } from './use-file-io-input-storage';
 
 const auth = vi.hoisted(() => ({ apiKey: 'test-key', isToolConsoleLocked: false }));
 vi.mock('@/lib/api-key-context', () => ({ useApiKey: () => auth }));
@@ -39,7 +40,7 @@ function deferred<T>() {
 }
 beforeEach(() => {
   window.localStorage.clear();
-  window.localStorage.setItem('mcp.file_io.inputs.v1', JSON.stringify({ project: 'p' }));
+  window.localStorage.setItem(fileIOInputStorageKey('test-key')!, JSON.stringify({ project: 'p' }));
   auth.apiKey = 'test-key'; auth.isToolConsoleLocked = false;
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   tool.mockImplementation(async (_key, name) => {
@@ -53,6 +54,7 @@ beforeEach(() => {
     throw new Error(`Unexpected tool ${name}`);
   });
   api.mockImplementation(async (_key, method, path) => {
+    if (method === 'GET' && path === '/projects') return { projects: ['p'], has_more: false };
     if (method === 'GET' && path === '/versions') return { versions: [{ id: '7', size: 3, created_at: '2026-01-01' }] };
     if (method === 'GET') return { ...read('old'), size: 3, created_at: '2026-01-01' };
     return { bytes_written: 5, version: v2 };
@@ -236,7 +238,7 @@ describe('FileIO page mandatory version workflow', () => {
     render(<FileIOPage />); input('Target Path', '/a.txt'); click('Read write base');
     await waitFor(() => expect(enabled('Write')).toBe(true));
     input('Write Content (UTF-8)', 'draft');
-    const saved = window.localStorage.getItem('mcp.file_io.inputs.v1')!;
+    const saved = window.localStorage.getItem(fileIOInputStorageKey('test-key')!)!;
     expect(saved).toContain('draft'); expect(saved).not.toContain(v1);
   });
 });
