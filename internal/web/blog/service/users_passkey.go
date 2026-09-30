@@ -31,7 +31,7 @@ func (s *Blog) FindUserByPasskeyID(ctx context.Context, credentialID []byte) (*m
 	}
 
 	user := new(model.User)
-	if err := s.dao.GetUsersCol().FindOne(ctx, bson.M{"passkeys.id": encodedID}).Decode(user); err != nil {
+	if err := s.dao.GetUsersCol().FindOne(ctx, bson.M{fieldPasskeysId: encodedID}).Decode(user); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.WithStack(mongo.ErrNoDocuments)
 		}
@@ -89,15 +89,15 @@ func (s *Blog) AddPasskeyCredential(ctx context.Context,
 	}
 
 	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
-		"_id": user.ID,
-		"passkeys": bson.M{
+		fieldDocumentID: user.ID,
+		fieldPasskeys: bson.M{
 			"$not": bson.M{
-				"$elemMatch": bson.M{"id": encodedID},
+				mongoElemMatch: bson.M{"id": encodedID},
 			},
 		},
 	}, bson.M{
-		"$push": bson.M{"passkeys": passkey},
-		"$set":  bson.M{"post_modified_gmt": now},
+		"$push":  bson.M{fieldPasskeys: passkey},
+		mongoSet: bson.M{fieldPostModifiedGmt: now},
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "add passkey for user %s", user.ID.Hex())
@@ -139,14 +139,14 @@ func (s *Blog) UpdatePasskeyCredential(ctx context.Context,
 
 	now := gutils.Clock.GetUTCNow()
 	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
-		"_id":         user.ID,
-		"passkeys.id": encodedID,
+		fieldDocumentID: user.ID,
+		fieldPasskeysId: encodedID,
 	}, bson.M{
-		"$set": bson.M{
+		mongoSet: bson.M{
 			"passkeys.$.credential_json": string(credentialJSON),
 			"passkeys.$.public_key":      base64.RawURLEncoding.EncodeToString(credential.PublicKey),
 			"passkeys.$.sign_count":      credential.Authenticator.SignCount,
-			"post_modified_gmt":          now,
+			fieldPostModifiedGmt:         now,
 		},
 	})
 	if err != nil {
@@ -196,12 +196,12 @@ func (s *Blog) RenamePasskeyCredential(ctx context.Context,
 
 	now := gutils.Clock.GetUTCNow()
 	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
-		"_id":         user.ID,
-		"passkeys.id": credentialID,
+		fieldDocumentID: user.ID,
+		fieldPasskeysId: credentialID,
 	}, bson.M{
-		"$set": bson.M{
-			"passkeys.$.name":   name,
-			"post_modified_gmt": now,
+		mongoSet: bson.M{
+			"passkeys.$.name":    name,
+			fieldPostModifiedGmt: now,
 		},
 	})
 	if err != nil {
@@ -244,11 +244,11 @@ func (s *Blog) DeletePasskeyCredential(ctx context.Context,
 
 	now := gutils.Clock.GetUTCNow()
 	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
-		"_id":         user.ID,
-		"passkeys.id": credentialID,
+		fieldDocumentID: user.ID,
+		fieldPasskeysId: credentialID,
 	}, bson.M{
-		"$pull": bson.M{"passkeys": bson.M{"id": credentialID}},
-		"$set":  bson.M{"post_modified_gmt": now},
+		"$pull":  bson.M{fieldPasskeys: bson.M{"id": credentialID}},
+		mongoSet: bson.M{fieldPostModifiedGmt: now},
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "delete passkey for user %s", user.ID.Hex())

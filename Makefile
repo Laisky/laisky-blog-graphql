@@ -1,17 +1,19 @@
 .PHONY: install
 install:
 	# go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	go install golang.org/x/tools/cmd/goimports@latest
+	go install golang.org/x/tools/cmd/goimports@v0.50.0
+	go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
 	go install google.golang.org/protobuf/protoc-gen-go@latest
 
 .PHONY: gen
 gen:
-	GQLGEN_DEBUG=1 GQLGEN_TRACE=1 go run github.com/99designs/gqlgen@v0.17.94 generate
+	GQLGEN_DEBUG=1 GQLGEN_TRACE=1 go run -mod=mod github.com/99designs/gqlgen generate
+	goimports -local github.com/Laisky/laisky-blog-graphql -w internal/web/generated.go internal/library/models/models.go
+	gofmt -s -w internal/web/generated.go internal/library/models/models.go
 
 .PHONY: test
 test:
-	@tox --recreate
-	@tox
+	go test -race -cover -timeout 5m ./...
 
 .PHONY: changelog
 changelog: CHANGELOG.md
@@ -19,14 +21,18 @@ changelog: CHANGELOG.md
 
 .PHONY: lint
 lint:
-	goimports -local github.com/Laisky/laisky-blog-graphql -w .
-	go mod tidy
-	gofmt -s -w .
+	./.scripts/check_go_format.sh
+	go mod tidy -diff
 	go vet ./...
-	golangci-lint run -c .golangci.lint.yml
+	golangci-lint run -c .golangci.lint.yml --max-issues-per-linter=0 --max-same-issues=0
 	govulncheck ./...
 	$(MAKE) lint-pure-go
 	$(MAKE) lint-system-owner
+
+.PHONY: format-go
+format-go:
+	goimports -local github.com/Laisky/laisky-blog-graphql -w .
+	gofmt -s -w .
 
 .PHONY: lint-pure-go
 lint-pure-go:

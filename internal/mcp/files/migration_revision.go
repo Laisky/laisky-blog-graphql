@@ -12,7 +12,7 @@ import (
 // the migration ledger, neither these statements nor their backfill run again.
 func applyFileRevisionMigration(ctx context.Context, tx *sql.Tx, isPostgres bool) error {
 	columns := []struct{ name, definition string }{
-		{"incarnation_id", "TEXT NOT NULL DEFAULT ''"},
+		{"incarnation_id", requiredTextColumn},
 		{"revision", "BIGINT NOT NULL DEFAULT 1 CHECK (revision > 0)"},
 	}
 	if isPostgres {

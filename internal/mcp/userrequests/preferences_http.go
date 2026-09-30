@@ -87,8 +87,8 @@ func (h *preferencesHTTPHandler) handleGet(w http.ResponseWriter, r *http.Reques
 		"disabled_tools":   disabledTools,
 		"command_template": commandTemplate,
 		"available_tools":  availableTools,
-		"user_id":          auth.UserIdentity,
-		"key_hint":         auth.KeySuffix,
+		fieldUserId:        auth.UserIdentity,
+		fieldKeyHint:       auth.KeySuffix,
 	})
 }
 
@@ -197,8 +197,8 @@ func (h *preferencesHTTPHandler) handleSet(w http.ResponseWriter, r *http.Reques
 		"disabled_tools":   disabledTools,
 		"command_template": commandTemplate,
 		"available_tools":  availableTools,
-		"user_id":          auth.UserIdentity,
-		"key_hint":         auth.KeySuffix,
+		fieldUserId:        auth.UserIdentity,
+		fieldKeyHint:       auth.KeySuffix,
 	})
 }
 
@@ -227,7 +227,7 @@ func (h *preferencesHTTPHandler) writeErrorWithLogger(w http.ResponseWriter, log
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": message}) //nolint:errchkjson // best-effort error response
+	_ = json.NewEncoder(w).Encode(map[string]any{fieldError: message}) //nolint:errchkjson // best-effort error response
 }
 
 func (h *preferencesHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
@@ -240,7 +240,8 @@ func (h *preferencesHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
 // logFromCtx extracts a context-aware logger from the context.
 // Falls back to the handler's logger or a shared logger if context logger is unavailable.
 func (h *preferencesHTTPHandler) logFromCtx(ctx context.Context) logSDK.Logger {
-	if logger := gmw.GetLogger(ctx); logger != nil {
+	if ctx != nil {
+		logger := gmw.GetLogger(ctx)
 		return logger.Named("preferences_http")
 	}
 	if h != nil && h.logger != nil {

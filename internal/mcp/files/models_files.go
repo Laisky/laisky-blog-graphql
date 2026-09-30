@@ -31,5 +31,5 @@ type File struct {
 
 // TableName returns the database table name.
 func (File) TableName() string {
-	return "mcp_files"
+	return tableMcpFiles
 }

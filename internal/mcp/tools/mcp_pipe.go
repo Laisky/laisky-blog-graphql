@@ -99,18 +99,18 @@ func (t *MCPPipeTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	env := map[string]any{
-		"vars":  spec.Vars,
-		"steps": map[string]any{},
+		"vars":     spec.Vars,
+		fieldSteps: map[string]any{},
 	}
 
 	counter := &stepCounter{}
 	result, execErr := t.executeSpec(ctx, logger, spec, env, 0, counter)
 
 	payload := map[string]any{
-		"ok":     execErr == nil,
-		"error":  errorString(execErr),
-		"result": result,
-		"steps":  env["steps"],
+		"ok":       execErr == nil,
+		fieldError: errorString(execErr),
+		"result":   result,
+		fieldSteps: env[fieldSteps],
 	}
 
 	toolResult, encodeErr := mcp.NewToolResultJSON(payload)
@@ -208,7 +208,7 @@ func (t *MCPPipeTool) executeSpec(ctx context.Context, logger logSDK.Logger, spe
 		return nil, errors.New("pipeline nesting too deep")
 	}
 
-	stepsEnv, ok := env["steps"].(map[string]any)
+	stepsEnv, ok := env[fieldSteps].(map[string]any)
 	if !ok {
 		return nil, errors.New("invalid steps environment")
 	}
@@ -254,7 +254,7 @@ func (t *MCPPipeTool) resolveReturn(spec *pipeSpec, env map[string]any) any {
 
 	resolved, err := resolveAny(spec.Return, env)
 	if err != nil {
-		return map[string]any{"error": err.Error()}
+		return map[string]any{fieldError: err.Error()}
 	}
 	return resolved
 }
@@ -302,20 +302,20 @@ func (t *MCPPipeTool) executeStep(ctx context.Context, logger logSDK.Logger, ste
 
 	if step.Pipe != nil {
 		childEnv := map[string]any{
-			"vars":  env["vars"],
-			"steps": map[string]any{},
+			"vars":     env["vars"],
+			fieldSteps: map[string]any{},
 		}
 		childResult, err := t.executeSpec(ctx, logger, step.Pipe, childEnv, depth+1, counter)
 		dur := time.Since(startedAt)
 		result := map[string]any{
-			"id":          step.ID,
-			"kind":        "pipe",
-			"started_at":  startedAt.Format(time.RFC3339Nano),
-			"duration_ms": dur.Milliseconds(),
-			"ok":          err == nil,
-			"error":       errorString(err),
-			"result":      childResult,
-			"steps":       childEnv["steps"],
+			"id":            step.ID,
+			fieldKind:       "pipe",
+			fieldStartedAt:  startedAt.Format(time.RFC3339Nano),
+			fieldDurationMs: dur.Milliseconds(),
+			"ok":            err == nil,
+			fieldError:      errorString(err),
+			"result":        childResult,
+			fieldSteps:      childEnv[fieldSteps],
 		}
 		if err != nil {
 			return result, errors.WithStack(err)
@@ -368,13 +368,13 @@ func (t *MCPPipeTool) executeStep(ctx context.Context, logger logSDK.Logger, ste
 	dur := time.Since(startedAt)
 
 	result := map[string]any{
-		"id":          step.ID,
-		"kind":        "parallel",
-		"started_at":  startedAt.Format(time.RFC3339Nano),
-		"duration_ms": dur.Milliseconds(),
-		"ok":          groupErr == nil,
-		"error":       errorString(groupErr),
-		"children":    childResults,
+		"id":            step.ID,
+		fieldKind:       "parallel",
+		fieldStartedAt:  startedAt.Format(time.RFC3339Nano),
+		fieldDurationMs: dur.Milliseconds(),
+		"ok":            groupErr == nil,
+		fieldError:      errorString(groupErr),
+		"children":      childResults,
 	}
 
 	if groupErr != nil {
@@ -420,13 +420,13 @@ func (c *stepCounter) increment(maxSteps int) error {
 // stepResultMap builds a normalized step result representation.
 func stepResultMap(step pipeStep, startedAt time.Time, dur time.Duration, toolResult *mcp.CallToolResult, stepErr error) map[string]any {
 	result := map[string]any{
-		"id":          step.ID,
-		"kind":        "tool",
-		"tool":        step.Tool,
-		"started_at":  startedAt.Format(time.RFC3339Nano),
-		"duration_ms": dur.Milliseconds(),
-		"ok":          stepErr == nil,
-		"error":       errorString(stepErr),
+		"id":            step.ID,
+		fieldKind:       "tool",
+		"tool":          step.Tool,
+		fieldStartedAt:  startedAt.Format(time.RFC3339Nano),
+		fieldDurationMs: dur.Milliseconds(),
+		"ok":            stepErr == nil,
+		fieldError:      errorString(stepErr),
 	}
 
 	if toolResult != nil {

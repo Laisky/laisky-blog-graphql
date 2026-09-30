@@ -2,9 +2,11 @@ package imageproc
 
 import (
 	"context"
-	"errors"
+	"crypto/tls"
+	stderrors "errors"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -29,9 +31,9 @@ type URLFetchConfig struct {
 	// LookupHost resolves a hostname to IPs. Defaults to net.DefaultResolver.
 	// Tests override this to simulate DNS-rebinding and private-IP scenarios.
 	LookupHost func(ctx context.Context, host string) ([]net.IP, error)
-	// DialContext is the transport-level dialer. Defaults to a net.Dialer
-	// that re-checks the resolved IP at connect time. Tests typically leave
-	// this nil to use the production behavior.
+	// DialContext is a trusted transport hook, normally nil. It receives only
+	// the validated numeric destination, never the untrusted origin hostname.
+	// Tests may redirect that connection to a local fixture.
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
@@ -82,7 +84,7 @@ func NewURLFetcher(cfg URLFetchConfig) *URLFetcher {
 func defaultLookup(ctx context.Context, host string) ([]net.IP, error) {
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return nil, err
+		return nil, laiskyerr.Wrap(err, "resolve image origin")
 	}
 	out := make([]net.IP, 0, len(addrs))
 	for _, a := range addrs {
@@ -91,182 +93,135 @@ func defaultLookup(ctx context.Context, host string) ([]net.IP, error) {
 	return out, nil
 }
 
-// Fetch downloads the URL and returns the body bytes plus the server-declared
-// Content-Type. All guards described in the proposal §3.7 are applied.
-func (f *URLFetcher) Fetch(ctx context.Context, url string) (FetchResult, error) {
-	if err := f.validateURL(ctx, url); err != nil {
-		return FetchResult{}, err
+// Fetch downloads an image through public, pinned destinations. Every redirect
+// is validated independently, with one deadline covering DNS, all hops and body.
+func (f *URLFetcher) Fetch(ctx context.Context, rawURL string) (FetchResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, f.cfg.TotalTimeout)
+	defer cancel()
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		return FetchResult{}, laiskyerr.Wrap(ErrURLBlocked, "invalid image URL")
 	}
+	for hops := 0; ; hops++ {
+		response, err := f.fetchHop(ctx, target)
+		if err != nil {
+			return FetchResult{}, classifyFetchError(err)
+		}
+		location := response.Header.Get("Location")
+		if isImageRedirect(response.StatusCode) && location != "" {
+			if err := response.Body.Close(); err != nil {
+				return FetchResult{}, classifyFetchError(err)
+			}
+			if hops >= f.cfg.MaxRedirects {
+				return FetchResult{}, laiskyerr.Wrap(ErrURLFetchFailed, "too many redirects")
+			}
+			// Resolve relative locations against the logical hostname, not the
+			// numeric connection target. The next hop repeats all origin checks.
+			target, err = target.Parse(location)
+			if err != nil {
+				return FetchResult{}, laiskyerr.Wrap(ErrURLBlocked, "invalid image redirect")
+			}
+			continue
+		}
+		return f.readResponse(response)
+	}
+}
 
+// pinnedRequest retains HTTP Host and TLS certificate/SNI identity while using
+// only a validated numeric authority for the network connection. Environment
+// proxies are intentionally not used: they would re-resolve the logical host.
+func (f *URLFetcher) pinnedRequest(ctx context.Context, target *url.URL) (*http.Request, *http.Transport, error) {
+	endpoint, err := f.publicEndpoint(ctx, target)
+	if err != nil {
+		return nil, nil, err
+	}
+	scheme := "https"
+	if target.Scheme == imageURLSchemeHTTP {
+		scheme = imageURLSchemeHTTP
+	}
+	wireURL := url.URL{
+		Scheme: scheme, Host: endpoint,
+		Path: target.Path, RawPath: target.RawPath,
+		RawQuery: target.RawQuery, ForceQuery: target.ForceQuery,
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, wireURL.String(), nil)
+	if err != nil {
+		return nil, nil, laiskyerr.Wrap(ErrURLBlocked, "invalid image request")
+	}
+	request.Host = target.Host
+	request.Header.Set("Accept", "image/*")
+	request.Header.Set("User-Agent", "laisky-mcp-image-fetcher/1.0")
 	dial := f.cfg.DialContext
 	if dial == nil {
-		dial = f.safeDialContext()
+		dial = (&net.Dialer{Timeout: f.cfg.TLSHandshakeTimeout}).DialContext
 	}
 	transport := &http.Transport{
 		DialContext:           dial,
+		TLSClientConfig:       &tls.Config{ServerName: target.Hostname(), MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout:   f.cfg.TLSHandshakeTimeout,
 		ResponseHeaderTimeout: f.cfg.ResponseHeaderTimeout,
 		DisableKeepAlives:     true,
 	}
+	return request, transport, nil
+}
 
-	// redirectsLeft is captured by CheckRedirect to enforce the hop cap.
-	redirectsLeft := f.cfg.MaxRedirects
+// fetchHop never follows a redirect inside the HTTP client; Fetch must validate
+// the next logical origin before another connection can be opened.
+func (f *URLFetcher) fetchHop(ctx context.Context, target *url.URL) (*http.Response, error) {
+	request, transport, err := f.pinnedRequest(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	defer transport.CloseIdleConnections()
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   f.cfg.TotalTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > redirectsLeft {
-				return laiskyerr.Wrap(ErrURLFetchFailed, "too many redirects")
-			}
-			if err := f.validateURL(req.Context(), req.URL.String()); err != nil {
-				return err
-			}
-			return nil
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
 		},
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	response, err := client.Do(request)
 	if err != nil {
-		return FetchResult{}, laiskyerr.Wrap(ErrURLFetchFailed, err.Error())
+		return nil, classifyFetchError(err)
 	}
-	req.Header.Set("Accept", "image/*")
-	req.Header.Set("User-Agent", "laisky-mcp-image-fetcher/1.0")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		if isTimeout(err) {
-			return FetchResult{}, laiskyerr.Wrap(ErrURLTimeout, err.Error())
-		}
-		// Preserve the sentinel wrapped by validateURL/CheckRedirect.
-		if errors.Is(err, ErrURLBlocked) || errors.Is(err, ErrURLFetchFailed) || errors.Is(err, ErrURLTimeout) {
-			return FetchResult{}, err
-		}
-		return FetchResult{}, laiskyerr.Wrap(ErrURLFetchFailed, err.Error())
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return FetchResult{}, laiskyerr.Wrapf(ErrURLFetchFailed, "status %d", resp.StatusCode)
-	}
-
-	body, err := readAllCapped(resp.Body, f.cfg.MaxBodyBytes)
-	if err != nil {
-		if laiskyerr.Is(err, ErrImageTooLarge) {
-			return FetchResult{}, err
-		}
-		if isTimeout(err) {
-			return FetchResult{}, laiskyerr.Wrap(ErrURLTimeout, err.Error())
-		}
-		return FetchResult{}, laiskyerr.Wrap(ErrURLFetchFailed, err.Error())
-	}
-
-	return FetchResult{
-		Body:     body,
-		MIMEHint: strings.ToLower(resp.Header.Get("Content-Type")),
-	}, nil
+	return response, nil
 }
 
-// safeDialContext returns a DialContext that re-resolves the destination host
-// at connect time and rejects any private / loopback / metadata destination.
-func (f *URLFetcher) safeDialContext() func(ctx context.Context, network, addr string) (net.Conn, error) {
-	dialer := &net.Dialer{Timeout: f.cfg.TLSHandshakeTimeout}
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		host, port, splitErr := net.SplitHostPort(addr)
-		if splitErr != nil {
-			return nil, laiskyerr.Wrap(ErrURLBlocked, splitErr.Error())
-		}
-		ips, err := f.cfg.LookupHost(ctx, host)
-		if err != nil {
-			return nil, laiskyerr.Wrap(ErrURLBlocked, err.Error())
-		}
-		for _, ip := range ips {
-			if !isPublicIP(ip) {
-				return nil, laiskyerr.Wrapf(ErrURLBlocked, "private IP %s", ip.String())
-			}
-		}
-		// Pick the first public IP.
-		if len(ips) == 0 {
-			return nil, laiskyerr.Wrap(ErrURLBlocked, "no addresses")
-		}
-		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+// readResponse always closes the body and preserves the primary read failure.
+func (f *URLFetcher) readResponse(response *http.Response) (FetchResult, error) {
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		closeErr := response.Body.Close()
+		return FetchResult{}, laiskyerr.Wrapf(stderrors.Join(ErrURLFetchFailed, closeErr), "image status %d", response.StatusCode)
 	}
+	body, err := readAllCapped(response.Body, f.cfg.MaxBodyBytes)
+	closeErr := response.Body.Close()
+	if err != nil || closeErr != nil {
+		return FetchResult{}, classifyFetchError(stderrors.Join(err, closeErr))
+	}
+	return FetchResult{Body: body, MIMEHint: strings.ToLower(response.Header.Get("Content-Type"))}, nil
 }
 
-// validateURL enforces the scheme allowlist and runs a DNS guard.
-func (f *URLFetcher) validateURL(ctx context.Context, raw string) error {
-	parsed, err := urlParse(raw)
-	if err != nil {
-		return laiskyerr.Wrap(ErrURLBlocked, err.Error())
-	}
-	scheme := strings.ToLower(parsed.Scheme)
-	switch scheme {
-	case "https":
-	case "http":
-		if !f.cfg.AllowHTTP {
-			return laiskyerr.Wrapf(ErrURLBlocked, "scheme %q disabled", scheme)
-		}
+// isImageRedirect matches the redirect statuses followed by net/http for GET.
+func isImageRedirect(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return true
 	default:
-		return laiskyerr.Wrapf(ErrURLBlocked, "scheme %q disallowed", scheme)
+		return false
 	}
-	host := parsed.Host
-	if idx := strings.IndexRune(host, ':'); idx >= 0 {
-		host = host[:idx]
-	}
-	if host == "" {
-		return laiskyerr.Wrap(ErrURLBlocked, "missing host")
-	}
-	ips, err := f.cfg.LookupHost(ctx, host)
-	if err != nil {
-		return laiskyerr.Wrap(ErrURLBlocked, err.Error())
-	}
-	for _, ip := range ips {
-		if !isPublicIP(ip) {
-			return laiskyerr.Wrapf(ErrURLBlocked, "private IP %s", ip.String())
-		}
-	}
-	return nil
 }
 
-// isPublicIP rejects all private / reserved / metadata IP ranges.
-func isPublicIP(ip net.IP) bool {
-	if ip == nil {
-		return false
+// classifyFetchError preserves cancellation and policy sentinels without
+// retaining a URL (which may contain private paths or query tokens) in errors.
+func classifyFetchError(err error) error {
+	var urlErr *url.Error
+	if stderrors.As(err, &urlErr) {
+		err = urlErr.Err
 	}
-	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() {
-		return false
+	if isTimeout(err) {
+		return laiskyerr.Wrap(stderrors.Join(ErrURLTimeout, err), "image request timed out")
 	}
-	if ip.IsPrivate() {
-		return false
+	if stderrors.Is(err, ErrURLBlocked) || stderrors.Is(err, ErrImageTooLarge) || stderrors.Is(err, ErrURLFetchFailed) {
+		return laiskyerr.WithStack(err)
 	}
-	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return false
-	}
-	// Block AWS / GCP / Azure metadata endpoints explicitly (covered by
-	// link-local, but enforced for defense-in-depth).
-	if ip.Equal(net.ParseIP("169.254.169.254")) {
-		return false
-	}
-	if ip.Equal(net.ParseIP("fd00:ec2::254")) {
-		return false
-	}
-	// Block IPv4-mapped IPv6 for private ranges.
-	if v4 := ip.To4(); v4 != nil {
-		ip = v4
-	}
-	return true
-}
-
-// urlParse wraps net/url.Parse + validation to avoid the import cycle hazard
-// of pulling net/url into this file twice.
-func urlParse(raw string) (parsedURL, error) {
-	u, err := netURLParse(raw)
-	if err != nil {
-		return parsedURL{}, err
-	}
-	return parsedURL{Scheme: u.Scheme, Host: u.Host}, nil
-}
-
-type parsedURL struct {
-	Scheme string
-	Host   string
+	return laiskyerr.Wrap(stderrors.Join(ErrURLFetchFailed, err), "image request failed")
 }

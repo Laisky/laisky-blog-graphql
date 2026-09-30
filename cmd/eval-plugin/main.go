@@ -14,6 +14,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -28,6 +29,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	errors "github.com/Laisky/errors/v2"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/conformance/eval"
@@ -45,15 +48,14 @@ func main() {
 }
 
 type cliFlags struct {
-	plugin    string
-	golden    string
-	out       string
-	suites    string
-	config    string
-	gitSHA    string
-	baseline  bool
-	force     bool
-	pluginAny string
+	plugin   string
+	golden   string
+	out      string
+	suites   string
+	config   string
+	gitSHA   string
+	baseline bool
+	force    bool
 }
 
 func parseFlags() cliFlags {
@@ -74,7 +76,7 @@ func run() error {
 	c := parseFlags()
 	if c.plugin == "" {
 		flag.Usage()
-		return fmt.Errorf("--plugin is required")
+		return errors.New("--plugin is required")
 	}
 	c.plugin = mcpplugin.NormalizeName(c.plugin)
 
@@ -109,7 +111,10 @@ func run() error {
 
 	// Compute golden_versions before invocation so we record them even when a
 	// suite is missing its dataset.
-	goldenVersions := computeGoldenVersions(c.golden)
+	goldenVersions, err := computeGoldenVersions(c.golden)
+	if err != nil {
+		return errors.Wrap(err, "fingerprint golden datasets")
+	}
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir out %s: %w", outDir, err)
@@ -147,7 +152,7 @@ func run() error {
 
 	if c.baseline && !c.force {
 		if _, err := os.Stat(scorecardPath); err == nil {
-			return fmt.Errorf("baseline exists at %s; pass --force to overwrite", scorecardPath)
+			return errors.Errorf("baseline exists at %s; pass --force to overwrite", scorecardPath)
 		}
 	}
 
@@ -257,7 +262,7 @@ func (p *stubPlugin) Stop(context.Context) error  { return nil }
 func resolveOutDir(c cliFlags, gitSHA string) (string, error) {
 	if c.baseline {
 		if c.out != "" {
-			return "", fmt.Errorf("--out conflicts with --baseline; pick one")
+			return "", errors.New("--out conflicts with --baseline; pick one")
 		}
 		return "docs/eval/baseline_v1", nil
 	}
@@ -278,24 +283,24 @@ func scorecardPath(outDir, plugin string, baseline bool) string {
 	return filepath.Join(outDir, fmt.Sprintf("%s_plugin_scorecard.md", plugin))
 }
 
-func writeScorecard(path string, sc eval.Scorecard) error {
+func writeScorecard(path string, sc eval.Scorecard) (retErr error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create scorecard %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, errors.Wrap(f.Close(), "close file")) }()
 	if err := sc.WriteMarkdown(f); err != nil {
 		return fmt.Errorf("write scorecard %s: %w", path, err)
 	}
 	return nil
 }
 
-func writeRawPerQuery(path string, rows []eval.PerQueryRecord) error {
+func writeRawPerQuery(path string, rows []eval.PerQueryRecord) (retErr error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create raw %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, errors.Wrap(f.Close(), "close file")) }()
 	enc := json.NewEncoder(f)
 	for _, r := range rows {
 		if err := enc.Encode(r); err != nil {
@@ -307,12 +312,12 @@ func writeRawPerQuery(path string, rows []eval.PerQueryRecord) error {
 
 // writeRunMetadata emits a deterministic YAML document so re-runs produce
 // stable diffs. Keys are written in a fixed order.
-func writeRunMetadata(path, gitSHA, runUTC, goldenDir string, goldenVersions map[string]string, judge eval.LLMJudge) error {
+func writeRunMetadata(path, gitSHA, runUTC, goldenDir string, goldenVersions map[string]string, judge eval.LLMJudge) (retErr error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create metadata %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, errors.Wrap(f.Close(), "close file")) }()
 
 	hostname, _ := os.Hostname()
 	judgeModels := "none"
@@ -323,62 +328,76 @@ func writeRunMetadata(path, gitSHA, runUTC, goldenDir string, goldenVersions map
 		judgeModels = "configured"
 	}
 
-	fmt.Fprintf(f, "harness_version: %s\n", quoteYAML(harnessVersion))
-	fmt.Fprintf(f, "git_sha: %s\n", quoteYAML(gitSHA))
-	fmt.Fprintf(f, "run_utc: %s\n", quoteYAML(runUTC))
-	fmt.Fprintf(f, "judge_models: %s\n", quoteYAML(judgeModels))
-	fmt.Fprintf(f, "embedding_model: %s\n", quoteYAML(embeddingModel))
-	fmt.Fprintf(f, "go_toolchain: %s\n", quoteYAML(runtime.Version()))
-	fmt.Fprintf(f, "hardware:\n")
-	fmt.Fprintf(f, "  num_cpu: %d\n", runtime.NumCPU())
-	fmt.Fprintf(f, "  hostname: %s\n", quoteYAML(hostname))
-	fmt.Fprintf(f, "  os: %s\n", quoteYAML(runtime.GOOS))
-	fmt.Fprintf(f, "  arch: %s\n", quoteYAML(runtime.GOARCH))
-	fmt.Fprintf(f, "golden_dir: %s\n", quoteYAML(goldenDir))
-	fmt.Fprintf(f, "golden_versions:\n")
+	var buf []byte
+	buf = fmt.Appendf(buf, "harness_version: %s\n", quoteYAML(harnessVersion))
+	buf = fmt.Appendf(buf, "git_sha: %s\n", quoteYAML(gitSHA))
+	buf = fmt.Appendf(buf, "run_utc: %s\n", quoteYAML(runUTC))
+	buf = fmt.Appendf(buf, "judge_models: %s\n", quoteYAML(judgeModels))
+	buf = fmt.Appendf(buf, "embedding_model: %s\n", quoteYAML(embeddingModel))
+	buf = fmt.Appendf(buf, "go_toolchain: %s\n", quoteYAML(runtime.Version()))
+	buf = fmt.Appendf(buf, "hardware:\n")
+	buf = fmt.Appendf(buf, "  num_cpu: %d\n", runtime.NumCPU())
+	buf = fmt.Appendf(buf, "  hostname: %s\n", quoteYAML(hostname))
+	buf = fmt.Appendf(buf, "  os: %s\n", quoteYAML(runtime.GOOS))
+	buf = fmt.Appendf(buf, "  arch: %s\n", quoteYAML(runtime.GOARCH))
+	buf = fmt.Appendf(buf, "golden_dir: %s\n", quoteYAML(goldenDir))
+	buf = fmt.Appendf(buf, "golden_versions:\n")
 	if len(goldenVersions) == 0 {
-		fmt.Fprintln(f, "  {}")
+		buf = fmt.Appendln(buf, "  {}")
 	} else {
 		for _, k := range sortedKeys(goldenVersions) {
-			fmt.Fprintf(f, "  %s: %s\n", quoteYAML(k), quoteYAML(goldenVersions[k]))
+			buf = fmt.Appendf(buf, "  %s: %s\n", quoteYAML(k), quoteYAML(goldenVersions[k]))
 		}
 	}
-	return nil
+	_, err = io.Copy(f, bytes.NewReader(buf))
+	return errors.Wrap(err, "write metadata")
 }
 
 // computeGoldenVersions hashes every regular file under goldenDir and returns
 // dataset-name → SHA-256 hex. Missing directory is reported as an empty map so
 // the eval still produces metadata.
-func computeGoldenVersions(goldenDir string) map[string]string {
+func computeGoldenVersions(goldenDir string) (map[string]string, error) {
 	out := map[string]string{}
 	info, err := os.Stat(goldenDir)
-	if err != nil || !info.IsDir() {
-		return out
+	if errors.Is(err, os.ErrNotExist) {
+		return out, nil
 	}
-	_ = filepath.WalkDir(goldenDir, func(path string, d os.DirEntry, walkErr error) error {
+	if err != nil {
+		return nil, errors.Wrap(err, "stat golden directory")
+	}
+	if !info.IsDir() {
+		return nil, errors.New("golden path must be a directory")
+	}
+	err = filepath.WalkDir(goldenDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return nil
+			return errors.Wrap(walkErr, "walk golden directory")
 		}
 		if d.IsDir() {
 			return nil
 		}
 		name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		if _, exists := out[name]; exists {
+			return errors.Errorf("duplicate golden dataset name %q", name)
+		}
 		sum, err := sha256File(path)
 		if err != nil {
-			return nil
+			return errors.Wrap(err, "hash golden dataset")
 		}
 		out[name] = sum
 		return nil
 	})
-	return out
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return out, nil
 }
 
-func sha256File(path string) (string, error) {
+func sha256File(path string) (_ string, retErr error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, errors.Wrap(f.Close(), "close file")) }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -387,7 +406,9 @@ func sha256File(path string) (string, error) {
 }
 
 func detectGitSHA() string {
-	out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--short", "HEAD").Output()
 	if err != nil {
 		return ""
 	}

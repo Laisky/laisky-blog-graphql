@@ -89,7 +89,7 @@ func (s *Blog) RequestEmailVerificationCode(ctx context.Context, account string,
 	}
 
 	col := s.dao.GetEmailVerificationCodesCol()
-	if _, err = col.DeleteMany(ctx, bson.M{"account": account, "purpose": purpose}); err != nil {
+	if _, err = col.DeleteMany(ctx, verificationIdentityFilter{Account: account, Purpose: purpose}); err != nil {
 		return errors.Wrap(err, "delete previous email verification codes")
 	}
 	if _, err = col.InsertOne(ctx, challenge); err != nil {
@@ -131,8 +131,8 @@ func (s *Blog) ConsumeEmailVerificationCode(ctx context.Context, account string,
 	col := s.dao.GetEmailVerificationCodesCol()
 	challenge := new(model.EmailVerificationCode)
 	if err = col.FindOne(ctx, bson.M{
-		"account":    account,
-		"purpose":    purpose,
+		fieldAccount: account,
+		fieldPurpose: purpose,
 		"expires_at": bson.M{"$gt": gutils.Clock.GetUTCNow()},
 	}).Decode(challenge); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -145,7 +145,7 @@ func (s *Blog) ConsumeEmailVerificationCode(ctx context.Context, account string,
 	if !secureCompareString(challenge.CodeHash, expectedHash) {
 		return errors.New("invalid email verification code")
 	}
-	if _, err = col.DeleteOne(ctx, bson.M{"_id": challenge.ID}); err != nil {
+	if _, err = col.DeleteOne(ctx, bson.M{fieldDocumentID: challenge.ID}); err != nil {
 		return errors.Wrap(err, "delete consumed email verification code")
 	}
 
@@ -180,8 +180,8 @@ func (s *Blog) setupEmailVerificationCols(ctx context.Context) error {
 	col := s.dao.GetEmailVerificationCodesCol()
 	if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{
-			{Key: "account", Value: 1},
-			{Key: "purpose", Value: 1},
+			{Key: fieldAccount, Value: 1},
+			{Key: fieldPurpose, Value: 1},
 		},
 	}); err != nil {
 		return errors.Wrap(err, "create email verification account index")

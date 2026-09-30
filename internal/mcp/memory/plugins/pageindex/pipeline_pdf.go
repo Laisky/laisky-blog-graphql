@@ -110,7 +110,7 @@ func (idx *Indexer) detectTOC(ctx context.Context, pages []string, budget *Budge
 			return nil, "", false, err
 		}
 		ans := parseSimpleAnswer(resp.Text, "toc_detected")
-		if ans == "yes" {
+		if ans == affirmativeAnswer {
 			tocPages = append(tocPages, i)
 			lastYes = true
 			continue
@@ -135,7 +135,7 @@ func (idx *Indexer) detectTOC(ctx context.Context, pages []string, budget *Budge
 	if err != nil {
 		return nil, "", false, err
 	}
-	hasPageIndex := parseSimpleAnswer(resp.Text, "page_index_given_in_toc") == "yes"
+	hasPageIndex := parseSimpleAnswer(resp.Text, "page_index_given_in_toc") == affirmativeAnswer
 	return tocPages, tocContent, hasPageIndex, nil
 }
 
@@ -179,9 +179,14 @@ func (idx *Indexer) modeAWithPageNumbers(ctx context.Context, pages []string, to
 	}
 	var content strings.Builder
 	for p := startPage; p < end; p++ {
-		content.WriteString(fmt.Sprintf("<physical_index_%d>\n%s\n<physical_index_%d>\n\n", p+1, pages[p], p+1))
+		if _, err := fmt.Fprintf(&content, "<physical_index_%d>\n%s\n<physical_index_%d>\n\n", p+1, pages[p], p+1); err != nil {
+			return nil, errors.Wrap(err, "build page context")
+		}
 	}
-	tocJSON, _ := json.Marshal(flat)
+	tocJSON, err := json.Marshal(flat)
+	if err != nil {
+		return nil, errors.Wrap(err, "encode index structure")
+	}
 	extractorPrompt, err := RenderPrompt(PromptTOCIndexExtractor, TOCIndexExtractorVars{TOC: string(tocJSON), Content: content.String()})
 	if err != nil {
 		return nil, err
@@ -192,7 +197,7 @@ func (idx *Indexer) modeAWithPageNumbers(ctx context.Context, pages []string, to
 	}
 	extracted, err := parseTOCList(resp2.Text)
 	if err != nil {
-		return flat, nil
+		return nil, errors.Wrap(err, "parse extracted table of contents")
 	}
 	mergeIndices(flat, extracted)
 	return flat, nil
@@ -233,7 +238,10 @@ func (idx *Indexer) modeBNoPageNumbers(ctx context.Context, pages []string, tocC
 	}
 	groups := groupPagesByTokens(pages, idx.tok, idx.cfg.Algo.MaxTokenNumEachNode)
 	for _, g := range groups {
-		structJSON, _ := json.Marshal(flat)
+		structJSON, err := json.Marshal(flat)
+		if err != nil {
+			return nil, errors.Wrap(err, "encode index structure")
+		}
 		filler, err := RenderPrompt(PromptAddPageNumberToTOC, AddPageNumberToTOCVars{Part: g, Structure: string(structJSON)})
 		if err != nil {
 			return nil, err
@@ -269,7 +277,10 @@ func (idx *Indexer) modeCNoTOC(ctx context.Context, pages []string, budget *Budg
 		return nil, err
 	}
 	for _, g := range groups[1:] {
-		prevJSON, _ := json.Marshal(flat)
+		prevJSON, err := json.Marshal(flat)
+		if err != nil {
+			return nil, errors.Wrap(err, "encode index structure")
+		}
 		contPrompt, err := RenderPrompt(PromptGenerateTOCContinue, GenerateTOCContinueVars{Part: g, PreviousStruct: string(prevJSON)})
 		if err != nil {
 			return nil, err
@@ -439,7 +450,10 @@ func pageRangeText(pages []string, start, end int) string {
 
 // generateDocDescription wraps the doc-description prompt.
 func (idx *Indexer) generateDocDescription(ctx context.Context, nodes []*Node, budget *Budget, stats *Stats) (string, error) {
-	outline, _ := json.Marshal(CloneOutline(nodes))
+	outline, err := json.Marshal(CloneOutline(nodes))
+	if err != nil {
+		return "", errors.Wrap(err, "encode index structure")
+	}
 	prompt, err := RenderPrompt(PromptGenerateDocDescription, GenerateDocDescriptionVars{Structure: string(outline)})
 	if err != nil {
 		return "", err

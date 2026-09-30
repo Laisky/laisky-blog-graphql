@@ -34,7 +34,7 @@ func (s *Service) DeleteRequest(ctx context.Context, auth *askuser.Authorization
 	s.log().Debug("deleted user request",
 		zap.String("user", auth.UserIdentity),
 		zap.String("request_id", id.String()),
-		zap.Int64("deleted", rowsAffected),
+		zap.Int64(fieldDeleted, rowsAffected),
 	)
 	return nil
 }
@@ -70,7 +70,7 @@ func (s *Service) DeleteAll(ctx context.Context, auth *askuser.AuthorizationCont
 		zap.String("user", auth.UserIdentity),
 		zap.Bool("all_tasks", includeAllTasks),
 		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", rowsAffected),
+		zap.Int64(fieldDeleted, rowsAffected),
 	)
 	return rowsAffected, nil
 }
@@ -106,7 +106,7 @@ func (s *Service) DeleteAllPending(ctx context.Context, auth *askuser.Authorizat
 		zap.String("user", auth.UserIdentity),
 		zap.Bool("all_tasks", includeAllTasks),
 		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", rowsAffected),
+		zap.Int64(fieldDeleted, rowsAffected),
 	)
 	return rowsAffected, nil
 }
@@ -163,7 +163,7 @@ func (s *Service) DeleteConsumed(ctx context.Context, auth *askuser.Authorizatio
 		zap.String("user", auth.UserIdentity),
 		zap.Bool("all_tasks", includeAllTasks),
 		zap.String("task_id", logTaskID),
-		zap.Int64("deleted", rowsAffected),
+		zap.Int64(fieldDeleted, rowsAffected),
 	)
 	return rowsAffected, nil
 }

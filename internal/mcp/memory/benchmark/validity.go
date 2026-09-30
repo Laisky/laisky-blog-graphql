@@ -6,7 +6,8 @@ import (
 	errors "github.com/Laisky/errors/v2"
 )
 
-const invalidReportWarning = "Benchmark run is INVALID because one or more query cases or lifecycle operations failed. Failed query cases are excluded from aggregate quality metrics, abstention credit is disabled, and this report must not be used as a baseline."
+const invalidReportWarning = "Benchmark run is INVALID because one or more query cases or lifecycle operations failed. Failed query cases are excluded from aggregate quality " +
+	"metrics, abstention credit is disabled, and this report must not be used as a baseline."
 
 // FinalizeReport derives the durable validity status and warning text from query and lifecycle errors.
 func FinalizeReport(report *Report) {

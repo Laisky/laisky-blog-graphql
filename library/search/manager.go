@@ -146,11 +146,7 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 
 	logger := m.logger
 	if ctx != nil {
-		if ctxLogger := gmw.GetLogger(ctx); ctxLogger != nil {
-			logger = ctxLogger.Named("search_manager").With(zap.String("query", trimmed))
-		} else if logger != nil {
-			logger = logger.With(zap.String("query", trimmed))
-		}
+		logger = gmw.GetLogger(ctx).Named("search_manager").With(zap.String("query", trimmed))
 	}
 
 	allowedAttempts := m.maxRetries + 1

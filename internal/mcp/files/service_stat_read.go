@@ -90,7 +90,7 @@ func (s *Service) Read(ctx context.Context, auth AuthContext, project, path stri
 	if !utf8.Valid(data) {
 		return ReadResult{}, errors.WithStack(NewError(ErrCodeInvalidContent, "stored file is not valid UTF-8", false))
 	}
-	result := ReadResult{ContentEncoding: "utf-8", Version: file.Version}
+	result := ReadResult{ContentEncoding: encodingUTF8, Version: file.Version}
 	if offset >= int64(len(data)) {
 		return result, nil
 	}

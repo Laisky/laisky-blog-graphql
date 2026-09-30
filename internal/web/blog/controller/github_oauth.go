@@ -591,9 +591,3 @@ func doGitHubJSONRequest(httpClient *http.Client, req *http.Request, out any) er
 
 	return nil
 }
-
-// githubOAuthAuthorizeURL returns the GitHub authorize endpoint used by this flow.
-// It accepts no parameters and returns the provider authorize URL for tests and diagnostics.
-func githubOAuthAuthorizeURL() string {
-	return githubOAuthAuthorizeEndpoint
-}

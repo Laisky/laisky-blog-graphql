@@ -14,6 +14,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
 )
@@ -137,7 +138,7 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 
 	endpoint, err := url.Parse(e.endpoint)
 	if err != nil {
-		return nil, errors.Wrapf(err, "invalid serp google endpoint %q", e.endpoint)
+		return nil, errors.New("invalid serp google endpoint")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -158,15 +159,13 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 
 	logger := e.logger
 	if ctx != nil {
-		if ctxLogger := gmw.GetLogger(ctx); ctxLogger != nil {
-			logger = ctxLogger.Named("serp_google")
-		}
+		logger = gmw.GetLogger(ctx).Named("serp_google")
 	}
 
 	if logger != nil {
 		logger.Debug("outgoing http request",
 			zap.String("method", req.Method),
-			zap.String("url", req.URL.String()),
+			zap.String("url", toolpolicy.URLForLog(req.URL.String())),
 			zap.String("query", trimmedQuery),
 		)
 	}
@@ -174,6 +173,11 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 	startAt := time.Now()
 	resp, err := e.client.Do(req)
 	if err != nil {
+		// net/http embeds the full credential-bearing URL in url.Error.
+		var requestErr *url.Error
+		if errors.As(err, &requestErr) {
+			err = requestErr.Err
+		}
 		return nil, errors.Wrap(err, "send serp google request")
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -183,11 +187,11 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 		return nil, errors.Wrap(err, "read serp google response body")
 	}
 
-	truncatedBody, truncated := truncateForLog(body, logBodyLimit)
+	truncatedBody, truncated := truncateForLog([]byte(e.redactProviderKey(string(body))), logBodyLimit)
 	if logger != nil {
 		logger.Debug("incoming http response",
 			zap.Int("status", resp.StatusCode),
-			zap.String("body", truncatedBody),
+			zap.Int("response_bytes", len(body)),
 			zap.Bool("body_truncated", truncated),
 			zap.Duration("cost", time.Since(startAt)),
 			zap.String("query", trimmedQuery),
@@ -204,7 +208,7 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 	}
 
 	if payload.Error != "" {
-		return nil, errors.Errorf("serp google reported error: %s", payload.Error)
+		return nil, errors.Errorf("serp google reported error: %s", e.redactProviderKey(payload.Error))
 	}
 
 	items := make([]search.SearchResultItem, 0, len(payload.OrganicResults))
@@ -240,4 +244,12 @@ func truncateForLog(body []byte, limit int) (string, bool) {
 		return string(body), false
 	}
 	return string(body[:limit]), true
+}
+
+// redactProviderKey removes raw and query-escaped credential echoes from provider errors.
+func (e *SearchEngine) redactProviderKey(message string) string {
+	if e.apiKey == "" {
+		return message
+	}
+	return strings.NewReplacer(e.apiKey, "[REDACTED]", url.QueryEscape(e.apiKey), "[REDACTED]").Replace(message)
 }

@@ -3,9 +3,6 @@ package pageindex
 import (
 	"bytes"
 	"context"
-	"io"
-	"os"
-	"path/filepath"
 
 	errors "github.com/Laisky/errors/v2"
 	dpdf "github.com/dslipak/pdf"
@@ -31,17 +28,17 @@ type PDFParser interface {
 // NewPDFParser dispatches text and outline parsers by name. Both default to "pdfcpu".
 func NewPDFParser(text, outline string) (PDFParser, error) {
 	if text == "" {
-		text = "pdfcpu"
+		text = parserPdfcpu
 	}
 	if outline == "" {
-		outline = "pdfcpu"
+		outline = parserPdfcpu
 	}
 	switch text {
-	case "pdfcpu", "dslipak":
+	case parserPdfcpu, parserDslipak:
 	default:
 		return nil, errors.Errorf("unknown text parser %q", text)
 	}
-	if outline != "pdfcpu" && outline != "dslipak" {
+	if outline != parserPdfcpu && outline != parserDslipak {
 		return nil, errors.Errorf("unknown outline parser %q", outline)
 	}
 	return &pdfBackend{text: text, outline: outline}, nil
@@ -53,12 +50,15 @@ type pdfBackend struct {
 }
 
 // PageCount returns the document's total page count.
-func (p *pdfBackend) PageCount(_ context.Context, data []byte) (int, error) {
+func (p *pdfBackend) PageCount(ctx context.Context, data []byte) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, errors.Wrap(err, "pdf page count canceled")
+	}
 	rs := bytes.NewReader(data)
 	switch p.text {
-	case "pdfcpu":
-		// pdfcpu's stable counter is PageCount(rs, conf).
-		n, err := pdfapi.PageCount(rs, nil)
+	case parserPdfcpu:
+		// Forward the request lifetime to pdfcpu, including cancellation.
+		n, err := pdfapi.PageCount(ctx, rs, nil)
 		if err != nil {
 			return 0, errors.Wrap(err, "pdfcpu page count")
 		}
@@ -74,8 +74,8 @@ func (p *pdfBackend) PageCount(_ context.Context, data []byte) (int, error) {
 }
 
 // PageText extracts plain text for a single 1-indexed page.
-func (p *pdfBackend) PageText(_ context.Context, data []byte, page int) (string, error) {
-	pages, err := dslipakPages(data)
+func (p *pdfBackend) PageText(ctx context.Context, data []byte, page int) (string, error) {
+	pages, err := dslipakPages(ctx, data)
 	if err != nil {
 		return "", err
 	}
@@ -87,34 +87,33 @@ func (p *pdfBackend) PageText(_ context.Context, data []byte, page int) (string,
 
 // PagesText extracts plain text for every page. We rely on dslipak for text in
 // both modes since pdfcpu's API exposes raw content streams rather than text.
-func (p *pdfBackend) PagesText(_ context.Context, data []byte) ([]string, error) {
-	return dslipakPages(data)
+func (p *pdfBackend) PagesText(ctx context.Context, data []byte) ([]string, error) {
+	return dslipakPages(ctx, data)
 }
 
 // Outline returns the recursive bookmark tree.
-func (p *pdfBackend) Outline(_ context.Context, data []byte) ([]Bookmark, error) {
-	if p.outline == "dslipak" {
+func (p *pdfBackend) Outline(ctx context.Context, data []byte) ([]Bookmark, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, errors.Wrap(err, "pdf outline canceled")
+	}
+	if p.outline == parserDslipak {
 		return nil, errors.New("outline not supported by dslipak parser")
 	}
-	tmpFile, cleanup, err := writeTemp(data)
+	bms, err := pdfapi.Bookmarks(ctx, bytes.NewReader(data), nil)
 	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-	f, err := os.Open(tmpFile)
-	if err != nil {
-		return nil, errors.Wrap(err, "open temp pdf")
-	}
-	defer f.Close()
-	bms, err := pdfapi.Bookmarks(f, nil)
-	if err != nil {
-		// pdfcpu returns errors when the PDF lacks an outline. Treat that as no outline.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, errors.Wrap(ctxErr, "pdf outline canceled")
+		}
+		// Preserve the existing no-outline fallback, but never swallow cancellation.
 		return nil, nil
 	}
 	return convertBookmarks(bms), nil
 }
 
-func dslipakPages(data []byte) ([]string, error) {
+func dslipakPages(ctx context.Context, data []byte) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, errors.Wrap(err, "pdf text canceled")
+	}
 	r, err := dpdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, errors.Wrap(err, "dslipak open")
@@ -122,6 +121,9 @@ func dslipakPages(data []byte) ([]string, error) {
 	n := r.NumPage()
 	out := make([]string, 0, n)
 	for i := 1; i <= n; i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, errors.Wrap(err, "pdf text canceled")
+		}
 		page := r.Page(i)
 		fonts := map[string]*dpdf.Font{}
 		for _, name := range page.Fonts() {
@@ -147,29 +149,4 @@ func convertBookmarks(in []pdfcpu.Bookmark) []Bookmark {
 		out = append(out, Bookmark{Title: b.Title, PageFrom: b.PageFrom, Children: convertBookmarks(b.Kids)})
 	}
 	return out
-}
-
-// writeTemp persists data to a temp file because pdfapi.Bookmarks needs a real file handle.
-func writeTemp(data []byte) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "pageindex-*")
-	if err != nil {
-		return "", func() {}, errors.Wrap(err, "mkdir temp")
-	}
-	cleanup := func() { _ = os.RemoveAll(dir) }
-	path := filepath.Join(dir, "doc.pdf")
-	f, err := os.Create(path)
-	if err != nil {
-		cleanup()
-		return "", func() {}, errors.Wrap(err, "create temp pdf")
-	}
-	if _, err := io.Copy(f, bytes.NewReader(data)); err != nil {
-		f.Close()
-		cleanup()
-		return "", func() {}, errors.Wrap(err, "write temp pdf")
-	}
-	if err := f.Close(); err != nil {
-		cleanup()
-		return "", func() {}, errors.Wrap(err, "close temp pdf")
-	}
-	return path, cleanup, nil
 }

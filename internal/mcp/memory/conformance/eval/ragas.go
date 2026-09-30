@@ -82,12 +82,12 @@ type RAGASReport struct {
 }
 
 // LoadRAGASSamples parses *.jsonl tuples for the RAGAS suite.
-func LoadRAGASSamples(path string) ([]RAGASSample, error) {
+func LoadRAGASSamples(path string) (_ []RAGASSample, retErr error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, errors.Wrapf(err, "open ragas golden %s", path)
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, errors.Wrap(f.Close(), "close file")) }()
 
 	var out []RAGASSample
 	sc := bufio.NewScanner(f)
@@ -151,18 +151,18 @@ Return JSON {"score": <0..1>}`
 
 // scoreSchema is reused by every score-style metric.
 var scoreSchema = map[string]any{
-	"type": "object",
+	evalType: "object",
 	"properties": map[string]any{
-		"score": map[string]any{"type": "number"},
+		"score": map[string]any{evalType: "number"},
 	},
 	"required": []string{"score"},
 }
 
 // rephraseSchema is the answer-relevancy rephrase response schema.
 var rephraseSchema = map[string]any{
-	"type": "object",
+	evalType: "object",
 	"properties": map[string]any{
-		"questions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"questions": map[string]any{evalType: "array", "items": map[string]any{evalType: "string"}},
 	},
 	"required": []string{"questions"},
 }
@@ -194,7 +194,7 @@ func AnswerCorrectness(ctx context.Context, judge LLMJudge, opts RAGASOpts, samp
 
 // AnswerRelevancy: judge rephrases the answer back into N questions, score is
 // mean cosine similarity of the embedded original question vs each rephrased
-// question (RAGAS v0.4 behaviour).
+// question (RAGAS v0.4 behavior).
 func AnswerRelevancy(ctx context.Context, judge LLMJudge, embedder EmbeddingClient, opts RAGASOpts, sample RAGASSample) (float64, error) {
 	if judge == nil {
 		return 0, errors.New("judge is nil")
@@ -248,12 +248,12 @@ func AnswerRelevancy(ctx context.Context, judge LLMJudge, embedder EmbeddingClie
 func RunRAGASEval(ctx context.Context, judge LLMJudge, embedder EmbeddingClient, samples []RAGASSample, opts RAGASOpts) (RAGASReport, error) {
 	if judge == nil {
 		return RAGASReport{
-			Faithfulness:          RAGASMetricStats{Status: "skipped"},
-			ContextPrecision:      RAGASMetricStats{Status: "skipped"},
-			ContextRecall:         RAGASMetricStats{Status: "skipped"},
-			ContextEntitiesRecall: RAGASMetricStats{Status: "skipped"},
-			AnswerRelevancy:       RAGASMetricStats{Status: "skipped"},
-			AnswerCorrectness:     RAGASMetricStats{Status: "skipped"},
+			Faithfulness:          RAGASMetricStats{Status: evalSkipped},
+			ContextPrecision:      RAGASMetricStats{Status: evalSkipped},
+			ContextRecall:         RAGASMetricStats{Status: evalSkipped},
+			ContextEntitiesRecall: RAGASMetricStats{Status: evalSkipped},
+			AnswerRelevancy:       RAGASMetricStats{Status: evalSkipped},
+			AnswerCorrectness:     RAGASMetricStats{Status: evalSkipped},
 		}, nil
 	}
 
@@ -261,48 +261,48 @@ func RunRAGASEval(ctx context.Context, judge LLMJudge, embedder EmbeddingClient,
 		values []float64
 	}
 	collect := map[string]*series{
-		"faithfulness":            {},
-		"context_precision":       {},
-		"context_recall":          {},
-		"context_entities_recall": {},
-		"answer_relevancy":        {},
-		"answer_correctness":      {},
+		evalFaithfulness:          {},
+		evalContextPrecision:      {},
+		evalContextRecall:         {},
+		evalContextEntitiesRecall: {},
+		evalAnswerRelevancy:       {},
+		evalAnswerCorrectness:     {},
 	}
 
 	for _, s := range samples {
 		if v, err := Faithfulness(ctx, judge, opts, s); err == nil {
-			collect["faithfulness"].values = append(collect["faithfulness"].values, v)
+			collect[evalFaithfulness].values = append(collect[evalFaithfulness].values, v)
 		}
 		if v, err := ContextPrecision(ctx, judge, opts, s); err == nil {
-			collect["context_precision"].values = append(collect["context_precision"].values, v)
+			collect[evalContextPrecision].values = append(collect[evalContextPrecision].values, v)
 		}
 		if v, err := ContextRecall(ctx, judge, opts, s); err == nil {
-			collect["context_recall"].values = append(collect["context_recall"].values, v)
+			collect[evalContextRecall].values = append(collect[evalContextRecall].values, v)
 		}
 		if v, err := ContextEntitiesRecall(ctx, judge, opts, s); err == nil {
-			collect["context_entities_recall"].values = append(collect["context_entities_recall"].values, v)
+			collect[evalContextEntitiesRecall].values = append(collect[evalContextEntitiesRecall].values, v)
 		}
 		if v, err := AnswerCorrectness(ctx, judge, opts, s); err == nil {
-			collect["answer_correctness"].values = append(collect["answer_correctness"].values, v)
+			collect[evalAnswerCorrectness].values = append(collect[evalAnswerCorrectness].values, v)
 		}
 		if embedder != nil {
 			if v, err := AnswerRelevancy(ctx, judge, embedder, opts, s); err == nil {
-				collect["answer_relevancy"].values = append(collect["answer_relevancy"].values, v)
+				collect[evalAnswerRelevancy].values = append(collect[evalAnswerRelevancy].values, v)
 			}
 		}
 	}
 
 	rep := RAGASReport{
-		Faithfulness:          stats(collect["faithfulness"].values, "ok"),
-		ContextPrecision:      stats(collect["context_precision"].values, "ok"),
-		ContextRecall:         stats(collect["context_recall"].values, "ok"),
-		ContextEntitiesRecall: stats(collect["context_entities_recall"].values, "ok"),
-		AnswerCorrectness:     stats(collect["answer_correctness"].values, "ok"),
+		Faithfulness:          stats(collect[evalFaithfulness].values, "ok"),
+		ContextPrecision:      stats(collect[evalContextPrecision].values, "ok"),
+		ContextRecall:         stats(collect[evalContextRecall].values, "ok"),
+		ContextEntitiesRecall: stats(collect[evalContextEntitiesRecall].values, "ok"),
+		AnswerCorrectness:     stats(collect[evalAnswerCorrectness].values, "ok"),
 	}
 	if embedder == nil {
-		rep.AnswerRelevancy = RAGASMetricStats{Status: "skipped"}
+		rep.AnswerRelevancy = RAGASMetricStats{Status: evalSkipped}
 	} else {
-		rep.AnswerRelevancy = stats(collect["answer_relevancy"].values, "ok")
+		rep.AnswerRelevancy = stats(collect[evalAnswerRelevancy].values, "ok")
 	}
 	return rep, nil
 }

@@ -32,7 +32,7 @@ func (s *Service) reactivateSummaryRefreshJobs(ctx context.Context, q sqlQueryEx
 	_, err = q.ExecContext(ctx,
 		rebindSQL(`UPDATE mcp_file_index_jobs SET status = ?, available_at = ?, updated_at = ?, file_updated_at = ?, last_error_code = ?
 		WHERE apikey_hash = ? AND project = ? AND file_path = ? AND operation = ? AND system_owner = ? AND status = ? AND content_hash = ? AND summary_generation_key = ?`, s.isPostgres),
-		"pending",
+		indexStatusPending,
 		now,
 		now,
 		ref.UpdatedAt,

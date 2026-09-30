@@ -91,10 +91,10 @@ func (s *Blog) ChangePassword(ctx context.Context, user *model.User, currentPass
 
 	now := gutils.Clock.GetUTCNow()
 	col := s.dao.GetUsersCol()
-	if _, err = col.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{
-		"$set": bson.M{
-			"password":          hashed,
-			"post_modified_gmt": now,
+	if _, err = col.UpdateOne(ctx, bson.M{fieldDocumentID: user.ID}, bson.M{
+		mongoSet: bson.M{
+			"password":           hashed,
+			fieldPostModifiedGmt: now,
 		},
 	}); err != nil {
 		return nil, errors.Wrapf(err, "update password for user %s", user.ID.Hex())
@@ -129,11 +129,11 @@ func (s *Blog) StartTOTPSetup(ctx context.Context, user *model.User) (string, st
 
 	now := gutils.Clock.GetUTCNow()
 	col := s.dao.GetUsersCol()
-	if _, err := col.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{
-		"$set": bson.M{
-			"totp_secret":       secret,
-			"totp_enabled":      false,
-			"post_modified_gmt": now,
+	if _, err := col.UpdateOne(ctx, bson.M{fieldDocumentID: user.ID}, bson.M{
+		mongoSet: bson.M{
+			"totp_secret":        secret,
+			fieldTotpEnabled:     false,
+			fieldPostModifiedGmt: now,
 		},
 	}); err != nil {
 		return "", "", errors.Wrapf(err, "store totp secret for user %s", user.ID.Hex())
@@ -174,10 +174,10 @@ func (s *Blog) ConfirmTOTPSetup(ctx context.Context, user *model.User, code stri
 
 	now := gutils.Clock.GetUTCNow()
 	col := s.dao.GetUsersCol()
-	if _, err := col.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{
-		"$set": bson.M{
-			"totp_enabled":      true,
-			"post_modified_gmt": now,
+	if _, err := col.UpdateOne(ctx, bson.M{fieldDocumentID: user.ID}, bson.M{
+		mongoSet: bson.M{
+			fieldTotpEnabled:     true,
+			fieldPostModifiedGmt: now,
 		},
 	}); err != nil {
 		return nil, errors.Wrapf(err, "enable totp for user %s", user.ID.Hex())
@@ -214,11 +214,11 @@ func (s *Blog) DisableTOTP(ctx context.Context, user *model.User, currentPasswor
 
 	now := gutils.Clock.GetUTCNow()
 	col := s.dao.GetUsersCol()
-	if _, err = col.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{
-		"$set": bson.M{
-			"totp_secret":       "",
-			"totp_enabled":      false,
-			"post_modified_gmt": now,
+	if _, err = col.UpdateOne(ctx, bson.M{fieldDocumentID: user.ID}, bson.M{
+		mongoSet: bson.M{
+			"totp_secret":        "",
+			fieldTotpEnabled:     false,
+			fieldPostModifiedGmt: now,
 		},
 	}); err != nil {
 		return nil, errors.Wrapf(err, "disable totp for user %s", user.ID.Hex())
@@ -237,7 +237,7 @@ func (s *Blog) setupUserCols(ctx context.Context) error {
 	{
 		if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{
 			Keys: bson.M{
-				"account": 1,
+				fieldAccount: 1,
 			},
 			Options: options.Index().SetUnique(true),
 		}); err != nil {
@@ -249,7 +249,7 @@ func (s *Blog) setupUserCols(ctx context.Context) error {
 	{
 		if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{
 			Keys: bson.M{
-				"uid": 1,
+				fieldUid: 1,
 			},
 			Options: options.Index().SetUnique(true).SetSparse(true),
 		}); err != nil {
@@ -273,7 +273,7 @@ func (s *Blog) setupUserCols(ctx context.Context) error {
 	{
 		if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{
 			Keys: bson.D{
-				{Key: "passkeys.id", Value: 1},
+				{Key: fieldPasskeysId, Value: 1},
 			},
 		}); err != nil {
 			return errors.Wrap(err, "create index for passkey credential")
@@ -319,7 +319,7 @@ func (s *Blog) UserRegister(ctx context.Context,
 		if createErr != nil {
 			return nil, errors.Wrap(createErr, "create oneapi sso user")
 		}
-		s.logger.Info("insert new oneapi sso user", zap.String("account", account))
+		s.logger.Info("insert new oneapi sso user", zap.String(fieldAccount, account))
 		return user, nil
 	}
 	if err = s.ConsumeEmailVerificationCode(ctx, account, model.EmailVerificationPurposeRegister, emailCode); err != nil {
@@ -335,7 +335,7 @@ func (s *Blog) UserRegister(ctx context.Context,
 
 	// check duplicate
 	existedUser := new(model.User)
-	err = col.FindOne(ctx, bson.M{"account": account}).Decode(existedUser)
+	err = col.FindOne(ctx, userAccountFilter{Account: account}).Decode(existedUser)
 	if err != nil {
 		if !errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.Wrapf(err, "find user %q", account)
@@ -355,7 +355,7 @@ func (s *Blog) UserRegister(ctx context.Context,
 		return nil, errors.Wrapf(err, "insert user %q", account)
 	}
 
-	s.logger.Info("insert new user", zap.String("account", account))
+	s.logger.Info("insert new user", zap.String(fieldAccount, account))
 	return user, nil
 }
 
@@ -370,7 +370,7 @@ func (s *Blog) UserActive(ctx context.Context, account, activeToken string) (u *
 	}
 
 	user := new(model.User)
-	if err = col.FindOne(ctx, bson.M{"account": account}).Decode(user); err != nil {
+	if err = col.FindOne(ctx, userAccountFilter{Account: account}).Decode(user); err != nil {
 		return nil, errors.Wrapf(err, "find user %q", account)
 	}
 
@@ -383,7 +383,7 @@ func (s *Blog) UserActive(ctx context.Context, account, activeToken string) (u *
 	user.ActiveToken = ""
 
 	// save user
-	if _, err = col.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{"$set": user}); err != nil {
+	if _, err = col.UpdateOne(ctx, bson.M{fieldDocumentID: user.ID}, bson.M{mongoSet: user}); err != nil {
 		return nil, errors.Wrapf(err, "update user %q", account)
 	}
 

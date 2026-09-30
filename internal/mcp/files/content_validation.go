@@ -5,10 +5,10 @@ import "strings"
 // NormalizeContentEncoding returns the normalized encoding or an error.
 func NormalizeContentEncoding(encoding string) (string, error) {
 	if strings.TrimSpace(encoding) == "" {
-		return "utf-8", nil
+		return encodingUTF8, nil
 	}
-	if strings.EqualFold(strings.TrimSpace(encoding), "utf-8") {
-		return "utf-8", nil
+	if strings.EqualFold(strings.TrimSpace(encoding), encodingUTF8) {
+		return encodingUTF8, nil
 	}
 	return "", NewError(ErrCodeInvalidQuery, "content_encoding must be utf-8", false)
 }

@@ -1,0 +1,31 @@
+name: mcp-network-security
+
+on:
+  pull_request:
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/mcp-network-security.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-network-security-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: SSRF, response types and HTTP log privacy with race detection
+        run: go test -race -count=3 -v -timeout 5m ./internal/mcp ./internal/mcp/imageproc -run 'TestURLFetchSecurity|TestMCPHTTPResponseSecurity|TestMCPHTTPLog'

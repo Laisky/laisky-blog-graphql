@@ -73,7 +73,7 @@ func (s *Blog) LoadPostTags(ctx context.Context) (tags []string, err error) {
 	docu := new(model.PostTags)
 	if err = s.dao.PostTagsCol().
 		FindOne(ctx, bson.D{},
-			options.FindOne().SetSort(bson.D{{Key: "_id", Value: -1}})).
+			options.FindOne().SetSort(bson.D{{Key: fieldDocumentID, Value: -1}})).
 		Decode(docu); err != nil {
 		return nil, errors.Wrap(err, "get latest post tags")
 	}
@@ -89,7 +89,7 @@ func (s *Blog) LoadPostSeries(ctx context.Context,
 	}
 	query := bson.D{}
 	if !id.IsZero() {
-		query = append(query, bson.E{Key: "_id", Value: id})
+		query = append(query, bson.E{Key: fieldDocumentID, Value: id})
 	}
 
 	if key != "" {
@@ -129,7 +129,7 @@ func (s *Blog) LoadPosts(ctx context.Context,
 
 	// logger.Debug("load blog posts", zap.String("query", fmt.Sprint(query)))
 	iter, err := s.dao.GetPostsCol().Find(ctx, query,
-		options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}),
+		options.Find().SetSort(bson.D{{Key: fieldDocumentID, Value: -1}}),
 		options.Find().SetSkip(int64(cfg.Page*cfg.Size)),
 		options.Find().SetLimit(int64(cfg.Size)),
 	)
@@ -261,12 +261,12 @@ func (s *Blog) makeQuery(ctx context.Context,
 	query = bson.D{}
 	if cfg.Name != "" {
 		query = append(query, bson.E{
-			Key:   "post_name",
+			Key:   fieldPostName,
 			Value: strings.ToLower(url.QueryEscape(cfg.Name))})
 	}
 
 	if !cfg.ID.IsZero() {
-		query = append(query, bson.E{Key: "_id", Value: cfg.ID})
+		query = append(query, bson.E{Key: fieldDocumentID, Value: cfg.ID})
 	}
 
 	if cfg.Tag != "" {
@@ -284,7 +284,7 @@ func (s *Blog) makeQuery(ctx context.Context,
 	if cfg.CategoryURL != nil {
 		s.logger.Debug("post category", zap.String("category_url", *cfg.CategoryURL))
 		if *cfg.CategoryURL == "" {
-			query = append(query, bson.E{Key: "category", Value: nil})
+			query = append(query, bson.E{Key: fieldCategory, Value: nil})
 		} else {
 			var cate *model.Category
 			if cate, err = s.LoadCategoryByURL(ctx, *cfg.CategoryURL); err != nil {
@@ -293,8 +293,8 @@ func (s *Blog) makeQuery(ctx context.Context,
 					zap.String("category_url", *cfg.CategoryURL),
 				)
 			} else if cate != nil {
-				s.logger.Debug("set post filter", zap.String("category", cate.ID.Hex()))
-				query = append(query, bson.E{Key: "category", Value: cate.ID})
+				s.logger.Debug("set post filter", zap.String(fieldCategory, cate.ID.Hex()))
+				query = append(query, bson.E{Key: fieldCategory, Value: cate.ID})
 			}
 		}
 	}
@@ -380,7 +380,7 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 
 			// save
 			if _, err := s.dao.GetPostsCol().UpdateByID(ctx, p.ID, bson.M{
-				"$set": bson.M{
+				mongoSet: bson.M{
 					"modified_at":             gutils.Clock.GetUTCNow(),
 					"content":                 p.Content,
 					"menu":                    p.Menu,
@@ -407,7 +407,7 @@ func (s *Blog) getI18NFilter(ctx context.Context,
 
 					// update post i18n content
 					if _, err := s.dao.GetPostsCol().UpdateByID(ctx, p.ID, bson.M{
-						"$set": bson.M{
+						mongoSet: bson.M{
 							"i18n.en_us.post_content": p.I18N.EnUs.PostContent,
 							"i18n.en_us.post_menu":    p.I18N.EnUs.PostMenu,
 						},
@@ -468,7 +468,7 @@ func (s *Blog) LoadUserByID(ctx context.Context, uid primitive.ObjectID) (user *
 	}
 
 	user = &model.User{}
-	result := s.dao.GetUsersCol().FindOne(ctx, bson.D{{Key: "_id", Value: uid}})
+	result := s.dao.GetUsersCol().FindOne(ctx, documentIDFilter{ID: uid})
 	if err = result.Decode(user); err != nil {
 		return nil, errors.Wrap(err, "decode user")
 	}
@@ -489,7 +489,7 @@ func (s *Blog) LoadCategoryByID(ctx context.Context, cateid primitive.ObjectID) 
 
 	cate = &model.Category{}
 	if err = s.dao.GetCategoriesCol().
-		FindOne(ctx, bson.D{{Key: "_id", Value: cateid}}).
+		FindOne(ctx, documentIDFilter{ID: cateid}).
 		Decode(cate); err != nil {
 		return nil, errors.Wrapf(err, "get category by id %s", cateid.Hex())
 	}
@@ -555,7 +555,7 @@ func (s *Blog) IsNameExists(ctx context.Context, name string) (bool, error) {
 		return false, errors.New("post name is empty")
 	}
 
-	n, err := s.dao.GetPostsCol().CountDocuments(ctx, bson.D{{Key: "post_name", Value: name}})
+	n, err := s.dao.GetPostsCol().CountDocuments(ctx, postNameFilter{Name: name})
 	if err != nil {
 		s.logger.Error("try to count post_name got error", zap.Error(err))
 		return false, errors.Wrapf(err, "try to count post_name `%s` got error", name)
@@ -658,7 +658,7 @@ func (s *Blog) UpdatePostCategory(ctx context.Context, name, category string) (p
 	}
 
 	p = new(model.Post)
-	if err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": name}).Decode(p); err != nil {
+	if err = s.dao.GetPostsCol().FindOne(ctx, postNameFilter{Name: name}).Decode(p); err != nil {
 		return nil, errors.Wrapf(err, "load post by name `%s`", name)
 	}
 
@@ -668,14 +668,14 @@ func (s *Blog) UpdatePostCategory(ctx context.Context, name, category string) (p
 
 	p.Category = c.ID
 	if _, err = s.dao.GetPostsCol().UpdateByID(ctx, p.ID, bson.M{
-		"$set": bson.M{
-			"category": c.ID,
+		mongoSet: bson.M{
+			fieldCategory: c.ID,
 		},
 	}); err != nil {
 		return nil, errors.Wrapf(err, "update post `%s` category", p.Name)
 	}
 
-	s.logger.Info("updated post category", zap.String("post", p.Name), zap.String("category", c.Name))
+	s.logger.Info("updated post category", zap.String("post", p.Name), zap.String(fieldCategory, c.Name))
 	return p, nil
 }
 
@@ -702,7 +702,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 	if _, ok := supporttedTypes[typeArg]; !ok {
 		return nil, errors.Errorf("type `%v` not supportted", typeArg)
 	}
-	if err = s.dao.GetPostsCol().FindOne(ctx, bson.M{"post_name": name}).Decode(p); err != nil {
+	if err = s.dao.GetPostsCol().FindOne(ctx, postNameFilter{Name: name}).Decode(p); err != nil {
 		if mongoSDK.NotFound(err) {
 			return nil, errors.Wrap(err, "post not exists")
 		}
@@ -743,7 +743,7 @@ func (s *Blog) UpdatePost(ctx context.Context, user *model.User,
 		})
 	}
 
-	if _, err = s.dao.GetPostsCol().ReplaceOne(ctx, bson.M{"_id": p.ID}, p); err != nil {
+	if _, err = s.dao.GetPostsCol().ReplaceOne(ctx, bson.M{fieldDocumentID: p.ID}, p); err != nil {
 		return nil, errors.Wrap(err, "try to update post got error")
 	}
 

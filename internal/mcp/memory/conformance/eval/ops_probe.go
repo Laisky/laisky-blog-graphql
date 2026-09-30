@@ -75,7 +75,7 @@ func RunOpsProbe(ctx context.Context, p mcpplugin.Plugin, queries []string, repl
 	if replays <= 0 {
 		replays = 1
 	}
-	auth := files.AuthContext{APIKey: "ops-probe", APIKeyHash: "ops-probe", UserIdentity: "user:ops-probe"}
+	auth := files.AuthContext{APIKey: evalOpsProbe, APIKeyHash: evalOpsProbe, UserIdentity: "user:ops-probe"}
 	latencies := make([]int64, 0, len(queries)*replays)
 	var inSum, outSum, totalSum int
 	var usdSum float64
@@ -83,7 +83,7 @@ func RunOpsProbe(ctx context.Context, p mcpplugin.Plugin, queries []string, repl
 	for r := 0; r < replays; r++ {
 		for _, q := range queries {
 			started := time.Now()
-			res, err := p.Search(ctx, auth, "ops-probe", q, "", 10)
+			res, err := p.Search(ctx, auth, evalOpsProbe, q, "", 10)
 			latencies = append(latencies, time.Since(started).Milliseconds())
 			if err != nil {
 				continue
@@ -192,17 +192,17 @@ func RunColdWarmDifferential(ctx context.Context, p mcpplugin.Plugin, queries []
 	if len(queries) == 0 {
 		return DifferentialReport{}, errors.New("at least one query required")
 	}
-	auth := files.AuthContext{APIKey: "ops-probe", APIKeyHash: "ops-probe", UserIdentity: "user:ops-probe"}
+	auth := files.AuthContext{APIKey: evalOpsProbe, APIKeyHash: evalOpsProbe, UserIdentity: "user:ops-probe"}
 
 	first := time.Now()
-	_, _ = p.Search(ctx, auth, "ops-probe", queries[0], "", 10)
+	_, _ = p.Search(ctx, auth, evalOpsProbe, queries[0], "", 10)
 	cold := time.Since(first).Milliseconds()
 
 	for i := 0; i < 99; i++ {
-		_, _ = p.Search(ctx, auth, "ops-probe", queries[i%len(queries)], "", 10)
+		_, _ = p.Search(ctx, auth, evalOpsProbe, queries[i%len(queries)], "", 10)
 	}
 	last := time.Now()
-	_, _ = p.Search(ctx, auth, "ops-probe", queries[0], "", 10)
+	_, _ = p.Search(ctx, auth, evalOpsProbe, queries[0], "", 10)
 	warm := time.Since(last).Milliseconds()
 
 	return DifferentialReport{ColdMS: cold, WarmMS: warm, DeltaMS: cold - warm}, nil

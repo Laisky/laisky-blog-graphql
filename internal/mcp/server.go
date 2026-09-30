@@ -174,6 +174,7 @@ func NewServer(
 
 	streamable := srv.NewStreamableHTTPServer(
 		mcpServer,
+		srv.WithSessionIdManagerResolver(requestSessionIDResolver{}),
 		srv.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
 			// Inject authorization header with backward-compatible query fallback.
 			authHeader, authSource := resolveRequestAuthorizationHeader(r)

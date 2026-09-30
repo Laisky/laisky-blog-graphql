@@ -9,7 +9,7 @@ const (
 	// HarnessVersion identifies executable behavior independently of the report schema.
 	HarnessVersion = "1.1.0"
 	// ReaderPromptVersion identifies the fixed answer-generation prompt.
-	ReaderPromptVersion = "reader-v1"
+	ReaderPromptVersion = "reader-v2"
 	// DefaultProtocolVersion is the MCP protocol version used by the HTTP client.
 	DefaultProtocolVersion = "2025-06-18"
 	// ReportStatusValid identifies a completed run whose cases contain no execution failures.
@@ -30,7 +30,7 @@ type Document struct {
 	Metadata        map[string]string `json:"metadata,omitempty"`
 }
 
-// Query is one labelled retrieval and optional answer-quality case.
+// Query is one labeled retrieval and optional answer-quality case.
 type Query struct {
 	ID           string            `json:"id"`
 	Text         string            `json:"query"`

@@ -176,10 +176,10 @@ func (t *authChallengeTracker) sweepLocked(now time.Time) {
 
 // appendRecent appends now to times, drops entries at or before cutoff, and
 // keeps at most the newest max entries.
-func appendRecent(times []time.Time, now time.Time, cutoff time.Time, max int) []time.Time {
+func appendRecent(times []time.Time, now time.Time, cutoff time.Time, limit int) []time.Time {
 	kept := keepRecent(append(times, now), cutoff)
-	if max > 0 && len(kept) > max {
-		kept = kept[len(kept)-max:]
+	if limit > 0 && len(kept) > limit {
+		kept = kept[len(kept)-limit:]
 	}
 	return kept
 }

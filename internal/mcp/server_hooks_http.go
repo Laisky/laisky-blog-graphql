@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -15,6 +14,8 @@ import (
 	"github.com/Laisky/zap"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	srv "github.com/mark3labs/mcp-go/server"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 )
 
 func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
@@ -98,7 +99,9 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 		return nil
 	}
 	if logger == nil {
-		return next
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(newLoggingResponseWriter(w, 0), r)
+		})
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +115,7 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 		redactedBody := redactMCPBody(body)
 		logger.Debug("incoming http request",
 			zap.String("method", r.Method),
-			zap.String("url", r.URL.String()),
+			zap.String("url", toolpolicy.URLForLog(r.URL.String())),
 			zap.String("body", redactedBody),
 			zap.Bool("body_truncated", truncated),
 			zap.String("remote_addr", r.RemoteAddr),
@@ -128,7 +131,7 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 		redactedResp := redactMCPBody(respBody)
 		logger.Debug("outgoing http response",
 			zap.String("method", r.Method),
-			zap.String("url", r.URL.String()),
+			zap.String("url", toolpolicy.URLForLog(r.URL.String())),
 			zap.Int("status", status),
 			zap.String("body", redactedResp),
 			zap.Bool("body_truncated", respTruncated),
@@ -136,24 +139,6 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 			zap.Duration("cost", time.Since(startAt)),
 		)
 	})
-}
-
-func readAndRestoreRequestBody(r *http.Request, limit int) (string, bool, error) {
-	if r.Body == nil {
-		return "", false, nil
-	}
-
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		return "", false, err
-	}
-	if err := r.Body.Close(); err != nil {
-		return "", false, err
-	}
-
-	r.Body = io.NopCloser(bytes.NewReader(data))
-	truncatedBody, truncated := truncateForLog(data, limit)
-	return truncatedBody, truncated, nil
 }
 
 type loggingResponseWriter struct {
@@ -172,13 +157,19 @@ func newLoggingResponseWriter(w http.ResponseWriter, limit int) *loggingResponse
 }
 
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
-	lrw.status = code
+	if lrw.status != 0 {
+		return
+	}
+	setMCPResponseHeaders(lrw.Header())
+	if code >= http.StatusOK {
+		lrw.status = code
+	}
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
 func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	if lrw.status == 0 {
-		lrw.status = http.StatusOK
+		lrw.WriteHeader(http.StatusOK)
 	}
 
 	if lrw.buffer.Len() < lrw.bodyLimit {
@@ -193,7 +184,7 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 		lrw.truncated = true
 	}
 
-	return lrw.ResponseWriter.Write(b)
+	return writeMCPResponse(lrw.ResponseWriter, b)
 }
 
 func (lrw *loggingResponseWriter) Status() int {
@@ -208,6 +199,9 @@ func (lrw *loggingResponseWriter) Body() (string, bool) {
 }
 
 func (lrw *loggingResponseWriter) Flush() {
+	if lrw.status == 0 {
+		lrw.WriteHeader(http.StatusOK)
+	}
 	if flusher, ok := lrw.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}

@@ -113,6 +113,8 @@ var scenarios = []scenario{
 
 // Run executes every applicable C-row and R-row against the fixture.
 func Run(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if fx == nil {
 		t.Fatal("conformance fixture is required")
 	}
@@ -144,19 +146,33 @@ func requireStorage(t *testing.T, fx Fixture) {
 }
 
 // runC01 — Agent writes UTF-8 text at path P, then reads it back.
-func runC01(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC01(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC02 — Agent writes a binary PDF at path P, then reads the full file back.
-func runC02(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC02(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC03 — Agent writes path P, then lists the parent directory.
-func runC03(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC03(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC04 — Agent writes path P, then stats it.
-func runC04(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC04(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC05 — Agent writes P, waits the freshness window, then searches for content unique to P.
 func runC05(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	requireStorage(t, fx)
 	if opts.SkipFreshness {
 		t.Skip("freshness window scenario skipped per options")
@@ -164,40 +180,75 @@ func runC05(t *testing.T, fx Fixture, opts Options) {
 }
 
 // runC06 — Agent writes P, then deletes it, then lists.
-func runC06(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC06(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC07 — Agent writes P, renames P → Q, then reads each.
-func runC07(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC07(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC08 — Agent writes P (TRUNCATE) twice with different content; second wins.
-func runC08(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC08(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC09 — Agent writes path P at offset N (OVERWRITE) on a text path.
-func runC09(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC09(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC10 — Two agents concurrently write the same path P (TRUNCATE).
-func runC10(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC10(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC11 — Two agents concurrently write different paths in the same project.
-func runC11(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC11(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC12 — Tenant isolation: B never sees A's content via search/list/read.
-func runC12(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC12(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC13 — Tenant isolation: cross-tenant guess returns NOT_FOUND with no oracle.
-func runC13(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC13(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC14 — Search with path_prefix scopes results.
-func runC14(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC14(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC15 — Search with limit=N caps the response.
-func runC15(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC15(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC16 — Search with project="*" returns results from all caller projects.
-func runC16(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC16(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC17 — Each tool with empty path, empty project, or path containing "..".
 func runC17(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+
 	plugin := fx.Plugin()
 	if plugin == nil {
 		t.Skip("fixture provides no plugin instance")
@@ -243,16 +294,27 @@ func runC17(t *testing.T, fx Fixture, _ Options) {
 }
 
 // runC18 — Long document: search returns chunk overlapping the last quarter.
-func runC18(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC18(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC19 — Agent writes arbitrary bytes at P, then reads them back.
-func runC19(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC19(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC20 — After delete, read/stat NOT_FOUND and search omits the chunk.
-func runC20(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC20(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runC21 — Tool call without the plugin field behaves like plugin="auto".
 func runC21(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+
 	plugin := fx.Plugin()
 	if plugin == nil {
 		t.Skip("fixture provides no plugin instance")
@@ -265,6 +327,8 @@ func runC21(t *testing.T, fx Fixture, _ Options) {
 
 // runC22 — Tool call with plugin="auto" matches C21.
 func runC22(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+
 	plugin := fx.Plugin()
 	if plugin == nil {
 		t.Skip("fixture provides no plugin instance")
@@ -281,6 +345,8 @@ func runC22(t *testing.T, fx Fixture, _ Options) {
 
 // runC23 — Project default pageindex; explicit rag write/read crosses to NOT_FOUND on plugin=pageindex.
 func runC23(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipCrossPlugin {
 		t.Skip("cross-plugin scenario skipped per options")
 	}
@@ -293,6 +359,8 @@ func runC23(t *testing.T, fx Fixture, opts Options) {
 
 // runC24 — Mirror of C23 with default rag and explicit pageindex.
 func runC24(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipCrossPlugin {
 		t.Skip("cross-plugin scenario skipped per options")
 	}
@@ -305,6 +373,8 @@ func runC24(t *testing.T, fx Fixture, opts Options) {
 
 // runC25 — Tool call with plugin="bogus"; INVALID_ARGUMENT names valid plugins.
 func runC25(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+
 	plugin := fx.Plugin()
 	if plugin == nil {
 		t.Skip("fixture provides no plugin instance")
@@ -331,6 +401,8 @@ func runC25(t *testing.T, fx Fixture, _ Options) {
 
 // runC26 — Cross-plugin NOT_FOUND hint identifies the owning plugin.
 func runC26(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipCrossPlugin {
 		t.Skip("cross-plugin scenario skipped per options")
 	}
@@ -345,6 +417,8 @@ func runC26(t *testing.T, fx Fixture, opts Options) {
 // pluginA, then assert read under pluginA returns those bytes and read under
 // pluginB returns NOT_FOUND with a hint identifying pluginA as the owner.
 func runCrossPluginIsolation(t *testing.T, fx MultiPluginFixture, pluginA, pluginB, label string) {
+	t.Helper()
+
 	if fx.Plugin() == nil || fx.SecondaryPlugin() == nil {
 		t.Skipf("%s: fixture missing primary or secondary plugin", label)
 	}
@@ -405,10 +479,15 @@ func runCrossPluginIsolation(t *testing.T, fx MultiPluginFixture, pluginA, plugi
 }
 
 // runC27 — Users cannot create or observe system-owned routing/catalog state.
-func runC27(t *testing.T, fx Fixture, _ Options) { requireStorage(t, fx) }
+func runC27(t *testing.T, fx Fixture, _ Options) {
+	t.Helper()
+	requireStorage(t, fx)
+}
 
 // runR01 — Concurrent TRUNCATE writes resolve to one winning content.
 func runR01(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency {
 		t.Skip("concurrency scenario skipped per options")
 	}
@@ -417,6 +496,8 @@ func runR01(t *testing.T, fx Fixture, opts Options) {
 
 // runR02 — Write/delete race resolves to a documented deterministic outcome.
 func runR02(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency {
 		t.Skip("concurrency scenario skipped per options")
 	}
@@ -425,6 +506,8 @@ func runR02(t *testing.T, fx Fixture, opts Options) {
 
 // runR03 — Read/write race never returns mixed bytes; latency bounded.
 func runR03(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency {
 		t.Skip("concurrency scenario skipped per options")
 	}
@@ -433,6 +516,8 @@ func runR03(t *testing.T, fx Fixture, opts Options) {
 
 // runR04 — Rename/read race resolves to original or NOT_FOUND atomically.
 func runR04(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency {
 		t.Skip("concurrency scenario skipped per options")
 	}
@@ -441,6 +526,8 @@ func runR04(t *testing.T, fx Fixture, opts Options) {
 
 // runR05 — Delete/read race never returns post-delete chunks via search.
 func runR05(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency {
 		t.Skip("concurrency scenario skipped per options")
 	}
@@ -449,6 +536,8 @@ func runR05(t *testing.T, fx Fixture, opts Options) {
 
 // runR06 — Freshness contract: search sees write within published window.
 func runR06(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency || opts.SkipFreshness {
 		t.Skip("freshness/concurrency scenario skipped per options")
 	}
@@ -457,6 +546,8 @@ func runR06(t *testing.T, fx Fixture, opts Options) {
 
 // runR07 — N=20 concurrent writes succeed within the per-call budget.
 func runR07(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency {
 		t.Skip("concurrency scenario skipped per options")
 	}
@@ -465,6 +556,8 @@ func runR07(t *testing.T, fx Fixture, opts Options) {
 
 // runR08 — Crash/restart: reads return bytes or UNAVAILABLE; no double-billing.
 func runR08(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency {
 		t.Skip("concurrency scenario skipped per options")
 	}
@@ -473,6 +566,8 @@ func runR08(t *testing.T, fx Fixture, opts Options) {
 
 // runR09 — Cross-plugin concurrent writes track P independently per plugin.
 func runR09(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency || opts.SkipCrossPlugin {
 		t.Skip("cross-plugin/concurrency scenario skipped per options")
 	}
@@ -533,6 +628,8 @@ func runR09(t *testing.T, fx Fixture, opts Options) {
 
 // runR10 — Thousands of concurrent reads stay within latency_budget × 1.5.
 func runR10(t *testing.T, fx Fixture, opts Options) {
+	t.Helper()
+
 	if opts.SkipConcurrency {
 		t.Skip("concurrency scenario skipped per options")
 	}

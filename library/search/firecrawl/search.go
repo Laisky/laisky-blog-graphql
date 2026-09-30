@@ -183,9 +183,7 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 
 	logger := e.logger
 	if ctx != nil {
-		if ctxLogger := gmw.GetLogger(ctx); ctxLogger != nil {
-			logger = ctxLogger.Named("firecrawl_search")
-		}
+		logger = gmw.GetLogger(ctx).Named("firecrawl_search")
 	}
 
 	if logger != nil {

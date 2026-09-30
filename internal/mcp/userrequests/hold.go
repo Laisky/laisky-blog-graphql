@@ -207,7 +207,7 @@ func (m *HoldManager) WaitForCommand(ctx context.Context, apiKeyHash string, tas
 		m.log().Info("agent connected, hold timer started",
 			zap.String("api_key_hash", apiKeyHash),
 			zap.String("task_id", taskID),
-			zap.Time("expires_at", entry.expiresAt),
+			zap.Time(fieldExpiresAt, entry.expiresAt),
 		)
 
 		// Start expiration goroutine

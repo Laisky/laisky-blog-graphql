@@ -38,12 +38,12 @@ type PipelineResult struct {
 
 // AllowedInputMIMETypes is the closed set of MIME types Normalize will accept.
 var AllowedInputMIMETypes = map[string]struct{}{
-	"image/jpeg": {},
-	"image/png":  {},
-	"image/webp": {},
-	"image/bmp":  {},
-	"image/tiff": {},
-	"image/gif":  {},
+	mimeImageJpeg: {},
+	mimeImagePng:  {},
+	mimeImageWebp: {},
+	mimeImageBmp:  {},
+	mimeImageTiff: {},
+	mimeImageGif:  {},
 }
 
 // Normalize decodes raw image bytes, fixes orientation, resizes to
@@ -79,7 +79,7 @@ func Normalize(raw []byte, originalFilename string) (PipelineResult, error) {
 		return PipelineResult{}, errors.Wrap(ErrDecodeFailed, "imageproc normalize: decode")
 	}
 
-	if mime == "image/jpeg" {
+	if mime == mimeImageJpeg {
 		orientation := readJPEGOrientation(raw)
 		img = applyOrientation(img, orientation)
 	}
@@ -127,25 +127,25 @@ func detectMIME(raw []byte, originalFilename string) (string, error) {
 		switch strings.ToLower(filenameExt(originalFilename)) {
 		case ".webp":
 			if isWebP(raw) {
-				return "image/webp", nil
+				return mimeImageWebp, nil
 			}
 		case ".bmp":
-			return "image/bmp", nil
+			return mimeImageBmp, nil
 		case ".tiff", ".tif":
-			return "image/tiff", nil
+			return mimeImageTiff, nil
 		case ".png":
-			return "image/png", nil
+			return mimeImagePng, nil
 		case ".jpg", ".jpeg":
-			return "image/jpeg", nil
+			return mimeImageJpeg, nil
 		case ".gif":
-			return "image/gif", nil
+			return mimeImageGif, nil
 		}
 		return "", errors.Wrap(ErrUnsupportedMIME, "imageproc: could not identify MIME")
 	}
 
 	// http.DetectContentType does not identify WebP — check manually.
-	if detected == "image/webp" || isWebP(raw) {
-		return "image/webp", nil
+	if detected == mimeImageWebp || isWebP(raw) {
+		return mimeImageWebp, nil
 	}
 	return detected, nil
 }
@@ -173,17 +173,17 @@ func isWebP(raw []byte) bool {
 func decodeImage(raw []byte, mime string) (image.Image, error) {
 	r := bytes.NewReader(raw)
 	switch mime {
-	case "image/jpeg":
+	case mimeImageJpeg:
 		return jpeg.Decode(r)
-	case "image/png":
+	case mimeImagePng:
 		return png.Decode(r)
-	case "image/webp":
+	case mimeImageWebp:
 		return webp.Decode(r)
-	case "image/bmp":
+	case mimeImageBmp:
 		return bmp.Decode(r)
-	case "image/tiff":
+	case mimeImageTiff:
 		return tiff.Decode(r)
-	case "image/gif":
+	case mimeImageGif:
 		g, err := gif.DecodeAll(r)
 		if err != nil {
 			return nil, err
@@ -225,16 +225,16 @@ func resizeIfNeeded(img image.Image, maxEdge int) image.Image {
 
 // readAllCapped reads r into memory, returning ErrImageTooLarge as soon as
 // the read would exceed cap.
-func readAllCapped(r io.Reader, cap int64) ([]byte, error) {
-	if cap <= 0 {
-		return nil, errors.New("readAllCapped: cap must be positive")
+func readAllCapped(r io.Reader, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, errors.New("readAllCapped: limit must be positive")
 	}
-	limited := io.LimitReader(r, cap+1)
+	limited := io.LimitReader(r, limit+1)
 	buf, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, errors.Wrap(err, "read body")
 	}
-	if int64(len(buf)) > cap {
+	if int64(len(buf)) > limit {
 		return nil, errors.WithStack(ErrImageTooLarge)
 	}
 	return buf, nil

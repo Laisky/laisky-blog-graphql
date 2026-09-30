@@ -34,8 +34,8 @@ func (s *Blog) FindUserByOIDCIdentity(ctx context.Context, provider string, subj
 
 	user := new(model.User)
 	err := s.dao.GetUsersCol().FindOne(ctx, bson.M{
-		"oidc_identities": bson.M{
-			"$elemMatch": bson.M{
+		fieldOidcIdentities: bson.M{
+			mongoElemMatch: bson.M{
 				"provider": provider,
 				"subject":  subject,
 			},
@@ -70,7 +70,7 @@ func (s *Blog) FindUserByAccount(ctx context.Context, account string) (*model.Us
 	}
 
 	user := new(model.User)
-	if err = s.dao.GetUsersCol().FindOne(ctx, bson.M{"account": account}).Decode(user); err != nil {
+	if err = s.dao.GetUsersCol().FindOne(ctx, userAccountFilter{Account: account}).Decode(user); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.WithStack(mongo.ErrNoDocuments)
 		}
@@ -237,18 +237,18 @@ func (s *Blog) BindOIDCIdentityToUser(ctx context.Context,
 		BoundAt:  now,
 	}
 	result, err := s.dao.GetUsersCol().UpdateOne(ctx, bson.M{
-		"_id": user.ID,
-		"oidc_identities": bson.M{
+		fieldDocumentID: user.ID,
+		fieldOidcIdentities: bson.M{
 			"$not": bson.M{
-				"$elemMatch": bson.M{
+				mongoElemMatch: bson.M{
 					"provider": provider,
 					"subject":  subject,
 				},
 			},
 		},
 	}, bson.M{
-		"$push": bson.M{"oidc_identities": identity},
-		"$set":  bson.M{"post_modified_gmt": now},
+		"$push":  bson.M{fieldOidcIdentities: identity},
+		mongoSet: bson.M{fieldPostModifiedGmt: now},
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "bind oidc identity for user %s", user.ID.Hex())

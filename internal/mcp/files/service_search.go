@@ -63,66 +63,7 @@ func (s *Service) Search(ctx context.Context, auth AuthContext, project, query, 
 		)
 	}
 
-	semantic := []searchCandidate{}
-	var semanticErr error
-	semanticEngine := s.semanticSearchEngineName()
-	if s.embedder == nil {
-		semanticErr = NewError(ErrCodeSearchBackend, "embedder not configured", false)
-		s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
-			Stage:       "semantic_retrieve",
-			Engine:      semanticEngine,
-			DurationMS:  0,
-			ResultCount: 0,
-			Err:         semanticErr,
-		})
-		s.LoggerFromContext(ctx).Debug("file search semantic retrieval skipped: embedder not configured",
-			zap.String("project", project),
-			zap.String("path_prefix", pathPrefix),
-		)
-	} else {
-		embedStartedAt := time.Now()
-		vectors, embedErr := s.embedder.EmbedTexts(ctx, auth.APIKey, []string{query})
-		s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
-			Stage:       "semantic_embed",
-			Engine:      "embedder",
-			DurationMS:  time.Since(embedStartedAt).Milliseconds(),
-			ResultCount: len(vectors),
-			Err:         embedErr,
-		})
-		if embedErr != nil {
-			semanticErr = errors.Wrap(embedErr, "embed query")
-			s.LoggerFromContext(ctx).Debug("file search semantic embedding failed",
-				zap.String("project", project),
-				zap.String("path_prefix", pathPrefix),
-				zap.Error(embedErr),
-			)
-		} else if len(vectors) == 0 {
-			semanticErr = NewError(ErrCodeSearchBackend, "embed query returned no vectors", true)
-			s.LoggerFromContext(ctx).Debug("file search semantic embedding returned no vectors",
-				zap.String("project", project),
-				zap.String("path_prefix", pathPrefix),
-			)
-		} else {
-			queryVec := vectors[0]
-			semanticStartedAt := time.Now()
-			semantic, semanticErr = s.fetchSemanticCandidates(ctx, auth.APIKeyHash, project, pathPrefix, queryVec, s.settings.Search.VectorCandidates)
-			s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
-				Stage:       "semantic_retrieve",
-				Engine:      semanticEngine,
-				DurationMS:  time.Since(semanticStartedAt).Milliseconds(),
-				ResultCount: len(semantic),
-				Err:         semanticErr,
-			})
-			if semanticErr != nil {
-				s.LoggerFromContext(ctx).Debug("file search semantic retrieval failed",
-					zap.String("project", project),
-					zap.String("path_prefix", pathPrefix),
-					zap.Int("candidate_limit", s.settings.Search.VectorCandidates),
-					zap.Error(semanticErr),
-				)
-			}
-		}
-	}
+	semantic, semanticErr := s.retrieveSemanticCandidates(ctx, auth, project, query, pathPrefix)
 
 	if lexicalErr != nil && semanticErr != nil {
 		return SearchResult{}, errors.WithStack(NewError(ErrCodeSearchBackend, "search backends unavailable", true))
@@ -418,7 +359,7 @@ func (s *Service) countRowsForSearch(ctx context.Context, source, apiKeyHash, pr
 	where := "c.apikey_hash = ? AND c.system_owner = ?"
 	args := []any{apiKeyHash, owner}
 	if project != ProjectWildcard {
-		where += " AND c.project = ?"
+		where += chunkProjectPredicate
 		args = append(args, project)
 	}
 	if strings.TrimSpace(pathPrefix) != "" {
@@ -444,7 +385,7 @@ func (s *Service) countPendingIndexJobs(ctx context.Context, apiKeyHash, project
 		args = append(args, project)
 	}
 	statement += " AND status IN (?, ?)"
-	args = append(args, "pending", "processing")
+	args = append(args, indexStatusPending, "processing")
 
 	var count int64
 	if err := s.db.QueryRowContext(ctx, rebindSQL(statement, s.isPostgres), args...).Scan(&count); err != nil {
@@ -474,7 +415,7 @@ func (s *Service) fetchSemanticCandidatesPostgres(ctx context.Context, apiKeyHas
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
-		query += " AND c.project = ?"
+		query += chunkProjectPredicate
 		args = append(args, project)
 	}
 	if strings.TrimSpace(pathPrefix) != "" {
@@ -593,7 +534,7 @@ func (s *Service) fetchLexicalCandidatesPostgres(ctx context.Context, apiKeyHash
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
-		statement += " AND c.project = ?"
+		statement += chunkProjectPredicate
 		args = append(args, project)
 	}
 	if strings.TrimSpace(pathPrefix) != "" {
@@ -795,7 +736,7 @@ func (s *Service) fetchChunkEmbeddings(ctx context.Context, apiKeyHash, project,
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
-		query += " AND c.project = ?"
+		query += chunkProjectPredicate
 		args = append(args, project)
 	}
 	if strings.TrimSpace(pathPrefix) != "" {
@@ -878,7 +819,7 @@ func (s *Service) fetchChunkRows(ctx context.Context, apiKeyHash, project, pathP
 		JOIN mcp_files f ON f.apikey_hash = c.apikey_hash AND f.project = c.project AND f.path = c.file_path AND f.deleted = FALSE AND f.system_owner = c.system_owner
 		WHERE c.apikey_hash = ? AND c.system_owner = ?`
 	if project != ProjectWildcard {
-		query += " AND c.project = ?"
+		query += chunkProjectPredicate
 		args = append(args, project)
 	}
 	if strings.TrimSpace(pathPrefix) != "" {
@@ -978,4 +919,72 @@ func normalizeScore(value, minVal, maxVal float64) float64 {
 		return 0
 	}
 	return (value - minVal) / (maxVal - minVal)
+}
+
+// retrieveSemanticCandidates embeds the query, retrieves candidates, and records each stage's outcome.
+func (s *Service) retrieveSemanticCandidates(ctx context.Context, auth AuthContext,
+	project, query, pathPrefix string,
+) ([]searchCandidate, error) {
+	semantic := []searchCandidate{}
+	var semanticErr error
+	semanticEngine := s.semanticSearchEngineName()
+	if s.embedder == nil {
+		semanticErr = NewError(ErrCodeSearchBackend, "embedder not configured", false)
+		s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
+			Stage:       "semantic_retrieve",
+			Engine:      semanticEngine,
+			DurationMS:  0,
+			ResultCount: 0,
+			Err:         semanticErr,
+		})
+		s.LoggerFromContext(ctx).Debug("file search semantic retrieval skipped: embedder not configured",
+			zap.String("project", project),
+			zap.String("path_prefix", pathPrefix),
+		)
+	} else {
+		embedStartedAt := time.Now()
+		vectors, embedErr := s.embedder.EmbedTexts(ctx, auth.APIKey, []string{query})
+		s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
+			Stage:       "semantic_embed",
+			Engine:      "embedder",
+			DurationMS:  time.Since(embedStartedAt).Milliseconds(),
+			ResultCount: len(vectors),
+			Err:         embedErr,
+		})
+		if embedErr != nil {
+			semanticErr = errors.Wrap(embedErr, "embed query")
+			s.LoggerFromContext(ctx).Debug("file search semantic embedding failed",
+				zap.String("project", project),
+				zap.String("path_prefix", pathPrefix),
+				zap.Error(embedErr),
+			)
+		} else if len(vectors) == 0 {
+			semanticErr = NewError(ErrCodeSearchBackend, "embed query returned no vectors", true)
+			s.LoggerFromContext(ctx).Debug("file search semantic embedding returned no vectors",
+				zap.String("project", project),
+				zap.String("path_prefix", pathPrefix),
+			)
+		} else {
+			queryVec := vectors[0]
+			semanticStartedAt := time.Now()
+			semantic, semanticErr = s.fetchSemanticCandidates(ctx, auth.APIKeyHash, project, pathPrefix, queryVec, s.settings.Search.VectorCandidates)
+			s.logSearchStage(ctx, project, pathPrefix, searchStageMetrics{
+				Stage:       "semantic_retrieve",
+				Engine:      semanticEngine,
+				DurationMS:  time.Since(semanticStartedAt).Milliseconds(),
+				ResultCount: len(semantic),
+				Err:         semanticErr,
+			})
+			if semanticErr != nil {
+				s.LoggerFromContext(ctx).Debug("file search semantic retrieval failed",
+					zap.String("project", project),
+					zap.String("path_prefix", pathPrefix),
+					zap.Int("candidate_limit", s.settings.Search.VectorCandidates),
+					zap.Error(semanticErr),
+				)
+			}
+		}
+	}
+
+	return semantic, semanticErr
 }

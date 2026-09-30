@@ -70,12 +70,12 @@ func run() error {
 	return nil
 }
 
-func loadSearches(path string) ([]plugin.SearchRecord, error) {
+func loadSearches(path string) (_ []plugin.SearchRecord, retErr error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "open records")
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, errors.Wrap(f.Close(), "close file")) }()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
@@ -172,7 +172,9 @@ type judgeReply struct {
 	Reason string `json:"reason"`
 }
 
-const judgeSystemPrompt = `You are an offline relevance judge for a code/document search system. Given a user query and two candidate result sets (A and B), pick the set that best answers the query. Prefer sets whose chunks directly satisfy the query intent, contain higher-quality context, and avoid off-topic content. If both sets are equally good (or equally bad), reply with TIE. Reply in strict JSON matching the schema: {"winner":"A|B|TIE","reason":"<one sentence>"}.`
+const judgeSystemPrompt = `You are an offline relevance judge for a code/document search system. Given a user query and two candidate result sets (A and B), pick the set that best ` +
+	`answers the query. Prefer sets whose chunks directly satisfy the query intent, contain higher-quality context, and avoid off-topic content. If both sets are equally good (or ` +
+	`equally bad), reply with TIE. Reply in strict JSON matching the schema: {"winner":"A|B|TIE","reason":"<one sentence>"}.`
 
 // CompareResults builds the judge prompt and parses the structured reply.
 // On parse failure, the verdict is TIE so the call still counts in the score
@@ -192,7 +194,7 @@ func (j *openaiJudge) CompareResults(ctx context.Context, query string, a, b plu
 	}
 	resp, err := j.llm.Respond(ctx, req)
 	if err != nil {
-		return plugin.Verdict{Winner: "TIE", Reason: "judge call failed: " + err.Error()}, errors.Wrap(err, "judge call")
+		return plugin.Verdict{Winner: comparisonTie, Reason: "judge call failed: " + err.Error()}, errors.Wrap(err, "judge call")
 	}
 	var out judgeReply
 	payload := resp.Output
@@ -201,13 +203,13 @@ func (j *openaiJudge) CompareResults(ctx context.Context, query string, a, b plu
 	}
 	if err := json.Unmarshal(payload, &out); err != nil {
 		fmt.Fprintf(os.Stderr, "promote-pageindex: judge response unparseable model=%s err=%v body=%q\n", j.model, err, resp.Text)
-		return plugin.Verdict{Winner: "TIE", Reason: "judge response unparseable: " + err.Error()}, errors.Wrap(err, "decode judge reply")
+		return plugin.Verdict{Winner: comparisonTie, Reason: "judge response unparseable: " + err.Error()}, errors.Wrap(err, "decode judge reply")
 	}
 	winner := strings.ToUpper(strings.TrimSpace(out.Winner))
 	switch winner {
-	case "A", "B", "TIE":
+	case "A", "B", comparisonTie:
 	default:
-		return plugin.Verdict{Winner: "TIE", Reason: "judge returned unknown winner: " + out.Winner}, errors.Errorf("unknown winner %q", out.Winner)
+		return plugin.Verdict{Winner: comparisonTie, Reason: "judge returned unknown winner: " + out.Winner}, errors.Errorf("unknown winner %q", out.Winner)
 	}
 	return plugin.Verdict{Winner: winner, Reason: out.Reason}, nil
 }
@@ -267,7 +269,7 @@ func (e *ensembleJudge) CompareResults(ctx context.Context, query string, a, b p
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return plugin.Verdict{Winner: "TIE", Reason: "ensemble call failed: " + err.Error()}, errors.Wrap(err, "ensemble judge")
+		return plugin.Verdict{Winner: comparisonTie, Reason: "ensemble call failed: " + err.Error()}, errors.Wrap(err, "ensemble judge")
 	}
 	return tallyEnsembleVerdicts(verdicts, e.judges), nil
 }
@@ -280,7 +282,7 @@ func tallyEnsembleVerdicts(verdicts []plugin.Verdict, judges []*openaiJudge) plu
 	for _, v := range verdicts {
 		counts[v.Winner]++
 	}
-	winner := "TIE"
+	winner := comparisonTie
 	best := 0
 	tied := false
 	for w, n := range counts {
@@ -294,7 +296,7 @@ func tallyEnsembleVerdicts(verdicts []plugin.Verdict, judges []*openaiJudge) plu
 		}
 	}
 	if tied {
-		winner = "TIE"
+		winner = comparisonTie
 	}
 	parts := make([]string, 0, len(verdicts))
 	for i, v := range verdicts {

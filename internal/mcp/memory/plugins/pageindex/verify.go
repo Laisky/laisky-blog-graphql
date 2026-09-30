@@ -253,10 +253,9 @@ func (idx *Indexer) checkTitleAppearance(ctx context.Context, title, pageText st
 	}
 	var out titleCheckResult
 	if err := json.Unmarshal([]byte(body), &out); err != nil {
-		// Upstream tolerates malformed responses by treating them as 'no'.
-		return false, nil
+		return false, errors.Wrap(err, "decode title verification")
 	}
-	return strings.EqualFold(strings.TrimSpace(out.Answer), "yes"), nil
+	return strings.EqualFold(strings.TrimSpace(out.Answer), affirmativeAnswer), nil
 }
 
 // fixIncorrectWithRetries iterates fixIncorrect up to titleCheckMaxRetries
@@ -461,7 +460,7 @@ func (idx *Indexer) singleTOCItemIndexFixer(ctx context.Context, title, content 
 	}
 	var out titleFixerResult
 	if err := json.Unmarshal([]byte(body), &out); err != nil {
-		return 0, false, nil
+		return 0, false, errors.Wrap(err, "decode title index repair")
 	}
 	page, ok := physicalIndexInt(out.PhysicalIndex)
 	if !ok || page <= 0 {

@@ -126,12 +126,10 @@ func runRAGMigrations(ctx context.Context, db *sql.DB, logger logSDK.Logger) err
 
 func (s *Service) loggerFromContext(ctx context.Context) logSDK.Logger {
 	if ctx != nil {
-		if ctxLogger := gmw.GetLogger(ctx); ctxLogger != nil {
-			return ctxLogger
-		}
 		if ctxLogger, ok := ctx.Value(ctxkeys.Logger).(logSDK.Logger); ok && ctxLogger != nil {
 			return ctxLogger
 		}
+		return gmw.GetLogger(ctx)
 	}
 	if s.logger != nil {
 		return s.logger

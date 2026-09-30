@@ -1,0 +1,65 @@
+name: dependency-compatibility
+
+on:
+  pull_request:
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
+      - 'gqlgen.yml'
+      - '**/*.graphql'
+      - '.scripts/**'
+      - '.github/workflows/dependency-compatibility.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-compatibility-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Install pinned code-generation formatter
+        run: go install golang.org/x/tools/cmd/goimports@v0.50.0
+      - name: Verify locked modules
+        run: |
+          go mod download
+          go mod verify
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: MCP wire protocol acceptance
+        run: go test -race -count=1 -timeout 5m -v ./internal/mcp -run 'TestMCPStableSDK|TestServerSupportsMCPProtocol|TestServerKeepsLegacyMCP'
+      - name: MCP session ownership regression (20 race runs)
+        if: ${{ !cancelled() }}
+        run: go test -race -count=20 -timeout 5m ./internal/mcp -run TestMCPReview
+      - name: Full Go behavior and race tests
+        if: ${{ !cancelled() }}
+        run: go test -race -cover -timeout 5m ./...
+      - name: Build all commands
+        if: ${{ !cancelled() }}
+        run: go build ./...
+      - name: Vet all packages
+        if: ${{ !cancelled() }}
+        run: go vet ./...
+      - name: Repository isolation and pure-Go invariants
+        if: ${{ !cancelled() }}
+        run: make lint-pure-go lint-system-owner
+      - name: GraphQL generation is reproducible
+        if: ${{ !cancelled() }}
+        run: |
+          make gen
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum internal/web/generated.go internal/library/models/models.go

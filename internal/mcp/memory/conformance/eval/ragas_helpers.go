@@ -11,7 +11,7 @@ import (
 )
 
 func renderPrompt(tmpl string, sample RAGASSample) (string, error) {
-	t, err := template.New("ragas").Parse(tmpl)
+	t, err := template.New(evalRagas).Parse(tmpl)
 	if err != nil {
 		return "", errors.Wrap(err, "parse prompt template")
 	}
@@ -88,7 +88,7 @@ func cosine(a, b []float32) float64 {
 
 func stats(values []float64, status string) RAGASMetricStats {
 	if len(values) == 0 {
-		return RAGASMetricStats{Status: "skipped"}
+		return RAGASMetricStats{Status: evalSkipped}
 	}
 	sum := 0.0
 	for _, v := range values {

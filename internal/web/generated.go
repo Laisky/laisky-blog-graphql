@@ -21244,10 +21244,6 @@ func (ec *executionContext) marshalNArweaveItem2githubᚗcomᚋLaiskyᚋlaisky�
 	return ec._ArweaveItem(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNArweaveUploadResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋarweaveᚋdtoᚐUploadResponse(ctx context.Context, sel ast.SelectionSet, v dto.UploadResponse) graphql.Marshaler {
-	return ec._ArweaveUploadResponse(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNArweaveUploadResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋarweaveᚋdtoᚐUploadResponse(ctx context.Context, sel ast.SelectionSet, v *dto.UploadResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21278,10 +21274,6 @@ func (ec *executionContext) marshalNBlogCategory2ᚕᚖgithubᚗcomᚋLaiskyᚋl
 	return ret
 }
 
-func (ec *executionContext) marshalNBlogLoginResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse(ctx context.Context, sel ast.SelectionSet, v models.BlogLoginResponse) graphql.Marshaler {
-	return ec._BlogLoginResponse(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse(ctx context.Context, sel ast.SelectionSet, v *models.BlogLoginResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21290,10 +21282,6 @@ func (ec *executionContext) marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaisky�
 		return graphql.Null
 	}
 	return ec._BlogLoginResponse(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNBlogPost2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost(ctx context.Context, sel ast.SelectionSet, v model.Post) graphql.Marshaler {
-	return ec._BlogPost(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNBlogPost2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐPost(ctx context.Context, sel ast.SelectionSet, v []*model.Post) graphql.Marshaler {
@@ -21368,10 +21356,6 @@ func (ec *executionContext) marshalNBlogPostType2githubᚗcomᚋLaiskyᚋlaisky�
 	return v
 }
 
-func (ec *executionContext) marshalNBlogUser2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx context.Context, sel ast.SelectionSet, v model.User) graphql.Marshaler {
-	return ec._BlogUser(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNBlogUser2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋmodelᚐUser(ctx context.Context, sel ast.SelectionSet, v *model.User) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21396,10 +21380,6 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 		}
 	}
 	return res
-}
-
-func (ec *executionContext) marshalNComment2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx context.Context, sel ast.SelectionSet, v models.Comment) graphql.Marshaler {
-	return ec._Comment(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNComment2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐComment(ctx context.Context, sel ast.SelectionSet, v []*models.Comment) graphql.Marshaler {
@@ -21448,10 +21428,6 @@ func (ec *executionContext) marshalNDate2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblo
 	return v
 }
 
-func (ec *executionContext) marshalNExtractKeyInfoResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐExtractKeyInfoResult(ctx context.Context, sel ast.SelectionSet, v models.ExtractKeyInfoResult) graphql.Marshaler {
-	return ec._ExtractKeyInfoResult(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNExtractKeyInfoResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐExtractKeyInfoResult(ctx context.Context, sel ast.SelectionSet, v *models.ExtractKeyInfoResult) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21486,10 +21462,6 @@ func (ec *executionContext) marshalNFileIOChunk2ᚖgithubᚗcomᚋLaiskyᚋlaisk
 		return graphql.Null
 	}
 	return ec._FileIOChunk(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNFileIODeleteResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIODeleteResult(ctx context.Context, sel ast.SelectionSet, v models.FileIODeleteResult) graphql.Marshaler {
-	return ec._FileIODeleteResult(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNFileIODeleteResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIODeleteResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIODeleteResult) graphql.Marshaler {
@@ -21538,10 +21510,6 @@ func (ec *executionContext) marshalNFileIOEntryType2githubᚗcomᚋLaiskyᚋlais
 	return v
 }
 
-func (ec *executionContext) marshalNFileIOHistoryContent2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryContent(ctx context.Context, sel ast.SelectionSet, v models.FileIOHistoryContent) graphql.Marshaler {
-	return ec._FileIOHistoryContent(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNFileIOHistoryContent2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryContent(ctx context.Context, sel ast.SelectionSet, v *models.FileIOHistoryContent) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21578,10 +21546,6 @@ func (ec *executionContext) marshalNFileIOHistoryEntry2ᚖgithubᚗcomᚋLaisky�
 	return ec._FileIOHistoryEntry(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNFileIOHistoryPage2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryPage(ctx context.Context, sel ast.SelectionSet, v models.FileIOHistoryPage) graphql.Marshaler {
-	return ec._FileIOHistoryPage(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNFileIOHistoryPage2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOHistoryPage(ctx context.Context, sel ast.SelectionSet, v *models.FileIOHistoryPage) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21590,10 +21554,6 @@ func (ec *executionContext) marshalNFileIOHistoryPage2ᚖgithubᚗcomᚋLaisky�
 		return graphql.Null
 	}
 	return ec._FileIOHistoryPage(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNFileIOListResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOListResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOListResult) graphql.Marshaler {
-	return ec._FileIOListResult(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNFileIOListResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOListResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOListResult) graphql.Marshaler {
@@ -21606,10 +21566,6 @@ func (ec *executionContext) marshalNFileIOListResult2ᚖgithubᚗcomᚋLaiskyᚋ
 	return ec._FileIOListResult(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNFileIOReadResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOReadResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOReadResult) graphql.Marshaler {
-	return ec._FileIOReadResult(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNFileIOReadResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOReadResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOReadResult) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21618,10 +21574,6 @@ func (ec *executionContext) marshalNFileIOReadResult2ᚖgithubᚗcomᚋLaiskyᚋ
 		return graphql.Null
 	}
 	return ec._FileIOReadResult(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNFileIORenameResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIORenameResult(ctx context.Context, sel ast.SelectionSet, v models.FileIORenameResult) graphql.Marshaler {
-	return ec._FileIORenameResult(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNFileIORenameResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIORenameResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIORenameResult) graphql.Marshaler {
@@ -21634,10 +21586,6 @@ func (ec *executionContext) marshalNFileIORenameResult2ᚖgithubᚗcomᚋLaisky�
 	return ec._FileIORenameResult(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNFileIOSearchResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOSearchResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOSearchResult) graphql.Marshaler {
-	return ec._FileIOSearchResult(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNFileIOSearchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOSearchResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOSearchResult) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21646,10 +21594,6 @@ func (ec *executionContext) marshalNFileIOSearchResult2ᚖgithubᚗcomᚋLaisky�
 		return graphql.Null
 	}
 	return ec._FileIOSearchResult(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNFileIOStatResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOStatResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOStatResult) graphql.Marshaler {
-	return ec._FileIOStatResult(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNFileIOStatResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOStatResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOStatResult) graphql.Marshaler {
@@ -21670,10 +21614,6 @@ func (ec *executionContext) unmarshalNFileIOWriteMode2githubᚗcomᚋLaiskyᚋla
 
 func (ec *executionContext) marshalNFileIOWriteMode2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteMode(ctx context.Context, sel ast.SelectionSet, v models.FileIOWriteMode) graphql.Marshaler {
 	return v
-}
-
-func (ec *executionContext) marshalNFileIOWriteResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteResult(ctx context.Context, sel ast.SelectionSet, v models.FileIOWriteResult) graphql.Marshaler {
-	return ec._FileIOWriteResult(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNFileIOWriteResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐFileIOWriteResult(ctx context.Context, sel ast.SelectionSet, v *models.FileIOWriteResult) graphql.Marshaler {
@@ -21702,10 +21642,6 @@ func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.S
 	return graphql.WrapContextMarshaler(ctx, res)
 }
 
-func (ec *executionContext) marshalNGeneralHTMLCrawlerTask2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, v models.GeneralHTMLCrawlerTask) graphql.Marshaler {
-	return ec._GeneralHTMLCrawlerTask(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNGeneralHTMLCrawlerTask2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralHTMLCrawlerTask(ctx context.Context, sel ast.SelectionSet, v *models.GeneralHTMLCrawlerTask) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21714,10 +21650,6 @@ func (ec *executionContext) marshalNGeneralHTMLCrawlerTask2ᚖgithubᚗcomᚋLai
 		return graphql.Null
 	}
 	return ec._GeneralHTMLCrawlerTask(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNGeneralLLMStormTask2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralLLMStormTask(ctx context.Context, sel ast.SelectionSet, v models.GeneralLLMStormTask) graphql.Marshaler {
-	return ec._GeneralLLMStormTask(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNGeneralLLMStormTask2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGeneralLLMStormTask(ctx context.Context, sel ast.SelectionSet, v *models.GeneralLLMStormTask) graphql.Marshaler {
@@ -21740,10 +21672,6 @@ func (ec *executionContext) marshalNGeneralUser2ᚕᚖgithubᚗcomᚋLaiskyᚋla
 	return ret
 }
 
-func (ec *executionContext) marshalNGithubOAuthLoginResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthLoginResponse(ctx context.Context, sel ast.SelectionSet, v models.GithubOAuthLoginResponse) graphql.Marshaler {
-	return ec._GithubOAuthLoginResponse(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNGithubOAuthLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthLoginResponse(ctx context.Context, sel ast.SelectionSet, v *models.GithubOAuthLoginResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21752,10 +21680,6 @@ func (ec *executionContext) marshalNGithubOAuthLoginResponse2ᚖgithubᚗcomᚋL
 		return graphql.Null
 	}
 	return ec._GithubOAuthLoginResponse(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNGithubOAuthStartResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthStartResponse(ctx context.Context, sel ast.SelectionSet, v models.GithubOAuthStartResponse) graphql.Marshaler {
-	return ec._GithubOAuthStartResponse(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNGithubOAuthStartResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐGithubOAuthStartResponse(ctx context.Context, sel ast.SelectionSet, v *models.GithubOAuthStartResponse) graphql.Marshaler {
@@ -21824,10 +21748,6 @@ func (ec *executionContext) marshalNLanguage2ᚕgithubᚗcomᚋLaiskyᚋlaisky�
 	return ret
 }
 
-func (ec *executionContext) marshalNLock2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚋmodelᚐLock(ctx context.Context, sel ast.SelectionSet, v model2.Lock) graphql.Marshaler {
-	return ec._Lock(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋgeneralᚋmodelᚐLock(ctx context.Context, sel ast.SelectionSet, v *model2.Lock) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -21836,10 +21756,6 @@ func (ec *executionContext) marshalNLock2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblo
 		return graphql.Null
 	}
 	return ec._Lock(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNMemoryAck2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryAck(ctx context.Context, sel ast.SelectionSet, v models.MemoryAck) graphql.Marshaler {
-	return ec._MemoryAck(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNMemoryAck2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryAck(ctx context.Context, sel ast.SelectionSet, v *models.MemoryAck) graphql.Marshaler {
@@ -21860,10 +21776,6 @@ func (ec *executionContext) unmarshalNMemoryAfterTurnInput2githubᚗcomᚋLaisky
 func (ec *executionContext) unmarshalNMemoryBeforeTurnInput2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryBeforeTurnInput(ctx context.Context, v any) (models.MemoryBeforeTurnInput, error) {
 	res, err := ec.unmarshalInputMemoryBeforeTurnInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
-}
-
-func (ec *executionContext) marshalNMemoryBeforeTurnResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryBeforeTurnResult(ctx context.Context, sel ast.SelectionSet, v models.MemoryBeforeTurnResult) graphql.Marshaler {
-	return ec._MemoryBeforeTurnResult(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNMemoryBeforeTurnResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryBeforeTurnResult(ctx context.Context, sel ast.SelectionSet, v *models.MemoryBeforeTurnResult) graphql.Marshaler {
@@ -21905,10 +21817,6 @@ func (ec *executionContext) marshalNMemoryContentPart2ᚖgithubᚗcomᚋLaisky�
 func (ec *executionContext) unmarshalNMemoryContentPartInput2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryContentPartInput(ctx context.Context, v any) (*models.MemoryContentPartInput, error) {
 	res, err := ec.unmarshalInputMemoryContentPartInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
-}
-
-func (ec *executionContext) marshalNMemoryDirectoryListing2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectoryListing(ctx context.Context, sel ast.SelectionSet, v models.MemoryDirectoryListing) graphql.Marshaler {
-	return ec._MemoryDirectoryListing(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNMemoryDirectoryListing2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐMemoryDirectoryListing(ctx context.Context, sel ast.SelectionSet, v *models.MemoryDirectoryListing) graphql.Marshaler {
@@ -22014,10 +21922,6 @@ func (ec *executionContext) unmarshalNNewBlogPost2githubᚗcomᚋLaiskyᚋlaisky
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
-func (ec *executionContext) marshalNOneapiQuota2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐOneapiQuota(ctx context.Context, sel ast.SelectionSet, v models.OneapiQuota) graphql.Marshaler {
-	return ec._OneapiQuota(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNOneapiQuota2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐOneapiQuota(ctx context.Context, sel ast.SelectionSet, v *models.OneapiQuota) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -22054,10 +21958,6 @@ func (ec *executionContext) marshalNPasskeyInfo2ᚖgithubᚗcomᚋLaiskyᚋlaisk
 	return ec._PasskeyInfo(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNPasskeyLoginResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyLoginResponse(ctx context.Context, sel ast.SelectionSet, v models.PasskeyLoginResponse) graphql.Marshaler {
-	return ec._PasskeyLoginResponse(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNPasskeyLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyLoginResponse(ctx context.Context, sel ast.SelectionSet, v *models.PasskeyLoginResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -22068,10 +21968,6 @@ func (ec *executionContext) marshalNPasskeyLoginResponse2ᚖgithubᚗcomᚋLaisk
 	return ec._PasskeyLoginResponse(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNPasskeyStartResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyStartResponse(ctx context.Context, sel ast.SelectionSet, v models.PasskeyStartResponse) graphql.Marshaler {
-	return ec._PasskeyStartResponse(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNPasskeyStartResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐPasskeyStartResponse(ctx context.Context, sel ast.SelectionSet, v *models.PasskeyStartResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -22080,10 +21976,6 @@ func (ec *executionContext) marshalNPasskeyStartResponse2ᚖgithubᚗcomᚋLaisk
 		return graphql.Null
 	}
 	return ec._PasskeyStartResponse(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNPostInfo2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v dto1.PostInfo) graphql.Marshaler {
-	return ec._PostInfo(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNPostInfo2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋblogᚋdtoᚐPostInfo(ctx context.Context, sel ast.SelectionSet, v *dto1.PostInfo) graphql.Marshaler {
@@ -22104,10 +21996,6 @@ func (ec *executionContext) unmarshalNSortOrder2githubᚗcomᚋLaiskyᚋlaisky�
 
 func (ec *executionContext) marshalNSortOrder2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSortOrder(ctx context.Context, sel ast.SelectionSet, v models.SortOrder) graphql.Marshaler {
 	return v
-}
-
-func (ec *executionContext) marshalNSsoProfile2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile(ctx context.Context, sel ast.SelectionSet, v models.SsoProfile) graphql.Marshaler {
-	return ec._SsoProfile(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNSsoProfile2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐSsoProfile(ctx context.Context, sel ast.SelectionSet, v *models.SsoProfile) graphql.Marshaler {
@@ -22165,10 +22053,6 @@ func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel
 	return ret
 }
 
-func (ec *executionContext) marshalNTelegramAlertType2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v model3.AlertTypes) graphql.Marshaler {
-	return ec._TelegramAlertType(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNTelegramAlertType2ᚕᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋwebᚋtelegramᚋmodelᚐAlertTypes(ctx context.Context, sel ast.SelectionSet, v []*model3.AlertTypes) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
@@ -22197,10 +22081,6 @@ func (ec *executionContext) marshalNTelegramMonitorUser2ᚕᚖgithubᚗcomᚋLai
 	})
 
 	return ret
-}
-
-func (ec *executionContext) marshalNTotpSetupResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐTotpSetupResponse(ctx context.Context, sel ast.SelectionSet, v models.TotpSetupResponse) graphql.Marshaler {
-	return ec._TotpSetupResponse(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNTotpSetupResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐTotpSetupResponse(ctx context.Context, sel ast.SelectionSet, v *models.TotpSetupResponse) graphql.Marshaler {
@@ -22243,10 +22123,6 @@ func (ec *executionContext) marshalNTwitterUser2ᚖgithubᚗcomᚋLaiskyᚋlaisk
 	return ec._TwitterUser(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNUserActiveResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserActiveResponse(ctx context.Context, sel ast.SelectionSet, v models.UserActiveResponse) graphql.Marshaler {
-	return ec._UserActiveResponse(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNUserActiveResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserActiveResponse(ctx context.Context, sel ast.SelectionSet, v *models.UserActiveResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -22255,10 +22131,6 @@ func (ec *executionContext) marshalNUserActiveResponse2ᚖgithubᚗcomᚋLaisky�
 		return graphql.Null
 	}
 	return ec._UserActiveResponse(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNUserEmailCodeResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserEmailCodeResponse(ctx context.Context, sel ast.SelectionSet, v models.UserEmailCodeResponse) graphql.Marshaler {
-	return ec._UserEmailCodeResponse(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNUserEmailCodeResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserEmailCodeResponse(ctx context.Context, sel ast.SelectionSet, v *models.UserEmailCodeResponse) graphql.Marshaler {
@@ -22271,10 +22143,6 @@ func (ec *executionContext) marshalNUserEmailCodeResponse2ᚖgithubᚗcomᚋLais
 	return ec._UserEmailCodeResponse(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNUserRegisterResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserRegisterResponse(ctx context.Context, sel ast.SelectionSet, v models.UserRegisterResponse) graphql.Marshaler {
-	return ec._UserRegisterResponse(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNUserRegisterResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserRegisterResponse(ctx context.Context, sel ast.SelectionSet, v *models.UserRegisterResponse) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -22283,10 +22151,6 @@ func (ec *executionContext) marshalNUserRegisterResponse2ᚖgithubᚗcomᚋLaisk
 		return graphql.Null
 	}
 	return ec._UserRegisterResponse(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNUserResendActiveEmailResponse2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserResendActiveEmailResponse(ctx context.Context, sel ast.SelectionSet, v models.UserResendActiveEmailResponse) graphql.Marshaler {
-	return ec._UserResendActiveEmailResponse(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNUserResendActiveEmailResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐUserResendActiveEmailResponse(ctx context.Context, sel ast.SelectionSet, v *models.UserResendActiveEmailResponse) graphql.Marshaler {
@@ -22299,10 +22163,6 @@ func (ec *executionContext) marshalNUserResendActiveEmailResponse2ᚖgithubᚗco
 	return ec._UserResendActiveEmailResponse(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNWebFetchResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐWebFetchResult(ctx context.Context, sel ast.SelectionSet, v models.WebFetchResult) graphql.Marshaler {
-	return ec._WebFetchResult(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNWebFetchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐWebFetchResult(ctx context.Context, sel ast.SelectionSet, v *models.WebFetchResult) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -22311,10 +22171,6 @@ func (ec *executionContext) marshalNWebFetchResult2ᚖgithubᚗcomᚋLaiskyᚋla
 		return graphql.Null
 	}
 	return ec._WebFetchResult(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNWebSearchResult2githubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚋsearchᚐSearchResult(ctx context.Context, sel ast.SelectionSet, v search.SearchResult) graphql.Marshaler {
-	return ec._WebSearchResult(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNWebSearchResult2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋlibraryᚋsearchᚐSearchResult(ctx context.Context, sel ast.SelectionSet, v *search.SearchResult) graphql.Marshaler {

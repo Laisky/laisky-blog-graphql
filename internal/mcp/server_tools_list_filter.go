@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
@@ -27,11 +26,8 @@ func withToolsListFiltering(next http.Handler, logger logSDK.Logger, preferenceS
 		return next
 	}
 
-	sessionAuthStore := newSessionAuthorizationStore()
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cacheSessionAuthorizationForRequest(r, logger, sessionAuthStore)
-		shouldFilter, disabledTools := loadDisabledToolsForListRequest(r, preferenceService, logger, sessionAuthStore)
+		shouldFilter, disabledTools := loadDisabledToolsForListRequest(r, preferenceService, logger)
 		if !shouldFilter || len(disabledTools) == 0 {
 			next.ServeHTTP(w, r)
 			return
@@ -66,7 +62,7 @@ func withToolsListFiltering(next http.Handler, logger logSDK.Logger, preferenceS
 }
 
 // loadDisabledToolsForListRequest inspects the request and returns disabled tools for tools/list calls.
-func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userrequests.Service, logger logSDK.Logger, sessionAuthStore *sessionAuthorizationStore) (bool, map[string]struct{}) {
+func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userrequests.Service, logger logSDK.Logger) (bool, map[string]struct{}) {
 	if r == nil || preferenceService == nil {
 		return false, nil
 	}
@@ -93,7 +89,7 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 		return false, nil
 	}
 
-	auth, authSource := resolveAuthorizationForListRequest(r, sessionAuthStore)
+	auth, authSource := resolveAuthorizationForListRequest(r)
 	if auth == nil {
 		if logger != nil {
 			logger.Debug("skip tools/list filtering: authorization unavailable",
@@ -125,7 +121,6 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 	if len(disabledTools) == 0 {
 		if logger != nil {
 			logger.Debug("tools/list filtering: no disabled tools",
-				zap.String("auth_source", authSource),
 				zap.String("user_identity", auth.UserIdentity),
 			)
 		}
@@ -148,116 +143,15 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 	return true, set
 }
 
-// sessionAuthorizationStore stores per-session, non-sensitive authorization metadata for tools/list filtering.
-type sessionAuthorizationStore struct {
-	values sync.Map
-}
-
-// cachedAuthorization stores only identity metadata needed to query preferences without persisting raw API keys.
-type cachedAuthorization struct {
-	APIKeyHash   string
-	KeySuffix    string
-	UserIdentity string
-}
-
-// newSessionAuthorizationStore creates a fresh in-memory authorization cache scoped to one HTTP handler.
-func newSessionAuthorizationStore() *sessionAuthorizationStore {
-	return &sessionAuthorizationStore{}
-}
-
-// Set stores authorization metadata for a given MCP session ID.
-func (s *sessionAuthorizationStore) Set(sessionID string, auth *askuser.AuthorizationContext) {
-	if s == nil || auth == nil {
-		return
-	}
-	sid := strings.TrimSpace(sessionID)
-	if sid == "" {
-		return
-	}
-
-	s.values.Store(sid, cachedAuthorization{
-		APIKeyHash:   auth.APIKeyHash,
-		KeySuffix:    auth.KeySuffix,
-		UserIdentity: auth.UserIdentity,
-	})
-}
-
-// Get returns cached authorization metadata for a session ID.
-func (s *sessionAuthorizationStore) Get(sessionID string) (*askuser.AuthorizationContext, bool) {
-	if s == nil {
-		return nil, false
-	}
-	sid := strings.TrimSpace(sessionID)
-	if sid == "" {
-		return nil, false
-	}
-
-	value, ok := s.values.Load(sid)
-	if !ok {
-		return nil, false
-	}
-
-	cached, ok := value.(cachedAuthorization)
-	if !ok {
-		return nil, false
-	}
-
-	return &askuser.AuthorizationContext{
-		APIKeyHash:   cached.APIKeyHash,
-		KeySuffix:    cached.KeySuffix,
-		UserIdentity: cached.UserIdentity,
-	}, true
-}
-
-// cacheSessionAuthorizationForRequest saves request authorization metadata when both session and auth headers are present.
-func cacheSessionAuthorizationForRequest(r *http.Request, logger logSDK.Logger, sessionAuthStore *sessionAuthorizationStore) {
-	if r == nil || sessionAuthStore == nil {
-		return
-	}
-
-	sessionID := strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID))
-	if sessionID == "" {
-		return
-	}
-
-	authHeader, authSource := resolveRequestAuthorizationHeader(r)
-	auth, err := askuser.ParseAuthorizationContext(authHeader)
+// resolveAuthorizationForListRequest uses only the current request's credentials.
+// Transport session IDs must never supply an identity or resurrect credentials.
+func resolveAuthorizationForListRequest(r *http.Request) (*askuser.AuthorizationContext, string) {
+	header, source := resolveRequestAuthorizationHeader(r)
+	auth, err := askuser.ParseAuthorizationContext(header)
 	if err != nil {
-		return
-	}
-
-	sessionAuthStore.Set(sessionID, auth)
-	if logger != nil {
-		logger.Debug("cached authorization for mcp session",
-			zap.String("session_id", sessionID),
-			zap.String("auth_source", authSource),
-			zap.String("user_identity", auth.UserIdentity),
-		)
-	}
-}
-
-// resolveAuthorizationForListRequest resolves authorization for tools/list from header first, then session cache.
-func resolveAuthorizationForListRequest(r *http.Request, sessionAuthStore *sessionAuthorizationStore) (*askuser.AuthorizationContext, string) {
-	if r == nil {
 		return nil, authSourceNone
 	}
-
-	authHeader, authSource := resolveRequestAuthorizationHeader(r)
-	auth, err := askuser.ParseAuthorizationContext(authHeader)
-	if err == nil {
-		return auth, authSource
-	}
-
-	sessionID := strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID))
-	if sessionID == "" {
-		return nil, authSourceNone
-	}
-
-	if cachedAuth, ok := sessionAuthStore.Get(sessionID); ok {
-		return cachedAuth, "session"
-	}
-
-	return nil, authSourceNone
+	return auth, source
 }
 
 // filterToolsListBody removes disabled tool definitions from a JSON-RPC tools/list response body.
@@ -358,13 +252,14 @@ func writeCapturedResponse(dst http.ResponseWriter, src *captureResponseWriter, 
 
 	copyHeaders(dst.Header(), src.header)
 	dst.Header().Del("Content-Length")
+	setMCPResponseHeaders(dst.Header())
 
 	status := src.status
 	if status == 0 {
 		status = http.StatusOK
 	}
 	dst.WriteHeader(status)
-	_, _ = dst.Write(body)
+	_, _ = writeMCPResponse(dst, body)
 }
 
 // copyHeaders clones HTTP header values from src into dst.

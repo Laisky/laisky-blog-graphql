@@ -58,6 +58,13 @@ type Service struct {
 
 // NewService constructs a FileIO service and runs migrations.
 func NewService(db *sql.DB, settings Settings, embedder Embedder, rerank RerankClient, credential *CredentialProtector, store CredentialStore, logger logSDK.Logger, lockProvider LockProvider, clock Clock) (*Service, error) {
+	return NewServiceWithContext(context.Background(), db, settings, embedder, rerank, credential, store, logger, lockProvider, clock)
+}
+
+// NewServiceWithContext constructs a FileIO service and runs migrations within the caller's lifetime.
+func NewServiceWithContext(ctx context.Context, db *sql.DB, settings Settings, embedder Embedder, rerank RerankClient,
+	credential *CredentialProtector, store CredentialStore, logger logSDK.Logger, lockProvider LockProvider, clock Clock,
+) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("sql db is required")
 	}
@@ -78,11 +85,11 @@ func NewService(db *sql.DB, settings Settings, embedder Embedder, rerank RerankC
 		}
 	}
 
-	if err := RunMigrations(context.Background(), db, logger); err != nil {
+	if err := RunMigrations(ctx, db, logger); err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	isPostgres, err := detectPostgresDialect(context.Background(), db)
+	isPostgres, err := detectPostgresDialect(ctx, db)
 	if err != nil {
 		return nil, errors.Wrap(err, "detect database dialect")
 	}
@@ -111,12 +118,10 @@ func NewService(db *sql.DB, settings Settings, embedder Embedder, rerank RerankC
 // LoggerFromContext returns the request-scoped logger when available.
 func (s *Service) LoggerFromContext(ctx context.Context) logSDK.Logger {
 	if ctx != nil {
-		if ctxLogger := gmw.GetLogger(ctx); ctxLogger != nil {
-			return ctxLogger
-		}
 		if ctxLogger, ok := ctx.Value(ctxkeys.Logger).(logSDK.Logger); ok && ctxLogger != nil {
 			return ctxLogger
 		}
+		return gmw.GetLogger(ctx)
 	}
 	if s != nil && s.logger != nil {
 		return s.logger

@@ -70,7 +70,7 @@ func (c *MCPClient) Initialize(ctx context.Context) error {
 
 	requestID := c.nextID()
 	_, err := c.rpc(ctx, rpcRequest{
-		JSONRPC: "2.0", ID: requestID, Method: "initialize",
+		JSONRPC: jsonRPCVersion, ID: requestID, Method: "initialize",
 		Params: map[string]any{
 			"protocolVersion": c.protocolVersion,
 			"capabilities":    map[string]any{},
@@ -80,7 +80,7 @@ func (c *MCPClient) Initialize(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "MCP initialize")
 	}
-	if _, err := c.rpc(ctx, rpcRequest{JSONRPC: "2.0", Method: "notifications/initialized"}); err != nil {
+	if _, err := c.rpc(ctx, rpcRequest{JSONRPC: jsonRPCVersion, Method: "notifications/initialized"}); err != nil {
 		return errors.Wrap(err, "MCP initialized notification")
 	}
 	c.mu.Lock()
@@ -95,7 +95,7 @@ func (c *MCPClient) CallTool(ctx context.Context, name string, arguments map[str
 		return nil, err
 	}
 	resultRaw, err := c.rpc(ctx, rpcRequest{
-		JSONRPC: "2.0", ID: c.nextID(), Method: "tools/call",
+		JSONRPC: jsonRPCVersion, ID: c.nextID(), Method: "tools/call",
 		Params: map[string]any{"name": name, "arguments": arguments},
 	})
 	if err != nil {
@@ -112,14 +112,14 @@ func (c *MCPClient) CallTool(ctx context.Context, name string, arguments map[str
 		return result.StructuredContent, nil
 	}
 	for _, content := range result.Content {
-		if content.Type != "text" || strings.TrimSpace(content.Text) == "" {
+		if content.Type != benchmarkText || strings.TrimSpace(content.Text) == "" {
 			continue
 		}
 		text := strings.TrimSpace(content.Text)
 		if json.Valid([]byte(text)) {
 			return json.RawMessage(text), nil
 		}
-		fallback, marshalErr := json.Marshal(map[string]string{"text": text})
+		fallback, marshalErr := json.Marshal(map[string]string{benchmarkText: text})
 		if marshalErr != nil {
 			return nil, errors.Wrap(marshalErr, "encode MCP text fallback")
 		}
@@ -190,7 +190,7 @@ type toolCallResult struct {
 func (r toolCallResult) text() string {
 	parts := make([]string, 0, len(r.Content))
 	for _, content := range r.Content {
-		if content.Type == "text" && strings.TrimSpace(content.Text) != "" {
+		if content.Type == benchmarkText && strings.TrimSpace(content.Text) != "" {
 			parts = append(parts, content.Text)
 		}
 	}

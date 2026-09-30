@@ -145,7 +145,10 @@ func (s *Searcher) pickRanges(ctx context.Context, tree *Tree, query string, bud
 	if budget != nil && budget.Remaining() <= 0 {
 		return nil, ErrBudgetExceeded
 	}
-	outline, _ := json.Marshal(CloneOutline(tree.Structure))
+	outline, err := json.Marshal(CloneOutline(tree.Structure))
+	if err != nil {
+		return nil, errors.Wrap(err, "encode index structure")
+	}
 	prompt, err := RenderPrompt(PromptPickPageRanges, PickPageRangesVars{
 		Query:     query,
 		Tree:      string(outline),

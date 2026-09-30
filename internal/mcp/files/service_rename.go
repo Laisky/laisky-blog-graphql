@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 
 	errors "github.com/Laisky/errors/v2"
 )
@@ -29,7 +30,7 @@ func (s *Service) Rename(ctx context.Context, auth AuthContext, project, fromPat
 func (s *Service) renameWithSystemState(
 	ctx context.Context, auth AuthContext, project, fromPath, toPath string, overwrite bool,
 	systemProject, systemOwner string, mutate SystemStateMutator,
-) (RenameResult, error) { //nolint:gocognit // rename validates and remaps a transactional subtree
+) (RenameResult, error) {
 	if err := s.validateAuth(auth); err != nil {
 		return RenameResult{}, errors.WithStack(err)
 	}
@@ -78,73 +79,17 @@ func (s *Service) renameWithSystemState(
 		if err != nil {
 			return err
 		}
-		if len(overwritePaths) > 0 {
-			inClause, inArgs := buildInClause(overwritePaths, s.isPostgres, 6)
-			query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ?
-    WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
-			args := make([]any, 0, 5+len(inArgs))
-			args = append(args, now, now, auth.APIKeyHash, project, owner)
-			args = append(args, inArgs...)
-			if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
-				return errors.Wrap(err, "soft delete overwritten destination files")
-			}
+		if err := s.softDeleteRenameDestinationsTx(ctx, tx, auth, project, owner, overwritePaths, now); err != nil {
+			return err
 		}
-		for _, mapping := range mappings {
-			if _, err := tx.ExecContext(ctx,
-				rebindSQL(`UPDATE mcp_files SET path = ?, updated_at = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
-				mapping.NewPath, now, mapping.ID, owner,
-			); err != nil {
-				return errors.Wrap(err, "apply rename path remap")
-			}
-			if _, err := tx.ExecContext(ctx,
-				rebindSQL(`UPDATE mcp_file_versions SET path = ? WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?`, s.isPostgres),
-				mapping.NewPath, auth.APIKeyHash, project, mapping.OldPath, owner,
-			); err != nil {
-				return errors.Wrap(err, "apply rename version path remap")
-			}
-			if owner == "" {
-				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: mapping.OldPath,
-					Operation: "DELETE", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
-					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
-				}); err != nil {
-					return errors.Wrap(err, "enqueue rename delete job")
-				}
-				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: mapping.NewPath,
-					Operation: "UPSERT", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
-					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
-				}); err != nil {
-					return errors.Wrap(err, "enqueue rename upsert job")
-				}
-				if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, mapping.NewPath, now); err != nil {
-					return err
-				}
-			}
+		if err := s.applyRenameMappingsTx(ctx, tx, auth, project, owner, mappings, now); err != nil {
+			return err
 		}
-		if owner == "" {
-			for _, overwrittenPath := range overwritePaths {
-				if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
-					APIKeyHash: auth.APIKeyHash, Project: project, FilePath: overwrittenPath,
-					Operation: "DELETE", FileUpdatedAt: &now, Status: "pending", RetryCount: 0,
-					AvailableAt: now, CreatedAt: now, UpdatedAt: now,
-				}); err != nil {
-					return errors.Wrap(err, "enqueue overwrite delete job")
-				}
-			}
+		if err := s.enqueueRenameOverwriteDeletesTx(ctx, tx, auth, project, owner, overwritePaths, now); err != nil {
+			return err
 		}
-		if mutate != nil {
-			stateCtx := contextWithSystemOwner(ctx, systemOwner)
-			state, err := s.loadSystemStateTx(stateCtx, tx, systemOwner, systemProject)
-			if err != nil {
-				return err
-			}
-			if err := mutate(state); err != nil {
-				return errors.Wrap(err, "mutate rename system state")
-			}
-			if err := s.persistSystemStateTx(stateCtx, tx, systemOwner, systemProject, state); err != nil {
-				return err
-			}
+		if err := s.mutateRenameSystemStateTx(ctx, tx, systemProject, systemOwner, mutate); err != nil {
+			return err
 		}
 		movedCount = len(mappings)
 		return nil
@@ -308,4 +253,103 @@ func (s *Service) validateRenameDestinations(
 		overwritePaths = append(overwritePaths, destination.Path)
 	}
 	return overwritePaths, nil
+}
+
+// softDeleteRenameDestinationsTx frees overwritten names before applying the remap.
+func (s *Service) softDeleteRenameDestinationsTx(ctx context.Context, tx *sql.Tx, auth AuthContext,
+	project, owner string, overwritePaths []string, now time.Time,
+) error {
+	if len(overwritePaths) > 0 {
+		inClause, inArgs := buildInClause(overwritePaths, s.isPostgres, 6)
+		query := rebindSQL(`UPDATE mcp_files SET deleted = TRUE, deleted_at = ?, updated_at = ?
+    WHERE apikey_hash = ? AND project = ? AND deleted = FALSE AND system_owner = ? AND path IN (%s)`, s.isPostgres)
+		args := make([]any, 0, 5+len(inArgs))
+		args = append(args, now, now, auth.APIKeyHash, project, owner)
+		args = append(args, inArgs...)
+		if _, err := tx.ExecContext(ctx, strings.Replace(query, "%s", inClause, 1), args...); err != nil {
+			return errors.Wrap(err, "soft delete overwritten destination files")
+		}
+	}
+
+	return nil
+}
+
+// applyRenameMappingsTx moves file/version paths and schedules their index updates atomically.
+func (s *Service) applyRenameMappingsTx(ctx context.Context, tx *sql.Tx, auth AuthContext,
+	project, owner string, mappings []renameMapping, now time.Time,
+) error {
+	for _, mapping := range mappings {
+		if _, err := tx.ExecContext(ctx,
+			rebindSQL(`UPDATE mcp_files SET path = ?, updated_at = ? WHERE id = ? AND system_owner = ?`, s.isPostgres),
+			mapping.NewPath, now, mapping.ID, owner,
+		); err != nil {
+			return errors.Wrap(err, "apply rename path remap")
+		}
+		if _, err := tx.ExecContext(ctx,
+			rebindSQL(`UPDATE mcp_file_versions SET path = ? WHERE apikey_hash = ? AND project = ? AND path = ? AND system_owner = ?`, s.isPostgres),
+			mapping.NewPath, auth.APIKeyHash, project, mapping.OldPath, owner,
+		); err != nil {
+			return errors.Wrap(err, "apply rename version path remap")
+		}
+		if owner == "" {
+			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+				APIKeyHash: auth.APIKeyHash, Project: project, FilePath: mapping.OldPath,
+				Operation: indexOperationDelete, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
+				AvailableAt: now, CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				return errors.Wrap(err, "enqueue rename delete job")
+			}
+			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+				APIKeyHash: auth.APIKeyHash, Project: project, FilePath: mapping.NewPath,
+				Operation: indexOperationUpsert, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
+				AvailableAt: now, CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				return errors.Wrap(err, "enqueue rename upsert job")
+			}
+			if err := s.storeCredentialEnvelopeTx(ctx, tx, auth, project, mapping.NewPath, now); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// mutateRenameSystemStateTx persists the plugin manifest in the same rename transaction.
+func (s *Service) mutateRenameSystemStateTx(ctx context.Context, tx *sql.Tx,
+	systemProject, systemOwner string, mutate SystemStateMutator,
+) error {
+	if mutate != nil {
+		stateCtx := contextWithSystemOwner(ctx, systemOwner)
+		state, err := s.loadSystemStateTx(stateCtx, tx, systemOwner, systemProject)
+		if err != nil {
+			return err
+		}
+		if err := mutate(state); err != nil {
+			return errors.Wrap(err, "mutate rename system state")
+		}
+		if err := s.persistSystemStateTx(stateCtx, tx, systemOwner, systemProject, state); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// enqueueRenameOverwriteDeletesTx schedules deleted destinations in the same rename transaction.
+func (s *Service) enqueueRenameOverwriteDeletesTx(ctx context.Context, tx *sql.Tx, auth AuthContext,
+	project, owner string, overwritePaths []string, now time.Time,
+) error {
+	if owner == "" {
+		for _, overwrittenPath := range overwritePaths {
+			if err := s.insertIndexJobTx(ctx, tx, FileIndexJob{
+				APIKeyHash: auth.APIKeyHash, Project: project, FilePath: overwrittenPath,
+				Operation: indexOperationDelete, FileUpdatedAt: &now, Status: indexStatusPending, RetryCount: 0,
+				AvailableAt: now, CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				return errors.Wrap(err, "enqueue overwrite delete job")
+			}
+		}
+	}
+	return nil
 }

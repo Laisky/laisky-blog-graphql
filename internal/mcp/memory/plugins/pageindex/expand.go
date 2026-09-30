@@ -182,7 +182,10 @@ func (idx *Indexer) generateNoTOC(ctx context.Context, slice []string, base int,
 		if budget != nil && budget.Remaining() <= 0 {
 			break
 		}
-		prevJSON, _ := json.Marshal(flat)
+		prevJSON, err := json.Marshal(flat)
+		if err != nil {
+			return nil, errors.Wrap(err, "encode index structure")
+		}
 		contPrompt, err := RenderPrompt(PromptGenerateTOCContinue, GenerateTOCContinueVars{Part: g, PreviousStruct: string(prevJSON)})
 		if err != nil {
 			return nil, err

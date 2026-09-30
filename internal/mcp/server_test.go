@@ -194,58 +194,39 @@ func TestLoadDisabledToolsForListRequestWithAuthorizationHeader(t *testing.T) {
 	require.NoError(t, err)
 
 	request := newToolsListRequest("", "Bearer sk-tools-list-header")
-	shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil, nil)
+	shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil)
 
 	require.True(t, shouldFilter)
 	_, ok := disabled["mcp_pipe"]
 	require.True(t, ok)
 }
 
-func TestLoadDisabledToolsForListRequestWithSessionAuthorizationFallback(t *testing.T) {
+// TestLoadDisabledToolsForListRequestDoesNotUseSessionIdentity protects anonymous catalogs.
+func TestLoadDisabledToolsForListRequestDoesNotUseSessionIdentity(t *testing.T) {
 	prefSvc := newUserPreferenceServiceForToolsListTest(t, "file:toolslist_session?mode=memory&cache=shared")
 	auth := mustAuthorizationContext(t, "Bearer sk-tools-list-session")
 	_, err := prefSvc.SetDisabledTools(context.Background(), auth, []string{"mcp_pipe"})
 	require.NoError(t, err)
 
-	sessionID := "mcp-session-tools-list"
-	store := newSessionAuthorizationStore()
-	cacheSessionAuthorizationForRequest(newGenericMCPRequest(sessionID, "Bearer sk-tools-list-session"), nil, store)
-
-	request := newToolsListRequest(sessionID, "")
-	shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil, store)
-
+	request := newToolsListRequest("mcp-session-tools-list", "")
+	shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil)
 	require.True(t, shouldFilter)
-	_, ok := disabled["mcp_pipe"]
-	require.True(t, ok)
+	require.Empty(t, disabled, "a session must not supply the previous caller's identity")
 }
 
 func TestResolveAuthorizationForListRequestWithoutAuthorization(t *testing.T) {
 	request := newToolsListRequest("", "")
-	auth, source := resolveAuthorizationForListRequest(request, nil)
+	auth, source := resolveAuthorizationForListRequest(request)
 	require.Nil(t, auth)
 	require.Equal(t, "none", source)
 }
 
 func TestResolveAuthorizationForListRequestWithAPIKeyQuery(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/mcp/?APIKEY=sk-tools-list-query", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`))
-	auth, source := resolveAuthorizationForListRequest(request, nil)
+	auth, source := resolveAuthorizationForListRequest(request)
 	require.NotNil(t, auth)
 	require.Equal(t, "query_apikey", source)
 	require.Equal(t, "sk-tools-list-query", auth.APIKey)
-}
-
-func TestCacheSessionAuthorizationForRequestWithAPIKeyQuery(t *testing.T) {
-	sessionID := "mcp-session-query-cache"
-	store := newSessionAuthorizationStore()
-	req := httptest.NewRequest(http.MethodPost, "/mcp/?apikey=sk-tools-list-query-cache", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
-	req.Header.Set(srv.HeaderKeySessionID, sessionID)
-
-	cacheSessionAuthorizationForRequest(req, nil, store)
-
-	cached, ok := store.Get(sessionID)
-	require.True(t, ok)
-	require.Equal(t, "user:"+cached.APIKeyHash[:16], cached.UserIdentity)
-	require.Equal(t, "ache", cached.KeySuffix)
 }
 
 func TestResolveRequestAuthorizationHeader(t *testing.T) {
@@ -311,18 +292,6 @@ func mustAuthorizationContext(t *testing.T, authHeader string) *askuser.Authoriz
 	auth, err := askuser.ParseAuthorizationContext(authHeader)
 	require.NoError(t, err)
 	return auth
-}
-
-// newGenericMCPRequest builds a generic MCP POST request with optional session and authorization headers.
-func newGenericMCPRequest(sessionID string, authorization string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, "/mcp/", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
-	if strings.TrimSpace(sessionID) != "" {
-		req.Header.Set(srv.HeaderKeySessionID, sessionID)
-	}
-	if strings.TrimSpace(authorization) != "" {
-		req.Header.Set("Authorization", authorization)
-	}
-	return req
 }
 
 // newToolsListRequest builds a tools/list MCP request with optional session and authorization headers.

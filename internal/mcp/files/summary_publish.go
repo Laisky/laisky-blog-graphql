@@ -286,7 +286,7 @@ func (s *Service) enqueueSummaryRefreshTx(ctx context.Context, tx *sql.Tx, job F
 		rebindSQL(`SELECT COUNT(1) FROM mcp_file_index_jobs
 		WHERE apikey_hash = ? AND project = ? AND file_path = ? AND operation = ? AND content_hash = ? AND summary_generation_key = ? AND system_owner = ? AND status IN (?, ?, ?)`, s.isPostgres),
 		job.APIKeyHash, job.Project, job.FilePath, "SUMMARY_REFRESH", pub.contentHash, pub.generationKey, "",
-		"pending", "processing", "waiting_auth",
+		indexStatusPending, "processing", "waiting_auth",
 	).Scan(&cnt); err != nil {
 		return errors.Wrap(err, "check summary refresh dedup")
 	}
@@ -305,7 +305,7 @@ func (s *Service) enqueueSummaryRefreshTx(ctx context.Context, tx *sql.Tx, job F
 		FileUpdatedAt: job.FileUpdatedAt,
 		// "pending" here is the index-job lifecycle status (see index_worker.go), not
 		// the SummaryStatus enum; the two domains share the word by coincidence.
-		Status:               "pending", //nolint:goconst // job status, not SummaryStatusPending
+		Status:               indexStatusPending, //nolint:goconst // job status, not SummaryStatusPending
 		RetryCount:           0,
 		AvailableAt:          now.Add(backoff),
 		CreatedAt:            now,

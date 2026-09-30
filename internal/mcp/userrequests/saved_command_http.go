@@ -77,9 +77,9 @@ func (h *savedCommandsHTTPHandler) handleList(w http.ResponseWriter, r *http.Req
 	}
 
 	h.writeJSON(w, map[string]any{
-		"commands": dtos,
-		"user_id":  auth.UserIdentity,
-		"key_hint": auth.KeySuffix,
+		"commands":   dtos,
+		fieldUserId:  auth.UserIdentity,
+		fieldKeyHint: auth.KeySuffix,
 	})
 }
 
@@ -224,7 +224,7 @@ func (h *savedCommandsHTTPHandler) handleDelete(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	h.writeJSON(w, map[string]any{"deleted": true})
+	h.writeJSON(w, map[string]any{fieldDeleted: true})
 }
 
 func (h *savedCommandsHTTPHandler) handleReorder(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +286,7 @@ func (h *savedCommandsHTTPHandler) writeErrorWithLogger(w http.ResponseWriter, l
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": message}) //nolint:errchkjson // best-effort error response
+	_ = json.NewEncoder(w).Encode(map[string]any{fieldError: message}) //nolint:errchkjson // best-effort error response
 }
 
 func (h *savedCommandsHTTPHandler) writeJSON(w http.ResponseWriter, payload any) {
@@ -299,7 +299,8 @@ func (h *savedCommandsHTTPHandler) writeJSON(w http.ResponseWriter, payload any)
 // logFromCtx extracts a context-aware logger from the context.
 // Falls back to the handler's logger or a shared logger if context logger is unavailable.
 func (h *savedCommandsHTTPHandler) logFromCtx(ctx context.Context) logSDK.Logger {
-	if logger := gmw.GetLogger(ctx); logger != nil {
+	if ctx != nil {
+		logger := gmw.GetLogger(ctx)
 		return logger.Named("saved_commands_http")
 	}
 	if h != nil && h.logger != nil {

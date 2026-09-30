@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
@@ -21,38 +23,65 @@ const maxMultipartMemory = 8 << 20 // 8 MiB
 // parseMultipart walks a multipart/form-data request and returns the caller's
 // text content, task_id, and the ordered list of attachments (files then URLs).
 func (h *httpHandler) parseMultipart(r *http.Request) (string, string, []AttachmentInput, error) {
-	var bodyCap int64 = 110 * 1024 * 1024
+	const overhead int64 = 2 << 20
+	perImage, count := DefaultImagePerImageMaxBytes, DefaultImageMaxPerRequest
 	if h.imageManager != nil {
 		settings := h.imageManager.Settings()
-		if settings.PerImageMaxBytes > 0 && settings.MaxPerRequest > 0 {
-			bodyCap = settings.PerImageMaxBytes*int64(settings.MaxPerRequest) + (2 << 20)
-		}
+		perImage, count = settings.PerImageMaxBytes, settings.MaxPerRequest
 	}
-	r.Body = http.MaxBytesReader(nil, r.Body, bodyCap)
-	if err := r.ParseMultipartForm(maxMultipartMemory); err != nil {
-		return "", "", nil, errors.Wrap(imageproc.ErrImageTooLarge, err.Error())
+	if perImage <= 0 || count <= 0 || int64(count) > (math.MaxInt64-overhead)/perImage {
+		return "", "", nil, errors.New("invalid image request size limits")
+	}
+	bodyCap := perImage*int64(count) + overhead
+
+	if err := parseBoundedMultipart(r, bodyCap); err != nil {
+		return "", "", nil, err
 	}
 	form := r.MultipartForm
 	if form == nil {
 		return "", "", nil, errors.New("multipart form missing")
 	}
 
+	defer func() {
+		if err := form.RemoveAll(); err != nil {
+			h.logger.Warn("remove multipart temporary files", zap.Error(err))
+		}
+	}()
 	content := strings.TrimSpace(firstFormValue(form.Value, "content"))
 	taskID := strings.TrimSpace(firstFormValue(form.Value, "task_id"))
+
+	attachmentCount := len(form.File["images"])
+	for _, raw := range form.Value["image_urls"] {
+		if strings.TrimSpace(raw) != "" {
+			attachmentCount++
+		}
+	}
+	if attachmentCount > count {
+		return "", "", nil, errors.WithStack(ErrTooManyImages)
+	}
 
 	var attachments []AttachmentInput
 	for _, hdr := range form.File["images"] {
 		if hdr == nil {
 			continue
 		}
+		if hdr.Size > perImage {
+			return "", "", nil, errors.WithStack(imageproc.ErrImageTooLarge)
+		}
 		file, err := hdr.Open()
 		if err != nil {
 			return "", "", nil, errors.Wrap(err, "open multipart part")
 		}
-		body, readErr := io.ReadAll(file)
-		_ = file.Close()
+		body, readErr := io.ReadAll(io.LimitReader(file, perImage+1))
+		closeErr := file.Close()
 		if readErr != nil {
 			return "", "", nil, errors.Wrap(readErr, "read multipart part")
+		}
+		if closeErr != nil {
+			return "", "", nil, errors.Wrap(closeErr, "close multipart part")
+		}
+		if int64(len(body)) > perImage {
+			return "", "", nil, errors.WithStack(imageproc.ErrImageTooLarge)
 		}
 		attachments = append(attachments, AttachmentInput{
 			FileBytes: body,
@@ -85,32 +114,29 @@ func firstFormValue(values map[string][]string, key string) string {
 // ImageManager.Process out of a wrapped error, so the client can highlight
 // the failing thumbnail. Returns -1 when the index is absent.
 func extractAttachmentIndex(err error) int {
-	s := err.Error()
-	marker := "attachment index "
-	idx := strings.LastIndex(s, marker)
-	if idx < 0 {
+	if err == nil {
 		return -1
 	}
-	rest := s[idx+len(marker):]
-	var n int
-	var parsed int
-	_, scanErr := fmtSscanf(rest, "%d%n", &parsed, &n)
-	_ = n
-	if scanErr != nil {
+	message := err.Error()
+	const marker = "attachment index "
+	start := strings.LastIndex(message, marker)
+	if start < 0 {
 		return -1
 	}
-	return parsed
+	rest := message[start+len(marker):]
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	if end == 0 || (end < len(rest) && rest[end] != ':' && rest[end] != ' ') {
+		return -1
+	}
+	index, parseErr := strconv.Atoi(rest[:end])
+	if parseErr != nil {
+		return -1
+	}
+	return index
 }
-
-// fmtSscanf is declared here so image_http.go does not need to pull in fmt at
-// the top of http.go. Keeping it local also gives us the option to add extra
-// parsing strictness later.
-func fmtSscanf(s, format string, a ...any) (int, error) {
-	return sscanf(s, format, a...)
-}
-
-// sscanf is a thin wrapper over fmt.Sscanf to decouple imports.
-var sscanf = defaultSscanf
 
 // writeImageError maps an image pipeline error onto an HTTP status + payload.
 func (h *httpHandler) writeImageError(w http.ResponseWriter, logger logSDK.Logger, err error, attachmentIndex int) {
@@ -159,8 +185,8 @@ func (h *httpHandler) writeImageError(w http.ResponseWriter, logger logSDK.Logge
 	}
 
 	payload := map[string]any{
-		"error":   code,
-		"message": err.Error(),
+		fieldError: code,
+		"message":  err.Error(),
 	}
 	if attachmentIndex >= 0 {
 		payload["attachment_index"] = attachmentIndex
@@ -179,14 +205,14 @@ func serializeRequestWithPresign(ctx context.Context, req Request, manager *Imag
 	images := make([]map[string]any, 0, len(req.Images))
 	for _, img := range req.Images {
 		item := map[string]any{
-			"id":         img.ID.String(),
-			"sha256":     img.SHA256,
-			"mime":       img.MIMEType,
-			"size":       img.SizeBytes,
-			"width":      img.Width,
-			"height":     img.Height,
-			"expires_at": img.ExpiresAt,
-			"sort_order": img.SortOrder,
+			"id":           img.ID.String(),
+			"sha256":       img.SHA256,
+			"mime":         img.MIMEType,
+			"size":         img.SizeBytes,
+			"width":        img.Width,
+			"height":       img.Height,
+			fieldExpiresAt: img.ExpiresAt,
+			"sort_order":   img.SortOrder,
 		}
 		if img.SourceURL != "" {
 			item["source_url"] = img.SourceURL
@@ -214,4 +240,22 @@ func serializeRequestsWithPresign(ctx context.Context, input []Request, manager 
 		items = append(items, serializeRequestWithPresign(ctx, req, manager, logger))
 	}
 	return items
+}
+
+// parseBoundedMultipart caps total request bytes before form parsing.
+func parseBoundedMultipart(r *http.Request, limit int64) error {
+	if err := r.Context().Err(); err != nil {
+		return errors.WithStack(err)
+	}
+	r.Body = http.MaxBytesReader(nil, r.Body, limit)
+	reader, err := r.MultipartReader()
+	if err != nil {
+		return errors.Wrap(imageproc.ErrDecodeFailed, "invalid multipart content type")
+	}
+	form, err := reader.ReadForm(maxMultipartMemory)
+	if err != nil {
+		return errors.Wrap(imageproc.ErrImageTooLarge, err.Error())
+	}
+	r.MultipartForm = form
+	return nil
 }

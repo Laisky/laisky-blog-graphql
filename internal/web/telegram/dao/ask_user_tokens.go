@@ -33,16 +33,16 @@ func (d *AskUserToken) col() *mongoLib.Collection {
 // RegisterAskUserToken associates a hashed API key with a Telegram UID.
 func (d *AskUserToken) RegisterAskUserToken(ctx context.Context, uid int, tokenHash string) error {
 	logger := gmw.GetLogger(ctx).Named("telegram_register_ask_user_token")
-	logger.Info("RegisterAskUserToken", zap.Int("uid", uid))
+	logger.Info("RegisterAskUserToken", zap.Int(fieldUid, uid))
 	_, err := d.col().UpdateOne(ctx,
 		bson.M{"token_hash": tokenHash},
 		bson.M{
-			"$set": bson.M{
-				"telegram_uid": uid,
-				"modified_at":  utils.Clock.GetUTCNow(),
+			mongoSet: bson.M{
+				fieldTelegramUid: uid,
+				fieldModifiedAt:  utils.Clock.GetUTCNow(),
 			},
-			"$setOnInsert": bson.M{
-				"created_at": utils.Clock.GetUTCNow(),
+			mongoSetOnInsert: bson.M{
+				fieldCreatedAt: utils.Clock.GetUTCNow(),
 			},
 		},
 		options.Update().SetUpsert(true),

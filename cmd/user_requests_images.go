@@ -13,7 +13,7 @@ import (
 )
 
 // buildUserRequestImageManager wires the ImageManager used by the user-requests
-// HTTP handler and the MCP tool. It returns nil when the feature flag is off.
+// HTTP handler and the MCP tool. It returns ErrImageFeatureDisabled when the feature flag is off.
 // buildUserRequestImageManager also installs the bucket lifecycle rule when the
 // feature is enabled; a failure to install the rule is logged but does not
 // prevent the service from starting (local dev MinIOs frequently lack
@@ -21,7 +21,7 @@ import (
 func buildUserRequestImageManager(ctx context.Context, svc *userrequests.Service, logger logSDK.Logger) (*userrequests.ImageManager, error) {
 	settings := svc.ImageSettings()
 	if !settings.Enabled {
-		return nil, nil
+		return nil, errors.WithStack(userrequests.ErrImageFeatureDisabled)
 	}
 
 	store, err := storage.NewMinIOClient(storage.MinIOConfig{

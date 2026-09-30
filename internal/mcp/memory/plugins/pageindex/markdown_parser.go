@@ -32,7 +32,7 @@ func ExtractHeaders(content []byte) ([]MDHeader, error) {
 		if !ok {
 			return ast.WalkContinue, nil
 		}
-		title := strings.TrimSpace(string(h.Text(source)))
+		title := strings.TrimSpace(headingText(h, source))
 		line := lineForOffset(source, segmentStart(h, source))
 		headers = append(headers, MDHeader{Level: h.Level, Title: title, LineNum: line})
 		return ast.WalkSkipChildren, nil
@@ -136,4 +136,27 @@ func lineForOffset(source []byte, off int) int {
 		return 1
 	}
 	return bytes.Count(source[:off], []byte("\n")) + 1
+}
+
+// headingText collects visible inline text in the same order as the heading AST.
+func headingText(node ast.Node, source []byte) string {
+	var out strings.Builder
+	var visit func(ast.Node)
+	visit = func(n ast.Node) {
+		switch v := n.(type) {
+		case *ast.Text:
+			out.Write(v.Segment.Value(source))
+			if v.SoftLineBreak() {
+				out.WriteByte('\n')
+			}
+		case *ast.String:
+			out.Write(v.Value)
+		default:
+			for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+				visit(child)
+			}
+		}
+	}
+	visit(node)
+	return out.String()
 }

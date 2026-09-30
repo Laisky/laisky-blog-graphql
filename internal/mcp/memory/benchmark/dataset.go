@@ -29,10 +29,10 @@ func LoadDataset(path, format string) (Dataset, error) {
 
 	format = strings.ToLower(strings.TrimSpace(format))
 	if format == "" {
-		format = "auto"
+		format = benchmarkAuto
 	}
 	if info.IsDir() {
-		if format != "auto" && format != "beam" {
+		if format != benchmarkAuto && format != "beam" {
 			return Dataset{}, errors.Errorf("dataset directory requires format beam, got %q", format)
 		}
 		dataset, raw, loadErr := loadBEAM(path)
@@ -47,7 +47,7 @@ func LoadDataset(path, format string) (Dataset, error) {
 	if err != nil {
 		return Dataset{}, errors.Wrapf(err, "read benchmark dataset %s", path)
 	}
-	if format == "auto" {
+	if format == benchmarkAuto {
 		format, err = detectDatasetFormat(path, raw)
 		if err != nil {
 			return Dataset{}, err
@@ -56,13 +56,13 @@ func LoadDataset(path, format string) (Dataset, error) {
 
 	var dataset Dataset
 	switch format {
-	case "canonical", "jsonl":
+	case benchmarkCanonical, "jsonl":
 		dataset, err = parseCanonicalJSONL(raw)
 	case "longmemeval":
 		dataset, err = parseLongMemEval(raw)
 	case "locomo":
 		dataset, err = parseLoCoMo(raw)
-	case "memoryagentbench", "mab":
+	case benchmarkMemoryagentbench, "mab":
 		dataset, err = parseMemoryAgentBench(raw)
 	default:
 		return Dataset{}, errors.Errorf("unsupported benchmark format %q", format)
@@ -80,13 +80,13 @@ func detectDatasetFormat(path string, raw []byte) (string, error) {
 		var probe map[string]json.RawMessage
 		if json.Unmarshal(line, &probe) == nil {
 			if _, ok := probe["type"]; ok {
-				return "canonical", nil
+				return benchmarkCanonical, nil
 			}
 			if _, ok := probe["questions"]; ok {
-				return "memoryagentbench", nil
+				return benchmarkMemoryagentbench, nil
 			}
 		}
-		return "canonical", nil
+		return benchmarkCanonical, nil
 	}
 
 	var objects []map[string]json.RawMessage
@@ -103,7 +103,7 @@ func detectDatasetFormat(path string, raw []byte) (string, error) {
 		}
 	}
 	if _, ok := first["questions"]; ok {
-		return "memoryagentbench", nil
+		return benchmarkMemoryagentbench, nil
 	}
 	return "", errors.New("cannot auto-detect dataset format; pass --format explicitly")
 }
@@ -292,68 +292,14 @@ func parseLoCoMo(raw []byte) (Dataset, error) {
 	}
 	dataset := Dataset{Name: "LoCoMo", Version: "locomo10", Source: "snap-research/locomo"}
 	for sampleIndex, sample := range samples {
-		sampleID := strings.TrimSpace(sample.SampleID)
-		if sampleID == "" {
-			sampleID = fmt.Sprintf("conversation-%d", sampleIndex+1)
+		part, err := parseLoCoMoSample(sampleIndex, sample)
+		if err != nil {
+			return Dataset{}, err
 		}
-		prefix := "/locomo/" + safeSegment(sampleID) + "/"
-		sessionKeys := sortedSessionKeys(sample.Conversation)
-		pathByDialog := make(map[string]string)
-		textByDialog := make(map[string]string)
-		for _, sessionKey := range sessionKeys {
-			var turns []locomoTurn
-			if err := json.Unmarshal(sample.Conversation[sessionKey], &turns); err != nil {
-				return Dataset{}, errors.Wrapf(err, "decode LoCoMo %s %s", sampleID, sessionKey)
-			}
-			dateKey := sessionKey + "_date_time"
-			var date string
-			_ = json.Unmarshal(sample.Conversation[dateKey], &date)
-			path := prefix + sessionKey + ".md"
-			var body strings.Builder
-			fmt.Fprintf(&body, "# %s\n\n", sessionKey)
-			if date != "" {
-				fmt.Fprintf(&body, "Date: %s\n\n", date)
-			}
-			for _, turn := range turns {
-				dialogID := anyString(turn.DiaID)
-				text := strings.TrimSpace(turn.Text)
-				if text == "" {
-					text = strings.TrimSpace(turn.BLIPCaption)
-				}
-				fmt.Fprintf(&body, "[%s] **%s:** %s\n\n", dialogID, turn.Speaker, text)
-				if dialogID != "" {
-					pathByDialog[dialogID] = path
-					textByDialog[dialogID] = text
-				}
-			}
-			dataset.Documents = append(dataset.Documents, Document{
-				ID: sampleID + ":" + sessionKey, Path: path, Content: body.String(),
-				Category: "conversation-session", SessionID: sessionKey, Timestamp: date,
-			})
-		}
-		for queryIndex, qa := range sample.QA {
-			goldPaths := make([]string, 0, len(qa.Evidence))
-			goldEvidence := make([]string, 0, len(qa.Evidence))
-			for _, evidenceID := range qa.Evidence {
-				key := anyString(evidenceID)
-				if path := pathByDialog[key]; path != "" {
-					goldPaths = append(goldPaths, path)
-				}
-				if text := textByDialog[key]; text != "" {
-					goldEvidence = append(goldEvidence, text)
-				}
-			}
-			category := anyString(qa.Category)
-			if category == "" {
-				category = "qa"
-			}
-			dataset.Queries = append(dataset.Queries, Query{
-				ID: fmt.Sprintf("%s:q-%04d", sampleID, queryIndex+1), Text: qa.Question,
-				PathPrefix: prefix, GoldPaths: uniqueStrings(goldPaths), GoldEvidence: uniqueStrings(goldEvidence),
-				Answer: qa.Answer, Category: category,
-			})
-		}
+		dataset.Documents = append(dataset.Documents, part.Documents...)
+		dataset.Queries = append(dataset.Queries, part.Queries...)
 	}
+
 	return dataset, nil
 }
 
@@ -397,7 +343,7 @@ func parseMemoryAgentBench(raw []byte) (Dataset, error) {
 				category = anyString(metadata["source"])
 			}
 			if category == "" {
-				category = "memoryagentbench"
+				category = benchmarkMemoryagentbench
 			}
 			dataset.Queries = append(dataset.Queries, Query{
 				ID: queryID, Text: question, PathPrefix: prefix, GoldPaths: append([]string(nil), goldPaths...),
@@ -524,7 +470,7 @@ func normalizeDataset(dataset Dataset) (Dataset, error) {
 			document.ID = document.Path
 		}
 		if document.ContentEncoding == "" {
-			document.ContentEncoding = "utf-8"
+			document.ContentEncoding = encodingUTF8
 		}
 	}
 	queryIDs := make(map[string]struct{}, len(dataset.Queries))
@@ -601,7 +547,7 @@ func decodeJSONObjectSequence(raw []byte) ([]map[string]json.RawMessage, error) 
 }
 
 func extractMemoryTexts(object map[string]json.RawMessage) []string {
-	for _, key := range []string{"context", "memory", "text", "content", "input"} {
+	for _, key := range []string{"context", "memory", benchmarkText, benchmarkContent, "input"} {
 		if text := rawString(object[key]); text != "" {
 			return []string{text}
 		}
@@ -648,7 +594,7 @@ func rawStringSlice(raw json.RawMessage) []string {
 			continue
 		}
 		if object, ok := value.(map[string]any); ok {
-			text := firstNonEmpty(anyString(object["content"]), anyString(object["text"]), anyString(object["value"]))
+			text := firstNonEmpty(anyString(object[benchmarkContent]), anyString(object[benchmarkText]), anyString(object["value"]))
 			if text != "" {
 				result = append(result, text)
 			}
@@ -794,4 +740,73 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// parseLoCoMoSample resolves a conversation's session paths and evidence in one namespace.
+func parseLoCoMoSample(sampleIndex int, sample locomoSample) (Dataset, error) {
+	dataset := Dataset{}
+
+	sampleID := strings.TrimSpace(sample.SampleID)
+	if sampleID == "" {
+		sampleID = fmt.Sprintf("conversation-%d", sampleIndex+1)
+	}
+	prefix := "/locomo/" + safeSegment(sampleID) + "/"
+	sessionKeys := sortedSessionKeys(sample.Conversation)
+	pathByDialog := make(map[string]string)
+	textByDialog := make(map[string]string)
+	for _, sessionKey := range sessionKeys {
+		var turns []locomoTurn
+		if err := json.Unmarshal(sample.Conversation[sessionKey], &turns); err != nil {
+			return Dataset{}, errors.Wrapf(err, "decode LoCoMo %s %s", sampleID, sessionKey)
+		}
+		dateKey := sessionKey + "_date_time"
+		var date string
+		_ = json.Unmarshal(sample.Conversation[dateKey], &date)
+		path := prefix + sessionKey + ".md"
+		var body strings.Builder
+		fmt.Fprintf(&body, "# %s\n\n", sessionKey)
+		if date != "" {
+			fmt.Fprintf(&body, "Date: %s\n\n", date)
+		}
+		for _, turn := range turns {
+			dialogID := anyString(turn.DiaID)
+			text := strings.TrimSpace(turn.Text)
+			if text == "" {
+				text = strings.TrimSpace(turn.BLIPCaption)
+			}
+			fmt.Fprintf(&body, "[%s] **%s:** %s\n\n", dialogID, turn.Speaker, text)
+			if dialogID != "" {
+				pathByDialog[dialogID] = path
+				textByDialog[dialogID] = text
+			}
+		}
+		dataset.Documents = append(dataset.Documents, Document{
+			ID: sampleID + ":" + sessionKey, Path: path, Content: body.String(),
+			Category: "conversation-session", SessionID: sessionKey, Timestamp: date,
+		})
+	}
+	for queryIndex, qa := range sample.QA {
+		goldPaths := make([]string, 0, len(qa.Evidence))
+		goldEvidence := make([]string, 0, len(qa.Evidence))
+		for _, evidenceID := range qa.Evidence {
+			key := anyString(evidenceID)
+			if path := pathByDialog[key]; path != "" {
+				goldPaths = append(goldPaths, path)
+			}
+			if text := textByDialog[key]; text != "" {
+				goldEvidence = append(goldEvidence, text)
+			}
+		}
+		category := anyString(qa.Category)
+		if category == "" {
+			category = "qa"
+		}
+		dataset.Queries = append(dataset.Queries, Query{
+			ID: fmt.Sprintf("%s:q-%04d", sampleID, queryIndex+1), Text: qa.Question,
+			PathPrefix: prefix, GoldPaths: uniqueStrings(goldPaths), GoldEvidence: uniqueStrings(goldEvidence),
+			Answer: qa.Answer, Category: category,
+		})
+	}
+
+	return dataset, nil
 }

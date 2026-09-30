@@ -79,7 +79,7 @@ func ScoreShadowReplay(ctx context.Context, records []SearchRecord, judge Judge,
 
 	for _, rec := range records {
 		if err := ctx.Err(); err != nil {
-			return ScoreResult{}, errors.Wrap(err, "scoring cancelled")
+			return ScoreResult{}, errors.Wrap(err, "scoring canceled")
 		}
 
 		swap := rng.Float64() < opts.PositionSwapPercent

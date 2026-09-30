@@ -42,7 +42,7 @@ func (d *Telegram) Search(ctx context.Context, keyword string) (notes []*telemod
 			Pattern: keyword,
 			Options: "i",
 		}}},
-		options.Find().SetSort(bson.M{"_id": -1}).SetLimit(10),
+		options.Find().SetSort(bson.M{fieldDocumentID: -1}).SetLimit(10),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "search notes")
