@@ -15,50 +15,46 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Read exact-check annotations and open repository alerts
+      - name: Read exact-check annotations and complete fixed-head analyses
         env:
           GH_TOKEN: ${{ github.token }}
         shell: python
         run: |
-          import json, os, pathlib, urllib.request, urllib.parse, urllib.error
+          import json, os, pathlib, urllib.request, urllib.parse
           root = pathlib.Path('/tmp/pr51-security')
           root.mkdir()
           base = 'https://api.github.com/repos/Laisky/laisky-blog-graphql/'
+          target = 'eff47d5e1cc1db5cb664cb789ddeba738b4b840c'
           headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
           def read(name, endpoint, accept=None):
               request_headers = dict(headers)
               if accept:
                   request_headers['Accept'] = accept
-              try:
-                  with urllib.request.urlopen(urllib.request.Request(base + endpoint, headers=request_headers), timeout=60) as response:
-                      data = json.load(response)
-                  (root / (name + '.json')).write_text(json.dumps(data, indent=2))
-                  return data
-              except urllib.error.HTTPError as error:
-                  (root / (name + '-error.json')).write_text(json.dumps({'status': error.code, 'endpoint': endpoint}))
-                  print(name, 'HTTP', error.code)
-                  return None
-          annotations = read('annotations', 'check-runs/109676951327/annotations?per_page=100')
-          if annotations is None:
-              raise RuntimeError('Cannot retrieve the known failed-check annotations')
-          for item in annotations:
-              print(json.dumps({key: item.get(key) for key in ['path', 'start_line', 'end_line', 'title', 'message']}, ensure_ascii=True))
-          refs = {'all': None, 'master': 'refs/heads/master', 'pr-merge': 'refs/pull/51/merge', 'pr-head': 'refs/pull/51/head'}
-          for name, ref in refs.items():
-              for page in range(1, 21):
-                  query = {'state': 'open', 'per_page': 100, 'page': page}
-                  if ref:
-                      query['ref'] = ref
-                  alerts = read('alerts-' + name + '-' + str(page), 'code-scanning/alerts?' + urllib.parse.urlencode(query))
-                  if not isinstance(alerts, list) or len(alerts) < 100:
-                      break
+              with urllib.request.urlopen(urllib.request.Request(base + endpoint, headers=request_headers), timeout=60) as response:
+                  data = json.load(response)
+              (root / (name + '.json')).write_text(json.dumps(data, indent=2))
+              return data
+          read('check', 'check-runs/109682342744')
+          read('annotations', 'check-runs/109682342744/annotations?per_page=100')
           for name, ref in [('merge', 'refs/pull/51/merge'), ('head', 'refs/pull/51/head')]:
-              analyses = read('analyses-' + name, 'code-scanning/analyses?' + urllib.parse.urlencode({'ref': ref, 'per_page': 10}))
-              if not isinstance(analyses, list):
-                  continue
-              for analysis in analyses:
-                  if analysis.get('commit_sha') == 'b1bb1bd25f30781bb44181cfb6feb97322cae103' and analysis.get('tool', {}).get('name') == 'CodeQL':
-                      read('sarif-' + str(analysis['id']), 'code-scanning/analyses/' + str(analysis['id']), 'application/sarif+json')
+              for page in range(1, 21):
+                  query = {'state': 'open', 'per_page': 100, 'page': page, 'ref': ref}
+                  alerts = read('alerts-' + name + '-' + str(page), 'code-scanning/alerts?' + urllib.parse.urlencode(query))
+                  if len(alerts) < 100:
+                      break
+              else:
+                  raise RuntimeError('Alert pagination incomplete')
+          analyses = read('analyses', 'code-scanning/analyses?' + urllib.parse.urlencode({'ref': 'refs/pull/51/head', 'per_page': 100}))
+          selected = [a for a in analyses if a.get('commit_sha') == target and a.get('tool', {}).get('name') == 'CodeQL']
+          if not selected:
+              raise RuntimeError('No exact-head CodeQL analyses available')
+          summary = []
+          for analysis in selected:
+              sarif = read('sarif-' + str(analysis['id']), 'code-scanning/analyses/' + str(analysis['id']), 'application/sarif+json')
+              count = sum(len(run.get('results', [])) for run in sarif.get('runs', []))
+              summary.append({'id': analysis['id'], 'sha': target, 'category': analysis.get('category'), 'results': count, 'error': analysis.get('error')})
+          (root / 'summary.json').write_text(json.dumps(summary, indent=2))
+          print(json.dumps(summary, indent=2))
       - uses: actions/upload-artifact@v4
         if: always()
         with:
