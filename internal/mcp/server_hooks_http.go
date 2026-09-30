@@ -98,7 +98,9 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 		return nil
 	}
 	if logger == nil {
-		return next
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(newLoggingResponseWriter(w, 0), r)
+		})
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -172,13 +174,19 @@ func newLoggingResponseWriter(w http.ResponseWriter, limit int) *loggingResponse
 }
 
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
-	lrw.status = code
+	if lrw.status != 0 {
+		return
+	}
+	setMCPResponseHeaders(lrw.Header())
+	if code >= http.StatusOK {
+		lrw.status = code
+	}
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
 func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	if lrw.status == 0 {
-		lrw.status = http.StatusOK
+		lrw.WriteHeader(http.StatusOK)
 	}
 
 	if lrw.buffer.Len() < lrw.bodyLimit {
@@ -208,6 +216,9 @@ func (lrw *loggingResponseWriter) Body() (string, bool) {
 }
 
 func (lrw *loggingResponseWriter) Flush() {
+	if lrw.status == 0 {
+		lrw.WriteHeader(http.StatusOK)
+	}
 	if flusher, ok := lrw.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}

@@ -253,6 +253,7 @@ func writeCapturedResponse(dst http.ResponseWriter, src *captureResponseWriter, 
 
 	copyHeaders(dst.Header(), src.header)
 	dst.Header().Del("Content-Length")
+	setMCPResponseHeaders(dst.Header())
 
 	status := src.status
 	if status == 0 {
