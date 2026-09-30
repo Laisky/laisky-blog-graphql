@@ -38,7 +38,7 @@ jobs:
                   (root / (name + '-error.json')).write_text(json.dumps({'status': error.code, 'endpoint': endpoint}))
                   print(name, 'HTTP', error.code)
                   return None
-          annotations = read('annotations', 'check-runs/109671848439/annotations?per_page=100')
+          annotations = read('annotations', 'check-runs/109676951327/annotations?per_page=100')
           if annotations is None:
               raise RuntimeError('Cannot retrieve the known failed-check annotations')
           for item in annotations:
@@ -57,7 +57,7 @@ jobs:
               if not isinstance(analyses, list):
                   continue
               for analysis in analyses:
-                  if analysis.get('commit_sha') == '50a13eb88824b2179f62384975f04c23ca3e1b1d' and analysis.get('tool', {}).get('name') == 'CodeQL':
+                  if analysis.get('commit_sha') == 'b1bb1bd25f30781bb44181cfb6feb97322cae103' and analysis.get('tool', {}).get('name') == 'CodeQL':
                       read('sarif-' + str(analysis['id']), 'code-scanning/analyses/' + str(analysis['id']), 'application/sarif+json')
       - uses: actions/upload-artifact@v4
         if: always()

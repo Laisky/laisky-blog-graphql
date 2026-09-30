@@ -136,8 +136,8 @@ func (f *URLFetcher) pinnedRequest(ctx context.Context, target *url.URL) (*http.
 		return nil, nil, err
 	}
 	scheme := "https"
-	if target.Scheme == "http" {
-		scheme = "http"
+	if target.Scheme == imageURLSchemeHTTP {
+		scheme = imageURLSchemeHTTP
 	}
 	wireURL := url.URL{
 		Scheme: scheme, Host: endpoint,

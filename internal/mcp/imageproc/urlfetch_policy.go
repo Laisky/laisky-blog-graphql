@@ -11,6 +11,8 @@ import (
 	errors "github.com/Laisky/errors/v2"
 )
 
+const imageURLSchemeHTTP = "http"
+
 // Special-purpose, documentation and transition ranges are not image origins.
 // In particular, IsPrivate does not include shared space (100.64.0.0/10), which
 // contains Alibaba's metadata endpoint. Keep IPv4-mapped IPv6 checks identical.
@@ -70,7 +72,7 @@ func (f *URLFetcher) publicEndpoint(ctx context.Context, target *url.URL) (strin
 		if port == "" {
 			port = "443"
 		}
-	case "http":
+	case imageURLSchemeHTTP:
 		if !f.cfg.AllowHTTP {
 			return "", errors.Wrap(ErrURLBlocked, "HTTP image origins are disabled")
 		}
