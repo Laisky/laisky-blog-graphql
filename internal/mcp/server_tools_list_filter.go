@@ -121,7 +121,6 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 	if len(disabledTools) == 0 {
 		if logger != nil {
 			logger.Debug("tools/list filtering: no disabled tools",
-				zap.String("auth_source", authSource),
 				zap.String("user_identity", auth.UserIdentity),
 			)
 		}
@@ -260,7 +259,7 @@ func writeCapturedResponse(dst http.ResponseWriter, src *captureResponseWriter, 
 		status = http.StatusOK
 	}
 	dst.WriteHeader(status)
-	_, _ = dst.Write(body)
+	_, _ = writeMCPResponse(dst, body)
 }
 
 // copyHeaders clones HTTP header values from src into dst.
