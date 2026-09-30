@@ -1,35 +1,55 @@
-# PR #51: project-wide quality closure — 2026-09-29
+# PR #51: project-wide quality closure
+
+Last verified: 2026-09-30 UTC.
 
 ## Scope and accepted source
 
-This report supersedes the earlier PR #51 decision to leave the 353 baseline
-lint findings as existing debt. Those findings are now fixed, not grandfathered.
-The earlier dependency and session reports remain historical evidence; they are
-not the current quality verdict.
+This report supersedes the earlier decision to leave 353 baseline lint findings
+as existing debt. Those findings are fixed, not grandfathered. Earlier dependency
+and session reports remain historical evidence, not the current quality verdict.
+All interrupted work is retained on PR #51, without a replacement PR or force push.
 
-- Initial project-wide runtime repair commit: `9c642e683f9b99d1b98eacbcb707ac6a3ea667ab`.
-- Initial project-wide source tree: `9ee695d5fedf9d0c3785e3c3a7be056c9973acbe`.
-- [Candidate acceptance](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36638208283/job/109643948422)
-  passed full race/coverage tests, 20 session-test repetitions, full `make lint`,
-  uncapped structured lint, build, imported-package vulnerability scanning, module
-  verification, generation and a check that acceptance did not modify the source.
-- Artifact `11065538382` (`quality-final-acceptance`) preserves the exact patch,
-  tree, allowlist, test results, lint JSON and vulnerability report. ZIP SHA-256:
-  `48ba1d9b106fef6ba4ad5c599729af0893968e2acff8a2edc03e3f9cc8d10d72`.
-- The candidate's automatic publisher lacked workflow-write permission. Its push
-  was rejected; the already-tested tree was committed through the owner's
-  authorized GitHub connection instead. No permissions or protections were weakened.
-- The closing commit adds this report and a regression test for the non-mutating
-  formatting gate. Final-head PR check links are recorded in the PR discussion.
+Accepted runtime: `eff47d5e1cc1db5cb664cb789ddeba738b4b840c`.
+Subsequent cleanup removes temporary evidence collection and aligns documentation;
+it does not replace the verified runtime fixes. Final cleanup-head checks are
+recorded in the PR discussion after they complete.
+
+## Current acceptance
+
+| Gate | Result and evidence |
+| --- | --- |
+| Full read-only `make lint`, uncapped diagnostics and formatting/mutation checks | **Pass**, zero issues and empty `format.patch`: [project quality](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36650150766) |
+| Reachable-symbol and imported-package vulnerability scans | **Pass**, zero affected findings at both levels: same quality run |
+| Frontend lint, tests, production build and all-severity/development-dependency audit | **Pass**: same quality run |
+| Module locks, MCP wire protocol, 20 race-enabled session repetitions, full Go race/coverage, build/vet and clean generation | **Pass**: [compatibility](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36650150642) |
+| Pure-Go and system-owner SQL invariants | **Pass**: compatibility and quality runs |
+| Real PostgreSQL FileIO/auth and existing frontend acceptance | **Pass**: [application checks](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36650150756) |
+| Real MongoDB 8 query-contract canaries, three race-enabled repetitions | **Pass**: [MongoDB contracts](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36650150696) |
+| SSRF, committed response MIME types, log privacy and body replay, three race-enabled repetitions | **Pass**: [network/security regressions](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36650150958) |
+| Complete CodeQL results, not only changed-line annotations | **Zero results** for Go, JavaScript/TypeScript and Actions; both PR head/merge open-alert queries are empty |
+
+The quality archive records GitHub's synthetic PR merge
+`1bc4faf2f062b90c6180871e2ebb1ff438406166`, containing the accepted head and the
+unchanged master base `c31b0bec36935bea60f7553adc428d914e61c327`. Source-dependent
+checks inspect that reviewed checkout and fail on any source mutation. Artifact
+`11070141922` has ZIP SHA-256
+`e82e9348a245356b5f1013dfc18626b6dd7ad8858705229510bdc36069bc7fae`.
+
+[Complete CodeQL evidence](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36650598166)
+contains exact-head analyses `1863382483` (Go), `1863374525` (JavaScript/TypeScript)
+and `1863373765` (Actions), all with no analysis errors and zero SARIF results.
+Artifact `11070301907` has ZIP SHA-256
+`1d224953ef5461b0e6cddb59d0b40e654b2d026b764cd3b6706a3566e223fe82`.
+The temporary read-only collector is removed. Default-branch alerts may remain
+until merge/rescan; no alerts were dismissed to obtain the PR result.
 
 ## Lint inventory: 353 to zero
 
 The [recovered uncapped baseline](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36631569601)
-contains 353 findings across 22 linters. The accepted candidate contains **zero**.
-`.golangci.lint.yml` is unchanged. Comparing suppression comments with the recovered
-source finds no new `nolint` comments; four obsolete comments were removed.
+contains 353 findings across 22 linters. The accepted runtime contains **zero**.
+`.golangci.lint.yml` is unchanged; no new suppression comments were introduced.
 
-| Category | Before | Accepted candidate |
+| Category | Before | Accepted runtime |
 | --- | ---: | ---: |
 | Duplicate constants (`goconst`) | 163 | 0 |
 | Unchecked errors (`errcheck`) | 67 | 0 |
@@ -44,74 +64,76 @@ source finds no new `nolint` comments; four obsolete comments were removed.
 
 Remaining categories are `err113`, `exhaustive`, `gocognit`, `mirror`, `musttag`,
 `nilerr`, `nilnil`, `predeclared`, `sqlclosecheck`, `unconvert`, `unused` and
-`wastedassign`. Existing linter configuration/deprecation notices are not hidden;
-zero diagnostics is not a claim that the linter emits no informational notices.
+`wastedassign`. Existing configuration/deprecation notices are not hidden;
+zero code diagnostics does not mean the linter emits no informational notices.
+
+The initial project-wide repair was accepted before publication in
+[run 36638208283](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36638208283/job/109643948422).
+Artifact `11065538382` preserves its exact patch and evidence, ZIP SHA-256
+`48ba1d9b106fef6ba4ad5c599729af0893968e2acff8a2edc03e3f9cc8d10d72`.
+The candidate publisher lacked workflow-write permission; its rejected push was
+not bypassed. The tested tree was committed through the owner's authorized
+GitHub connection instead, without weakening permissions or protections.
 
 ## Verified behavioral repairs
 
 | Boundary | Repair and retained regression evidence |
 | --- | --- |
-| Frontend filesystem boundary | Open assets inside the configured root and serve the same opened handle. The cached `index.html` path uses that boundary too. `TestSPARootBoundary` and `TestSPAIndexRootBoundary` reject outward symlinks and retain legitimate internal links. |
-| Provider credentials in logs/errors | Remove complete API-key-bearing URLs and upstream bodies from diagnostics; redact raw/escaped keys in returned provider errors while preserving cancellation identity. `TestSearchNeverExposesProviderKey` checks successful, HTTP-error and transport-error paths. |
-| Multipart resource limits | Enforce total body, per-image and file-count bounds before large reads; reject overflowed limit calculations, malformed parts and canceled requests. Read/close/temporary-file cleanup errors are no longer silently lost. |
-| Attachment index parsing | Reject malformed, negative and overflowing indexes instead of using an unsupported scanner format. Remove the obsolete scanner helper. |
-| Concurrent shadow-plugin shutdown | Preserve caller context values while detaching request cancellation; use an independent bounded operation lifecycle. Synchronize admission and draining, make concurrent stops safe, and do not close a recorder still in use. `TestShadowPreservesValuesAndNeverClosesActiveRecorder` and `TestShadowConcurrentAdmissionAndStop` exercise those boundaries. |
-| Avro compatibility and malformed input | Retain existing Arweave tag bytes with a maintained decoder and bounded allocation. Check the reader's terminal error and trailing bytes; truncated data must not become a successful decode. Tests use independent goar/goavro compatibility controls and malformed-length/trailing-data cases. |
-| Request caching | Propagate JSON/hash errors, reject invalid numeric values before cache/network use, and include the configured model in cache identity. |
-| Benchmark evidence | Use decimal evidence indexes beyond nine, preserve writer/close failures, and reject invalid/ambiguous golden-version input. Advance the reader-prompt version for the changed evidence format. |
-| Context and error propagation | Forward service/indexer contexts, bound Git subprocess execution, close SQL rows before subsequent work, preserve primary failures when cleanup also fails, and retain the existing HTTP status contract for search failures. |
-| Maintainability | Extract cohesive helpers from complex rename/search/evaluation functions, keep wire JSON field names stable, deduplicate constants, and fix deprecated/dead code without changing the tenant predicates or weakening assertions. |
+| Static frontend files | Open assets and cached index files inside the configured root and serve the same opened handle. `TestSPARootBoundary` and `TestSPAIndexRootBoundary` reject outward symlinks and preserve legitimate internal links. |
+| Provider diagnostics | Remove API-key-bearing URLs and upstream bodies; redact raw/escaped keys from returned errors while preserving cancellation identity. `TestSearchNeverExposesProviderKey` covers success, HTTP failure and transport failure. |
+| Multipart limits and attachment parsing | Bound total body, per-image and file-count allocations; reject overflow, malformed parts and invalid indexes; preserve cancellation and read/close/temporary-file cleanup failures. |
+| Shadow-plugin shutdown | Preserve caller context values with a bounded independent lifecycle, synchronize admission/draining and concurrent stops, and never close an active recorder. Dedicated concurrent/race tests exercise both boundaries. |
+| Avro compatibility | Use a maintained decoder with bounded allocation and independent goar/goavro wire controls. Truncation, terminal read errors and trailing bytes must fail rather than decode successfully. |
+| Cache and benchmark correctness | Include the model in cache identity; reject invalid numbers; propagate JSON/hash/write failures. Evidence indexes beyond nine remain decimal and golden-version input is validated. |
+| Context/error handling | Forward service/indexer contexts, bound Git subprocess execution, close SQL rows before subsequent work, preserve primary errors when cleanup also fails, and retain the existing search HTTP status contract. |
+| MCP identity and sessions | Remove session-to-identity fallback. Current credentials alone select preferences; credential-bound legacy proofs enforce POST/GET/DELETE ownership with negative side-effect and cross-instance positive controls. |
+| Image network boundary | Dial a validated numeric public address, preserve logical Host and TLS identity, reject disallowed DNS answers/redirects/address classes, disable environment proxies, and enforce a single deadline and bounded response reading. |
+| MCP response context | Enforce JSON/SSE or inert plain-text MIME types and `nosniff` at the buffered/streamed write boundary. Real HTTP tests cover committed headers and early SSE flushes without HTML-escaping wire bytes. |
+| MCP HTTP logging | Redact query credentials and URL userinfo without changing the request. Inspect at most 4097 bytes for a 4096-byte log prefix; replay all downstream bytes, terminal read errors and original Close behavior. This is not a new global MCP request-size contract. |
+| Maintainability | Extract cohesive helpers, preserve wire field names and tenant predicates, deduplicate constants, and remove dead/deprecated code without weakening assertions. |
 
-The earlier raw-wire MCP and owner-bound legacy-session regressions remain in
-place, including negative side-effect assertions and 20 race-enabled repetitions.
-The static-file and Avro defects were reproduced in the recovered baseline; the
-cached-index escape and credential logging were separately tested red before
-repair. Ordinary positive-control cases remain in the same suites.
+The static-file, Avro, cached-index and provider-logging defects were reproduced
+before their fixes. The tests-only HTTP logging commit `dae48053c19f180ee1e9907e82091c8583fb9bfc`
+failed [run 36649626987](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36649626987)
+on credential leakage, premature Close and lost partial-read data. Other protocol,
+session, build/vet and generation checks passed. The same tests pass after
+`eff47d5`, including three race-enabled repetitions. See
+[HTTP security acceptance](pr51_http_security_2026_09_30.md) for the complete
+negative/positive-control matrix and scanner interpretation.
 
-## Follow-up: MongoDB query alerts
+## MongoDB query alerts: validation before refactoring
 
-The post-cleanup CodeQL run reported 15 query-taint alerts in blog comments,
-post/user lookup, verification-code deletion and Twitter lookup. They are not
-counted as 15 confirmed injection vulnerabilities: the affected values are
-already strings or ObjectIDs under fixed BSON keys, and the driver does not
-parse those string values as JSON query operators.
+CodeQL reported 15 query-taint alerts in blog comments, post/user lookup,
+verification deletion and Twitter lookup. These are **not** counted as 15 confirmed
+injection vulnerabilities: the original values were already strings or ObjectIDs
+under fixed BSON keys, not JSON parsed into query operators.
 
-The follow-up first tested the unchanged production queries against MongoDB 8.0.
-The tests-only revision `1faa6a820388ce88e476d90d2503849dfc0b1dfd` passed the
-[real MongoDB contract job](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36646209044).
-Operator-shaped strings did not select the canary record, and positive lookups
-still returned it. This rules out the alleged injection for the exercised paths;
-it is not a blanket claim about every possible database query.
+The tests-only revision `1faa6a820388ce88e476d90d2503849dfc0b1dfd` first passed the
+[real MongoDB contract job](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36646209044)
+against unchanged production queries. Operator-shaped strings could not select
+the canary record; positive lookups still returned it. The
+[controlled before/after comparison](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36646206339)
+retains both logs and the exact refactor patch.
 
-The query representation is then narrowed to fixed, local BSON struct types.
-Each type accepts only the intended scalar values; callers cannot add operator
-keys. Fields have no `omitempty`, so empty input never turns an identity filter
-into an unrestricted empty filter. ObjectIDs stay ObjectIDs and Twitter IDs
-remain strings, including leading zeros. Existing normalization, authorization,
-pagination and update documents are unchanged. No CodeQL exclusions, taint
-barriers or warning suppressions were introduced.
+Queries now use fixed local BSON struct types with scalar fields and no
+`omitempty`: callers cannot introduce operator keys, and empty input never turns
+an identity filter into an unrestricted empty filter. ObjectIDs stay ObjectIDs;
+Twitter IDs stay strings, including leading zeros. Normalization, authorization,
+pagination and update documents are unchanged. No CodeQL exclusions or custom
+taint barriers were added.
 
-Retained tests compare the real driver's BSON serialization to independently
-specified pre-refactor filters, including empty, Unicode, null-byte and
-operator-shaped values. The dedicated `mongo-query-contract` PR job requires a
-working disposable MongoDB instance and repeats the race-enabled tests three
-times. It exercises production lookups/comment/category boundaries and verifies
-that an account-and-purpose deletion retains both other accounts and other
-purposes. Local runs without the explicit database URI may skip the integration
-test; CI always supplies it, and a connection failure fails the job.
+Tests compare real BSON serialization to independent expected pre-refactor
+filters, including empty, Unicode, null-byte and operator-shaped values. Real
+MongoDB tests exercise production lookup/comment/category paths and prove
+account-and-purpose deletion preserves other accounts and purposes. Local runs
+without the explicit database URI may skip integration tests; the retained PR
+job always supplies MongoDB and fails on connection or contract failure.
 
-The [controlled comparison](https://github.com/Laisky/laisky-blog-graphql/actions/runs/36646206339)
-preserves pre-refactor and candidate logs plus the exact source patch. Final-head
-CodeQL and all four PR workflow results are recorded in the PR discussion. The
-temporary source-preparation workflow is removed from the delivered tree; only
-the read-only MongoDB acceptance job remains.
+## Dependencies and remaining advisory classification
 
-## Dependencies and security interpretation
-
-The MCP SDK remains `mcp-go v1.1.1`, with the earlier pdfcpu context, pgx/pgxmock,
-and module-selected gqlgen migrations retained. Frontend packages and transitive
-pins are now included in the quality pass, with a frozen-lockfile installation
-and an audit covering development dependencies and all reported severities.
+The MCP SDK is `mcp-go v1.1.1`, retaining pdfcpu context support, the pgx/pgxmock
+migration and module-selected gqlgen generation. Frontend and transitive updates
+are locked and audited across all severities, including development dependencies.
 
 The legacy `hamba/avro` import used by goar is replaced by a minimal compatibility
 adapter over `github.com/iskorotkov/avro/v2 v2.34.0`. The adapter preserves the
@@ -119,40 +141,31 @@ existing count-only block encoding and caps decoder allocations; it is not a
 renamed copy of the vulnerable decoder.
 
 The gRPC pin is `v1.85.0-dev.0.20260825072537-93e31b48545e`, the patched revision
-identified by [GO-2026-6443](https://pkg.go.dev/vuln/GO-2026-6443). This is an
-explicit development/pseudo-version, **not a stable-release claim**. Keep its
-compatibility tests and vulnerability gates when replacing it with a later release.
+identified by [GO-2026-6443](https://pkg.go.dev/vuln/GO-2026-6443). It is explicitly
+a development/pseudo-version, **not a stable release**. Retain compatibility and
+vulnerability gates when replacing it with a later release.
 
-Both reachable-symbol and imported-package vulnerability checks pass. One
-module-level advisory remains: [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)
-concerns the unmaintained `golang.org/x/crypto/openpgp` package and has no fixed
-release. The module is needed by other cryptographic packages, but the affected
-OpenPGP package is not in this application's import graph. The package-level
-check is deliberately retained so introducing that import fails acceptance.
-This is a classified non-applicable package exposure, not a suppressed warning
-or a statement that every required module is vulnerability-free.
+One module-level advisory remains: [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)
+concerns unmaintained `golang.org/x/crypto/openpgp`, with no fixed release. Other
+cryptographic packages require the module, but this application does not import
+the affected OpenPGP package. Both symbol-reachable and imported-package scans
+report zero affected findings. The package-level gate will reject introducing
+that import. This is classified non-applicable package exposure, not a suppressed
+warning or a claim that every required module is advisory-free.
 
-## Permanent acceptance gates
+## Permanent acceptance and rollout
 
-`make lint` is now read-only: it checks formatting, uses `go mod tidy -diff`,
-runs vet, uncapped lint, vulnerability checks and both repository invariants.
-`make format-go` is the separate, explicit source-rewriting command. `make test`
-runs the real race-enabled Go suite instead of the obsolete tox invocation.
-
-The quality workflow captures the reviewed commit and runs source-dependent
-scans before `make lint`. It always preserves `format.patch` and fails if checks
-modify tracked files or create untracked source. The formatting-gate regression
-creates dirty and clean temporary fixtures, checks rejection/acceptance, and
-compares bytes to prove the gate does not silently repair what it is checking.
-GraphQL generation is a separate reproducibility check; generated files are
-produced by the module-selected generator, never edited by hand.
+`make lint` is read-only: formatting, `go mod tidy -diff`, vet, uncapped lint,
+vulnerability checks and both repository invariants. `make format-go` explicitly
+rewrites formatting; `make test` runs the actual race-enabled Go suite rather than
+the obsolete tox command. The quality workflow scans the archived checkout,
+retains `format.patch`, and fails on tracked/untracked source mutation. A regression
+proves dirty input is rejected and clean input accepted without rewriting either.
+GraphQL generation is separately checked for reproducibility.
 
 ```sh
-# After intentional source changes:
 make format-go
 make gen
-
-# Acceptance (should leave the checkout unchanged):
 make lint
 make test
 go build ./...
@@ -164,13 +177,13 @@ pnpm lint && pnpm test && pnpm build
 pnpm audit
 ```
 
-The separate application workflow runs FileIO/auth tests with real PostgreSQL.
-A passing command does not imply 100% coverage or completion of every future
-proposal/conformance scenario. This closure covers the inventoried diagnostics,
-reproduced production defects and the checked dependency graph; it does not
-prove the absence of unknown defects.
+The five retained PR workflows cover quality, compatibility, PostgreSQL/frontend,
+MongoDB and network security; default CodeQL covers Go, JavaScript/TypeScript and
+Actions. All temporary updater/collector workflows are removed after collection.
+Passing these finite tests/scans does not establish 100% coverage, every future
+proposal's acceptance, or absence of unknown defects.
 
 No merge, deployment, production data migration or paid model call is part of
-this acceptance. Authenticated legacy MCP clients still require a fresh session
-and the same API key on each request after rollout; see
+acceptance. Authenticated legacy MCP clients require a fresh session and the same
+API key on every request after rollout. See
 [session ownership and rollout](pr51_session_isolation_2026_09_29.md).
