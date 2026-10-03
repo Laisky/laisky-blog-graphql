@@ -11,7 +11,6 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dto"
-	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/formatting"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library"
@@ -232,12 +231,11 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		maxlen = 3000
 	}
 
-	// Truncate message if too long.
-	truncatedMsg := library.Truncate(msg, maxlen)
-	if len(truncatedMsg) < len(msg) {
-		msg = escapeMsg(truncatedMsg) + "..."
-	} else {
-		msg = escapeMsg(msg)
+	// Truncate message if too long. Alerts are sent as plain text, so the
+	// text is never escaped: escaping for one Markdown dialect while sending
+	// in another showed subscribers literal backslashes.
+	if truncatedMsg := library.Truncate(msg, maxlen); len(truncatedMsg) < len(msg) {
+		msg = truncatedMsg + "..."
 	}
 
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
@@ -253,7 +251,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 	errMsg := ""
 	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
 	for _, user := range users {
-		if err = r.svc.SendMsgToUser(user.UID, msg); err != nil {
+		if err = r.svc.SendPlainTextToUser(user.UID, msg); err != nil {
 			logger.Error("send msg to user",
 				zap.Error(err),
 				zap.Int("uid", user.UID),
@@ -270,9 +268,4 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
 		return alert, errors.WithStack(err)
 	}
 	return alert, nil
-}
-
-// escapeMsg escapes special characters in a message to prevent Telegram from interpreting them as formatting
-func escapeMsg(msg string) string {
-	return formatting.EscapeTelegramMarkdown(msg)
 }

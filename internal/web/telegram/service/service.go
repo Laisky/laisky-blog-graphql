@@ -27,6 +27,7 @@ var (
 type Interface interface {
 	PleaseRetry(ctx context.Context, sender *tb.User, msg string)
 	SendMsgToUser(uid int, msg string) (err error)
+	SendPlainTextToUser(uid int, msg string) (err error)
 	LoadAlertTypesByUser(ctx context.Context, u *model.MonitorUsers) (alerts []*model.AlertTypes, err error)
 	LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error)
 	LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.MonitorUsers, err error)
@@ -211,6 +212,21 @@ func (s *Telegram) SendMsgToUser(uid int, msg string) (err error) {
 	_, err = s.bot.Send(&tb.User{ID: int64(uid)}, msg,
 		&tb.SendOptions{
 			ParseMode:             tb.ModeMarkdown,
+			DisableWebPagePreview: true,
+		},
+	)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+// SendPlainTextToUser sends msg to the Telegram user uid exactly as written,
+// with no parse mode, so alert text from other systems is never reinterpreted
+// as formatting. It returns the Telegram API error, if any.
+func (s *Telegram) SendPlainTextToUser(uid int, msg string) (err error) {
+	_, err = s.bot.Send(&tb.User{ID: int64(uid)}, msg,
+		&tb.SendOptions{
 			DisableWebPagePreview: true,
 		},
 	)
