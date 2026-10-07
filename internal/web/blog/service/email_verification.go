@@ -125,14 +125,21 @@ func (s *Blog) ConsumeEmailVerificationCode(ctx context.Context, account string,
 	if s.oneapi != nil {
 		challenge, findErr := s.oneapi.FindValidEmailCode(ctx, account, purpose, gutils.Clock.GetUTCNow())
 		if findErr != nil {
-			return errors.WithStack(errInvalidEmailVerificationCode)
+			if errors.Is(findErr, blogoneapi.ErrNotFound) {
+				return errors.WithStack(errInvalidEmailVerificationCode)
+			}
+			return errors.Wrap(findErr, "find oneapi email verification code")
 		}
 		expectedHash := hashEmailVerificationCode(account, purpose, code)
 		if !secureCompareString(challenge.CodeHash, expectedHash) {
 			return errors.WithStack(errInvalidEmailVerificationCode)
 		}
+		// ErrNotFound here means a concurrent submission consumed the code first.
 		if consumeErr := s.oneapi.ConsumeEmailCode(ctx, challenge.ID, expectedHash); consumeErr != nil {
-			return errors.WithStack(errInvalidEmailVerificationCode)
+			if errors.Is(consumeErr, blogoneapi.ErrNotFound) {
+				return errors.WithStack(errInvalidEmailVerificationCode)
+			}
+			return errors.Wrap(consumeErr, "consume oneapi email verification code")
 		}
 		return nil
 	}

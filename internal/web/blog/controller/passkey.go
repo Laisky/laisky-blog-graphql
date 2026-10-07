@@ -314,14 +314,6 @@ func (r *MutationResolver) UserFinishPasskeyLogin(ctx context.Context,
 		logger.Debug("passkey login session rejected", zap.Error(err))
 		return nil, maskLoginError(err)
 	}
-	// A signed session is single use. Claiming it before verification stops a
-	// captured session+assertion pair from being replayed, including racing
-	// submissions of the same pair.
-	if err = claimPasskeyLoginSession(envelope); err != nil {
-		logger.Warn("passkey login session reuse rejected", zap.Error(err))
-		return nil, maskLoginError(err)
-	}
-
 	wa, err := newWebAuthnForRequest(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "create webauthn")
@@ -347,6 +339,14 @@ func (r *MutationResolver) UserFinishPasskeyLogin(ctx context.Context,
 	}
 	if authenticatedUser == nil {
 		return nil, maskLoginError(model.ErrInvalidCredentials)
+	}
+	// A signed session is single use. It is claimed only after the assertion
+	// verified, so junk submissions cannot exhaust the registry, and the claim
+	// is atomic, so of two racing submissions of one captured pair only the
+	// first is accepted.
+	if err = claimPasskeyLoginSession(envelope); err != nil {
+		logger.Warn("passkey login session reuse rejected", zap.Error(err))
+		return nil, maskLoginError(err)
 	}
 	// A signature counter that did not advance means the assertion was replayed
 	// or the authenticator was cloned. Authenticators that never count (always

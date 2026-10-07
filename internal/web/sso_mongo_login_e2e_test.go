@@ -178,6 +178,17 @@ func TestMongoSSOPasskeyLoginHandles(t *testing.T) {
 		reject(t, e.finishPasskeyLogin(t, session, assertion))
 	})
 
+	// Only a verified assertion consumes a session, so anonymous callers cannot
+	// exhaust the single-use registry with junk submissions.
+	t.Run("a rejected assertion does not consume the session", func(t *testing.T) {
+		key := newVirtualPasskey(t)
+		e.addPasskey(t, owner.ID, key.storedPasskey(t))
+		challenge, session := e.startPasskeyLogin(t)
+		reject(t, e.finishPasskeyLogin(t, session, key.assertion(t, challenge, "https://evil.example.test", []byte(owner.UID), 0)))
+		response := e.finishPasskeyLogin(t, session, key.assertion(t, challenge, ssoE2EOrigin, []byte(owner.UID), 0))
+		require.Equal(t, owner.UID, stringField(t, e.whoAmI(t, stringField(t, response, "UserFinishPasskeyLogin", "token")), "WhoAmI", "id"))
+	})
+
 	t.Run("pending owner cannot use a passkey", func(t *testing.T) {
 		pending := e.insertLegacyUser(t, "passkey-pending@example.test", legacyOwnerPassword, true, bson.M{"status": "pending"})
 		key := newVirtualPasskey(t)
