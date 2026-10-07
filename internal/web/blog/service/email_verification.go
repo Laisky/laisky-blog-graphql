@@ -34,6 +34,11 @@ const (
 	defaultSMTPTLSPort = 465
 )
 
+// errInvalidEmailVerificationCode reports a missing, expired, mismatched, or
+// already consumed email code. It is a statement about the submitted code, as
+// opposed to a storage failure while checking it.
+var errInvalidEmailVerificationCode = errors.New("invalid email verification code")
+
 // smtpDialerFactory overrides the SMTP dialer, used only by tests. When nil the
 // default gomail dialer is used, which enables implicit TLS on port 465.
 var smtpDialerFactory func(host string, port int, username, passwd string) email.Sender
@@ -41,7 +46,7 @@ var smtpDialerFactory func(host string, port int, username, passwd string) email
 // RequestEmailVerificationCode creates and emails a one-time verification code.
 // It accepts account and purpose, returning nil after the SMTP relay accepts the message.
 func (s *Blog) RequestEmailVerificationCode(ctx context.Context, account string, purpose string) error {
-	account, purpose, err := sanitizeEmailVerificationRequest(account, purpose)
+	account, purpose, err := s.sanitizeEmailVerificationIdentity(account, purpose)
 	if err != nil {
 		return errors.Wrap(err, "sanitize email verification request")
 	}
@@ -104,26 +109,37 @@ func (s *Blog) RequestEmailVerificationCode(ctx context.Context, account string,
 
 // ConsumeEmailVerificationCode verifies and removes a one-time email code.
 // It accepts account, purpose, and code, returning nil when the code is valid.
+//
+// A code authenticates at most once, even when several requests submit it
+// concurrently. Rejections caused by the submitted values wrap
+// errInvalidEmailVerificationCode; any other error is a storage failure.
 func (s *Blog) ConsumeEmailVerificationCode(ctx context.Context, account string, purpose string, code string) error {
-	account, purpose, err := sanitizeEmailVerificationRequest(account, purpose)
+	account, purpose, err := s.sanitizeEmailVerificationIdentity(account, purpose)
 	if err != nil {
-		return errors.Wrap(err, "sanitize email verification request")
+		return errors.Wrapf(errInvalidEmailVerificationCode, "sanitize email verification request: %v", err)
 	}
 	code, err = sanitizeEmailVerificationCode(code)
 	if err != nil {
-		return errors.Wrap(err, "sanitize email verification code")
+		return errors.Wrapf(errInvalidEmailVerificationCode, "sanitize email verification code: %v", err)
 	}
 	if s.oneapi != nil {
 		challenge, findErr := s.oneapi.FindValidEmailCode(ctx, account, purpose, gutils.Clock.GetUTCNow())
 		if findErr != nil {
-			return errors.New("invalid email verification code")
+			if errors.Is(findErr, blogoneapi.ErrNotFound) {
+				return errors.WithStack(errInvalidEmailVerificationCode)
+			}
+			return errors.Wrap(findErr, "find oneapi email verification code")
 		}
 		expectedHash := hashEmailVerificationCode(account, purpose, code)
 		if !secureCompareString(challenge.CodeHash, expectedHash) {
-			return errors.New("invalid email verification code")
+			return errors.WithStack(errInvalidEmailVerificationCode)
 		}
+		// ErrNotFound here means a concurrent submission consumed the code first.
 		if consumeErr := s.oneapi.ConsumeEmailCode(ctx, challenge.ID, expectedHash); consumeErr != nil {
-			return errors.New("invalid email verification code")
+			if errors.Is(consumeErr, blogoneapi.ErrNotFound) {
+				return errors.WithStack(errInvalidEmailVerificationCode)
+			}
+			return errors.Wrap(consumeErr, "consume oneapi email verification code")
 		}
 		return nil
 	}
@@ -136,17 +152,23 @@ func (s *Blog) ConsumeEmailVerificationCode(ctx context.Context, account string,
 		"expires_at": bson.M{"$gt": gutils.Clock.GetUTCNow()},
 	}).Decode(challenge); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return errors.New("invalid email verification code")
+			return errors.WithStack(errInvalidEmailVerificationCode)
 		}
 		return errors.Wrap(err, "find email verification code")
 	}
 
 	expectedHash := hashEmailVerificationCode(account, purpose, code)
 	if !secureCompareString(challenge.CodeHash, expectedHash) {
-		return errors.New("invalid email verification code")
+		return errors.WithStack(errInvalidEmailVerificationCode)
 	}
-	if _, err = col.DeleteOne(ctx, bson.M{fieldDocumentID: challenge.ID}); err != nil {
+	// Only the request whose delete removes the challenge may use it; a
+	// concurrent submission of the same code loses the race and is rejected.
+	deleted, err := col.DeleteOne(ctx, bson.M{fieldDocumentID: challenge.ID, "code_hash": challenge.CodeHash})
+	if err != nil {
 		return errors.Wrap(err, "delete consumed email verification code")
+	}
+	if deleted.DeletedCount != 1 {
+		return errors.WithStack(errInvalidEmailVerificationCode)
 	}
 
 	return nil
@@ -154,20 +176,29 @@ func (s *Blog) ConsumeEmailVerificationCode(ctx context.Context, account string,
 
 // ValidateEmailCodeLogin validates a passwordless email-code login attempt.
 // It accepts account and email code, returning the matching user on success.
+//
+// Rejections caused by the submitted values are reported as
+// model.ErrInvalidCredentials; any other error is a storage failure.
 func (s *Blog) ValidateEmailCodeLogin(ctx context.Context, account string, code string) (*model.User, error) {
-	account, err := sanitizeUserAccount(account)
+	account, err := s.sanitizeExistingAccount(account)
 	if err != nil {
-		return nil, errors.Wrap(err, "sanitize account")
+		return nil, errors.Wrapf(model.ErrInvalidCredentials, "sanitize account: %v", err)
 	}
 	if err = s.ConsumeEmailVerificationCode(ctx, account, model.EmailVerificationPurposeLogin, code); err != nil {
-		return nil, errors.WithStack(model.ErrInvalidCredentials)
+		if errors.Is(err, errInvalidEmailVerificationCode) {
+			return nil, errors.WithStack(model.ErrInvalidCredentials)
+		}
+		return nil, errors.Wrap(err, "consume login email code")
 	}
 
 	user, err := s.FindUserByAccount(ctx, account)
 	if err != nil {
-		return nil, errors.WithStack(model.ErrInvalidCredentials)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, errors.WithStack(model.ErrInvalidCredentials)
+		}
+		return nil, errors.Wrap(err, "load email code login account")
 	}
-	if user.Status != model.UserStatusActive {
+	if !user.IsActive() {
 		return nil, errors.WithStack(model.ErrInvalidCredentials)
 	}
 
@@ -218,7 +249,22 @@ func (s *Blog) shouldSendEmailVerificationCode(ctx context.Context, account stri
 		}
 		return false, errors.Wrap(err, "find login account")
 	}
-	return user.Status == model.UserStatusActive, nil
+	return user.IsActive(), nil
+}
+
+// sanitizeEmailVerificationIdentity validates account and purpose for an email
+// code. Login codes address existing accounts, so they use the store's
+// existing-account bound; registration codes use the new-account bound.
+func (s *Blog) sanitizeEmailVerificationIdentity(account string, purpose string) (string, string, error) {
+	normalizedPurpose := strings.TrimSpace(strings.ToLower(purpose))
+	if normalizedPurpose == model.EmailVerificationPurposeLogin {
+		normalizedAccount, err := s.sanitizeExistingAccount(account)
+		if err != nil {
+			return "", "", errors.Wrap(err, "sanitize account")
+		}
+		return normalizedAccount, normalizedPurpose, nil
+	}
+	return sanitizeEmailVerificationRequest(account, purpose)
 }
 
 // sanitizeEmailVerificationRequest validates account and purpose for email verification.

@@ -33,8 +33,10 @@ import {
 import {
   canStartGithubOAuth,
   canSubmitSsoLogin,
+  describeSsoAuthError,
   isTotpRequiredError,
   isTurnstileEnabled,
+  isTurnstileFailedError,
   isTurnstileRequiredError,
 } from '@/pages/sso-login-state';
 import { resolveAuthenticatedRedirect } from '@/pages/sso-session-redirect';
@@ -148,6 +150,32 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       api.reset(widgetID);
     }
     setTurnstileToken('');
+  };
+
+  // handleChallengeError reveals a fresh Turnstile challenge when the backend asks
+  // for one or could not verify the supplied one. It returns true when handled.
+  const handleChallengeError = (message: string): boolean => {
+    if (isTurnstileRequiredError(message)) {
+      setTurnstileChallengeActive(true);
+      resetTurnstile();
+      setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+      return true;
+    }
+    if (isTurnstileFailedError(message)) {
+      setTurnstileChallengeActive(true);
+      resetTurnstile();
+      setStatus({ tone: 'info', message: 'Security verification could not be confirmed. Please complete it again.' });
+      return true;
+    }
+    return false;
+  };
+
+  // leaveWithSession persists the issued session on the SSO origin before handing
+  // it to an external application, so a later visit to SSO (for example from
+  // another application) is recognized instead of asking for credentials again.
+  const leaveWithSession = (target: URL, token: string) => {
+    storeSsoToken(token);
+    window.location.assign(buildRedirectUrlWithToken(target, token));
   };
 
   useEffect(() => {
@@ -350,9 +378,8 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       }
 
       if (redirectTarget.url) {
-        const redirectUrl = buildRedirectUrlWithToken(redirectTarget.url, token);
         setStatus({ tone: 'success', message: 'Login successful. Redirecting...' });
-        window.location.assign(redirectUrl);
+        leaveWithSession(redirectTarget.url, token);
         return;
       }
 
@@ -365,11 +392,22 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       const message = error instanceof Error ? error.message : 'Login failed. Please try again.';
 
       // The client tripped the risk thresholds and must solve a Turnstile
-      // challenge. Reveal the widget and prompt to complete it, then retry.
-      if (isTurnstileRequiredError(message)) {
-        setTurnstileChallengeActive(true);
-        resetTurnstile();
-        setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+      // challenge, or the supplied one could not be verified. Reveal the widget
+      // and prompt to complete it, then retry.
+      if (handleChallengeError(message)) {
+        return;
+      }
+
+      // The backend accepted the password but the account has TOTP enabled and
+      // no code was supplied. Reveal the TOTP field and prompt for a second step
+      // instead of surfacing this as a login failure. Passing the password step
+      // earned this client a short allowance on the server, so the TOTP step does
+      // not need another challenge; the widget returns only if the server asks.
+      if (mode === 'login' && isTotpRequiredError(message)) {
+        setTurnstileChallengeActive(false);
+        setTotpRequired(true);
+        setTotpCode('');
+        setStatus({ tone: 'info', message: 'Enter the 6-digit code from your authenticator app to continue.' });
         return;
       }
 
@@ -379,17 +417,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         setTurnstileMessage('Please complete the security verification again.');
       }
 
-      // The backend accepted the password but the account has TOTP enabled and
-      // no code was supplied. Reveal the TOTP field and prompt for a second step
-      // instead of surfacing this as a login failure.
-      if (mode === 'login' && isTotpRequiredError(message)) {
-        setTotpRequired(true);
-        setTotpCode('');
-        setStatus({ tone: 'info', message: 'Enter the 6-digit code from your authenticator app to continue.' });
-        return;
-      }
-
-      setStatus({ tone: 'error', message });
+      setStatus({ tone: 'error', message: describeSsoAuthError(message) });
     } finally {
       setIsSubmitting(false);
     }
@@ -415,13 +443,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to send verification code.';
-      if (isTurnstileRequiredError(message)) {
-        setTurnstileChallengeActive(true);
-        resetTurnstile();
-        setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+      if (handleChallengeError(message)) {
         return;
       }
-      setStatus({ tone: 'error', message });
+      setStatus({ tone: 'error', message: describeSsoAuthError(message) });
       if (turnstileChallengeRequired) {
         resetTurnstile();
         setTurnstileMessage('Please complete the security verification again.');
@@ -460,13 +485,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       window.location.assign(authorizeURL);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start GitHub sign in.';
-      if (isTurnstileRequiredError(message)) {
-        setTurnstileChallengeActive(true);
-        resetTurnstile();
-        setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+      if (handleChallengeError(message)) {
         return;
       }
-      setStatus({ tone: 'error', message });
+      setStatus({ tone: 'error', message: describeSsoAuthError(message) });
       if (turnstileChallengeRequired) {
         resetTurnstile();
         setTurnstileMessage('Please complete the security verification again.');
@@ -509,16 +531,13 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       }
       const target = new URL(finish.UserFinishPasskeyLogin.redirect_to || '/profile', window.location.origin);
       setStatus({ tone: 'success', message: 'Passkey accepted. Redirecting...' });
-      window.location.assign(buildRedirectUrlWithToken(target, token));
+      leaveWithSession(target, token);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Passkey login failed.';
-      if (isTurnstileRequiredError(message)) {
-        setTurnstileChallengeActive(true);
-        resetTurnstile();
-        setStatus({ tone: 'info', message: 'Please complete the security verification to continue.' });
+      if (handleChallengeError(message)) {
         return;
       }
-      setStatus({ tone: 'error', message });
+      setStatus({ tone: 'error', message: describeSsoAuthError(message) });
       if (turnstileChallengeRequired) {
         resetTurnstile();
         setTurnstileMessage('Please complete the security verification again.');

@@ -27,7 +27,7 @@ func (r *Repo) FindByPasskeyCredentialID(ctx context.Context, credentialID []byt
 	if err != nil {
 		return nil, err
 	}
-	if user.Status != blogmodel.UserStatusActive {
+	if !user.IsActive() {
 		return nil, errors.WithStack(blogmodel.ErrInvalidCredentials)
 	}
 	return user, nil

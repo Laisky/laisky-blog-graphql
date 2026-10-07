@@ -20,3 +20,17 @@ func TestSyntheticObjectIDRoundTrip(t *testing.T) {
 	_, ok = OneAPIIDFromSyntheticObjectID(primitive.NewObjectID())
 	require.False(t, ok)
 }
+
+// TestUserIsActive pins the account-state contract shared by every login
+// method: legacy MongoDB accounts without a status stay usable, while explicit
+// inactive states and OneAPI users without an enabled status are rejected.
+func TestUserIsActive(t *testing.T) {
+	require.False(t, (*User)(nil).IsActive())
+	require.True(t, (&User{Status: UserStatusActive}).IsActive())
+	require.True(t, (&User{}).IsActive(), "pre-status MongoDB accounts must keep working")
+	require.False(t, (&User{Status: UserStatusPending}).IsActive())
+	require.False(t, (&User{Status: "disabled"}).IsActive())
+	require.True(t, (&User{OneAPIID: 7, Status: UserStatusActive}).IsActive())
+	require.False(t, (&User{OneAPIID: 7}).IsActive(), "OneAPI users always carry an explicit status")
+	require.False(t, (&User{OneAPIID: 7, Status: UserStatusPending}).IsActive())
+}

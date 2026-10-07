@@ -38,3 +38,7 @@ jobs:
           cache: true
       - name: BSON wire and real MongoDB query contracts
         run: go test -race -count=3 -v -timeout 5m ./internal/web/blog/service ./internal/web/twitter/service -run TestMongo
+      # Legacy-account SSO login, passkey, risk-policy and GraphQL e2e contracts.
+      # Password hashing dominates their runtime, so they run once per job.
+      - name: SSO login contracts against real MongoDB
+        run: go test -race -count=1 -v -timeout 10m ./internal/web/blog/controller ./internal/web -run TestMongo

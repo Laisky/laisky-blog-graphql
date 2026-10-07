@@ -797,8 +797,10 @@ func (s *Blog) ValidateAndGetUser(ctx context.Context) (user *model.User, err er
 	return requireActiveUser(user)
 }
 
+// requireActiveUser returns the user only when its account may authenticate.
+// It accepts a loaded user and returns ErrInvalidCredentials for inactive or missing users.
 func requireActiveUser(user *model.User) (*model.User, error) {
-	if user == nil || user.Status != model.UserStatusActive {
+	if !user.IsActive() {
 		return nil, errors.WithStack(model.ErrInvalidCredentials)
 	}
 	return user, nil

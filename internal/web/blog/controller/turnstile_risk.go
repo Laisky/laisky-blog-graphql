@@ -18,6 +18,12 @@ const (
 	defaultTurnstileFailureWindow      = 15 * time.Minute
 	defaultTurnstileFailureThreshold   = 3
 	defaultTurnstileMaxTrackedClients  = 10000
+	// defaultTurnstileClearanceTTL and defaultTurnstileClearanceUses bound the
+	// allowance a client earns by solving a challenge: the next few auth
+	// requests in this window (for example the TOTP step that follows a
+	// verified password) are not challenged again.
+	defaultTurnstileClearanceTTL  = 5 * time.Minute
+	defaultTurnstileClearanceUses = 3
 
 	// unknownAuthClientKey buckets requests whose client IP cannot be resolved so
 	// they are still rate-tracked collectively rather than escaping the check.
@@ -39,15 +45,33 @@ type authChallengeTracker struct {
 	failureWindow      time.Duration
 	failureThreshold   int
 	maxClients         int
+	clearanceTTL       time.Duration
+	clearanceUses      int
 
 	// now returns the current time; overridable in tests.
 	now func() time.Time
 }
 
-// clientAuthRisk holds the recent attempt and failure timestamps for one client.
+// clientAuthRisk holds the recent attempt and failure timestamps for one client,
+// plus the allowance earned by its last solved Turnstile challenge.
 type clientAuthRisk struct {
 	attempts []time.Time
 	failures []time.Time
+
+	// clearedUntil and clearanceLeft describe the solved-challenge allowance.
+	clearedUntil  time.Time
+	clearanceLeft int
+}
+
+// hasClearance reports whether the solved-challenge allowance is still usable.
+func (c *clientAuthRisk) hasClearance(now time.Time) bool {
+	return c.clearanceLeft > 0 && now.Before(c.clearedUntil)
+}
+
+// revokeClearance drops any solved-challenge allowance.
+func (c *clientAuthRisk) revokeClearance() {
+	c.clearedUntil = time.Time{}
+	c.clearanceLeft = 0
 }
 
 // newAuthChallengeTracker builds a tracker with the provided thresholds,
@@ -82,6 +106,8 @@ func newAuthChallengeTracker(
 		failureWindow:      failureWindow,
 		failureThreshold:   failureThreshold,
 		maxClients:         maxClients,
+		clearanceTTL:       defaultTurnstileClearanceTTL,
+		clearanceUses:      defaultTurnstileClearanceUses,
 		now:                func() time.Time { return gutils.Clock.GetUTCNow() },
 	}
 }
@@ -102,7 +128,8 @@ func (t *authChallengeTracker) recordAttempt(key string) {
 }
 
 // recordFailure notes that a client failed a credential check. This drives the
-// repeated-failure signal.
+// repeated-failure signal and revokes any solved-challenge allowance, so every
+// further guess from a high-risk client needs a fresh challenge.
 func (t *authChallengeTracker) recordFailure(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -110,6 +137,41 @@ func (t *authChallengeTracker) recordFailure(key string) {
 	now := t.now()
 	client := t.clientLocked(key)
 	client.failures = appendRecent(client.failures, now, now.Add(-t.failureWindow), t.failureThreshold+1)
+	client.revokeClearance()
+}
+
+// recordChallengePassed grants the allowance earned by a verified Turnstile
+// token: the next clearanceUses auth requests within clearanceTTL are admitted
+// without another challenge unless a credential failure revokes it first.
+func (t *authChallengeTracker) recordChallengePassed(key string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	client := t.clientLocked(key)
+	client.clearedUntil = t.now().Add(t.clearanceTTL)
+	client.clearanceLeft = t.clearanceUses
+}
+
+// admitWithoutChallenge decides whether the current auth request may proceed
+// without a Turnstile token. Low-risk clients always may. A high-risk client
+// may only by spending one unit of its solved-challenge allowance.
+func (t *authChallengeTracker) admitWithoutChallenge(key string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	client, ok := t.clients[key]
+	if !ok {
+		return true
+	}
+	now := t.now()
+	if !t.highRiskLocked(key, client, now) {
+		return true
+	}
+	if !client.hasClearance(now) {
+		return false
+	}
+	client.clearanceLeft--
+	return true
 }
 
 // recordSuccess clears the failure history for a client after a successful
@@ -128,22 +190,13 @@ func (t *authChallengeTracker) recordSuccess(key string) {
 	}
 }
 
-// challengeRequired reports whether the client should solve a Turnstile
-// challenge based on recent request frequency or accumulated failures.
-func (t *authChallengeTracker) challengeRequired(key string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	client, ok := t.clients[key]
-	if !ok {
-		return false
-	}
-
-	now := t.now()
+// highRiskLocked prunes expired signals and reports whether the client exceeds
+// a risk threshold. The caller must hold the mutex.
+func (t *authChallengeTracker) highRiskLocked(key string, client *clientAuthRisk, now time.Time) bool {
 	client.attempts = keepRecent(client.attempts, now.Add(-t.frequencyWindow))
 	client.failures = keepRecent(client.failures, now.Add(-t.failureWindow))
 
-	if len(client.attempts) == 0 && len(client.failures) == 0 {
+	if len(client.attempts) == 0 && len(client.failures) == 0 && !client.hasClearance(now) {
 		delete(t.clients, key)
 		return false
 	}
@@ -168,7 +221,7 @@ func (t *authChallengeTracker) sweepLocked(now time.Time) {
 	for key, client := range t.clients {
 		client.attempts = keepRecent(client.attempts, now.Add(-t.frequencyWindow))
 		client.failures = keepRecent(client.failures, now.Add(-t.failureWindow))
-		if len(client.attempts) == 0 && len(client.failures) == 0 {
+		if len(client.attempts) == 0 && len(client.failures) == 0 && !client.hasClearance(now) {
 			delete(t.clients, key)
 		}
 	}
@@ -214,6 +267,12 @@ func getAuthChallengeTracker() *authChallengeTracker {
 			gconfig.Shared.GetInt(base+".failure_threshold"),
 			gconfig.Shared.GetInt(base+".max_tracked_clients"),
 		)
+		if seconds := gconfig.Shared.GetInt(base + ".clearance_seconds"); seconds > 0 {
+			authChallengeInst.clearanceTTL = time.Duration(seconds) * time.Second
+		}
+		if uses := gconfig.Shared.GetInt(base + ".clearance_uses"); uses > 0 {
+			authChallengeInst.clearanceUses = uses
+		}
 	}
 	return authChallengeInst
 }

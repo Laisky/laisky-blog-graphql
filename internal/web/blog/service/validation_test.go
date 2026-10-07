@@ -1,11 +1,14 @@
 package service
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/dto"
+	blogoneapi "github.com/Laisky/laisky-blog-graphql/internal/web/blog/oneapi"
 )
 
 // TestNormalizePostNameForQuery verifies that post names are normalized for queries.
@@ -73,4 +76,43 @@ func TestValidateArweaveFileID(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStoreSpecificExistingCredentialBounds verifies existing MongoDB accounts
+// keep the bounds they were created under while OneAPI keeps its own.
+func TestStoreSpecificExistingCredentialBounds(t *testing.T) {
+	mongoStore := &Blog{}
+	oneAPIStore := &Blog{oneapi: &blogoneapi.Repo{}}
+	password24 := strings.Repeat("p", 24)
+	account60 := strings.Repeat("a", 48) + "@example.com"
+
+	got, err := mongoStore.sanitizeExistingPassword(password24)
+	require.NoError(t, err)
+	require.Equal(t, password24, got)
+	_, err = mongoStore.sanitizeExistingPassword(strings.Repeat("p", maxLegacyMongoPasswordLength+1))
+	require.Error(t, err)
+	_, err = oneAPIStore.sanitizeExistingPassword(password24)
+	require.Error(t, err, "OneAPI keeps its 20-character password bound")
+
+	got, err = mongoStore.sanitizeExistingAccount(" " + strings.ToUpper(account60) + " ")
+	require.NoError(t, err)
+	require.Equal(t, account60, got)
+	_, err = oneAPIStore.sanitizeExistingAccount(account60)
+	require.Error(t, err)
+}
+
+// TestNormalizeProviderDisplayName verifies provider display names are
+// truncated rather than failing the sign-in, while invalid bytes still fail.
+func TestNormalizeProviderDisplayName(t *testing.T) {
+	got, err := normalizeProviderDisplayName("  Zhonghua (Laisky) Cai, with a long name  ")
+	require.NoError(t, err)
+	require.Equal(t, "Zhonghua (Laisky) Ca", got)
+	require.LessOrEqual(t, utf8.RuneCountInString(got), maxUserDisplayNameLength)
+
+	got, err = normalizeProviderDisplayName("雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪")
+	require.NoError(t, err)
+	require.Equal(t, maxUserDisplayNameLength, utf8.RuneCountInString(got))
+
+	_, err = normalizeProviderDisplayName("bad\x00name")
+	require.Error(t, err)
 }

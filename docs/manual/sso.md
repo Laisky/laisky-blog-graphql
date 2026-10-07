@@ -198,6 +198,17 @@ curl -X POST 'https://sso.laisky.com/query' \
 
 If successful, treat the token as valid and map the returned user to your local session model.
 
+Treat any GraphQL error as an invalid session, and a transport error, timeout,
+non-200 status or malformed body as "SSO unavailable" (fail closed, but do not
+tell the user their session expired). Use a fixed HTTPS endpoint, do not follow
+redirects with the bearer token, and authorize by comparing the returned `id`
+with the UIDs your application allows; a valid SSO session alone does not mean
+the user may act in your application.
+
+The SSO login page keeps the issued session on the SSO origin before handing it
+to your callback, so a later visit to SSO from any client application reuses it
+without asking for credentials again.
+
 `WhoAmI.id` is the same stable external UID carried in `sso_token.sub` and `sso_token.uid`.
 
 ### Optional: Local JWT Verification
@@ -290,6 +301,13 @@ The server uses discoverable WebAuthn credentials:
 2. The browser calls `navigator.credentials.get`.
 3. `UserFinishPasskeyLogin` verifies the signed session and WebAuthn assertion, updates the credential counter, and returns `sso_token`.
 
+Each signed login session can be finished once; resubmitting the same
+session is rejected even when the authenticator reports a zero signature
+counter, as synced platform passkeys do. A non-zero counter that does not
+advance is rejected as a possible replay or cloned authenticator. Consumed
+sessions are tracked in process memory until they expire, so a multi-replica
+deployment must send a ceremony's start and finish to the same instance.
+
 ### Profile Page
 
 Standalone SSO profile route:
@@ -336,9 +354,19 @@ Profile supports:
   remain in SSO-owned SQL tables.
 - `settings.web.sso_jwt.private_key` signs SSO JWTs when configured. If it is omitted, the service derives an Ed25519 signing key from `settings.secret` for compatibility with older deployments.
 - `settings.secret` signs GitHub OAuth state and passkey sessions. When the SSO JWT private key is omitted, rotating `settings.secret` also invalidates active SSO tokens.
-- Passkey user handles use the external SSO UID. Legacy ObjectID handles remain
-  resolvable only when their `sso_user_links.blog_object_id` mapping was
-  imported.
+- Passkey user handles use the external SSO UID. Passkeys registered before
+  the UID switch carry the account's hex blog ObjectID as their user handle.
+  Login resolves the owner from the credential ID first and then accepts either
+  that owner's UID or that owner's legacy ObjectID handle (on OneAPI, the
+  imported `sso_user_links.blog_object_id`). Any other handle is rejected; a
+  supplied handle is never trusted on its own.
+- MongoDB store compatibility: blog accounts created before the `status` field
+  existed have no status and remain active. An explicit non-active status (for
+  example `pending`) is rejected by every login method and by token
+  validation. Existing MongoDB accounts are looked up with the original
+  128-character account bound and their passwords verified with the original
+  1024-character bound (the GraphQL login input is still capped at 100). New
+  passwords keep the 8–20 character OneAPI-compatible policy.
 
 Follow the [OneAPI SSO migration runbook](sso_oneapi_migration.md) before
 changing the production selector.
@@ -494,6 +522,35 @@ Turnstile is enforced on:
 - Passkey login start through `UserStartPasskeyLogin`.
 
 `UserGithubOAuthBindStart` is authenticated by the current SSO token and does not use Turnstile.
+
+Risk policy:
+
+- A client (keyed by resolved client IP) is high risk after more than
+  `frequency_threshold` (default 5) auth requests within
+  `frequency_window_seconds` (default 60) or `failure_threshold` (default 3)
+  credential failures within `failure_window_seconds` (default 900).
+- Only rejections caused by the submitted credentials count as failures. A
+  database or signing outage returns `login_unavailable` and never counts.
+- Solving a challenge earns a short allowance: the next `clearance_uses`
+  (default 3) auth requests within `clearance_seconds` (default 300) are not
+  challenged again, so the TOTP step after a verified password needs no second
+  challenge. Any credential failure revokes the allowance immediately.
+- A supplied token that Cloudflare does not accept returns `turnstile_failed`;
+  the client must show a fresh challenge. It is never reported as invalid
+  credentials.
+
+```yaml
+settings:
+  web:
+    turnstile:
+      risk:
+        frequency_window_seconds: 60
+        frequency_threshold: 5
+        failure_window_seconds: 900
+        failure_threshold: 3
+        clearance_seconds: 300
+        clearance_uses: 3
+```
 
 The deprecated `BlogLogin` mutation cannot carry a Turnstile token. When Turnstile is configured, that legacy path fails closed and clients must use `UserLogin`.
 
@@ -751,6 +808,9 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 7. Passkey registration fails on HTTP: WebAuthn requires a secure context, except for browser-supported local development cases.
 8. `WhoAmI` returns unauthorized: token is missing, malformed, expired, or not sent as `Authorization: Bearer <token>`.
 9. Callback loops after success: local callback did not persist a session before removing `sso_token`.
+10. `turnstile_required` / `turnstile_failed`: show (or re-show) the Turnstile widget and retry with a fresh token.
+11. `login_unavailable`: the credentials could not be evaluated because a backing dependency failed; retry later. It does not mean the password is wrong.
+12. `totp_required`: the password was accepted; prompt for the TOTP code and resubmit.
 
 ## Go-Live Checklist
 
