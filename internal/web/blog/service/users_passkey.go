@@ -15,7 +15,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
 
-// FindUserByPasskeyID loads a user that owns the provided WebAuthn credential ID.
+// FindUserByPasskeyID loads the active user that owns the provided WebAuthn credential ID.
 // It accepts a context and raw credential ID bytes, returning the matched user.
 func (s *Blog) FindUserByPasskeyID(ctx context.Context, credentialID []byte) (*model.User, error) {
 	encodedID := base64.RawURLEncoding.EncodeToString(credentialID)
@@ -36,6 +36,9 @@ func (s *Blog) FindUserByPasskeyID(ctx context.Context, credentialID []byte) (*m
 			return nil, errors.WithStack(mongo.ErrNoDocuments)
 		}
 		return nil, errors.Wrap(err, "find user by passkey id")
+	}
+	if !user.IsActive() {
+		return nil, errors.WithStack(model.ErrInvalidCredentials)
 	}
 
 	return user, nil

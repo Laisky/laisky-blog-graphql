@@ -49,6 +49,14 @@ const (
 	maxUserPasswordLength = 20
 	// maxUserDisplayNameLength caps the length of user display names.
 	maxUserDisplayNameLength = 20
+	// maxLegacyMongoAccountLength is the account length the MongoDB store
+	// accepted before the OneAPI integration. Existing MongoDB accounts are
+	// looked up with this bound so they keep working.
+	maxLegacyMongoAccountLength = 128
+	// maxLegacyMongoPasswordLength is the password length the MongoDB store
+	// accepted before the OneAPI integration. Existing MongoDB passwords are
+	// verified with this bound; the GraphQL controllers still cap input earlier.
+	maxLegacyMongoPasswordLength = 1024
 	// maxActiveTokenLength caps the length of account activation tokens.
 	maxActiveTokenLength = 256
 	// maxEmailVerificationCodeLength caps the length of email verification codes.
@@ -290,6 +298,48 @@ func sanitizeUserAccount(account string) (string, error) {
 // It accepts the raw password string and returns the sanitized password.
 func sanitizeUserPassword(password string) (string, error) {
 	return sanitizeRequiredText(password, maxUserPasswordLength, "password")
+}
+
+// sanitizeExistingAccount validates an account used to find an existing user.
+// It accepts the raw account and returns the normalized account. OneAPI
+// accounts use OneAPI's bound; MongoDB accounts keep the bound they were
+// created under, so legacy accounts are never locked out by a newer policy.
+func (s *Blog) sanitizeExistingAccount(account string) (string, error) {
+	limit := maxUserAccountLength
+	if s.oneapi == nil {
+		limit = maxLegacyMongoAccountLength
+	}
+	trimmed, err := sanitizeRequiredText(account, limit, fieldAccount)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(trimmed), nil
+}
+
+// sanitizeExistingPassword validates a password that is only verified against
+// a stored hash. It accepts the raw password and returns the sanitized value.
+// New passwords still go through sanitizeNewUserPassword.
+func (s *Blog) sanitizeExistingPassword(password string) (string, error) {
+	limit := maxUserPasswordLength
+	if s.oneapi == nil {
+		limit = maxLegacyMongoPasswordLength
+	}
+	return sanitizeRequiredText(password, limit, "password")
+}
+
+// normalizeProviderDisplayName turns an identity-provider display name into a
+// stored display name. Provider names are cosmetic and outside the user's
+// control at sign-in time, so an over-long name is truncated instead of
+// failing the login. It returns an error only for invalid content.
+func normalizeProviderDisplayName(displayName string) (string, error) {
+	trimmed := strings.TrimSpace(displayName)
+	if strings.ContainsRune(trimmed, '\x00') {
+		return "", errors.New("display name contains invalid null byte")
+	}
+	if utf8.RuneCountInString(trimmed) > maxUserDisplayNameLength {
+		trimmed = strings.TrimSpace(string([]rune(trimmed)[:maxUserDisplayNameLength]))
+	}
+	return trimmed, nil
 }
 
 // sanitizeNewUserPassword validates a password against OneAPI's accepted

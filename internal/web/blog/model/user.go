@@ -106,6 +106,26 @@ func (u *User) GetPayload() map[string]interface{} {
 	}
 }
 
+// IsActive reports whether the account may authenticate.
+//
+// OneAPI-backed users must be enabled. MongoDB blog accounts created before the
+// status field existed carry no status at all; they were always allowed to sign
+// in, so an absent status keeps them usable. Any explicit non-active status,
+// such as pending email verification, is rejected.
+func (u *User) IsActive() bool {
+	if u == nil {
+		return false
+	}
+	switch u.Status {
+	case UserStatusActive:
+		return true
+	case "":
+		return u.OneAPIID == 0
+	default:
+		return false
+	}
+}
+
 // IsAdmin is admin
 func (u *User) IsAdmin() bool {
 	if u.OneAPIID > 0 {

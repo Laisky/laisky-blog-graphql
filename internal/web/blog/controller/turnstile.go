@@ -13,6 +13,7 @@ import (
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
+	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
@@ -70,12 +71,13 @@ func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, 
 	}
 
 	if err := validateInputLength(turnstileTokenLengthLimit, token); err != nil {
-		return errors.Wrap(err, "validate turnstile token length")
+		return errors.Wrapf(model.ErrTurnstileFailed, "validate turnstile token length: %v", err)
 	}
 
 	// Low-risk clients proceed without a challenge; any token they happen to send
-	// is ignored so a stale one cannot block them.
-	if !tracker.challengeRequired(clientKey) {
+	// is ignored so a stale one cannot block them. A high-risk client that just
+	// solved a challenge spends its allowance here instead of solving another.
+	if tracker.admitWithoutChallenge(clientKey) {
 		return nil
 	}
 
@@ -84,10 +86,26 @@ func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, 
 	}
 
 	if err := verifyTurnstileToken(ctx, secret, token, resolveTurnstileClientIP(ctx)); err != nil {
-		return errors.Wrap(err, "verify turnstile token")
+		gmw.GetLogger(ctx).Named("turnstile").Info("turnstile token rejected",
+			zap.String("action", action),
+			zap.Error(err),
+		)
+		return errors.Wrap(model.ErrTurnstileFailed, action)
 	}
+	tracker.recordChallengePassed(clientKey)
 
 	return nil
+}
+
+// turnstileGateError converts a Turnstile gate failure into the stable client
+// error. It accepts the gate error and returns ErrTurnstileRequired when the
+// client must show a challenge, or ErrTurnstileFailed when a supplied token
+// could not be verified. A gate failure never reports the credentials as wrong.
+func turnstileGateError(err error) error {
+	if errors.Is(err, model.ErrTurnstileRequired) {
+		return errors.WithStack(model.ErrTurnstileRequired)
+	}
+	return errors.WithStack(model.ErrTurnstileFailed)
 }
 
 // verifyTurnstileToken verifies a Turnstile token with Cloudflare siteverify endpoint.

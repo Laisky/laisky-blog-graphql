@@ -334,10 +334,7 @@ func (r *UserResolver) ID(ctx context.Context,
 func (r *MutationResolver) UserLogin(ctx context.Context,
 	account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error) {
 	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
-		if errors.Is(err, model.ErrTurnstileRequired) {
-			return nil, errors.WithStack(model.ErrTurnstileRequired)
-		}
-		return nil, maskLoginError(model.ErrInvalidCredentials)
+		return nil, turnstileGateError(err)
 	}
 
 	return r.loginWithPassword(ctx, account, password, totpCode)
@@ -348,10 +345,7 @@ func (r *MutationResolver) UserLogin(ctx context.Context,
 func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
 	account string, emailCode string, turnstileToken *string) (*models.BlogLoginResponse, error) {
 	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
-		if errors.Is(err, model.ErrTurnstileRequired) {
-			return nil, errors.WithStack(model.ErrTurnstileRequired)
-		}
-		return nil, maskLoginError(model.ErrInvalidCredentials)
+		return nil, turnstileGateError(err)
 	}
 
 	logger := ginMw.GetLogger(ctx).Named("user_login_email_code")
@@ -367,8 +361,11 @@ func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
 	tracker := getAuthChallengeTracker()
 	user, err := r.svc.ValidateEmailCodeLogin(ctx, account, emailCode)
 	if err != nil {
-		tracker.recordFailure(clientKey)
-		return nil, maskLoginError(err)
+		clientErr, countsAsFailure := credentialFailure(ctx, "email_code", err)
+		if countsAsFailure {
+			tracker.recordFailure(clientKey)
+		}
+		return nil, clientErr
 	}
 
 	tracker.recordSuccess(clientKey)
@@ -383,17 +380,11 @@ func (r *MutationResolver) UserRequestEmailCode(ctx context.Context,
 	switch purpose {
 	case model.EmailVerificationPurposeRegister:
 		if err := validateTurnstileTokenForRegister(ctx, turnstileToken); err != nil {
-			if errors.Is(err, model.ErrTurnstileRequired) {
-				return nil, errors.WithStack(model.ErrTurnstileRequired)
-			}
-			return nil, errors.Wrap(err, "validate turnstile token")
+			return nil, turnstileGateError(err)
 		}
 	case model.EmailVerificationPurposeLogin:
 		if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
-			if errors.Is(err, model.ErrTurnstileRequired) {
-				return nil, errors.WithStack(model.ErrTurnstileRequired)
-			}
-			return nil, maskLoginError(model.ErrInvalidCredentials)
+			return nil, turnstileGateError(err)
 		}
 	default:
 		return nil, errors.Errorf("unsupported email verification purpose %q", purpose)
@@ -442,10 +433,7 @@ func (r *MutationResolver) UserRegister(ctx context.Context,
 		return nil, err
 	}
 	if err := validateTurnstileTokenForRegister(ctx, turnstileToken); err != nil {
-		if errors.Is(err, model.ErrTurnstileRequired) {
-			return nil, errors.WithStack(model.ErrTurnstileRequired)
-		}
-		return nil, errors.Wrap(err, "validate turnstile token")
+		return nil, turnstileGateError(err)
 	}
 	_, err := r.svc.UserRegister(ctx, account, password, displayName, emailCode)
 	if err != nil {
@@ -528,8 +516,11 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
-		tracker.recordFailure(clientKey)
-		return nil, maskLoginError(err)
+		clientErr, countsAsFailure := credentialFailure(ctx, "password", err)
+		if countsAsFailure {
+			tracker.recordFailure(clientKey)
+		}
+		return nil, clientErr
 	}
 
 	code := ""
@@ -556,8 +547,24 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 }
 
 // newLoginResponse signs an SSO JWT for a validated user.
-// It accepts a context and user, returning the GraphQL login response.
+// It accepts a context and user, returning the GraphQL login response. Failures
+// here are infrastructure failures after the credentials were accepted, so they
+// are logged with their cause and reported to the client as ErrLoginUnavailable.
 func (r *MutationResolver) newLoginResponse(ctx context.Context, user *model.User) (*models.BlogLoginResponse, error) {
+	resp, err := r.signLoginResponse(ctx, user)
+	if err != nil {
+		ginMw.GetLogger(ctx).Named("sso_login").Error("issue sso token after successful authentication",
+			zap.String("class", "unavailable"),
+			zap.Error(err),
+		)
+		return nil, errors.WithStack(model.ErrLoginUnavailable)
+	}
+	return resp, nil
+}
+
+// signLoginResponse hydrates the stable UID and signs the SSO JWT.
+// It accepts a context and user, returning the GraphQL login response.
+func (r *MutationResolver) signLoginResponse(ctx context.Context, user *model.User) (*models.BlogLoginResponse, error) {
 	user, err := r.svc.EnsureUserUID(ctx, user)
 	if err != nil {
 		return nil, errors.Wrap(err, "ensure user uid")

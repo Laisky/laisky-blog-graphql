@@ -8,7 +8,9 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
+import { storeSsoToken } from '@/lib/sso-session';
 import { buildRedirectUrlWithToken } from '@/pages/sso-login';
+import { describeSsoAuthError } from '@/pages/sso-login-state';
 
 const USER_GITHUB_OAUTH_LOGIN_MUTATION = `
   mutation GithubOAuthLogin($code: String!, $state: String!) {
@@ -55,11 +57,17 @@ export function SsoGithubCallbackPage() {
         const redirectURL = buildGithubCallbackRedirect(data.UserGithubOAuthLogin.redirect_to, token, window.location.origin);
         if (!isCancelled) {
           setStatus({ tone: 'success', message: 'GitHub authorization complete. Redirecting...' });
+          // Persist the session on the SSO origin before leaving, so returning
+          // to SSO later reuses it instead of asking for credentials again.
+          storeSsoToken(token);
           window.location.assign(redirectURL);
         }
       } catch (error) {
         if (!isCancelled) {
-          setStatus({ tone: 'error', message: error instanceof Error ? error.message : 'GitHub authorization failed.' });
+          setStatus({
+            tone: 'error',
+            message: error instanceof Error ? describeSsoAuthError(error.message) : 'GitHub authorization failed.',
+          });
         }
       }
     };

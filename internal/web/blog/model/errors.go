@@ -24,3 +24,15 @@ var ErrTurnstileRequired = errors.New("turnstile_required")
 // not proven the password. The message is a stable token so the SSO web client
 // can detect it and prompt for the TOTP code as a second step.
 var ErrTOTPRequired = errors.New("totp_required")
+
+// ErrTurnstileFailed indicates a Turnstile token was supplied but could not be
+// verified, for example because it expired, was already used, or Cloudflare
+// could not be reached. The client must solve a fresh challenge; it is never a
+// statement about the submitted credentials.
+var ErrTurnstileFailed = errors.New("turnstile_failed")
+
+// ErrLoginUnavailable indicates authentication could not be evaluated because a
+// backing dependency (database, signing key) failed. It is distinct from
+// ErrInvalidCredentials so outages are neither reported to users as a wrong
+// password nor counted toward the anti-abuse failure threshold.
+var ErrLoginUnavailable = errors.New("login_unavailable")

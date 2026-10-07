@@ -15,11 +15,12 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
+	ginMw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
+	"github.com/Laisky/zap"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
@@ -44,12 +45,50 @@ type passkeySessionEnvelope struct {
 // It wraps a blog user and exposes stable user handle and credential records.
 type passkeyUser struct {
 	user *model.User
+	// handle overrides the user handle for one login ceremony. It is set only
+	// to a handle that acceptedPasskeyUserHandle proved belongs to user.
+	handle []byte
 }
 
-// WebAuthnID returns the stable WebAuthn user handle.
-// It accepts no parameters and returns the Mongo ObjectID hex value as bytes.
+// WebAuthnID returns the WebAuthn user handle.
+// It accepts no parameters and returns the verified ceremony handle when one was
+// accepted, otherwise the stable external UID that new registrations use.
 func (u passkeyUser) WebAuthnID() []byte {
+	if len(u.handle) > 0 {
+		return u.handle
+	}
 	return []byte(u.user.UID)
+}
+
+// legacyPasskeyUserHandle returns the user handle that passkeys registered
+// before the switch to UID handles carry: the hex MongoDB ObjectID of the blog
+// account. It returns nil for users without such an identifier, including the
+// synthetic IDs of OneAPI-native users, which were never used as handles.
+func legacyPasskeyUserHandle(user *model.User) []byte {
+	if user == nil || user.ID.IsZero() {
+		return nil
+	}
+	if _, synthetic := model.OneAPIIDFromSyntheticObjectID(user.ID); synthetic {
+		return nil
+	}
+	return []byte(user.ID.Hex())
+}
+
+// acceptedPasskeyUserHandle selects the user handle a login ceremony is checked
+// against. The user was already resolved from the credential ID, so it owns the
+// credential; the authenticator's handle is accepted only when it is that same
+// user's current UID or its known legacy ObjectID handle. Any other handle maps
+// to the UID, and the WebAuthn library then rejects the mismatch. A supplied
+// handle is never reflected without this proof.
+func acceptedPasskeyUserHandle(user *model.User, supplied []byte) []byte {
+	current := []byte(user.UID)
+	if len(current) > 0 && hmac.Equal(supplied, current) {
+		return current
+	}
+	if legacy := legacyPasskeyUserHandle(user); legacy != nil && hmac.Equal(supplied, legacy) {
+		return legacy
+	}
+	return current
 }
 
 // WebAuthnName returns the account identifier shown to authenticators.
@@ -85,6 +124,9 @@ func (r *MutationResolver) UserStartPasskeyRegistration(ctx context.Context, lab
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "validate user")
+	}
+	if user, err = r.svc.EnsureUserUID(ctx, user); err != nil {
+		return nil, errors.Wrap(err, "ensure passkey user handle")
 	}
 	if err = validateInputLength(100, label); err != nil {
 		return nil, errors.Wrap(err, "validate passkey label")
@@ -135,6 +177,9 @@ func (r *MutationResolver) UserFinishPasskeyRegistration(ctx context.Context,
 	user, err := r.svc.ValidateAndGetUser(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "validate user")
+	}
+	if user, err = r.svc.EnsureUserUID(ctx, user); err != nil {
+		return nil, errors.Wrap(err, "ensure passkey user handle")
 	}
 	if err = validateInputLength(100, label); err != nil {
 		return nil, errors.Wrap(err, "validate passkey label")
@@ -217,10 +262,7 @@ func (r *MutationResolver) UserStartPasskeyLogin(ctx context.Context,
 	turnstileToken *string,
 ) (*models.PasskeyStartResponse, error) {
 	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
-		if errors.Is(err, model.ErrTurnstileRequired) {
-			return nil, errors.WithStack(model.ErrTurnstileRequired)
-		}
-		return nil, maskLoginError(model.ErrInvalidCredentials)
+		return nil, turnstileGateError(err)
 	}
 	validatedRedirect, err := resolveGitHubOAuthRedirectTarget(ctx, redirectTo)
 	if err != nil {
@@ -266,8 +308,17 @@ func (r *MutationResolver) UserFinishPasskeyLogin(ctx context.Context,
 		return nil, errors.Wrap(err, "validate passkey login input")
 	}
 
+	logger := ginMw.GetLogger(ctx).Named("sso_passkey_login")
 	envelope, err := verifyPasskeySession(session, passkeySessionKindLogin)
 	if err != nil {
+		logger.Debug("passkey login session rejected", zap.Error(err))
+		return nil, maskLoginError(err)
+	}
+	// A signed session is single use. Claiming it before verification stops a
+	// captured session+assertion pair from being replayed, including racing
+	// submissions of the same pair.
+	if err = claimPasskeyLoginSession(envelope); err != nil {
+		logger.Warn("passkey login session reuse rejected", zap.Error(err))
 		return nil, maskLoginError(err)
 	}
 
@@ -282,24 +333,35 @@ func (r *MutationResolver) UserFinishPasskeyLogin(ctx context.Context,
 
 	var authenticatedUser *model.User
 	handler := func(rawID []byte, userHandle []byte) (webauthn.User, error) {
-		user, loadErr := r.loadPasskeyUser(ctx, rawID, userHandle)
+		user, loadErr := r.loadPasskeyUser(ctx, rawID)
 		if loadErr != nil {
 			return nil, loadErr
 		}
 		authenticatedUser = user
-		return passkeyUser{user: user}, nil
+		return passkeyUser{user: user, handle: acceptedPasskeyUserHandle(user, userHandle)}, nil
 	}
 	_, credential, err := wa.FinishPasskeyLogin(handler, envelope.Session, request)
 	if err != nil {
+		logger.Info("passkey assertion rejected", zap.Error(err))
 		return nil, maskLoginError(err)
 	}
 	if authenticatedUser == nil {
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
+	// A signature counter that did not advance means the assertion was replayed
+	// or the authenticator was cloned. Authenticators that never count (always
+	// zero) are not affected.
+	if credential.Authenticator.CloneWarning {
+		logger.Warn("passkey signature counter did not advance",
+			zap.Uint32("stored_sign_count", storedPasskeySignCount(authenticatedUser, credential.ID)),
+		)
+		return nil, maskLoginError(errors.New("passkey signature counter did not advance"))
+	}
 
 	updatedUser, err := r.svc.UpdatePasskeyCredential(ctx, authenticatedUser, credential)
 	if err != nil {
-		return nil, errors.Wrap(err, "update passkey credential")
+		logger.Error("persist passkey counter after successful assertion", zap.Error(err))
+		return nil, errors.WithStack(model.ErrLoginUnavailable)
 	}
 	loginResp, err := r.newLoginResponse(ctx, updatedUser)
 	if err != nil {
@@ -314,33 +376,29 @@ func (r *MutationResolver) UserFinishPasskeyLogin(ctx context.Context,
 }
 
 // loadPasskeyUser loads the user for a WebAuthn discoverable credential callback.
-// It accepts raw credential ID and user handle, returning the matching blog user.
-func (r *MutationResolver) loadPasskeyUser(ctx context.Context, rawID []byte, userHandle []byte) (*model.User, error) {
-	if len(rawID) > 0 {
-		user, err := r.svc.FindUserByPasskeyID(ctx, rawID)
-		if err != nil {
-			return nil, errors.Wrap(err, "find user by passkey id")
-		}
-		return user, nil
+// It accepts the raw credential ID, which the WebAuthn parser guarantees is
+// present, and returns the active blog user that owns that credential.
+func (r *MutationResolver) loadPasskeyUser(ctx context.Context, rawID []byte) (*model.User, error) {
+	if len(rawID) == 0 {
+		return nil, errors.New("passkey credential id is empty")
 	}
-	if len(userHandle) == 0 {
-		return nil, errors.New("passkey user handle is empty")
-	}
-
-	handle := strings.TrimSpace(string(userHandle))
-	id, err := primitive.ObjectIDFromHex(handle)
+	user, err := r.svc.FindUserByPasskeyID(ctx, rawID)
 	if err != nil {
-		user, loadErr := r.svc.LoadUserByUID(ctx, handle)
-		if loadErr != nil {
-			return nil, errors.Wrap(loadErr, "load passkey user by uid handle")
-		}
-		return user, nil
-	}
-	user, err := r.svc.LoadUserByID(ctx, id)
-	if err != nil {
-		return nil, errors.Wrap(err, "load passkey user by handle")
+		return nil, errors.Wrap(err, "find user by passkey id")
 	}
 	return user, nil
+}
+
+// storedPasskeySignCount returns the persisted signature counter of one of the
+// user's credentials, or zero when it is unknown. It is used only for logging.
+func storedPasskeySignCount(user *model.User, credentialID []byte) uint32 {
+	encodedID := base64.RawURLEncoding.EncodeToString(credentialID)
+	for _, passkey := range user.Passkeys {
+		if passkey.ID == encodedID {
+			return passkey.SignCount
+		}
+	}
+	return 0
 }
 
 // newWebAuthnForRequest creates a WebAuthn handler for the current request origin.
@@ -398,12 +456,16 @@ func newWebAuthnCredentialRequest(ctx context.Context, credentialJSON string) (*
 
 // decodeStoredPasskeyCredential decodes a persisted passkey credential.
 // It accepts a stored passkey model and returns the WebAuthn credential record.
+//
+// A clone warning persisted by an earlier ceremony is cleared, so it reflects
+// only the counter comparison of the ceremony being verified now.
 func decodeStoredPasskeyCredential(passkey model.PasskeyCredential) (webauthn.Credential, error) {
 	if strings.TrimSpace(passkey.CredentialJSON) != "" {
 		var credential webauthn.Credential
 		if err := json.Unmarshal([]byte(passkey.CredentialJSON), &credential); err != nil {
 			return credential, errors.Wrap(err, "unmarshal passkey credential")
 		}
+		credential.Authenticator.CloneWarning = false
 		return credential, nil
 	}
 

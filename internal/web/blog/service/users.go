@@ -36,19 +36,32 @@ func (s *Blog) ValidateTOTPCode(_ context.Context, user *model.User, code string
 }
 
 // ValidateLogin validates an account and password pair.
-// It accepts a context, account, and password, returning the matching user on success.
+// It accepts a context, account, and password, returning the matching active user on success.
+//
+// Every rejection caused by the submitted values (malformed input, unknown
+// account, wrong password, inactive account) is reported as
+// model.ErrInvalidCredentials. Any other error means the store could not be
+// consulted and must not be treated as a credential failure.
 func (s *Blog) ValidateLogin(ctx context.Context, account, password string) (u *model.User, err error) {
-	if account, err = sanitizeUserAccount(account); err != nil {
-		return nil, errors.Wrap(err, "sanitize account")
+	if account, err = s.sanitizeExistingAccount(account); err != nil {
+		return nil, errors.Wrapf(model.ErrInvalidCredentials, "sanitize account: %v", err)
 	}
-	if password, err = sanitizeUserPassword(password); err != nil {
-		return nil, errors.Wrap(err, "sanitize password")
+	if password, err = s.sanitizeExistingPassword(password); err != nil {
+		return nil, errors.Wrapf(model.ErrInvalidCredentials, "sanitize password: %v", err)
 	}
 	if s.oneapi != nil {
-		return s.oneapi.ValidateLogin(ctx, account, password)
+		u, err = s.oneapi.ValidateLogin(ctx, account, password)
+	} else {
+		u, err = s.dao.ValidateLogin(ctx, account, password)
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "validate login")
+	}
+	if !u.IsActive() {
+		return nil, errors.WithStack(model.ErrInvalidCredentials)
 	}
 
-	return s.dao.ValidateLogin(ctx, account, password)
+	return u, nil
 }
 
 // ChangePassword updates the authenticated user's password after validating the old password.
@@ -58,7 +71,7 @@ func (s *Blog) ChangePassword(ctx context.Context, user *model.User, currentPass
 		return nil, errors.New("user is nil")
 	}
 
-	currentPassword, err := sanitizeUserPassword(currentPassword)
+	currentPassword, err := s.sanitizeExistingPassword(currentPassword)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize current password")
 	}
@@ -194,7 +207,7 @@ func (s *Blog) DisableTOTP(ctx context.Context, user *model.User, currentPasswor
 	if user == nil {
 		return nil, errors.New("user is nil")
 	}
-	currentPassword, err := sanitizeUserPassword(currentPassword)
+	currentPassword, err := s.sanitizeExistingPassword(currentPassword)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize current password")
 	}

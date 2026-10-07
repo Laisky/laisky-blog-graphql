@@ -1,5 +1,12 @@
 export const TOTP_REQUIRED_TOKEN = 'totp_required';
 export const TURNSTILE_REQUIRED_TOKEN = 'turnstile_required';
+// TURNSTILE_FAILED_TOKEN is returned when a supplied challenge token could not be
+// verified (expired, reused, or Cloudflare unreachable); it never means the
+// credentials were wrong.
+export const TURNSTILE_FAILED_TOKEN = 'turnstile_failed';
+// LOGIN_UNAVAILABLE_TOKEN is returned when the backend could not evaluate the
+// credentials at all, for example during a database outage.
+export const LOGIN_UNAVAILABLE_TOKEN = 'login_unavailable';
 
 // SsoSubmitState describes the visible auth form state needed to decide whether it can submit.
 export interface SsoSubmitState {
@@ -33,6 +40,20 @@ export function isTotpRequiredError(message: string): boolean {
 // isTurnstileRequiredError reports whether an auth error is asking for Turnstile verification.
 export function isTurnstileRequiredError(message: string): boolean {
   return message.trim().toLowerCase().includes(TURNSTILE_REQUIRED_TOKEN);
+}
+
+// isTurnstileFailedError reports whether a supplied Turnstile token was rejected.
+export function isTurnstileFailedError(message: string): boolean {
+  return message.trim().toLowerCase().includes(TURNSTILE_FAILED_TOKEN);
+}
+
+// describeSsoAuthError turns a backend auth error into a message for the user.
+// Stable machine tokens are replaced by explanations; other messages pass through.
+export function describeSsoAuthError(message: string): string {
+  if (message.trim().toLowerCase().includes(LOGIN_UNAVAILABLE_TOKEN)) {
+    return 'Sign-in is temporarily unavailable. Please try again in a moment.';
+  }
+  return message;
 }
 
 // isTurnstileEnabled reports whether a site key is configured.

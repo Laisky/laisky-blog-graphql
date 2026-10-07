@@ -54,7 +54,7 @@ func (s *Blog) FindUserByOIDCIdentity(ctx context.Context, provider string, subj
 // FindUserByAccount loads a user by sanitized account value.
 // It accepts a context and account, returning the matched user.
 func (s *Blog) FindUserByAccount(ctx context.Context, account string) (*model.User, error) {
-	account, err := sanitizeUserAccount(account)
+	account, err := s.sanitizeExistingAccount(account)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize account")
 	}
@@ -91,11 +91,11 @@ func (s *Blog) GetOrCreateOIDCUser(ctx context.Context,
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	subject = strings.TrimSpace(subject)
 	var err error
-	email, err = sanitizeUserAccount(email)
+	email, err = s.sanitizeExistingAccount(email)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize oidc email")
 	}
-	displayName, err = sanitizeUserDisplayName(displayName)
+	displayName, err = normalizeProviderDisplayName(displayName)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize oidc display name")
 	}

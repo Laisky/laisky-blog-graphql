@@ -124,3 +124,59 @@ func TestAuthChallengeTrackerDefaultsAppliedForNonPositiveConfig(t *testing.T) {
 	require.Equal(t, defaultTurnstileFailureThreshold, tracker.failureThreshold)
 	require.Equal(t, defaultTurnstileMaxTrackedClients, tracker.maxClients)
 }
+
+// TestAuthChallengeTrackerSolvedChallengeAllowance verifies a solved challenge
+// admits a bounded number of follow-up requests (such as the TOTP step) and is
+// revoked by the next credential failure.
+func TestAuthChallengeTrackerSolvedChallengeAllowance(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	tracker := newTestTracker(time.Minute, 100, 15*time.Minute, 2, &now)
+	tracker.clearanceUses = 2
+
+	tracker.recordFailure("client")
+	tracker.recordFailure("client")
+	require.True(t, tracker.challengeRequired("client"))
+	require.False(t, tracker.admitWithoutChallenge("client"))
+
+	tracker.recordChallengePassed("client")
+	require.False(t, tracker.challengeRequired("client"), "a fresh allowance is not consumed by a query")
+	require.True(t, tracker.admitWithoutChallenge("client"))
+	require.True(t, tracker.admitWithoutChallenge("client"))
+	require.False(t, tracker.admitWithoutChallenge("client"), "the allowance is bounded")
+	require.True(t, tracker.challengeRequired("client"))
+
+	tracker.recordChallengePassed("client")
+	tracker.recordFailure("client")
+	require.False(t, tracker.admitWithoutChallenge("client"), "a credential failure revokes the allowance")
+
+	tracker.recordChallengePassed("client")
+	now = now.Add(defaultTurnstileClearanceTTL + time.Second)
+	require.False(t, tracker.admitWithoutChallenge("client"), "the allowance expires")
+}
+
+// TestAuthChallengeTrackerLowRiskAdmitted verifies low-risk clients never need
+// a challenge and never consume an allowance.
+func TestAuthChallengeTrackerLowRiskAdmitted(t *testing.T) {
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	tracker := newTestTracker(time.Minute, 3, 15*time.Minute, 2, &now)
+
+	require.True(t, tracker.admitWithoutChallenge("never-seen"))
+	tracker.recordAttempt("client")
+	require.True(t, tracker.admitWithoutChallenge("client"))
+}
+
+// challengeRequired reports whether the client's next auth request would have
+// to solve a Turnstile challenge: it is high risk (recent request frequency or
+// accumulated failures) and holds no unused solved-challenge allowance. It does
+// not spend the allowance.
+func (t *authChallengeTracker) challengeRequired(key string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	client, ok := t.clients[key]
+	if !ok {
+		return false
+	}
+	now := t.now()
+	return t.highRiskLocked(key, client, now) && !client.hasClearance(now)
+}
