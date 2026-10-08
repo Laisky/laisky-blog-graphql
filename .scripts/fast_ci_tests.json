@@ -1,0 +1,26 @@
+[
+  {
+    "package": "./internal/library/toolpolicy",
+    "tests": [
+      "TestAdmissionBoundsEveryDNSLookup",
+      "TestReportedChainBoundsEveryDNSLookup",
+      "TestAdmittedAddressesHonorsParentContext",
+      "TestAdmittedAddressesSeparatesTimeoutFromDNSFailure",
+      "TestAdmitFetchURLPinsResolvedAddresses",
+      "TestVerifyEgressChain",
+      "TestEgressPolicyFromAdmission",
+      "TestQuery",
+      "TestOptionalIntNeverCoercesOrTruncates",
+      "TestOptionalBool",
+      "TestURLAdmission",
+      "TestURLCancellationAndDNSFailure",
+      "TestURLLogRedaction",
+      "TestURLForLogOriginOnly",
+      "TestURLForLogAllowedRequestAndAuditField"
+    ]
+  },
+  {
+    "package": "./internal/web/telegram/formatting",
+    "tests": ["TestEscapeTelegramMarkdown"]
+  }
+]

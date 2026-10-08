@@ -1749,6 +1749,10 @@ This is the same test that ships in `eval-driven-development` 2026 harnesses
 
 ### 7.7 Eval-as-CI wiring
 
+Owner cadence amendment (2026-10-08): [the fast-CI policy](../manual/fast_ci.md)
+supersedes the nightly/per-PR scheduling below. Evaluation is deliberately local
+or manually dispatched; its metrics, assertions and baseline rules are unchanged.
+
 - A new top-level make target `make eval-plugin PLUGIN=<name>` runs the full §7.3 suite on
   a developer box. CI runs the same target nightly per plugin and on every PR that
   touches `internal/mcp/memory/plugins/<plugin>/...`.

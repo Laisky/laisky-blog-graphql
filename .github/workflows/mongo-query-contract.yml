@@ -1,18 +1,13 @@
 name: mongo-query-contract
 
 on:
-  pull_request:
-    paths:
-      - '**/*.go'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/mongo-query-contract.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: mongo-query-contract-${{ github.event.pull_request.number }}
+  group: mongo-query-contract-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

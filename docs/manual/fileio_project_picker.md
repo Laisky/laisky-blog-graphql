@@ -73,6 +73,7 @@ pnpm lint
 pnpm build
 ```
 
-The PR-only `fileio-project-picker` workflow runs these checks without deployment,
+The manually dispatched `fileio-project-picker` workflow runs these checks without deployment,
 paid-provider calls or production secrets. Test source is not evidence that tests
 passed: consult the exact PR head's check results and PR validation notes.
+The [fast-CI policy](fast_ci.md) governs automatic checks and deliberate database acceptance.
