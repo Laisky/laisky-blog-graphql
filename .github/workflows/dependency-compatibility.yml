@@ -1,23 +1,13 @@
 name: dependency-compatibility
 
 on:
-  pull_request:
-    paths:
-      - '**/*.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Makefile'
-      - 'Dockerfile'
-      - 'gqlgen.yml'
-      - '**/*.graphql'
-      - '.scripts/**'
-      - '.github/workflows/dependency-compatibility.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: dependency-compatibility-${{ github.event.pull_request.number }}
+  group: dependency-compatibility-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

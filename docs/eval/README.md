@@ -91,6 +91,11 @@ This protocol is documented in [../proposals/mcp_memory_plugin_manager.md#75-gat
 
 ## 6. CI
 
+Owner cadence amendment (2026-10-08): evaluation now runs deliberately locally or
+by `workflow_dispatch`, as specified by [the fast-CI policy](../manual/fast_ci.md).
+This supersedes the nightly/per-PR trigger description below; scorecard hard
+gates and baseline adoption requirements are unchanged.
+
 The nightly + per-PR workflow lives at `.github/workflows/eval-nightly.yml`. It
 matrixes over the registered plugins and runs `make eval-plugin PLUGIN=<name>` for
 each. PRs touching `internal/mcp/memory/plugins/<plugin>/**` or

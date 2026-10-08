@@ -1,21 +1,13 @@
 name: fileio-project-picker
 
 on:
-  pull_request:
-    paths:
-      - 'internal/mcp/files/**'
-      - 'internal/mcp/auth/**'
-      - 'internal/web/interface_catalog.go'
-      - 'web/**'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/fileio-project-picker.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: fileio-project-picker-${{ github.event.pull_request.number }}
+  group: fileio-project-picker-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
