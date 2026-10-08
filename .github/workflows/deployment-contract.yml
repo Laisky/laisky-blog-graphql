@@ -1,0 +1,23 @@
+name: deployment-contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/deployment-contract.yml'
+      - '.scripts/test_deploy_workflow.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Deployment status, image verification and rollback contracts
+        run: python3 .scripts/test_deploy_workflow.py
