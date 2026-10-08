@@ -12,8 +12,8 @@ require (
 	github.com/Laisky/gin-middlewares/v7 v7.0.3-0.20260320133617-ccf155d4ffea
 	github.com/Laisky/go-config/v2 v2.0.0
 	github.com/Laisky/go-redis/v2 v2.0.2
-	github.com/Laisky/go-utils/v6 v6.3.0
-	github.com/Laisky/zap v1.27.1-0.20260318034917-6e5a9fb2b3d1
+	github.com/Laisky/go-utils/v6 v6.3.2-0.20261008143735-d465b5cfdaa2
+	github.com/Laisky/zap v1.27.1-0.20261006114731-55f41c2b5061
 	github.com/avast/retry-go/v4 v4.7.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -101,6 +101,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dlclark/regexp2/v2 v2.8.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/emmansun/gmsm v0.45.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.8 // indirect
 	github.com/ethereum/go-ethereum v1.17.6 // indirect

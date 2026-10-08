@@ -54,7 +54,7 @@ read -r -d '' AWK_PROGRAM <<'AWK' || true
 BEGIN {
     IGNORECASE = 0
     sql_re = "(SELECT|UPDATE|DELETE|INSERT|FROM|JOIN|INTO|REPLACE INTO)"
-    table_re = "(mcp_files|mcp_file_chunks|mcp_file_chunk_embeddings|mcp_file_chunk_bm25|mcp_file_index_jobs|mcp_file_versions)\\>"
+    table_re = "(mcp_files|mcp_file_chunks|mcp_file_chunk_embeddings|mcp_file_chunk_bm25|mcp_file_index_jobs|mcp_file_versions)([^[:alnum:]_]|$)"
 }
 {
     lines[NR] = $0
@@ -117,6 +117,10 @@ while IFS=$'\t' read -r locator status excerpt; do
             ;;
     esac
 done <"$tmp_report"
+
+if [ "$scanned" -eq 0 ]; then
+    fail "no tracked SQL queries scanned (scope or awk expression is misconfigured)"
+fi
 
 echo
 if [ "$failures" -eq 0 ]; then

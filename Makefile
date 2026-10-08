@@ -40,6 +40,7 @@ lint-pure-go:
 
 .PHONY: lint-system-owner
 lint-system-owner:
+	bash ./.scripts/check_system_owner_test.sh
 	./.scripts/check_system_owner.sh
 
 .PHONY: build
