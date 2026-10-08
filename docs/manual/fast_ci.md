@@ -72,6 +72,13 @@ and `deployment-contract.yml` safety tests also remain unchanged. Consequently
 the overall workflow inventory includes separate safety jobs beyond the fast
 unit gate. Altering those is outside this test-cadence amendment.
 
+The complete frontend `pnpm test` suite and `pnpm build` production build run in
+the `project-quality / frontend-acceptance` job only on `workflow_dispatch`, or
+locally using the commands above. Its locked dependencies, tool versions and
+test/build commands are preserved. `frontend-quality` keeps `pnpm lint` and the
+all-severity dependency audit automatic; Go quality and security steps are
+unchanged. Manual dispatch runs both qualification and the retained safety jobs.
+
 This policy supersedes earlier statements that database/compatibility acceptance
 must run per PR, and the nightly/per-PR evaluation wiring described in proposal
 section 7.7 and the eval runbook. Evaluation workflows already use manual dispatch.

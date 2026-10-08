@@ -98,12 +98,6 @@ jobs:
       - name: Frontend lint
         if: ${{ !cancelled() }}
         run: pnpm lint
-      - name: Frontend behavior tests
-        if: ${{ !cancelled() }}
-        run: pnpm test
-      - name: Production build
-        if: ${{ !cancelled() }}
-        run: pnpm build
       - name: Audit all dependency severities
         if: ${{ !cancelled() }}
         run: pnpm audit --json > /tmp/project-quality-frontend-audit.json
@@ -114,3 +108,31 @@ jobs:
           path: /tmp/project-quality-frontend-audit.json
           retention-days: 7
           if-no-files-found: error
+
+  frontend-acceptance:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Frontend behavior tests
+        if: ${{ !cancelled() }}
+        run: pnpm test
+      - name: Production build
+        if: ${{ !cancelled() }}
+        run: pnpm build
