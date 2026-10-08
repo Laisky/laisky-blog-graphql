@@ -99,6 +99,7 @@ require (
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/consensys/gnark-crypto v0.21.0 // indirect
 	github.com/crate-crypto/go-eth-kzg v1.5.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dlclark/regexp2/v2 v2.8.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect

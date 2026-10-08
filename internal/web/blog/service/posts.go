@@ -192,6 +192,9 @@ func (s *Blog) LoadPostHistory(ctx context.Context, fileID string, language mode
 	if err := validateArweaveFileID(fileID); err != nil {
 		return nil, errors.Wrap(err, "validate file id")
 	}
+	if err := s.requireRegisteredPostHistory(ctx, fileID); err != nil {
+		return nil, errors.WithStack(err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ario.laisky.com/"+fileID, nil)
 	if err != nil {
