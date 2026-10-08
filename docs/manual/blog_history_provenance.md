@@ -4,7 +4,7 @@
 
 Current `hidden: true` and nonempty `post_password` deny public history, consistent with the current public reader's body protection. An explicit `post_status` other than `publish` also denies history. Registered legacy records with a missing or empty status remain eligible: the existing public reader's `makeQuery` has no status predicate, and legacy Python archive support predates the current Go publisher, which explicitly writes `publish`. This exception is limited to a successful trusted membership lookup; it does not trust status in downloaded archive JSON.
 
-A missing record, unavailable database, or malformed metadata fails closed. Removing a post record also removes public history authorization, even if an immutable archive remains at the gateway. Each history view now needs current publication metadata and a gateway fetch; a browser's old `postHistory` cache entry is not sufficient authorization. The companion frontend change always asks the server and ignores legacy cached historical bodies. Current article caching remains unchanged.
+A missing record, unavailable database, or metadata decoding failure fails closed. Removing a post record also removes public history authorization, even if an immutable archive remains at the gateway. Each history view now needs current publication metadata and a gateway fetch; a browser's old `postHistory` cache entry is not sufficient authorization. The companion frontend change always asks the server and ignores legacy cached historical bodies. Current article caching remains unchanged.
 
 Authorized archive contents are returned unchanged. This preserves source-authored iframes, Slide HTML, styles, media, SVG/MathML, current and legacy JSON, `gz::` compressed bodies, and English translations. This change does not introduce a new HTML policy or claim that intentionally authored active HTML is forbidden.
 
@@ -17,5 +17,5 @@ The first retained regression returned synthetic iframe-canary JSON through a mo
 Run the focused regressions with:
 
 ```sh
-GOMAXPROCS=2 go test -mod=readonly -p 1 -count=1 -timeout45s ./internal/web/blog/service -run '^TestPostHistory' -v
+GOMAXPROCS=2 go test -mod=readonly -p 1 -count=1 -timeout 45s ./internal/web/blog/service -run '^TestPostHistory' -v
 ```
