@@ -99,8 +99,8 @@ jobs:
     needs: [check_skip, build_latest]
     if: needs.check_skip.outputs.should_skip != 'true'
     concurrency:
-      group: deploy-${{ github.ref }}
-      cancel-in-progress: true
+      group: deploy-b1
+      cancel-in-progress: false
     steps:
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1.0.3
@@ -110,7 +110,62 @@ jobs:
           password: ${{ secrets.TARGET_HOST_PASSWORD }}
           port: ${{ secrets.TARGET_HOST_SSH_PORT }}
           script: |
-            docker pull ppcelery/laisky-blog-graphql:latest
+            bash -se <<'DEPLOY'
+            set -euo pipefail
             cd /home/laisky/repo/VPS
-            docker-compose -f b1-docker-compose.yml up -d --remove-orphans --force-recreate graphql
-            docker ps
+            image=ppcelery/laisky-blog-graphql:latest
+            rollback_image=ppcelery/laisky-blog-graphql:rollback-ci-${{ github.run_id }}
+            compose=(docker compose -f b1-docker-compose.yml)
+
+            # Fail before changing image tags or containers; never fall back to v1.
+            docker compose version
+            "${compose[@]}" config --quiet
+            previous_container=$("${compose[@]}" ps -q graphql)
+            previous_image=
+            if [[ -n "$previous_container" ]]; then
+              [[ "$previous_container" != *$'\n'* ]]
+              previous_image=$(docker inspect --format '{{.Image}}' "$previous_container")
+              docker tag "$previous_image" "$rollback_image"
+            fi
+
+            docker pull "$image"
+            expected_image=$(docker image inspect --format '{{.Id}}' "$image")
+
+            verify_image() {
+              local container actual running
+              container=$("${compose[@]}" ps -q graphql) || return $?
+              [[ -n "$container" && "$container" != *$'\n'* ]] || return 1
+              actual=$(docker inspect --format '{{.Image}}' "$container") || return $?
+              running=$(docker inspect --format '{{.State.Running}}' "$container") || return $?
+              [[ "$actual" == "$1" && "$running" == true ]]
+            }
+
+            rollback() {
+              local deploy_status=$1 rollback_status
+              echo "Deployment failed (exit $deploy_status)." >&2
+              if [[ -z "$previous_image" ]]; then
+                echo 'No previous container; automatic rollback is unavailable.' >&2
+              elif docker tag "$previous_image" "$image" &&
+                "${compose[@]}" up -d --no-deps --pull never --force-recreate --wait --wait-timeout 120 graphql &&
+                verify_image "$previous_image"; then
+                echo "Rollback restored the previous image; retained as $rollback_image." >&2
+              else
+                rollback_status=$?
+                echo "Rollback failed (exit $rollback_status); saved image: $rollback_image." >&2
+              fi
+              # Diagnostics and even a successful rollback must not turn a failed deploy green.
+              "${compose[@]}" ps graphql || true
+              exit "$deploy_status"
+            }
+
+            # Recreate only GraphQL and verify the locally pulled image, without another pull.
+            if "${compose[@]}" up -d --no-deps --pull never --force-recreate --wait --wait-timeout 120 graphql; then
+              if verify_image "$expected_image"; then
+                "${compose[@]}" ps graphql
+              else
+                rollback "$?"
+              fi
+            else
+              rollback "$?"
+            fi
+            DEPLOY
