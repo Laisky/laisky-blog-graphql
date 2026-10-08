@@ -65,7 +65,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: '1.27.2'
       - name: Namespace SQL guard
         run: bash .scripts/check_system_owner.sh
       - name: FileIO and auth behavior tests with race detector
