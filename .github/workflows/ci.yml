@@ -114,7 +114,7 @@ jobs:
             set -euo pipefail
             cd /home/laisky/repo/VPS
             image=ppcelery/laisky-blog-graphql:latest
-            rollback_image=ppcelery/laisky-blog-graphql:rollback-ci-${{ github.run_id }}
+            rollback_image=ppcelery/laisky-blog-graphql:rollback-ci-${{ github.run_id }}-${{ github.run_attempt }}
             compose=(docker compose -f b1-docker-compose.yml)
 
             # Fail before changing image tags or containers; never fall back to v1.

@@ -31,8 +31,8 @@ The Compose mock returned 17 with the reported parser error; the payload returne
 
 Before implementation, the first 12 retained contracts in
 `.scripts/test_deploy_workflow.py` all failed against that payload. After the fix,
-those same contracts passed. Review additions expanded coverage to 19 test methods
-(24 isolated scenario executions), all passing. Run:
+those same contracts passed. Review additions expanded coverage to 20 test methods
+(26 isolated scenario executions), all passing. Run:
 
 ```sh
 python3 .scripts/test_deploy_workflow.py
@@ -43,6 +43,8 @@ snapshot and pull failures, container-query/inspection failures, empty/multiple
 container IDs, wrong image, stopped container, original failure propagation after
 successful/failed rollback, rollback verification, failed diagnostics, first
 installation without a rollback image, and retention of the saved rollback tag.
+A review-discovered rerun tag collision was separately reproduced RED before
+adding the workflow attempt number; reruns now preserve distinct recovery tags.
 The tests execute the actual workflow payload and reject unknown mock commands.
 A PR-only `deployment-contract` job keeps these checks in CI.
 
@@ -55,7 +57,7 @@ remote Docker failure.
 
 The SSH payload explicitly invokes Bash with strict options and uses Compose v2.
 Configuration validates before pulling or changing image tags. The running
-container's image is saved as `ppcelery/laisky-blog-graphql:rollback-ci-<run-id>`.
+container's image is saved as `ppcelery/laisky-blog-graphql:rollback-ci-<run-id>-<attempt>`.
 Recreation targets only `graphql`, leaves dependencies/orphans alone, waits up to
 120 seconds, disables an extra pull, and checks the actual running image ID.
 

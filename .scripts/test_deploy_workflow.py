@@ -71,18 +71,19 @@ sys.exit(99)
 '''
 
 
-def deployment_payload(directory):
+def deployment_payload(directory, run_attempt=1):
     workflow = WORKFLOW.read_text()
     marker = "          script: |\n"
     if workflow.count(marker) != 1:
         raise AssertionError("Expected exactly one SSH deployment payload")
     payload = textwrap.dedent(workflow.split(marker, 1)[1])
     payload = payload.replace("/home/laisky/repo/VPS", str(directory))
-    return re.sub(r"\$\{\{\s*github.run_id\s*\}\}", "12345", payload)
+    payload = re.sub(r"\$\{\{\s*github.run_id\s*\}\}", "12345", payload)
+    return re.sub(r"\$\{\{\s*github.run_attempt\s*\}\}", str(run_attempt), payload)
 
 
 class DeploymentContract(unittest.TestCase):
-    def run_deploy(self, scenario):
+    def run_deploy(self, scenario, run_attempt=1):
         with tempfile.TemporaryDirectory(prefix="deploy-contract-") as directory:
             root = Path(directory)
             for executable in ("docker", "docker-compose"):
@@ -90,7 +91,7 @@ class DeploymentContract(unittest.TestCase):
                 path.write_text(MOCK)
                 path.chmod(0o755)
             result = subprocess.run(
-                ["bash", "-c", deployment_payload(root)],
+                ["bash", "-c", deployment_payload(root, run_attempt)],
                 env={**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"],
                      "MOCK_ROOT": directory, "SCENARIO": scenario},
                 capture_output=True, text=True, timeout=10,
@@ -142,6 +143,15 @@ class DeploymentContract(unittest.TestCase):
         self.assertIn("group: deploy-b1", deployment)
         self.assertIn("cancel-in-progress: false", deployment)
         self.assertNotIn("script_stop:", deployment)
+
+    def test_reruns_retain_distinct_rollback_images(self):
+        tags = []
+        for attempt in (1, 2):
+            result, calls = self.run_deploy("success", run_attempt=attempt)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            tags.extend(call[-1] for call in calls if call[1:2] == ["tag"])
+        self.assertEqual(tags, ["ppcelery/laisky-blog-graphql:rollback-ci-12345-1",
+                                "ppcelery/laisky-blog-graphql:rollback-ci-12345-2"])
 
     def test_missing_v2_stops_before_pull(self):
         result, calls = self.run_deploy("missing_v2")
