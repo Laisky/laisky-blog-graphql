@@ -448,28 +448,11 @@ func (r *MutationResolver) AcquireLock(ctx context.Context,
 	return ok, nil
 }
 
-// GeneralAddLLMStormTask enqueues an LLM storm task for the authenticated worker.
-func (r *MutationResolver) GeneralAddLLMStormTask(ctx context.Context, prompt string, apiKey string) (string, error) {
-	logger := gmw.GetLogger(ctx).
-		Named("general_add_llm_storm_task")
-
-	if service.Instance == nil {
-		return "", errors.New("general service not initialized")
-	}
-
-	uc := &jwt.UserClaims{}
-	if err := auth.Instance.GetUserClaims(ctx, uc); err != nil {
-		return "", errors.Wrap(err, "validate worker")
-	}
-	logger = logger.With(zap.String("username", uc.Subject))
-
-	taskID, err := service.Instance.AddLLMStormTask(ctx, prompt, apiKey)
-	if err != nil {
-		return "", errors.Wrap(err, "enqueue llm storm task")
-	}
-
-	logger.Info("enqueued llm storm task", zap.String("task_id", taskID))
-	return taskID, nil
+// GeneralAddLLMStormTask rejects new research tasks after llm-storm retirement.
+// The mutation remains in the schema so existing clients receive a stable error;
+// GeneralGetLLMStormTaskResult continues to serve stored results.
+func (r *MutationResolver) GeneralAddLLMStormTask(_ context.Context, _ string, _ string) (string, error) {
+	return "", errors.New("llm-storm research has been retired; new tasks are unavailable")
 }
 
 // GeneralAddHTMLCrawlerTask enqueues an HTML crawler task for the authenticated worker.
