@@ -14,6 +14,7 @@ require (
 	github.com/Laisky/go-redis/v2 v2.0.2
 	github.com/Laisky/go-utils/v6 v6.3.0
 	github.com/Laisky/zap v1.27.1-0.20260318034917-6e5a9fb2b3d1
+	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/avast/retry-go/v4 v4.7.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -205,6 +206,7 @@ require (
 	github.com/xo/terminfo v1.2.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.dedis.ch/kyber/v3 v3.1.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.9.1 // indirect
