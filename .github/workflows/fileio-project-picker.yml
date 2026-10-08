@@ -1,21 +1,13 @@
 name: fileio-project-picker
 
 on:
-  pull_request:
-    paths:
-      - 'internal/mcp/files/**'
-      - 'internal/mcp/auth/**'
-      - 'internal/web/interface_catalog.go'
-      - 'web/**'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/fileio-project-picker.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: fileio-project-picker-${{ github.event.pull_request.number }}
+  group: fileio-project-picker-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -73,7 +65,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: '1.27.2'
       - name: Namespace SQL guard
         run: bash .scripts/check_system_owner.sh
       - name: FileIO and auth behavior tests with race detector

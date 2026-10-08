@@ -1,18 +1,13 @@
 name: mongo-query-contract
 
 on:
-  pull_request:
-    paths:
-      - '**/*.go'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/mongo-query-contract.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: mongo-query-contract-${{ github.event.pull_request.number }}
+  group: mongo-query-contract-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache: true
       - name: BSON wire and real MongoDB query contracts
         run: go test -race -count=3 -v -timeout 5m ./internal/web/blog/service ./internal/web/twitter/service -run TestMongo

@@ -95,8 +95,8 @@ github.com/Laisky/go-utils/v3 v3.5.0 h1:CsPA/mcIHqBnA6I8rF/zDn9iRDE6BFQePrC7c36e
 github.com/Laisky/go-utils/v3 v3.5.0/go.mod h1:UY8fpnM/YqroAC3cxF2rwaehfX4vQktz9MJYrTxU9kg=
 github.com/Laisky/go-utils/v5 v5.2.1 h1:unaHHc99aACYrYEQnRTqamqT/Eq7/YZMzme6KYYTQhk=
 github.com/Laisky/go-utils/v5 v5.2.1/go.mod h1:Zs66B4NyyHHX+C13YFZLQrIFBA4eyvoWLqnu/C3/L5s=
-github.com/Laisky/go-utils/v6 v6.3.2-0.20261008143735-d465b5cfdaa2 h1:poq5eIG4B6XWOFPg+TiZE41B201wZwq3LkE93sCV0Dg=
-github.com/Laisky/go-utils/v6 v6.3.2-0.20261008143735-d465b5cfdaa2/go.mod h1:vR5j5xG7ZrBcGIC3HMoLbC0TC8aTXu7voSDR78cOr58=
+github.com/Laisky/go-utils/v6 v6.3.2-0.20261008165128-506ec9758d5f h1:Nn0K/vpv0yQg0XgaDqvsJlQSatjUxAyokbbIefYUp4k=
+github.com/Laisky/go-utils/v6 v6.3.2-0.20261008165128-506ec9758d5f/go.mod h1:vR5j5xG7ZrBcGIC3HMoLbC0TC8aTXu7voSDR78cOr58=
 github.com/Laisky/golang-fifo v1.0.1-0.20240403092208-1d90c6c33e11 h1:floHhmC3CTMGzxG0pagDMNLIWchPpbJocYKL5DtphGg=
 github.com/Laisky/golang-fifo v1.0.1-0.20240403092208-1d90c6c33e11/go.mod h1:j90tUqwBaEncIzpAd6ZGPZHWjclgAyMY8fdOqsewitE=
 github.com/Laisky/graphql v1.0.6 h1:NEULGxfxo+wbsW2OmqBXOMNUGgqo8uFjWNabwuNK10g=
@@ -120,6 +120,8 @@ github.com/alecthomas/units v0.0.0-20190717042225-c3de453c63f4/go.mod h1:ybxpYRF
 github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d/go.mod h1:rBZYJk541a8SKzHPHnH3zbiI+7dagKZ0cgpgrD7Fyho=
 github.com/alexvec/go-bip39 v1.1.0 h1:NIIGUK5upunOmun1ud6wuLmgGOlyNJisOvaM+zPoWic=
 github.com/alexvec/go-bip39 v1.1.0/go.mod h1:krOrXeBrNpaizxUULtpLeQ64bm/+0vPMHk11kXwb9lY=
+github.com/alicebob/miniredis/v2 v2.39.0 h1:M7WbmV5BmV56L8KTG0rw6vEQ+woTOghpDgin2xv4A0g=
+github.com/alicebob/miniredis/v2 v2.39.0/go.mod h1:TcL7YfarKPGDAthEtl5NBeHZfeUQj6OXMm/+iu5cLMM=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0/go.mod h1:t2tdKJDJF9BV14lnkjHmOQgcvEKgtqs5a1N3LNdJhGE=
@@ -853,6 +855,8 @@ github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.8.6 h1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=
 github.com/yuin/goldmark v1.8.6/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
+github.com/yuin/gopher-lua v1.1.1 h1:kYKnWBjvbNP4XLT3+bPEwAXJx262OhaHDWDVOPjL46M=
+github.com/yuin/gopher-lua v1.1.1/go.mod h1:GBR0iDaNXjAgGg9zfCvksxSRnQx76gclCIb7kdAd1Pw=
 github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=
 github.com/zeebo/assert v1.3.0/go.mod h1:Pq9JiuJQpG8JLJdtkwrJESF0Foym2/D9XMU5ciN/wJ0=
 github.com/zeebo/xxh3 v1.1.0 h1:s7DLGDK45Dyfg7++yxI0khrfwq9661w9EN78eP/UZVs=
@@ -1028,8 +1032,8 @@ golang.org/x/net v0.0.0-20220412020605-290c469a71a5/go.mod h1:CfG3xpIq0wQ8r1q4Su
 golang.org/x/net v0.0.0-20220425223048-2871e0cb64e4/go.mod h1:CfG3xpIq0wQ8r1q4Su4UZFWDARRcnwPjda9FqA0JpMk=
 golang.org/x/net v0.0.0-20220520000938-2e3eb7b945c2/go.mod h1:CfG3xpIq0wQ8r1q4Su4UZFWDARRcnwPjda9FqA0JpMk=
 golang.org/x/net v0.0.0-20220722155237-a158d28d115b/go.mod h1:XRhObCWvk6IyKnWLug+ECip1KBveYUHfp+8e9klMJ9c=
-golang.org/x/net v0.59.0 h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=
-golang.org/x/net v0.59.0/go.mod h1:2DA/G1UfVbCpQPeWTmMPGY7Cs2PkBkwu743bVX5PIVg=
+golang.org/x/net v0.60.0 h1:79p50tfZlm0J9YfoDsSi639qSXNGVwEzOPLCxM2FsYU=
+golang.org/x/net v0.60.0/go.mod h1:2DA/G1UfVbCpQPeWTmMPGY7Cs2PkBkwu743bVX5PIVg=
 golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be/go.mod h1:N/0e6XlmueqKjAGxoOufVs8QHGRruUQn6yWY3a++T0U=
 golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421/go.mod h1:gOpvHmFTYa4IltrdGE7lF6nIHvwfUNPOp7c8zoXwtLw=
 golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45/go.mod h1:gOpvHmFTYa4IltrdGE7lF6nIHvwfUNPOp7c8zoXwtLw=
