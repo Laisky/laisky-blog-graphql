@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
+import { buildSsoRedirectUrl } from '@/lib/sso-redirect';
 import { storeSsoToken } from '@/lib/sso-session';
 import { buildRedirectUrlWithToken } from '@/pages/sso-login';
 import { describeSsoAuthError } from '@/pages/sso-login-state';
@@ -54,7 +55,10 @@ export function SsoGithubCallbackPage() {
         if (!token) {
           throw new Error('GitHub login succeeded but no token was returned.');
         }
-        const redirectURL = buildGithubCallbackRedirect(data.UserGithubOAuthLogin.redirect_to, token, window.location.origin);
+        const target = data.UserGithubOAuthLogin.redirect_to.trim()
+          ? new URL(data.UserGithubOAuthLogin.redirect_to, window.location.origin)
+          : new URL('/profile', window.location.origin);
+        const redirectURL = await buildSsoRedirectUrl(target, token);
         if (!isCancelled) {
           setStatus({ tone: 'success', message: 'GitHub authorization complete. Redirecting...' });
           // Persist the session on the SSO origin before leaving, so returning

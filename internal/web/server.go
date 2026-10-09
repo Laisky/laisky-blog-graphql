@@ -178,6 +178,7 @@ func RunServer(addr string, resolver *Resolver) {
 			ginMw.WithLogger(log.Logger.Named("gin")),
 		),
 		addSecurityHeaders,
+		ssoCodeTransport(prefix),
 		allowCORS,
 	)
 
@@ -186,6 +187,7 @@ func RunServer(addr string, resolver *Resolver) {
 	}
 
 	registerOneapiProxyRoutes(server, prefix)
+	registerSSOCodeRoutes(server, prefix, resolver)
 
 	// Shared application state exists independently of transport registration.
 	var activeMCP *mcp.Server
