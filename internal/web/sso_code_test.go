@@ -342,7 +342,7 @@ func TestSSOCodeCompletedBodyResetsDeadline(t *testing.T) {
 		State: strings.Repeat("A", 43), Challenge: ssoDigest(strings.Repeat("a", 43)), ChallengeMethod: "S256"}
 	body, err := json.Marshal(bindings)
 	require.NoError(t, err)
-	_, err = fmt.Fprintf(connection, "POST /sso/code HTTP/1.1\r\nHost: local.test\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+	_, err = fmt.Fprintf(connection, "POST /sso/code HTTP/1.1\r\nHost: local.test\r\nContent-Type: application/json\r\nAuthorization: Bearer synthetic-fixture\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
 	require.NoError(t, err)
 	reader := bufio.NewReader(connection)
 	response, err := http.ReadResponse(reader, nil)
