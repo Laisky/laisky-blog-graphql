@@ -73,7 +73,7 @@ production credentials through the fast unit gate.
 
 The 2026-10-09 owner-approved simplification also makes `project-quality`,
 `mcp-network-security` and CodeQL opt-in with `workflow_dispatch`. Their complete
-job bodies remain available: uncapped Go diagnostics, symbol/package vulnerability
+job bodies remain in source: uncapped Go diagnostics, symbol/package vulnerability
 scans, vet and pure-Go/SQL-owner invariants, frontend lint/dependency audit,
 frontend test/build acceptance, and the three-run network security race suite.
 CodeQL no longer runs on master/develop push or PR events or its former Saturday
@@ -85,21 +85,29 @@ and the path-filtered `deployment-contract.yml` safety job stay byte-for-byte
 unchanged. Dependency/database acceptance, memory benchmarks and evaluation
 already use manual dispatch and remain unchanged.
 
-On a Go-changing PR targeting master/develop, executable validation jobs fall
+In the checked-in YAML, a Go-changing PR targeting master/develop falls
 from five to one: Linter (one), project-quality (two), MCP network security (one)
 and CodeQL (one) become Linter only. The old project-quality frontend-acceptance
 job was skipped on PRs and is excluded from this execution count. PRs touching
 deployment wiring still add the unchanged shell-contract job. A typical master
 source push falls from two validation jobs to one, alongside the unchanged four
 delivery jobs. The Saturday CodeQL schedule falls from one job to zero. These
-counts cover checked-in Actions; account-managed external checks are separate.
+counts describe declared YAML scheduling, not account settings. A read-only
+Actions inventory found CodeQL already `disabled_manually`. Therefore the active
+Actions count for a typical Go PR is four to one, and master validation stays
+one to one alongside four delivery jobs. CodeQL remains disabled; this PR does
+not enable it or repair its inherited v1 actions. Its preserved commands become
+manual-only in source if an owner separately enables the integration later.
+Account-managed external checks are separate.
 
 Before editing, an authorized read of master branch protection returned
 `required_status_checks: null` and the repository ruleset list was empty.
 No branch protection, account/integration settings or credentials were changed.
 GitHub's [workflow-dispatch documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)
-describes manual selection of a ref. A workflow must first exist on the default
-branch to be dispatched; use the unchanged local commands for this unmerged PR.
+describes manual selection of a ref. An enabled workflow with a dispatch trigger
+must first exist on the default branch to be dispatched; use the unchanged local
+commands for this unmerged PR. CodeQL's existing disabled state is an additional
+manual-execution limitation, not changed by this repository patch.
 [Required-check documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)
 warns that removing a required workflow trigger can otherwise leave a check
 pending. Recheck protection before any later merge; this PR does not change it.
