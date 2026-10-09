@@ -371,7 +371,7 @@ func TestSSOCodeDuplicateInputs(t *testing.T) {
 		State: strings.Repeat("A", 43), Challenge: ssoDigest(strings.Repeat("a", 43)), ChallengeMethod: "S256"}
 	base, err := json.Marshal(bindings)
 	require.NoError(t, err)
-	for _, key := range []string{"state", "STATE", `state`} {
+	for _, key := range []string{"state", "STATE", `\u0073tate`} {
 		body := string(base[:len(base)-1]) + `,"` + key + `":"` + bindings.State + `"}`
 		request := httptest.NewRequest(http.MethodPost, "/sso/code", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
