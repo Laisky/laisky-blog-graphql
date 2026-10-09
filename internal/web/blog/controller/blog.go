@@ -456,7 +456,8 @@ func (r *MutationResolver) UserResendActiveEmail(ctx context.Context,
 	return nil, errors.Errorf("notimplement")
 }
 
-// BlogCreatePost create new blog post
+// BlogCreatePost publishes a new post for an authenticated administrator.
+// It accepts post content and language and returns the published post or an authorization error.
 func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 	newpost models.NewBlogPost,
 	language models.Language,
@@ -466,6 +467,9 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 	if err != nil {
 		logger.Debug("user invalidate", zap.Error(err))
 		return nil, errors.WithStack(err)
+	}
+	if !user.IsAdmin() {
+		return nil, errors.New("blog publishing requires an administrator")
 	}
 
 	newpost.Language = language
@@ -594,6 +598,8 @@ func (r *MutationResolver) signLoginResponse(ctx context.Context, user *model.Us
 	}, nil
 }
 
+// BlogAmendPost applies administrator category curation or author-owned content amendments.
+// It accepts the requested post changes and language and returns the amended post or an authorization error.
 func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	post models.NewBlogPost,
 	language models.Language,
@@ -603,6 +609,9 @@ func (r *MutationResolver) BlogAmendPost(ctx context.Context,
 	if err != nil {
 		logger.Debug("user invalidate", zap.Error(err))
 		return nil, errors.WithStack(err)
+	}
+	if !user.IsAdmin() {
+		return nil, errors.New("blog publishing requires an administrator")
 	}
 
 	post.Language = language
