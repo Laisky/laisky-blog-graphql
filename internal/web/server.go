@@ -555,6 +555,12 @@ func newAgentAPIProbeHandler() gin.HandlerFunc {
 
 // allowCORS applies the shared cross-origin headers for browser clients.
 func allowCORS(ctx *gin.Context) {
+	// Scoped code transport already enforces its fixed origin and POST-only policy.
+	if ctx.GetBool(ssoCodeTransportContextKey) {
+		ctx.Next()
+		return
+	}
+
 	logger := ginMw.GetLogger(ctx).Named("cors")
 	origin := strings.TrimSpace(ctx.Request.Header.Get("Origin"))
 	allowedOrigin := ""

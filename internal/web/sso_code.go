@@ -25,18 +25,19 @@ import (
 )
 
 const (
-	blogSSOOrigin          = "https://blog.laisky.com"
-	blogSSOClient          = "blog"
-	ssoCodeTTL             = 60 * time.Second
-	ssoRequestTimeout      = 5 * time.Second
-	ssoBodyLimit           = 8192
-	ssoErrorField          = "error"
-	ssoInvalidRequest      = "invalid_request"
-	ssoInvalidGrant        = "invalid_grant"
-	ssoInvalidSession      = "invalid_session"
-	ssoUnavailable         = "temporarily_unavailable"
-	ssoAuthorizationHeader = "Authorization"
-	ssoBearerPrefix        = "Bearer "
+	blogSSOOrigin              = "https://blog.laisky.com"
+	blogSSOClient              = "blog"
+	ssoCodeTTL                 = 60 * time.Second
+	ssoRequestTimeout          = 5 * time.Second
+	ssoBodyLimit               = 8192
+	ssoErrorField              = "error"
+	ssoInvalidRequest          = "invalid_request"
+	ssoInvalidGrant            = "invalid_grant"
+	ssoInvalidSession          = "invalid_session"
+	ssoUnavailable             = "temporarily_unavailable"
+	ssoAuthorizationHeader     = "Authorization"
+	ssoBearerPrefix            = "Bearer "
+	ssoCodeTransportContextKey = "laisky.sso.code_transport"
 )
 
 type ssoCodeBindings struct {
@@ -119,6 +120,7 @@ func ssoCodeTransport(prefix urlPrefixConfig) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		c.Set(ssoCodeTransportContextKey, true)
 		c.Header("Cache-Control", "no-store")
 		c.Header("Pragma", "no-cache")
 		c.Header("Referrer-Policy", "no-referrer")

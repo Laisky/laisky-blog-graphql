@@ -30,7 +30,7 @@ Unmarked legacy Blog redirects remain supported for issuer-first migration, so a
 bookmarked legacy login URL can still put a reusable bearer in the initial Blog HTTP
 request. Enabling the new client does not eliminate that migration path. A separately
 ordered issuer cutover must reject unmarked Blog handoffs after the new client is
-delivered; other clients remain compatible. This support change alone does not close #188.
+delivered; other clients remain compatible. Refs Laisky/laisky-blog#188; the issue remains open through migration.
 A code can still appear in request-target logs; PKCE protects redemption of an intercepted
 code. This work does not inspect or change edge/origin log retention.
 

@@ -399,3 +399,31 @@ func TestSSOCodeDuplicateInputs(t *testing.T) {
 	router.ServeHTTP(ssoDeadlineRecorder{result}, request)
 	require.Equal(t, http.StatusBadRequest, result.Code)
 }
+
+// TestSSOCodeActualCORSStack preserves scoped POST-only headers through the actual legacy CORS middleware.
+func TestSSOCodeActualCORSStack(t *testing.T) {
+	router := gin.New()
+	router.Use(ssoCodeTransport(urlPrefixConfig{}), allowCORS)
+	handler := ssoCodeHandler{}
+	router.POST("/sso/token", handler.redeem)
+	router.GET("/legacy", func(c *gin.Context) { c.String(http.StatusOK, "legacy") })
+	grant := ssoTokenRequest{ClientID: blogSSOClient, RedirectURI: blogSSOOrigin,
+		Code: strings.Repeat("A", 43), State: strings.Repeat("A", 43), Verifier: strings.Repeat("a", 43)}
+	response := ssoFixtureRequest(router, "/sso/token", grant, "", blogSSOOrigin)
+	require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	require.Equal(t, blogSSOOrigin, response.Header().Get("Access-Control-Allow-Origin"))
+	require.Equal(t, "POST", response.Header().Get("Access-Control-Allow-Methods"))
+	require.Empty(t, response.Header().Get("Access-Control-Allow-Credentials"))
+	require.Equal(t, []string{"Origin"}, response.Header().Values("Vary"))
+	require.Equal(t, "Content-Type, Authorization", response.Header().Get("Access-Control-Allow-Headers"))
+	denied := ssoFixtureRequest(router, "/sso/token", grant, "", "https://other.laisky.com")
+	require.Equal(t, http.StatusForbidden, denied.Code)
+	require.Empty(t, denied.Header().Get("Access-Control-Allow-Origin"))
+	request := httptest.NewRequest(http.MethodGet, "/legacy", nil)
+	request.Header.Set("Origin", "https://console.laisky.com")
+	legacy := httptest.NewRecorder()
+	router.ServeHTTP(legacy, request)
+	require.Equal(t, http.StatusOK, legacy.Code)
+	require.Equal(t, "true", legacy.Header().Get("Access-Control-Allow-Credentials"))
+	require.Contains(t, legacy.Header().Get("Access-Control-Allow-Methods"), "GET")
+}
