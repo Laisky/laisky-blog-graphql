@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
-import { storeSsoToken } from '@/lib/sso-session';
+import { loadSsoToken, storeSsoToken } from '@/lib/sso-session';
 import { SsoGithubCallbackPage } from './sso-github-callback';
 import { SsoLoginPage } from './sso-login';
 
@@ -123,6 +123,68 @@ describe('all existing auth completions use the opt-in code handoff', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'inert-password' } });
     fireEvent.click(screen.getByRole('button', { name: /^Login$/ }));
     await screen.findByText(/Unable to complete Blog SSO code handoff/);
+    expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe('authenticated session survives a failed code handoff', () => {
+  async function retryWithExistingSession() {
+    cleanup();
+    fetchCode.mockResolvedValue(new Response(JSON.stringify({ code, expires_in: 60 }),
+      { headers: { 'Content-Type': 'application/json' } }));
+    vi.mocked(fetchGraphQL).mockReset().mockResolvedValue({ BlogUser: {} });
+    loginPage();
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    expect(fetchCode).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetchGraphQL).mock.calls).toHaveLength(1);
+    expect(new URL(assign.mock.calls[0][0]).searchParams.get('sso_code')).toBe(code);
+  }
+
+  it('retains authenticated session after password handoff failure and retries without login', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({ UserLogin: { token: 'synthetic-bearer' } });
+    fetchCode.mockResolvedValue(new Response('{}', { status: 503 }));
+    loginPage();
+    fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: 'alice' } });
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'inert-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Login$/ }));
+    await screen.findByText(/Unable to complete Blog SSO code handoff/);
+    expect(assign).not.toHaveBeenCalled();
+    expect(fetchCode).toHaveBeenCalledTimes(1);
+    expect(loadSsoToken() === 'synthetic-bearer').toBe(true);
+    await retryWithExistingSession();
+  });
+
+  it('retains authenticated session after GitHub handoff failure and retries without OAuth', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({
+      UserGithubOAuthLogin: { token: 'synthetic-bearer', redirect_to: target },
+    });
+    fetchCode.mockResolvedValue(new Response('{}', { status: 503 }));
+    render(<MemoryRouter initialEntries={['/sso/github/callback?code=inert-code&state=inert-state']}>
+      <SsoGithubCallbackPage />
+    </MemoryRouter>);
+    await screen.findByText(/Unable to complete Blog SSO code handoff/);
+    expect(assign).not.toHaveBeenCalled();
+    expect(fetchCode).toHaveBeenCalledTimes(1);
+    expect(loadSsoToken() === 'synthetic-bearer').toBe(true);
+    await retryWithExistingSession();
+  });
+});
+
+describe('cancelled GitHub completion preserves cancellation', () => {
+  it('does not persist or issue a code after the callback page unmounts', async () => {
+    let resolveLogin: (value: unknown) => void = () => { throw new Error('local fixture not ready'); };
+    const pending = new Promise((resolve) => { resolveLogin = resolve; });
+    vi.mocked(fetchGraphQL).mockReturnValueOnce(pending);
+    const page = render(<MemoryRouter initialEntries={['/sso/github/callback?code=inert-code&state=inert-state']}>
+      <SsoGithubCallbackPage />
+    </MemoryRouter>);
+    await waitFor(() => expect(fetchGraphQL).toHaveBeenCalledTimes(1));
+    page.unmount();
+    resolveLogin({ UserGithubOAuthLogin: { token: 'synthetic-bearer', redirect_to: target } });
+    await pending;
+    await Promise.resolve();
+    expect(loadSsoToken()).toBe('');
+    expect(fetchCode).not.toHaveBeenCalled();
     expect(assign).not.toHaveBeenCalled();
   });
 });

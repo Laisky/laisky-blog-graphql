@@ -174,8 +174,8 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
   // it to an external application, so a later visit to SSO (for example from
   // another application) is recognized instead of asking for credentials again.
   const leaveWithSession = async (target: URL, token: string) => {
-    const redirect = await buildSsoRedirectUrl(target, token);
     storeSsoToken(token);
+    const redirect = await buildSsoRedirectUrl(target, token);
     window.location.assign(redirect);
   };
 
