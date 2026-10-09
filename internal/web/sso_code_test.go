@@ -371,14 +371,25 @@ func TestSSOCodeDuplicateInputs(t *testing.T) {
 		State: strings.Repeat("A", 43), Challenge: ssoDigest(strings.Repeat("a", 43)), ChallengeMethod: "S256"}
 	base, err := json.Marshal(bindings)
 	require.NoError(t, err)
-	for _, key := range []string{"state", "STATE", `\u0073tate`} {
-		body := string(base[:len(base)-1]) + `,"` + key + `":"` + bindings.State + `"}`
-		request := httptest.NewRequest(http.MethodPost, "/sso/code", strings.NewReader(body))
+	t.Run("canonical fields reach service validation", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/sso/code", bytes.NewReader(base))
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Authorization", "Bearer synthetic-fixture")
 		result := httptest.NewRecorder()
 		router.ServeHTTP(ssoDeadlineRecorder{result}, request)
-		require.Equal(t, http.StatusBadRequest, result.Code)
+		// The deliberately absent service is reached only after canonical JSON passes.
+		require.Equal(t, http.StatusServiceUnavailable, result.Code)
+	})
+	for _, key := range []string{"state", "STATE", `\u0073tate`, "ſtate", `\u017ftate`} {
+		t.Run(key, func(t *testing.T) {
+			body := string(base[:len(base)-1]) + `,"` + key + `":"` + bindings.State + `"}`
+			request := httptest.NewRequest(http.MethodPost, "/sso/code", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Authorization", "Bearer synthetic-fixture")
+			result := httptest.NewRecorder()
+			router.ServeHTTP(ssoDeadlineRecorder{result}, request)
+			require.Equal(t, http.StatusBadRequest, result.Code)
+		})
 	}
 	request := httptest.NewRequest(http.MethodPost, "/sso/code", bytes.NewReader(base))
 	request.Header.Set("Content-Type", "application/json")
