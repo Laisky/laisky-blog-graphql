@@ -3,7 +3,9 @@
 This is a scoped custom SSO handoff, not a general OAuth authorization server.
 Existing SSO signing, 90-day JWT lifetime, issuer session storage, and other clients remain unchanged.
 The client must opt in; client-side checks are convenience checks, while issuer checks enforce the binding.
-Deploy the issuer before enabling the Blog client. This change does not require credential rotation.
+Delivery order is issuer code support, then the Blog client, then this Blog-only
+legacy rejection. Do not merge or deploy the final cutover before the new client is
+delivered. This change is a separate dependent cutover deliverable. This change does not require credential rotation.
 
 The registered client is `blog`, with redirect URI exactly `https://blog.laisky.com`.
 Its root callback carries `sso_code` and `sso_state`, never the reusable bearer.
@@ -26,11 +28,13 @@ Only the Blog origin may exchange through a browser; issuance is scoped to the S
 Responses are no-store and no-referrer. Bodies and execution time are bounded.
 
 Residual scope: JavaScript session storage and 90-day JWT semantics remain.
-Unmarked legacy Blog redirects remain supported for issuer-first migration, so an old
-bookmarked legacy login URL can still put a reusable bearer in the initial Blog HTTP
-request. Enabling the new client does not eliminate that migration path. A separately
-ordered issuer cutover must reject unmarked Blog handoffs after the new client is
-delivered; other clients remain compatible. Refs Laisky/laisky-blog#188; the issue remains open through migration.
+Unmarked legacy Blog redirects are rejected at the raw redirect parser, synchronous
+bearer builder, and asynchronous handoff. Blog identity is its normalized canonical
+hostname, covering old paths, HTTP, ports, userinfo, and trailing-dot variants.
+Code callbacks still require the exact HTTPS root. Other hostname clients preserve
+legacy handoff. Old bookmarks must restart sign-in through the current Blog client.
+This change addresses the remaining issuer migration path; it does not rotate existing
+credentials, alter existing JWT lifetimes, or redesign issuer/browser session storage.
 A code can still appear in request-target logs; PKCE protects redemption of an intercepted
 code. This work does not inspect or change edge/origin log retention.
 
@@ -38,3 +42,5 @@ Primary references (reviewed 2026-10-09):
 - RFC 7636 §§4.1–4.6: https://www.rfc-editor.org/rfc/rfc7636
 - RFC 9700 §§2.1.1,4.1: https://www.rfc-editor.org/rfc/rfc9700.html
 - Redis atomic script execution: https://redis.io/docs/latest/develop/programmability/eval-intro/
+
+Refs Laisky/laisky-blog#188. Delivery remains pending the ordered issuer/client/cutover steps.

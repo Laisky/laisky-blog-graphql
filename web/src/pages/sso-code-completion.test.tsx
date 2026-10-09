@@ -126,3 +126,51 @@ describe('all existing auth completions use the opt-in code handoff', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 });
+
+describe('ordered Blog cutover prevents authentication-method downgrades', () => {
+  it('blocks direct password login with an old unmarked Blog redirect', () => {
+    render(<MemoryRouter initialEntries={['/sso/login?redirect_to=' + encodeURIComponent('https://blog.laisky.com/pages/0/')]}>
+      <SsoLoginPage />
+    </MemoryRouter>);
+    fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: 'alice' } });
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'inert-password' } });
+    expect(screen.getByRole('button', { name: /^Login$/ })).toBeDisabled();
+    expect(fetchGraphQL).not.toHaveBeenCalled();
+    expect(fetchCode).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('does not downgrade an existing session for an old Blog bookmark', async () => {
+    storeSsoToken('synthetic-bearer');
+    vi.mocked(fetchGraphQL).mockResolvedValue({ BlogUser: {} });
+    render(<MemoryRouter initialEntries={['/sso/login?redirect_to=' + encodeURIComponent('https://blog.laisky.com')]}>
+      <SsoLoginPage />
+    </MemoryRouter>);
+    await screen.findByText(/Invalid Blog SSO code request/);
+    expect(fetchCode).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unmarked Blog target returned by passkey completion', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValueOnce({ UserStartPasskeyLogin: { session: 'inert-session', options_json: '{}' } })
+      .mockResolvedValueOnce({ UserFinishPasskeyLogin: { token: 'synthetic-bearer', redirect_to: 'http://blog.laisky.com/article' } });
+    vi.mocked(getPasskeyCredentialJSON).mockResolvedValue('{}');
+    loginPage();
+    fireEvent.click(screen.getByRole('button', { name: /Sign in with Passkey/ }));
+    await screen.findByText(/Blog requires a single-use SSO code/);
+    expect(fetchCode).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unmarked Blog target returned by signed GitHub completion', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({
+      UserGithubOAuthLogin: { token: 'synthetic-bearer', redirect_to: 'https://blog.laisky.com:444/' },
+    });
+    render(<MemoryRouter initialEntries={['/sso/github/callback?code=inert-code&state=inert-state']}>
+      <SsoGithubCallbackPage />
+    </MemoryRouter>);
+    await screen.findByText(/Blog requires a single-use SSO code/);
+    expect(fetchCode).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+});

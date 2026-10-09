@@ -46,7 +46,11 @@ export function parseRedirectTarget(rawValue: string | null, origin: string): Re
   }
 
   try {
-    if (parseBlogCodeTarget(parsed) && !/^https:\/\/blog\.laisky\.com\/?\?/.test(raw)) {
+    const codeBinding = parseBlogCodeTarget(parsed);
+    if (isBlogSsoClient(parsed) && !codeBinding) {
+      throw new Error('Blog requires a current single-use SSO code request.');
+    }
+    if (codeBinding && !/^https:\/\/blog\.laisky\.com\/?\?/.test(raw)) {
       throw new Error('Invalid Blog SSO callback spelling.');
     }
   } catch {
@@ -164,6 +168,7 @@ export function isInternalIPv6Address(hostname: string): boolean {
 }
 
 export function buildRedirectUrlWithToken(target: URL, token: string): string {
+  if (isBlogSsoClient(target)) throw new Error('Blog requires a single-use SSO code. Restart sign-in from Blog.');
   if (parseBlogCodeTarget(target)) throw new Error('Blog requires a single-use SSO code.');
   const next = new URL(target.toString());
   next.searchParams.set('sso_token', token);
@@ -172,6 +177,12 @@ export function buildRedirectUrlWithToken(target: URL, token: string): string {
 
 const blogCallback = 'https://blog.laisky.com';
 const codeMarkers = ['sso_flow', 'sso_state', 'sso_challenge', 'sso_challenge_method'];
+
+/** isBlogSsoClient identifies the existing Blog hostname across old scheme, port and path variants. */
+function isBlogSsoClient(target: URL): boolean {
+  return normalizeHostname(target.hostname) === 'blog.laisky.com';
+}
+
 
 /** BlogCodeTarget holds only the public bindings for the registered Blog callback. */
 export interface BlogCodeTarget {
