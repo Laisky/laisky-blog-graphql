@@ -158,7 +158,7 @@ func validateSSOCodeToken(token string) (time.Time, error) {
 	if err := jwt.ParseSSOToken(token, claims); err != nil {
 		return time.Time{}, errors.Wrap(err, "verify sso bearer")
 	}
-	if claims.ExpiresAt == nil || !claims.ExpiresAt.Time.After(time.Now()) ||
+	if claims.ExpiresAt == nil || !claims.ExpiresAt.After(time.Now()) ||
 		claims.Subject == "" || claims.Subject != claims.UID {
 		return time.Time{}, errors.New("invalid sso claims")
 	}
@@ -189,8 +189,8 @@ func validSSOVerifier(value string) bool {
 		return false
 	}
 	for _, ch := range value {
-		if !(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' ||
-			ch >= '0' && ch <= '9' || strings.ContainsRune("-._~", ch)) {
+		if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') &&
+			(ch < '0' || ch > '9') && !strings.ContainsRune("-._~", ch) {
 			return false
 		}
 	}
