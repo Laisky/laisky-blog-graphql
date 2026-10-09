@@ -419,7 +419,7 @@ func (h ssoCodeHandler) redeem(c *gin.Context) {
 		return
 	}
 	expiry, err := h.validate(c, record.Token)
-	if err != nil || !expiry.After(time.Now()) {
+	if err != nil || time.Until(expiry) < time.Second {
 		fail(http.StatusBadRequest, ssoInvalidGrant)
 		return
 	}
