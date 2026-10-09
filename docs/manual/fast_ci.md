@@ -94,11 +94,13 @@ source push falls from two validation jobs to one, alongside the unchanged four
 delivery jobs. The Saturday CodeQL schedule falls from one job to zero. These
 counts describe declared YAML scheduling, not account settings. A read-only
 Actions inventory found CodeQL already `disabled_manually`. Therefore the active
-Actions count for a typical Go PR is four to one, and master validation stays
+checked-in Actions count for a typical Go PR is four to one, and master validation stays
 one to one alongside four delivery jobs. CodeQL remains disabled; this PR does
 not enable it or repair its inherited v1 actions. Its preserved commands become
 manual-only in source if an owner separately enables the integration later.
-Account-managed external checks are separate.
+The independent account-managed CodeQL default setup still runs four language
+analysis jobs via `dynamic/github-code-scanning/codeql`. Those external automatic
+checks are outside this repository-only amendment and remain unchanged.
 
 Before editing, an authorized read of master branch protection returned
 `required_status_checks: null` and the repository ruleset list was empty.
