@@ -58,12 +58,13 @@ export function SsoGithubCallbackPage() {
         const target = data.UserGithubOAuthLogin.redirect_to.trim()
           ? new URL(data.UserGithubOAuthLogin.redirect_to, window.location.origin)
           : new URL('/profile', window.location.origin);
+        if (isCancelled) return;
+        // Authentication succeeded independently of code issuance. Retain the
+        // local session so a failed handoff can retry without another OAuth login.
+        storeSsoToken(token);
         const redirectURL = await buildSsoRedirectUrl(target, token);
         if (!isCancelled) {
           setStatus({ tone: 'success', message: 'GitHub authorization complete. Redirecting...' });
-          // Persist the session on the SSO origin before leaving, so returning
-          // to SSO later reuses it instead of asking for credentials again.
-          storeSsoToken(token);
           window.location.assign(redirectURL);
         }
       } catch (error) {

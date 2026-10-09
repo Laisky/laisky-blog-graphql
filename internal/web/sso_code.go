@@ -26,6 +26,8 @@ import (
 
 const (
 	blogSSOOrigin              = "https://blog.laisky.com"
+	ssoIssuerOrigin            = "https://sso.laisky.com"
+	mcpIssuerOrigin            = "https://mcp.laisky.com"
 	blogSSOClient              = "blog"
 	ssoCodeTTL                 = 60 * time.Second
 	ssoRequestTimeout          = 5 * time.Second
@@ -127,7 +129,7 @@ func ssoCodeTransport(prefix urlPrefixConfig) gin.HandlerFunc {
 		origin := c.GetHeader("Origin")
 		allowed := origin == "" || origin == blogSSOOrigin
 		if !tokenEndpoint {
-			allowed = origin == "" || origin == "https://sso.laisky.com"
+			allowed = origin == "" || origin == ssoIssuerOrigin || origin == mcpIssuerOrigin
 		}
 		if !allowed {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{ssoErrorField: ssoInvalidRequest})

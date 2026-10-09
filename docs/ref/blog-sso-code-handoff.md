@@ -24,7 +24,11 @@ the canonical client endpoint is `https://sso.laisky.com/sso/token`.
 Codes use 32 random bytes and digest-only Redis keys, expire within 60 seconds,
 and consume exactly once across replicas after matching all bindings. Wrong bindings
 do not burn a valid code. Redemption also revalidates the active SSO session.
-Only the Blog origin may exchange through a browser; issuance is scoped to the SSO origin.
+Only the Blog origin may exchange through a browser; issuance permits exactly the documented
+standalone SSO and MCP frontend origins (https://sso.laisky.com, https://mcp.laisky.com).
+The MCP-mounted login uses the configured public API prefix, including /mcp/sso/code.
+Successful authentication persists the existing origin-local session before code issuance;
+a handoff failure keeps that session available for a validated retry and never navigates with a bearer.
 Responses are no-store and no-referrer. Bodies and execution time are bounded.
 
 Residual scope: JavaScript session storage and 90-day JWT semantics remain.

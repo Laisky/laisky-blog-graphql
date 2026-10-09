@@ -438,3 +438,50 @@ func TestSSOCodeActualCORSStack(t *testing.T) {
 	require.Equal(t, "true", legacy.Header().Get("Access-Control-Allow-Credentials"))
 	require.Contains(t, legacy.Header().Get("Access-Control-Allow-Methods"), "GET")
 }
+
+// TestSSOCodeMCPIssuanceOrigin preserves documented frontend origins on the existing prefixed API route.
+func TestSSOCodeMCPIssuanceOrigin(t *testing.T) {
+	configureSSOCodeFixture(t)
+	store := miniredis.RunT(t)
+	db := redis.NewClient(&redis.Options{Addr: store.Addr()})
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	var activeChecks atomic.Int32
+	handler := ssoCodeHandler{db: db, validate: func(_ *gin.Context, token string) (time.Time, error) {
+		activeChecks.Add(1)
+		return validateSSOCodeToken(token)
+	}}
+	prefix := urlPrefixConfig{internal: "/mcp", public: "/mcp"}
+	router := gin.New()
+	router.Use(ssoCodeTransport(prefix), allowCORS)
+	router.POST(prefix.join("/sso/code"), handler.issue)
+	router.POST(prefix.join("/sso/token"), handler.redeem)
+	token := signSSOCodeFixture(t, nil)
+	bindings := ssoCodeBindings{ClientID: blogSSOClient, RedirectURI: blogSSOOrigin,
+		State: strings.Repeat("A", 43), Challenge: ssoDigest(strings.Repeat("a", 43)), ChallengeMethod: "S256"}
+	for _, origin := range []string{"https://sso.laisky.com", "https://mcp.laisky.com"} {
+		t.Run(origin, func(t *testing.T) {
+			before := activeChecks.Load()
+			result := ssoFixtureRequest(router, "/mcp/sso/code", bindings, token, origin)
+			require.Equal(t, http.StatusOK, result.Code)
+			require.Equal(t, before+1, activeChecks.Load())
+			require.Equal(t, origin, result.Header().Get("Access-Control-Allow-Origin"))
+			require.Empty(t, result.Header().Get("Access-Control-Allow-Credentials"))
+			require.Equal(t, "POST", result.Header().Get("Access-Control-Allow-Methods"))
+			require.Equal(t, []string{"Origin"}, result.Header().Values("Vary"))
+		})
+	}
+	for _, origin := range []string{blogSSOOrigin, "https://other.laisky.com", "https://mcp.laisky.com.evil.test",
+		"http://mcp.laisky.com", "https://mcp.laisky.com:444"} {
+		t.Run("reject "+origin, func(t *testing.T) {
+			before := activeChecks.Load()
+			result := ssoFixtureRequest(router, "/mcp/sso/code", bindings, token, origin)
+			require.Equal(t, http.StatusForbidden, result.Code)
+			require.Equal(t, before, activeChecks.Load())
+			require.Empty(t, result.Header().Get("Access-Control-Allow-Origin"))
+		})
+	}
+	request := ssoTokenRequest{ClientID: blogSSOClient, RedirectURI: blogSSOOrigin,
+		Code: strings.Repeat("A", 43), State: bindings.State, Verifier: strings.Repeat("a", 43)}
+	require.Equal(t, http.StatusForbidden,
+		ssoFixtureRequest(router, "/mcp/sso/token", request, "", "https://mcp.laisky.com").Code)
+}
