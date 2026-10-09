@@ -243,7 +243,7 @@ func decodeSSOBody(c *gin.Context, target any) (bool, error) {
 	if err != nil || first != json.Delim('{') {
 		return true, errors.New("invalid sso json object")
 	}
-	seen := make(map[string]struct{})
+	seen := make([]string, 0)
 	for fields.More() {
 		key, err := fields.Token()
 		if err != nil {
@@ -253,11 +253,13 @@ func decodeSSOBody(c *gin.Context, target any) (bool, error) {
 		if !ok {
 			return true, errors.New("invalid sso json field")
 		}
-		name = strings.ToLower(name)
-		if _, duplicate := seen[name]; duplicate {
-			return true, errors.New("duplicate sso json field")
+		// Match encoding/json's Unicode field aliases; comparisons stay bounded by the 8 KiB body.
+		for _, prior := range seen {
+			if strings.EqualFold(name, prior) {
+				return true, errors.New("duplicate sso json field")
+			}
 		}
-		seen[name] = struct{}{}
+		seen = append(seen, name)
 		var value json.RawMessage
 		if err := fields.Decode(&value); err != nil {
 			return true, errors.Wrap(err, "read sso json value")
