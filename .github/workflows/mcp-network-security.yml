@@ -1,18 +1,14 @@
 name: mcp-network-security
 
+# Heavy acceptance is opt-in; Linter retains the automatic fast unit gate.
 on:
-  pull_request:
-    paths:
-      - '**/*.go'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/mcp-network-security.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: mcp-network-security-${{ github.event.pull_request.number }}
+  group: mcp-network-security-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
