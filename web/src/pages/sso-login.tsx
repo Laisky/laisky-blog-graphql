@@ -11,7 +11,7 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
-import { buildRedirectUrlWithToken, parseRedirectTarget } from '@/lib/sso-redirect';
+import { buildSsoRedirectUrl, parseBlogCodeTarget, parseRedirectTarget } from '@/lib/sso-redirect';
 import { clearSsoToken, loadSsoToken, resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
 import {
   SSO_SESSION_CHECK_QUERY,
@@ -173,9 +173,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
   // leaveWithSession persists the issued session on the SSO origin before handing
   // it to an external application, so a later visit to SSO (for example from
   // another application) is recognized instead of asking for credentials again.
-  const leaveWithSession = (target: URL, token: string) => {
+  const leaveWithSession = async (target: URL, token: string) => {
     storeSsoToken(token);
-    window.location.assign(buildRedirectUrlWithToken(target, token));
+    const redirect = await buildSsoRedirectUrl(target, token);
+    window.location.assign(redirect);
   };
 
   useEffect(() => {
@@ -263,6 +264,19 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       }
 
       if (isCancelled) {
+        return;
+      }
+
+      if (redirectTarget.url && parseBlogCodeTarget(redirectTarget.url)) {
+        try {
+          const redirect = await buildSsoRedirectUrl(redirectTarget.url, token);
+          if (!isCancelled) window.location.assign(redirect);
+        } catch {
+          if (!isCancelled) {
+            setStatus({ tone: 'error', message: 'Unable to complete Blog SSO code handoff.' });
+            setIsCheckingSession(false);
+          }
+        }
         return;
       }
 
@@ -379,7 +393,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
       if (redirectTarget.url) {
         setStatus({ tone: 'success', message: 'Login successful. Redirecting...' });
-        leaveWithSession(redirectTarget.url, token);
+        await leaveWithSession(redirectTarget.url, token);
         return;
       }
 
@@ -531,7 +545,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       }
       const target = new URL(finish.UserFinishPasskeyLogin.redirect_to || '/profile', window.location.origin);
       setStatus({ tone: 'success', message: 'Passkey accepted. Redirecting...' });
-      leaveWithSession(target, token);
+      await leaveWithSession(target, token);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Passkey login failed.';
       if (handleChallengeError(message)) {

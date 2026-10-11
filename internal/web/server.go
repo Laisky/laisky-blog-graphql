@@ -178,6 +178,7 @@ func RunServer(addr string, resolver *Resolver) {
 			ginMw.WithLogger(log.Logger.Named("gin")),
 		),
 		addSecurityHeaders,
+		ssoCodeTransport(prefix),
 		allowCORS,
 	)
 
@@ -186,6 +187,7 @@ func RunServer(addr string, resolver *Resolver) {
 	}
 
 	registerOneapiProxyRoutes(server, prefix)
+	registerSSOCodeRoutes(server, prefix, resolver)
 
 	// Shared application state exists independently of transport registration.
 	var activeMCP *mcp.Server
@@ -553,6 +555,12 @@ func newAgentAPIProbeHandler() gin.HandlerFunc {
 
 // allowCORS applies the shared cross-origin headers for browser clients.
 func allowCORS(ctx *gin.Context) {
+	// Scoped code transport already enforces its fixed origin and POST-only policy.
+	if ctx.GetBool(ssoCodeTransportContextKey) {
+		ctx.Next()
+		return
+	}
+
 	logger := ginMw.GetLogger(ctx).Named("cors")
 	origin := strings.TrimSpace(ctx.Request.Header.Get("Origin"))
 	allowedOrigin := ""
