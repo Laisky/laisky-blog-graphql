@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildRedirectUrlWithToken, buildSsoRedirectUrl, parseRedirectTarget } from './sso-redirect';
+import { buildRedirectUrlWithToken, buildSsoRedirectUrl } from './sso-redirect';
 
 const variants = [
   'https://blog.laisky.com', 'https://blog.laisky.com/pages/0/',
@@ -10,11 +10,8 @@ const variants = [
 ];
 
 describe('ordered Blog issuer cutover', () => {
-  it.each(variants)('rejects a reusable bearer for legacy Blog target %s', async (raw) => {
-    const target = new URL(raw);
-    expect(() => buildRedirectUrlWithToken(target, 'synthetic-test-bearer')).toThrow();
-    await expect(buildSsoRedirectUrl(target, 'synthetic-test-bearer')).rejects.toThrow();
-    expect(parseRedirectTarget(raw, 'https://sso.laisky.com').url).toBeNull();
+  it.each(variants)('rejects the reusable-bearer builder for every Blog target %s', (raw) => {
+    expect(() => buildRedirectUrlWithToken(new URL(raw), 'synthetic-test-bearer')).toThrow();
   });
 
   it('retains another client using legacy state parameters', async () => {

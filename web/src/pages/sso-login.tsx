@@ -11,7 +11,7 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
-import { buildSsoRedirectUrl, parseBlogCodeTarget, parseRedirectTarget } from '@/lib/sso-redirect';
+import { buildSsoRedirectUrl, isBlogSsoClient, parseRedirectTarget } from '@/lib/sso-redirect';
 import { clearSsoToken, loadSsoToken, resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
 import {
   SSO_SESSION_CHECK_QUERY,
@@ -267,7 +267,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         return;
       }
 
-      if (redirectTarget.url && parseBlogCodeTarget(redirectTarget.url)) {
+      if (redirectTarget.url && isBlogSsoClient(redirectTarget.url)) {
         try {
           const redirect = await buildSsoRedirectUrl(redirectTarget.url, token);
           if (!isCancelled) window.location.assign(redirect);
