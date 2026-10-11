@@ -16,11 +16,10 @@ func TestDefaultEgressRejectsMissingRequestChain(t *testing.T) {
 	original := gconfig.Shared
 	t.Cleanup(func() { gconfig.Shared = original })
 	for _, tc := range []struct {
-		name         string
-		configured   *bool
-		wantVerified bool
+		name       string
+		configured *bool
 	}{
-		{"unset secure default", nil, true}, {"explicit verification", reviewEgressBoolPointer(true), true}, {"explicit unsafe opt-out", reviewEgressBoolPointer(false), false},
+		{"unset", nil}, {"deprecated true ignored", reviewEgressBoolPointer(true)}, {"deprecated false ignored", reviewEgressBoolPointer(false)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gconfig.Shared = gconfig.New()
@@ -28,15 +27,11 @@ func TestDefaultEgressRejectsMissingRequestChain(t *testing.T) {
 				gconfig.Shared.Set(configKeyRequireVerified, *tc.configured)
 			}
 			settings := LoadEgressSettings()
-			require.Equal(t, tc.wantVerified, settings.RequireVerified)
+			require.True(t, settings.RequireVerified)
 			task := rlibs.NewHTMLCrawlerTaskWithEgress("https://1.1.1.1/document", "", true, &rlibs.CrawlerEgressPolicy{Host: "1.1.1.1", Addresses: []string{"1.1.1.1"}, MaxRedirects: 1})
 			policy := *task.Egress
 			err := verifyRenderedTask(context.Background(), settings, task.TaskID, task.Url, policy, task)
-			if tc.wantVerified {
-				require.ErrorIs(t, err, crawleregress.ErrUnverified)
-			} else {
-				require.NoError(t, err)
-			}
+			require.ErrorIs(t, err, crawleregress.ErrUnverified)
 			task.EgressReceipt = crawleregress.NewReceipt(task.TaskID, task.Url, policy)
 			task.EgressReceipt.Origins = []crawleregress.Origin{{URL: task.Url, Addresses: policy.Addresses, PeerAddress: "1.1.1.1", Kind: crawleregress.OriginDocument}}
 			require.NoError(t, verifyRenderedTask(context.Background(), settings, task.TaskID, task.Url, policy, task))
