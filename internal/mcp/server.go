@@ -195,8 +195,10 @@ func NewServer(
 			}
 
 			// Create a per-request logger with request-specific context
+			requestID := gutils.UUID7()
+			ctx = context.WithValue(ctx, ctxkeys.RequestID, requestID)
 			reqLogger := serverLogger.With(
-				zap.String("request_id", gutils.UUID7()),
+				zap.String("request_id", requestID),
 				zap.String("remote_addr", r.RemoteAddr),
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),

@@ -6,6 +6,8 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 )
 
 // AddLLMStormTask adds a new LLMStormTask to the queue.
@@ -53,18 +55,29 @@ func (db *DB) AddHTMLCrawlerTask(ctx context.Context, url string) (taskID string
 }
 
 // AddHTMLCrawlerTaskWithOptions adds a new HTMLCrawlerTask to the queue with extra fields.
-// It submits no egress policy; prefer AddHTMLCrawlerTaskWithEgress so the
-// renderer can pin its connections to the admitted addresses.
+// It admits a public target and pins the default connection policy before enqueue.
 func (db *DB) AddHTMLCrawlerTaskWithOptions(ctx context.Context, url, apiKey string, outputMarkdown bool) (taskID string, err error) {
 	return db.AddHTMLCrawlerTaskWithEgress(ctx, url, apiKey, outputMarkdown, nil)
 }
 
 // AddHTMLCrawlerTaskWithEgress queues a crawl together with the connection
-// policy request admission produced for it.
+// policy request admission produced for it. The retained apiKey argument is never
+// queued because local rendering and markdown conversion need no provider credentials.
 func (db *DB) AddHTMLCrawlerTaskWithEgress(ctx context.Context, url, apiKey string,
 	outputMarkdown bool, egress *CrawlerEgressPolicy,
 ) (taskID string, err error) {
-	task := NewHTMLCrawlerTaskWithEgress(url, apiKey, outputMarkdown, egress)
+	if egress == nil {
+		admission, admitErr := crawleregress.AdmitURL(ctx, url)
+		if admitErr != nil {
+			return "", errors.Wrap(admitErr, "admit crawler target")
+		}
+		policy := admission.Policy(crawleregress.DefaultMaxRedirects, false)
+		egress = &policy
+	}
+	if _, policyErr := crawleregress.ValidatePolicy(ctx, url, *egress); policyErr != nil {
+		return "", errors.Wrap(policyErr, "validate crawler task policy")
+	}
+	task := NewHTMLCrawlerTaskWithEgress(url, "", outputMarkdown, egress)
 	payload, err := task.ToString()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to serialize task using ToString")

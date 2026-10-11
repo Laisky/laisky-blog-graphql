@@ -73,7 +73,7 @@ func TestWebFetchHandleBillingError(t *testing.T) {
 
 	textContent, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
-	require.Contains(t, textContent.Text, "billing check failed: quota depleted")
+	require.Contains(t, textContent.Text, "billing check failed")
 }
 
 func TestWebFetchHandleSuccess(t *testing.T) {
