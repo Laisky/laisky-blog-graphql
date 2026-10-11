@@ -11,8 +11,13 @@ const (
 	//  `KeyPrefixTaskLLMStormResult + <task_id>`
 	KeyPrefixTaskLLMStormResult = keyPrefixTask + "llm_storm/result/"
 
-	// KeyTaskHTMLCrawlerPending is the key for HTML crawler pending tasks
-	KeyTaskHTMLCrawlerPending = keyPrefixTask + "html_crawler/pending"
+	// KeyTaskHTMLCrawlerLegacyPending is the queue compiled into legacy workers.
+	// Verified producers and consumers must never migrate, drain or fall back to it.
+	KeyTaskHTMLCrawlerLegacyPending = keyPrefixTask + "html_crawler/pending"
+
+	// KeyTaskHTMLCrawlerPending is the isolated queue for connection-receipt v1 tasks.
+	// Its generation prevents legacy workers from competing for verified tasks.
+	KeyTaskHTMLCrawlerPending = keyPrefixTask + "html_crawler/verified/v1/pending"
 	// KeyPrefixTaskHTMLCrawlerResult is the key prefix for HTML crawler results
 	//
 	//  `KeyPrefixTaskHTMLCrawlerResult + <task_id>`

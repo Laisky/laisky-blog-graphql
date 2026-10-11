@@ -84,6 +84,29 @@ option is unsafe and does not authorize a mismatched task/policy or reported
 violation. An old worker model that drops egress fields cannot satisfy this
 contract; pin the same shared module revision in the worker.
 
+### Queue generation and mixed fleets
+
+`KeyTaskHTMLCrawlerPending` routes every current producer and consumer to
+`laisky/tasks/html_crawler/verified/v1/pending`. This queue generation belongs
+to the pinned-policy and connection-receipt v1 contract. Already compiled
+legacy workers continue using `laisky/tasks/html_crawler/pending`, exposed as
+`KeyTaskHTMLCrawlerLegacyPending` only to identify that retained queue. Current
+workers never consume both queues and producers never fall back to the old key.
+Do not migrate, delete or drain existing legacy tasks as part of this release.
+Task UUIDs and `laisky/tasks/html_crawler/result/` remain unchanged; a result
+still needs exact submitted identity, policy and receipt verification.
+
+A worker upgrade alone cannot isolate tasks on a shared queue. The October 11
+owned fixture produced a legacy result despite deployment of a qualified new
+worker, exposing competing legacy consumers beyond that container. The
+versioned key prevents those old binaries from receiving new verified tasks
+without credential changes or relaxed verification. This isolates accidental
+routing by consumers with the literal old Redis key; it is not an ACL or
+capability boundary. The existing authenticated GraphQL dequeue API intentionally
+uses the current contract. A client authorized to call that API or arbitrary
+Redis commands is not excluded by queue naming; the receipt verifier still
+fails closed on every returned result.
+
 ## Diagnostics and billing
 
 The MCP failure alert exports reviewed scalar `error_code`, `stage`, UUID
@@ -115,14 +138,21 @@ scalar diagnostics to assess outcomes.
 Use `[publish only]` in the actual release merge/squash commit message to let
 CI publish images while skipping automatic deployment. Qualify those exact
 published digests: a later rebuild may contain a different Chrome release.
-Deploy the backward-compatible receipt-capable worker first, verify its owned
-probe, and then deploy the producer. Preserve queued tasks and configuration.
+Deploy the receipt-capable worker pinned to the versioned queue first. Before
+deploying the producer, submit an owned fixture with the same shared module
+and verify its UUID in that worker's artifact-qualified logs, the complete
+returned policy/receipt and the exact consumer's HTML and Markdown controls.
+A success status or body alone is insufficient. Retain mixed-fleet tests in
+both repositories proving that legacy consumers cannot receive verified tasks
+and current consumers leave old tasks untouched. Preserve queued tasks and
+configuration; no queue fallback, dual consumption or migration is permitted.
 
-Rollback must preserve the producer/worker contract. Reverting only to an old
-worker restores unavailable fetches under the secure verifier; weakening the
-verifier is not a rollback strategy. Preserve previous image digests and drain accepted work without deleting
-queued tasks,
-and report readiness before any production-changing step. Draft PR status is
+Rollback must preserve both queue generation and producer/worker contract.
+Reverting only the worker or producer to a pre-generation binary can leave
+accepted work without a compatible consumer. Preserve both pending queues
+and prior image digests, and keep a compatible verified consumer for accepted
+verified tasks. Weakening verification or moving work to the legacy queue is
+not a rollback strategy. Report readiness before any production-changing step. Draft PR status is
 retained until the recorded acceptance gates pass.
 
 ## API references
