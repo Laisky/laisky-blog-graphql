@@ -71,19 +71,56 @@ Benchmark/evaluation targets (`make memory-bench-test`, `make memory-bench-curre
 Live runs require deliberate operator configuration and must never receive
 production credentials through the fast unit gate.
 
-Existing `project-quality` diagnostics, symbol/package vulnerability scans,
-frontend dependency audit, `mcp-network-security`, CodeQL and pure-Go/SQL-owner
-invariants remain automatic and unchanged. `ci.yml` image publishing/deployment
-and `deployment-contract.yml` safety tests also remain unchanged. Consequently
-the overall workflow inventory includes separate safety jobs beyond the fast
-unit gate. Altering those is outside this test-cadence amendment.
+The 2026-10-09 owner-approved simplification also makes `project-quality`,
+`mcp-network-security` and CodeQL opt-in with `workflow_dispatch`. Their complete
+job bodies remain in source: uncapped Go diagnostics, symbol/package vulnerability
+scans, vet and pure-Go/SQL-owner invariants, frontend lint/dependency audit,
+frontend test/build acceptance, and the three-run network security race suite.
+CodeQL no longer runs on master/develop push or PR events or its former Saturday
+schedule. This extends PR #56's earlier cadence change; it deletes no coverage.
+
+`Linter / check` remains the single automatic formatting and 16-essential-unit
+gate on every PR and master/develop push. `ci.yml` image publishing/deployment
+and the path-filtered `deployment-contract.yml` safety job stay byte-for-byte
+unchanged. Dependency/database acceptance, memory benchmarks and evaluation
+already use manual dispatch and remain unchanged.
+
+In the checked-in YAML, a Go-changing PR targeting master/develop falls
+from five to one: Linter (one), project-quality (two), MCP network security (one)
+and CodeQL (one) become Linter only. The old project-quality frontend-acceptance
+job was skipped on PRs and is excluded from this execution count. PRs touching
+deployment wiring still add the unchanged shell-contract job. A typical master
+source push falls from two validation jobs to one, alongside the unchanged four
+delivery jobs. The Saturday CodeQL schedule falls from one job to zero. These
+counts describe declared YAML scheduling, not account settings. A read-only
+Actions inventory found CodeQL already `disabled_manually`. Therefore the active
+checked-in Actions count for a typical Go PR is four to one, and master validation stays
+one to one alongside four delivery jobs. CodeQL remains disabled; this PR does
+not enable it or repair its inherited v1 actions. Its preserved commands become
+manual-only in source if an owner separately enables the integration later.
+The independent account-managed CodeQL default setup still runs four language
+analysis jobs via `dynamic/github-code-scanning/codeql`. Those external automatic
+checks are outside this repository-only amendment and remain unchanged.
+
+Before editing, an authorized read of master branch protection returned
+`required_status_checks: null` and the repository ruleset list was empty.
+No branch protection, account/integration settings or credentials were changed.
+GitHub's [workflow-dispatch documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)
+describes manual selection of a ref. An enabled workflow with a dispatch trigger
+must first exist on the default branch to be dispatched; use the unchanged local
+commands for this unmerged PR. CodeQL's existing disabled state is an additional
+manual-execution limitation, not changed by this repository patch.
+[Required-check documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)
+warns that removing a required workflow trigger can otherwise leave a check
+pending. Recheck protection before any later merge; this PR does not change it.
 
 The complete frontend `pnpm test` suite and `pnpm build` production build run in
 the `project-quality / frontend-acceptance` job only on `workflow_dispatch`, or
 locally using the commands above. Its locked dependencies, tool versions and
 test/build commands are preserved. `frontend-quality` keeps `pnpm lint` and the
-all-severity dependency audit automatic; Go quality and security steps are
-unchanged. Manual dispatch runs both qualification and the retained safety jobs.
+all-severity dependency audit in the same manual workflow; Go quality and
+security commands are unchanged. Manual dispatch runs qualification and the
+retained quality jobs.
 
 This policy supersedes earlier statements that database/compatibility acceptance
 must run per PR, and the nightly/per-PR evaluation wiring described in proposal

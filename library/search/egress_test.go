@@ -8,13 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
+	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
-	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // TestLoadEgressSettingsDefaults pins the shipped defaults: a bounded redirect
-// budget, no subresource egress, and mandatory renderer evidence unless the
-// operator explicitly selects the unsafe compatibility mode.
+// budget, no subresource egress, and unconditional renderer evidence.
 func TestLoadEgressSettingsDefaults(t *testing.T) {
 	original := gconfig.Shared
 	gconfig.Shared = gconfig.New()
@@ -31,6 +30,12 @@ func TestLoadEgressSettingsDefaults(t *testing.T) {
 	tightened := LoadEgressSettings()
 	require.Equal(t, 2, tightened.MaxRedirects)
 	require.True(t, tightened.RequireVerified)
+	gconfig.Shared.Set(configKeyMaxRedirects, 0)
+	require.Zero(t, LoadEgressSettings().MaxRedirects, "explicit zero must forbid redirects")
+	gconfig.Shared.Set(configKeyMaxRedirects, -1)
+	require.Zero(t, LoadEgressSettings().MaxRedirects)
+	gconfig.Shared.Set(configKeyMaxRedirects, 999999)
+	require.Equal(t, crawleregress.MaxRedirects, LoadEgressSettings().MaxRedirects)
 }
 
 // TestCrawlerEgressPolicyIsSelfContained checks the envelope handed to the
@@ -51,36 +56,15 @@ func TestCrawlerEgressPolicyIsSelfContained(t *testing.T) {
 	require.False(t, envelope.AllowSubresources)
 }
 
-// TestVerifyRenderedEgressFailsClosedOnViolation is the core G05 guarantee: a
-// render result whose reported chain left the admitted origin must never reach
-// the caller, even though the original request passed admission.
+// TestVerifyRenderedEgressFailsClosedOnViolation keeps receipt verification mandatory even with a false legacy field.
 func TestVerifyRenderedEgressFailsClosedOnViolation(t *testing.T) {
-	logger := log.Logger.Named("egress_test")
-	policy := toolpolicy.EgressPolicy{Host: "example.com", Addresses: []string{"93.184.216.34"}, MaxRedirects: 1}
-
-	t.Run("a redirect into a private address is rejected", func(t *testing.T) {
-		err := verifyRenderedEgress(context.Background(), logger, EgressSettings{MaxRedirects: 1},
-			policy, []string{"https://example.com/a", "http://127.0.0.1/admin"})
-		require.Error(t, err)
-	})
-
-	t.Run("a chain longer than the policy is rejected", func(t *testing.T) {
-		err := verifyRenderedEgress(context.Background(), logger, EgressSettings{MaxRedirects: 1},
-			policy, []string{"https://example.com/a", "https://example.com/b", "https://example.com/c"})
-		require.Error(t, err)
-	})
-
-	t.Run("explicit unsafe compatibility accepts an unverified crawl", func(t *testing.T) {
-		require.NoError(t, verifyRenderedEgress(context.Background(), logger,
-			EgressSettings{MaxRedirects: 1, RequireVerified: false}, policy, nil))
-	})
-
-	t.Run("an unverified crawl is rejected when verification is required", func(t *testing.T) {
-		err := verifyRenderedEgress(context.Background(), logger,
-			EgressSettings{MaxRedirects: 1, RequireVerified: true}, policy, nil)
-		require.Error(t, err)
-		require.ErrorIs(t, err, toolpolicy.ErrEgressUnverified)
-	})
+	task := rlibs.NewHTMLCrawlerTaskWithEgress("https://1.1.1.1/doc", "", true, &rlibs.CrawlerEgressPolicy{Host: "1.1.1.1", Addresses: []string{"1.1.1.1"}, MaxRedirects: 1})
+	policy := *task.Egress
+	require.ErrorIs(t, verifyRenderedTask(context.Background(), EgressSettings{RequireVerified: true}, task.TaskID, task.Url, policy, task), crawleregress.ErrUnverified)
+	require.ErrorIs(t, verifyRenderedTask(context.Background(), EgressSettings{RequireVerified: false}, task.TaskID, task.Url, policy, task), crawleregress.ErrUnverified)
+	task.EgressReceipt = crawleregress.NewReceipt(task.TaskID, task.Url, policy)
+	task.EgressReceipt.Origins = []crawleregress.Origin{{URL: task.Url, Addresses: policy.Addresses, PeerAddress: "127.0.0.1", Kind: crawleregress.OriginDocument}}
+	require.ErrorIs(t, verifyRenderedTask(context.Background(), EgressSettings{RequireVerified: false}, task.TaskID, task.Url, policy, task), crawleregress.ErrRejected)
 }
 
 // TestHTMLCrawlerTaskCarriesEgressPolicyThroughSerialization keeps the envelope
