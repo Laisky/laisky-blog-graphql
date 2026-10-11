@@ -112,10 +112,16 @@ policy must fail safely; do not make them appear verified. A rollout must keep
 verification enabled and use bounded synthetic public fixtures plus reviewed
 scalar diagnostics to assess outcomes.
 
+Use `[publish only]` in the actual release merge/squash commit message to let
+CI publish images while skipping automatic deployment. Qualify those exact
+published digests: a later rebuild may contain a different Chrome release.
+Deploy the backward-compatible receipt-capable worker first, verify its owned
+probe, and then deploy the producer. Preserve queued tasks and configuration.
+
 Rollback must preserve the producer/worker contract. Reverting only to an old
 worker restores unavailable fetches under the secure verifier; weakening the
-verifier is not a rollback strategy. Preserve previous image digests, drain or
-expire incompatible queued tasks using a separately reviewed operational plan,
+verifier is not a rollback strategy. Preserve previous image digests and drain accepted work without deleting
+queued tasks,
 and report readiness before any production-changing step. Draft PR status is
 retained until the recorded acceptance gates pass.
 

@@ -82,6 +82,58 @@ def deployment_payload(directory, run_attempt=1):
     return re.sub(r"\$\{\{\s*github.run_attempt\s*\}\}", str(run_attempt), payload)
 
 
+def release_job_decisions(workflow, message):
+    """release_job_decisions executes the real prefix check and evaluates supported job selectors."""
+    source = workflow.read_text()
+
+    def job_body(name):
+        """job_body returns the named job's source without subsequent jobs."""
+        body = source.split("  " + name + ":\n", 1)[1]
+        return re.split(r"^  [a-zA-Z_][a-zA-Z_0-9-]*:\n", body, maxsplit=1, flags=re.MULTILINE)[0]
+
+    check = job_body("check_skip")
+    lines = check.splitlines()
+    starts = [index for index, line in enumerate(lines) if line.strip() == "run: |"]
+    if len(starts) != 1:
+        raise AssertionError("Expected exactly one commit-prefix check script")
+    start = starts[0]
+    indent = len(lines[start]) - len(lines[start].lstrip()) + 2
+    script = []
+    for line in lines[start + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) < indent:
+            break
+        script.append(line[indent:])
+    with tempfile.TemporaryDirectory(prefix="release-selector-contract-") as directory:
+        output = Path(directory) / "outputs"
+        result = subprocess.run(
+            ["bash"], input="\n".join(script) + "\n", text=True, capture_output=True, timeout=5,
+            env={"PATH": os.environ["PATH"], "COMMIT_MSG": message, "GITHUB_OUTPUT": str(output)},
+        )
+        if result.returncode:
+            raise AssertionError(result.stderr)
+        outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    skip = outputs["should_skip"]
+
+    def selected(name):
+        """selected evaluates the workflow's restricted release expression grammar."""
+        matches = re.findall(r"^    if: (.+)$", job_body(name), flags=re.MULTILINE)
+        if len(matches) != 1:
+            raise AssertionError("Expected exactly one selector for " + name)
+        decisions = []
+        for predicate in matches[0].split(" && "):
+            if predicate == "needs.check_skip.outputs.should_skip != 'true'":
+                decisions.append(skip.casefold() != "true")
+                continue
+            marker = re.fullmatch(r"!contains\(github\.event\.head_commit\.message, '([^']*)'\)", predicate)
+            if marker is None:
+                raise AssertionError("Unsupported release selector: " + predicate)
+            # GitHub contains() is case insensitive; see its expressions reference.
+            decisions.append(marker.group(1).casefold() not in message.casefold())
+        return all(decisions)
+
+    return tuple(selected(name) for name in ("build_latest", "build_latest_cache", "deploy"))
+
+
 class DeploymentContract(unittest.TestCase):
     def run_deploy(self, scenario, run_attempt=1):
         with tempfile.TemporaryDirectory(prefix="deploy-contract-") as directory:
@@ -234,6 +286,23 @@ class DeploymentContract(unittest.TestCase):
         self.assertEqual(result.returncode, 17)
         self.assertTrue(any("rollback-ci-12345" in " ".join(call) for call in calls))
         self.assertFalse(any("rmi" in call or "prune" in call or "down" in call for call in calls))
+
+    def test_release_selectors_preserve_builds_and_gate_only_marked_deployment(self):
+        """test_release_selectors_preserve_builds_and_gate_only_marked_deployment executes actual selectors."""
+        cases = [
+            ("fix: ordinary release", (True, True, True)),
+            ("fix: docs wording without a skipped prefix", (True, True, True)),
+            ("fix: quoted '$()' commit text", (True, True, True)),
+            ("fix: release [publish only]", (True, True, False)),
+            ("fix: release [PUBLISH ONLY]", (True, True, False)),
+            ("fix: release\n\n[publish only]", (True, True, False)),
+        ]
+        for prefix in ("docs:", "doc:", "tests:", "test:", "ci:"):
+            cases.append((prefix + " existing skip", (False, False, False)))
+            cases.append((prefix + " existing skip [publish only]", (False, False, False)))
+        for message, expected in cases:
+            with self.subTest(message=message):
+                self.assertEqual(release_job_decisions(ROOT / ".github/workflows/ci.yml", message), expected)
 
 
 if __name__ == "__main__":
