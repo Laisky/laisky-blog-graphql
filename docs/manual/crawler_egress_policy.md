@@ -76,13 +76,22 @@ renderer behavior tests remain part of acceptance.
 | --- | --- | --- |
 | `settings.mcp.tools.web_fetch.egress.max_redirects` | `5` | Document redirect budget published to the renderer. |
 | `settings.mcp.tools.web_fetch.egress.allow_subresources` | `false` | Whether public page subresources may be fetched. |
-| `settings.mcp.tools.web_fetch.egress.require_verified` | `true` | Require connection receipts before releasing content. |
+| `settings.mcp.tools.web_fetch.egress.require_verified` | Always verified | Deprecated and ignored, including an explicit `false`. |
 
-The secure default is true when its key is absent. This repair does not select
-an unsafe compatibility override. The existing explicit-false compatibility
-option is unsafe and does not authorize a mismatched task/policy or reported
-violation. An old worker model that drops egress fields cannot satisfy this
-contract; pin the same shared module revision in the worker.
+Final task identity, exact target, echoed policy and connection receipt
+verification are unconditional. Missing or empty receipts never release a body,
+even when the deprecated configuration key is explicitly false or a source
+caller constructs `EgressSettings{RequireVerified: false}`. `LoadEgressSettings`
+always reports `RequireVerified: true`; the field remains for source
+compatibility and cannot weaken enforcement. An old worker model that drops
+egress fields cannot satisfy this contract. The mandatory-verification
+follow-up changes no task/receipt wire or queue generation, so a receipt-capable
+worker already pinned to the verified-v1 contract remains compatible.
+
+Fresh-default standalone probes attest the exact consumer and defaults, not a
+running service's effective redirect/subresource configuration. Mandatory
+receipt enforcement itself is a property of the qualified source/artifact and
+does not depend on inspecting runtime settings or credentials.
 
 ### Queue generation and mixed fleets
 

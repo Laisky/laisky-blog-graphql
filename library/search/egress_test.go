@@ -13,8 +13,7 @@ import (
 )
 
 // TestLoadEgressSettingsDefaults pins the shipped defaults: a bounded redirect
-// budget, no subresource egress, and mandatory renderer evidence unless the
-// operator explicitly selects the unsafe compatibility mode.
+// budget, no subresource egress, and unconditional renderer evidence.
 func TestLoadEgressSettingsDefaults(t *testing.T) {
 	original := gconfig.Shared
 	gconfig.Shared = gconfig.New()
@@ -57,12 +56,12 @@ func TestCrawlerEgressPolicyIsSelfContained(t *testing.T) {
 	require.False(t, envelope.AllowSubresources)
 }
 
-// TestVerifyRenderedEgressFailsClosedOnViolation keeps receipt verification secure even under explicit compatibility opt-out.
+// TestVerifyRenderedEgressFailsClosedOnViolation keeps receipt verification mandatory even with a false legacy field.
 func TestVerifyRenderedEgressFailsClosedOnViolation(t *testing.T) {
 	task := rlibs.NewHTMLCrawlerTaskWithEgress("https://1.1.1.1/doc", "", true, &rlibs.CrawlerEgressPolicy{Host: "1.1.1.1", Addresses: []string{"1.1.1.1"}, MaxRedirects: 1})
 	policy := *task.Egress
 	require.ErrorIs(t, verifyRenderedTask(context.Background(), EgressSettings{RequireVerified: true}, task.TaskID, task.Url, policy, task), crawleregress.ErrUnverified)
-	require.NoError(t, verifyRenderedTask(context.Background(), EgressSettings{RequireVerified: false}, task.TaskID, task.Url, policy, task))
+	require.ErrorIs(t, verifyRenderedTask(context.Background(), EgressSettings{RequireVerified: false}, task.TaskID, task.Url, policy, task), crawleregress.ErrUnverified)
 	task.EgressReceipt = crawleregress.NewReceipt(task.TaskID, task.Url, policy)
 	task.EgressReceipt.Origins = []crawleregress.Origin{{URL: task.Url, Addresses: policy.Addresses, PeerAddress: "127.0.0.1", Kind: crawleregress.OriginDocument}}
 	require.ErrorIs(t, verifyRenderedTask(context.Background(), EgressSettings{RequireVerified: false}, task.TaskID, task.Url, policy, task), crawleregress.ErrRejected)
