@@ -46,7 +46,8 @@ type Admission struct {
 // non-public address, follow an unbounded redirect chain, or silently pull
 // subresources from another origin.
 type EgressPolicy struct {
-	// Host is the only hostname this task may resolve.
+	// Host is the original hostname whose connections must use Addresses.
+	// New redirect/subresource hosts require independent public admission.
 	Host string `json:"host"`
 	// Addresses are the only addresses the renderer may connect to for Host.
 	Addresses []string `json:"addresses"`
@@ -80,7 +81,11 @@ func AdmitFetchURL(ctx context.Context, raw string) (Admission, error) {
 	return admitFetchURL(ctx, raw, net.DefaultResolver.LookupIPAddr)
 }
 
-// VerifyEgressChain re-admits every origin the renderer reports it contacted.
+// VerifyEgressChain re-admits legacy claimed URLs for audit diagnostics only.
+// It cannot establish which peers were contacted; use crawleregress.VerifyReceipt
+// for successful-result security decisions.
+//
+// Deprecated: URL-only chains cannot establish pinned connection evidence.
 //
 // A hop is accepted only when it passes the same admission the original target
 // did, so a redirect into a private address, a rebound host, or a chain longer
@@ -205,4 +210,45 @@ func (p EgressPolicy) SortedAddresses() []string {
 	copy(addresses, p.Addresses)
 	sort.Strings(addresses)
 	return addresses
+}
+
+// AdmitFetchURLWithResolver applies admission using an explicitly supplied resolver.
+// It is intended for renderer admission and deterministic behavioral tests.
+func AdmitFetchURLWithResolver(ctx context.Context, raw string, lookup func(context.Context, string) ([]net.IPAddr, error)) (Admission, error) {
+	if lookup == nil {
+		return Admission{}, invalid("url", "resolver is required")
+	}
+	return admitFetchURL(ctx, raw, lookup)
+}
+
+// ValidatePinnedDestination validates a URL against already admitted public addresses without another DNS lookup.
+func ValidatePinnedDestination(ctx context.Context, raw string, addresses []string) (Admission, error) {
+	if len(addresses) == 0 || len(addresses) > 64 {
+		return Admission{}, invalid("egress", "bounded public addresses are required")
+	}
+	resolved := make([]net.IPAddr, 0, len(addresses))
+	for _, text := range addresses {
+		ip, err := netip.ParseAddr(text)
+		if err != nil || ip.Zone() != "" || !publicAddress(ip) {
+			return Admission{}, invalid("egress", "non-public pinned address")
+		}
+		resolved = append(resolved, net.IPAddr{IP: net.IP(ip.Unmap().AsSlice())})
+	}
+	admission, err := admitFetchURL(ctx, raw, func(context.Context, string) ([]net.IPAddr, error) { return resolved, nil })
+	if err != nil {
+		return Admission{}, err
+	}
+	if ip, err := netip.ParseAddr(admission.Host); err == nil {
+		found := false
+		for _, text := range addresses {
+			candidate, _ := netip.ParseAddr(text)
+			if candidate.Unmap() == ip.Unmap() {
+				found = true
+			}
+		}
+		if !found {
+			return Admission{}, invalid("egress", "literal destination is not pinned")
+		}
+	}
+	return admission, nil
 }

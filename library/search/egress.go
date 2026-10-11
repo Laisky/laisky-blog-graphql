@@ -5,24 +5,21 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
-	logSDK "github.com/Laisky/go-utils/v6/log"
-	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
+	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 )
 
 // Egress configuration keys. Missing renderer evidence is rejected by default.
-// An operator can explicitly opt out for a legacy renderer, but that mode is
-// unverified and must not be represented as egress protection.
+// An explicit compatibility opt-out is unverified and must not be represented as protection.
 const (
 	configKeyMaxRedirects      = "settings.mcp.tools.web_fetch.egress.max_redirects"
 	configKeyAllowSubresources = "settings.mcp.tools.web_fetch.egress.allow_subresources"
 	configKeyRequireVerified   = "settings.mcp.tools.web_fetch.egress.require_verified"
 
-	// defaultMaxRedirects matches ordinary browser behavior for a document
-	// load while keeping the chain short enough to re-admit cheaply.
-	defaultMaxRedirects = 5
+	// defaultMaxRedirects keeps document redirects bounded across all producers.
+	defaultMaxRedirects = crawleregress.DefaultMaxRedirects
 )
 
 // EgressSettings is the crawl-side policy this deployment publishes.
@@ -31,7 +28,7 @@ type EgressSettings struct {
 	MaxRedirects int
 	// AllowSubresources permits page subresource loads.
 	AllowSubresources bool
-	// RequireVerified rejects a render result that carries no request chain.
+	// RequireVerified rejects a render result that carries no bound connection receipt.
 	// It defaults to true. An explicit false permits unverified legacy results
 	// and is an unsafe compatibility choice, not proof of a safe crawl.
 	RequireVerified bool
@@ -47,8 +44,14 @@ func LoadEgressSettings() EgressSettings {
 	if gconfig.Shared.IsSet(configKeyRequireVerified) {
 		settings.RequireVerified = gconfig.Shared.GetBool(configKeyRequireVerified)
 	}
-	if settings.MaxRedirects <= 0 {
+	if !gconfig.Shared.IsSet(configKeyMaxRedirects) {
 		settings.MaxRedirects = defaultMaxRedirects
+	}
+	if settings.MaxRedirects < 0 {
+		settings.MaxRedirects = 0
+	}
+	if settings.MaxRedirects > crawleregress.MaxRedirects {
+		settings.MaxRedirects = crawleregress.MaxRedirects
 	}
 	return settings
 }
@@ -63,28 +66,20 @@ func crawlerEgressPolicy(policy toolpolicy.EgressPolicy) *rlibs.CrawlerEgressPol
 	}
 }
 
-// verifyRenderedEgress re-admits the origins the renderer says it contacted.
-//
-// A policy violation always fails the fetch: a redirect into a private address
-// or a rebound host must not return a body to the caller. An absent chain is a
-// different condition — nothing was checked — and fails under the secure
-// default. Only an explicit unsafe compatibility setting may accept it.
-func verifyRenderedEgress(ctx context.Context, logger logSDK.Logger, settings EgressSettings,
-	policy toolpolicy.EgressPolicy, chain []string,
-) error {
-	err := toolpolicy.VerifyEgressChain(ctx, policy, chain)
-	switch {
-	case err == nil:
-		logger.Debug("renderer egress verified", zap.Int("hops", len(chain)))
-		return nil
-	case errors.Is(err, toolpolicy.ErrEgressUnverified):
-		if settings.RequireVerified {
-			return errors.Wrap(err, "verify renderer egress")
-		}
-		logger.Warn("renderer reported no request chain; egress is unverified",
-			zap.String("host", policy.Host), zap.Bool("require_verified", false))
-		return nil
-	default:
-		return errors.Wrap(err, "renderer violated the egress policy")
+// verifyRenderedTask checks the immutable submitted target/policy against actual connection evidence.
+func verifyRenderedTask(ctx context.Context, settings EgressSettings, taskID, target string, policy toolpolicy.EgressPolicy, task *rlibs.HTMLCrawlerTask) error {
+	if task == nil || task.TaskID != taskID || task.Url != target || task.Egress == nil || crawleregress.PolicyDigest(target, *task.Egress) != crawleregress.PolicyDigest(target, policy) {
+		return fetchFailure(crawleregress.ErrRejected, "crawler_egress_rejected", "verification", taskID)
 	}
+	err := crawleregress.VerifyReceipt(ctx, taskID, target, policy, task.EgressReceipt)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, crawleregress.ErrUnverified) {
+		if !settings.RequireVerified {
+			return nil
+		}
+		return fetchFailure(err, "crawler_egress_unverified", "verification", taskID)
+	}
+	return fetchFailure(err, "crawler_egress_rejected", "verification", taskID)
 }

@@ -6,6 +6,8 @@ import (
 	"github.com/Laisky/errors/v2"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/go-utils/v6/json"
+
+	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 )
 
 const (
@@ -95,16 +97,7 @@ func NewLLMStormTask(prompt, apikey string) *LLMStormTask {
 // the name again and can reach a different address, so the admission-time DNS
 // check alone does not prevent rebinding, redirect escapes, or subresource
 // egress. The field names mirror internal/library/toolpolicy.EgressPolicy.
-type CrawlerEgressPolicy struct {
-	// Host is the only hostname this task may resolve.
-	Host string `json:"host"`
-	// Addresses are the only addresses the renderer may connect to for Host.
-	Addresses []string `json:"addresses"`
-	// MaxRedirects bounds the hops after the initial request; 0 allows none.
-	MaxRedirects int `json:"max_redirects"`
-	// AllowSubresources permits loading page subresources.
-	AllowSubresources bool `json:"allow_subresources"`
-}
+type CrawlerEgressPolicy = crawleregress.Policy
 
 // HTMLCrawlerTask is a task for crawling HTML pages.
 type HTMLCrawlerTask struct {
@@ -120,10 +113,11 @@ type HTMLCrawlerTask struct {
 	// unpinned; a renderer that receives no policy must refuse or be treated as
 	// unverified rather than assumed safe.
 	Egress *CrawlerEgressPolicy `json:"egress,omitempty"`
-	// RequestChain is the ordered list of origins the renderer actually
-	// contacted, starting with the original request. The server re-admits every
-	// entry, so a renderer that omits it leaves its egress unverified.
+	// RequestChain is legacy URL-only audit data. It cannot establish actual
+	// connection evidence and is never used to verify a successful result.
 	RequestChain []string `json:"request_chain,omitempty"`
+	// EgressReceipt is connection evidence bound to this exact task and policy.
+	EgressReceipt *crawleregress.Receipt `json:"egress_receipt,omitempty"`
 	// ResultHTML is the raw fetched HTML body, always present no matter OutputMarkdown is true or false
 	ResultHTML []byte `json:"result_html,omitempty"`
 	// ResultMarkdown if OutputMarkdown is true, the fetched HTML body converted to markdown
@@ -144,7 +138,7 @@ func (s *HTMLCrawlerTask) ToString() (string, error) {
 func NewHTMLCrawlerTaskFromString(taskStr string) (*HTMLCrawlerTask, error) {
 	var task HTMLCrawlerTask
 	if err := json.Unmarshal([]byte(taskStr), &task); err != nil {
-		return nil, errors.Wrapf(err, "unmarshal html crawler task %q", taskStr)
+		return nil, errors.Wrap(err, "unmarshal html crawler task")
 	}
 
 	return &task, nil
@@ -171,6 +165,15 @@ func NewHTMLCrawlerTaskWithEgress(url, apiKey string, outputMarkdown bool, egres
 		Url:            url,
 		APIKey:         apiKey,
 		OutputMarkdown: outputMarkdown,
-		Egress:         egress,
+		Egress:         cloneCrawlerPolicy(egress),
 	}
+}
+
+// cloneCrawlerPolicy prevents caller mutations from changing a submitted contract.
+func cloneCrawlerPolicy(policy *CrawlerEgressPolicy) *CrawlerEgressPolicy {
+	if policy == nil {
+		return nil
+	}
+	cloned := crawleregress.ClonePolicy(*policy)
+	return &cloned
 }
