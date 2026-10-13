@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { copyFile, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +38,9 @@ test('opt-in quarantine preserves exact Debug ID pairs outside checkout and remo
   assert.equal((await stat(artifact)).mode & 0o777, 0o700);
   assert.equal((await stat(join(artifact, 'assets/index-fixture.js.map'))).mode & 0o777, 0o600);
   assert.deepEqual(JSON.parse(await readFile(join(artifact, 'manifest.json'), 'utf8')), {
-    format: 1, files: [{ script: 'assets/index-fixture.js', map: 'assets/index-fixture.js.map', debug_id: debugID }],
+    format: 1, repaired_count: 0, files: [{ script: 'assets/index-fixture.js', map: 'assets/index-fixture.js.map', debug_id: debugID,
+      source_map_sha256: createHash('sha256').update(JSON.stringify(data.map)).digest('hex'),
+      prepared_map_sha256: createHash('sha256').update(JSON.stringify(data.map)).digest('hex'), repaired: false }],
   });
   assert.deepEqual(await readdir(join(data.dist, 'assets')), ['index-fixture.js']);
   assert.equal(await readFile(data.scriptPath, 'utf8'), data.script);
@@ -145,3 +148,100 @@ test('copy failure removes only collected maps and preserves JavaScript and unre
   assert.equal(await readFile(data.scriptPath, 'utf8'), data.script);
   assert.equal(await readFile(unrelated, 'utf8'), 'fixture must survive');
 });
+
+test('repairs only the private map copy when both IDs are absent, retaining all original source-map fields', async (context) => {
+  const data = await fixture(context);
+  const map = { version: 3, sources: ['../src/private-fixture.ts'], sourcesContent: ['synthetic private source'],
+    names: ['renderFixture'], mappings: 'AAAA,CAAC', file: 'index-fixture.js', sourceRoot: '../', extra: { retain: true } };
+  const original = JSON.stringify(map, null, 2);
+  await writeFile(data.mapPath, original);
+  const script = `globalThis._sentryDebugIdIdentifier="sentry-dbid-${debugID}";\n`
+    + `globalThis._sentryDebugIds["fixture-stack"]="${debugID}";\n//# debugId=${debugID}\n`;
+  await writeFile(data.scriptPath, script);
+  let originalObserved;
+  const artifact = await finalizePrivateSourceMaps({ enabled: true, distDir: data.dist, checkoutDir: data.checkout, scratchRoot: data.scratch,
+    copyFileFn: async (source, target) => {
+      if (source === data.mapPath) originalObserved = await readFile(source, 'utf8');
+      await copyFile(source, target);
+    } });
+  assert.equal(originalObserved, original, 'never rewrite the public source-map input');
+  const preparedBytes = await readFile(join(artifact, 'assets/index-fixture.js.map'));
+  assert.deepEqual(JSON.parse(preparedBytes.toString('utf8')), { ...map, debug_id: debugID, debugId: debugID });
+  assert.equal(await readFile(data.scriptPath, 'utf8'), script);
+  assert.equal(await readFile(join(artifact, 'assets/index-fixture.js'), 'utf8'), script);
+  await assert.rejects(readFile(data.mapPath), { code: 'ENOENT' });
+  const manifest = JSON.parse(await readFile(join(artifact, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.repaired_count, 1);
+  assert.equal(manifest.files[0].repaired, true);
+  assert.equal(manifest.files[0].source_map_sha256, createHash('sha256').update(original).digest('hex'));
+  assert.equal(manifest.files[0].prepared_map_sha256, createHash('sha256').update(preparedBytes).digest('hex'));
+  assert.notEqual(manifest.files[0].source_map_sha256, manifest.files[0].prepared_map_sha256);
+});
+
+for (const fields of [
+  { debug_id: debugID, debugId: debugID },
+  { debugId: debugID },
+]) {
+  test(`preserves existing valid ID fields without repair: ${Object.keys(fields).join(', ')}`, async (context) => {
+    const data = await fixture(context);
+    const { debug_id: _removed, ...map } = data.map;
+    const original = JSON.stringify({ ...map, ...fields }, null, 2);
+    await writeFile(data.mapPath, original);
+    const artifact = await finalizePrivateSourceMaps({ enabled: true, distDir: data.dist, checkoutDir: data.checkout, scratchRoot: data.scratch });
+    assert.equal(await readFile(join(artifact, 'assets/index-fixture.js.map'), 'utf8'), original);
+    const manifest = JSON.parse(await readFile(join(artifact, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.repaired_count, 0);
+    assert.equal(manifest.files[0].source_map_sha256, manifest.files[0].prepared_map_sha256);
+  });
+}
+
+for (const [label, fields] of [
+  ['invalid present underscore', { debug_id: 'invalid' }],
+  ['null present underscore', { debug_id: null }],
+  ['invalid present camel case', { debugId: 'invalid' }],
+  ['mismatched underscore', { debug_id: '87654321-1234-4123-8123-123456789abc' }],
+  ['inconsistent dual fields', { debug_id: debugID, debugId: '87654321-1234-4123-8123-123456789abc' }],
+]) {
+  test(`rejects ${label} and removes served maps`, async (context) => {
+    const data = await fixture(context);
+    const { debug_id: _removed, ...map } = data.map;
+    await writeFile(data.mapPath, JSON.stringify({ ...map, ...fields }));
+    await assert.rejects(finalizePrivateSourceMaps({ enabled: true, distDir: data.dist, checkoutDir: data.checkout, scratchRoot: data.scratch }),
+      { message: 'Private source map quarantine failed.' });
+    await assert.rejects(readFile(data.mapPath), { code: 'ENOENT' });
+    assert.equal(await readFile(data.scriptPath, 'utf8'), data.script);
+  });
+}
+
+for (const [label, script] of [
+  ['only runtime ID', `globalThis._sentryDebugIdIdentifier="sentry-dbid-${debugID}";`],
+  ['two official footers', `//# debugId=${debugID}\n//# debugId=${debugID}\n`],
+  ['inconsistent runtime identifier', `globalThis._sentryDebugIdIdentifier="sentry-dbid-87654321-1234-4123-8123-123456789abc";\n//# debugId=${debugID}\n`],
+  ['inconsistent runtime table', `globalThis._sentryDebugIds["fixture"]="87654321-1234-4123-8123-123456789abc";\n//# debugId=${debugID}\n`],
+]) {
+  test(`does not repair a missing-ID map with ${label}`, async (context) => {
+    const data = await fixture(context);
+    const { debug_id: _removed, ...map } = data.map;
+    await writeFile(data.mapPath, JSON.stringify(map));
+    await writeFile(data.scriptPath, script);
+    await assert.rejects(finalizePrivateSourceMaps({ enabled: true, distDir: data.dist, checkoutDir: data.checkout, scratchRoot: data.scratch }),
+      { message: 'Private source map quarantine failed.' });
+    await assert.rejects(readFile(data.mapPath), { code: 'ENOENT' });
+    assert.equal(await readFile(data.scriptPath, 'utf8'), script);
+  });
+}
+
+for (const [label, fields] of [
+  ['non-array sources', { sources: 'synthetic.ts', mappings: 'AAAA' }],
+  ['non-string mappings', { sources: ['synthetic.ts'], mappings: ['AAAA'] }],
+]) {
+  test(`does not repair missing IDs with ${label}`, async (context) => {
+    const data = await fixture(context);
+    await writeFile(data.mapPath, JSON.stringify({ version: 3, ...fields }));
+    await assert.rejects(finalizePrivateSourceMaps({ enabled: true, distDir: data.dist, checkoutDir: data.checkout, scratchRoot: data.scratch }),
+      { message: 'Private source map quarantine failed.' });
+    await assert.rejects(readFile(data.mapPath), { code: 'ENOENT' });
+    assert.equal(await readFile(data.scriptPath, 'utf8'), data.script);
+    assert.deepEqual(await readdir(data.scratch), []);
+  });
+}

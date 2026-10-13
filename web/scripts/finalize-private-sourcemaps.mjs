@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -52,12 +53,36 @@ export function hasSourceMapDirective(source) {
   return Array.from(directiveComments(source)).some(({ text }) => /^[#@]\s*sourceMappingURL\s*=/.test(text));
 }
 
-/** matchingDebugID requires the emitted debugId line directive to match its paired source map. */
-function matchingDebugID(source, expected) {
-  // The official plugin emits this standalone footer after the generated JavaScript.
-  const directive = /(?:^|\n)[ \t]*\/\/#\s*debugId=([0-9a-f-]+)[ \t]*(?:\r?\n)?$/i.exec(source);
-  return directive?.[1] === expected;
+/** officialDebugID validates one official footer and corroborates any injected runtime identifier. */
+function officialDebugID(source) {
+  const lines = [...source.matchAll(/^[ \t]*\/\/#\s*debugId=([^\r\n]*)$/gm)];
+  const footer = /(?:^|\n)[ \t]*\/\/#\s*debugId=([0-9a-f-]+)[ \t]*(?:\r?\n)?$/i.exec(source);
+  const debugID = footer?.[1];
+  if (lines.length !== 1 || typeof debugID !== 'string' || !debugIDPattern.test(debugID)) throw new Error(failureMessage);
+  const runtimeIdentifiers = [...source.matchAll(/_sentryDebugIdIdentifier\s*=\s*["']([^"']+)["']/g)];
+  if (runtimeIdentifiers.some((match) => match[1] !== `sentry-dbid-${debugID}`)) throw new Error(failureMessage);
+  const runtimeTable = [...source.matchAll(/_sentryDebugIds\[[^\]\r\n]+\]\s*=\s*["']([^"']+)["']/g)];
+  if (runtimeTable.some((match) => match[1] !== debugID)) throw new Error(failureMessage);
+  return debugID;
 }
+
+/** prepareMap preserves present IDs and repairs only a private flat V3 copy missing both ID fields. */
+function prepareMap(sourceBytes, sourceMap, debugID) {
+  if (!sourceMap || typeof sourceMap !== 'object' || Array.isArray(sourceMap)
+    || sourceMap.version !== 3 || Object.hasOwn(sourceMap, 'sections')
+    || !Array.isArray(sourceMap.sources) || typeof sourceMap.mappings !== 'string') throw new Error(failureMessage);
+  const hasUnderscore = Object.hasOwn(sourceMap, 'debug_id');
+  const hasCamelCase = Object.hasOwn(sourceMap, 'debugId');
+  for (const key of ['debug_id', 'debugId']) {
+    if (Object.hasOwn(sourceMap, key) && (typeof sourceMap[key] !== 'string'
+      || !debugIDPattern.test(sourceMap[key]) || sourceMap[key] !== debugID)) throw new Error(failureMessage);
+  }
+  if (hasUnderscore || hasCamelCase) return { bytes: sourceBytes, repaired: false };
+  return { bytes: Buffer.from(JSON.stringify({ ...sourceMap, debug_id: debugID, debugId: debugID }) + '\n'), repaired: true };
+}
+
+/** sha256 identifies exact original and privately prepared map bytes without exposing their source. */
+function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
 
 /** finalizePrivateSourceMaps quarantines matching build artifacts before removing served maps. */
 export async function finalizePrivateSourceMaps({ enabled = false, distDir = join(webDirectory, 'dist'),
@@ -83,14 +108,15 @@ export async function finalizePrivateSourceMaps({ enabled = false, distDir = joi
     for (const mapPath of maps) {
       const scriptPath = mapPath.slice(0, -4);
       if (!files.includes(scriptPath)) throw new Error(failureMessage);
-      const sourceMap = JSON.parse(await readFile(mapPath, 'utf8'));
+      const sourceBytes = await readFile(mapPath);
+      const sourceMap = JSON.parse(sourceBytes.toString('utf8'));
       let debugID;
+      let prepared = { bytes: sourceBytes, repaired: false };
       if (/\.(?:js|mjs|cjs)$/.test(scriptPath)) {
-        debugID = sourceMap.debug_id;
-        if (typeof debugID !== 'string' || !debugIDPattern.test(debugID)
-          || !matchingDebugID(await readFile(scriptPath, 'utf8'), debugID)) throw new Error(failureMessage);
+        debugID = officialDebugID(await readFile(scriptPath, 'utf8'));
+        prepared = prepareMap(sourceBytes, sourceMap, debugID);
       }
-      pairs.push({ scriptPath, mapPath, debugID });
+      pairs.push({ scriptPath, mapPath, debugID, sourceBytes, prepared });
     }
     if (!pairs.some((pair) => pair.debugID)) throw new Error(failureMessage);
     const artifactDir = await mkdtemp(join(scratch, 'mcp-private-sourcemaps-'));
@@ -105,11 +131,13 @@ export async function finalizePrivateSourceMaps({ enabled = false, distDir = joi
         const target = join(artifact, relative(dist, source));
         await mkdir(dirname(target), { recursive: true, mode: 0o700 });
         await copyFileFn(source, target);
+        if (source === pair.mapPath && pair.prepared.repaired) await writeFile(target, pair.prepared.bytes);
         await chmod(target, 0o600);
       }
-      manifest.push({ script, map, ...(pair.debugID ? { debug_id: pair.debugID } : {}) });
+      manifest.push({ script, map, ...(pair.debugID ? { debug_id: pair.debugID } : {}),
+        source_map_sha256: sha256(pair.sourceBytes), prepared_map_sha256: sha256(pair.prepared.bytes), repaired: pair.prepared.repaired });
     }
-    await writeFile(join(artifact, 'manifest.json'), JSON.stringify({ format: 1, files: manifest }, null, 2) + '\n', { mode: 0o600 });
+    await writeFile(join(artifact, 'manifest.json'), JSON.stringify({ format: 1, repaired_count: pairs.filter((pair) => pair.prepared.repaired).length, files: manifest }, null, 2) + '\n', { mode: 0o600 });
     return artifact;
   } catch { throw new Error(failureMessage); }
   finally {
