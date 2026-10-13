@@ -21,6 +21,8 @@ import { applySiteBranding } from '@/lib/site-branding';
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
 import { HomePage } from '@/pages/home';
 import { NotFoundPage } from '@/pages/not-found';
+import { RouteError } from '@/pages/route-error';
+import { browserReporter, createRootErrorHandlers, initializeBrowserSentry } from '@/lib/browser-sentry';
 import { SsoGithubCallbackPage } from '@/pages/sso-github-callback';
 import { SsoLoginPage } from '@/pages/sso-login';
 import { SsoProfilePage } from '@/pages/sso-profile';
@@ -58,7 +60,7 @@ async function bootstrap() {
     throw new Error('Failed to find root element');
   }
 
-  createRoot(container).render(
+  createRoot(container, createRootErrorHandlers()).render(
     <StrictMode>
       <ThemeProvider>
         <ToolsConfigProvider config={toolsConfig} prices={runtimeConfig?.pricing}>
@@ -71,7 +73,8 @@ async function bootstrap() {
   );
 }
 
-bootstrap().catch((error) => {
+initializeBrowserSentry().then(bootstrap).catch((error) => {
+  browserReporter.capture(error, 'bootstrap');
   if (import.meta.env.DEV) {
     console.error('Failed to initialize application', error);
   }
@@ -90,7 +93,7 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled
     {
       path: '/',
       element: <AppLayout />,
-      errorElement: <NotFoundPage />,
+      errorElement: <RouteError />,
       children: [
         { index: true, element: <HomePage /> },
         { path: 'tools/ask_user', element: <AskUserPage /> },

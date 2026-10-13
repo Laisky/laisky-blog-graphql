@@ -33,6 +33,12 @@ COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY web/ ./
+# Public browser routing/configuration only; never pass upload auth tokens here.
+ARG VITE_SENTRY_ENABLED
+ARG VITE_SENTRY_SITE
+ARG VITE_SENTRY_DSN
+ARG VITE_SENTRY_ENVIRONMENT
+ARG VITE_SENTRY_RELEASE
 RUN pnpm build
 
 # copy executable file, certs, and assets to a pure container

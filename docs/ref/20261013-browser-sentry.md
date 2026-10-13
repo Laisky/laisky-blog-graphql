@@ -1,0 +1,11 @@
+# Browser Sentry SDK decisions (checked 2026-10-13)
+
+- [Official React SDK setup](https://docs.sentry.io/platforms/javascript/guides/react/): React 19 supports `createRoot` error callbacks for caught, uncaught and recoverable errors. This application uses those callbacks through one reporter, plus the React Router fallback for loader/render failures. It does not combine Sentry ErrorBoundary with another automatic boundary reporter.
+- [Official options](https://docs.sentry.io/platforms/javascript/guides/react/configuration/options/): `defaultIntegrations: false` removes defaults. `beforeSend` runs after scope enrichment and can drop or rewrite errors. Version 11 dataCollection defaults include rich debugging data; every documented collection category is explicitly disabled. Fetch message enrichment, logs, sessions, breadcrumbs and tracing propagation are disabled.
+- [GlobalHandlers](https://docs.sentry.io/platforms/javascript/guides/react/configuration/integrations/globalhandlers/): captures browser uncaught errors and promise rejections. Only this integration and Dedupe are explicitly enabled.
+- [Official Vite source maps](https://docs.sentry.io/platforms/javascript/sourcemaps/uploading/vite/): upload privately to the correct project and correlate deployed assets. Hidden maps alone are still files that must be excluded from published artifacts.
+- Registry metadata for pinned `@sentry/react` 11.7.0 declares React 17/18/19 and React Router 6/7/8 peers. The installed SDK's TypeScript declarations verify the precise dataCollection option names and error event type; build/tests verify local compatibility.
+
+No wizard, Sentry credentials, project creation, upload or real test event was used. This reference records upstream guidance, not production qualification.
+
+SDK 11.7.0 source inspection: `core/client.js` internal-error path can bypass beforeSend, and `utils/prepareEvent.js` skips event processors for internal hints. Therefore the final transport reconstructs error-only envelopes from the same strict projection and removes other items/headers, including attachments. Synthetic real-SDK tests cover this bypass. No traces sampler/sample rate is configured; setting a rate of zero can still enable tracing mode.
