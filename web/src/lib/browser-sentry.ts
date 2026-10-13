@@ -4,6 +4,7 @@ const HOST = 'mcp.laisky.com';
 const ERROR_TYPES = new Set(['Error', 'TypeError', 'ReferenceError', 'RangeError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError']);
 const SOURCES = new Set(['bootstrap', 'react-caught', 'react-uncaught', 'react-recoverable', 'router']);
 
+/** BrowserSentryConfig contains only explicit public deployment values. */
 export type BrowserSentryConfig = {
   enabled?: string;
   site?: string;
@@ -14,6 +15,7 @@ export type BrowserSentryConfig = {
 
 type Settings = { dsn: string; environment: string; release: string };
 type Sdk = Pick<typeof import('@sentry/react'), 'init' | 'captureException' | 'globalHandlersIntegration' | 'dedupeIntegration' | 'makeFetchTransport'>;
+/** ErrorSource limits event labels to recognized application error paths. */
 export type ErrorSource = 'bootstrap' | 'react-caught' | 'react-uncaught' | 'react-recoverable' | 'router';
 
 /** resolveSettings requires deliberate deployment configuration for the exact MCP host. */
@@ -30,7 +32,7 @@ function resolveSettings(config: BrowserSentryConfig, hostname: string): Setting
   } catch { return; }
 }
 
-/** safeAssetUrl retains only built app assets; routes, credentials, queries and fragments never leave the browser. */
+/** normalizeAssetUrl retains only built app assets; routes, credentials, queries and fragments never leave the browser. */
 function normalizeAssetUrl(input: unknown): string | undefined {
   if (typeof input !== 'string' || input.length > 2048) return;
   try {
@@ -112,6 +114,20 @@ export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import
     if (!transportFailureLogged) { console.warn('Browser error reporting transport unavailable'); transportFailureLogged = true; }
   };
   const reported = new WeakSet<object>();
+  const primitiveReports = new Map<string, { source: ErrorSource; at: number }>();
+  const primitiveKey = (error: unknown): string | undefined => {
+    const kind = typeof error;
+    if (kind !== 'string' && kind !== 'number' && kind !== 'boolean' && kind !== 'undefined' && error !== null) return;
+    const value = String(error);
+    if (value.length > 65_536) return;
+    // Two local non-cryptographic words identify cross-source duplicates; hashes are never emitted or used for security.
+    let first = 0x811c9dc5; let second = 0x9e3779b9;
+    for (let index = 0; index < value.length; index++) {
+      const character = value.charCodeAt(index);
+      first = Math.imul(first ^ character, 0x01000193); second = Math.imul(second ^ character, 0x85ebca6b);
+    }
+    return `${kind}:${value.length}:${first >>> 0}:${second >>> 0}`;
+  };
   return {
     init(config: BrowserSentryConfig, hostname: string): Promise<void> {
       if (initialization) return initialization;
@@ -183,6 +199,18 @@ export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import
     isEnabled(): boolean { return ready; },
     capture(error: unknown, source: ErrorSource): void {
       if (!sdk || !ready) return;
+      if (typeof error === 'string' && error.length > 65_536) return;
+      if (source === 'react-caught' || source === 'router') {
+        const key = primitiveKey(error);
+        if (key) {
+          const now = Date.now();
+          for (const [stored, report] of primitiveReports) if (now - report.at > 500) primitiveReports.delete(stored);
+          const previous = primitiveReports.get(key);
+          if (previous && previous.source !== source) return;
+          primitiveReports.delete(key); primitiveReports.set(key, { source, at: now });
+          if (primitiveReports.size > 32) primitiveReports.delete(primitiveReports.keys().next().value!);
+        }
+      }
       try { sdk.captureException(error, { tags: { source } }); } catch { console.warn('Browser error reporting could not capture an error'); }
     },
   };

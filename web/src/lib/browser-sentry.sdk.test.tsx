@@ -1,6 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import * as Sentry from '@sentry/react';
-import { createBrowserReporter } from './browser-sentry';
+import { act, StrictMode, type ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { RouteError } from '@/pages/route-error';
+import { browserReporter, createBrowserReporter, createRootErrorHandlers } from './browser-sentry';
 
 afterEach(async () => { await Sentry.close(1000); vi.restoreAllMocks(); });
 it('uses the real pinned SDK to capture manual, unhandled error and rejection events with a memory-only transport', async () => {
@@ -25,4 +30,21 @@ it('uses the real pinned SDK to capture manual, unhandled error and rejection ev
   const wire = JSON.stringify(envelopes); expect(wire).toContain('Browser application error'); expect(wire).toContain('mcp@abcdef0123456789');
   for (const forbidden of ['private', 'secret', '?key=', '?prompt=', '?token=', 'tool args', 'tool result', 'history']) expect(wire).not.toContain(forbidden);
   expect(wire).not.toContain('session'); expect(wire).not.toContain('transaction');
+});
+
+it('reports a mounted router primitive failure once across React caught hook and StrictMode fallback', async () => {
+  const envelopes: unknown[] = [];
+  const reporter = createBrowserReporter(async () => ({ ...Sentry,
+    makeFetchTransport: () => ({ send: async (envelope) => { envelopes.push(envelope); return { statusCode: 200 }; }, flush: async () => true }),
+  }), 'https://mcp.laisky.com/assets/index-AbCd1234.js');
+  await reporter.init({ enabled: 'true', site: 'mcp', dsn: 'https://0123456789abcdef0123456789abcdef@o123.ingest.sentry.io/456', environment: 'staging', release: 'abcdef0123456789' }, 'mcp.laisky.com');
+  vi.spyOn(browserReporter, 'capture').mockImplementation(reporter.capture);
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  function Thrower(): ReactNode { throw 'private primitive tool result'; }
+  const router = createMemoryRouter([{ path: '/', element: <Thrower />, errorElement: <RouteError /> }]);
+  const container = document.createElement('div'); const root = createRoot(container, createRootErrorHandlers(reporter, true));
+  flushSync(() => { root.render(<StrictMode><RouterProvider router={router} /></StrictMode>); });
+  await act(async () => {}); await Sentry.flush(1000);
+  expect(container.textContent).toContain('Page not found'); expect(envelopes).toHaveLength(1);
+  expect(JSON.stringify(envelopes)).not.toContain('private'); flushSync(() => root.unmount());
 });

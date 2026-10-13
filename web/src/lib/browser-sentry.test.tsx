@@ -18,6 +18,19 @@ function fakeSdk() {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('deployment gating and SDK lifecycle', () => {
+  it('deduplicates only paired primitive sources within 500ms, preserving same-source and distinct failures', async () => {
+    vi.useFakeTimers(); const sdk = fakeSdk(); const reporter = createBrowserReporter(async () => sdk); await reporter.init(config, HOST);
+    reporter.capture('private', 'react-caught'); reporter.capture('private', 'router');
+    expect(sdk.captureException).toHaveBeenCalledTimes(1);
+    reporter.capture('private', 'react-caught'); reporter.capture('distinct private', 'router');
+    expect(sdk.captureException).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(501); reporter.capture('private', 'router'); expect(sdk.captureException).toHaveBeenCalledTimes(4);
+    const long = 'private'.repeat(1000); reporter.capture(long, 'react-caught'); reporter.capture(long, 'router'); expect(sdk.captureException).toHaveBeenCalledTimes(5);
+    reporter.capture('private'.repeat(10000), 'router'); expect(sdk.captureException).toHaveBeenCalledTimes(5);
+    for (let index = 0; index < 33; index++) reporter.capture(`private-${index}`, 'react-caught');
+    reporter.capture('private-0', 'router'); expect(sdk.captureException).toHaveBeenCalledTimes(39);
+  });
+
   it.each(['throw', 'reject'] as const)('contains transport send %s and flush failures without SDK retry loops', async (failure) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {}); const sdk = fakeSdk();
     const reporter = createBrowserReporter(async () => sdk); await reporter.init(config, HOST);
