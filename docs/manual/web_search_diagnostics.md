@@ -16,6 +16,8 @@ The search manager previously stringified all provider errors, losing typed caus
 
 Provider diagnostics omit query text, query length, credentials, headers, endpoint URLs, raw response bodies and provider error messages. Known providers return safe typed status/stage failures, preserving typed transport/read/decode causes internally. HTTP status is checked before reading error bodies. This is an observability and privacy repair; no historical provider outage is asserted or repaired speculatively.
 
+Search events use an application base logger with a reviewed opaque request ID propagated through the search context. They do not inherit the framework request logger: the MCP framework binds client addresses and paths, and other callers can bind arbitrary user fields. JSON-log negative controls demonstrate this leakage before the correction. This deliberate logger choice follows the task's stricter privacy requirement; the repository's general framework-logger convention would retain those user fields.
+
 The MCP success schema remains unchanged. Failures still use the MCP tool-error result rather than a transport error. Search failures expose a safe category, and billing-denial results use a generic message instead of arbitrary upstream text. Accepted billing is not repeated, refunded or otherwise changed by this patch.
 
 ## Diagnostic contract

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
@@ -118,13 +117,11 @@ func (se *SearchEngine) Search(ctx context.Context, query string) (*BingAnswer, 
 	// Set the subscription key header.
 	req.Header.Add("Ocp-Apim-Subscription-Key", se.apikey)
 
-	logger := se.logger
-	if ctx != nil {
-		logger = gmw.GetLogger(ctx).Named("bing_search")
-	}
+	logger := diagnostics.Logger(ctx, se.logger)
 	if logger == nil {
 		logger = appLog.Logger.Named("bing_search")
 	}
+	logger = logger.With(zap.String("provider", "bing"))
 
 	logger.Debug("outgoing http request",
 		zap.String("method", req.Method),

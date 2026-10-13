@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
-	gutils "github.com/Laisky/go-utils/v6"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
@@ -145,10 +143,7 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 		return nil, errors.New("search query cannot be empty")
 	}
 
-	logger := m.logger
-	if ctx != nil && ctx.Value(gutils.CtxKey("gmw-logger")) != nil {
-		logger = gmw.GetLogger(ctx).Named("search_manager")
-	}
+	logger := diagnostics.Logger(ctx, m.logger)
 
 	allowedAttempts := m.maxRetries + 1
 	if allowedAttempts <= 0 {

@@ -76,7 +76,7 @@ func TestSearchDiagnosticsPrivacy(t *testing.T) {
 			engine := NewSearchEngine(diagnosticCanary)
 			engine.client = client
 			engine.logger = logger
-			_, err = engine.Search(gmw.SetLogger(context.Background(), logger), diagnosticCanary)
+			_, err = engine.Search(diagnostics.WithLogger(gmw.SetLogger(context.Background(), logger), logger), diagnosticCanary)
 			require.Equal(t, 1, calls, "privacy checks must actually invoke the provider")
 			if tc.success {
 				require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestSearchStalledResponseBodyClassifiesDeadline(t *testing.T) {
 				<-req.Context().Done()
 			}))
 			defer server.Close()
-			ctx, cancel := context.WithTimeout(gmw.SetLogger(context.Background(), logger), tc.callerTimeout)
+			ctx, cancel := context.WithTimeout(diagnostics.WithLogger(gmw.SetLogger(context.Background(), logger), logger), tc.callerTimeout)
 			defer cancel()
 			client := server.Client()
 			client.Timeout = tc.clientTimeout
@@ -245,6 +245,7 @@ func TestSearchStalledResponseBodyClassifiesDeadline(t *testing.T) {
 				return localTransport.RoundTrip(localRequest)
 			})
 			engine.client = client
+			engine.logger = logger
 			_, err = engine.Search(ctx, diagnosticCanary)
 			require.Error(t, err)
 			select {
@@ -268,5 +269,60 @@ func TestSearchStalledResponseBodyClassifiesDeadline(t *testing.T) {
 			require.NotContains(t, encoded.String(), diagnosticCanary)
 			require.NotContains(t, err.Error(), diagnosticCanary)
 		})
+	}
+}
+
+// TestSearchDoesNotInheritFrameworkUserFields exercises actual JSON inherited-field serialization.
+func TestSearchDoesNotInheritFrameworkUserFields(t *testing.T) {
+	var encoded bytes.Buffer
+	core := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		zapcore.AddSync(&encoded), zap.DebugLevel)
+	base, err := glog.NewWithName("reviewed-base", glog.LevelDebug,
+		zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
+	require.NoError(t, err)
+	fields := []string{"remote_addr", "path", "query", "auth", "user_id"}
+	inherited := make([]zap.Field, 0, len(fields))
+	for _, field := range fields {
+		inherited = append(inherited, zap.String(field, diagnosticCanary+"-"+field))
+	}
+	frameworkLogger := base.With(inherited...)
+	frameworkLogger.Debug("synthetic framework negative control")
+	for _, field := range fields {
+		require.Contains(t, encoded.String(), diagnosticCanary+"-"+field,
+			"the framework logger must actually carry the synthetic user field")
+	}
+	encoded.Reset()
+	ctx := gmw.SetLogger(context.Background(), frameworkLogger)
+	calls := 0
+	client := &http.Client{Transport: diagnosticTransport(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header),
+			Body: io.NopCloser(strings.NewReader(`{"webPages":{"value":[{"url":"https://public.example/result"}]}}`)), Request: req}, nil
+	})}
+	engine := NewSearchEngine("synthetic-key")
+	engine.client = client
+	engine.logger = base
+	_, err = engine.Search(ctx, "public synthetic query")
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+	require.NotEmpty(t, encoded.String(), "provider diagnostics remain enabled")
+	for _, field := range fields {
+		require.NotContains(t, encoded.String(), diagnosticCanary+"-"+field)
+		require.NotContains(t, encoded.String(), "\""+field+"\":")
+	}
+	require.Contains(t, encoded.String(), "\"provider\":\"bing\"")
+	encoded.Reset()
+	const operationID = "2da21657-39ea-4385-99c7-7321fe0a8f11"
+	reviewed := base.With(zap.Bool("reviewed_operation", true), zap.String("request_id", operationID))
+	ctx = diagnostics.WithLogger(diagnostics.WithRequestID(ctx, operationID), reviewed)
+	_, err = engine.Search(ctx, "public synthetic query")
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+	require.Contains(t, encoded.String(), "\"reviewed_operation\":true",
+		"the reviewed operation logger must take priority over the fallback")
+	require.Contains(t, encoded.String(), operationID, "canonical correlation remains available")
+	for _, field := range fields {
+		require.NotContains(t, encoded.String(), diagnosticCanary+"-"+field)
+		require.NotContains(t, encoded.String(), "\""+field+"\":")
 	}
 }

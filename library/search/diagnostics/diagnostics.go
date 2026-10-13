@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/Laisky/errors/v2"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/google/uuid"
 )
 
@@ -208,6 +209,25 @@ func Summary(err error) Diagnostic {
 }
 
 type requestIDKey struct{}
+
+type loggerKey struct{}
+
+// WithLogger binds an application base logger carrying only reviewed fields.
+// Framework request loggers can carry user data and must not be supplied here.
+func WithLogger(ctx context.Context, logger logSDK.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey{}, logger)
+}
+
+// Logger selects the reviewed operation logger or the injected application base.
+// It never inherits arbitrary fields from framework request loggers.
+func Logger(ctx context.Context, fallback logSDK.Logger) logSDK.Logger {
+	if ctx != nil {
+		if logger, ok := ctx.Value(loggerKey{}).(logSDK.Logger); ok && logger != nil {
+			return logger
+		}
+	}
+	return fallback
+}
 
 // WithRequestID carries only a canonical nonzero UUID through the search path.
 func WithRequestID(ctx context.Context, id string) context.Context {

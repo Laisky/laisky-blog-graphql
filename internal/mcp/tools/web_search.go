@@ -78,7 +78,7 @@ func (t *WebSearchTool) Definition() mcp.Tool {
 
 // Handle executes the web_search tool logic using the configured dependencies.
 func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	logger := webSearchLogger(ctx, t.logger)
+	logger := webSearchLogger(t.logger)
 	requestID, _ := ctx.Value(ctxkeys.RequestID).(string)
 	parsedID, idErr := uuid.Parse(requestID)
 	if idErr != nil || len(requestID) != 36 || parsedID == uuid.Nil || parsedID.String() != requestID {
@@ -86,6 +86,7 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 	}
 	ctx = diagnostics.WithRequestID(ctx, requestID)
 	logger = logger.With(zap.String("web_search_request_id", requestID))
+	ctx = diagnostics.WithLogger(ctx, logger)
 	query, err := req.RequireString("query")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -148,8 +149,10 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 	return toolResult, nil
 }
 
-func webSearchLogger(ctx context.Context, fallback logSDK.Logger) logSDK.Logger {
-	logger := webFetchLogger(ctx, fallback)
+func webSearchLogger(fallback logSDK.Logger) logSDK.Logger {
+	// The MCP framework logger carries client addresses and paths. Start from
+	// the injected application base and attach only the reviewed correlation ID.
+	logger := fallback
 	if named, ok := logger.(interface{ Name() string }); ok && strings.HasSuffix(named.Name(), ".web_search") {
 		return logger
 	}

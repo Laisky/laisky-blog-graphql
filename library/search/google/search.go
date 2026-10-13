@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
@@ -119,13 +118,11 @@ func (se *SearchEngine) Search(ctx context.Context, query string) (*CustomSearch
 	params.Set("q", query)
 	req.URL.RawQuery = params.Encode()
 
-	logger := se.logger
-	if ctx != nil {
-		logger = gmw.GetLogger(ctx).Named("google_search")
-	}
+	logger := diagnostics.Logger(ctx, se.logger)
 	if logger == nil {
 		logger = appLog.Logger.Named("google_search")
 	}
+	logger = logger.With(zap.String("provider", "google"))
 
 	logger.Debug("outgoing http request",
 		zap.String("method", req.Method),

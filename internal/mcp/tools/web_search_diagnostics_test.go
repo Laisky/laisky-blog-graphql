@@ -89,9 +89,9 @@ func TestWebSearchDiagnosticsActualLogsAndAlert(t *testing.T) {
 			require.NoError(t, err)
 			provider := &diagnosticSearchProvider{err: tt.err, nilOutput: tt.nilOutput}
 			var billingCalls int
-			tool, err := NewWebSearchTool(provider, appLog.Logger, func(context.Context) string { return "private-token-canary" }, func(context.Context, string, oneapi.Price, string) error { billingCalls++; return nil })
+			tool, err := NewWebSearchTool(provider, logger, func(context.Context) string { return "private-token-canary" }, func(context.Context, string, oneapi.Price, string) error { billingCalls++; return nil })
 			require.NoError(t, err)
-			ctx := context.WithValue(context.Background(), ctxkeys.Logger, logger)
+			ctx := context.WithValue(context.Background(), ctxkeys.Logger, logger.With(zap.String("remote_addr", "private-address-canary"), zap.String("path", "private-user-path-canary"), zap.String("query", "private-query-canary"), zap.String("authorization", "private-auth-canary")))
 			ctx = context.WithValue(ctx, ctxkeys.RequestID, "private-id-canary")
 			result, err := tool.Handle(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"query": "private-query-canary"}}})
 			require.NoError(t, err)

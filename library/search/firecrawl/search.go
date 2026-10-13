@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
@@ -180,12 +179,10 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	logger := e.logger
-	if ctx != nil {
-		logger = gmw.GetLogger(ctx).Named("firecrawl_search")
-	}
+	logger := diagnostics.Logger(ctx, e.logger)
 
 	if logger != nil {
+		logger = logger.With(zap.String("provider", "firecrawl"))
 		logger.Debug("outgoing http request",
 			zap.String("method", req.Method),
 			zap.String("request_id", diagnostics.RequestID(ctx)),
