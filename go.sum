@@ -95,8 +95,6 @@ github.com/Laisky/go-utils/v3 v3.5.0 h1:CsPA/mcIHqBnA6I8rF/zDn9iRDE6BFQePrC7c36e
 github.com/Laisky/go-utils/v3 v3.5.0/go.mod h1:UY8fpnM/YqroAC3cxF2rwaehfX4vQktz9MJYrTxU9kg=
 github.com/Laisky/go-utils/v5 v5.2.1 h1:unaHHc99aACYrYEQnRTqamqT/Eq7/YZMzme6KYYTQhk=
 github.com/Laisky/go-utils/v5 v5.2.1/go.mod h1:Zs66B4NyyHHX+C13YFZLQrIFBA4eyvoWLqnu/C3/L5s=
-github.com/Laisky/go-utils/v6 v6.3.2-0.20261008165128-506ec9758d5f h1:Nn0K/vpv0yQg0XgaDqvsJlQSatjUxAyokbbIefYUp4k=
-github.com/Laisky/go-utils/v6 v6.3.2-0.20261008165128-506ec9758d5f/go.mod h1:vR5j5xG7ZrBcGIC3HMoLbC0TC8aTXu7voSDR78cOr58=
 github.com/Laisky/go-utils/v6 v6.4.0 h1:t3a0uezKHWc+77UTCUVuv+gT+a2A0OmHTuyM6xnS/Uk=
 github.com/Laisky/go-utils/v6 v6.4.0/go.mod h1:vR5j5xG7ZrBcGIC3HMoLbC0TC8aTXu7voSDR78cOr58=
 github.com/Laisky/golang-fifo v1.0.1-0.20240403092208-1d90c6c33e11 h1:floHhmC3CTMGzxG0pagDMNLIWchPpbJocYKL5DtphGg=
