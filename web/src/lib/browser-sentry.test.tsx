@@ -4,8 +4,10 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import type { BrowserOptions, ErrorEvent } from '@sentry/react';
 
-import { createBrowserReporter, createRootErrorHandlers, projectErrorEvent, projectErrorEnvelope, safeAssetUrl } from './browser-sentry';
+import { browserReporter, initializeBrowserSentry, createBrowserReporter as buildBrowserReporter, createRootErrorHandlers, projectErrorEvent, projectErrorEnvelope, safeAssetUrl } from './browser-sentry';
 
+// Unit and memory-transport tests explicitly isolate origin policy from jsdom's default origin.
+const createBrowserReporter = (...args: Parameters<typeof buildBrowserReporter>) => buildBrowserReporter(args[0], args[1], args[2] ?? (() => true));
 const HOST = 'mcp.laisky.com';
 const config = { enabled: 'true', site: 'mcp', dsn: 'https://0123456789abcdef0123456789abcdef@o123.ingest.sentry.io/456', environment: 'staging', release: 'abcdef0123456789' };
 const settings = { environment: 'staging', release: 'mcp@abcdef0123456789' };
@@ -15,9 +17,47 @@ const event: ErrorEvent = { type: undefined, exception: { values: [{ type: 'Type
 function fakeSdk() {
   return { init: vi.fn<(options: BrowserOptions) => ReturnType<typeof import('@sentry/react')['init']>>().mockReturnValue({} as ReturnType<typeof import('@sentry/react')['init']>), captureException: vi.fn(), globalHandlersIntegration: vi.fn(() => ({ name: 'GlobalHandlers' })), dedupeIntegration: vi.fn(() => ({ name: 'Dedupe' })), makeFetchTransport: vi.fn<typeof import('@sentry/react')['makeFetchTransport']>(() => ({ send: vi.fn(async () => ({})), flush: vi.fn(async () => true) })) };
 }
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe('deployment gating and SDK lifecycle', () => {
+  it('closes capture, readiness, hooks and final transport when the origin no longer matches', async () => {
+    const sdk = fakeSdk(); let allowed = true;
+    const reporter = createBrowserReporter(async () => sdk, asset, () => allowed);
+    await reporter.init(config, HOST); expect(reporter.isEnabled()).toBe(true);
+    const options = sdk.init.mock.calls[0][0];
+    const transport = options.transport!({} as Parameters<NonNullable<BrowserOptions['transport']>>[0]);
+    allowed = false;
+    expect(reporter.isEnabled()).toBe(false); reporter.capture(new Error('private'), 'bootstrap');
+    expect(sdk.captureException).not.toHaveBeenCalled();
+    const hint = { attachments: [{ filename: 'private', data: 'private' }] };
+    expect(options.beforeSend!(event, hint)).toBeNull(); expect(hint.attachments).toEqual([]);
+    await expect(transport.send([{}, [[{ type: 'event' }, event]]])).resolves.toEqual({});
+    expect(sdk.makeFetchTransport.mock.results[0].value.send).not.toHaveBeenCalled();
+  });
+  it('refuses SDK loading before origin approval and rechecks origin after asynchronous loading', async () => {
+    const sdk = fakeSdk(); const load = vi.fn(async () => sdk);
+    await createBrowserReporter(load, asset, () => false).init(config, HOST); expect(load).not.toHaveBeenCalled();
+    let allowed = true; let resolve!: (sdk: ReturnType<typeof fakeSdk>) => void;
+    const reporter = createBrowserReporter(() => new Promise((done) => { resolve = done; }), asset, () => allowed);
+    const startup = reporter.init(config, HOST); allowed = false; resolve(sdk); await startup;
+    expect(sdk.init).not.toHaveBeenCalled(); expect(reporter.isEnabled()).toBe(false);
+  });
+  it.each(['http://mcp.laisky.com', 'https://mcp.laisky.com:8443', 'https://sso.laisky.com', 'https://mcp.laisky.com.evil.test'])('refuses browser initialization on origin %s', async (url) => {
+    vi.stubGlobal('window', { location: new URL(url) });
+    const initialize = vi.spyOn(browserReporter, 'init');
+    await initializeBrowserSentry();
+    expect(initialize).not.toHaveBeenCalled();
+  });
+  it.each(['https://mcp.laisky.com', 'https://mcp.laisky.com:443/path?private=secret#private'])('allows only the normalized target HTTPS origin %s', async (url) => {
+    vi.stubGlobal('window', { location: new URL(url) });
+    vi.stubEnv('VITE_SENTRY_ENABLED', 'true'); vi.stubEnv('VITE_SENTRY_SITE', 'mcp');
+    vi.stubEnv('VITE_SENTRY_DSN', config.dsn); vi.stubEnv('VITE_SENTRY_ENVIRONMENT', config.environment);
+    vi.stubEnv('VITE_SENTRY_RELEASE', config.release);
+    const initialize = vi.spyOn(browserReporter, 'init').mockResolvedValue();
+    await initializeBrowserSentry();
+    expect(initialize).toHaveBeenCalledExactlyOnceWith(config, HOST);
+  });
+
   it('deduplicates only paired primitive sources within 500ms, preserving same-source and distinct failures', async () => {
     vi.useFakeTimers(); const sdk = fakeSdk(); const reporter = createBrowserReporter(async () => sdk); await reporter.init(config, HOST);
     reporter.capture('private', 'react-caught'); reporter.capture('private', 'router');

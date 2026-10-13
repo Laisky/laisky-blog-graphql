@@ -105,7 +105,7 @@ export function projectErrorEnvelope(envelope: Envelope, settings: Pick<Settings
 }
 
 /** createBrowserReporter provides an inert, idempotent facade when deployment config or the SDK is unavailable. */
-export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import('./sentry-sdk'), entryAssetUrl = import.meta.url) {
+export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import('./sentry-sdk'), entryAssetUrl = import.meta.url, originAllowed = () => window.location.origin === 'https://mcp.laisky.com') {
   let initialization: Promise<void> | undefined;
   let sdk: Sdk | undefined;
   let ready = false;
@@ -130,6 +130,7 @@ export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import
   };
   return {
     init(config: BrowserSentryConfig, hostname: string): Promise<void> {
+      if (!originAllowed()) return Promise.resolve();
       if (initialization) return initialization;
       const settings = resolveSettings(config, hostname);
       if (!settings) return Promise.resolve();
@@ -143,13 +144,14 @@ export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import
               new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Reporting startup timeout')), 3000); }),
             ]);
           } finally { clearTimeout(timeout); }
+          if (!originAllowed()) return;
           const client = loaded.init({
             ...settings,
             transport: (options) => {
               const upstream = loaded.makeFetchTransport({ ...options, fetchOptions: { ...options.fetchOptions, credentials: 'omit', referrerPolicy: 'no-referrer' } });
               return {
                 send: async (envelope) => {
-                  const clean = ready ? projectErrorEnvelope(envelope, settings, entryAssetUrl) : null;
+                  const clean = ready && originAllowed() ? projectErrorEnvelope(envelope, settings, entryAssetUrl) : null;
                   if (!clean) return {};
                   try { return await upstream.send(clean); } catch { transportFailure(); return {}; }
                 },
@@ -174,7 +176,7 @@ export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import
             beforeBreadcrumb: () => null,
             beforeSend: (event: ErrorEvent, hint: EventHint) => {
               hint.attachments = [];
-              if (!ready) return null;
+              if (!ready || !originAllowed()) return null;
               const clean = projectErrorEvent(event, settings, entryAssetUrl);
               const original = hint.originalException;
               if (clean && original && (typeof original === 'object' || typeof original === 'function')) {
@@ -196,9 +198,9 @@ export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import
       })();
       return initialization;
     },
-    isEnabled(): boolean { return ready; },
+    isEnabled(): boolean { return ready && originAllowed(); },
     capture(error: unknown, source: ErrorSource): void {
-      if (!sdk || !ready) return;
+      if (!sdk || !ready || !originAllowed()) return;
       if (typeof error === 'string' && error.length > 65_536) return;
       if (source === 'react-caught' || source === 'router') {
         const key = primitiveKey(error);
@@ -218,8 +220,9 @@ export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import
 
 export const browserReporter = createBrowserReporter();
 
-/** initializeBrowserSentry initializes only explicitly opted-in builds on the MCP production hostname. */
+/** initializeBrowserSentry initializes only explicitly opted-in builds on the exact MCP HTTPS origin. */
 export function initializeBrowserSentry(): Promise<void> {
+  if (window.location.origin !== 'https://mcp.laisky.com') return Promise.resolve();
   return browserReporter.init({
     enabled: import.meta.env.VITE_SENTRY_ENABLED,
     site: import.meta.env.VITE_SENTRY_SITE,

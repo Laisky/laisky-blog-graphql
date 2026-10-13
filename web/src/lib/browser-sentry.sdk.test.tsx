@@ -5,7 +5,10 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { RouteError } from '@/pages/route-error';
-import { browserReporter, createBrowserReporter, createRootErrorHandlers } from './browser-sentry';
+import { browserReporter, createBrowserReporter as buildBrowserReporter, createRootErrorHandlers } from './browser-sentry';
+
+// SDK tests use an explicit approved origin predicate with an in-memory transport.
+const createBrowserReporter = (...args: Parameters<typeof buildBrowserReporter>) => buildBrowserReporter(args[0], args[1], args[2] ?? (() => true));
 
 afterEach(async () => { await Sentry.close(1000); vi.restoreAllMocks(); });
 it('uses the real pinned SDK to capture manual, unhandled error and rejection events with a memory-only transport', async () => {

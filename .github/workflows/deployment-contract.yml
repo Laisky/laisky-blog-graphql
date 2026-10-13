@@ -6,6 +6,8 @@ on:
       - '.github/workflows/ci.yml'
       - '.github/workflows/deployment-contract.yml'
       - '.scripts/test_deploy_workflow.py'
+      - '.scripts/prepare_browser_sentry.py'
+      - '.scripts/test_browser_sentry_build_args.py'
   workflow_dispatch:
 
 permissions:
@@ -20,4 +22,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Deployment status, image verification and rollback contracts
-        run: python3 .scripts/test_deploy_workflow.py
+        run: |
+          python3 .scripts/test_deploy_workflow.py
+          python3 .scripts/test_browser_sentry_build_args.py
