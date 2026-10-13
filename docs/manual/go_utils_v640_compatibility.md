@@ -25,10 +25,19 @@ acceptance. These fixtures contain no operational account or password data.
 
 ## Scope and remaining acceptance
 
-MCP file and memory implementations do not import go-utils directly. Their
-existing write/read, EOF, directory, quota, tenant-isolation, empty-search and
-memory-boundary regressions remain applicable as consumer controls. SMTP
+MCP file credentials directly use go-utils crypto/kms envelopes. Memory
+adapters directly use the agents/files and agents/memory SDKs. Synthetic old
+and updated consumer envelopes are read in both directions, with wrong AAD,
+wrong key, malformed encoding and tamper rejection controls. Existing write/read,
+EOF, directory, quota, tenant-isolation and memory-boundary tests, plus explicit
+adapter empty-search/list and failure contracts, are consumer controls. SMTP
 verification-code and OneAPI bcrypt tests cover their direct helper uses.
+The updated SDK bounds directory-summary introspection to canonical descendants
+of /memory/<session>, with depth/child-entry caps of 32/200, at most 64KiB per
+abstract and 1MiB aggregate abstract bytes, and a ten-second deadline. Cross-session paths now fail; root and traversal paths remain rejected; the documented empty-path session
+flow stays valid. Tests exercise both success and rejection through the real
+SQLite-backed memory service. This tightening belongs to the library update;
+callers using broad summary paths must use session-scoped paths instead.
 No Sentry/frontend or MCP web_search diagnostic files are changed.
 
 Validation receipts and exact commands are recorded in the pull request.
