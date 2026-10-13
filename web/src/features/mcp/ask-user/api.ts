@@ -1,3 +1,4 @@
+import { requestWithUnexpectedError, markPrivateError, readPrivateJsonResponse } from '@/lib/private-error';
 import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
 
 export interface AskUserRequest {
@@ -26,7 +27,7 @@ export async function listRequests(apiKey: string, signal?: AbortSignal): Promis
     throw new Error('API key is required');
   }
   const apiBasePath = resolveToolApiBase('ask_user');
-  const response = await fetch(`${apiBasePath}api/requests`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/requests`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -34,14 +35,14 @@ export async function listRequests(apiKey: string, signal?: AbortSignal): Promis
       Pragma: 'no-cache',
     },
     signal,
-  });
+  }, 'ask-user');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'Ask user request failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid ask user JSON response');
 }
 
 export async function submitAnswer(apiKey: string, requestId: string, answer: string): Promise<void> {
@@ -50,7 +51,7 @@ export async function submitAnswer(apiKey: string, requestId: string, answer: st
     throw new Error('API key is required');
   }
   const apiBasePath = resolveToolApiBase('ask_user');
-  const response = await fetch(`${apiBasePath}api/requests/${requestId}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/requests/${requestId}`, {
     cache: 'no-store',
     method: 'POST',
     headers: {
@@ -60,10 +61,10 @@ export async function submitAnswer(apiKey: string, requestId: string, answer: st
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ answer }),
-  });
+  }, 'ask-user');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'Ask user request failed');
   }
 }

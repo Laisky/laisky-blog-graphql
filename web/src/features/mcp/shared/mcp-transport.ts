@@ -1,3 +1,4 @@
+import { markPrivateError, parsePrivateJson, reportUnexpectedRequestError, requestWithUnexpectedError } from '@/lib/private-error';
 import { encodeMcpHeader, headerBindings, mirrorMcpArguments, type HeaderBinding } from './mcp-headers';
 
 /** Minimal tools-only MCP Streamable HTTP transport; no RPC is replayed implicitly. */
@@ -16,6 +17,13 @@ export class McpRequestError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+/** protocolFailure observes malformed protocol replies, without changing error details or replay behavior. */
+function protocolFailure(message: string): McpRequestError {
+  const error = new McpRequestError(message);
+  reportUnexpectedRequestError(error, { operation: 'mcp' });
+  return error;
 }
 
 /** McpToolResult retains both text blocks and the protocol's optional structured content. */
@@ -64,9 +72,9 @@ function waitForSignal<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> 
 
 /** objectEnvelope rejects batching and primitives before examining any RPC fields. */
 function objectEnvelope(value: unknown): Envelope {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new McpRequestError('Invalid MCP response envelope');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw protocolFailure('Invalid MCP response envelope');
   const envelope = value as Envelope;
-  if (envelope.jsonrpc !== '2.0') throw new McpRequestError('Invalid JSON-RPC version');
+  if (envelope.jsonrpc !== '2.0') throw protocolFailure('Invalid JSON-RPC version');
   return envelope;
 }
 
@@ -77,11 +85,13 @@ async function consumeEnvelope(value: unknown, id: string, onRequest: (message: 
     if ('id' in message) await onRequest(message);
     return { done: false as const };
   }
-  if (message.id !== id || ('result' in message) === ('error' in message)) throw new McpRequestError('Mismatched or invalid MCP response');
+  if (message.id !== id || ('result' in message) === ('error' in message)) throw protocolFailure('Mismatched or invalid MCP response');
   if ('error' in message) {
     const error = message.error as { message?: unknown; code?: unknown } | null;
-    throw new McpRequestError(typeof error?.message === 'string' ? error.message : 'MCP request failed', undefined,
+    const failure = new McpRequestError(typeof error?.message === 'string' ? error.message : 'MCP request failed', undefined,
       typeof error?.code === 'number' ? error.code : undefined);
+    if (typeof error?.message === 'string') markPrivateError(failure, 'MCP request failed');
+    throw failure;
   }
   return { done: true as const, value: message.result };
 }
@@ -91,9 +101,9 @@ async function readRPC(response: Response, id: string, signal: AbortSignal, onRe
   const type = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
   if (type !== 'application/json' && type !== 'text/event-stream') {
     await response.body?.cancel();
-    throw new McpRequestError('MCP server returned neither JSON nor SSE');
+    throw protocolFailure('MCP server returned neither JSON nor SSE');
   }
-  if (!response.body) throw new McpRequestError('MCP response has no body');
+  if (!response.body) throw protocolFailure('MCP response has no body');
   const reader = response.body.getReader();
   const decoder = new TextDecoder('utf-8', { fatal: true });
   let buffer = '', total = 0;
@@ -103,12 +113,17 @@ async function readRPC(response: Response, id: string, signal: AbortSignal, onRe
     while (true) {
       const chunk = await waitForSignal(reader.read(), signal);
       total += chunk.value?.byteLength ?? 0;
-      if (total > MAX_RESPONSE_BYTES) throw new McpRequestError('MCP response exceeded the 64 MiB limit');
-      buffer += decoder.decode(chunk.value, { stream: !chunk.done });
+      if (total > MAX_RESPONSE_BYTES) throw protocolFailure('MCP response exceeded the 64 MiB limit');
+      try { buffer += decoder.decode(chunk.value, { stream: !chunk.done }); }
+      catch (error) {
+        if (error instanceof Error) markPrivateError(error, 'Invalid MCP JSON response');
+        reportUnexpectedRequestError(error, { operation: 'mcp' });
+        throw error;
+      }
       if (type === 'application/json') {
         if (!chunk.done) continue;
-        const result = await consumeEnvelope(JSON.parse(buffer), id, onRequest);
-        if (!result.done) throw new McpRequestError('MCP response did not contain a result');
+        const result = await consumeEnvelope(parsePrivateJson(buffer, 'Invalid MCP JSON response'), id, onRequest);
+        if (!result.done) throw protocolFailure('MCP response did not contain a result');
         return result.value;
       }
       while (true) {
@@ -118,7 +133,7 @@ async function readRPC(response: Response, id: string, signal: AbortSignal, onRe
         buffer = buffer.slice(offset + (buffer[offset] === '\r' && buffer[offset + 1] === '\n' ? 2 : 1));
         if (line === '') {
           if (data.join('\n').trim() && (eventType === '' || eventType === 'message')) {
-            const result = await consumeEnvelope(JSON.parse(data.join('\n')), id, onRequest);
+            const result = await consumeEnvelope(parsePrivateJson(data.join('\n'), 'Invalid MCP JSON response'), id, onRequest);
             if (result.done) return result.value;
           }
           data = []; eventType = '';
@@ -131,7 +146,7 @@ async function readRPC(response: Response, id: string, signal: AbortSignal, onRe
           // Event IDs/retry hints are not permission to re-POST a possibly committed mutation.
         }
       }
-      if (chunk.done) throw new McpRequestError('MCP stream ended before the matching response; the request was not replayed');
+      if (chunk.done) throw protocolFailure('MCP stream ended before the matching response; the request was not replayed');
     }
   } finally {
     // A successful response may arrive before the server closes the stream.
@@ -214,7 +229,7 @@ export class StreamableMcpClient {
       headers['Mcp-Method'] = message.method;
       if (message.method === 'tools/call') headers['Mcp-Name'] = encodeMcpHeader(String(params.name));
     }
-    return this.fetcher(this.endpoint, { method: 'POST', headers, body: JSON.stringify(outgoing), signal, redirect: 'error' });
+    return requestWithUnexpectedError(this.endpoint, { method: 'POST', headers, body: JSON.stringify(outgoing), signal, redirect: 'error' }, 'mcp', this.fetcher);
   }
 
   /** notify is used only for legacy lifecycle/responses, never on modern HTTP. */
@@ -243,7 +258,7 @@ export class StreamableMcpClient {
         const value = await readRPC(discover, discoverID, timeout.signal, (msg) => this.respond(msg, modern, timeout.signal));
         const result = value as { resultType?: unknown; supportedVersions?: unknown } | null;
         if (result?.resultType !== 'complete' || !Array.isArray(result.supportedVersions) || !result.supportedVersions.includes(MODERN_VERSION)) {
-          throw new McpRequestError('MCP discovery did not confirm the requested modern protocol');
+          throw protocolFailure('MCP discovery did not confirm the requested modern protocol');
         }
         this.lifetime.signal.throwIfAborted();
         this.session = modern;
@@ -265,12 +280,12 @@ export class StreamableMcpClient {
       if (!response.ok) { await response.body?.cancel(); throw new McpRequestError('MCP initialization failed', response.status); }
       const token = response.headers.get('Mcp-Session-Id') ?? undefined;
       if (token !== undefined && (token.length === 0 || token.length > 1024 || !/^[\x21-\x7e]+$/.test(token))) {
-        await response.body?.cancel(); throw new McpRequestError('MCP server returned an invalid session ID');
+        await response.body?.cancel(); throw protocolFailure('MCP server returned an invalid session ID');
       }
       const negotiated: Session = { id: token, protocolVersion: LEGACY_VERSIONS[0], era: 'legacy' };
       const raw = await readRPC(response, id, timeout.signal, (message) => this.respond(message, negotiated, timeout.signal));
       const version = (raw as { protocolVersion?: unknown } | null)?.protocolVersion;
-      if (typeof version !== 'string' || !LEGACY_VERSIONS.includes(version)) throw new McpRequestError('MCP server selected an unsupported protocol version');
+      if (typeof version !== 'string' || !LEGACY_VERSIONS.includes(version)) throw protocolFailure('MCP server selected an unsupported protocol version');
       negotiated.protocolVersion = version;
       await this.notify({ jsonrpc: '2.0', method: 'notifications/initialized' }, negotiated, timeout.signal);
       this.lifetime.signal.throwIfAborted();
@@ -301,18 +316,18 @@ export class StreamableMcpClient {
         if (!response.ok) { await response.body?.cancel(); throw new McpRequestError('MCP tool discovery failed', response.status); }
         const raw = await readRPC(response, id, timeout.signal, (msg) => this.respond(msg, session, timeout.signal));
         const result = raw as { tools?: unknown; nextCursor?: unknown; ttlMs?: unknown; resultType?: unknown } | null;
-        if (result?.resultType !== 'complete' || !Array.isArray(result.tools)) throw new McpRequestError('Invalid modern MCP tool catalog');
+        if (result?.resultType !== 'complete' || !Array.isArray(result.tools)) throw protocolFailure('Invalid modern MCP tool catalog');
         ttl = Math.min(ttl, typeof result.ttlMs === 'number' && Number.isFinite(result.ttlMs) ? Math.max(0, result.ttlMs) : 0);
         for (const item of result.tools) {
-          if (++count > 10_000) throw new McpRequestError('MCP catalog exceeds the tool limit');
+          if (++count > 10_000) throw protocolFailure('MCP catalog exceeds the tool limit');
           if (!item || typeof item !== 'object' || typeof item.name !== 'string' || entries.has(item.name) || rejected.has(item.name)) {
-            throw new McpRequestError('Invalid or duplicate MCP tool name');
+            throw protocolFailure('Invalid or duplicate MCP tool name');
           }
           try { entries.set(item.name, headerBindings(item.inputSchema)); }
           catch { rejected.add(item.name); } // Invalid annotations exclude only this tool, not the valid catalog.
         }
         const next = result.nextCursor;
-        if (next !== undefined && (typeof next !== 'string' || !next || cursors.has(next) || cursors.size >= 100)) throw new McpRequestError('Invalid MCP catalog cursor');
+        if (next !== undefined && (typeof next !== 'string' || !next || cursors.has(next) || cursors.size >= 100)) throw protocolFailure('Invalid MCP catalog cursor');
         cursor = next as string | undefined;
         if (cursor) cursors.add(cursor);
       } while (cursor);
@@ -364,15 +379,15 @@ export class StreamableMcpClient {
           : `MCP request failed (HTTP ${response.status}); it was not replayed`, response.status, failure.code);
       }
       const result = await readRPC(response, id, timeout.signal, (message) => this.respond(message, observed!, timeout.signal));
-      if (!result || typeof result !== 'object' || Array.isArray(result)) throw new McpRequestError('Invalid MCP tool result');
+      if (!result || typeof result !== 'object' || Array.isArray(result)) throw protocolFailure('Invalid MCP tool result');
       if (observed.era === 'modern' && (!('resultType' in result) || result.resultType !== 'complete')) {
         throw new McpRequestError('MCP requires an unsupported interaction; the operation was not replayed');
       }
-      if (!('content' in result) || !Array.isArray(result.content)) throw new McpRequestError('MCP tool response is missing content');
-      if ('isError' in result && typeof result.isError !== 'boolean') throw new McpRequestError('Invalid MCP tool error status');
+      if (!('content' in result) || !Array.isArray(result.content)) throw protocolFailure('MCP tool response is missing content');
+      if ('isError' in result && typeof result.isError !== 'boolean') throw protocolFailure('Invalid MCP tool error status');
       for (const block of result.content) {
         if (!block || typeof block !== 'object' || Array.isArray(block) || typeof block.type !== 'string' || !block.type
-            || (block.type === 'text' && typeof block.text !== 'string')) throw new McpRequestError('Invalid MCP content block');
+            || (block.type === 'text' && typeof block.text !== 'string')) throw protocolFailure('Invalid MCP content block');
       }
       return result as McpToolResult;
     } catch (error) {

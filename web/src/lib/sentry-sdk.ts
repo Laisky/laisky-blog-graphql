@@ -1,2 +1,2 @@
-// Explicit errors-only exports keep replay, tracing and unrelated SDK helpers out of the runtime chunk.
-export { init, captureException, globalHandlersIntegration, dedupeIntegration, makeFetchTransport } from '@sentry/react';
+// Named exports keep optional replay/tracing integrations out of the application bridge.
+export { init, captureException, reactErrorHandler } from '@sentry/react';
