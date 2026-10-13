@@ -105,7 +105,7 @@ export function projectErrorEnvelope(envelope: Envelope, settings: Pick<Settings
 }
 
 /** createBrowserReporter provides an inert, idempotent facade when deployment config or the SDK is unavailable. */
-export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import('@sentry/react'), entryAssetUrl = import.meta.url) {
+export function createBrowserReporter(loadSdk: () => Promise<Sdk> = () => import('./sentry-sdk'), entryAssetUrl = import.meta.url) {
   let initialization: Promise<void> | undefined;
   let sdk: Sdk | undefined;
   let ready = false;
