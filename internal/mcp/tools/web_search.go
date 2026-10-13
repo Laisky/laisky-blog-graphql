@@ -2,17 +2,21 @@ package tools
 
 import (
 	"context"
-	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+	"github.com/google/uuid"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
+	"github.com/Laisky/laisky-blog-graphql/library/search/diagnostics"
 )
 
 // SearchProvider abstracts the search execution capability used by the tool.
@@ -74,6 +78,14 @@ func (t *WebSearchTool) Definition() mcp.Tool {
 
 // Handle executes the web_search tool logic using the configured dependencies.
 func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	logger := webSearchLogger(ctx, t.logger)
+	requestID, _ := ctx.Value(ctxkeys.RequestID).(string)
+	parsedID, idErr := uuid.Parse(requestID)
+	if idErr != nil || len(requestID) != 36 || parsedID == uuid.Nil || parsedID.String() != requestID {
+		requestID = uuid.NewString()
+	}
+	ctx = diagnostics.WithRequestID(ctx, requestID)
+	logger = logger.With(zap.String("web_search_request_id", requestID))
 	query, err := req.RequireString("query")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -85,38 +97,40 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 	}
 
 	start := time.Now().UTC()
-	t.logger.Debug("web_search started", zap.Int("query_len", len(query)))
+	logger.Debug("web_search started")
 
 	apiKey := t.apiKeyProvider(ctx)
 	if apiKey == "" {
-		t.logger.Warn("web_search missing api key", zap.Int("query_len", len(query)))
+		logger.Warn("web_search missing api key")
 		return mcp.NewToolResultError("missing authorization bearer token"), nil
 	}
 
-	t.logger.Debug("web_search billing check started", zap.Int("query_len", len(query)))
+	logger.Debug("web_search billing check started")
 
 	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebSearch, "web_search"); err != nil {
-		t.logger.Warn("web_search billing denied", zap.Error(err), zap.Int("query_len", len(query)))
-		return mcp.NewToolResultError(fmt.Sprintf("billing check failed: %v", err)), nil
+		logger.Warn("web_search billing denied", zap.Error(diagnostics.Wrap(err, "provider")))
+		return mcp.NewToolResultError("billing check failed"), nil
 	}
 
-	t.logger.Debug("web_search billing check passed", zap.Int("query_len", len(query)))
+	logger.Debug("web_search billing check passed")
 
 	output, err := t.searchProvider.Search(ctx, query)
 	if err != nil {
-		t.logger.Error("web_search failed", zap.Error(err), zap.Int("query_len", len(query)))
-		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
+		diagnostic := diagnostics.Summary(err)
+		fields := appLog.WebSearchFailureFields(appLog.WebSearchFailureSummary{Diagnostic: diagnostic, DurationMS: time.Since(start).Milliseconds()})
+		logger.Error("web_search failed", append(fields, zap.Error(diagnostics.Wrap(err, diagnostic.Stage)))...)
+		return mcp.NewToolResultError("search failed: " + diagnostic.Category), nil
 	}
 
 	if output == nil {
+		fields := appLog.WebSearchFailureFields(appLog.WebSearchFailureSummary{Diagnostic: diagnostics.Summary(diagnostics.New("provider", "internal")), DurationMS: time.Since(start).Milliseconds()})
+		logger.Error("web_search failed", fields...)
 		return mcp.NewToolResultError("search provider returned no result"), nil
 	}
 
-	t.logger.Debug("web_search completed",
-		zap.Int("query_len", len(query)),
+	logger.Debug("web_search completed",
 		zap.Int("results_count", len(output.Items)),
-		zap.String("engine_name", output.EngineName),
-		zap.String("engine_type", output.EngineType),
+		zap.String("provider", diagnostics.Normalize(diagnostics.Diagnostic{Provider: output.EngineType}).Provider),
 		zap.Duration("duration", time.Since(start)),
 	)
 
@@ -126,9 +140,18 @@ func (t *WebSearchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*m
 
 	toolResult, err := mcp.NewToolResultJSON(response)
 	if err != nil {
-		t.logger.Error("encode search result", zap.Error(err))
-		return mcp.NewToolResultError("failed to encode search result"), nil
+		fields := appLog.WebSearchFailureFields(appLog.WebSearchFailureSummary{Diagnostic: diagnostics.Summary(diagnostics.New("encode", "internal")), DurationMS: time.Since(start).Milliseconds()})
+		logger.Error("web_search failed", fields...)
+		return mcp.NewToolResultError("failed to encode search result"), nil //nolint:nilerr // MCP execution errors are tool results, not transport errors.
 	}
 
 	return toolResult, nil
+}
+
+func webSearchLogger(ctx context.Context, fallback logSDK.Logger) logSDK.Logger {
+	logger := webFetchLogger(ctx, fallback)
+	if named, ok := logger.(interface{ Name() string }); ok && strings.HasSuffix(named.Name(), ".web_search") {
+		return logger
+	}
+	return logger.Named("web_search")
 }
