@@ -1,5 +1,6 @@
+import { getPrivateErrorMessage, setUnexpectedRequestReporter } from '@/lib/private-error';
 import assert from 'node:assert/strict';
-import { describe, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StreamableMcpClient } from './mcp-transport';
 
 const fixedNames = ['authorization', 'content-type', 'mcp-method', 'mcp-name', 'mcp-protocol-version'];
@@ -91,6 +92,53 @@ describe('MCP preflight rejection before mutation dispatch', () => {
       assert.deepEqual(unsafeNames(operations[0].headers), [...fixedNames, 'mcp-param-h1'].sort());
       assert.deepEqual(operations[0].arguments, args);
       assert.deepEqual(args, { p0: null, p1: 'present' });
+    } finally { client.close(); }
+  });
+});
+
+afterEach(() => { setUnexpectedRequestReporter(); });
+
+describe('private MCP transport errors', () => {
+  it.each(['json', 'sse'])('retains remote RPC messages and codes from %s', async (format) => {
+    const observer = vi.fn(); setUnexpectedRequestReporter(observer);
+    const fetcher: typeof fetch = async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const message = { jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'synthetic private tool arguments' } };
+      return format === 'json' ? Response.json(message)
+        : new Response(`data: ${JSON.stringify(message)}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const client = new StreamableMcpClient('https://fixture.invalid/mcp', 'Bearer synthetic', fetcher);
+    try {
+      const error = await client.call('candidate').catch((failure: unknown) => failure);
+      expect(error).toMatchObject({ code: -32000, message: 'synthetic private tool arguments' });
+      expect(getPrivateErrorMessage(error)).toBe('MCP request failed');
+      expect(observer).not.toHaveBeenCalled();
+    } finally { client.close(); }
+  });
+  it.each(['application/json', 'text/event-stream'])('annotates native parse failures in %s', async (type) => {
+    const observer = vi.fn(); setUnexpectedRequestReporter(observer);
+    const body = type === 'application/json' ? 'synthetic private tool result' : 'data: synthetic private tool result\n\n';
+    const fetcher: typeof fetch = async () => new Response(body, { headers: { 'Content-Type': type } });
+    const client = new StreamableMcpClient('https://fixture.invalid/mcp', 'Bearer synthetic', fetcher);
+    try {
+      const error = await client.call('candidate').catch((failure: unknown) => failure);
+      expect(error).toBeInstanceOf(SyntaxError);
+      expect(getPrivateErrorMessage(error)).toBe('Invalid MCP JSON response');
+      expect(observer).toHaveBeenCalledExactlyOnceWith(error, { operation: 'mcp' });
+    } finally { client.close(); }
+  });
+});
+
+describe('actionable malformed MCP protocol replies', () => {
+  it('observes invalid protocol shape once without replaying a request', async () => {
+    const observer = vi.fn(); setUnexpectedRequestReporter(observer);
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ jsonrpc: 'bad', id: 'unknown' }));
+    const client = new StreamableMcpClient('https://fixture.invalid/mcp', 'Bearer synthetic', fetcher);
+    try {
+      const error = await client.call('candidate').catch((failure: unknown) => failure);
+      expect(error).toMatchObject({ message: 'Invalid JSON-RPC version' });
+      expect(observer).toHaveBeenCalledExactlyOnceWith(error, { operation: 'mcp' });
+      expect(fetcher).toHaveBeenCalledTimes(1);
     } finally { client.close(); }
   });
 });
