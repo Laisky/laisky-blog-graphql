@@ -93,14 +93,13 @@ func setupLogger(ctx context.Context) {
 		gconfig.Shared.GetString("settings.logger.push_api"),
 		glog.WithAlertType(gconfig.Shared.GetString("settings.logger.alert_type")),
 		glog.WithAlertToken(gconfig.Shared.GetString("settings.logger.push_token")),
-		log.WebFetchAlertOption(),
 	)
 	if err != nil {
 		log.Logger.Panic("create AlertPusher", zap.Error(err))
 	}
 
 	log.Logger = log.Logger.WithOptions(
-		zap.HooksWithFields(log.WebFetchAlertHook(alertPusher)),
+		zap.HooksWithFields(alertPusher.GetZapHook()),
 	).Named("laisky-graphql")
 
 	lvl := gconfig.Shared.GetString("log-level")

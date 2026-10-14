@@ -20,7 +20,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
-	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
 )
 
@@ -45,18 +44,18 @@ func TestWebFetchFailureSafeCorrelation(t *testing.T) {
 	}))
 	t.Cleanup(endpoint.Close)
 	alert, err := logSDK.NewAlert(context.Background(), endpoint.URL,
-		logSDK.WithAlertType("synthetic"), logSDK.WithAlertToken("synthetic-token"), appLog.WebFetchAlertOption())
+		logSDK.WithAlertType("synthetic"), logSDK.WithAlertToken("synthetic-token"))
 	require.NoError(t, err)
 	t.Cleanup(alert.Close)
 	core, observed := observer.New(zapcore.DebugLevel)
 	logger, err := logSDK.NewWithName("request", logSDK.LevelDebug,
-		zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }), zap.HooksWithFields(appLog.WebFetchAlertHook(alert)))
+		zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }), zap.HooksWithFields(alert.GetZapHook()))
 	require.NoError(t, err)
 	var billingCalls int
 	tool := mustWebFetchTool(t, func(context.Context) string { return "synthetic-token" },
 		func(context.Context, string, oneapi.Price, string) error { billingCalls++; return nil },
 		func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) {
-			return nil, &search.FetchFailureError{Diagnostic: search.FetchFailureDiagnostic{ErrorCode: "crawler_egress_unverified", Stage: "verification", TaskID: "0199c118-4229-7000-8000-000000000002"}, Cause: errors.New("private-upstream-canary")}
+			return nil, &search.FetchFailureError{Diagnostic: search.FetchFailureDiagnostic{ErrorCode: "crawler_egress_unverified", Stage: "verification", TaskID: "0199c118-4229-7000-8000-000000000002"}, Cause: errors.New("renderer unavailable; response body: private-upstream-canary")}
 		})
 	tool.logger = logger
 	ctx := context.WithValue(context.Background(), ctxkeys.Logger, logger.With(zap.String("client", "private-client-canary")))
@@ -69,7 +68,7 @@ func TestWebFetchFailureSafeCorrelation(t *testing.T) {
 	require.Len(t, failures, 1, "the reviewed application logger receives the failure without inherited request fields")
 	require.Equal(t, "fetch failed: crawler_egress_unverified", result.Content[0].(mcp.TextContent).Text)
 	require.Equal(t, "request.web_fetch", failures[0].LoggerName)
-	require.Equal(t, "0199c118-4229-7000-8000-000000000001", failures[0].ContextMap()["web_fetch_request_id"])
+	require.Equal(t, "0199c118-4229-7000-8000-000000000001", failures[0].ContextMap()["request_id"])
 	require.Contains(t, failures[0].ContextMap(), "error", "local errors remain structured")
 	select {
 	case message := <-messages:
@@ -101,7 +100,7 @@ func TestWebFetchUnknownFailureAndUntrustedCorrelation(t *testing.T) {
 			require.Equal(t, "fetch failed: fetch_failed", result.Content[0].(mcp.TextContent).Text)
 			entries := observed.FilterMessage("web_fetch failed").All()
 			require.Len(t, entries, 1)
-			safeID := entries[0].ContextMap()["web_fetch_request_id"].(string)
+			safeID := entries[0].ContextMap()["request_id"].(string)
 			parsed, err := uuid.Parse(safeID)
 			require.NoError(t, err)
 			require.NotEqual(t, uuid.Nil, parsed)

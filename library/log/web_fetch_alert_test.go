@@ -51,9 +51,9 @@ func receivedAlert(t *testing.T, messages <-chan string) string {
 	}
 }
 
-func TestWebFetchAlertDefaultSDKOmitsLocalStructuredFields(t *testing.T) {
+func TestWebFetchAlertExplicitEmptySDKOmitsLocalStructuredFields(t *testing.T) {
 	endpoint, messages := alertReceiver(t)
-	alert, err := logSDK.NewAlert(context.Background(), endpoint, logSDK.WithAlertType("synthetic"), logSDK.WithAlertToken("synthetic-token"))
+	alert, err := logSDK.NewAlert(context.Background(), endpoint, logSDK.WithAlertType("synthetic"), logSDK.WithAlertToken("synthetic-token"), logSDK.WithAlertFieldAllowlist())
 	require.NoError(t, err)
 	t.Cleanup(alert.Close)
 	entry := zapcore.Entry{LoggerName: "graphql.mcp.web_fetch", Message: "web_fetch failed", Level: zapcore.ErrorLevel, Time: time.Now()}

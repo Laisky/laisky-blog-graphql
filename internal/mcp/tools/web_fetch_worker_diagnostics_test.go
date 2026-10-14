@@ -19,7 +19,6 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
-	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
 )
 
@@ -49,21 +48,21 @@ func TestWebFetchWorkerDiagnosticsActualLogsAndAlert(t *testing.T) {
 				_, _ = w.Write([]byte(`{"data":{"TelegramMonitorAlert":{"name":"synthetic"}}}`))
 			}))
 			t.Cleanup(endpoint.Close)
-			alert, err := logSDK.NewAlert(context.Background(), endpoint.URL, logSDK.WithAlertType("synthetic"), logSDK.WithAlertToken("synthetic"), appLog.WebFetchAlertOption())
+			alert, err := logSDK.NewAlert(context.Background(), endpoint.URL, logSDK.WithAlertType("synthetic"), logSDK.WithAlertToken("synthetic"))
 			require.NoError(t, err)
 			t.Cleanup(alert.Close)
 			var local bytes.Buffer
 			logger, err := logSDK.NewWithName("graphql.mcp.web_fetch", logSDK.LevelDebug,
 				zap.WrapCore(func(zapcore.Core) zapcore.Core {
 					return zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&local), zapcore.DebugLevel)
-				}), zap.HooksWithFields(appLog.WebFetchAlertHook(alert)))
+				}), zap.HooksWithFields(alert.GetZapHook()))
 			require.NoError(t, err)
 			var billingCalls, fetchCalls int
 			tool, err := NewWebFetchTool(&rlibs.DB{}, logger, func(context.Context) string { return "private-token-canary" },
 				func(context.Context, string, oneapi.Price, string) error { billingCalls++; return nil },
 				func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) {
 					fetchCalls++
-					cause := errors.WithStack(errors.New("private-worker-body-url-token-canary"))
+					cause := errors.WithStack(errors.New("navigation failed: unexpected EOF; Authorization: Bearer private-auth-token-canary; response body: private-worker-body-url-token-canary"))
 					if !tc.structured {
 						return nil, cause
 					}
@@ -81,6 +80,7 @@ func TestWebFetchWorkerDiagnosticsActualLogsAndAlert(t *testing.T) {
 			require.Equal(t, 1, billingCalls)
 			require.Equal(t, 1, fetchCalls)
 			require.NotContains(t, local.String(), "canary")
+			require.Contains(t, local.String(), "unexpected EOF")
 			require.NotContains(t, result.Content[0].(mcp.TextContent).Text, "canary")
 			decoder := json.NewDecoder(&local)
 			var failures []map[string]any
@@ -93,14 +93,15 @@ func TestWebFetchWorkerDiagnosticsActualLogsAndAlert(t *testing.T) {
 			}
 			require.Len(t, failures, 1)
 			require.Equal(t, "graphql.mcp.web_fetch", failures[0]["logger"])
-			require.Equal(t, "0199c118-4229-7000-8000-000000000001", failures[0]["web_fetch_request_id"])
+			require.Equal(t, "0199c118-4229-7000-8000-000000000001", failures[0]["request_id"])
 			if tc.structured {
-				require.Equal(t, "conversion", failures[0]["web_fetch_worker_stage"])
-				require.Equal(t, "empty_markdown", failures[0]["web_fetch_worker_category"])
+				require.Equal(t, "conversion", failures[0]["worker_stage"])
+				require.Equal(t, "empty_markdown", failures[0]["worker_category"])
 			}
 			select {
 			case message := <-messages:
 				require.NotContains(t, message, "canary")
+				require.Contains(t, message, "unexpected EOF")
 				require.Contains(t, message, `"request_id":"0199c118-4229-7000-8000-000000000001"`)
 				if tc.structured {
 					require.Contains(t, message, `"error_code":"crawler_failed"`)
@@ -127,7 +128,7 @@ func TestWebFetchBillingDiagnosticPrivacy(t *testing.T) {
 	tool, err := NewWebFetchTool(&rlibs.DB{}, logger, func(context.Context) string { return "private-token-canary" },
 		func(context.Context, string, oneapi.Price, string) error {
 			billingCalls++
-			return errors.WithStack(errors.New("private-billing-body-token-canary"))
+			return errors.WithStack(errors.New("billing quota check failed; response body: private-billing-body-token-canary"))
 		}, func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) { fetchCalls++; return nil, nil })
 	require.NoError(t, err)
 	ctx := context.WithValue(context.Background(), ctxkeys.Logger, logger.With(zap.String("authorization", "private-auth-canary")))
@@ -139,4 +140,27 @@ func TestWebFetchBillingDiagnosticPrivacy(t *testing.T) {
 	require.Equal(t, "billing check failed", result.Content[0].(mcp.TextContent).Text)
 	require.NotContains(t, local.String(), "canary")
 	require.Contains(t, local.String(), "web_fetch billing denied")
+}
+
+func TestWebFetchTypedBillingBodyIsNotDiagnosticText(t *testing.T) {
+	var local bytes.Buffer
+	logger, err := logSDK.NewWithName("reviewed", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core {
+		return zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&local), zapcore.DebugLevel)
+	}))
+	require.NoError(t, err)
+	billing := &oneapi.BillingError{Outcome: oneapi.BillingDenied, Status: 429, Reason: "private-unlabeled-user-page-canary"}
+	tool, err := NewWebFetchTool(&rlibs.DB{}, logger, func(context.Context) string { return "synthetic-token" },
+		func(context.Context, string, oneapi.Price, string) error { return errors.WithStack(billing) },
+		func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) {
+			t.Fatal("denied billing must not fetch")
+			return nil, nil
+		})
+	require.NoError(t, err)
+	result, err := tool.Handle(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"url": "https://1.1.1.1/doc"}}})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Contains(t, local.String(), "HTTP 429")
+	require.Contains(t, local.String(), string(oneapi.BillingDenied))
+	require.NotContains(t, local.String(), "canary")
+	require.Equal(t, "private-unlabeled-user-page-canary", billing.Reason, "original billing result is untouched")
 }

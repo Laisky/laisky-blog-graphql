@@ -128,12 +128,6 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 	}
 }
 
-// sanitizeURLForLog removes query and fragment components before logging a URL.
-// It redacts malformed inputs instead of logging their original bytes.
-func sanitizeURLForLog(rawURL string) string {
-	return toolpolicy.URLForLog(rawURL)
-}
-
 func safeCrawlerStatus(status string) string {
 	switch status {
 	case rlibs.TaskStatusPending, rlibs.TaskStatusRunning, rlibs.TaskStatusSuccess, rlibs.TaskStatusFailed:

@@ -14,6 +14,7 @@ const failureStageFetch = "fetch"
 const failureCodeFetch = "fetch_failed"
 const failureCodeCrawler = "crawler_failed"
 const failureStageRender = "render"
+const fetchDiagnosticTextLimit = 2048
 
 // FetchFailureDiagnostic contains reviewed scalar fields safe for remote alerts.
 type FetchFailureDiagnostic struct {
@@ -63,9 +64,49 @@ func FetchDiagnostic(err error) FetchFailureDiagnostic {
 	return diagnostic
 }
 
-// FetchLogError exposes only normalized error text, excluding the retained internal cause.
+// FetchLogError keeps useful sanitized cause text while retaining the original error separately.
+// The presentation error never unwraps to a raw cause or exports its verbose stack.
 func FetchLogError(err error) error {
-	return &FetchFailureError{Diagnostic: FetchDiagnostic(err)}
+	if err == nil {
+		return nil
+	}
+	diagnostic := FetchDiagnostic(err)
+	cause := err
+	var failure *FetchFailureError
+	if errors.As(err, &failure) {
+		cause = failure.Cause
+	}
+	text := ""
+	if cause != nil {
+		text = safeFetchCauseText(cause)
+	}
+	return &fetchLogError{diagnostic: diagnostic, text: text}
+}
+
+type fetchLogError struct {
+	diagnostic FetchFailureDiagnostic
+	text       string
+}
+
+func (e *fetchLogError) Error() string {
+	prefix := e.diagnostic.ErrorCode + ": " + e.diagnostic.Stage
+	if e.text == "" {
+		return prefix
+	}
+	return prefix + ": " + e.text
+}
+
+func safeFetchCauseText(cause error) (text string) {
+	defer func() {
+		if recover() != nil {
+			text = "[error text unavailable]"
+		}
+	}()
+	text = logSDK.SanitizeDiagnosticText(cause.Error())
+	if len(text) > fetchDiagnosticTextLimit {
+		return "[diagnostic text exceeds limit]"
+	}
+	return text
 }
 
 type fetchLoggerKey struct{}
