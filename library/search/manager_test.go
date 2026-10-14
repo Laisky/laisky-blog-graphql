@@ -104,8 +104,8 @@ func TestManagerSearchExhaustedEngines(t *testing.T) {
 	result, err := manager.Search(context.Background(), "python")
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Contains(t, err.Error(), "primary")
-	require.Contains(t, err.Error(), "secondary")
+	require.NotContains(t, err.Error(), "primary")
+	require.NotContains(t, err.Error(), "secondary")
 	require.Equal(t, 1, primary.calls)
 	require.Equal(t, 1, secondary.calls)
 }

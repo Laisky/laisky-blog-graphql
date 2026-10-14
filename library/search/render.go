@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // type htmlToMarkdownConverter interface {
@@ -38,9 +38,8 @@ type crawlerTaskStore interface {
 //
 //nolint:gocognit // complex but straightforward state-machine loop
 func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiKey string, outputMarkdown bool) ([]byte, error) {
-	// gmw.GetLogger always returns a usable logger, so no nil guard is needed.
-	logger := gmw.GetLogger(ctx).Named("fetch_dynamic_url_content").With(
-		zap.String("url", sanitizeURLForLog(url)),
+	// Only the application logger carries reviewed operation correlation.
+	logger := reviewedFetchLogger(ctx, appLog.Logger).Named("fetch_dynamic_url_content").With(
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 	logger.Debug("submitting html crawler task")
@@ -50,7 +49,7 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 	// entry points already applied, so an admitted URL cannot be rejected now.
 	admission, err := toolpolicy.AdmitFetchURL(ctx, url)
 	if err != nil {
-		logger.Debug("fetch target is not admissible", zap.Error(err))
+		logger.Debug("fetch target is not admissible")
 		return nil, fetchFailure(err, "fetch_admission_failed", "admission", "")
 	}
 	egressSettings := LoadEgressSettings()
@@ -59,11 +58,11 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 	// submit task
 	taskID, err := rdb.AddHTMLCrawlerTaskWithEgress(ctx, url, "", outputMarkdown, crawlerEgressPolicy(policy))
 	if err != nil {
-		logger.Debug("submit html crawler task failed", zap.Error(err))
+		logger.Debug("submit html crawler task failed")
 		return nil, fetchFailure(err, "crawler_submit_failed", "submit", "")
 	}
 
-	logger = logger.With(zap.String("task_id", taskID))
+	logger = logger.With(zap.String("task_id", safeTaskID(taskID)))
 	logger.Debug("submitted html crawler task")
 
 	// fetch task result
@@ -71,7 +70,7 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 	for {
 		task, err := rdb.GetHTMLCrawlerTaskResult(ctx, taskID)
 		if err != nil {
-			logger.Debug("get html crawler task result failed", zap.Error(err))
+			logger.Debug("get html crawler task result failed")
 			return nil, fetchFailure(err, "crawler_result_failed", "result", taskID)
 		}
 
@@ -80,7 +79,7 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 		}
 		if task.Status != lastStatus {
 			logger.Debug("html crawler task status updated",
-				zap.String("status", task.Status),
+				zap.String("status", safeCrawlerStatus(task.Status)),
 				zap.Bool("task_output_markdown", task.OutputMarkdown),
 			)
 			lastStatus = task.Status
@@ -121,16 +120,19 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 			}
 			continue
 		case rlibs.TaskStatusFailed:
-			return nil, fetchFailure(errors.New("crawler task failed"), "crawler_failed", "render", taskID)
+			return nil, failedCrawlerTask(taskID, url, policy, outputMarkdown, task)
 		default:
-			logger.Debug("html crawler task returned unknown status", zap.String("status", task.Status))
+			logger.Debug("html crawler task returned unknown status", zap.String("status", safeCrawlerStatus(task.Status)))
 			return nil, fetchFailure(errors.New("unknown crawler task status"), "crawler_status_invalid", "result", taskID)
 		}
 	}
 }
 
-// sanitizeURLForLog removes query and fragment components before logging a URL.
-// It redacts malformed inputs instead of logging their original bytes.
-func sanitizeURLForLog(rawURL string) string {
-	return toolpolicy.URLForLog(rawURL)
+func safeCrawlerStatus(status string) string {
+	switch status {
+	case rlibs.TaskStatusPending, rlibs.TaskStatusRunning, rlibs.TaskStatusSuccess, rlibs.TaskStatusFailed:
+		return status
+	default:
+		return "unknown"
+	}
 }

@@ -12,7 +12,7 @@ require (
 	github.com/Laisky/gin-middlewares/v7 v7.0.3-0.20260320133617-ccf155d4ffea
 	github.com/Laisky/go-config/v2 v2.0.0
 	github.com/Laisky/go-redis/v2 v2.0.2
-	github.com/Laisky/go-utils/v6 v6.3.2-0.20261008165128-506ec9758d5f
+	github.com/Laisky/go-utils/v6 v6.4.1-0.20261014024154-261c427b230a
 	github.com/Laisky/zap v1.27.1-0.20261006114731-55f41c2b5061
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/avast/retry-go/v4 v4.7.0

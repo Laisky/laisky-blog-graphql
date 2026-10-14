@@ -102,6 +102,10 @@ type CrawlerEgressPolicy = crawleregress.Policy
 // HTMLCrawlerTask is a task for crawling HTML pages.
 type HTMLCrawlerTask struct {
 	baseTask
+	// FailureStage and FailureCategory are optional reviewed worker diagnostics.
+	// They do not establish connection evidence and are never used to release content.
+	FailureStage    string `json:"failure_stage,omitempty"`
+	FailureCategory string `json:"failure_category,omitempty"`
 	// Url is the target URL to fetch
 	Url string `json:"url"`
 	// APIKey is the one-api api key used for fetching dynamic content

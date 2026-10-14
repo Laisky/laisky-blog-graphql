@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
-	gutils "github.com/Laisky/go-utils/v6"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
@@ -83,13 +81,14 @@ func (t *WebFetchTool) Definition() mcp.Tool {
 
 // Handle executes the web_fetch tool logic using the configured dependencies.
 func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	logger := webFetchLogger(ctx, t.logger).Named("web_fetch")
+	logger := reviewedWebFetchLogger(t.logger)
 	requestID, _ := ctx.Value(ctxkeys.RequestID).(string)
 	parsedID, idErr := uuid.Parse(requestID)
 	if idErr != nil || len(requestID) != 36 || parsedID == uuid.Nil || parsedID.String() != requestID {
 		requestID = uuid.NewString()
 	}
-	logger = logger.With(zap.String("web_fetch_request_id", requestID))
+	logger = logger.With(zap.String("request_id", requestID))
+	ctx = search.WithFetchLogger(ctx, logger)
 	urlValue, err := req.RequireString("url")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -102,7 +101,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 
 	apiKey := t.apiKeyProvider(ctx)
 	if apiKey == "" {
-		logger.Warn("web_fetch missing api key", zap.String("url", sanitizeURLForLog(urlValue)))
+		logger.Warn("web_fetch missing api key")
 		return mcp.NewToolResultError("missing authorization bearer token"), nil
 	}
 
@@ -115,39 +114,35 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 
 	start := time.Now().UTC()
-	logURL := sanitizeURLForLog(urlValue)
 	logger.Debug("web_fetch started",
-		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 	logger.Debug("web_fetch billing check started",
-		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 
 	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebFetch, "web_fetch"); err != nil {
-		logger.Warn("web_fetch billing denied", zap.Error(err), zap.String("url", logURL))
+		logger.Warn("web_fetch billing denied", zap.Error(toolBillingLogError(err)))
 		return mcp.NewToolResultError("billing check failed"), nil
 	}
 
 	logger.Debug("web_fetch billing check passed",
-		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 
 	content, err := t.fetcher(ctx, t.store, urlValue, apiKey, outputMarkdown)
 	if err != nil {
 		diagnostic := search.FetchDiagnostic(err)
-		fields := appLog.WebFetchFailureFields(appLog.WebFetchFailureSummary{
+		fields := appLog.WebFetchDiagnosticFields(appLog.WebFetchFailureSummary{
 			ErrorCode: diagnostic.ErrorCode, Stage: diagnostic.Stage, TaskID: diagnostic.TaskID,
+			WorkerStage: diagnostic.WorkerStage, WorkerCategory: diagnostic.WorkerCategory,
 			DurationMS: time.Since(start).Milliseconds(),
 		})
-		logger.Error("web_fetch failed", append(fields, zap.Error(err))...)
+		logger.Error("web_fetch failed", append(fields, zap.Error(search.FetchLogError(err)))...)
 		return mcp.NewToolResultError("fetch failed: " + diagnostic.ErrorCode), nil
 	}
 
 	logger.Debug("web_fetch completed",
-		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 		zap.Duration("duration", time.Since(start)),
 		zap.Int("content_len", len(content)),
@@ -166,27 +161,22 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	return toolResult, nil
 }
 
-// sanitizeURLForLog removes query and fragment components from a URL before
-// writing it into logs.
-//
-// Parameters:
-//   - rawURL: original URL string from the request.
-//
-// Returns:
-//   - sanitized URL without credentials, query or fragment; malformed input is redacted.
-func sanitizeURLForLog(rawURL string) string {
-	return toolpolicy.URLForLog(rawURL)
+func reviewedWebFetchLogger(fallback logSDK.Logger) logSDK.Logger {
+	if named, ok := fallback.(interface{ Name() string }); ok && strings.HasSuffix(named.Name(), ".web_fetch") {
+		return fallback
+	}
+	return fallback.Named("web_fetch")
 }
 
-// webFetchLogger selects the request logger once and retains the injected
-// fallback for direct/nontransport invocations. No client logger name is used.
-func webFetchLogger(ctx context.Context, fallback logSDK.Logger) logSDK.Logger {
-	if logger, ok := ctx.Value(ctxkeys.Logger).(logSDK.Logger); ok && logger != nil {
-		return logger
+// toolBillingLogError preserves billing outcome/status without logging the response body in Reason.
+func toolBillingLogError(err error) error {
+	var billing *oneapi.BillingError
+	if errors.As(err, &billing) && billing != nil {
+		outcome := oneapi.ClassifyBillingOutcome(err)
+		if billing.Status >= 100 && billing.Status <= 599 {
+			return errors.Errorf("billing request failed: outcome=%s HTTP %d", outcome, billing.Status)
+		}
+		return errors.Errorf("billing request failed: outcome=%s", outcome)
 	}
-	logger := gmw.GetLogger(ctx)
-	if ctx.Value(gutils.CtxKey("gmw-logger")) != nil {
-		return logger
-	}
-	return fallback
+	return search.FetchLogError(err)
 }

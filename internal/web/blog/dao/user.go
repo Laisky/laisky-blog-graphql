@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/Laisky/errors/v2"
-	gutils "github.com/Laisky/go-utils/v6"
 	gcrypto "github.com/Laisky/go-utils/v6/crypto"
 	"github.com/Laisky/zap"
 	"go.mongodb.org/mongo-driver/bson"
@@ -23,7 +22,7 @@ var (
 // It accepts no parameters and returns the dummy hash string.
 func (d *Blog) dummyPasswordHash() string {
 	dummyPasswordHashOnce.Do(func() {
-		hash, err := gcrypto.PasswordHash([]byte("invalid-password-placeholder"), gutils.HashTypeSha256)
+		hash, err := gcrypto.PasswordHashArgon2id([]byte("invalid-password-placeholder"))
 		if err != nil {
 			d.logger.Error("generate dummy password hash", zap.Error(errors.Wrap(err, "generate dummy password hash")))
 			return

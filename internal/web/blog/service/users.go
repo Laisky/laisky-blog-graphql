@@ -97,7 +97,7 @@ func (s *Blog) ChangePassword(ctx context.Context, user *model.User, currentPass
 		return nil, errors.WithStack(model.ErrInvalidCredentials)
 	}
 
-	hashed, err := gcrypto.PasswordHash([]byte(newPassword), gutils.HashTypeSha256)
+	hashed, err := gcrypto.PasswordHashArgon2id([]byte(newPassword))
 	if err != nil {
 		return nil, errors.Wrap(err, "hash new password")
 	}
@@ -357,7 +357,7 @@ func (s *Blog) UserRegister(ctx context.Context,
 		return nil, errors.New("account already exists")
 	}
 
-	pwd, err := gcrypto.PasswordHash([]byte(password), gutils.HashTypeSha256)
+	pwd, err := gcrypto.PasswordHashArgon2id([]byte(password))
 	if err != nil {
 		return nil, errors.Wrapf(err, "generate password hash for %q", account)
 	}
