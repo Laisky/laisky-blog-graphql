@@ -7,12 +7,15 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/Laisky/zap/zapcore"
 	"github.com/google/uuid"
+
+	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 )
 
 // WebFetchFailureSummary is the reviewed scalar envelope for one fetch failure.
 // Error details, target URLs and user content must never be added to it.
 type WebFetchFailureSummary struct {
 	ErrorCode, Stage, RequestID, TaskID string
+	WorkerStage, WorkerCategory         string
 	DurationMS                          int64
 }
 
@@ -54,6 +57,12 @@ func WebFetchFailureFields(summary WebFetchFailureSummary) []zapcore.Field {
 		zap.String("web_fetch_error_code", summary.ErrorCode),
 		zap.String("web_fetch_stage", summary.Stage),
 	}
+	if summary.ErrorCode == "crawler_failed" && summary.Stage == "render" {
+		workerStage, workerCategory := crawleregress.WorkerFailureDiagnostic(summary.WorkerStage, summary.WorkerCategory)
+		if workerStage != "" {
+			fields = append(fields, zap.String("web_fetch_worker_stage", workerStage), zap.String("web_fetch_worker_category", workerCategory))
+		}
+	}
 	if canonicalCorrelationID(summary.RequestID) {
 		fields = append(fields, zap.String("web_fetch_request_id", summary.RequestID))
 	}
@@ -78,7 +87,7 @@ func canonicalCorrelationID(value string) bool {
 // These options must be used together with that hook; directly installing the
 // SDK hook would allow unreviewed generic fields from unrelated callsites.
 func WebFetchAlertOption() logSDK.AlertOption {
-	return logSDK.WithAlertFieldAllowlist("error_code", "stage", "request_id", "task_id", "duration_ms")
+	return logSDK.WithAlertFieldAllowlist("error_code", "stage", "request_id", "task_id", "duration_ms", "worker_stage", "worker_category")
 }
 
 // WebFetchAlertHook keeps all existing alerts metadata-only except the fixed
@@ -103,25 +112,33 @@ func WebFetchAlertHook(alert *logSDK.Alert) func(zapcore.Entry, []zapcore.Field)
 				return hook(entry, nil)
 			}
 			seen[field.Key] = true
-			if field.Type == zapcore.StringType {
-				switch field.Key {
-				case "web_fetch_error_code":
-					summary.ErrorCode = field.String
-				case "web_fetch_stage":
-					summary.Stage = field.String
-				case "web_fetch_request_id":
-					summary.RequestID = field.String
-				case "web_fetch_task_id":
-					summary.TaskID = field.String
-				}
-			} else if field.Key == "web_fetch_duration_ms" && field.Type == zapcore.Int64Type {
-				summary.DurationMS = field.Integer
-			}
+			applyFetchAlertField(&summary, field)
 		}
 		approved := WebFetchFailureFields(summary)
 		for i := range approved {
 			approved[i].Key = strings.TrimPrefix(approved[i].Key, "web_fetch_")
 		}
 		return hook(entry, approved)
+	}
+}
+
+func applyFetchAlertField(summary *WebFetchFailureSummary, field zapcore.Field) {
+	if field.Type == zapcore.StringType {
+		switch field.Key {
+		case "web_fetch_error_code":
+			summary.ErrorCode = field.String
+		case "web_fetch_stage":
+			summary.Stage = field.String
+		case "web_fetch_worker_stage":
+			summary.WorkerStage = field.String
+		case "web_fetch_worker_category":
+			summary.WorkerCategory = field.String
+		case "web_fetch_request_id":
+			summary.RequestID = field.String
+		case "web_fetch_task_id":
+			summary.TaskID = field.String
+		}
+	} else if field.Key == "web_fetch_duration_ms" && field.Type == zapcore.Int64Type {
+		summary.DurationMS = field.Integer
 	}
 }

@@ -83,13 +83,14 @@ func (t *WebFetchTool) Definition() mcp.Tool {
 
 // Handle executes the web_fetch tool logic using the configured dependencies.
 func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	logger := webFetchLogger(ctx, t.logger).Named("web_fetch")
+	logger := reviewedWebFetchLogger(t.logger)
 	requestID, _ := ctx.Value(ctxkeys.RequestID).(string)
 	parsedID, idErr := uuid.Parse(requestID)
 	if idErr != nil || len(requestID) != 36 || parsedID == uuid.Nil || parsedID.String() != requestID {
 		requestID = uuid.NewString()
 	}
 	logger = logger.With(zap.String("web_fetch_request_id", requestID))
+	ctx = search.WithFetchLogger(ctx, logger)
 	urlValue, err := req.RequireString("url")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -102,7 +103,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 
 	apiKey := t.apiKeyProvider(ctx)
 	if apiKey == "" {
-		logger.Warn("web_fetch missing api key", zap.String("url", sanitizeURLForLog(urlValue)))
+		logger.Warn("web_fetch missing api key")
 		return mcp.NewToolResultError("missing authorization bearer token"), nil
 	}
 
@@ -115,23 +116,19 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	}
 
 	start := time.Now().UTC()
-	logURL := sanitizeURLForLog(urlValue)
 	logger.Debug("web_fetch started",
-		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 	logger.Debug("web_fetch billing check started",
-		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 
 	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebFetch, "web_fetch"); err != nil {
-		logger.Warn("web_fetch billing denied", zap.Error(err), zap.String("url", logURL))
+		logger.Warn("web_fetch billing denied", zap.Error(search.FetchLogError(err)))
 		return mcp.NewToolResultError("billing check failed"), nil
 	}
 
 	logger.Debug("web_fetch billing check passed",
-		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 
@@ -140,14 +137,14 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		diagnostic := search.FetchDiagnostic(err)
 		fields := appLog.WebFetchFailureFields(appLog.WebFetchFailureSummary{
 			ErrorCode: diagnostic.ErrorCode, Stage: diagnostic.Stage, TaskID: diagnostic.TaskID,
+			WorkerStage: diagnostic.WorkerStage, WorkerCategory: diagnostic.WorkerCategory,
 			DurationMS: time.Since(start).Milliseconds(),
 		})
-		logger.Error("web_fetch failed", append(fields, zap.Error(err))...)
+		logger.Error("web_fetch failed", append(fields, zap.Error(search.FetchLogError(err)))...)
 		return mcp.NewToolResultError("fetch failed: " + diagnostic.ErrorCode), nil
 	}
 
 	logger.Debug("web_fetch completed",
-		zap.String("url", logURL),
 		zap.Bool("output_markdown", outputMarkdown),
 		zap.Duration("duration", time.Since(start)),
 		zap.Int("content_len", len(content)),
@@ -189,4 +186,11 @@ func webFetchLogger(ctx context.Context, fallback logSDK.Logger) logSDK.Logger {
 		return logger
 	}
 	return fallback
+}
+
+func reviewedWebFetchLogger(fallback logSDK.Logger) logSDK.Logger {
+	if named, ok := fallback.(interface{ Name() string }); ok && strings.HasSuffix(named.Name(), ".web_fetch") {
+		return fallback
+	}
+	return fallback.Named("web_fetch")
 }

@@ -119,10 +119,38 @@ fails closed on every returned result.
 ## Diagnostics and billing
 
 The MCP failure alert exports reviewed scalar `error_code`, `stage`, UUID
-`request_id`/`task_id` and bounded `duration` for this exact callsite. It does not
-export URLs, raw errors, credentials, configuration or page content. Other
-alerts retain their existing restrictive policy. Local structured diagnostics
-remain available; outward failure text uses safe codes.
+`request_id`/`task_id` and bounded `duration_ms` for this exact callsite. Failed
+worker results may additionally carry optional JSON strings `failure_stage`
+and `failure_category`. The producer exports these as `worker_stage` and
+`worker_category` only when failed status, task UUID, exact target, output mode
+and echoed policy match the submitted operation. These fields describe the
+worker's failure stage; they are diagnostic metadata, not receipt or
+authentication proof. They never release a body or weaken success verification.
+
+The existing consumer `crawler_failed`/`render` code and stage remain unchanged.
+Missing, partial, unknown, invalid or mismatched worker metadata leaves the
+generic failure. Old decoders ignore the additive keys and new decoders accept
+old payloads. Legacy `failed_reason` remains compatible but is never parsed or
+exported as diagnostics. Worker `canceled`/`timeout` categories do not imply the
+producer's caller context was canceled or expired.
+
+Reviewed worker stage/category pairs are:
+
+| Worker stage | Categories |
+| --- | --- |
+| `admission` | `policy_missing`, `policy_invalid`, `unsupported_proxy`, `task_missing` |
+| `render` | `render_failed`, `challenge`, `empty_body`, `result_too_large` |
+| `verification` | `evidence_rejected` |
+| `conversion` | `conversion_failed`, `empty_body`, `empty_markdown`, `result_too_large` |
+
+Each stage also permits `canceled`, `timeout` and `worker_failed`. The category
+must match its stage exactly; freeform text is never classified by substring.
+
+Alerts and local fetch logs exclude target URLs, inherited framework/client
+fields, raw error causes, credentials, configuration and page content. A reviewed
+application logger carries UUID correlation to the fetch state machine; returned
+errors still preserve internal typed causes while log presentation includes only
+normalized safe text. Other alerts retain their restrictive policy.
 
 Admission/authorization rejection precedes paid acceptance. An accepted fetch
 that later fails keeps existing billing behavior. The incident does not justify

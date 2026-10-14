@@ -2,16 +2,24 @@ package search
 
 import (
 	"context"
-	"strings"
 
 	"github.com/Laisky/errors/v2"
+	logSDK "github.com/Laisky/go-utils/v6/log"
+	"github.com/google/uuid"
+
+	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 )
 
 const failureStageFetch = "fetch"
 const failureCodeFetch = "fetch_failed"
+const failureCodeCrawler = "crawler_failed"
+const failureStageRender = "render"
 
 // FetchFailureDiagnostic contains reviewed scalar fields safe for remote alerts.
-type FetchFailureDiagnostic struct{ ErrorCode, Stage, TaskID string }
+type FetchFailureDiagnostic struct {
+	ErrorCode, Stage, TaskID    string
+	WorkerStage, WorkerCategory string
+}
 
 // FetchFailureError carries safe diagnostics while preserving the underlying error identity.
 type FetchFailureError struct {
@@ -43,36 +51,50 @@ func FetchDiagnostic(err error) FetchFailureDiagnostic {
 		diagnostic.ErrorCode = failureCodeFetch
 	}
 	switch diagnostic.Stage {
-	case "admission", "submit", "result", "verification", "render", "wait", "fetch":
+	case "admission", "submit", "result", "verification", failureStageRender, "wait", failureStageFetch:
 	default:
 		diagnostic.Stage = failureStageFetch
 	}
+	if diagnostic.ErrorCode == failureCodeCrawler && diagnostic.Stage == failureStageRender {
+		diagnostic.WorkerStage, diagnostic.WorkerCategory = crawleregress.WorkerFailureDiagnostic(diagnostic.WorkerStage, diagnostic.WorkerCategory)
+	} else {
+		diagnostic.WorkerStage, diagnostic.WorkerCategory = "", ""
+	}
 	return diagnostic
+}
+
+// FetchLogError exposes only normalized error text, excluding the retained internal cause.
+func FetchLogError(err error) error {
+	return &FetchFailureError{Diagnostic: FetchDiagnostic(err)}
+}
+
+type fetchLoggerKey struct{}
+
+// WithFetchLogger threads a reviewed application logger rather than framework request fields.
+func WithFetchLogger(ctx context.Context, logger logSDK.Logger) context.Context {
+	return context.WithValue(ctx, fetchLoggerKey{}, logger)
+}
+
+func reviewedFetchLogger(ctx context.Context, fallback logSDK.Logger) logSDK.Logger {
+	if logger, ok := ctx.Value(fetchLoggerKey{}).(logSDK.Logger); ok && logger != nil {
+		return logger
+	}
+	return fallback
 }
 func fetchFailure(err error, code, stage, taskID string) error {
 	return errors.WithStack(&FetchFailureError{Diagnostic: FetchFailureDiagnostic{ErrorCode: code, Stage: stage, TaskID: safeTaskID(taskID)}, Cause: err})
 }
 func safeTaskID(taskID string) string {
-	if len(taskID) != 36 {
+	parsed, err := uuid.Parse(taskID)
+	if err != nil || len(taskID) != 36 || parsed == uuid.Nil || parsed.String() != taskID {
 		return ""
-	}
-	for index, char := range taskID {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			if char != '-' {
-				return ""
-			}
-			continue
-		}
-		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
-			return ""
-		}
 	}
 	return taskID
 }
 func knownFailureCode(code string) bool {
 	switch code {
 	case failureCodeFetch, "fetch_admission_failed", "crawler_submit_failed", "crawler_result_failed",
-		"crawler_egress_unverified", "crawler_egress_rejected", "crawler_failed", "crawler_status_invalid",
+		"crawler_egress_unverified", "crawler_egress_rejected", failureCodeCrawler, "crawler_status_invalid",
 		"fetch_canceled", "fetch_timeout": //nolint:misspell // stable externally consumed diagnostic enum
 		return true
 	default:

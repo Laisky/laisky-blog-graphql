@@ -58,14 +58,15 @@ func TestWebFetchFailureSafeCorrelation(t *testing.T) {
 		func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) {
 			return nil, &search.FetchFailureError{Diagnostic: search.FetchFailureDiagnostic{ErrorCode: "crawler_egress_unverified", Stage: "verification", TaskID: "0199c118-4229-7000-8000-000000000002"}, Cause: errors.New("private-upstream-canary")}
 		})
-	ctx := context.WithValue(context.Background(), ctxkeys.Logger, logger)
+	tool.logger = logger
+	ctx := context.WithValue(context.Background(), ctxkeys.Logger, logger.With(zap.String("client", "private-client-canary")))
 	ctx = context.WithValue(ctx, ctxkeys.RequestID, "0199c118-4229-7000-8000-000000000001")
 	result, err := tool.Handle(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"url": "https://1.1.1.1/private-url-canary?token=private-token-canary"}}})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 	require.Equal(t, 1, billingCalls, "accepted billing is neither refunded nor repeated on provider failure")
 	failures := observed.FilterMessage("web_fetch failed").All()
-	require.Len(t, failures, 1, "the context logger, rather than the static tool logger, receives failure")
+	require.Len(t, failures, 1, "the reviewed application logger receives the failure without inherited request fields")
 	require.Equal(t, "fetch failed: crawler_egress_unverified", result.Content[0].(mcp.TextContent).Text)
 	require.Equal(t, "request.web_fetch", failures[0].LoggerName)
 	require.Equal(t, "0199c118-4229-7000-8000-000000000001", failures[0].ContextMap()["web_fetch_request_id"])
