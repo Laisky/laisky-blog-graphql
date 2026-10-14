@@ -18,6 +18,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 func searchDefaultAlertReceiver(t *testing.T) (string, <-chan string) {
@@ -55,16 +56,16 @@ func receiveSearchDefaultAlert(t *testing.T, messages <-chan string) string {
 	}
 }
 
-// TestWebSearchDefaultDiagnosticsMeaningfulCauseAndAliases is a behavior control for the direct SDK default.
+// TestWebSearchDefaultDiagnosticsMeaningfulCauseAndAliases exercises the application scope with the SDK default.
 func TestWebSearchDefaultDiagnosticsMeaningfulCauseAndAliases(t *testing.T) {
 	endpoint, messages := searchDefaultAlertReceiver(t)
 	alert, err := logSDK.NewAlert(context.Background(), endpoint, logSDK.WithAlertType("fixture"), logSDK.WithAlertToken("fixture-token"))
 	require.NoError(t, err)
 	t.Cleanup(alert.Close)
 	var local bytes.Buffer
-	logger, err := logSDK.NewWithName("request", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core {
+	logger, err := logSDK.NewWithName("graphql.laisky-graphql.mcp", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core {
 		return zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&local), zapcore.DebugLevel)
-	}), zap.HooksWithFields(alert.GetZapHook()))
+	}), zap.HooksWithFields(appLog.WebDiagnosticAlertHook(alert.GetZapHook())))
 	require.NoError(t, err)
 	cause := errors.WithStack(errors.New("navigation failed: unexpected EOF; api_key=private-key-canary; response body: private-page-canary"))
 	provider := &diagnosticSearchProvider{err: cause}
@@ -105,8 +106,8 @@ func TestWebSearchDefaultDiagnosticsMeaningfulCauseAndAliases(t *testing.T) {
 	}
 	require.NotContains(t, message, "web_search_")
 	require.NotContains(t, message, "canary")
-	// An unrelated ordinary field is intentionally not in any application field-name list.
-	logger.Error("unrelated operation failed", zap.String("future_diagnostic_revision", "parser-v2"), zap.Int("failure_count", 3))
+	// An ordinary future field stays useful within the reviewed scope without a field-name list.
+	logger.Named("web_search").Error("other diagnostic failed", zap.String("future_diagnostic_revision", "parser-v2"), zap.Int("failure_count", 3))
 	message = receiveSearchDefaultAlert(t, messages)
 	require.Contains(t, message, `"future_diagnostic_revision":"parser-v2"`)
 	require.Contains(t, message, `"failure_count":3`)
@@ -116,7 +117,7 @@ func TestWebSearchDefaultDiagnosticsMeaningfulCauseAndAliases(t *testing.T) {
 // TestWebSearchDefaultDiagnosticsTypedBillingBody preserves status without the remote body.
 func TestWebSearchDefaultDiagnosticsTypedBillingBody(t *testing.T) {
 	var local bytes.Buffer
-	logger, err := logSDK.NewWithName("request", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core {
+	logger, err := logSDK.NewWithName("graphql.laisky-graphql.mcp", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core {
 		return zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&local), zapcore.DebugLevel)
 	}))
 	require.NoError(t, err)

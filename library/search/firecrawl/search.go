@@ -185,7 +185,6 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 		logger = logger.With(zap.String("provider", "firecrawl"))
 		logger.Debug("outgoing http request",
 			zap.String("method", req.Method),
-			zap.String("request_id", diagnostics.RequestID(ctx)),
 			zap.Int("limit", limit),
 		)
 	}

@@ -318,6 +318,9 @@ func TestSearchDoesNotInheritFrameworkUserFields(t *testing.T) {
 	require.Contains(t, encoded.String(), "\"reviewed_operation\":true",
 		"the reviewed operation logger must take priority over the fallback")
 	require.Contains(t, encoded.String(), operationID, "canonical correlation remains available")
+	for _, line := range strings.Split(strings.TrimSpace(encoded.String()), "\n") {
+		require.Equal(t, 1, strings.Count(line, `"request_id":`), "one correlation key per actual JSON event")
+	}
 	for _, field := range fields {
 		require.NotContains(t, encoded.String(), diagnosticCanary+"-"+field)
 		require.NotContains(t, encoded.String(), "\""+field+"\":")

@@ -152,7 +152,7 @@ application logger carries UUID correlation to the fetch state machine; returned
 errors still preserve internal typed causes while log presentation includes bounded
 sanitized useful cause text. Typed billing response bodies are excluded entirely;
 only validated billing outcome and HTTP status enter logs. Production installs
-the SDK's direct default hook without a field-name allowlist. Authored fetch fields
+the SDK's default hook within the reviewed search/fetch loggers, without a field-name allowlist. Authored fetch fields
 use the existing generic alert names once, and the SDK sanitizes diagnostic
 primitives, credentials, URLs and labeled payloads. Optional legacy explicit-filter
 adapters retain their documented selection behavior when deliberately chosen.
@@ -205,3 +205,12 @@ The implementation uses the documented [Go HTTP transport](https://pkg.go.dev/ne
 and [Chromium proxy behavior](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md).
 These API references describe mechanisms; the candidate's fixture tests establish
 its behavior and must pass before production readiness is claimed.
+
+Startup scope safety: the application exports default diagnostics from its static
+`graphql.laisky-graphql.mcp.web_search`, `graphql.laisky-graphql.mcp.web_fetch` and
+`graphql.laisky-graphql.mcp.web_fetch.fetch_dynamic_url_content` loggers. Unrelated
+services still emit arbitrary user/provider errors, so their alert fields retain
+legacy metadata-only export. One dispatcher calls one existing SDK hook per entry;
+there is no duplicate alert stream or diagnostic field-name filter. Actual startup
+and HTTP receiver controls retain future ordinary fields/useful causes in those
+scopes while rejecting user-ID/unlabelled payload fields and scope lookalikes.

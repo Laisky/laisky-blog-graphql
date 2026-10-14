@@ -160,7 +160,6 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 		logger = logger.With(zap.String("provider", "serp_google"))
 		logger.Debug("outgoing http request",
 			zap.String("method", req.Method),
-			zap.String("request_id", diagnostics.RequestID(ctx)),
 		)
 	}
 

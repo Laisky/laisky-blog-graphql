@@ -99,7 +99,7 @@ func setupLogger(ctx context.Context) {
 	}
 
 	log.Logger = log.Logger.WithOptions(
-		zap.HooksWithFields(alertPusher.GetZapHook()),
+		zap.HooksWithFields(log.WebDiagnosticAlertHook(alertPusher.GetZapHook())),
 	).Named("laisky-graphql")
 
 	lvl := gconfig.Shared.GetString("log-level")

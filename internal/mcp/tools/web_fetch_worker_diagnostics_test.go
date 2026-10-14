@@ -19,6 +19,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
 )
 
@@ -52,10 +53,10 @@ func TestWebFetchWorkerDiagnosticsActualLogsAndAlert(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(alert.Close)
 			var local bytes.Buffer
-			logger, err := logSDK.NewWithName("graphql.mcp.web_fetch", logSDK.LevelDebug,
+			logger, err := logSDK.NewWithName("graphql.laisky-graphql.mcp.web_fetch", logSDK.LevelDebug,
 				zap.WrapCore(func(zapcore.Core) zapcore.Core {
 					return zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&local), zapcore.DebugLevel)
-				}), zap.HooksWithFields(alert.GetZapHook()))
+				}), zap.HooksWithFields(appLog.WebDiagnosticAlertHook(alert.GetZapHook())))
 			require.NoError(t, err)
 			var billingCalls, fetchCalls int
 			tool, err := NewWebFetchTool(&rlibs.DB{}, logger, func(context.Context) string { return "private-token-canary" },
@@ -92,7 +93,7 @@ func TestWebFetchWorkerDiagnosticsActualLogsAndAlert(t *testing.T) {
 				}
 			}
 			require.Len(t, failures, 1)
-			require.Equal(t, "graphql.mcp.web_fetch", failures[0]["logger"])
+			require.Equal(t, "graphql.laisky-graphql.mcp.web_fetch", failures[0]["logger"])
 			require.Equal(t, "0199c118-4229-7000-8000-000000000001", failures[0]["request_id"])
 			if tc.structured {
 				require.Equal(t, "conversion", failures[0]["worker_stage"])

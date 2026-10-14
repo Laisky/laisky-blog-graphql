@@ -24,7 +24,7 @@ The MCP success schema remains unchanged. Failures still use the MCP tool-error 
 
 `web_search failed` authors `stage`, `category`, `provider`, `attempts`, optional
 `status`, `duration_ms`, and `request_id` once. Production installs the SDK's
-direct sanitized default hook without an application field-name allowlist.
+sanitized SDK default hook within reviewed operation loggers, without an application field-name allowlist.
 Ordinary future diagnostic primitives from unrelated events also remain useful.
 Legacy explicit-filter prefix adapters remain optional and retain their selection
 behavior when deliberately chosen.
@@ -58,6 +58,15 @@ marshalers; production relies on authored safe diagnostics and SDK sanitization.
 
 Offline tests cover actual provider JSON logs, typed cause propagation, positive successful responses, HTTP auth/429/5xx, malformed responses, DNS/TLS/connection/timeout, cancellation, mixed failover, nil output, safe correlation and local-receiver alert serialization. Negative controls use sensitive canaries and the previous manager/tool implementations. Repository lint and race/coverage acceptance must pass on the exact final commit without changing source/module files.
 
-This task does not authorize deployment or merging. Before a separately approved rollout, qualify the exact image built from the reviewed commit, verify it uses the direct SDK `GetZapHook` without an application field filter, and exercise a synthetic local alert receiver without paid production search. Confirm a controlled failure carries reviewed scalar fields and no sensitive content. Monitor category/status/attempt distributions and alert delivery; unknowns should trigger further bounded correlation, not speculative labels.
+Qualified source merges require current owner authorization and exact-head checks; runtime rollout remains separately held. Before a separately approved rollout, qualify the exact image built from the reviewed commit, verify the actual startup hook delegates reviewed search/fetch diagnostics to SDK `GetZapHook` without a field-name filter, and exercise a synthetic local alert receiver without paid production search. Confirm a controlled failure carries reviewed scalar fields and no sensitive content. Monitor category/status/attempt distributions and alert delivery; unknowns should trigger further bounded correlation, not speculative labels.
 
 Rollback is a separately approved release of the previously qualified immutable image or a source revert followed by normal image qualification. Preserve the existing fetch verification, redaction, credentials and configuration. A rollback restores the prior search diagnostic gap and raw-provider telemetry risk. Unrelated SSO/Ramjet release holds and frontend/dependency ownership are independent gates.
+
+Startup scope safety: the application exports default diagnostics from its static
+`graphql.laisky-graphql.mcp.web_search`, `graphql.laisky-graphql.mcp.web_fetch` and
+`graphql.laisky-graphql.mcp.web_fetch.fetch_dynamic_url_content` loggers. Unrelated
+services still emit arbitrary user/provider errors, so their alert fields retain
+legacy metadata-only export. One dispatcher calls one existing SDK hook per entry;
+there is no duplicate alert stream or diagnostic field-name filter. Actual startup
+and HTTP receiver controls retain future ordinary fields/useful causes in those
+scopes while rejecting user-ID/unlabelled payload fields and scope lookalikes.

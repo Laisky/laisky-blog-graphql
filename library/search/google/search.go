@@ -126,7 +126,6 @@ func (se *SearchEngine) Search(ctx context.Context, query string) (*CustomSearch
 
 	logger.Debug("outgoing http request",
 		zap.String("method", req.Method),
-		zap.String("request_id", diagnostics.RequestID(ctx)),
 	)
 
 	startAt := time.Now()
@@ -153,7 +152,6 @@ func (se *SearchEngine) Search(ctx context.Context, query string) (*CustomSearch
 
 	logger.Debug("incoming http response",
 		zap.String("method", req.Method),
-		zap.String("request_id", diagnostics.RequestID(ctx)),
 		zap.Int("status", resp.StatusCode),
 		zap.Duration("cost", time.Since(startAt)),
 	)
