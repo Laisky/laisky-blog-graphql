@@ -1,3 +1,4 @@
+import { getPrivateErrorMessage, setUnexpectedRequestReporter } from '@/lib/private-error';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callFileAPI, callFileTool, extractFilePayload } from './client';
 import { fileIOErrorMessage } from './version-state';
@@ -8,7 +9,7 @@ vi.mock('../shared/auth', () => ({
   resolveToolApiBase: () => '/tools/file_io/',
 }));
 vi.mock('../shared/mcp-api', () => ({ callMcpTool: vi.fn() }));
-afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+afterEach(() => { setUnexpectedRequestReporter(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe('FileIO console transports', () => {
   it('passes the exact captured condition to MCP', async () => {
@@ -41,7 +42,8 @@ describe('FileIO console transports', () => {
     vi.stubGlobal('fetch', fetcher);
     let error: unknown;
     try { await callFileAPI('key', 'PUT', '/file'); } catch (caught) { error = caught; }
-    expect(error).toMatchObject({ status });
+    expect(error).toMatchObject({ status, message: 'rejected' });
+    expect(getPrivateErrorMessage(error)).toBe('FileIO request failed');
     expect(fileIOErrorMessage(error)).toContain('draft is kept');
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -55,5 +57,39 @@ describe('FileIO console transports', () => {
     const content = [{ type: 'text', text: '{"version":"v1"}' }];
     expect(extractFilePayload({ content })).toEqual({ version: 'v1' });
     expect(extractFilePayload({ content, structuredContent: { version: 'v2' } } as Parameters<typeof extractFilePayload>[0])).toEqual({ version: 'v2' });
+  });
+});
+
+describe('private FileIO response errors', () => {
+  it('preserves raw tool error details for the UI with a private summary', async () => {
+    const observer = vi.fn(); setUnexpectedRequestReporter(observer);
+    vi.mocked(callMcpTool).mockResolvedValue({ isError: true, content: [{ type: 'text', text: 'synthetic private file content' }] });
+    const error = await callFileTool('key', 'file_read', {}).catch((failure: unknown) => failure);
+    expect(error).toMatchObject({ message: 'synthetic private file content' });
+    expect(getPrivateErrorMessage(error)).toBe('FileIO request failed');
+    expect(observer).not.toHaveBeenCalled();
+    expect(callMcpTool).toHaveBeenCalledTimes(1);
+  });
+  it('marks malformed tool and HTTP JSON without changing native parse failures', async () => {
+    let toolFailure: unknown;
+    try { extractFilePayload({ content: [{ type: 'text', text: 'private file content' }] }); }
+    catch (error) { toolFailure = error; }
+    expect(toolFailure).toBeInstanceOf(SyntaxError);
+    expect(getPrivateErrorMessage(toolFailure)).toBe('Invalid FileIO JSON response');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('private file content')));
+    const httpFailure = await callFileAPI('key', 'GET', '/file').catch((error: unknown) => error);
+    expect(httpFailure).toBeInstanceOf(SyntaxError);
+    expect(getPrivateErrorMessage(httpFailure)).toBe('Invalid FileIO JSON response');
+  });
+});
+
+describe('FileIO malformed success payload observation', () => {
+  it('observes a missing payload while preserving the fixed protocol error', async () => {
+    const observer = vi.fn(); setUnexpectedRequestReporter(observer);
+    vi.mocked(callMcpTool).mockResolvedValue({ content: [] });
+    const error = await callFileTool('key', 'file_read', {}).catch((failure: unknown) => failure);
+    expect(error).toMatchObject({ message: 'Tool response missing structured payload.' });
+    expect(observer).toHaveBeenCalledExactlyOnceWith(error, { operation: 'file-io' });
+    expect(getPrivateErrorMessage(error)).toBeUndefined();
   });
 });
