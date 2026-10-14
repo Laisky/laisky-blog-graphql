@@ -106,6 +106,9 @@ type HTMLCrawlerTask struct {
 	// They do not establish connection evidence and are never used to release content.
 	FailureStage    string `json:"failure_stage,omitempty"`
 	FailureCategory string `json:"failure_category,omitempty"`
+	// FailureSignal is an optional finite reason for a failed render challenge.
+	// It carries no page content and is not connection or identity evidence.
+	FailureSignal string `json:"failure_signal,omitempty"`
 	// Url is the target URL to fetch
 	Url string `json:"url"`
 	// APIKey is the one-api api key used for fetching dynamic content

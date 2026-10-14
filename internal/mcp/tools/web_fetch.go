@@ -135,7 +135,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		diagnostic := search.FetchDiagnostic(err)
 		fields := appLog.WebFetchDiagnosticFields(appLog.WebFetchFailureSummary{
 			ErrorCode: diagnostic.ErrorCode, Stage: diagnostic.Stage, TaskID: diagnostic.TaskID,
-			WorkerStage: diagnostic.WorkerStage, WorkerCategory: diagnostic.WorkerCategory,
+			WorkerStage: diagnostic.WorkerStage, WorkerCategory: diagnostic.WorkerCategory, WorkerSignal: diagnostic.WorkerSignal,
 			DurationMS: time.Since(start).Milliseconds(),
 		})
 		logger.Error("web_fetch failed", append(fields, zap.Error(search.FetchLogError(err)))...)

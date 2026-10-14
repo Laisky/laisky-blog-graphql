@@ -20,6 +20,7 @@ const fetchDiagnosticTextLimit = 2048
 type FetchFailureDiagnostic struct {
 	ErrorCode, Stage, TaskID    string
 	WorkerStage, WorkerCategory string
+	WorkerSignal                string
 }
 
 // FetchFailureError carries safe diagnostics while preserving the underlying error identity.
@@ -58,8 +59,13 @@ func FetchDiagnostic(err error) FetchFailureDiagnostic {
 	}
 	if diagnostic.ErrorCode == failureCodeCrawler && diagnostic.Stage == failureStageRender {
 		diagnostic.WorkerStage, diagnostic.WorkerCategory = crawleregress.WorkerFailureDiagnostic(diagnostic.WorkerStage, diagnostic.WorkerCategory)
+		if diagnostic.TaskID != "" {
+			diagnostic.WorkerSignal = crawleregress.WorkerChallengeSignal(diagnostic.WorkerStage, diagnostic.WorkerCategory, diagnostic.WorkerSignal)
+		} else {
+			diagnostic.WorkerSignal = ""
+		}
 	} else {
-		diagnostic.WorkerStage, diagnostic.WorkerCategory = "", ""
+		diagnostic.WorkerStage, diagnostic.WorkerCategory, diagnostic.WorkerSignal = "", "", ""
 	}
 	return diagnostic
 }
