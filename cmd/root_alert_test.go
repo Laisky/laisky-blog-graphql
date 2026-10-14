@@ -13,10 +13,11 @@ import (
 
 	gconfig "github.com/Laisky/go-config/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
-	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/zap"
 	"github.com/Laisky/zap/zapcore"
 	"github.com/stretchr/testify/require"
+
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // TestStartupAlertDiagnosticScope exercises the actual startup hook and HTTP serializer.
