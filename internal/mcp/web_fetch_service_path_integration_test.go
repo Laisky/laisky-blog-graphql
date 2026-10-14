@@ -147,15 +147,16 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 	endpoint := httptest.NewServer(server.Handler())
 	t.Cleanup(endpoint.Close)
 
+	var challengeTaskID string
 	cases := []struct {
-		path                         string
-		markdown                     bool
-		code, workerCategory, status string
+		path                                       string
+		markdown                                   bool
+		code, workerCategory, status, workerSignal string
 	}{
 		{path: "/html", status: rlibs.TaskStatusSuccess},
 		{path: "/markdown", markdown: true, status: rlibs.TaskStatusSuccess},
 		{path: "/quoted-challenge", status: rlibs.TaskStatusSuccess},
-		{path: "/challenge", code: "crawler_failed", workerCategory: "challenge", status: rlibs.TaskStatusFailed},
+		{path: "/challenge", code: "crawler_failed", workerCategory: "challenge", status: rlibs.TaskStatusFailed, workerSignal: "widget_element"},
 		{path: "/render-failure", code: "crawler_failed", workerCategory: "render_failed", status: rlibs.TaskStatusFailed},
 		{path: "/missing-worker-receipt", code: "crawler_failed", workerCategory: "evidence_rejected", status: rlibs.TaskStatusFailed},
 		{path: "/missing-result-receipt", code: "crawler_egress_unverified", status: rlibs.TaskStatusSuccess},
@@ -199,10 +200,17 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 			require.Empty(t, decoded.APIKey)
 			require.Equal(t, []string{"93.184.216.34"}, decoded.Egress.Addresses)
 			require.Greater(t, client.TTL(ctx, rlibs.KeyPrefixTaskHTMLCrawlerResult+id).Val(), 2*time.Hour)
+			var wire map[string]any
+			require.NoError(t, json.Unmarshal([]byte(raw), &wire))
 			if tc.workerCategory != "" {
-				var wire map[string]any
-				require.NoError(t, json.Unmarshal([]byte(raw), &wire))
 				require.Equal(t, tc.workerCategory, wire["failure_category"])
+			}
+			require.Equal(t, tc.workerSignal, decoded.FailureSignal)
+			if tc.workerSignal != "" {
+				require.Equal(t, tc.workerSignal, wire["failure_signal"])
+				challengeTaskID = id
+			} else {
+				require.NotContains(t, wire, "failure_signal")
 			}
 			if tc.code == "" {
 				require.NotNil(t, decoded.EgressReceipt)
@@ -211,9 +219,26 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 			if tc.code != "" {
 				logData, readErr := os.ReadFile(operationLogPath)
 				require.NoError(t, readErr)
-				require.Contains(t, string(logData), "\"error_code\":\""+tc.code+"\"")
+				decoder := json.NewDecoder(bytes.NewReader(logData))
+				var failure map[string]any
+				matches := 0
+				for decoder.More() {
+					var entry map[string]any
+					require.NoError(t, decoder.Decode(&entry))
+					if entry["msg"] == "web_fetch failed" && entry["task_id"] == id {
+						failure = entry
+						matches++
+					}
+				}
+				require.Equal(t, 1, matches, "failure fields must belong to this queued task")
+				require.Equal(t, tc.code, failure["error_code"])
 				if tc.workerCategory != "" {
-					require.Contains(t, string(logData), "\"worker_category\":\""+tc.workerCategory+"\"")
+					require.Equal(t, tc.workerCategory, failure["worker_category"])
+				}
+				if tc.workerSignal != "" {
+					require.Equal(t, tc.workerSignal, failure["worker_signal"])
+				} else {
+					require.NotContains(t, failure, "worker_signal")
 				}
 			}
 		})
@@ -272,10 +297,11 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 			require.NotContains(t, string(data), canary, "private fixture content escaped to logs")
 		}
 	}
-	var producerAlert, workerAlert bool
+	require.NotEmpty(t, challengeTaskID)
+	var producerAlert, workerAlert, producerChallenge, workerChallenge bool
 	alertDeadline := time.NewTimer(5 * time.Second)
 	defer alertDeadline.Stop()
-	for !producerAlert || !workerAlert || len(alertMessages) > 0 {
+	for !producerAlert || !workerAlert || !producerChallenge || !workerChallenge || len(alertMessages) > 0 {
 		select {
 		case message := <-alertMessages:
 			for _, canary := range []string{"service-secret-canary", "service-query-canary", "service-body-canary", "service-billing-body-canary"} {
@@ -295,10 +321,30 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 				require.NotEmpty(t, fields["category"])
 				require.NotEmpty(t, fields["task_id"], "worker alerts need the actual queued correlation ID")
 			}
+			if isProducer {
+				if fields["worker_category"] == "challenge" {
+					require.Equal(t, "render", fields["worker_stage"])
+					require.Equal(t, challengeTaskID, fields["task_id"])
+					require.Equal(t, "widget_element", fields["worker_signal"])
+					producerChallenge = true
+				} else {
+					require.NotContains(t, fields, "worker_signal")
+				}
+			}
+			if isWorker {
+				if fields["category"] == "challenge" {
+					require.Equal(t, "render", fields["stage"])
+					require.Equal(t, challengeTaskID, fields["task_id"])
+					require.Equal(t, "widget_element", fields["challenge_signal"])
+					workerChallenge = true
+				} else {
+					require.NotContains(t, fields, "challenge_signal")
+				}
+			}
 			producerAlert = producerAlert || isProducer
 			workerAlert = workerAlert || isWorker
 		case <-alertDeadline.C:
-			t.Fatal("actual producer and worker alerts must both retain useful structured fields")
+			t.Fatal("actual producer and worker challenge alerts must carry the bounded signal for the same task")
 		}
 	}
 	select {
