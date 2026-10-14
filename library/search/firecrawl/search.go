@@ -12,19 +12,17 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
+	"github.com/Laisky/laisky-blog-graphql/library/search/diagnostics"
 )
 
 const (
 	defaultEndpoint    = "https://api.firecrawl.dev/v2/search"
 	httpRequestTimeout = 30 * time.Second
-	// logBodyLimit caps the number of response bytes logged for debugging.
-	logBodyLimit = 4096
 	// defaultLimit is the number of web results requested when none is configured.
 	defaultLimit = 10
 	// maxLimit mirrors the Firecrawl API upper bound for the result count.
@@ -146,12 +144,12 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 		return nil, errors.New("search query cannot be empty")
 	}
 	if strings.TrimSpace(e.apiKey) == "" {
-		return nil, errors.New("firecrawl api key is not configured")
+		return nil, errors.Wrap(diagnostics.New("configuration", "internal"), "firecrawl api key is not configured")
 	}
 
 	endpoint, err := url.Parse(e.endpoint)
 	if err != nil {
-		return nil, errors.Wrapf(err, "invalid firecrawl endpoint %q", e.endpoint)
+		return nil, diagnostics.Wrap(err, "configuration")
 	}
 
 	limit := e.limit
@@ -169,28 +167,25 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 	}
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, errors.Wrap(err, "marshal firecrawl request")
+		return nil, errors.Wrap(diagnostics.Wrap(err, "encode"), "marshal firecrawl request")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, errors.Wrap(err, "create firecrawl request")
+		return nil, errors.Wrap(diagnostics.Wrap(err, "request"), "create firecrawl request")
 	}
 	// The API key travels in the Authorization header and must never be logged.
 	req.Header.Set("Authorization", "Bearer "+e.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	logger := e.logger
-	if ctx != nil {
-		logger = gmw.GetLogger(ctx).Named("firecrawl_search")
-	}
+	logger := diagnostics.Logger(ctx, e.logger)
 
 	if logger != nil {
+		logger = logger.With(zap.String("provider", "firecrawl"))
 		logger.Debug("outgoing http request",
 			zap.String("method", req.Method),
-			zap.String("url", endpoint.String()),
-			zap.String("query", trimmedQuery),
+			zap.String("request_id", diagnostics.RequestID(ctx)),
 			zap.Int("limit", limit),
 		)
 	}
@@ -198,44 +193,39 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 	startAt := time.Now()
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, errors.Wrap(err, "send firecrawl request")
+		// net/http's outer URL error contains request inputs and provider credentials.
+		// Preserve its typed underlying cause without retaining the sensitive request URL.
+		var requestErr *url.Error
+		if errors.As(err, &requestErr) {
+			err = requestErr.Err
+		}
+		return nil, errors.Wrap(diagnostics.Transport(ctx, err), "send firecrawl request")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "read firecrawl response body")
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.WithStack(diagnostics.HTTP(resp.StatusCode))
 	}
 
-	truncatedBody, truncated := truncateForLog(respBody, logBodyLimit)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(diagnostics.Wrap(diagnostics.Transport(ctx, err), "response"), "read firecrawl response body")
+	}
+
 	if logger != nil {
 		logger.Debug("incoming http response",
 			zap.Int("status", resp.StatusCode),
-			zap.String("body", truncatedBody),
-			zap.Bool("body_truncated", truncated),
 			zap.Duration("cost", time.Since(startAt)),
-			zap.String("query", trimmedQuery),
 		)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("firecrawl returned status %d: %s", resp.StatusCode, truncatedBody)
 	}
 
 	var parsed firecrawlResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return nil, errors.Wrap(err, "unmarshal firecrawl response")
+		return nil, errors.Wrap(diagnostics.Wrap(err, "decode"), "unmarshal firecrawl response")
 	}
 
 	if !parsed.Success {
-		msg := strings.TrimSpace(parsed.Error)
-		if msg == "" {
-			msg = strings.TrimSpace(parsed.Warning)
-		}
-		if msg == "" {
-			msg = "unknown error"
-		}
-		return nil, errors.Errorf("firecrawl reported failure: %s", msg)
+		return nil, errors.Wrap(diagnostics.New("provider", "unknown"), "firecrawl reported failure")
 	}
 
 	items := make([]search.SearchResultItem, 0, len(parsed.Data.Web))
@@ -270,12 +260,4 @@ type firecrawlWebResult struct {
 	URL         string `json:"url"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
-}
-
-// truncateForLog limits the payload logged for debugging and reports whether truncation occurred.
-func truncateForLog(body []byte, limit int) (string, bool) {
-	if len(body) <= limit {
-		return string(body), false
-	}
-	return string(body[:limit]), true
 }

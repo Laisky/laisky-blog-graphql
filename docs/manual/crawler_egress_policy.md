@@ -149,8 +149,13 @@ must match its stage exactly; freeform text is never classified by substring.
 Alerts and local fetch logs exclude target URLs, inherited framework/client
 fields, raw error causes, credentials, configuration and page content. A reviewed
 application logger carries UUID correlation to the fetch state machine; returned
-errors still preserve internal typed causes while log presentation includes only
-normalized safe text. Other alerts retain their restrictive policy.
+errors still preserve internal typed causes while log presentation includes bounded
+sanitized useful cause text. Typed billing response bodies are excluded entirely;
+only validated billing outcome and HTTP status enter logs. Production installs
+the SDK's direct default hook without a field-name allowlist. Authored fetch fields
+use the existing generic alert names once, and the SDK sanitizes diagnostic
+primitives, credentials, URLs and labeled payloads. Optional legacy explicit-filter
+adapters retain their documented selection behavior when deliberately chosen.
 
 Admission/authorization rejection precedes paid acceptance. An accepted fetch
 that later fails keeps existing billing behavior. The incident does not justify

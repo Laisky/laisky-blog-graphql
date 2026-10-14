@@ -9,11 +9,10 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
-	"github.com/Laisky/zap"
 
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/search/diagnostics"
 )
 
 const (
@@ -144,10 +143,7 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 		return nil, errors.New("search query cannot be empty")
 	}
 
-	logger := m.logger
-	if ctx != nil {
-		logger = gmw.GetLogger(ctx).Named("search_manager").With(zap.String("query", trimmed))
-	}
+	logger := diagnostics.Logger(ctx, m.logger)
 
 	allowedAttempts := m.maxRetries + 1
 	if allowedAttempts <= 0 {
@@ -168,11 +164,14 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 
 	attempts := 0
 	usedEngines := map[string]struct{}{}
-	var failureDetails []string
+	var failures []error
 
 	for tierIdx, tier := range m.tiers {
 		engines := m.roundRobinEngines(tierIdx, tier)
 		for _, engine := range engines {
+			if ctx != nil && ctx.Err() != nil {
+				return nil, diagnostics.Stopped(ctx.Err(), failures, attempts)
+			}
 			if attempts >= allowedAttempts {
 				break
 			}
@@ -184,37 +183,25 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 			usedEngines[key] = struct{}{}
 			attempts++
 
-			tierLogger := logger
-			if tierLogger != nil {
-				tierLogger.Debug("search manager invoking engine",
-					zap.String("engine", engine.Name()),
-					zap.Int("tier", tierIdx),
-					zap.Int("attempt", attempts),
-				)
-			}
+			logEngineInvocation(logger, engine, tierIdx, attempts)
 
+			attemptStart := time.Now()
 			items, err := engine.Search(ctx, trimmed)
 			if err != nil {
-				failureDetails = append(failureDetails, fmt.Sprintf("%s: %v", engine.Name(), err))
-				if tierLogger != nil {
-					tierLogger.Warn("search engine failed",
-						zap.String("engine", engine.Name()),
-						zap.Int("tier", tierIdx),
-						zap.Int("attempt", attempts),
-						zap.Error(err),
-					)
+				failure := diagnostics.WithProvider(err, engine.Type())
+				failures = append(failures, failure)
+				diagnostic := diagnostics.Summary(failure)
+				logEngineFailure(ctx, logger, diagnostic, tierIdx, attempts, time.Since(attemptStart))
+				if ctx != nil && ctx.Err() != nil {
+					return nil, diagnostics.Stopped(ctx.Err(), failures, attempts)
 				}
 				continue
 			}
 
-			if tierLogger != nil {
-				tierLogger.Info("search manager succeeded",
-					zap.String("engine", engine.Name()),
-					zap.String("engine_type", engine.Type()),
-					zap.Int("tier", tierIdx),
-					zap.Int("attempt", attempts),
-				)
+			if ctx != nil && ctx.Err() != nil {
+				return nil, diagnostics.Stopped(ctx.Err(), failures, attempts)
 			}
+			logEngineSuccess(logger, engine, tierIdx, attempts)
 			return &SearchOutput{
 				Items:      items,
 				EngineName: engine.Name(),
@@ -226,12 +213,7 @@ func (m *Manager) Search(ctx context.Context, query string) (*SearchOutput, erro
 		}
 	}
 
-	if len(failureDetails) == 0 {
-		return nil, errors.New("search manager could not locate a usable engine")
-	}
-
-	message := fmt.Sprintf("search manager exhausted engines after %d attempt(s): %s", attempts, strings.Join(failureDetails, "; "))
-	return nil, errors.New(message)
+	return nil, diagnostics.Exhausted(failures)
 }
 
 // initializeRoundRobinOffsets seeds each tier cursor before searches begin.

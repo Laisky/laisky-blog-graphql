@@ -10,20 +10,17 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
+	"github.com/Laisky/laisky-blog-graphql/library/search/diagnostics"
 )
 
 const (
-	defaultEndpoint    = "https://serpapi.com/search.json"
-	httpRequestTimeout = 10 * time.Second
-	// logBodyLimit caps the number of response bytes logged for debugging.
-	logBodyLimit         = 4096
+	defaultEndpoint      = "https://serpapi.com/search.json"
+	httpRequestTimeout   = 10 * time.Second
 	serpGoogleEngineName = "serp_google"
 )
 
@@ -133,17 +130,17 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 		return nil, errors.New("search query cannot be empty")
 	}
 	if strings.TrimSpace(e.apiKey) == "" {
-		return nil, errors.New("serp google api key is not configured")
+		return nil, errors.Wrap(diagnostics.New("configuration", "internal"), "serp google api key is not configured")
 	}
 
 	endpoint, err := url.Parse(e.endpoint)
 	if err != nil {
-		return nil, errors.New("invalid serp google endpoint")
+		return nil, diagnostics.Wrap(err, "configuration")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "create serp google request")
+		return nil, errors.Wrap(diagnostics.Wrap(err, "request"), "create serp google request")
 	}
 
 	params := req.URL.Query()
@@ -157,58 +154,53 @@ func (e *SearchEngine) Search(ctx context.Context, query string) ([]search.Searc
 	req.URL.RawQuery = params.Encode()
 	req.Header.Set("Accept", "application/json")
 
-	logger := e.logger
-	if ctx != nil {
-		logger = gmw.GetLogger(ctx).Named("serp_google")
-	}
+	logger := diagnostics.Logger(ctx, e.logger)
 
 	if logger != nil {
+		logger = logger.With(zap.String("provider", "serp_google"))
 		logger.Debug("outgoing http request",
 			zap.String("method", req.Method),
-			zap.String("url", toolpolicy.URLForLog(req.URL.String())),
-			zap.String("query", trimmedQuery),
+			zap.String("request_id", diagnostics.RequestID(ctx)),
 		)
 	}
 
 	startAt := time.Now()
 	resp, err := e.client.Do(req)
 	if err != nil {
-		// net/http embeds the full credential-bearing URL in url.Error.
+		// net/http's outer URL error contains request inputs and provider credentials.
+		// Preserve its typed underlying cause without retaining the sensitive request URL.
 		var requestErr *url.Error
 		if errors.As(err, &requestErr) {
 			err = requestErr.Err
 		}
-		return nil, errors.Wrap(err, "send serp google request")
+		return nil, errors.Wrap(diagnostics.Transport(ctx, err), "send serp google request")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "read serp google response body")
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.WithStack(diagnostics.HTTP(resp.StatusCode))
 	}
 
-	truncatedBody, truncated := truncateForLog([]byte(e.redactProviderKey(string(body))), logBodyLimit)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(diagnostics.Wrap(diagnostics.Transport(ctx, err), "response"), "read serp google response body")
+	}
+
 	if logger != nil {
 		logger.Debug("incoming http response",
 			zap.Int("status", resp.StatusCode),
 			zap.Int("response_bytes", len(body)),
-			zap.Bool("body_truncated", truncated),
 			zap.Duration("cost", time.Since(startAt)),
-			zap.String("query", trimmedQuery),
 		)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("serp google returned status %d: %s", resp.StatusCode, truncatedBody)
 	}
 
 	var payload serpResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, errors.Wrap(err, "unmarshal serp google response")
+		return nil, errors.Wrap(diagnostics.Wrap(err, "decode"), "unmarshal serp google response")
 	}
 
 	if payload.Error != "" {
-		return nil, errors.Errorf("serp google reported error: %s", e.redactProviderKey(payload.Error))
+		return nil, errors.Wrap(diagnostics.New("provider", "unknown"), "serp google reported failure")
 	}
 
 	items := make([]search.SearchResultItem, 0, len(payload.OrganicResults))
@@ -236,20 +228,4 @@ type serpOrganicResult struct {
 	Link    string `json:"link"`
 	Title   string `json:"title"`
 	Snippet string `json:"snippet"`
-}
-
-// truncateForLog limits the payload logged for debugging and reports whether truncation occurred.
-func truncateForLog(body []byte, limit int) (string, bool) {
-	if len(body) <= limit {
-		return string(body), false
-	}
-	return string(body[:limit]), true
-}
-
-// redactProviderKey removes raw and query-escaped credential echoes from provider errors.
-func (e *SearchEngine) redactProviderKey(message string) string {
-	if e.apiKey == "" {
-		return message
-	}
-	return strings.NewReplacer(e.apiKey, "[REDACTED]", url.QueryEscape(e.apiKey), "[REDACTED]").Replace(message)
 }
