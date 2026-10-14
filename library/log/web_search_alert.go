@@ -36,13 +36,26 @@ func WebSearchFailureFields(summary WebSearchFailureSummary) []zapcore.Field {
 	return fields
 }
 
-// ToolFailureAlertOption enables only reviewed keys, used with ToolFailureAlertHook.
+// WebSearchDiagnosticFields authors one validated scalar set using stable generic aliases.
+// Production sends these directly through the SDK's sanitized default hook.
+func WebSearchDiagnosticFields(summary WebSearchFailureSummary) []zapcore.Field {
+	fields := WebSearchFailureFields(summary)
+	for i := range fields {
+		fields[i].Key = strings.TrimPrefix(fields[i].Key, "web_search_")
+	}
+	return fields
+}
+
+// ToolFailureAlertOption retains optional legacy explicit field selection.
+// Production uses the SDK sanitized default; this option is only for callers
+// deliberately selecting the prefix adapter ToolFailureAlertHook.
 func ToolFailureAlertOption() logSDK.AlertOption {
 	return logSDK.WithAlertFieldAllowlist("error_code", "stage", "request_id", "task_id", "duration_ms", "category", "provider", "status", "attempts")
 }
 
-// ToolFailureAlertHook preserves fetch redaction and allows one reviewed search callsite.
-// Generic fields and arbitrary error/object marshalers are never passed to the SDK.
+// ToolFailureAlertHook is the optional legacy prefix-validation adapter.
+// It retains explicit selection and metadata-only unrelated events when chosen;
+// production installs the SDK default hook directly.
 func ToolFailureAlertHook(alert *logSDK.Alert) func(zapcore.Entry, []zapcore.Field) error {
 	fetchHook, hook := WebFetchAlertHook(alert), alert.GetZapHook()
 	return func(entry zapcore.Entry, fields []zapcore.Field) error {

@@ -122,7 +122,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	)
 
 	if err := t.billingChecker(ctx, apiKey, oneapi.PriceWebFetch, "web_fetch"); err != nil {
-		logger.Warn("web_fetch billing denied", zap.Error(webFetchBillingLogError(err)))
+		logger.Warn("web_fetch billing denied", zap.Error(toolBillingLogError(err)))
 		return mcp.NewToolResultError("billing check failed"), nil
 	}
 
@@ -168,8 +168,8 @@ func reviewedWebFetchLogger(fallback logSDK.Logger) logSDK.Logger {
 	return fallback.Named("web_fetch")
 }
 
-// webFetchBillingLogError excludes the typed provider response body from Reason.
-func webFetchBillingLogError(err error) error {
+// toolBillingLogError preserves billing outcome/status without logging the response body in Reason.
+func toolBillingLogError(err error) error {
 	var billing *oneapi.BillingError
 	if errors.As(err, &billing) && billing != nil {
 		outcome := oneapi.ClassifyBillingOutcome(err)

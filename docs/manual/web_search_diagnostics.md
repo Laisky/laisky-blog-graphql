@@ -14,7 +14,7 @@ The 04:18–04:25 UTC Docker log query returned no entries. A bounded current fi
 
 The search manager previously stringified all provider errors, losing typed causes and exposing provider text. It also attempted fallback engines after the caller context ended, and invoked an engine when the context was already canceled. Behavioral regressions reproduce these defects. Failover now preserves causes for `errors.Is`/`errors.As`, stops work when the caller context ends, and retains existing attempt/distinct-engine limits and successful fallback behavior. Provider instances, priority configuration and credentials are unchanged. A per-provider HTTP client timeout keeps the healthy fallback path available while the caller is active; an actual local HTTP test reproduced and rejected the first candidate that confused this timeout with caller deadline expiry.
 
-Provider diagnostics omit query text, query length, credentials, headers, endpoint URLs, raw response bodies and provider error messages. Known providers return safe typed status/stage failures, preserving typed transport/read/decode causes internally. HTTP status is checked before reading error bodies. This is an observability and privacy repair; no historical provider outage is asserted or repaired speculatively.
+Provider diagnostics omit query text, query length, credentials, headers, endpoint URLs, raw response bodies and provider-reported payload messages. Known providers return safe typed status/stage failures, preserving typed transport/read/decode causes internally. HTTP status is checked before reading error bodies. This is an observability and privacy repair; no historical provider outage is asserted or repaired speculatively.
 
 Search events use an application base logger with a reviewed opaque request ID propagated through the search context. They do not inherit the framework request logger: the MCP framework binds client addresses and paths, and other callers can bind arbitrary user fields. JSON-log negative controls demonstrate this leakage before the correction. This deliberate logger choice follows the task's stricter privacy requirement; the repository's general framework-logger convention would retain those user fields.
 
@@ -22,7 +22,12 @@ The MCP success schema remains unchanged. Failures still use the MCP tool-error 
 
 ## Diagnostic contract
 
-`web_search failed` uses dedicated local `web_search_*` fields. The alert adapter validates these fields and emits `stage`, `category`, `provider`, `attempts`, optional `status`, `duration_ms`, and `request_id`.
+`web_search failed` authors `stage`, `category`, `provider`, `attempts`, optional
+`status`, `duration_ms`, and `request_id` once. Production installs the SDK's
+direct sanitized default hook without an application field-name allowlist.
+Ordinary future diagnostic primitives from unrelated events also remain useful.
+Legacy explicit-filter prefix adapters remain optional and retain their selection
+behavior when deliberately chosen.
 
 - Stages: configuration, request, transport, response, decode, provider, manager, encode.
 - Categories: canceled, deadline, dns, tls, connection, timeout, rate_limit, auth, provider_http, malformed_response, internal, unknown.
@@ -31,12 +36,28 @@ The MCP success schema remains unchanged. Failures still use the MCP tool-error 
 - Correlation is a canonical nonzero UUID from the request context, or a newly generated UUID. It reaches manager attempt logs and the final tool event without hashing query/user data.
 - Mixed causes report manager/unknown and no misleading status. Individual attempt warnings carry safe stage/category/provider/status and correlation. Unknown errors are not classified by text. A transport deadline with an active caller is classified as provider-local timeout; an ended caller reports canceled/deadline, retaining earlier attempted causes.
 
-The existing fetch adapter and unrelated metadata-only alert behavior remain in place. Generic field collisions, duplicates, namespaces, invalid types, oversized strings and arbitrary marshalers do not open a new export channel.
+Returned search errors and typed cause identity retain their existing contract.
+Log presentation separately preserves useful sanitized internal cause text, bounded
+to 2048 bytes and 32 cause nodes. Known JSON/parser body-bearing values use type-based descriptions with useful
+offset/expected-type context. Routine DNS hostname and transport operation/network
+context remain available after sanitization; no blanket stage-based text suppression
+is applied.
+Known providers continue discarding HTTP/provider error bodies and messages at the
+source. Joined failure presentation does not replace honest mixed categories or
+statuses. Typed billing diagnostics omit the provider's raw Reason body and retain
+only validated outcome and actual bounded HTTP status.
+
+The SDK sanitizes recognizable credentials, URLs and labeled payloads; it cannot
+identify arbitrary unlabeled personal text. Sources must never put queries, user
+content or raw provider bodies into diagnostic messages. Logger bases exclude
+inherited client/framework fields. Optional legacy explicit-filter adapters still
+validate prefixes, duplicates, namespaces and types without invoking arbitrary
+marshalers; production relies on authored safe diagnostics and SDK sanitization.
 
 ## Acceptance and release
 
 Offline tests cover actual provider JSON logs, typed cause propagation, positive successful responses, HTTP auth/429/5xx, malformed responses, DNS/TLS/connection/timeout, cancellation, mixed failover, nil output, safe correlation and local-receiver alert serialization. Negative controls use sensitive canaries and the previous manager/tool implementations. Repository lint and race/coverage acceptance must pass on the exact final commit without changing source/module files.
 
-This task does not authorize deployment or merging. Before a separately approved rollout, qualify the exact image built from the reviewed commit, verify it uses `ToolFailureAlertOption` with `ToolFailureAlertHook`, and exercise a synthetic local alert receiver without paid production search. Confirm a controlled failure carries reviewed scalar fields and no sensitive content. Monitor category/status/attempt distributions and alert delivery; unknowns should trigger further bounded correlation, not speculative labels.
+This task does not authorize deployment or merging. Before a separately approved rollout, qualify the exact image built from the reviewed commit, verify it uses the direct SDK `GetZapHook` without an application field filter, and exercise a synthetic local alert receiver without paid production search. Confirm a controlled failure carries reviewed scalar fields and no sensitive content. Monitor category/status/attempt distributions and alert delivery; unknowns should trigger further bounded correlation, not speculative labels.
 
 Rollback is a separately approved release of the previously qualified immutable image or a source revert followed by normal image qualification. Preserve the existing fetch verification, redaction, credentials and configuration. A rollback restores the prior search diagnostic gap and raw-provider telemetry risk. Unrelated SSO/Ramjet release holds and frontend/dependency ownership are independent gates.

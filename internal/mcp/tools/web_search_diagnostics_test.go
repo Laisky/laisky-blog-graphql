@@ -22,7 +22,6 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
-	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 	"github.com/Laisky/laisky-blog-graphql/library/search/diagnostics"
 )
@@ -50,13 +49,13 @@ func TestWebSearchDiagnosticsActualLogsAndAlert(t *testing.T) {
 		{"http", "rate_limit", "response", diagnostics.HTTP(429), false},
 		{"cancel", "canceled", "transport", diagnostics.Wrap(context.Canceled, "transport"), false},
 		{"deadline", "deadline", "transport", diagnostics.Wrap(context.DeadlineExceeded, "transport"), false},
-		{"dns", "dns", "transport", diagnostics.Wrap(&net.DNSError{Err: "private-dns-canary", Name: "private-host-canary"}, "transport"), false},
-		{"tls", "tls", "transport", diagnostics.Wrap(x509.HostnameError{Host: "private-host-canary"}, "transport"), false},
+		{"dns", "dns", "transport", diagnostics.Wrap(&net.DNSError{Err: "no such host", Name: "resolver.fixture.test"}, "transport"), false},
+		{"tls", "tls", "transport", diagnostics.Wrap(x509.HostnameError{Host: "tls.fixture.test"}, "transport"), false},
 		{"connection", "connection", "transport", diagnostics.Wrap(syscall.ECONNREFUSED, "transport"), false},
 		{"auth", "auth", "response", diagnostics.HTTP(401), false},
 		{"http_500", "provider_http", "response", diagnostics.HTTP(503), false},
 		{"malformed", "malformed_response", "decode", diagnostics.Wrap(&json.SyntaxError{Offset: 1}, "decode"), false},
-		{"unknown", "unknown", "provider", errors.New("private-error-canary"), false},
+		{"unknown", "unknown", "provider", errors.New("provider failed response body: private-error-canary"), false},
 		{"nil", "internal", "provider", nil, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -79,13 +78,13 @@ func TestWebSearchDiagnosticsActualLogsAndAlert(t *testing.T) {
 				_, _ = w.Write([]byte(`{"data":{"TelegramMonitorAlert":{"name":"synthetic"}}}`))
 			}))
 			t.Cleanup(endpoint.Close)
-			alert, err := logSDK.NewAlert(context.Background(), endpoint.URL, logSDK.WithAlertType("synthetic"), logSDK.WithAlertToken("synthetic"), appLog.ToolFailureAlertOption())
+			alert, err := logSDK.NewAlert(context.Background(), endpoint.URL, logSDK.WithAlertType("synthetic"), logSDK.WithAlertToken("synthetic"))
 			require.NoError(t, err)
 			t.Cleanup(alert.Close)
 			var local bytes.Buffer
 			logger, err := logSDK.NewWithName("request", logSDK.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core {
 				return zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&local), zapcore.DebugLevel)
-			}), zap.HooksWithFields(appLog.ToolFailureAlertHook(alert)))
+			}), zap.HooksWithFields(alert.GetZapHook()))
 			require.NoError(t, err)
 			provider := &diagnosticSearchProvider{err: tt.err, nilOutput: tt.nilOutput}
 			var billingCalls int
@@ -102,7 +101,7 @@ func TestWebSearchDiagnosticsActualLogsAndAlert(t *testing.T) {
 			require.NotEqual(t, uuid.Nil, parsed)
 			require.NotContains(t, result.Content[0].(mcp.TextContent).Text, "canary")
 			require.NotContains(t, local.String(), "canary")
-			decoder := json.NewDecoder(&local)
+			decoder := json.NewDecoder(bytes.NewReader(local.Bytes()))
 			var failure map[string]any
 			for decoder.More() {
 				var entry map[string]any
@@ -114,9 +113,9 @@ func TestWebSearchDiagnosticsActualLogsAndAlert(t *testing.T) {
 			}
 			require.NotNil(t, failure)
 			require.Equal(t, "request.web_search", failure["logger"])
-			require.Equal(t, tt.category, failure["web_search_category"])
-			require.Equal(t, tt.stage, failure["web_search_stage"])
-			require.Equal(t, provider.requestID, failure["web_search_request_id"])
+			require.Equal(t, tt.category, failure["category"])
+			require.Equal(t, tt.stage, failure["stage"])
+			require.Equal(t, provider.requestID, failure["request_id"])
 			select {
 			case message := <-messages:
 				require.Contains(t, message, `"category":"`+tt.category+`"`)
@@ -142,7 +141,7 @@ func TestWebSearchPreservesExistingLoggerName(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tool.Handle(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"query": "synthetic"}}})
 	require.NoError(t, err)
-	decoder := json.NewDecoder(&local)
+	decoder := json.NewDecoder(bytes.NewReader(local.Bytes()))
 	found := false
 	for decoder.More() {
 		var entry map[string]any

@@ -19,6 +19,9 @@ import (
 
 const (
 	managerStage         = "manager"
+	transportStage       = "transport"
+	responseStage        = "response"
+	decodeStage          = "decode"
 	providerStage        = "provider"
 	authCategory         = "auth"
 	providerHTTPCategory = "provider_http"
@@ -50,7 +53,7 @@ func (e *FailureError) Unwrap() error { return e.cause }
 // Normalize bounds all fields and replaces unreviewed values with honest defaults.
 func Normalize(d Diagnostic) Diagnostic {
 	switch d.Stage {
-	case "configuration", "request", "transport", "response", "decode", providerStage, managerStage, "encode":
+	case "configuration", "request", transportStage, responseStage, decodeStage, providerStage, managerStage, "encode":
 	default:
 		d.Stage = providerStage
 	}
@@ -103,7 +106,7 @@ func wrapFailure(err error, stage string) *FailureError {
 	d.Stage = stage
 	var syntax *json.SyntaxError
 	var shape *json.UnmarshalTypeError
-	if stage == "decode" && (errors.As(err, &syntax) || errors.As(err, &shape) || errors.Is(err, io.ErrUnexpectedEOF)) {
+	if stage == decodeStage && (errors.As(err, &syntax) || errors.As(err, &shape) || errors.Is(err, io.ErrUnexpectedEOF)) {
 		d.Category = "malformed_response"
 	}
 	return &FailureError{diagnostic: Normalize(d), cause: err}
@@ -118,7 +121,7 @@ func HTTP(status int) error {
 	case 429:
 		category = rateLimitCategory
 	}
-	return &FailureError{diagnostic: Normalize(Diagnostic{Stage: "response", Category: category, Status: status})}
+	return &FailureError{diagnostic: Normalize(Diagnostic{Stage: responseStage, Category: category, Status: status})}
 }
 
 // WithProvider adds only a reviewed provider type, never an instance name or endpoint.
@@ -140,7 +143,7 @@ func Transport(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
-	failure := wrapFailure(err, "transport")
+	failure := wrapFailure(err, transportStage)
 	if ctx != nil && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
 		failure.diagnostic.Category = timeoutCategory
 	}
