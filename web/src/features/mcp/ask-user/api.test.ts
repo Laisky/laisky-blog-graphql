@@ -1,3 +1,4 @@
+import { getPrivateErrorMessage } from '@/lib/private-error';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { listRequests, submitAnswer } from './api';
@@ -52,6 +53,24 @@ describe('ask_user API helpers', () => {
 
     await submitAnswer('test-key', 'req-1', 'answer');
     expect(fetchMock).toHaveBeenCalledWith('/mcp/tools/ask_user/api/requests/req-1', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('preserves private response text for the UI without using it as a telemetry summary', async () => {
+    fetchMock.mockResolvedValue(new Response('synthetic private question', { status: 403 }));
+    const error = await listRequests('test-key').catch((failure: unknown) => failure);
+    expect(error).toMatchObject({ message: 'synthetic private question' });
+    expect(getPrivateErrorMessage(error)).toBe('Ask user request failed');
+    fetchMock.mockResolvedValue(new Response('synthetic private answer', { status: 400 }));
+    const answerError = await submitAnswer('test-key', 'req', 'answer').catch((failure: unknown) => failure);
+    expect(answerError).toMatchObject({ message: 'synthetic private answer' });
+    expect(getPrivateErrorMessage(answerError)).toBe('Ask user request failed');
+  });
+
+  it('marks native JSON parse errors from private success bodies', async () => {
+    fetchMock.mockResolvedValue(new Response('synthetic private question'));
+    const error = await listRequests('test-key').catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SyntaxError);
+    expect(getPrivateErrorMessage(error)).toBe('Invalid ask user JSON response');
   });
 
   it('addresses the root alias when the deployment has no public prefix', async () => {
