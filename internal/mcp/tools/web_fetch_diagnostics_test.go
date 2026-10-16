@@ -77,6 +77,8 @@ func TestWebFetchFailureSafeCorrelation(t *testing.T) {
 		require.Contains(t, message, `"request_id":"0199c118-4229-7000-8000-000000000001"`)
 		require.Contains(t, message, `"task_id":"0199c118-4229-7000-8000-000000000002"`)
 		require.Contains(t, message, `"duration_ms":`)
+		require.Contains(t, message, `"caller_context_state":"active"`)
+		require.Contains(t, message, `"error_lifecycle":"none"`)
 		require.NotContains(t, message, "canary")
 	case <-time.After(3 * time.Second):
 		t.Fatal("synthetic alert was not delivered")
