@@ -148,6 +148,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 	t.Cleanup(endpoint.Close)
 
 	var challengeTaskID string
+	lifecycleExpected := map[string]serviceLifecycleExpectation{}
 	cases := []struct {
 		path                                       string
 		markdown                                   bool
@@ -189,6 +190,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 
 			id := client.Get(ctx, "service-path/case"+tc.path).Val()
 			require.NotEmpty(t, id)
+			lifecycleExpected[id] = serviceLifecycleExpectation{status: tc.status, verified: tc.code == ""}
 			raw, resultErr := client.Get(ctx, rlibs.KeyPrefixTaskHTMLCrawlerResult+id).Result()
 			require.NoError(t, resultErr)
 			decoded, decodeErr := rlibs.NewHTMLCrawlerTaskFromString(raw)
@@ -287,6 +289,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("worker failed to complete owned tasks")
 	}
+	assertServiceLifecycleEvidence(t, workerLogPath, operationLogPath, lifecycleExpected)
 	require.Equal(t, []string{"owned-legacy-sentinel"}, client.LRange(ctx, rlibs.KeyTaskHTMLCrawlerLegacyPending, 0, -1).Val())
 	require.Zero(t, client.LLen(ctx, rlibs.KeyTaskHTMLCrawlerPending).Val())
 	require.Equal(t, "done", client.Get(ctx, "service-path/worker-done").Val())
@@ -318,10 +321,14 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 			require.NotEmpty(t, fields["stage"])
 			require.NotEmpty(t, fields["error_code"])
 			if isWorker {
+				require.Equal(t, "processing_completed", fields["event"])
+				require.Equal(t, "active", fields["worker_context_state"])
 				require.NotEmpty(t, fields["category"])
 				require.NotEmpty(t, fields["task_id"], "worker alerts need the actual queued correlation ID")
 			}
 			if isProducer {
+				require.Equal(t, "active", fields["caller_context_state"])
+				require.Equal(t, "none", fields["error_lifecycle"])
 				if fields["worker_category"] == "challenge" {
 					require.Equal(t, "render", fields["worker_stage"])
 					require.Equal(t, challengeTaskID, fields["task_id"])
