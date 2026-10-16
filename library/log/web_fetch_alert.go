@@ -14,6 +14,7 @@ import (
 // WebFetchFailureSummary is the reviewed scalar envelope for one fetch failure.
 // Error details, target URLs and user content must never be added to it.
 type WebFetchFailureSummary struct {
+	CallerContextState, ErrorLifecycle  string
 	ErrorCode, Stage, RequestID, TaskID string
 	WorkerStage, WorkerCategory         string
 	WorkerSignal                        string
@@ -67,6 +68,14 @@ func WebFetchFailureFields(summary WebFetchFailureSummary) []zapcore.Field {
 				fields = append(fields, zap.String("web_fetch_worker_signal", signal))
 			}
 		}
+	}
+	switch summary.CallerContextState {
+	case "active", "canceled", "deadline_exceeded": //nolint:misspell // stable diagnostic enum
+		fields = append(fields, zap.String("web_fetch_caller_context_state", summary.CallerContextState))
+	}
+	switch summary.ErrorLifecycle {
+	case "none", "canceled", "deadline_exceeded", "mixed", "unknown": //nolint:misspell // stable diagnostic enum
+		fields = append(fields, zap.String("web_fetch_error_lifecycle", summary.ErrorLifecycle))
 	}
 	if canonicalCorrelationID(summary.RequestID) {
 		fields = append(fields, zap.String("web_fetch_request_id", summary.RequestID))

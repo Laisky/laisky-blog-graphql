@@ -38,6 +38,7 @@ type crawlerTaskStore interface {
 //
 //nolint:gocognit // complex but straightforward state-machine loop
 func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiKey string, outputMarkdown bool) ([]byte, error) {
+	start := time.Now()
 	// Only the application logger carries reviewed operation correlation.
 	logger := reviewedFetchLogger(ctx, appLog.Logger).Named("fetch_dynamic_url_content").With(
 		zap.Bool("output_markdown", outputMarkdown),
@@ -78,9 +79,11 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 			return nil, fetchFailure(errors.New("nil crawler result"), "crawler_result_failed", "result", taskID)
 		}
 		if task.Status != lastStatus {
-			logger.Debug("html crawler task status updated",
+			logger.Info("html crawler result observed",
+				zap.String("event", "result_observed"), zap.String("stage", "result"),
 				zap.String("status", safeCrawlerStatus(task.Status)),
-				zap.Bool("task_output_markdown", task.OutputMarkdown),
+				zap.String("caller_context_state", FetchCallerContextState(ctx)),
+				zap.Int64("duration_ms", min(max(time.Since(start).Milliseconds(), 0), 24*60*60*1000)),
 			)
 			lastStatus = task.Status
 		}
@@ -98,6 +101,11 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 			if (outputMarkdown && len(task.ResultMarkdown) == 0) || (!outputMarkdown && len(task.ResultHTML) == 0) {
 				return nil, fetchFailure(errors.New("empty crawler result body"), "crawler_result_failed", "result", taskID)
 			}
+			// Observation above is distinct from accepting the verified, nonempty body.
+			logger.Info("html crawler result verified", zap.String("event", "result_verified"),
+				zap.String("stage", "verification"), zap.String("status", rlibs.TaskStatusSuccess),
+				zap.String("caller_context_state", FetchCallerContextState(ctx)),
+				zap.Int64("duration_ms", min(max(time.Since(start).Milliseconds(), 0), 24*60*60*1000)))
 			if task.OutputMarkdown && outputMarkdown {
 				logger.Debug("html crawler task completed with markdown",
 					zap.Int("content_len", len(task.ResultMarkdown)),

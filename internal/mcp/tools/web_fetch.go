@@ -136,17 +136,12 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		fields := appLog.WebFetchDiagnosticFields(appLog.WebFetchFailureSummary{
 			ErrorCode: diagnostic.ErrorCode, Stage: diagnostic.Stage, TaskID: diagnostic.TaskID,
 			WorkerStage: diagnostic.WorkerStage, WorkerCategory: diagnostic.WorkerCategory, WorkerSignal: diagnostic.WorkerSignal,
+			CallerContextState: search.FetchCallerContextState(ctx), ErrorLifecycle: search.FetchErrorLifecycle(err),
 			DurationMS: time.Since(start).Milliseconds(),
 		})
 		logger.Error("web_fetch failed", append(fields, zap.Error(search.FetchLogError(err)))...)
 		return mcp.NewToolResultError("fetch failed: " + diagnostic.ErrorCode), nil
 	}
-
-	logger.Debug("web_fetch completed",
-		zap.Bool("output_markdown", outputMarkdown),
-		zap.Duration("duration", time.Since(start)),
-		zap.Int("content_len", len(content)),
-	)
 
 	payload := map[string]any{
 		contentKey: string(content),
@@ -157,6 +152,11 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 		logger.Error("encode web_fetch result", zap.Error(err))
 		return mcp.NewToolResultError("failed to encode web_fetch response"), nil
 	}
+
+	// This event establishes response construction, not transport delivery or client receipt.
+	logger.Info("web_fetch response prepared", zap.String("event", "response_prepared"),
+		zap.String("stage", "response"), zap.String("caller_context_state", search.FetchCallerContextState(ctx)),
+		zap.Int64("duration_ms", min(max(time.Since(start).Milliseconds(), 0), 24*60*60*1000)))
 
 	return toolResult, nil
 }
