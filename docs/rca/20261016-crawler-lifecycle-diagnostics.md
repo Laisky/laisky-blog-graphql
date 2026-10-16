@@ -1,6 +1,6 @@
 # Crawler lifecycle diagnostics
 
-The Yahoo task's original renderer cause remains unknown. A legacy `canceled` reason, an approximately seventeen-second lifetime, and a successful audit write do not establish user cancellation, a deadline, a challenge, an outage, terminal publication, or caller receipt. These changes address reproduced observability gaps without changing fetching, verification, queue, billing, or response behavior.
+The Yahoo task's original renderer cause remains unknown. Its legacy `canceled` reason and approximately seventeen-second lifetime do not establish user cancellation, a deadline, a challenge, or an outage. Separately, a successful audit write belongs to task `01a141cf-610c-7b0b-a677-9fbe53bb9de9`, whose target is unestablished; it is not evidence of Yahoo recovery, terminal publication, or caller receipt. These changes address reproduced observability gaps without changing fetching, verification, queue, billing, or response behavior.
 
 ## Correlation and evidence boundaries
 
