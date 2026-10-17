@@ -120,7 +120,8 @@ class WorkflowContract(unittest.TestCase):
         cls.ci = (ROOT / '.github/workflows/ci.yml').read_text()
         cls.contract = (ROOT / '.github/workflows/deployment-contract.yml').read_text()
 
-    def test_release_workflow_diff_is_exactly_the_argument_bridge(self):
+    def test_release_workflow_diff_is_exactly_the_argument_bridge_and_auto_deploy_policy(self):
+        """test_release_workflow_diff_is_exactly_the_argument_bridge_and_auto_deploy_policy checks both reviewed changes."""
         original = self.ci
         original = original.replace('    outputs:\n      browser_sentry_build_args: ${{ steps.browser_sentry.outputs.build_args }}\n', '', 1)
         step = '''      - name: Prepare public MCP browser reporting arguments
@@ -144,9 +145,13 @@ class WorkflowContract(unittest.TestCase):
             cwd=ROOT, capture_output=True, text=True, check=False,
         )
         # A checked-in digest also verifies shallow CI clones where the original commit is unavailable.
-        self.assertEqual(hashlib.sha256(original.encode()).hexdigest(), 'de272b53428256e6a0916125a3aae39e7bdacc673f8b44167f397dfabeb2ccda')
+        self.assertEqual(hashlib.sha256(original.encode()).hexdigest(), 'a39ed672e45d39dada4189afcf1d73e685d9436c97d189b9313d05bf496f3ef6')
         if baseline.returncode == 0:
-            self.assertEqual(original, baseline.stdout)
+            held_selector = "    if: needs.check_skip.outputs.should_skip != 'true' && !contains(github.event.head_commit.message, '[publish only]')"
+            automatic_selector = "    if: needs.check_skip.outputs.should_skip != 'true'"
+            self.assertEqual(baseline.stdout.count(held_selector), 1)
+            expected_baseline = baseline.stdout.replace(held_selector, automatic_selector, 1)
+            self.assertEqual(original, expected_baseline)
 
     def test_contract_trigger_and_permissions_unchanged(self):
         header = self.contract.split('jobs:\n')[0]
