@@ -287,15 +287,15 @@ class DeploymentContract(unittest.TestCase):
         self.assertTrue(any("rollback-ci-12345" in " ".join(call) for call in calls))
         self.assertFalse(any("rmi" in call or "prune" in call or "down" in call for call in calls))
 
-    def test_release_selectors_preserve_builds_and_gate_only_marked_deployment(self):
-        """test_release_selectors_preserve_builds_and_gate_only_marked_deployment executes actual selectors."""
+    def test_release_selectors_deploy_latest_even_for_publish_only_commits(self):
+        """test_release_selectors_deploy_latest_even_for_publish_only_commits executes actual selectors."""
         cases = [
             ("fix: ordinary release", (True, True, True)),
             ("fix: docs wording without a skipped prefix", (True, True, True)),
             ("fix: quoted '$()' commit text", (True, True, True)),
-            ("fix: release [publish only]", (True, True, False)),
-            ("fix: release [PUBLISH ONLY]", (True, True, False)),
-            ("fix: release\n\n[publish only]", (True, True, False)),
+            ("fix: release [publish only]", (True, True, True)),
+            ("fix: release [PUBLISH ONLY]", (True, True, True)),
+            ("fix: release\n\n[publish only]", (True, True, True)),
         ]
         for prefix in ("docs:", "doc:", "tests:", "test:", "ci:"):
             cases.append((prefix + " existing skip", (False, False, False)))
