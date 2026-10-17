@@ -177,9 +177,13 @@ policy must fail safely; do not make them appear verified. A rollout must keep
 verification enabled and use bounded synthetic public fixtures plus reviewed
 scalar diagnostics to assess outcomes.
 
-Use `[publish only]` in the actual release merge/squash commit message to let
-CI publish images while skipping automatic deployment. Qualify those exact
-published digests: a later rebuild may contain a different Chrome release.
+Under the automatic-latest delivery policy adopted on 2026-10-17, eligible
+release pushes publish images and automatically deploy `latest` after a successful
+image build. `[publish only]` no longer suppresses deployment. Complete the required
+source and compatibility qualification before an eligible merge or push; then
+record the exact published digests and actual runtime identities. A later rebuild
+may contain a different Chrome release. Coordinate the worker-first rollout below
+before releasing a producer change that depends on the new worker contract.
 Deploy the receipt-capable worker pinned to the versioned queue first. Before
 deploying the producer, submit an owned fixture with the same shared module
 and verify its UUID in that worker's artifact-qualified logs, the complete
