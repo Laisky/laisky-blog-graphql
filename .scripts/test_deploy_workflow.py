@@ -19,6 +19,11 @@ scenario = os.environ["SCENARIO"]
 args = sys.argv[1:]
 with (root / "calls").open("a") as f:
     f.write(json.dumps([pathlib.Path(sys.argv[0]).name] + args) + "\n")
+if pathlib.Path(sys.argv[0]).name == "timeout":
+    if args == ["--version"]: sys.exit(127 if scenario == "missing_timeout" else 0)
+    assert args[:3] == ["300", "docker", "pull"], args
+    if scenario == "pull_timeout": sys.exit(124)
+    os.execvp(args[1], args[1:])
 if pathlib.Path(sys.argv[0]).name == "docker-compose":
     print("services.derper.volumes contains unsupported option: 'create_host_path'", file=sys.stderr)
     sys.exit(0 if scenario == "success" else 17)
@@ -44,15 +49,19 @@ if args[0] == "inspect":
         if scenario == "inspect_failure" and (root / "started").exists() and not state.exists(): sys.exit(31)
         if state.exists() and scenario == "rollback_wrong_image": print("sha256:wrong")
         elif not (root / "started").exists() or state.exists(): print("sha256:old")
-        elif scenario in ("wrong_image", "restore_tag_failure"): print("sha256:wrong")
+        elif scenario in ("wrong_image", "restore_tag_failure") or (root / "identity-changed").exists(): print("sha256:wrong")
         else: print("sha256:new")
+    elif ".IPAddress" in args[2]:
+        assert args[-1] == ("restored-container" if state.exists() else "new-container"), args
+        if scenario == "address_missing" and not state.exists(): sys.exit(43)
+        print("172.19.0.30" if state.exists() else "172.19.0.20")
     elif "{{.State.Running}}" in args:
         print("false" if scenario == "not_running" and not state.exists() else "true")
     sys.exit(0)
 if "up" in args:
     (root / "started").touch()
     if state.exists(): sys.exit(29 if scenario == "rollback_failure" else 0)
-    sys.exit(17 if scenario in ("up_failure", "rollback_failure", "first_deploy_failure", "diagnostics_failure", "rollback_wrong_image") else 0)
+    sys.exit(17 if scenario in ("up_failure", "rollback_failure", "first_deploy_failure", "diagnostics_failure", "rollback_wrong_image", "rollback_unready", "rollback_cid_changes") else 0)
 if "ps" in args:
     if "-q" not in args and scenario == "diagnostics_failure": sys.exit(41)
     if "-q" in args:
@@ -64,11 +73,106 @@ if "ps" in args:
             sys.exit(0)
         if scenario == "multiple_new" and (root / "started").exists() and not state.exists():
             print("fixture-container\nsecond-container"); sys.exit(0)
-        if scenario == "first_deploy_failure" and not (root / "started").exists(): print("")
-        else: print("fixture-container")
+        if scenario in ("first_deploy_failure", "first_deploy_unready") and not (root / "started").exists(): print("")
+        elif (root / "cid-changed").exists() and (not state.exists() or scenario == "rollback_cid_changes"): print("unexpected-container")
+        elif state.exists(): print("restored-container")
+        elif (root / "started").exists(): print("new-container")
+        else: print("previous-container")
     sys.exit(0)
 print("Unexpected mock command: " + repr(args), file=sys.stderr)
 sys.exit(99)
+'''
+
+
+# Inject only disposable HTTP/time transports; execute the production Python probe.
+HTTP_FIXTURE = r'''import email.message, json, os, pathlib, signal, time, urllib.error, urllib.request
+root = pathlib.Path(os.environ["MOCK_ROOT"])
+scenario = os.environ["SCENARIO"]
+real_build_opener = urllib.request.build_opener
+time.sleep = lambda seconds: None
+
+class Response:
+    def __init__(self, payload, content_type="application/json", session=False, status=200):
+        self.status = status
+        self.headers = email.message.Message()
+        self.headers["Content-Type"] = content_type
+        if session:
+            self.headers["Mcp-Session-Id"] = "unexpected-session"
+        self.payload = payload
+    def __enter__(self): return self
+    def __exit__(self, *args): return False
+    def read(self, limit):
+        assert limit == 1024 * 1024 + 1, limit
+        if scenario == "unready_stall" and not (root / "restored").exists():
+            signal.pause()
+        return self.payload[:limit]
+
+class Transport:
+    def open(self, request, timeout):
+        assert 0 < timeout <= 5, timeout
+        body = json.loads(request.data)
+        method = body["method"]
+        restored = (root / "restored").exists()
+        expected_ip = "172.19.0.30" if restored else "172.19.0.20"
+        # A healthy old endpoint must not mask failure of the new/restored CID.
+        assert request.full_url == "http://" + expected_ip + ":17800/.well-known/mcp", request.full_url
+        assert request.get_header("Content-type") == "application/json"
+        assert request.get_header("Accept") == "application/json, text/event-stream"
+        assert request.get_header("Mcp-protocol-version") == "2026-07-28"
+        assert request.get_header("Mcp-method") == method
+        assert body["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"] == "2026-07-28"
+        assert not any(k.lower() in ("authorization", "cookie") for k in request.headers)
+        with (root / "calls").open("a") as stream:
+            stream.write(json.dumps(["http", method, expected_ip, timeout]) + "\n")
+        fail = not restored and scenario.startswith("unready_") or scenario == "first_deploy_unready"
+        if scenario == "rollback_unready" and restored:
+            raise urllib.error.URLError("fixture unavailable")
+        if scenario == "readiness_transient" and not (root / "retried").exists():
+            (root / "retried").touch()
+            raise urllib.error.URLError("fixture starting")
+        if fail and scenario in ("unready_http", "first_deploy_unready"):
+            raise urllib.error.HTTPError(request.full_url, 503, "fixture", {}, None)
+        if fail and scenario == "unready_redirect":
+            raise urllib.error.HTTPError(request.full_url, 302, "fixture", {}, None)
+        result = {"resultType": "complete"}
+        if method == "server/discover":
+            result.update(supportedVersions=["2026-07-28"],
+                          _meta={"io.modelcontextprotocol/serverInfo": {"name": "LAISKY MCP SERVER"}})
+        else:
+            result.update(cacheScope="private", tools=[{"name": "web_search"}, {"name": "web_fetch"}])
+        if scenario == "extended_catalog" and method == "tools/list":
+            result["tools"] = [{"name": "extra_tool"}, {"name": "web_fetch"}, {"name": "web_search"}]
+            result["extra"] = {"order": "irrelevant"}
+        payload = {"jsonrpc": "2.0", "id": body["id"], "result": result}
+        if fail and scenario == "unready_error": payload["error"] = {"code": -32000, "message": "fixture"}
+        if fail and scenario == "unready_id": payload["id"] = 999
+        if fail and scenario == "unready_partial": result["resultType"] = "partial"
+        if fail and scenario == "unready_version": result["supportedVersions"] = ["obsolete"]
+        if fail and scenario == "unready_server" and method == "server/discover":
+            result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] = ""
+        if scenario == "renamed_server" and method == "server/discover":
+            result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] = "Renamed service display name"
+        if fail and scenario == "unready_catalog" and method == "tools/list": result["tools"] = []
+        if fail and scenario == "unready_missing_tool" and method == "tools/list":
+            result["tools"] = [{"name": "web_fetch"}]
+        if fail and scenario == "unready_cache" and method == "tools/list": result["cacheScope"] = "public"
+        if fail and scenario == "unready_shape": payload["result"] = []
+        raw = json.dumps(payload, sort_keys=scenario == "extended_catalog").encode()
+        if fail and scenario == "unready_html": raw = b"<html>healthy frontend</html>"
+        if fail and scenario == "unready_large": raw = b"x" * (1024 * 1024 + 1)
+        if scenario == "identity_changes" and not restored:
+            (root / "identity-changed").touch()
+        if scenario == "cid_changes" and not restored or scenario == "rollback_cid_changes" and restored:
+            (root / "cid-changed").touch()
+        return Response(raw, "text/html" if fail and scenario == "unready_type" else "application/json",
+                        fail and scenario == "unready_session")
+def build_opener(*handlers):
+    assert any(isinstance(h, urllib.request.ProxyHandler) and h.proxies == {} for h in handlers)
+    redirect = next(h for h in handlers if isinstance(h, urllib.request.HTTPRedirectHandler))
+    assert type(redirect) is not urllib.request.HTTPRedirectHandler
+    assert redirect.redirect_request(None, None, 302, "fixture", {}, "http://old-healthy/") is None
+    return Transport()
+urllib.request.build_opener = build_opener
 '''
 
 
@@ -174,14 +278,15 @@ class DeploymentContract(unittest.TestCase):
     def run_deploy(self, scenario, run_attempt=1, workflow=None):
         with tempfile.TemporaryDirectory(prefix="deploy-contract-") as directory:
             root = Path(directory)
-            for executable in ("docker", "docker-compose"):
+            for executable in ("docker", "docker-compose", "timeout"):
                 path = root / executable
                 path.write_text(MOCK)
                 path.chmod(0o755)
+            (root / "sitecustomize.py").write_text(HTTP_FIXTURE)
             result = subprocess.run(
                 ["bash", "-c", deployment_payload(root, run_attempt, workflow)],
                 env={**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"],
-                     "MOCK_ROOT": directory, "SCENARIO": scenario},
+                     "MOCK_ROOT": directory, "SCENARIO": scenario, "PYTHONPATH": directory},
                 capture_output=True, text=True, timeout=10,
             )
             calls = [json.loads(line) for line in (root / "calls").read_text().splitlines()]
@@ -189,6 +294,98 @@ class DeploymentContract(unittest.TestCase):
 
     def assert_no_up(self, calls):
         self.assertFalse(any("up" in call for call in calls), calls)
+
+    def test_running_matching_image_without_mcp_readiness_rolls_back(self):
+        """HTTP liveness/image identity alone must not accept an unusable MCP server."""
+        for reason in ("http", "redirect", "html", "type", "error", "id", "partial",
+                       "version", "server", "catalog", "missing_tool", "cache", "shape", "session", "large"):
+            with self.subTest(reason=reason):
+                result, calls = self.run_deploy("unready_" + reason)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(sum("up" in call for call in calls), 2)
+                self.assertIn("Rollback restored", result.stderr)
+                self.assertTrue(any(call[:3] == ["http", "tools/list", "172.19.0.30"] for call in calls))
+                self.assertLessEqual(sum(call[0] == "http" for call in calls), 64)
+
+    def test_readiness_checks_new_and_restored_container_addresses(self):
+        result, calls = self.run_deploy("success")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[1:3] for call in calls if call[0] == "http"],
+                         [["server/discover", "172.19.0.20"], ["tools/list", "172.19.0.20"]])
+        result, calls = self.run_deploy("up_failure")
+        self.assertEqual(result.returncode, 17)
+        self.assertEqual([call[1:3] for call in calls if call[0] == "http"],
+                         [["server/discover", "172.19.0.30"], ["tools/list", "172.19.0.30"]])
+
+    def test_rollback_readiness_failure_preserves_original_exit(self):
+        result, calls = self.run_deploy("rollback_unready")
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertIn("Rollback failed", result.stderr)
+        self.assertNotIn("Rollback restored", result.stderr)
+
+    def test_first_deploy_unready_has_no_automatic_rollback(self):
+        result, calls = self.run_deploy("first_deploy_unready")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sum("up" in call for call in calls), 1)
+        self.assertIn("No previous container", result.stderr)
+
+    def test_transient_startup_readiness_can_recover(self):
+        result, calls = self.run_deploy("readiness_transient")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sum("up" in call for call in calls), 1)
+        self.assertEqual(sum(call[0] == "http" for call in calls), 3)
+
+    def test_identity_change_during_readiness_is_rejected(self):
+        result, calls = self.run_deploy("identity_changes")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Rollback restored", result.stderr)
+
+    def test_stalled_response_is_bounded_by_outer_deadline(self):
+        model = load_workflow(WORKFLOW)
+        step = workflow_step(model['jobs']['deploy'], 'appleboy/ssh-action')
+        step['with']['script'] = step['with']['script'].replace('budget_seconds = 60', 'budget_seconds = 0.1')
+        with tempfile.TemporaryDirectory(prefix='readiness-deadline-') as directory:
+            workflow = Path(directory) / 'ci.yml'
+            workflow.write_text(workflow_fixture(model))
+            result, calls = self.run_deploy('unready_stall', workflow=workflow)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('MCP readiness failed.', result.stderr)
+        self.assertIn('Rollback restored', result.stderr)
+
+    def test_container_replacement_during_probe_is_not_accepted(self):
+        result, calls = self.run_deploy("cid_changes")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Rollback restored", result.stderr)
+        result, calls = self.run_deploy("rollback_cid_changes")
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertNotIn("Rollback restored", result.stderr)
+        self.assertIn("Rollback failed", result.stderr)
+
+    def test_unavailable_verified_container_address_rolls_back(self):
+        result, calls = self.run_deploy("address_missing")
+        self.assertEqual(result.returncode, 43, result.stderr)
+        self.assertIn("Rollback restored", result.stderr)
+
+    def test_renamed_server_display_name_is_accepted(self):
+        result, calls = self.run_deploy("renamed_server")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_timeout_stops_before_tag_or_pull(self):
+        result, calls = self.run_deploy("missing_timeout")
+        self.assertEqual(result.returncode, 127, result.stderr)
+        self.assert_no_up(calls)
+        self.assertFalse(any(call[1:2] == ["tag"] or "pull" in call for call in calls))
+
+    def test_pull_timeout_preserves_previous_container(self):
+        result, calls = self.run_deploy("pull_timeout")
+        self.assertEqual(result.returncode, 124, result.stderr)
+        self.assert_no_up(calls)
+        self.assertFalse(any(call[1:2] == ["tag"] and call[-1].endswith(":latest") for call in calls))
+
+    def test_additive_catalog_and_response_order_are_accepted(self):
+        result, calls = self.run_deploy("extended_catalog")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sum(call[0] == "http" for call in calls), 2)
 
     def test_success(self):
         result, calls = self.run_deploy("success")
@@ -237,6 +434,10 @@ class DeploymentContract(unittest.TestCase):
         step = workflow_step(deployment, 'appleboy/ssh-action')
         self.assertIsInstance(step['with']['script'], str)
         self.assertNotEqual(step['with'].get('script_stop', 'false'), 'true')
+        budget = re.fullmatch(r"(\d+)([smh])", step['with']['command_timeout'])
+        self.assertIsNotNone(budget)
+        seconds = int(budget[1]) * {'s': 1, 'm': 60, 'h': 3600}[budget[2]]
+        self.assertGreaterEqual(seconds, 720)  # Pull300 + two Compose120/MCP60 checks + margin.
 
     def test_shared_b1_concurrency_does_not_cancel_deploys(self):
         self.assert_deploy_settings(WORKFLOW)
@@ -257,6 +458,9 @@ class DeploymentContract(unittest.TestCase):
         variants.append(candidate)
         candidate = copy.deepcopy(model)
         workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')['with']['script_stop'] = 'true'
+        variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')['with']['command_timeout'] = '10m'
         variants.append(candidate)
         with tempfile.TemporaryDirectory(prefix='deploy-field-mutations-') as directory:
             path = Path(directory) / 'ci.yml'
@@ -310,6 +514,9 @@ class DeploymentContract(unittest.TestCase):
         variants.append(workflow_fixture(candidate))
         candidate = copy.deepcopy(model)
         workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')['with']['script_stop'] = 'false'
+        variants.append(workflow_fixture(candidate))
+        candidate = copy.deepcopy(model)
+        workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')['with']['command_timeout'] = '900s'
         variants.append(workflow_fixture(candidate))
         with tempfile.TemporaryDirectory(prefix='deploy-equivalent-yaml-') as directory:
             path = Path(directory) / 'ci.yml'
