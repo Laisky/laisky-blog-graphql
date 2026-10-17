@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Run the actual SSH deployment payload with disposable Docker/Compose mocks."""
+import copy
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import tempfile
-import textwrap
+import yaml
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,42 +72,80 @@ sys.exit(99)
 '''
 
 
-def deployment_payload(directory, run_attempt=1):
-    workflow = WORKFLOW.read_text()
-    marker = "          script: |\n"
-    if workflow.count(marker) != 1:
-        raise AssertionError("Expected exactly one SSH deployment payload")
-    payload = textwrap.dedent(workflow.split(marker, 1)[1])
-    payload = payload.replace("/home/laisky/repo/VPS", str(directory))
-    payload = re.sub(r"\$\{\{\s*github.run_id\s*\}\}", "12345", payload)
+def load_workflow(path):
+    """load_workflow parses YAML scalars as strings, including GitHub's `on` key."""
+    return yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+
+
+def workflow_step(job, action):
+    """workflow_step returns the unique step using the named action, independent of its display name."""
+    matches = [step for step in job['steps'] if step.get('uses', '').startswith(action + '@')]
+    if len(matches) != 1:
+        raise AssertionError('Expected exactly one ' + action + ' step')
+    return matches[0]
+
+
+def expression(value, required=False):
+    """expression removes optional GitHub delimiters without altering quoted literals."""
+    value = value.strip()
+    if value.startswith('${{') and value.endswith('}}'):
+        value = value[3:-2].strip()
+    elif required:
+        raise AssertionError('Expected a GitHub expression, not a literal value')
+    return value
+
+
+def workflow_fixture(model, indent=2):
+    """workflow_fixture emits disposable YAML with literal scripts and schema booleans for equivalence tests."""
+    model = copy.deepcopy(model)
+    def restore_booleans(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in ('push', 'cancel-in-progress', 'persist-credentials') and item in ('true', 'false'):
+                    value[key] = item == 'true'
+                else:
+                    restore_booleans(item)
+        elif isinstance(value, list):
+            for item in value:
+                restore_booleans(item)
+    restore_booleans(model)
+    for event, settings in model.get('on', {}).items():
+        if settings == '':
+            model['on'][event] = None
+    class FixtureDumper(yaml.SafeDumper):
+        pass
+    def literal(dumper, value):
+        return dumper.represent_scalar('tag:yaml.org,2002:str', value, style='|' if '\n' in value else None)
+    FixtureDumper.add_representer(str, literal)
+    return yaml.dump(model, Dumper=FixtureDumper, sort_keys=False, indent=indent)
+
+
+def deployment_payload(directory, run_attempt=1, workflow=None):
+    model = load_workflow(WORKFLOW if workflow is None else workflow)
+    payload = workflow_step(model['jobs']['deploy'], 'appleboy/ssh-action')['with']['script']
+    payload = payload.replace('/home/laisky/repo/VPS', str(directory))
+    payload = re.sub(r"\$\{\{\s*github.run_id\s*\}\}", '12345', payload)
     return re.sub(r"\$\{\{\s*github.run_attempt\s*\}\}", str(run_attempt), payload)
 
 
 def release_job_decisions(workflow, message):
     """release_job_decisions executes the real prefix check and evaluates supported job selectors."""
-    source = workflow.read_text()
-
-    def job_body(name):
-        """job_body returns the named job's source without subsequent jobs."""
-        body = source.split("  " + name + ":\n", 1)[1]
-        return re.split(r"^  [a-zA-Z_][a-zA-Z_0-9-]*:\n", body, maxsplit=1, flags=re.MULTILINE)[0]
-
-    check = job_body("check_skip")
-    lines = check.splitlines()
-    starts = [index for index, line in enumerate(lines) if line.strip() == "run: |"]
-    if len(starts) != 1:
-        raise AssertionError("Expected exactly one commit-prefix check script")
-    start = starts[0]
-    indent = len(lines[start]) - len(lines[start].lstrip()) + 2
-    script = []
-    for line in lines[start + 1:]:
-        if line.strip() and len(line) - len(line.lstrip()) < indent:
-            break
-        script.append(line[indent:])
+    jobs = load_workflow(workflow)['jobs']
+    if expression(jobs['check_skip']['outputs']['should_skip'], required=True) != 'steps.check.outputs.should_skip':
+        raise AssertionError('Skip job output must resolve to the real check step output')
+    checks = [step for step in jobs['check_skip']['steps'] if step.get('id') == 'check']
+    if len(checks) != 1:
+        raise AssertionError('Expected exactly one commit-prefix check step')
+    check = checks[0]
+    if expression(check['env']['COMMIT_MSG'], required=True) != 'github.event.head_commit.message':
+        raise AssertionError('Commit message must be passed through the environment')
+    script = check['run']
+    if '${{' in script:
+        raise AssertionError('Do not interpolate commit text into shell source')
     with tempfile.TemporaryDirectory(prefix="release-selector-contract-") as directory:
         output = Path(directory) / "outputs"
         result = subprocess.run(
-            ["bash"], input="\n".join(script) + "\n", text=True, capture_output=True, timeout=5,
+            ["bash"], input=script, text=True, capture_output=True, timeout=5,
             env={"PATH": os.environ["PATH"], "COMMIT_MSG": message, "GITHUB_OUTPUT": str(output)},
         )
         if result.returncode:
@@ -116,18 +155,15 @@ def release_job_decisions(workflow, message):
 
     def selected(name):
         """selected evaluates the workflow's restricted release expression grammar."""
-        matches = re.findall(r"^    if: (.+)$", job_body(name), flags=re.MULTILINE)
-        if len(matches) != 1:
-            raise AssertionError("Expected exactly one selector for " + name)
+        condition = expression(jobs[name]['if'])
         decisions = []
-        for predicate in matches[0].split(" && "):
-            if predicate == "needs.check_skip.outputs.should_skip != 'true'":
-                decisions.append(skip.casefold() != "true")
+        for predicate in condition.split('&&'):
+            if re.fullmatch(r"\s*needs\.check_skip\.outputs\.should_skip\s*!=\s*'true'\s*", predicate):
+                decisions.append(skip.casefold() != 'true')
                 continue
-            marker = re.fullmatch(r"!contains\(github\.event\.head_commit\.message, '([^']*)'\)", predicate)
+            marker = re.fullmatch(r"\s*!contains\(\s*github\.event\.head_commit\.message\s*,\s*'([^']*)'\s*\)\s*", predicate)
             if marker is None:
-                raise AssertionError("Unsupported release selector: " + predicate)
-            # GitHub contains() is case insensitive; see its expressions reference.
+                raise AssertionError('Unsupported release selector: ' + predicate)
             decisions.append(marker.group(1).casefold() not in message.casefold())
         return all(decisions)
 
@@ -135,7 +171,7 @@ def release_job_decisions(workflow, message):
 
 
 class DeploymentContract(unittest.TestCase):
-    def run_deploy(self, scenario, run_attempt=1):
+    def run_deploy(self, scenario, run_attempt=1, workflow=None):
         with tempfile.TemporaryDirectory(prefix="deploy-contract-") as directory:
             root = Path(directory)
             for executable in ("docker", "docker-compose"):
@@ -143,7 +179,7 @@ class DeploymentContract(unittest.TestCase):
                 path.write_text(MOCK)
                 path.chmod(0o755)
             result = subprocess.run(
-                ["bash", "-c", deployment_payload(root, run_attempt)],
+                ["bash", "-c", deployment_payload(root, run_attempt, workflow)],
                 env={**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"],
                      "MOCK_ROOT": directory, "SCENARIO": scenario},
                 capture_output=True, text=True, timeout=10,
@@ -190,11 +226,106 @@ class DeploymentContract(unittest.TestCase):
                 self.assertEqual(sum("up" in call for call in calls), 2)
                 self.assertIn("Rollback restored", result.stderr)
 
+    def assert_deploy_settings(self, workflow):
+        """assert_deploy_settings checks actual build dependencies and deployment fields, not comments."""
+        deployment = load_workflow(workflow)['jobs']['deploy']
+        needs = deployment['needs']
+        needs = [needs] if isinstance(needs, str) else needs
+        self.assertTrue({'check_skip', 'build_latest'}.issubset(needs))
+        self.assertEqual(deployment['concurrency']['group'], 'deploy-b1')
+        self.assertEqual(deployment['concurrency']['cancel-in-progress'], 'false')
+        step = workflow_step(deployment, 'appleboy/ssh-action')
+        self.assertIsInstance(step['with']['script'], str)
+        self.assertNotEqual(step['with'].get('script_stop', 'false'), 'true')
+
     def test_shared_b1_concurrency_does_not_cancel_deploys(self):
-        deployment = WORKFLOW.read_text().split("  deploy:\n", 1)[1]
-        self.assertIn("group: deploy-b1", deployment)
-        self.assertIn("cancel-in-progress: false", deployment)
-        self.assertNotIn("script_stop:", deployment)
+        self.assert_deploy_settings(WORKFLOW)
+
+    def test_comments_cannot_mask_unsafe_deployment_fields(self):
+        """test_comments_cannot_mask_unsafe_deployment_fields rejects real concurrency and dependency changes."""
+        model = load_workflow(WORKFLOW)
+        variants = []
+        for field, value in [('group', 'unsafe-${{ github.ref }}'), ('cancel-in-progress', 'true')]:
+            candidate = copy.deepcopy(model)
+            candidate['jobs']['deploy']['concurrency'][field] = value
+            variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        candidate['jobs']['deploy']['needs'] = ['check_skip']
+        variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')['uses'] = 'unrelated/action@v1'
+        variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')['with']['script_stop'] = 'true'
+        variants.append(candidate)
+        with tempfile.TemporaryDirectory(prefix='deploy-field-mutations-') as directory:
+            path = Path(directory) / 'ci.yml'
+            for index, candidate in enumerate(variants):
+                with self.subTest(mutation=index):
+                    path.write_text(workflow_fixture(candidate) + '\n# group: deploy-b1\n# cancel-in-progress: false\n')
+                    with self.assertRaises((AssertionError, KeyError)):
+                        self.assert_deploy_settings(path)
+
+    def test_skip_job_output_and_environment_bindings_are_enforced(self):
+        """test_skip_job_output_and_environment_bindings_are_enforced keeps simulation tied to actual GitHub value flow."""
+        model = load_workflow(WORKFLOW)
+        variants = []
+        for value in ('${{ steps.check.outputs.missing }}', 'steps.check.outputs.should_skip'):
+            candidate = copy.deepcopy(model)
+            candidate['jobs']['check_skip']['outputs']['should_skip'] = value
+            variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        check = next(step for step in candidate['jobs']['check_skip']['steps'] if step.get('id') == 'check')
+        check['env']['COMMIT_MSG'] = 'github.event.head_commit.message'
+        variants.append(candidate)
+        with tempfile.TemporaryDirectory(prefix='skip-binding-mutations-') as directory:
+            path = Path(directory) / 'ci.yml'
+            for candidate in variants:
+                path.write_text(workflow_fixture(candidate))
+                with self.assertRaises((AssertionError, KeyError)):
+                    release_job_decisions(path, 'docs: must skip')
+
+    def test_equivalent_yaml_and_expression_edits_preserve_deployment(self):
+        """test_equivalent_yaml_and_expression_edits_preserve_deployment accepts formatting while exercising real shell outcomes."""
+        model = load_workflow(WORKFLOW)
+        variants = ['# Documentation-only comment.\n' + workflow_fixture(model), workflow_fixture(model, indent=4)]
+        candidate = copy.deepcopy(model)
+        step = workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')
+        step['name'] = step.get('name', '') + ' reviewed'
+        variants.append(workflow_fixture(candidate))
+        for trailing_newline in (True, False):
+            candidate = copy.deepcopy(model)
+            step = workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')
+            step['with']['script'] = step['with']['script'].rstrip('\n') + ('\n' if trailing_newline else '')
+            variants.append(workflow_fixture(candidate))
+        for delimiters in (True, False):
+            candidate = copy.deepcopy(model)
+            for job in ('build_latest', 'build_latest_cache', 'deploy'):
+                condition = expression(candidate['jobs'][job]['if'])
+                candidate['jobs'][job]['if'] = '${{ ' + condition + ' }}' if delimiters else condition
+            variants.append(workflow_fixture(candidate))
+        candidate = copy.deepcopy(model)
+        for job in ('build_latest', 'build_latest_cache', 'deploy'):
+            candidate['jobs'][job]['if'] = re.sub(r'\s*!=\s*', '  !=  ', expression(candidate['jobs'][job]['if']))
+        variants.append(workflow_fixture(candidate))
+        candidate = copy.deepcopy(model)
+        workflow_step(candidate['jobs']['deploy'], 'appleboy/ssh-action')['with']['script_stop'] = 'false'
+        variants.append(workflow_fixture(candidate))
+        with tempfile.TemporaryDirectory(prefix='deploy-equivalent-yaml-') as directory:
+            path = Path(directory) / 'ci.yml'
+            for index, source in enumerate(variants):
+                with self.subTest(edit=index):
+                    path.write_text(source)
+                    self.assert_deploy_settings(path)
+                    self.assertEqual(release_job_decisions(path, 'fix: release [publish only]'), (True, True, True))
+                    self.assertEqual(release_job_decisions(path, 'docs: existing skip'), (False, False, False))
+                    success, calls = self.run_deploy('success', workflow=path)
+                    self.assertEqual(success.returncode, 0, success.stderr)
+                    self.assertEqual(sum('up' in call for call in calls), 1)
+                    failure, calls = self.run_deploy('up_failure', workflow=path)
+                    self.assertEqual(failure.returncode, 17, failure.stderr)
+                    self.assertEqual(sum('up' in call for call in calls), 2)
+                    self.assertIn('Rollback restored', failure.stderr)
 
     def test_reruns_retain_distinct_rollback_images(self):
         tags = []

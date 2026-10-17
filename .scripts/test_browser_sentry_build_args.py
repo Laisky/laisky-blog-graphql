@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Behavioral contracts for public browser arguments and unchanged release controls."""
 
-import hashlib
+import copy
 import importlib.util
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
 import unittest
+
+from test_deploy_workflow import expression, load_workflow, workflow_fixture, workflow_step
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / '.scripts/prepare_browser_sentry.py'
@@ -112,65 +115,166 @@ class ArgumentsContract(unittest.TestCase):
 
 
 class WorkflowContract(unittest.TestCase):
-    """WorkflowContract permits only public argument forwarding in the release workflow."""
+    """WorkflowContract checks public argument flow and actual release boundaries without snapshotting unrelated YAML."""
 
     @classmethod
     def setUpClass(cls):
-        """setUpClass reads repository workflow fixtures, never runner secrets."""
         cls.ci = (ROOT / '.github/workflows/ci.yml').read_text()
         cls.contract = (ROOT / '.github/workflows/deployment-contract.yml').read_text()
+        cls.dockerfile = (ROOT / 'Dockerfile').read_text()
 
-    def test_release_workflow_diff_is_exactly_the_argument_bridge_and_auto_deploy_policy(self):
-        """test_release_workflow_diff_is_exactly_the_argument_bridge_and_auto_deploy_policy checks both reviewed changes."""
-        original = self.ci
-        original = original.replace('    outputs:\n      browser_sentry_build_args: ${{ steps.browser_sentry.outputs.build_args }}\n', '', 1)
-        step = '''      - name: Prepare public MCP browser reporting arguments
-        id: browser_sentry
-        env:
-          MCP_SENTRY_ENABLED: ${{ vars.MCP_SENTRY_ENABLED }}
-          MCP_SENTRY_DSN: ${{ vars.MCP_SENTRY_DSN }}
-          MCP_SENTRY_ENVIRONMENT: ${{ vars.MCP_SENTRY_ENVIRONMENT }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: python3 .scripts/prepare_browser_sentry.py --github-output "$GITHUB_OUTPUT"
+    def assert_release_workflow(self, model):
+        """assert_release_workflow protects publishing scope and explicit public-only argument forwarding."""
+        self.assertEqual(set(model['on']), {'push'})
+        triggers = model['on']['push']
+        self.assertNotIn('tags', triggers)
+        self.assertIn(triggers.get('tags-ignore'), (None, ['**']))
+        self.assertEqual(set(triggers['branches']), {'master', 'main', 'test/ci'})
+        self.assertEqual(set(triggers['paths-ignore']), {'docs/**', 'doc/**', 'tests/**', 'test/**', 'ci/**'})
+        jobs = model['jobs']
+        build = jobs['build_latest']
+        needs = build['needs']
+        self.assertIn('check_skip', [needs] if isinstance(needs, str) else needs)
+        bridge = [step for step in build['steps'] if step.get('id') == 'browser_sentry']
+        self.assertEqual(len(bridge), 1)
+        bridge = bridge[0]
+        expected = {name: 'vars.' + name for name in ('MCP_SENTRY_ENABLED', 'MCP_SENTRY_DSN', 'MCP_SENTRY_ENVIRONMENT')}
+        expected['SOURCE_SHA'] = 'github.sha'
+        self.assertEqual({name: expression(value, required=True) for name, value in bridge['env'].items()}, expected)
+        command = shlex.split(bridge['run'])
+        self.assertEqual(command[0], 'python3')
+        command = [command[0]] + [argument for argument in command[1:] if argument not in ('-B', '-u')]
+        self.assertEqual(command, ['python3', '.scripts/prepare_browser_sentry.py', '--github-output', '$GITHUB_OUTPUT'])
+        self.assertEqual(expression(build['outputs']['browser_sentry_build_args'], required=True), 'steps.browser_sentry.outputs.build_args')
+        publish = workflow_step(build, 'docker/build-push-action')['with']
+        self.assertEqual(expression(publish['build-args'], required=True), 'steps.browser_sentry.outputs.build_args')
+        self.assertEqual(publish['push'], 'true')
+        self.assertEqual(publish['context'], '.')
+        self.assertEqual({tag.strip() for tag in publish['tags'].splitlines() if tag.strip()}, {'ppcelery/laisky-blog-graphql:latest', 'ppcelery/laisky-blog-graphql:${{ steps.vars.outputs.short_sha }}'})
+        cache = jobs['build_latest_cache']
+        needs = cache['needs']
+        self.assertTrue({'check_skip', 'build_latest'}.issubset([needs] if isinstance(needs, str) else needs))
+        cache_build = workflow_step(cache, 'docker/build-push-action')['with']
+        self.assertEqual(expression(cache_build['build-args'], required=True), 'needs.build_latest.outputs.browser_sentry_build_args')
+        self.assertEqual(cache_build['push'], 'false')
+        self.assertEqual(cache_build['context'], '.')
 
-'''
-        self.assertEqual(original.count(step), 1)
-        original = original.replace(step, '', 1)
-        for reference in ('steps.browser_sentry.outputs.build_args', 'needs.build_latest.outputs.browser_sentry_build_args'):
-            line = '          build-args: ${{ ' + reference + ' }}\n'
-            self.assertEqual(original.count(line), 1)
-            original = original.replace(line, '', 1)
-        baseline = subprocess.run(
-            ['git', 'show', '4471050910d21fe5bca26bd9be0af6fc5ad9e0e5:.github/workflows/ci.yml'],
-            cwd=ROOT, capture_output=True, text=True, check=False,
-        )
-        # A checked-in digest also verifies shallow CI clones where the original commit is unavailable.
-        self.assertEqual(hashlib.sha256(original.encode()).hexdigest(), 'a39ed672e45d39dada4189afcf1d73e685d9436c97d189b9313d05bf496f3ef6')
-        if baseline.returncode == 0:
-            held_selector = "    if: needs.check_skip.outputs.should_skip != 'true' && !contains(github.event.head_commit.message, '[publish only]')"
-            automatic_selector = "    if: needs.check_skip.outputs.should_skip != 'true'"
-            self.assertEqual(baseline.stdout.count(held_selector), 1)
-            expected_baseline = baseline.stdout.replace(held_selector, automatic_selector, 1)
-            self.assertEqual(original, expected_baseline)
+    def assert_contract_workflow(self, model):
+        """assert_contract_workflow checks read-only contract triggers and real script commands."""
+        self.assertEqual(set(model['on']), {'pull_request', 'workflow_dispatch'})
+        required = {'.github/workflows/ci.yml', '.github/workflows/deployment-contract.yml',
+                    '.scripts/test_deploy_workflow.py', '.scripts/prepare_browser_sentry.py',
+                    '.scripts/test_browser_sentry_build_args.py', '.scripts/requirements-deployment-tests.txt', 'Dockerfile'}
+        self.assertTrue(required.issubset(model['on']['pull_request']['paths']))
+        self.assertTrue({'branches', 'branches-ignore', 'paths-ignore'}.isdisjoint(model['on']['pull_request']))
+        self.assertEqual(model['permissions'], {'contents': 'read'})
+        job = model['jobs']['shell-contract']
+        checkout = workflow_step(job, 'actions/checkout')
+        self.assertEqual(checkout['with']['persist-credentials'], 'false')
+        commands = [shlex.split(line, comments=True) for step in job['steps'] for line in step.get('run', '').splitlines()]
+        for script in ('.scripts/test_deploy_workflow.py', '.scripts/test_browser_sentry_build_args.py'):
+            self.assertTrue(any(command and command[0] == 'python3' and script in command[1:] for command in commands))
+        self.assertTrue(any(command[:4] == ['python3', '-m', 'pip', 'install'] and
+                            '.scripts/requirements-deployment-tests.txt' in command for command in commands))
 
-    def test_contract_trigger_and_permissions_unchanged(self):
-        header = self.contract.split('jobs:\n')[0]
-        for path in ('.scripts/prepare_browser_sentry.py', '.scripts/test_browser_sentry_build_args.py'):
-            line = "      - '" + path + "'\n"
-            self.assertEqual(header.count(line), 1)
-            header = header.replace(line, '', 1)
-        self.assertEqual(hashlib.sha256(header.encode()).hexdigest(),
-                         '8561e718f0afea83c3f69c3b1c7f04b3adad06abe0f6d284de46856362d7f082')
-        self.assertIn('python3 .scripts/test_deploy_workflow.py\n', self.contract)
-        self.assertIn('python3 .scripts/test_browser_sentry_build_args.py\n', self.contract)
-
-    def test_exact_public_inputs_and_docker_builder_arguments(self):
-        variables = re.findall(r'\$\{\{ vars\.([^ }]+) \}\}', self.ci)
-        self.assertEqual(variables, ['MCP_SENTRY_ENABLED', 'MCP_SENTRY_DSN', 'MCP_SENTRY_ENVIRONMENT'])
-        dockerfile = (ROOT / 'Dockerfile').read_text()
-        self.assertEqual(re.findall(r'^ARG (VITE_SENTRY_[A-Z]+)$', dockerfile, re.MULTILINE), list(CONFIG.FIELDS))
-        self.assertNotRegex(dockerfile, r'(?im)^(?:ARG|ENV) .*SENTRY.*TOKEN')
+    def assert_docker_arguments(self, source):
+        """assert_docker_arguments treats independent public declarations as a set while excluding credential arguments."""
+        declarations = re.findall(r'^\s*ARG\s+(VITE_SENTRY_[A-Z]+)\s*(?:#.*)?$', source, re.MULTILINE | re.IGNORECASE)
+        self.assertEqual(set(declarations), set(CONFIG.FIELDS))
+        self.assertNotRegex(source, r'(?im)^\s*(?:ARG|ENV)\s+.*SENTRY.*TOKEN')
         self.assertNotIn('os.environ.items', HELPER.read_text())
+
+    def test_public_argument_flow_and_release_boundaries(self):
+        self.assert_release_workflow(load_workflow(ROOT / '.github/workflows/ci.yml'))
+
+    def test_contract_triggers_permissions_and_commands(self):
+        self.assert_contract_workflow(load_workflow(ROOT / '.github/workflows/deployment-contract.yml'))
+
+    def test_public_docker_arguments_exclude_credentials(self):
+        self.assert_docker_arguments(self.dockerfile)
+
+    def test_equivalent_metadata_and_ordering_are_accepted(self):
+        """test_equivalent_metadata_and_ordering_are_accepted proves comments, names and declaration order are incidental."""
+        model = load_workflow(ROOT / '.github/workflows/ci.yml')
+        variants = ['# Workflow documentation.\n' + workflow_fixture(model)]
+        candidate = copy.deepcopy(model)
+        bridge = next(step for step in candidate['jobs']['build_latest']['steps'] if step.get('id') == 'browser_sentry')
+        bridge['name'] = bridge.get('name', '') + ' reviewed'
+        variants.append(workflow_fixture(candidate))
+        candidate = copy.deepcopy(model)
+        bridge = next(step for step in candidate['jobs']['build_latest']['steps'] if step.get('id') == 'browser_sentry')
+        bridge['env'] = dict(reversed(list(bridge['env'].items())))
+        variants.append(workflow_fixture(candidate))
+        candidate = copy.deepcopy(model)
+        candidate['on']['push']['tags-ignore'] = ['**']
+        variants.append(workflow_fixture(candidate))
+        with tempfile.TemporaryDirectory(prefix='public-workflow-equivalence-') as directory:
+            path = Path(directory) / 'workflow.yml'
+            for source in variants:
+                path.write_text(source)
+                self.assert_release_workflow(load_workflow(path))
+            contract = load_workflow(ROOT / '.github/workflows/deployment-contract.yml')
+            contract['name'] = contract.get('name', '') + ' reviewed'
+            path.write_text(workflow_fixture(contract))
+            self.assert_contract_workflow(load_workflow(path))
+        lines = self.dockerfile.splitlines(True)
+        positions = [index for index, line in enumerate(lines) if re.match(r'^\s*ARG\s+VITE_SENTRY_', line, re.IGNORECASE)]
+        declarations = [lines[index] for index in positions]
+        for index, declaration in zip(positions, reversed(declarations)):
+            lines[index] = declaration
+        self.assert_docker_arguments(''.join(lines))
+
+    def test_unsafe_release_and_contract_changes_are_rejected(self):
+        """test_unsafe_release_and_contract_changes_are_rejected distinguishes safety changes from harmless formatting."""
+        model = load_workflow(ROOT / '.github/workflows/ci.yml')
+        variants = []
+        for event in ('pull_request_target', 'workflow_dispatch'):
+            candidate = copy.deepcopy(model)
+            candidate['on'][event] = {}
+            variants.append(candidate)
+        for field, patterns in [('tags', ['**']), ('tags-ignore', ['private-*'])]:
+            candidate = copy.deepcopy(model)
+            candidate['on']['push'][field] = patterns
+            variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        bridge = next(step for step in candidate['jobs']['build_latest']['steps'] if step.get('id') == 'browser_sentry')
+        bridge['env']['MCP_SENTRY_DSN'] = '${{ secrets.SENTRY_AUTH_TOKEN }}'
+        variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        candidate['jobs']['build_latest']['outputs']['browser_sentry_build_args'] = 'private-value'
+        variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        workflow_step(candidate['jobs']['build_latest_cache'], 'docker/build-push-action')['with']['push'] = 'true'
+        variants.append(candidate)
+        candidate = copy.deepcopy(model)
+        candidate['on']['push']['branches'] = ['unsafe-release-branch']
+        variants.append(candidate)
+        contract = load_workflow(ROOT / '.github/workflows/deployment-contract.yml')
+        contract_variants = []
+        candidate = copy.deepcopy(contract)
+        candidate['permissions']['contents'] = 'write'
+        contract_variants.append(candidate)
+        candidate = copy.deepcopy(contract)
+        candidate['on']['push'] = {}
+        contract_variants.append(candidate)
+        candidate = copy.deepcopy(contract)
+        candidate['on']['pull_request']['paths'].remove('Dockerfile')
+        contract_variants.append(candidate)
+        candidate = copy.deepcopy(contract)
+        candidate['on']['pull_request']['branches'] = ['restricted-base']
+        contract_variants.append(candidate)
+        with tempfile.TemporaryDirectory(prefix='public-workflow-mutations-') as directory:
+            path = Path(directory) / 'workflow.yml'
+            for candidate in variants:
+                path.write_text(workflow_fixture(candidate))
+                with self.assertRaises((AssertionError, KeyError)):
+                    self.assert_release_workflow(load_workflow(path))
+            for candidate in contract_variants:
+                path.write_text(workflow_fixture(candidate))
+                with self.assertRaises((AssertionError, KeyError)):
+                    self.assert_contract_workflow(load_workflow(path))
+        with self.assertRaises(AssertionError):
+            self.assert_docker_arguments(self.dockerfile + '\nARG SENTRY_AUTH_TOKEN\n')
 
 
 if __name__ == '__main__':
