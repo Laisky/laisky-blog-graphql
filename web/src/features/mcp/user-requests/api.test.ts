@@ -1,3 +1,4 @@
+import { getPrivateErrorMessage } from '@/lib/private-error';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createUserRequest, getQuota, type ImageSubmissionError } from './api';
@@ -55,6 +56,8 @@ describe('createUserRequest', () => {
     }
     expect(caught).not.toBeNull();
     expect(caught!.code).toBe('quota_exceeded');
+    expect(caught!.message).toBe('too big');
+    expect(getPrivateErrorMessage(caught)).toBe('User requests operation failed');
     expect(caught!.attachmentIndex).toBe(2);
   });
 });
@@ -73,5 +76,22 @@ describe('getQuota', () => {
     const q = await getQuota('sk-test');
     expect(q.used_bytes).toBe(123);
     expect(q.quota_bytes).toBe(1000);
+  });
+});
+
+describe('private user request errors', () => {
+  beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal('fetch', mockFetch); });
+  it('preserves raw failure text and keeps HTTP behavior unchanged', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('synthetic private user history', { status: 403 }));
+    const error = await getQuota('test-key').catch((failure: unknown) => failure);
+    expect(error).toMatchObject({ message: 'synthetic private user history' });
+    expect(getPrivateErrorMessage(error)).toBe('User requests operation failed');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+  it('annotates native parser errors from private request payloads', async () => {
+    mockFetch.mockResolvedValueOnce(new Response('synthetic private request'));
+    const error = await createUserRequest('test-key', 'request').catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SyntaxError);
+    expect(getPrivateErrorMessage(error)).toBe('Invalid user requests JSON response');
   });
 });

@@ -14,8 +14,10 @@ import (
 // WebFetchFailureSummary is the reviewed scalar envelope for one fetch failure.
 // Error details, target URLs and user content must never be added to it.
 type WebFetchFailureSummary struct {
+	CallerContextState, ErrorLifecycle  string
 	ErrorCode, Stage, RequestID, TaskID string
 	WorkerStage, WorkerCategory         string
+	WorkerSignal                        string
 	DurationMS                          int64
 }
 
@@ -62,7 +64,18 @@ func WebFetchFailureFields(summary WebFetchFailureSummary) []zapcore.Field {
 		workerStage, workerCategory := crawleregress.WorkerFailureDiagnostic(summary.WorkerStage, summary.WorkerCategory)
 		if workerStage != "" {
 			fields = append(fields, zap.String("web_fetch_worker_stage", workerStage), zap.String("web_fetch_worker_category", workerCategory))
+			if signal := crawleregress.WorkerChallengeSignal(workerStage, workerCategory, summary.WorkerSignal); signal != "" && canonicalCorrelationID(summary.TaskID) {
+				fields = append(fields, zap.String("web_fetch_worker_signal", signal))
+			}
 		}
+	}
+	switch summary.CallerContextState {
+	case "active", "canceled", "deadline_exceeded": //nolint:misspell // stable diagnostic enum
+		fields = append(fields, zap.String("web_fetch_caller_context_state", summary.CallerContextState))
+	}
+	switch summary.ErrorLifecycle {
+	case "none", "canceled", "deadline_exceeded", "mixed", "unknown": //nolint:misspell // stable diagnostic enum
+		fields = append(fields, zap.String("web_fetch_error_lifecycle", summary.ErrorLifecycle))
 	}
 	if canonicalCorrelationID(summary.RequestID) {
 		fields = append(fields, zap.String("web_fetch_request_id", summary.RequestID))
@@ -97,6 +110,8 @@ func canonicalCorrelationID(value string) bool {
 // WebFetchAlertOption retains the optional legacy explicit-filter policy.
 // Production uses the SDK's default sanitized diagnostics instead. Callers
 // choosing this adapter pair it with WebFetchAlertHook for prefix validation.
+// Its unchanged field list omits worker_signal; the production default SDK
+// diagnostic scopes carry the new bounded field without this optional adapter.
 func WebFetchAlertOption() logSDK.AlertOption {
 	return logSDK.WithAlertFieldAllowlist("error_code", "stage", "request_id", "task_id", "duration_ms", "worker_stage", "worker_category")
 }

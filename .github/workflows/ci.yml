@@ -32,6 +32,8 @@ jobs:
           fi
 
   build_latest:
+    outputs:
+      browser_sentry_build_args: ${{ steps.browser_sentry.outputs.build_args }}
     needs: check_skip
     if: needs.check_skip.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
@@ -59,10 +61,20 @@ jobs:
         shell: bash
         run: echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
+      - name: Prepare public MCP browser reporting arguments
+        id: browser_sentry
+        env:
+          MCP_SENTRY_ENABLED: ${{ vars.MCP_SENTRY_ENABLED }}
+          MCP_SENTRY_DSN: ${{ vars.MCP_SENTRY_DSN }}
+          MCP_SENTRY_ENVIRONMENT: ${{ vars.MCP_SENTRY_ENVIRONMENT }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: python3 .scripts/prepare_browser_sentry.py --github-output "$GITHUB_OUTPUT"
+
       - name: Build and push (latest + hash)
         uses: docker/build-push-action@v5
         with:
           context: .
+          build-args: ${{ steps.browser_sentry.outputs.build_args }}
           push: true
           tags: |
             ppcelery/laisky-blog-graphql:latest
@@ -90,6 +102,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          build-args: ${{ needs.build_latest.outputs.browser_sentry_build_args }}
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -15,11 +15,13 @@ const failureCodeFetch = "fetch_failed"
 const failureCodeCrawler = "crawler_failed"
 const failureStageRender = "render"
 const fetchDiagnosticTextLimit = 2048
+const fetchLifecycleUnknown = "unknown"
 
 // FetchFailureDiagnostic contains reviewed scalar fields safe for remote alerts.
 type FetchFailureDiagnostic struct {
 	ErrorCode, Stage, TaskID    string
 	WorkerStage, WorkerCategory string
+	WorkerSignal                string
 }
 
 // FetchFailureError carries safe diagnostics while preserving the underlying error identity.
@@ -58,10 +60,84 @@ func FetchDiagnostic(err error) FetchFailureDiagnostic {
 	}
 	if diagnostic.ErrorCode == failureCodeCrawler && diagnostic.Stage == failureStageRender {
 		diagnostic.WorkerStage, diagnostic.WorkerCategory = crawleregress.WorkerFailureDiagnostic(diagnostic.WorkerStage, diagnostic.WorkerCategory)
+		if diagnostic.TaskID != "" {
+			diagnostic.WorkerSignal = crawleregress.WorkerChallengeSignal(diagnostic.WorkerStage, diagnostic.WorkerCategory, diagnostic.WorkerSignal)
+		} else {
+			diagnostic.WorkerSignal = ""
+		}
 	} else {
-		diagnostic.WorkerStage, diagnostic.WorkerCategory = "", ""
+		diagnostic.WorkerStage, diagnostic.WorkerCategory, diagnostic.WorkerSignal = "", "", ""
 	}
 	return diagnostic
+}
+
+// FetchCallerContextState reports only the caller context state at observation time.
+// An active caller does not exclude a separate worker or dependency cancellation.
+func FetchCallerContextState(ctx context.Context) string {
+	switch ctx.Err() {
+	case context.Canceled:
+		return "canceled" //nolint:misspell // stable diagnostic enum
+	case context.DeadlineExceeded:
+		return "deadline_exceeded"
+	default:
+		return "active"
+	}
+}
+
+// FetchErrorLifecycle reports bounded error-chain composition without attributing its source.
+// Mixed means a lifecycle sentinel joined with a different lifecycle or concrete cause.
+// Unknown means the traversal budget was exceeded; existing error codes are unchanged.
+func FetchErrorLifecycle(err error) string {
+	if err == nil {
+		return "none"
+	}
+	pending := []error{err}
+	canceled, deadline, concrete := false, false, false
+	for inspected := 0; len(pending) > 0; inspected++ {
+		if inspected >= 32 {
+			return fetchLifecycleUnknown
+		}
+		node := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if node == nil {
+			continue
+		}
+		switch node {
+		case context.Canceled: //nolint:errorlint // Direct-node identity keeps recursive inspection within the explicit budget.
+			canceled = true
+			continue
+		case context.DeadlineExceeded:
+			deadline = true
+			continue
+		}
+		switch cause := node.(type) { //nolint:errorlint // Inspect direct unwrap edges within the explicit traversal budget.
+		case interface{ Unwrap() []error }:
+			children := cause.Unwrap()
+			if len(children)+len(pending) > 32 {
+				return fetchLifecycleUnknown
+			}
+			pending = append(pending, children...)
+		case interface{ Unwrap() error }:
+			child := cause.Unwrap()
+			if child == nil {
+				concrete = true
+			} else {
+				pending = append(pending, child)
+			}
+		default:
+			concrete = true
+		}
+	}
+	switch {
+	case (canceled && deadline) || ((canceled || deadline) && concrete):
+		return "mixed"
+	case canceled:
+		return "canceled" //nolint:misspell // stable diagnostic enum
+	case deadline:
+		return "deadline_exceeded"
+	default:
+		return "none"
+	}
 }
 
 // FetchLogError keeps useful sanitized cause text while retaining the original error separately.
