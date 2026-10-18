@@ -19,7 +19,8 @@ RUN go mod download
 ADD . .
 ENV GOOS=linux
 ENV GOARCH=amd64
-RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
+# Build the module package so Go records its standard public VCS metadata.
+RUN go build -a -ldflags '-w -extldflags "-static"' -o main .
 
 # build front-end assets
 FROM node:24-bookworm AS webbuild

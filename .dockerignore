@@ -1,6 +1,13 @@
-# Global ignores
-.git
-.gitignore
+# Keep only public Git metadata needed for standard Go VCS stamping.
+# Checkout-local configuration/auth, hooks, logs, worktrees and external object stores stay out.
+.git/*
+!.git/HEAD
+!.git/index
+!.git/packed-refs
+!.git/refs
+!.git/shallow
+!.git/objects
+.git/objects/info
 **/.DS_Store
 
 # Go build artifacts

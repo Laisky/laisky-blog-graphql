@@ -48,3 +48,27 @@ Test-process isolation sets only CRAWLER_FAILURE_LOG_DIR to a newly owned
 os.MkdirTemp directory. Focused test leaves are explicitly chmodded to 0700;
 tests do not assume t.TempDir's leaf mode or relax the production private-path
 check. Cleanup is confined to these newly owned synthetic directories.
+
+## Container build provenance
+
+Docker's local directory context makes only included files available to COPY/ADD.
+This release uses a local checkout (`context: .`), not a remote Git URL context.
+The needed public Git metadata and tracked .gitignore must survive filtering for
+Go's automatic VCS stamping. Checkout-private configuration and external object
+lookup hints must not cross that boundary. The actual BuildKit scratch-export
+regression tests that boundary with synthetic credential canaries, then compiles
+and runs the real ProcessSource using the production Go command.
+
+Go's VCS stamping requires main-module information. The named-file form produces
+command-line-arguments; building the module package supplies standard revision and
+modified settings. A missing outside-context worktree pointer cannot establish a
+revision and is tested as an honest unknown. Fixture commands strip inherited
+GIT_* overrides and ignore system/global Git configuration; no real credential
+configuration is read by the fixture Git operations.
+
+- [Docker build contexts and .dockerignore](https://docs.docker.com/build/concepts/context/)
+- [Go build and -buildvcs](https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies)
+- [runtime/debug.ReadBuildInfo](https://pkg.go.dev/runtime/debug#ReadBuildInfo)
+
+These source/build controls do not qualify the persistent journal mount,
+operational retention, cross-UID private export, or a production deployment.

@@ -93,6 +93,24 @@ or making paid calls. Synthetic tests establish local capture and reference
 delivery; they do not establish production retention or recover already expired
 historical records. Missing old inputs are an instrumentation/retention gap.
 
+## Release build identity
+
+ProcessSource selects Go's public build metadata: revision/modified status when
+available, module/Go versions, service, hostname and a once-per-process run ID.
+The release's local Docker context retains only the Git HEAD/index, refs,
+packed refs, shallow boundary and local objects required by standard VCS stamping.
+Tracked .gitignore is retained. Checkout configuration/auth, hooks, logs, linked
+worktree/module metadata and external object-store hints are excluded. Git remains
+in the build stage; the runtime stage copies the binary, not the Git directory.
+
+The backend builds the module package with `go build ... .`. A named `main.go`
+build does not supply this module's automatic VCS identity. Both select the same
+sole root production Go source. A complete release checkout must produce its exact
+revision and truthful modified bit. A manual linked-worktree pointer whose Git
+metadata is outside the Docker context remains buildable with unavailable
+revision; it does not qualify as a revision-identified release. No revision is
+invented from environment configuration or a mutable image tag.
+
 ## Required deployment gate before merging this change
 
 The default branch normally publishes and deploys after merge. This source-only
