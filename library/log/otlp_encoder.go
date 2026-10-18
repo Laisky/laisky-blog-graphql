@@ -285,7 +285,7 @@ func (encoder *otlpObjectEncoder) AddInt(key string, value int) {
 
 // AddInt64 retains the source int64 value without numeric precision loss.
 func (encoder *otlpObjectEncoder) AddInt64(key string, value int64) {
-	encoder.add(key, attribute.Int64Value(int64(value)))
+	encoder.add(key, attribute.Int64Value(value))
 }
 
 // AddInt32 retains the source int32 value without numeric precision loss.
@@ -310,7 +310,7 @@ func (encoder *otlpObjectEncoder) AddUint(key string, value uint) {
 
 // AddUint64 retains the source uint64 value without numeric precision loss.
 func (encoder *otlpObjectEncoder) AddUint64(key string, value uint64) {
-	encoder.add(key, otlpUint64Value(uint64(value)))
+	encoder.add(key, otlpUint64Value(value))
 }
 
 // AddUint32 retains the source uint32 value without numeric precision loss.
