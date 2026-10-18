@@ -6,7 +6,6 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
-	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
@@ -203,69 +202,82 @@ func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 // mutations
 // ============================
 
-// TelegramMonitorAlert pushes one throttled alert message. It refuses the send
-// when the alert rate limiter is not configured, rather than bypassing it.
-func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context,
-	typeArg string,
-	token string,
-	msg string) (*model.AlertTypes, error) {
+// TelegramMonitorAlert sends the complete alert through the existing authorized subscriber path.
+// It preserves fail-closed throttling and token validation; partial provider acceptance
+// returns a visible error because retrying the mutation may duplicate accepted sends.
+func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, token, msg string) (*model.AlertTypes, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
 	}
+	const separator = " >>>>>>>>>>>>>>>>>> \n"
+	if len(typeArg) > service.MaxAlertPayloadBytes-len(separator) || len(msg) > service.MaxAlertPayloadBytes-len(separator)-len(typeArg) {
+		return nil, errors.WithStack(service.ErrAlertPayloadTooLarge)
+	}
+	complete := typeArg + separator + msg
+	if err := service.ValidateAlertPayload(complete); err != nil {
+		return nil, err
+	}
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_alert")
-	// The limiter is absent when telegram throttling was never configured or is
-	// unusable. Refuse the alert instead of dereferencing nil or, worse, pushing
-	// unlimited alerts because the guard was skipped.
 	if telegramRatelimiter == nil {
-		logger.Error("telegram alert throttle is not configured; refusing to send")
 		return nil, errors.WithStack(errTelegramThrottleUnavailable)
 	}
-	if !telegramRatelimiter.Allow(typeArg) { //nolint:contextcheck // Allow is a rate-limiter check that does not need request context
-		// logger.Warn("deny by throttle", zap.String("type", typeArg))
-		return nil, errors.Errorf("deny by throttle")
+	if !telegramRatelimiter.Allow(typeArg) { //nolint:contextcheck // Rate admission does not need request context.
+		return nil, errors.New("deny by throttle")
 	}
-
-	maxlen := gconfig.Shared.GetInt("settings.telegram.max_len")
-	if maxlen <= 0 || maxlen > 3000 {
-		logger.Warn("invalid max len, reset to 3000", zap.Int("maxlen", maxlen))
-		maxlen = 3000
-	}
-
-	// Truncate message if too long. Alerts are sent as plain text, so the
-	// text is never escaped: escaping for one Markdown dialect while sending
-	// in another showed subscribers literal backslashes.
-	if truncatedMsg := library.Truncate(msg, maxlen); len(truncatedMsg) < len(msg) {
-		msg = truncatedMsg + "..."
-	}
-
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-
+	if alert == nil {
+		return nil, errors.New("telegram alert authorization returned no alert")
+	}
 	users, err := r.svc.LoadUsersByAlertType(ctx, alert)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-
-	errMsg := ""
-	msg = typeArg + " >>>>>>>>>>>>>>>>>> " + "\n" + msg
+	recipients := make([]int, 0, len(users))
+	seen := make(map[int]struct{}, len(users))
 	for _, user := range users {
-		if err = r.svc.SendPlainTextToUser(user.UID, msg); err != nil {
-			logger.Error("send msg to user",
-				zap.Error(err),
-				zap.Int("uid", user.UID),
-				zap.String("msg", msg))
-			errMsg += err.Error()
+		if user == nil || user.UID == 0 {
+			return alert, errors.New("telegram alert has an invalid subscriber")
+		}
+		if _, exists := seen[user.UID]; exists {
+			continue
+		}
+		seen[user.UID] = struct{}{}
+		recipients = append(recipients, user.UID)
+	}
+	if len(recipients) == 0 {
+		return alert, errors.New("telegram alert has no subscribers; nothing was sent")
+	}
+	logger.Debug("send complete telegram alert", zap.Int("subscribers", len(recipients)), zap.Int("payload_bytes", len(complete)))
+	outcome := &AlertFanoutError{Total: len(recipients)}
+	for _, uid := range recipients {
+		if ctx.Err() != nil {
+			outcome.cause = ctx.Err()
+			break
+		}
+		outcome.Attempted++
+		err = r.svc.SendAlertToUser(ctx, uid, complete)
+		if err == nil {
+			outcome.Accepted++
+		} else {
+			var delivery *service.AlertDeliveryError
+			if errors.As(err, &delivery) && !delivery.Unconfirmed {
+				outcome.Rejected++
+				outcome.RetryAfterSeconds = max(outcome.RetryAfterSeconds, delivery.RetryAfterSeconds)
+			} else {
+				outcome.Unconfirmed++
+			}
+		}
+		if ctx.Err() != nil {
+			outcome.cause = ctx.Err()
+			break
 		}
 	}
-
-	if errMsg != "" {
-		err = errors.New(errMsg)
-	}
-
-	if err != nil {
-		return alert, errors.WithStack(err)
+	outcome.Unattempted = outcome.Total - outcome.Attempted
+	if outcome.Accepted != outcome.Total {
+		return alert, errors.WithStack(outcome)
 	}
 	return alert, nil
 }
