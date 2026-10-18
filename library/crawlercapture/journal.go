@@ -289,14 +289,8 @@ func openPrivateDirectory(path string, create bool, syncDirectory func(*os.File)
 			}
 		}
 		leaf := index == len(components)-1
-		if err := checkOwner(before, leaf); err != nil {
+		if err := validatePrivateDirectoryInfo(before, leaf, index); err != nil {
 			return nil, closeJournalRoot(root, err)
-		}
-		if leaf && before.Mode().Perm() != 0700 {
-			return nil, closeJournalRoot(root, errors.New("journal directory must have mode 0700"))
-		}
-		if !leaf && before.Mode().Perm()&0022 != 0 && before.Mode()&os.ModeSticky == 0 {
-			return nil, closeJournalRoot(root, errors.Errorf("journal ancestor %d permits untrusted writes (mode %o)", index, before.Mode()))
 		}
 		child, openErr := root.OpenRoot(component)
 		if openErr != nil {
@@ -342,7 +336,7 @@ func streamRecord(writer io.Writer, record Record) error {
 		if _, err := writer.Write(encoded[:at+len(marker)-4]); err != nil {
 			return errors.Wrap(err, "write capture metadata")
 		}
-		if blob.State == "captured" {
+		if blob.State == capturedState {
 			if _, err := io.WriteString(writer, "\""); err != nil {
 				return err
 			}
@@ -370,4 +364,18 @@ func streamRecord(writer io.Writer, record Record) error {
 // closeJournalRoot retains cleanup failures alongside the original operation error.
 func closeJournalRoot(root *os.Root, operationErr error) error {
 	return errors.Join(operationErr, root.Close())
+}
+
+// validatePrivateDirectoryInfo keeps archive ownership and ancestor-write checks identical for every traversal.
+func validatePrivateDirectoryInfo(info os.FileInfo, leaf bool, index int) error {
+	if err := checkOwner(info, leaf); err != nil {
+		return err
+	}
+	if leaf && info.Mode().Perm() != 0700 {
+		return errors.New("journal directory must have mode 0700")
+	}
+	if !leaf && info.Mode().Perm()&0022 != 0 && info.Mode()&os.ModeSticky == 0 {
+		return errors.Errorf("journal ancestor %d permits untrusted writes (mode %o)", index, info.Mode())
+	}
+	return nil
 }

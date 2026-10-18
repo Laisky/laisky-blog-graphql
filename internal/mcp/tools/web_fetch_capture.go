@@ -81,7 +81,6 @@ func (capture *webFetchCapture) writeFailure(diagnostic search.FetchFailureDiagn
 	reference, err := journal.Write(capture.record)
 	reference.Source = journal.Source()
 	return captureReferenceFields(reference, err, details...)
-
 }
 
 // captureSourceFields reports the same emitter identity as the private record.

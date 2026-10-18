@@ -14,6 +14,11 @@ import (
 	"github.com/Laisky/errors/v2"
 )
 
+const (
+	capturedState   = "captured"
+	notReachedState = "not_reached"
+)
+
 // Blob is a byte-preserving value. Captured zero bytes differs from not_reached.
 // JSON encodes Data as base64; strings, Unicode and invalid bytes are never repaired.
 type Blob struct {
@@ -36,26 +41,26 @@ func Captured(data []byte) Blob {
 func CapturedString(data string) Blob {
 	hash := sha256.New()
 	_, _ = io.Copy(hash, readerOnly{strings.NewReader(data)})
-	return Blob{State: "captured", ByteLength: int64(len(data)), SHA256: hex.EncodeToString(hash.Sum(nil)), text: &data}
+	return Blob{State: capturedState, ByteLength: int64(len(data)), SHA256: hex.EncodeToString(hash.Sum(nil)), text: &data}
 }
 
 // observedBlob describes bytes already independently owned by the capture.
 func observedBlob(data []byte) Blob {
 	sum := sha256.Sum256(data)
-	return Blob{State: "captured", ByteLength: int64(len(data)), SHA256: hex.EncodeToString(sum[:]), owned: data}
+	return Blob{State: capturedState, ByteLength: int64(len(data)), SHA256: hex.EncodeToString(sum[:]), owned: data}
 }
 
 // NotReached records that an operation did not provide a value.
-func NotReached() Blob { return Blob{State: "not_reached"} }
+func NotReached() Blob { return Blob{State: notReachedState} }
 
 // Validate checks value completeness and byte identity without interpreting its contents.
 func (b Blob) Validate() error {
 	switch b.State {
-	case "not_reached":
+	case notReachedState:
 		if b.ByteLength != 0 || b.SHA256 != "" || b.hasContent() {
 			return errors.New("invalid absent capture value")
 		}
-	case "captured":
+	case capturedState:
 		hash := sha256.New()
 		n, err := io.Copy(hash, readerOnly{b.reader()})
 		if err != nil || !b.hasContent() || b.ByteLength != n || !sameDigest(b.SHA256, hex.EncodeToString(hash.Sum(nil))) {
@@ -189,7 +194,7 @@ func (r Record) Validate() error {
 			return err
 		}
 	}
-	if r.Request.OutputMarkdownDeclared != (r.Request.OriginalOutputMarkdown.State == "captured") {
+	if r.Request.OutputMarkdownDeclared != (r.Request.OriginalOutputMarkdown.State == capturedState) {
 		return errors.New("capture option presence mismatch")
 	}
 	digest, err := r.manifestDigest()

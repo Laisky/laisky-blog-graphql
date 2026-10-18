@@ -15,8 +15,8 @@ func checkOwner(info os.FileInfo, leaf bool) error {
 	if !ok {
 		return errors.New("journal ownership unavailable")
 	}
-	uid := uint32(os.Geteuid())
-	if (leaf && stat.Uid != uid) || (!leaf && stat.Uid != uid && stat.Uid != 0) {
+	uid := int64(os.Geteuid())
+	if (leaf && int64(stat.Uid) != uid) || (!leaf && int64(stat.Uid) != uid && stat.Uid != 0) {
 		return errors.New("journal path has untrusted owner")
 	}
 	return nil
