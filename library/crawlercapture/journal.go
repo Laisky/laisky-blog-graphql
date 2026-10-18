@@ -179,7 +179,7 @@ func (j *Journal) Write(record Record) (reference Reference, resultErr error) {
 	hash := sha256.New()
 	counter := &countingWriter{writer: io.MultiWriter(file, hash)}
 	modeErr := file.Chmod(0600)
-	encodeErr := modeErr
+	var encodeErr error
 	if modeErr != nil {
 		encodeErr = modeErr
 	} else {
