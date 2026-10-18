@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ type Interface interface {
 	PleaseRetry(ctx context.Context, sender *tb.User, msg string)
 	SendMsgToUser(uid int, msg string) (err error)
 	SendPlainTextToUser(uid int, msg string) (err error)
+	SendAlertToUser(ctx context.Context, uid int, msg string) error
 	LoadAlertTypesByUser(ctx context.Context, u *model.MonitorUsers) (alerts []*model.AlertTypes, err error)
 	LoadAlertTypes(ctx context.Context, cfg *dto.QueryCfg) (alerts []*model.AlertTypes, err error)
 	LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.MonitorUsers, err error)
@@ -38,9 +40,10 @@ type Interface interface {
 
 // Telegram client
 type Telegram struct {
-	stop      chan struct{}
-	bot       *tb.Bot
-	userStats *sync.Map
+	stop        chan struct{}
+	bot         *tb.Bot
+	alertClient *http.Client
+	userStats   *sync.Map
 
 	monitorDao      *dao.Monitor
 	telegramDao     *dao.Telegram
@@ -67,9 +70,11 @@ func New(ctx context.Context,
 	askUserTokenDao *dao.AskUserToken,
 	token, api string,
 ) (*Telegram, error) {
+	client := &http.Client{Timeout: time.Minute}
 	bot, err := tb.NewBot(tb.Settings{
-		Token: token,
-		URL:   api,
+		Client: client,
+		Token:  token,
+		URL:    api,
 		Poller: &tb.LongPoller{
 			Timeout: 1 * time.Second,
 		},
@@ -85,6 +90,7 @@ func New(ctx context.Context,
 		askUserTokenDao: askUserTokenDao,
 		stop:            make(chan struct{}),
 		bot:             bot,
+		alertClient:     client,
 		userStats:       new(sync.Map),
 		askUserRequests: new(sync.Map),
 		askUserSessions: new(sync.Map),

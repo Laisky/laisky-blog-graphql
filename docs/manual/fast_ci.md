@@ -13,10 +13,12 @@ includes security fixes. Historical timing measurements below retain the
 toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
-16 named unit tests in `internal/library/toolpolicy` and
-`internal/web/telegram/formatting`. These exercise input validation, controlled
+20 named unit tests in `internal/library/toolpolicy`,
+`internal/web/telegram/formatting`, `internal/web/telegram/controller` and
+`internal/web/telegram/service`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
-logging and Telegram escaping without external services. The explicit manifest
+logging, Telegram escaping, complete alert content, document bounds and visible
+API rejection without external services. The explicit manifest
 is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
