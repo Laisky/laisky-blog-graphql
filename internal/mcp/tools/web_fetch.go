@@ -14,6 +14,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
@@ -133,8 +134,10 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mc
 	content, err := t.fetcher(ctx, t.store, urlValue, apiKey, outputMarkdown)
 	if err != nil {
 		diagnostic := search.FetchDiagnostic(err)
+		targetScheme, targetHostname := crawleregress.TargetComponents(urlValue)
 		fields := appLog.WebFetchDiagnosticFields(appLog.WebFetchFailureSummary{
 			ErrorCode: diagnostic.ErrorCode, Stage: diagnostic.Stage, TaskID: diagnostic.TaskID,
+			TargetScheme: targetScheme, TargetHostname: targetHostname, WorkerContext: diagnostic.WorkerContext,
 			WorkerStage: diagnostic.WorkerStage, WorkerCategory: diagnostic.WorkerCategory, WorkerSignal: diagnostic.WorkerSignal,
 			CallerContextState: search.FetchCallerContextState(ctx), ErrorLifecycle: search.FetchErrorLifecycle(err),
 			DurationMS: time.Since(start).Milliseconds(),

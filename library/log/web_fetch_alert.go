@@ -19,9 +19,12 @@ type WebFetchFailureSummary struct {
 	WorkerStage, WorkerCategory         string
 	WorkerSignal                        string
 	DurationMS                          int64
+	TargetScheme, TargetHostname        string
+	WorkerContext                       *crawleregress.FailureContext
 }
 
 const (
+	webFetchErrorCrawler      = "crawler_failed"
 	webFetchStageFetch        = "fetch"
 	webFetchStageResult       = "result"
 	webFetchStageVerification = "verification"
@@ -36,7 +39,7 @@ var webFetchFailureStages = map[string]string{
 	"crawler_result_failed":     webFetchStageResult,
 	"crawler_egress_unverified": webFetchStageVerification,
 	"crawler_egress_rejected":   webFetchStageVerification,
-	"crawler_failed":            webFetchStageRender,
+	webFetchErrorCrawler:        webFetchStageRender,
 	"crawler_status_invalid":    webFetchStageResult,
 	"fetch_canceled":            webFetchStageWait,
 	"fetch_timeout":             webFetchStageWait,
@@ -60,7 +63,7 @@ func WebFetchFailureFields(summary WebFetchFailureSummary) []zapcore.Field {
 		zap.String("web_fetch_error_code", summary.ErrorCode),
 		zap.String("web_fetch_stage", summary.Stage),
 	}
-	if summary.ErrorCode == "crawler_failed" && summary.Stage == webFetchStageRender {
+	if summary.ErrorCode == webFetchErrorCrawler && summary.Stage == webFetchStageRender {
 		workerStage, workerCategory := crawleregress.WorkerFailureDiagnostic(summary.WorkerStage, summary.WorkerCategory)
 		if workerStage != "" {
 			fields = append(fields, zap.String("web_fetch_worker_stage", workerStage), zap.String("web_fetch_worker_category", workerCategory))
@@ -96,7 +99,7 @@ func WebFetchDiagnosticFields(summary WebFetchFailureSummary) []zapcore.Field {
 	for i := range fields {
 		fields[i].Key = strings.TrimPrefix(fields[i].Key, "web_fetch_")
 	}
-	return fields
+	return append(fields, webFetchContextFields(summary, fields)...)
 }
 
 func canonicalCorrelationID(value string) bool {

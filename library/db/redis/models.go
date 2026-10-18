@@ -109,6 +109,8 @@ type HTMLCrawlerTask struct {
 	// FailureSignal is an optional finite reason for a failed render challenge.
 	// It carries no page content and is not connection or identity evidence.
 	FailureSignal string `json:"failure_signal,omitempty"`
+	// FailureContext is optional observed metadata, not body-release evidence.
+	FailureContext *crawleregress.FailureContext `json:"failure_context,omitempty"`
 	// Url is the target URL to fetch
 	Url string `json:"url"`
 	// APIKey is the one-api api key used for fetching dynamic content
