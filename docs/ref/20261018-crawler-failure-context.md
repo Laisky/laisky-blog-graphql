@@ -25,3 +25,26 @@ Primary references:
 
 See [the application contract](../manual/crawler_failure_context.md) for binding,
 optional observations, public-error compatibility and synthetic-test limits.
+
+## Byte preservation and private journal primitives
+
+The caller retains the original RequireString URL bytes before normalization.
+It records the presence and actual valid boolean/null output_markdown value,
+encoded as canonical JSON, separately from the resolved boolean. It does not
+traverse or serialize unknown arguments or the HTTP request envelope. JSON byte
+fields use a reversible base64 representation; this is an explicit private-record
+codec, not an attempt to bypass alert filtering.
+
+The standard library documents raw JSON retention, private temporary-file
+creation, and file synchronization. Those primitives support atomic publication,
+but do not by themselves guarantee persistent-container storage, delivery through
+an asynchronous collector, or an unlimited retention period.
+
+- [encoding/json.RawMessage](https://pkg.go.dev/encoding/json#RawMessage)
+- [os.CreateTemp](https://pkg.go.dev/os#CreateTemp)
+- [os.File.Sync](https://pkg.go.dev/os#File.Sync)
+
+Test-process isolation sets only CRAWLER_FAILURE_LOG_DIR to a newly owned
+os.MkdirTemp directory. Focused test leaves are explicitly chmodded to 0700;
+tests do not assume t.TempDir's leaf mode or relax the production private-path
+check. Cleanup is confined to these newly owned synthetic directories.
