@@ -3,9 +3,10 @@
 package crawlercapture
 
 import (
-	"github.com/Laisky/errors/v2"
 	"os"
 	"syscall"
+
+	"github.com/Laisky/errors/v2"
 )
 
 // checkOwner permits system ancestors and requires the private leaf owner.

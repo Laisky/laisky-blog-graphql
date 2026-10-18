@@ -1,9 +1,10 @@
 package crawlercapture
 
 import (
-	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestJournalWriteDoesNotMutateRenderer allows the same immutable record to be reused concurrently.

@@ -3,8 +3,9 @@
 package crawlercapture
 
 import (
-	"github.com/Laisky/errors/v2"
 	"os"
+
+	"github.com/Laisky/errors/v2"
 )
 
 // checkOwner rejects platforms without the private Unix ownership contract.
