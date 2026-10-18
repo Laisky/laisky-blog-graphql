@@ -17,6 +17,13 @@ func failedCrawlerTask(taskID, target string, policy toolpolicy.EgressPolicy, ma
 		crawleregress.PolicyDigest(target, *task.Egress) == crawleregress.PolicyDigest(target, policy) {
 		diagnostic.WorkerStage, diagnostic.WorkerCategory = crawleregress.WorkerFailureDiagnostic(task.FailureStage, task.FailureCategory)
 		diagnostic.WorkerSignal = crawleregress.WorkerChallengeSignal(diagnostic.WorkerStage, diagnostic.WorkerCategory, task.FailureSignal)
+		if diagnostic.WorkerStage != "" {
+			context := crawleregress.ReviewedFailureContext(task.FailureContext)
+			scheme, hostname := crawleregress.TargetComponents(target)
+			if context != nil && (context.TargetScheme == "" || context.TargetScheme == scheme && context.TargetHostname == hostname) {
+				diagnostic.WorkerContext = context
+			}
+		}
 	}
 	// Legacy FailedReason is deliberately not parsed or logged.
 	return errors.WithStack(&FetchFailureError{Diagnostic: diagnostic, Cause: errors.New("crawler task failed")})
