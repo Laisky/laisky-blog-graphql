@@ -100,7 +100,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (res
 	captureFailure := search.FetchFailureDiagnostic{ErrorCode: "tool_input_rejected", Stage: "admission"}
 	defer func() {
 		if capture != nil && result != nil && result.IsError && !capture.attempted {
-			logger.Warn("web_fetch failure journal", capture.writeFailure(captureFailure)...)
+			logger.Warn("web_fetch failed", capture.writeFailure(captureFailure)...)
 		}
 	}()
 
@@ -121,7 +121,7 @@ func (t *WebFetchTool) Handle(ctx context.Context, req mcp.CallToolRequest) (res
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	capture = newWebFetchCapture(req, originalURL, requestID)
-	capture.record.Request.OutputMarkdown = outputMarkdown
+	capture.outputMarkdown = outputMarkdown
 	if err := toolpolicy.ValidateFetchURL(ctx, urlValue); err != nil {
 		return mcp.NewToolResultError("invalid url"), nil //nolint:nilerr // Validation failures are MCP tool results, not transport failures.
 	}

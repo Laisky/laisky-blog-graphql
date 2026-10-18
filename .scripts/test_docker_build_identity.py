@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise Docker's real context filtering and the real capture build identity."""
+"""Exercise Docker's real context filtering and the real application build identity."""
 
 import json
 import os
@@ -71,13 +71,13 @@ class DockerBuildIdentityTests(unittest.TestCase):
             raise AssertionError("The Go builder must install Git for standard VCS stamping")
 
     def fixture(self, directory):
-        """fixture creates a complete synthetic checkout containing the actual capture code."""
+        """fixture creates a complete synthetic checkout containing the actual build identity code."""
         directory.mkdir(mode=0o700)
         for name in (".dockerignore", ".gitignore", "Dockerfile"):
             shutil.copyfile(ROOT / name, directory / name)
-        package = directory / "library/crawlercapture"
+        package = directory / "library/buildidentity"
         package.mkdir(parents=True)
-        for source in (ROOT / "library/crawlercapture").glob("*.go"):
+        for source in (ROOT / "library/buildidentity").glob("*.go"):
             if not source.name.endswith("_test.go"):
                 shutil.copyfile(source, package / source.name)
         version, = [line.split()[1] for line in (ROOT / "go.mod").read_text().splitlines()
@@ -92,10 +92,10 @@ class DockerBuildIdentityTests(unittest.TestCase):
 import (
     "encoding/json"
     "os"
-    "github.com/Laisky/laisky-blog-graphql/library/crawlercapture"
+    "github.com/Laisky/laisky-blog-graphql/library/buildidentity"
 )
 func main() {
-    source, err := crawlercapture.ProcessSource("laisky-blog-graphql")
+    source, err := buildidentity.ProcessSource("laisky-blog-graphql")
     if err != nil { panic(err) }
     if err = json.NewEncoder(os.Stdout).Encode(source); err != nil { panic(err) }
 }

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,12 +77,20 @@ func TestWebFetchWorkerDiagnosticsActualLogsAndAlert(t *testing.T) {
 			ctx := context.WithValue(context.Background(), ctxkeys.Logger, logger.With(zap.String("authorization", "private-auth-canary"),
 				zap.String("url", "private-url-canary"), zap.String("remote_addr", "private-address-canary")))
 			ctx = context.WithValue(ctx, ctxkeys.RequestID, "0199c118-4229-7000-8000-000000000001")
-			result, err := tool.Handle(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"url": "https://1.1.1.1/private-target-canary?token=private-query-canary"}}})
+			originalURL := "https://1.1.1.1/private-target-canary?token=private-query-canary"
+			result, err := tool.Handle(ctx, mcp.CallToolRequest{Header: http.Header{"Authorization": {"Bearer private-header-canary"}},
+				Params: mcp.CallToolParams{Arguments: map[string]any{"url": originalURL,
+					"unknown_config": "private-config-canary", "unknown_input": "private-unknown-input-canary"}}})
 			require.NoError(t, err)
 			require.True(t, result.IsError)
 			require.Equal(t, 1, billingCalls)
 			require.Equal(t, 1, fetchCalls)
-			require.NotContains(t, local.String(), "canary")
+			forbidden := []string{"private-token-canary", "private-auth-canary", "private-auth-token-canary",
+				"private-worker-body-url-token-canary", "private-url-canary", "private-address-canary",
+				"private-header-canary", "private-config-canary", "private-unknown-input-canary"}
+			for _, value := range forbidden {
+				require.NotContains(t, local.String(), value)
+			}
 			require.Contains(t, local.String(), "unexpected EOF")
 			require.NotContains(t, result.Content[0].(mcp.TextContent).Text, "canary")
 			decoder := json.NewDecoder(&local)
@@ -95,13 +105,16 @@ func TestWebFetchWorkerDiagnosticsActualLogsAndAlert(t *testing.T) {
 			require.Len(t, failures, 1)
 			require.Equal(t, "graphql.laisky-graphql.mcp.web_fetch", failures[0]["logger"])
 			require.Equal(t, "0199c118-4229-7000-8000-000000000001", failures[0]["request_id"])
+			requireWebFetchChosenInput(t, failures[0], originalURL)
 			if tc.structured {
 				require.Equal(t, "conversion", failures[0]["worker_stage"])
 				require.Equal(t, "empty_markdown", failures[0]["worker_category"])
 			}
 			select {
 			case message := <-messages:
-				require.NotContains(t, message, "canary")
+				for _, value := range forbidden {
+					require.NotContains(t, message, value)
+				}
 				require.Contains(t, message, "unexpected EOF")
 				require.Contains(t, message, `"request_id":"0199c118-4229-7000-8000-000000000001"`)
 				if tc.structured {
@@ -133,13 +146,17 @@ func TestWebFetchBillingDiagnosticPrivacy(t *testing.T) {
 		}, func(context.Context, *rlibs.DB, string, string, bool) ([]byte, error) { fetchCalls++; return nil, nil })
 	require.NoError(t, err)
 	ctx := context.WithValue(context.Background(), ctxkeys.Logger, logger.With(zap.String("authorization", "private-auth-canary")))
-	result, err := tool.Handle(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"url": "https://1.1.1.1/private-target-canary?token=private-query-canary"}}})
+	originalURL := "https://1.1.1.1/private-target-canary?token=private-query-canary"
+	result, err := tool.Handle(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"url": originalURL}}})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 	require.Equal(t, 1, billingCalls)
 	require.Zero(t, fetchCalls, "denied billing never invokes the worker")
 	require.Equal(t, "billing check failed", result.Content[0].(mcp.TextContent).Text)
-	require.NotContains(t, local.String(), "canary")
+	requireWebFetchChosenInput(t, ordinaryWebFetchFailureJSON(t, local.Bytes()), originalURL)
+	for _, value := range []string{"private-token-canary", "private-auth-canary", "private-billing-body-token-canary"} {
+		require.NotContains(t, local.String(), value)
+	}
 	require.Contains(t, local.String(), "web_fetch billing denied")
 }
 
@@ -162,6 +179,43 @@ func TestWebFetchTypedBillingBodyIsNotDiagnosticText(t *testing.T) {
 	require.True(t, result.IsError)
 	require.Contains(t, local.String(), "HTTP 429")
 	require.Contains(t, local.String(), string(oneapi.BillingDenied))
-	require.NotContains(t, local.String(), "canary")
+	requireWebFetchChosenInput(t, ordinaryWebFetchFailureJSON(t, local.Bytes()), "https://1.1.1.1/doc")
+	require.NotContains(t, local.String(), "private-unlabeled-user-page-canary")
 	require.Equal(t, "private-unlabeled-user-page-canary", billing.Reason, "original billing result is untouched")
+}
+
+// ordinaryWebFetchFailureJSON reads the actual ordinary JSON sink and requires one failure event.
+func ordinaryWebFetchFailureJSON(t *testing.T, data []byte) map[string]any {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var failures []map[string]any
+	for {
+		var event map[string]any
+		if err := decoder.Decode(&event); err == io.EOF {
+			break
+		} else {
+			require.NoError(t, err)
+		}
+		if event["msg"] == "web_fetch failed" {
+			failures = append(failures, event)
+		}
+	}
+	require.Len(t, failures, 1)
+	return failures[0]
+}
+
+// requireWebFetchChosenInput distinguishes selected URL/options from unrelated secret data.
+func requireWebFetchChosenInput(t *testing.T, event map[string]any, originalURL string) {
+	t.Helper()
+	require.Equal(t, originalURL, event["original_url"])
+	require.Equal(t, strings.TrimSpace(originalURL), event["submitted_url"])
+	require.Equal(t, "utf8", event["original_url_encoding"])
+	require.Equal(t, "utf8", event["submitted_url_encoding"])
+	require.Equal(t, float64(len(originalURL)), event["original_url_byte_length"])
+	require.Equal(t, float64(len(strings.TrimSpace(originalURL))), event["submitted_url_byte_length"])
+	require.Equal(t, false, event["output_markdown_declared"])
+	require.Equal(t, "absent", event["declared_output_type"])
+	require.Contains(t, event, "declared_output_markdown")
+	require.Nil(t, event["declared_output_markdown"])
+	require.Equal(t, true, event["output_markdown"])
 }

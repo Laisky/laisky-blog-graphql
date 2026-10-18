@@ -20,9 +20,10 @@ Primary-document HTTP status, base MIME type, redirects and final scheme/hostnam
 are optional and must come from an actual worker observation. They are never
 inferred from empty_markdown, a duration, a missing receipt or HTTP metadata for
 a subresource. The caller separately selects only target scheme/hostname from its
-admitted URL. No full URL, path, query, userinfo, cookies, headers or page body is
-added to diagnostic fields. These are application-selected metadata components;
-there is no shared SDK policy change or filter evasion.
+admitted URL. No full URL or page body is added to this optional Redis object. Original
+selected input is separately emitted in ordinary failure logs and alerts.
+Arbitrary cookies, headers and API keys are not selected; there is no shared SDK
+policy change or filter evasion.
 
 Context is attributed only after the existing exact task ID, target URL, output
 mode and policy binding. Invalid optional envelopes are not attributed. Successful
@@ -42,56 +43,39 @@ unknown application fields and legacy public errors. These synthetic tests do no
 identify the historical target's upstream cause, prove real Telegram delivery or
 constitute production acceptance. No failed target is retried by this change.
 
-## Recoverable private failure logs
+## Original input in ordinary logs and alerts
 
-Authenticated failed web_fetch operations synchronously save an application-native
-JSON failure-log record. The original declared URL is retained before trimming;
-the submitted URL is separate. Only the declared output_markdown value and its
-presence are selected from arguments, with the effective boolean recorded
-separately. Missing, explicit null, false and true remain distinguishable.
-HTTP request headers, authorization context, provider API keys and unknown tool
-arguments are not serialized. Calls without a nonempty declared URL, authorization, or a valid output option,
-and successful operations, do not create caller failure records.
+Authenticated failed web_fetch operations emit the original decoded URL before
+trimming, submitted URL, declared output_markdown presence/value and effective
+boolean through the existing structured logger and alert hook. Missing,
+explicit null, false and true remain distinguishable. Successful operations
+retain their existing behavior. No task, HTTP request envelope, authorization
+context, provider API key or unknown argument is serialized.
 
-Each record identifies its emitting service, hostname and process run, request ID
-and the task ID when one was assigned. failure.stage means the phase observed by
-that emitter, not an assertion about an upstream root cause. A caller receiving
-crawler_failed records worker_result, while the public legacy stage remains
-render. Optional worker_stage/worker_code preserve the bound validated worker
-report; a worker records its actual phase/code without duplicating these fields. A caller failure before queue submission
-has no invented task ID. The paired worker failure log contains the exact byte
-sequence passed to the converter, rather than a later DOM reconstruction or only
-an HTML preview. Records join on the existing task identity; logging does not
-alter task/policy/output binding, public error codes or successful body release.
+Every failure entry identifies service, hostname, process run, public build
+provenance, request ID and task ID when assigned. The emitter's stage does not
+assert an upstream root cause. A caller observing crawler_failed records the
+worker-result phase while the public legacy stage remains render; the validated
+worker stage/code stay separate. A pre-submission failure invents no task ID.
+Worker logs provide the last successfully observed browser DOM snapshot, the
+single argument passed
+to conversion and available partial renderer response observations. An observed
+DOM snapshot can precede a later renderer failure and is not necessarily
+returned, final or stable. Correlation does not change task/policy/output binding, public errors or successful body
+release.
 
-The journal stores byte payloads reversibly as JSON base64, with explicit states,
-lengths and SHA256 checks. Atomic private-file publication and filesystem sync
-precede a complete reference. Partial, corrupt or failed writes are not reported complete; a final file left
-after an unsuccessful directory sync is reported durability_uncertain. A complete
-JSON record alone does not establish storage persistence. Journal code does not redact, truncate
-or delete payloads. Existing response budgets still apply to crawl behavior; they
-do not authorize silently clipping diagnostic bytes.
+Selected original values are not application previews and are not silently
+filtered, replaced or truncated. There is no application-managed journal,
+capture-directory environment setting, payload archive API, replay CLI or
+persistent mount requirement. Normal logging representation and delivery remain
+the responsibility of the existing logger/SDK/receiver/destination.
 
-CRAWLER_FAILURE_LOG_DIR selects an explicit private journal directory. Without
-it, the caller uses the process temporary directory's
-laisky-blog-graphql-crawler-failure-logs subdirectory (normally
-/tmp/laisky-blog-graphql-crawler-failure-logs), with private directory/file
-permissions. This default is container-local and can disappear
-on container replacement; it is not durable external storage or an indefinite
-retention guarantee. A persistent mount, operational retention/capacity policy
-and complete capture/retrieval acceptance require separate rollout qualification.
-No deployment configuration is changed by this source patch.
-
-Alerts put emitter identity, capture status/ID, digest and size first; the full
-path follows operation details. A long path therefore cannot push the bounded
-recovery identity out of a notification preview. The journal and complete path
-are not truncated.
-The current SDK diagnostic filter and Telegram length/queue/throttle behavior
-remain unsuitable as a full-payload archive. Recovery uses the private failure
-logs themselves, without re-fetching the target, reading provider configuration
-or making paid calls. Synthetic tests establish local capture and reference
-delivery; they do not establish production retention or recover already expired
-historical records. Missing old inputs are an instrumentation/retention gap.
+Complete delivery must be qualified through that actual path, including large,
+Unicode, empty/unobserved and binary inputs. A local HTTP test does not prove
+real Telegram delivery or backend retention. Existing transport constraints must
+remain observable; no application storage fallback circumvents them. Historical
+missing input is an instrumentation/retention gap, not evidence of a particular
+website cause and not information the user should have to reconstruct.
 
 ## Release build identity
 
@@ -111,25 +95,10 @@ metadata is outside the Docker context remains buildable with unavailable
 revision; it does not qualify as a revision-identified release. No revision is
 invented from environment configuration or a mutable image tag.
 
-## Required deployment gate before merging this change
+## Required delivery qualification
 
-The default branch normally publishes and deploys after merge. This source-only
-change must therefore stay Draft until an explicit approved persistent private
-journal configuration is prepared and qualified for both services. The default
-temporary directory is not production durability acceptance.
-
-The future deployment must provide a persistent private bind/directory through
-CRAWLER_FAILURE_LOG_DIR, owned by the actual service identity. The caller runs
-as UID 1000 and needs its own 0700 directory and 0600 journal files; the worker's
-separate identity/directory must be qualified independently. The filesystem must
-support non-overwriting hardlink publication, file sync and directory sync.
-These requirements do not authorize changing a shared directory's ownership or
-permissions.
-
-Capacity budget, monitoring, capture-write failure handling and the owner-managed
-retention policy must be explicit. The application performs no automatic deletion.
-Container recreation and application/image rollback must preserve existing
-archives. Qualification must prove a saved paired capture remains readable after
-the approved lifecycle transition, without fetching the failed URL or consulting
-provider configuration. No VPS/Compose/mount change or production persistence
-qualification was performed as part of this source implementation.
+The default branch normally publishes and deploys after merge. Keep the Draft
+until exact-source tests and production-path logging/alert fidelity are
+qualified. This application change adds no storage/configuration mounts or
+new listener. Independent logging changes remain owned and reviewed separately;
+do not describe successful source fixtures as complete production acceptance.

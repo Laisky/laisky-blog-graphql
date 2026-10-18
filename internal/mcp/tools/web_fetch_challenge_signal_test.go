@@ -101,8 +101,9 @@ func TestWebFetchChallengeSignalActualLogsAndAlert(t *testing.T) {
 			require.NoError(t, err)
 			ctx := context.WithValue(context.Background(), ctxkeys.RequestID, "0199c118-4229-7000-8000-000000000001")
 			ctx = context.WithValue(ctx, ctxkeys.Logger, logger.With(zap.String("authorization", "private-inherited-canary")))
+			originalURL := "https://1.1.1.1/private-target-canary?key=private-query-canary"
 			result, err := tool.Handle(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
-				"url": "https://1.1.1.1/private-target-canary?key=private-query-canary",
+				"url": originalURL, "unknown_config": "private-config-canary", "unknown_input": "private-unknown-input-canary",
 			}}})
 			require.NoError(t, err)
 			require.True(t, result.IsError)
@@ -110,7 +111,13 @@ func TestWebFetchChallengeSignalActualLogsAndAlert(t *testing.T) {
 			require.Equal(t, 1, fetchCalls)
 			require.NotContains(t, result.Content[0].(mcp.TextContent).Text, "canary")
 			localText := local.String()
-			require.NotContains(t, localText, "canary")
+			// Selected URL/query bytes remain; unrelated credentials and worker data do not.
+			forbidden := []string{"private-token-canary", "private-auth-canary", "private-body-canary",
+				"private-inherited-canary", "private-signal-canary", "private-task-canary", "private.invalid",
+				"private-config-canary", "private-unknown-input-canary"}
+			for _, value := range forbidden {
+				require.NotContains(t, localText, value)
+			}
 			decoder := json.NewDecoder(&local)
 			var failure map[string]any
 			count := 0
@@ -124,6 +131,12 @@ func TestWebFetchChallengeSignalActualLogsAndAlert(t *testing.T) {
 			}
 			require.Equal(t, 1, count)
 			require.Equal(t, "crawler_failed", failure["error_code"])
+			requireWebFetchChosenInput(t, failure, originalURL)
+			if tc.task == "0199c118-4229-7000-8000-000000000002" {
+				require.Equal(t, tc.task, failure["task_id"])
+			} else {
+				require.NotContains(t, failure, "task_id", "invalid correlation must stay omitted by the diagnostic projection")
+			}
 			if tc.local {
 				require.Equal(t, tc.signal, failure["worker_signal"])
 			} else {
@@ -131,7 +144,9 @@ func TestWebFetchChallengeSignalActualLogsAndAlert(t *testing.T) {
 			}
 			select {
 			case message := <-messages:
-				require.NotContains(t, message, "canary")
+				for _, value := range forbidden {
+					require.NotContains(t, message, value)
+				}
 				require.Contains(t, message, "\"error_code\":\"crawler_failed\"")
 				if tc.remote {
 					require.Contains(t, message, "\"worker_signal\":\""+tc.signal+"\"")

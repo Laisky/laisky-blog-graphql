@@ -2,124 +2,122 @@ package tools
 
 import (
 	"strings"
+	"unicode/utf8"
 
-	"github.com/Laisky/errors/v2"
 	"github.com/Laisky/zap"
 	"github.com/Laisky/zap/zapcore"
 	mcp "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/Laisky/laisky-blog-graphql/library/crawlercapture"
+	"github.com/Laisky/laisky-blog-graphql/library/buildidentity"
 	"github.com/Laisky/laisky-blog-graphql/library/search"
 )
 
 const webFetchCaptureService = "laisky-blog-graphql"
 
-// webFetchCapture retains declared crawl input only. It never serializes the
-// request envelope, headers, context, provider key or unknown tool arguments.
+// webFetchCapture keeps only declared input in memory until an ordinary failure
+// log event. It never serializes the request envelope, headers or provider key.
 type webFetchCapture struct {
-	record         crawlercapture.Record
-	preparationErr error
-	attempted      bool
+	originalURL            string
+	submittedURL           string
+	outputMarkdown         bool
+	outputMarkdownDeclared bool
+	declaredOutputMarkdown *bool
+	declaredOutputType     string
+	attempted              bool
 }
 
-// newWebFetchCapture snapshots only the declared inputs without normalizing their bytes.
-func newWebFetchCapture(req mcp.CallToolRequest, originalURL, requestID string) *webFetchCapture {
-	request := crawlercapture.Request{
-		OriginalURL:            crawlercapture.CapturedString(originalURL),
-		SubmittedURL:           crawlercapture.CapturedString(strings.TrimSpace(originalURL)),
-		OutputMarkdown:         true,
-		OriginalOutputMarkdown: crawlercapture.NotReached(),
+// newWebFetchCapture preserves input before normalization. The operation logger
+// already owns request_id, so this helper does not add a duplicate context key.
+func newWebFetchCapture(req mcp.CallToolRequest, originalURL, _ string) *webFetchCapture {
+	capture := &webFetchCapture{
+		originalURL: originalURL, submittedURL: strings.TrimSpace(originalURL),
+		outputMarkdown: true, declaredOutputType: "absent",
 	}
 	value, present := req.GetArguments()["output_markdown"]
-	request.OutputMarkdownDeclared = present
-	var preparationErr error
+	capture.outputMarkdownDeclared = present
 	if present {
-		// This constructor runs only after OptionalBool accepted a boolean or null.
-		// Encode that declared value directly without traversing unknown arguments
-		// or invoking arbitrary serializers from an injected request object.
-		raw := []byte("null")
-		if declared, ok := value.(bool); ok {
-			request.DeclaredOutputMarkdown = &declared
-			request.OutputMarkdown = declared
-			if declared {
-				raw = []byte("true")
-			} else {
-				raw = []byte("false")
-			}
-		} else if value != nil {
-			preparationErr = errors.New("declared output option was not resolved")
+		switch value := value.(type) {
+		case nil:
+			capture.declaredOutputType = "null"
+		case bool:
+			capture.declaredOutputType = "bool"
+			capture.declaredOutputMarkdown = &value
+			capture.outputMarkdown = value
+		default:
+			// Handle rejects other types before this constructor. Never traverse
+			// an injected unsupported object or invoke an arbitrary serializer.
+			capture.declaredOutputType = "unsupported"
 		}
-		request.OriginalOutputMarkdown = crawlercapture.Captured(raw)
 	}
-
-	return &webFetchCapture{record: crawlercapture.Record{
-		Correlation: crawlercapture.Correlation{RequestID: requestID},
-		Request:     request,
-		Converter:   crawlercapture.Converter{Input: crawlercapture.NotReached()},
-	}, preparationErr: preparationErr}
+	return capture
 }
 
-// writeFailure saves once before emitting a reference and preserves the original operation outcome.
+// writeFailure selects ordinary log fields once; it performs no storage or
+// delivery operation and never changes the original crawl outcome.
 func (capture *webFetchCapture) writeFailure(diagnostic search.FetchFailureDiagnostic, details ...zapcore.Field) []zapcore.Field {
 	capture.attempted = true
-	capture.record.Correlation.TaskID = diagnostic.TaskID
-	capture.record.Failure = crawlercapture.Failure{Stage: diagnostic.Stage, Code: diagnostic.ErrorCode}
-	if diagnostic.ErrorCode == "crawler_failed" {
-		capture.record.Failure.Stage = "worker_result"
-		if diagnostic.TaskID != "" {
-			capture.record.Failure.WorkerStage = diagnostic.WorkerStage
-			capture.record.Failure.WorkerCode = diagnostic.WorkerCategory
+	source, err := buildidentity.ProcessSource(webFetchCaptureService)
+	fields := captureSourceFields(source)
+	if err != nil {
+		fields = append(fields, zap.NamedError("origin_identity_error", err))
+	}
+	for _, field := range []zapcore.Field{
+		zap.String("error_code", diagnostic.ErrorCode), zap.String("stage", diagnostic.Stage),
+	} {
+		if !captureHasField(details, field.Key) {
+			fields = append(fields, field)
 		}
 	}
-	if capture.preparationErr != nil {
-		return append(captureInitializationFailure("input_encoding_failed", capture.preparationErr), details...)
-	}
-	journal, err := crawlercapture.JournalFromEnvironment(webFetchCaptureService)
-	if err != nil {
-		return append(captureInitializationFailure("write_failed", err), details...)
-	}
-	reference, err := journal.Write(capture.record)
-	reference.Source = journal.Source()
-	return captureReferenceFields(reference, err, details...)
-}
-
-// captureSourceFields reports the same emitter identity as the private record.
-func captureSourceFields(source crawlercapture.Source) []zapcore.Field {
-	return []zapcore.Field{
-		zap.String("origin_service", source.Service),
-		zap.String("origin_hostname", source.Hostname),
-		zap.String("origin_process_run_id", source.ProcessRunID),
-	}
-}
-
-// captureInitializationFailure makes an unavailable capture explicit without
-// pretending that an incomplete or unwritten record has a retrievable digest.
-func captureInitializationFailure(status string, err error) []zapcore.Field {
-	source, sourceErr := crawlercapture.ProcessSource(webFetchCaptureService)
-	fields := captureSourceFields(source)
-	fields = append(fields, zap.String("failure_capture_status", status), zap.NamedError("failure_capture_error", err))
-	if sourceErr != nil {
-		fields = append(fields, zap.NamedError("failure_capture_source_error", sourceErr))
-	}
-	return fields
-}
-
-// captureReferenceFields puts bounded recovery identity before details and the
-// complete path last; a downstream notification preview cannot hide the digest.
-func captureReferenceFields(reference crawlercapture.Reference, err error, details ...zapcore.Field) []zapcore.Field {
-	fields := captureSourceFields(reference.Source)
-	fields = append(fields, zap.String("failure_capture_status", reference.Status),
-		zap.String("failure_capture_id", reference.CaptureID))
-	if reference.SHA256 != "" {
-		fields = append(fields, zap.String("failure_capture_sha256", reference.SHA256),
-			zap.Int64("failure_capture_bytes", reference.Bytes))
+	if !captureHasField(details, "caller_phase") {
+		phase := diagnostic.Stage
+		if diagnostic.ErrorCode == "crawler_failed" {
+			phase = "worker_result"
+		}
+		fields = append(fields, zap.String("caller_phase", phase))
 	}
 	fields = append(fields, details...)
-	if err != nil {
-		fields = append(fields, zap.NamedError("failure_capture_error", err))
+	fields = append(fields, zap.Bool("output_markdown_declared", capture.outputMarkdownDeclared),
+		zap.String("declared_output_type", capture.declaredOutputType),
+		zap.Any("declared_output_markdown", capture.declaredOutputMarkdown),
+		zap.Bool("output_markdown", capture.outputMarkdown))
+	fields = append(fields, captureStringFields("original_url", capture.originalURL)...)
+	return append(fields, captureStringFields("submitted_url", capture.submittedURL)...)
+}
+
+// captureSourceFields selects only public source/process identity, without reading configuration.
+func captureSourceFields(source buildidentity.Source) []zapcore.Field {
+	fields := []zapcore.Field{zap.String("origin_service", webFetchCaptureService)}
+	for _, field := range []struct{ key, value string }{
+		{"origin_hostname", source.Hostname}, {"origin_process_run_id", source.ProcessRunID},
+		{"origin_revision", source.Revision}, {"origin_go_version", source.GoVersion},
+		{"origin_module_version", source.ModuleVersion},
+	} {
+		if field.value != "" {
+			fields = append(fields, zap.String(field.key, field.value))
+		}
 	}
-	if reference.Path != "" {
-		fields = append(fields, zap.String("failure_capture_path", reference.Path))
+	if source.Revision != "" {
+		fields = append(fields, zap.Bool("origin_modified", source.Modified))
 	}
 	return fields
+}
+
+// captureStringFields preserves valid text directly and uses Zap's standard
+// binary field for invalid UTF-8 instead of silently repairing its bytes.
+func captureStringFields(key, value string) []zapcore.Field {
+	fields := []zapcore.Field{zap.Int(key+"_byte_length", len(value))}
+	if utf8.ValidString(value) {
+		return append(fields, zap.String(key+"_encoding", "utf8"), zap.String(key, value))
+	}
+	return append(fields, zap.String(key+"_encoding", "binary"), zap.Binary(key, []byte(value)))
+}
+
+// captureHasField avoids duplicate diagnostic keys while retaining existing authored context.
+func captureHasField(fields []zapcore.Field, key string) bool {
+	for _, field := range fields {
+		if field.Key == key {
+			return true
+		}
+	}
+	return false
 }

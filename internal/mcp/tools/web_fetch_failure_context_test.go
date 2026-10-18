@@ -85,7 +85,10 @@ func TestCrawlerFailureContextActualDefaultAlert(t *testing.T) {
 		})
 	require.NoError(t, err)
 	ctx := context.WithValue(context.Background(), ctxkeys.RequestID, "0199c118-4229-7000-8000-000000000001")
-	result, err := tool.Handle(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"url": "https://1.1.1.1/private-path-canary?token=private-query-canary"}}})
+	originalURL := "https://1.1.1.1/private-path-canary?token=private-query-canary"
+	result, err := tool.Handle(ctx, mcp.CallToolRequest{Header: http.Header{"Authorization": {"Bearer private-header-canary"}},
+		Params: mcp.CallToolParams{Arguments: map[string]any{"url": originalURL,
+			"unknown_config": "private-config-canary", "unknown_input": "private-unknown-input-canary"}}})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 	require.Equal(t, "fetch failed: crawler_failed", result.Content[0].(mcp.TextContent).Text)
@@ -108,6 +111,11 @@ func TestCrawlerFailureContextActualDefaultAlert(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, message, fmt.Sprintf("%q:%s", key, encoded))
 	}
-	require.NotContains(t, message, "canary")
-	require.NotContains(t, local.String(), "canary")
+	localText := local.String()
+	requireWebFetchChosenInput(t, ordinaryWebFetchFailureJSON(t, local.Bytes()), originalURL)
+	for _, value := range []string{"synthetic-local-billing-key", "synthetic-alert-token", "private-header-canary",
+		"private-config-canary", "private-unknown-input-canary"} {
+		require.NotContains(t, localText, value)
+		require.NotContains(t, message, value)
+	}
 }

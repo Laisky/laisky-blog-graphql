@@ -26,28 +26,26 @@ Primary references:
 See [the application contract](../manual/crawler_failure_context.md) for binding,
 optional observations, public-error compatibility and synthetic-test limits.
 
-## Byte preservation and private journal primitives
+## Original input through ordinary structured logs and alerts
 
-The caller retains the original RequireString URL bytes before normalization.
-It records the presence and actual valid boolean/null output_markdown value,
-encoded as canonical JSON, separately from the resolved boolean. It does not
-traverse or serialize unknown arguments or the HTTP request envelope. JSON byte
-fields use a reversible base64 representation; this is an explicit private-record
-codec, not an attempt to bypass alert filtering.
+The caller selects the decoded RequireString URL before trimming, the submitted
+URL, declared boolean/null output option and resolved boolean. It does not
+traverse unknown arguments or serialize the HTTP request envelope, task/API key,
+authorization context or process configuration. Source service, hostname,
+process run and public build metadata identify the emitter; the task ID is
+present only after assignment.
 
-The standard library documents raw JSON retention, private temporary-file
-creation, and file synchronization. Those primitives support atomic publication,
-but do not by themselves guarantee persistent-container storage, delivery through
-an asynchronous collector, or an unlimited retention period.
+Full selected input is emitted through the existing log and alert path without
+an application preview, replacement, filter or custom payload codec. It is not
+written to an application archive or sent through a new API. Worker entries
+supply the exact converter argument and observed rendered/partial response data;
+the existing task identity joins the two application sources.
 
-- [encoding/json.RawMessage](https://pkg.go.dev/encoding/json#RawMessage)
-- [os.CreateTemp](https://pkg.go.dev/os#CreateTemp)
-- [os.File.Sync](https://pkg.go.dev/os#File.Sync)
-
-Test-process isolation sets only CRAWLER_FAILURE_LOG_DIR to a newly owned
-os.MkdirTemp directory. Focused test leaves are explicitly chmodded to 0700;
-tests do not assume t.TempDir's leaf mode or relax the production private-path
-check. Cleanup is confined to these newly owned synthetic directories.
+The application fixture is only one fidelity boundary. Existing SDK, receiver,
+queue and destination size/delivery behavior must be qualified by their owners;
+the application must not silently work around a loss with separate storage.
+Missing old input remains an instrumentation/retention gap, not a request for the
+user to reconstruct information that the logs should supply.
 
 ## Container build provenance
 
@@ -70,5 +68,7 @@ configuration is read by the fixture Git operations.
 - [Go build and -buildvcs](https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies)
 - [runtime/debug.ReadBuildInfo](https://pkg.go.dev/runtime/debug#ReadBuildInfo)
 
-These source/build controls do not qualify the persistent journal mount,
-operational retention, cross-UID private export, or a production deployment.
+These source/build controls qualify public binary provenance only. They do not
+establish complete logging/alert delivery, backend retention or a production
+deployment. The memory-only library/buildidentity package has no storage or
+payload responsibilities.
