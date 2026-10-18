@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Laisky/errors/v2"
@@ -60,16 +62,15 @@ var apiCMD = &cobra.Command{
 	Short: "api",
 	Long:  `graphql API service for laisky`,
 	Args:  gcmd.NoExtraArgs,
-	PreRun: func(cmd *cobra.Command, args []string) {
-		ctx := context.Background()
-		if err := initialize(ctx, cmd); err != nil {
-			log.Logger.Panic("init", zap.Error(err))
-		}
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := runAPI(); err != nil {
-			log.Logger.Panic("run api", zap.Error(err))
-		}
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return runAPIWithLogging(ctx, func(ctx context.Context) error {
+			if err := initialize(ctx, cmd); err != nil {
+				return err
+			}
+			return runAPI(ctx)
+		})
 	},
 }
 
@@ -79,8 +80,7 @@ func init() {
 }
 
 //nolint:gocognit,maintidx // large but straightforward initialization sequence
-func runAPI() error {
-	ctx := context.Background()
+func runAPI(ctx context.Context) error {
 	logger := log.Logger.Named("api")
 	startTime := time.Now()
 	if err := validateStartupConfig(); err != nil {
@@ -629,8 +629,7 @@ func runAPI() error {
 		zap.Duration("total_duration", time.Since(startTime)))
 
 	resolver := web.NewResolver(args)
-	web.RunServer(gconfig.Shared.GetString("listen"), resolver)
-	return nil
+	return web.RunServerContext(ctx, gconfig.Shared.GetString("listen"), resolver)
 }
 
 // buildFileCredentialProtector validates and constructs the FileIO credential protector.
