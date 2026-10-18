@@ -110,7 +110,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [check_skip, build_latest]
-    if: needs.check_skip.outputs.should_skip != 'true' && !contains(github.event.head_commit.message, '[publish only]')
+    if: needs.check_skip.outputs.should_skip != 'true'
     concurrency:
       group: deploy-b1
       cancel-in-progress: false
@@ -122,6 +122,7 @@ jobs:
           username: ${{ secrets.TARGET_HOST_USERNAME }}
           password: ${{ secrets.TARGET_HOST_PASSWORD }}
           port: ${{ secrets.TARGET_HOST_SSH_PORT }}
+          command_timeout: 15m
           script: |
             bash -se <<'DEPLOY'
             set -euo pipefail
@@ -132,6 +133,8 @@ jobs:
 
             # Fail before changing image tags or containers; never fall back to v1.
             docker compose version
+            python3 --version >/dev/null
+            timeout --version >/dev/null
             "${compose[@]}" config --quiet
             previous_container=$("${compose[@]}" ps -q graphql)
             previous_image=
@@ -141,18 +144,101 @@ jobs:
               docker tag "$previous_image" "$rollback_image"
             fi
 
-            docker pull "$image"
+            timeout 300 docker pull "$image"
             expected_image=$(docker image inspect --format '{{.Id}}' "$image")
 
-            verify_image() {
-              local container actual running
+            verify_ready() {
+              local container current actual running address
               container=$("${compose[@]}" ps -q graphql) || return $?
               [[ -n "$container" && "$container" != *$'\n'* ]] || return 1
               actual=$(docker inspect --format '{{.Image}}' "$container") || return $?
               running=$(docker inspect --format '{{.State.Running}}' "$container") || return $?
-              [[ "$actual" == "$1" && "$running" == true ]]
-            }
+              [[ "$actual" == "$1" && "$running" == true ]] || return 1
+              # Probe this verified container directly, never a public proxy or the old container.
+              address=$(docker inspect --format '{{(index .NetworkSettings.Networks "vps_default").IPAddress}}' "$container") || return $?
+              python3 - "$address" <<'READINESS' || return $?
+            import http.client
+            import ipaddress
+            import json
+            import signal
+            import sys
+            import time
+            import urllib.error
+            import urllib.request
 
+            budget_seconds = 60
+            deadline = time.monotonic() + budget_seconds
+            version = "2026-07-28"
+            url = "http://" + str(ipaddress.IPv4Address(sys.argv[1])) + ":17800/.well-known/mcp"
+
+            def expired(signum, frame):
+                raise TimeoutError("readiness deadline")
+
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, request, fp, code, message, headers, target):
+                    return None
+
+            def require(condition):
+                if not condition:
+                    raise ValueError("invalid MCP readiness response")
+
+            signal.signal(signal.SIGALRM, expired)
+            signal.setitimer(signal.ITIMER_REAL, budget_seconds)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+            try:
+                for attempt in range(31):
+                    try:
+                        for method in ("server/discover", "tools/list"):
+                            remaining = deadline - time.monotonic()
+                            require(remaining > 0)
+                            payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": {"_meta": {
+                                "io.modelcontextprotocol/protocolVersion": version,
+                                "io.modelcontextprotocol/clientInfo": {"name": "release-check", "version": "1"},
+                                "io.modelcontextprotocol/clientCapabilities": {},
+                            }}}
+                            request = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={
+                                "Content-Type": "application/json",
+                                "Accept": "application/json, text/event-stream",
+                                "Mcp-Protocol-Version": version,
+                                "Mcp-Method": method,
+                            })
+                            with opener.open(request, timeout=min(5, remaining)) as response:
+                                require(response.status == 200)
+                                require(response.headers.get_content_type() == "application/json")
+                                require("Mcp-Session-Id" not in response.headers)
+                                raw = response.read(1024 * 1024 + 1)
+                            require(len(raw) <= 1024 * 1024)
+                            reply = json.loads(raw)
+                            require(isinstance(reply, dict) and reply.get("jsonrpc") == "2.0")
+                            require(type(reply.get("id")) is int and reply["id"] == 1 and "error" not in reply)
+                            result = reply.get("result")
+                            require(isinstance(result, dict) and result.get("resultType") == "complete")
+                            if method == "server/discover":
+                                versions = result.get("supportedVersions")
+                                require(isinstance(versions, list) and version in versions)
+                                name = result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
+                                require(isinstance(name, str) and bool(name.strip()))
+                            else:
+                                tools = result.get("tools")
+                                require(isinstance(tools, list) and all(isinstance(tool, dict) for tool in tools))
+                                require({"web_fetch", "web_search"} <= {tool.get("name") for tool in tools})
+                                require(result.get("cacheScope") == "private")
+                        break
+                    except (OSError, ValueError, KeyError, TypeError, AttributeError, http.client.HTTPException):
+                        remaining = deadline - time.monotonic()
+                        if attempt == 30 or remaining <= 0:
+                            print("MCP readiness failed.", file=sys.stderr)
+                            sys.exit(1)
+                        time.sleep(min(2, remaining))
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+            READINESS
+              # Fail if Compose selected another container, or this image/process changed during probing.
+              current=$("${compose[@]}" ps -q graphql) || return $?
+              actual=$(docker inspect --format '{{.Image}}' "$container") || return $?
+              running=$(docker inspect --format '{{.State.Running}}' "$container") || return $?
+              [[ "$current" == "$container" && "$actual" == "$1" && "$running" == true ]]
+            }
             rollback() {
               local deploy_status=$1 rollback_status
               echo "Deployment failed (exit $deploy_status)." >&2
@@ -160,7 +246,7 @@ jobs:
                 echo 'No previous container; automatic rollback is unavailable.' >&2
               elif docker tag "$previous_image" "$image" &&
                 "${compose[@]}" up -d --no-deps --pull never --force-recreate --wait --wait-timeout 120 graphql &&
-                verify_image "$previous_image"; then
+                verify_ready "$previous_image"; then
                 echo "Rollback restored the previous image; retained as $rollback_image." >&2
               else
                 rollback_status=$?
@@ -171,9 +257,9 @@ jobs:
               exit "$deploy_status"
             }
 
-            # Recreate only GraphQL and verify the locally pulled image, without another pull.
+            # Recreate only GraphQL; require the pulled image and its MCP metadata readiness.
             if "${compose[@]}" up -d --no-deps --pull never --force-recreate --wait --wait-timeout 120 graphql; then
-              if verify_image "$expected_image"; then
+              if verify_ready "$expected_image"; then
                 "${compose[@]}" ps graphql
               else
                 rollback "$?"
