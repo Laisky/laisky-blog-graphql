@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Laisky/errors/v2"
 	"go.opentelemetry.io/otel/attribute"
@@ -38,15 +39,14 @@ type otlpConfig struct {
 
 // otlpRuntime owns one private SDK and serializes shutdown with callback admission.
 type otlpRuntime struct {
-	config                    otlpConfig
-	token                     string
-	provider                  *sdklog.LoggerProvider
-	logger                    otellog.Logger
-	emitted, exported, failed atomic.Uint64
-	admission                 sync.RWMutex
-	stopped                   bool
-	shutdownOnce              sync.Once
-	shutdownErr               error
+	config                              otlpConfig
+	provider                            *sdklog.LoggerProvider
+	logger                              otellog.Logger
+	emitted, exported, failed, rejected atomic.Uint64
+	admission                           sync.RWMutex
+	stopped                             bool
+	shutdownOnce                        sync.Once
+	shutdownErr                         error
 }
 
 var (
@@ -58,7 +58,7 @@ var (
 // OTLPStats describes application-side export outcomes, never durable collector delivery.
 // Unresolved includes queued, in-flight and overflow-lost records; it is not a drop counter.
 type OTLPStats struct {
-	Emitted, ExportedRecords, FailedExportRecords, Unresolved uint64
+	Emitted, ExportedRecords, FailedExportRecords, Unresolved, Rejected uint64
 }
 
 // SnapshotOTLP returns process-local counters without request data or credentials.
@@ -80,7 +80,7 @@ func (r *otlpRuntime) stats() OTLPStats {
 	if emitted > resolved {
 		unresolved = emitted - resolved
 	}
-	return OTLPStats{emitted, exported, failed, unresolved}
+	return OTLPStats{Emitted: emitted, ExportedRecords: exported, FailedExportRecords: failed, Unresolved: unresolved, Rejected: r.rejected.Load()}
 }
 
 // ConfigureOTLP enables the optional private log branch once. Empty endpoint leaves stdout unchanged.
@@ -126,7 +126,7 @@ func newOTLPRuntime(ctx context.Context, config otlpConfig) (*otlpRuntime, error
 	if endpoint.Scheme != "https" && !insecure {
 		return nil, errors.New("application OTLP requires HTTPS")
 	}
-	if !validResourceLabel(config.host, 128) || !validResourceLabel(config.environment, 64) {
+	if !validResourceLabel(config.host) || !validResourceLabel(config.environment) {
 		return nil, errors.New("invalid application OTLP resource identity")
 	}
 	if err := validateOTLPResourceEnvironment(); err != nil {
@@ -184,7 +184,7 @@ func newOTLPRuntime(ctx context.Context, config otlpConfig) (*otlpRuntime, error
 		transport.CloseIdleConnections()
 		return nil, errors.New("cannot initialize application OTLP exporter")
 	}
-	runtime := &otlpRuntime{config: config, token: tokenText}
+	runtime := &otlpRuntime{config: config}
 	counted := &privateExporter{delegate: exporter, runtime: runtime, transport: transport}
 	processor := sdklog.NewBatchProcessor(counted,
 		sdklog.WithMaxQueueSize(config.queueSize), sdklog.WithExportMaxBatchSize(config.batchSize),
@@ -194,24 +194,13 @@ func newOTLPRuntime(ctx context.Context, config otlpConfig) (*otlpRuntime, error
 		sdklog.WithResource(resource.NewSchemaless(attribute.String("service.name", "graphql"),
 			attribute.String("service.namespace", "laisky"), attribute.String("host.name", config.host),
 			attribute.String("deployment.environment.name", config.environment))),
-		sdklog.WithAttributeCountLimit(otlpMaxAttributes), sdklog.WithAttributeValueLengthLimit(otlpMaxStringBytes))
+		sdklog.WithAttributeCountLimit(-1), sdklog.WithAttributeValueLengthLimit(-1))
 	runtime.logger = runtime.provider.Logger("github.com/Laisky/laisky-blog-graphql/library/log")
 	return runtime, nil
 }
 
-// validResourceLabel permits bounded operational labels rather than arbitrary text.
-func validResourceLabel(value string, limit int) bool {
-	if value == "" || len(value) > limit {
-		return false
-	}
-	for _, ch := range value {
-		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || strings.ContainsRune("._-", ch) {
-			continue
-		}
-		return false
-	}
-	return true
-}
+// validResourceLabel requires an explicitly chosen value representable by OTLP strings.
+func validResourceLabel(value string) bool { return value != "" && utf8.ValidString(value) }
 
 // readBoundedOTLPFile reads a regular bounded file without exposing its path or bytes in errors.
 func readBoundedOTLPFile(path string, limit int64) (data []byte, readErr error) {
@@ -286,25 +275,17 @@ func (e *privateExporter) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// validateOTLPResourceEnvironment prevents SDK resource merging and malformed-input diagnostics
-// from exporting inherited private metadata. The four permitted identities are overridden explicitly.
+// validateOTLPResourceEnvironment rejects malformed resource syntax before SDK diagnostics.
+// Application-selected custom attributes remain intact; explicit application identity wins on merge.
 func validateOTLPResourceEnvironment() error {
 	raw := strings.TrimSpace(os.Getenv("OTEL_RESOURCE_ATTRIBUTES"))
-	if len(raw) > 16*1024 {
-		return errors.New("unexpected application OTLP resource environment")
-	}
 	if raw == "" {
 		return nil
 	}
 	for _, pair := range strings.Split(raw, ",") {
 		key, value, ok := strings.Cut(pair, "=")
-		if !ok {
+		if !ok || strings.TrimSpace(key) == "" || !utf8.ValidString(key) || !utf8.ValidString(value) {
 			return errors.New("invalid application OTLP resource environment")
-		}
-		switch strings.TrimSpace(key) {
-		case "service.name", "service.namespace", "host.name", "deployment.environment.name":
-		default:
-			return errors.New("unexpected application OTLP resource environment")
 		}
 		if _, err := url.PathUnescape(strings.TrimSpace(value)); err != nil {
 			return errors.New("invalid application OTLP resource environment")

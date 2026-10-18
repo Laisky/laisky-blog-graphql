@@ -6,7 +6,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -108,64 +107,6 @@ func stopOTLP(t *testing.T, runtime *otlpRuntime) {
 	require.NoError(t, runtime.shutdown(ctx))
 }
 
-// forbiddenOTLPObject supplies isolated synthetic logging test data.
-type forbiddenOTLPObject struct{}
-
-// MarshalLogObject supports isolated synthetic logging acceptance.
-func (forbiddenOTLPObject) MarshalLogObject(zapcore.ObjectEncoder) error {
-	panic("remote marshaler must not run")
-}
-
-// TestOTLPPrivacyBeforeSerialization verifies the isolated logging lifecycle contract.
-func TestOTLPPrivacyBeforeSerialization(t *testing.T) {
-	capture := new(otlpCapture)
-	runtime, err := newOTLPRuntime(context.Background(), otlpFixture(t, capture))
-	require.NoError(t, err)
-	runtime.emit(zapcore.Entry{Level: zapcore.ErrorLevel, Time: time.Now(),
-		Message:    "request failed password=SYNTHETIC_MESSAGE_SECRET; status=503",
-		LoggerName: "worker token=SYNTHETIC_LOGGER_SECRET", Stack: "SYNTHETIC_STACK_SECRET"},
-		[]zapcore.Field{
-			zap.String("url", "https://user:SYNTHETIC_URL_SECRET@example.invalid/path?token=SYNTHETIC_QUERY_SECRET"),
-			zap.String("request", "SYNTHETIC_REQUEST_SECRET"),
-			zap.String("current_input", "SYNTHETIC_TENANT_SECRET"),
-			zap.String("apiKey", "SYNTHETIC_API_SECRET"), zap.String("authorization", "Bearer SYNTHETIC_AUTH_SECRET"),
-			zap.String("status", "degraded"), zap.Int("status_code", 503), zap.Int("attempts", 2),
-			zap.Object("duration_ms", forbiddenOTLPObject{}), zap.Any("unknown", forbiddenOTLPObject{}),
-			zap.Float64("duration_ms", 12.5), zap.Bool("body_truncated", true),
-			zap.String("details", "fetch https://user:SYNTHETIC_URL_SECRET@example.invalid/private?token=SYNTHETIC_QUERY_SECRET failed: unexpected EOF"),
-			zap.String("known_token_echo", "collector rejected "+syntheticOTLPToken),
-			zap.Error(io.EOF),
-			zap.NamedError("upstream_error", fmt.Errorf("provider rejected api_key=SYNTHETIC_ERROR_SECRET; HTTP 503; response body: SYNTHETIC_ERROR_BODY")),
-			zap.NamedError("diagnostic_error", panickingOTLPError{}),
-			zap.Float64("latency_ms", math.NaN()),
-			zap.Uint64("response_bytes", math.MaxUint64), zap.Int("retry_count", -1), zap.Int("attempts", 99),
-		})
-	stopOTLP(t, runtime)
-	records := capture.records()
-	require.Len(t, records, 1)
-	encoded, err := protojson.Marshal(records[0])
-	require.NoError(t, err)
-	require.NotContains(t, string(encoded), "SYNTHETIC_")
-	require.NotContains(t, string(encoded), syntheticOTLPToken)
-	require.Contains(t, records[0].Body.GetStringValue(), "request failed")
-	require.Contains(t, records[0].Body.GetStringValue(), "status=503")
-	require.Equal(t, logpb.SeverityNumber_SEVERITY_NUMBER_ERROR, records[0].SeverityNumber)
-	attrs := map[string]*commonpb.AnyValue{}
-	for _, a := range records[0].Attributes {
-		attrs[a.Key] = a.Value
-	}
-	require.Equal(t, "degraded", attrs["status"].GetStringValue())
-	require.Equal(t, int64(503), attrs["status_code"].GetIntValue())
-	require.Equal(t, int64(2), attrs["attempts"].GetIntValue())
-	require.Equal(t, 12.5, attrs["duration_ms"].GetDoubleValue())
-	require.Equal(t, "EOF", attrs["error"].GetStringValue())
-	require.Contains(t, attrs["upstream_error"].GetStringValue(), "HTTP 503")
-	require.Equal(t, "[error text unavailable]", attrs["diagnostic_error"].GetStringValue())
-	require.Contains(t, attrs["details"].GetStringValue(), "unexpected EOF")
-	require.Greater(t, attrs["app.log.attributes_dropped"].GetIntValue(), int64(0))
-	require.Equal(t, OTLPStats{Emitted: 1, ExportedRecords: 1}, runtime.stats())
-}
-
 // TestOTLPInitCapturedChildrenAndConfigureIdempotence verifies the isolated logging lifecycle contract.
 func TestOTLPInitCapturedChildrenAndConfigureIdempotence(t *testing.T) {
 	configureOTLPMu.Lock()
@@ -196,7 +137,7 @@ func TestOTLPInitCapturedChildrenAndConfigureIdempotence(t *testing.T) {
 	var stdout bytes.Buffer
 	base, err := logSDK.NewWithName("graphql", logSDK.LevelInfo, zap.WrapCore(func(zapcore.Core) zapcore.Core {
 		return zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&stdout), zapcore.InfoLevel)
-	}), zap.HooksWithFields(privateOTLPHook))
+	}), privateOTLPOption())
 	require.NoError(t, err)
 	captured := base.Named("captured-before-provider").With(zap.Int("attempts", 1), zap.String("request_body", "SYNTHETIC_BOUND_SECRET"))
 	captured.Info("before-provider")
@@ -232,7 +173,7 @@ func TestOTLPRetryAndProcessRestartBoundary(t *testing.T) {
 	config := otlpFixture(t, capture)
 	runtime, err := newOTLPRuntime(context.Background(), config)
 	require.NoError(t, err)
-	runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, []zapcore.Field{zap.Int("attempt", 1)})
+	require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, []zapcore.Field{zap.Int("attempt", 1)}))
 	require.Eventually(t, func() bool { return capture.attempts.Load() >= 1 }, time.Second, 5*time.Millisecond)
 	capture.fail.Store(false)
 	require.Eventually(t, func() bool { return len(capture.records()) == 1 }, time.Second, 5*time.Millisecond)
@@ -241,7 +182,7 @@ func TestOTLPRetryAndProcessRestartBoundary(t *testing.T) {
 	// only collector-acknowledged records have crossed the durable boundary.
 	runtime, err = newOTLPRuntime(context.Background(), config)
 	require.NoError(t, err)
-	runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, []zapcore.Field{zap.Int("attempt", 2)})
+	require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, []zapcore.Field{zap.Int("attempt", 2)}))
 	stopOTLP(t, runtime)
 	require.Len(t, capture.records(), 2)
 }
@@ -257,7 +198,7 @@ func TestOTLPBoundedQueueAndShutdown(t *testing.T) {
 	require.NoError(t, err)
 	started := time.Now()
 	for i := range 1000 {
-		runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, []zapcore.Field{zap.Int("attempt", i)})
+		require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, []zapcore.Field{zap.Int("attempt", i)}))
 	}
 	require.Less(t, time.Since(started), 500*time.Millisecond, "logger must not wait for exporter I/O")
 	require.LessOrEqual(t, capture.attempts.Load(), int64(2), "one bounded SDK worker owns export")
@@ -276,7 +217,7 @@ func TestOTLPShutdownDeadlineAndSanitizedFailure(t *testing.T) {
 	config.timeout = 200 * time.Millisecond
 	runtime, err := newOTLPRuntime(context.Background(), config)
 	require.NoError(t, err)
-	runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil)
+	require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil))
 	require.Eventually(t, func() bool { return capture.attempts.Load() > 0 }, time.Second, 5*time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
@@ -320,7 +261,7 @@ func TestOTLPConfigRejectsUnsafeInputs(t *testing.T) {
 		{"credentials in URL", func(c *otlpConfig) { c.endpoint = "https://user:secret@example.invalid/v1/logs" }},
 		{"query", func(c *otlpConfig) { c.endpoint += "?token=secret" }},
 		{"wrong path", func(c *otlpConfig) { c.endpoint += "/other" }},
-		{"bad host label", func(c *otlpConfig) { c.host = "host secret" }},
+		{"empty host label", func(c *otlpConfig) { c.host = "" }},
 		{"missing token", func(c *otlpConfig) { c.tokenFile = "/missing/synthetic" }},
 		{"invalid CA", func(c *otlpConfig) { c.caFile = c.tokenFile }},
 	} {
@@ -341,15 +282,27 @@ func TestOTLPConcurrentEmitAndShutdown(t *testing.T) {
 	runtime, err := newOTLPRuntime(context.Background(), otlpFixture(t, capture))
 	require.NoError(t, err)
 	var workers sync.WaitGroup
+	outcomes := make(chan error, 400)
 	for range 4 {
 		workers.Go(func() {
 			for range 100 {
-				runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil)
+				outcomes <- runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil)
 			}
 		})
 	}
-	workers.Go(func() { _ = runtime.shutdown(context.Background()) })
+	var shutdownErr error
+	workers.Go(func() { shutdownErr = runtime.shutdown(context.Background()) })
 	workers.Wait()
+	close(outcomes)
+	require.NoError(t, shutdownErr)
+	var rejected uint64
+	for err := range outcomes {
+		if err != nil {
+			rejected++
+			require.Equal(t, "application OTLP pipeline stopped before record admission", err.Error())
+		}
+	}
+	require.Equal(t, rejected, runtime.stats().Rejected)
 	require.NoError(t, runtime.shutdown(context.Background()))
 }
 
@@ -358,10 +311,10 @@ func TestOTLPRejectsCallbacksAfterShutdown(t *testing.T) {
 	capture := new(otlpCapture)
 	runtime, err := newOTLPRuntime(context.Background(), otlpFixture(t, capture))
 	require.NoError(t, err)
-	runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil)
+	require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil))
 	stopOTLP(t, runtime)
 	before := runtime.stats()
-	runtime.emit(zapcore.Entry{Level: zapcore.ErrorLevel, Time: time.Now()}, nil)
+	require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.ErrorLevel, Time: time.Now()}, nil))
 	require.Equal(t, before, runtime.stats())
 	require.Len(t, capture.records(), 1)
 }
@@ -381,7 +334,7 @@ func TestOTLPRedirectCannotForwardBearer(t *testing.T) {
 	require.NoError(t, os.WriteFile(config.caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: receiver.Certificate().Raw}), 0600))
 	runtime, err := newOTLPRuntime(context.Background(), config)
 	require.NoError(t, err)
-	runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil)
+	require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil))
 	require.Error(t, runtime.shutdown(context.Background()))
 	require.Zero(t, redirected.Load())
 	require.Equal(t, uint64(1), runtime.stats().FailedExportRecords)
@@ -404,7 +357,7 @@ func TestOTLPPartialResponseIsNotDurableAcceptance(t *testing.T) {
 	require.NoError(t, os.WriteFile(config.caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: receiver.Certificate().Raw}), 0600))
 	runtime, err := newOTLPRuntime(context.Background(), config)
 	require.NoError(t, err)
-	runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil)
+	require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now()}, nil))
 	require.Error(t, runtime.shutdown(context.Background()))
 	stats := runtime.stats()
 	require.Zero(t, stats.ExportedRecords)
@@ -430,7 +383,7 @@ func TestOTLPContentFidelity(t *testing.T) {
 	require.NoError(t, err)
 	previous := activeOTLP.Swap(runtime)
 	defer activeOTLP.Store(previous)
-	logger, err := logSDK.New(logSDK.WithName("graphql"), logSDK.WithOutputPaths([]string{}), logSDK.WithZapOptions(zap.HooksWithFields(privateOTLPHook)))
+	logger, err := logSDK.New(logSDK.WithName("graphql"), logSDK.WithOutputPaths([]string{}), logSDK.WithZapOptions(privateOTLPOption()))
 	require.NoError(t, err)
 	logger.With(zap.String("stage", "cache")).Info("synthetic operational refresh completed",
 		zap.String("future_revision", "parser-v2"), zap.Int("channel_count", 17),
@@ -455,7 +408,7 @@ func TestOTLPExistingStartupMessageAndFutureFields(t *testing.T) {
 	capture := new(otlpCapture)
 	runtime, err := newOTLPRuntime(context.Background(), otlpFixture(t, capture))
 	require.NoError(t, err)
-	runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now(), Message: "parallel database initialization completed"},
+	require.NoError(t, runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now(), Message: "parallel database initialization completed"},
 		[]zapcore.Field{
 			zap.Duration("duration", 15*time.Millisecond),
 			zap.Time("completed_at", time.Date(2026, 10, 18, 12, 0, 0, 123, time.FixedZone("private-label", 3600))), zap.String("future_revision", "parser-v2"),
@@ -465,7 +418,7 @@ func TestOTLPExistingStartupMessageAndFutureFields(t *testing.T) {
 			zap.String("deployment.environment.name", "SYNTHETIC_SPOOF_ENV"),
 			zap.String("current_input", "SYNTHETIC_INPUT_SECRET"), zap.String("conversation_items", "SYNTHETIC_CONVERSATION_SECRET"),
 			zap.String("input_items", "SYNTHETIC_INPUT_ITEMS_SECRET"), zap.String("output_items", "SYNTHETIC_OUTPUT_ITEMS_SECRET"),
-		})
+		}))
 	stopOTLP(t, runtime)
 	records := capture.records()
 	require.Len(t, records, 1)
@@ -474,8 +427,8 @@ func TestOTLPExistingStartupMessageAndFutureFields(t *testing.T) {
 	for _, a := range records[0].Attributes {
 		attrs[a.Key] = a.Value
 	}
-	require.Equal(t, 0.015, attrs["duration"].GetDoubleValue())
-	require.Equal(t, "2026-10-18T11:00:00.000000123Z", attrs["completed_at"].GetStringValue())
+	require.Equal(t, int64(15*time.Millisecond), attrs["duration"].GetIntValue())
+	require.Equal(t, "2026-10-18T12:00:00.000000123+01:00", attrs["completed_at"].GetStringValue())
 	require.Equal(t, "parser-v2", attrs["future_revision"].GetStringValue())
 	require.Equal(t, int64(42), attrs["token_count"].GetIntValue())
 	require.True(t, attrs["password_reset_required"].GetBoolValue())
@@ -484,37 +437,14 @@ func TestOTLPExistingStartupMessageAndFutureFields(t *testing.T) {
 	require.Equal(t, "future-stage-v8", attrs["stage"].GetStringValue())
 	encoded, err := protojson.Marshal(records[0])
 	require.NoError(t, err)
-	require.NotContains(t, string(encoded), "SYNTHETIC_")
-}
-
-// TestOTLPDiagnosticBoundsAreVisible preserves finite queue-record size and reports projection loss.
-func TestOTLPDiagnosticBoundsAreVisible(t *testing.T) {
-	capture := new(otlpCapture)
-	runtime, err := newOTLPRuntime(context.Background(), otlpFixture(t, capture))
-	require.NoError(t, err)
-	fields := make([]zapcore.Field, 0, 35)
-	for i := range 30 {
-		fields = append(fields, zap.String(fmt.Sprintf("future_field_%d", i), strings.Repeat("ordinary diagnostic ", 150)))
-	}
-	fields = append(fields, zap.String("app.log.attributes_dropped", "SYNTHETIC_FLAG_SPOOF"))
-	runtime.emit(zapcore.Entry{Level: zapcore.InfoLevel, Time: time.Now(), Message: strings.Repeat("operational progress ", 400)}, fields)
-	stopOTLP(t, runtime)
-	records := capture.records()
-	require.Len(t, records, 1)
-	require.LessOrEqual(t, len(records[0].Body.GetStringValue()), otlpMaxBodyBytes)
-	require.LessOrEqual(t, len(records[0].Attributes), otlpMaxAttributes)
-	attrs := map[string]*commonpb.AnyValue{}
-	for _, a := range records[0].Attributes {
-		attrs[a.Key] = a.Value
-	}
-	require.True(t, attrs["app.log.content_truncated"].GetBoolValue())
-	require.Greater(t, attrs["app.log.attributes_dropped"].GetIntValue(), int64(0))
+	require.Contains(t, string(encoded), "SYNTHETIC_INPUT_SECRET")
+	require.Contains(t, string(encoded), "SYNTHETIC_CONVERSATION_SECRET")
+	require.Contains(t, string(encoded), "SYNTHETIC_SPOOF_SERVICE")
 }
 
 // TestOTLPResourceEnvironmentFailsClosed rejects private and malformed metadata before SDK construction.
 func TestOTLPResourceEnvironmentFailsClosed(t *testing.T) {
 	for _, raw := range []string{
-		"private_payload=SYNTHETIC_RESOURCE_SECRET",
 		"SYNTHETIC_MALFORMED_RESOURCE_SECRET",
 		"service.name=%SYNTHETIC_BAD_ESCAPE_SECRET",
 		strings.Repeat("SYNTHETIC_OVERSIZED_SECRET", 1000),
@@ -532,12 +462,6 @@ func TestOTLPResourceEnvironmentFailsClosed(t *testing.T) {
 	}
 }
 
-// panickingOTLPError verifies error-formatting panics never expose their payload.
-type panickingOTLPError struct{}
-
-// Error deliberately panics with synthetic private text.
-func (panickingOTLPError) Error() string { panic("SYNTHETIC_PANIC_SECRET") }
-
 // TestOTLPDebugChildFollowsSourceLevel preserves intentionally enabled diagnostics without enabling filtered logs.
 func TestOTLPDebugChildFollowsSourceLevel(t *testing.T) {
 	capture := new(otlpCapture)
@@ -546,7 +470,7 @@ func TestOTLPDebugChildFollowsSourceLevel(t *testing.T) {
 	previous := activeOTLP.Swap(runtime)
 	defer activeOTLP.Store(previous)
 	logger, err := logSDK.New(logSDK.WithName("graphql"), logSDK.WithLevel(logSDK.LevelInfo),
-		logSDK.WithOutputPaths([]string{}), logSDK.WithZapOptions(zap.HooksWithFields(privateOTLPHook)))
+		logSDK.WithOutputPaths([]string{}), logSDK.WithZapOptions(privateOTLPOption()))
 	require.NoError(t, err)
 	child := logger.Named("request").With(zap.String("stage", "inspection"))
 	child.Debug("must remain filtered")

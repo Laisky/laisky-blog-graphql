@@ -1,6 +1,6 @@
 # Private application logs through go-fluentd
 
-The GraphQL API optionally sends a privacy-restricted log stream to the existing
+The GraphQL API optionally sends an application log stream to the existing
 authenticated OTLP/HTTP collector. Stdout and existing alerts remain unchanged.
 This is one export branch; do not also collect the same stdout stream into the
 central log store.
@@ -16,61 +16,73 @@ Set these only in the deployment's private configuration, never in Git:
 | APP_LOG_OTLP_ENV | Fixed environment label, for example production |
 
 The resource always identifies service.name=graphql and service.namespace=laisky.
-Host/environment values accept only ASCII letters, digits, dots, underscores and
-hyphens. The exporter rejects endpoint user information, queries, fragments,
+Host/environment values must be explicitly nonempty valid UTF-8 and otherwise
+retain the operator-selected value, including Unicode, spaces and long labels. The exporter rejects endpoint user information, queries, fragments,
 non-log paths, plaintext HTTP in production and HTTP redirects. It verifies TLS
 against the configured CA without skipping hostname verification. It does not
-use a proxy. Standard OTEL exporter/resource environment settings do not override
-the private provider's explicit configuration. No global OTel provider is changed.
-The SDK merges OTEL_RESOURCE_ATTRIBUTES even with an explicit resource. When this
-optional exporter is enabled, inherited resource settings must therefore contain
-only the four fixed identity keys shown above, which the explicit resource
-overrides. Unknown keys, malformed pairs/percent escapes and input above 16 KiB
-fail configuration with a fixed error before SDK parsing. OTEL_SERVICE_NAME is
-overridden by service.name=graphql. Disabled export does not inspect these inputs.
+use a proxy. Standard OTEL exporter settings do not override
+the private provider's explicit transport configuration. No global OTel provider is changed.
+The SDK merges application-chosen OTEL_RESOURCE_ATTRIBUTES into the resource.
+Custom attributes are preserved, including unknown names. The four explicit
+service/namespace/host/environment identities take precedence on collision;
+OTEL_SERVICE_NAME cannot replace service.name=graphql. Malformed resource pairs,
+invalid UTF-8 or invalid percent escapes fail configuration with a fixed error
+before SDK diagnostics. No content-key allowlist or arbitrary resource-text cap
+is applied. Disabled export does not inspect these inputs.
 Configuration is process-scoped and idempotent; changes require a process restart.
 
-The init-time hook is inherited by child loggers captured before API startup.
+The init-time private branch is prepared when APP_LOG_OTLP_ENDPOINT is present
+before logger creation. Child loggers captured before provider startup inherit it.
+Disabled export keeps the original core and evaluates no extra field callbacks.
+Changing the environment after a logger was created cannot reconstruct earlier
+dynamic fields; configure the environment before process startup and restart.
+The adapter reuses the fork's accepted-entry gate, preserving sampling and
+existing stdout, alert and fatal behavior without checking or writing twice.
 The API configures its private provider before running application initialization. Maintenance commands retain their existing behavior.
 Entries already admitted by the local logger are exported at their original
 severity, including DEBUG when deliberately enabled. The default console remains INFO.
 Changing the local logger level still gates export; the hook cannot enable a
 previously filtered entry.
 
-The remote body preserves the original operational message after targeted
-credential, URL and labeled-payload sanitization using the shared go-utils
-SanitizeDiagnosticText contract. Ordinary future string, bool, signed/unsigned
-integer, float and duration fields survive without an event or field allowlist.
-Error fields retain sanitized Error() text without stacks or verbose formatting;
-panicking error methods produce a fixed marker. Error methods must return promptly.
-Unsigned values above the OTLP signed integer range become decimal strings.
-Duration fields preserve Zap's standard numeric seconds; explicitly authored numeric
-duration_ms fields keep milliseconds. Inline time values use UTC RFC3339Nano.
+The remote Body is the original application message. The bridge adds no automatic
+sanitizer, token-literal replacement, field allowlist/denylist, value masking,
+field-count cap or text truncation. Application-selected log levels and existing
+source logging/alert policies remain unchanged. Applications must choose what to
+log; this transport does not independently collect HTTP request bodies.
 
-Targeted normalized credential and private-payload key handling excludes
-authentication headers, cookies, tokens, passwords, raw requests/responses,
-body/payload fields and the actual memory/file content keys used by this app.
-Counters such as token_count and booleans such as password_reset_required remain.
-The configured OTLP bearer is also removed if echoed by an application message.
-SDK URL sanitization replaces complete URLs, protecting user information, query
-credentials and private paths while preserving surrounding failure context.
+An ordered native Zap ObjectEncoder/ArrayEncoder evaluates each field once for
+this output branch. With-bound callbacks are captured once per output branch;
+subsequent writes reuse immutable snapshots and retain namespace and field order.
+Callsite callbacks run for each output branch and should return promptly. Original
+Stringer/Error and reflected JSON tags/marshalers retain application semantics.
+Arrays, objects, null and empty containers become native OTLP values. Binary and
+invalid UTF-8 strings become exact Bytes values; valid ByteString remains text.
+Duration is signed nanoseconds; time is RFC3339Nano with the original offset.
+Native float types remain OTLP doubles, including negative zero, NaN and infinity.
+Complex values use Go's full-precision complex string representation.
 
-Objects, arrays, reflected values, Stringers, bytes and unsupported Zap types are
-excluded before arbitrary encoder callbacks run. A namespace stops subsequent
-fields to preserve its scoping semantics. Duplicate names keep the first accepted
-value. Fixed resource identity keys, logger.name, bridge accounting keys and
-VictoriaLogs canonical record keys cannot be spoofed by application fields.
-These exclusions increment app.log.attributes_dropped rather than silently
-claiming complete structured-object forwarding.
+The official AnyValue mapping emits integers outside signed int64 and reflected
+JSON decimals outside double range/shortest-roundtrip precision as exact decimal
+strings. An object containing duplicate names becomes a unique-key multimap:
+every key has an array of its source values, including singleton keys. Value
+order is preserved. Reflected map iteration order is application JSON behavior.
+The SDK's record attribute count and string-length limits are explicitly disabled,
+overriding inherited defaults. There is no new per-record byte bound; large
+records can consume more memory or be rejected by a receiver.
 
-Records have a 4 KiB body, 2 KiB strings, 128-byte keys, at most 24 attributes
-including two reserved accounting slots, and a 16 KiB approximate content budget
-including per-field overhead, with at most 256 input fields examined. Oversized projected strings carry a truncation
-marker and app.log.content_truncated=true. Names/values are bounded before SDK
-queue admission. This is targeted sanitization, not a guarantee that arbitrary
-unlabelled personal prose is safe. Existing source-level request/content
-redaction remains necessary; the bridge never reads HTTP bodies itself.
-Stdout preserves the application's original fields and messages.
+Original logger name, caller and stack metadata are added only when the application
+has not already supplied those same keys. Authored resource-like or storage-like
+field names remain attributes unchanged; resource identity and log attributes are
+separate in OTLP. Backend flattening, duplicate-key and reserved-name behavior must
+be qualified independently; the bridge does not claim universal storage fidelity.
+Pinned native VictoriaLogs collision/type-loss regressions remain a release gate.
+An ordinary JSON-subset campaign cannot establish general typed storage fidelity.
+
+If encoding fails, a callback panics, a top-level attribute key is empty or a key has invalid UTF-8,
+a reflected JSON string has a lone surrogate escape, or a value cannot be represented by OTLP, the entire remote record is rejected. Rejected
+increments and a fixed error reaches the logger's configured error output. No
+partial sanitized/truncated replacement is emitted. The original stdout branch
+and its application-selected behavior remain intact.
 
 The official SDK batches asynchronously: 512 pending records, batches of 128,
 one-second partial flush and a five-second export/retry deadline. There is no
@@ -82,7 +94,7 @@ duplicates on retry. Stdout remains local evidence; go-fluentd durability begins
 only at its accepted-response boundary.
 
 SnapshotOTLP exposes process-local Emitted, ExportedRecords, FailedExportRecords
-and Unresolved. ExportedRecords counts a successful SDK Export call, not a
+and Unresolved, plus Rejected for whole-record projection failures. ExportedRecords counts a successful SDK Export call, not a
 VictoriaLogs insert or a durable end-to-end acknowledgement. FailedExportRecords
 counts the records in calls returning an error, after the configured retries.
 Unresolved includes queued, in-flight and overflow-lost records during runtime;
@@ -126,7 +138,12 @@ flushes and checks SDK success. The caller must separately verify exactly one
 VictoriaLogs row with service.name=graphql, the chosen host/environment,
 the exact body synthetic operational refresh completed, stage=cache,
 future_revision=parser-v2, channel_count=17, duration_ms=12.5, cache_ready=true,
-status_code=299 and success=true, and absence of the synthetic secret canaries.
+status_code=299 and success=true, and exact preservation of the synthetic API/auth/URL/request-body/nested canaries.
+The common native fixture also contains Object/Array marshalers, null/empty
+containers, application service.name/host.name/_msg fields and a namespace payload.
+All fixture values are synthetic; never substitute actual secrets. Null, empty
+container, duplicate-name and reserved-name fidelity need downstream assertions
+in addition to this source/SDK test.
 That isolated evidence does not replace actual deployed GraphQL acceptance or
 prove durable recovery by itself. Production credential mounts, service
 recreation and release require their separately authorized delivery steps.
