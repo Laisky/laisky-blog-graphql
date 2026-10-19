@@ -17,6 +17,7 @@ on:
       - '.scripts/test_docker_build_identity.py'
       - '.scripts/prepare_docker_context.py'
       - 'library/crawlercapture/**'
+      - 'library/buildidentity/**'
   workflow_dispatch:
 
 permissions:
