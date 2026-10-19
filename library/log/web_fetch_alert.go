@@ -19,9 +19,12 @@ type WebFetchFailureSummary struct {
 	WorkerStage, WorkerCategory         string
 	WorkerSignal                        string
 	DurationMS                          int64
+	TargetScheme, TargetHostname        string
+	WorkerContext                       *crawleregress.FailureContext
 }
 
 const (
+	webFetchErrorCrawler      = "crawler_failed"
 	webFetchStageFetch        = "fetch"
 	webFetchStageResult       = "result"
 	webFetchStageVerification = "verification"
@@ -36,7 +39,7 @@ var webFetchFailureStages = map[string]string{
 	"crawler_result_failed":     webFetchStageResult,
 	"crawler_egress_unverified": webFetchStageVerification,
 	"crawler_egress_rejected":   webFetchStageVerification,
-	"crawler_failed":            webFetchStageRender,
+	webFetchErrorCrawler:        webFetchStageRender,
 	"crawler_status_invalid":    webFetchStageResult,
 	"fetch_canceled":            webFetchStageWait,
 	"fetch_timeout":             webFetchStageWait,
@@ -60,7 +63,7 @@ func WebFetchFailureFields(summary WebFetchFailureSummary) []zapcore.Field {
 		zap.String("web_fetch_error_code", summary.ErrorCode),
 		zap.String("web_fetch_stage", summary.Stage),
 	}
-	if summary.ErrorCode == "crawler_failed" && summary.Stage == webFetchStageRender {
+	if summary.ErrorCode == webFetchErrorCrawler && summary.Stage == webFetchStageRender {
 		workerStage, workerCategory := crawleregress.WorkerFailureDiagnostic(summary.WorkerStage, summary.WorkerCategory)
 		if workerStage != "" {
 			fields = append(fields, zap.String("web_fetch_worker_stage", workerStage), zap.String("web_fetch_worker_category", workerCategory))
@@ -90,13 +93,13 @@ func WebFetchFailureFields(summary WebFetchFailureSummary) []zapcore.Field {
 }
 
 // WebFetchDiagnosticFields supplies backward-compatible authored scalar names.
-// SDK default delivery sanitizes these fields without requiring an application field filter.
+// SDK default delivery encodes chosen fields faithfully and rejects an oversized complete record.
 func WebFetchDiagnosticFields(summary WebFetchFailureSummary) []zapcore.Field {
 	fields := WebFetchFailureFields(summary)
 	for i := range fields {
 		fields[i].Key = strings.TrimPrefix(fields[i].Key, "web_fetch_")
 	}
-	return fields
+	return append(fields, webFetchContextFields(summary, fields)...)
 }
 
 func canonicalCorrelationID(value string) bool {
@@ -108,10 +111,10 @@ func canonicalCorrelationID(value string) bool {
 }
 
 // WebFetchAlertOption retains the optional legacy explicit-filter policy.
-// Production uses the SDK's default sanitized diagnostics instead. Callers
+// Production uses the app-scoped faithful SDK core instead. Callers
 // choosing this adapter pair it with WebFetchAlertHook for prefix validation.
-// Its unchanged field list omits worker_signal; the production default SDK
-// diagnostic scopes carry the new bounded field without this optional adapter.
+// Its unchanged field list omits worker_signal; production diagnostic scopes
+// carry the bounded field without this optional adapter.
 func WebFetchAlertOption() logSDK.AlertOption {
 	return logSDK.WithAlertFieldAllowlist("error_code", "stage", "request_id", "task_id", "duration_ms", "worker_stage", "worker_category")
 }
@@ -120,7 +123,13 @@ func WebFetchAlertOption() logSDK.AlertOption {
 // metadata-only selection outside the fixed fetch failure callsite and validates
 // dedicated scalar fields without invoking error/object marshalers.
 func WebFetchAlertHook(alert *logSDK.Alert) func(zapcore.Entry, []zapcore.Field) error {
-	hook := alert.GetZapHook()
+	core := alert.GetZapCore()
+	hook := func(entry zapcore.Entry, fields []zapcore.Field) error {
+		if !core.Enabled(entry.Level) {
+			return nil
+		}
+		return core.Write(entry, fields)
+	}
 	return func(entry zapcore.Entry, fields []zapcore.Field) error {
 		if entry.Message != "web_fetch failed" || !strings.HasSuffix(entry.LoggerName, ".web_fetch") {
 			return hook(entry, nil)

@@ -37,7 +37,7 @@ func WebSearchFailureFields(summary WebSearchFailureSummary) []zapcore.Field {
 }
 
 // WebSearchDiagnosticFields authors one validated scalar set using stable generic aliases.
-// Production sends these directly through the SDK's sanitized default hook.
+// Production faithfully encodes these chosen fields through its scoped SDK core and complete-record budget.
 func WebSearchDiagnosticFields(summary WebSearchFailureSummary) []zapcore.Field {
 	fields := WebSearchFailureFields(summary)
 	for i := range fields {
@@ -47,7 +47,7 @@ func WebSearchDiagnosticFields(summary WebSearchFailureSummary) []zapcore.Field 
 }
 
 // ToolFailureAlertOption retains optional legacy explicit field selection.
-// Production uses the SDK sanitized default; this option is only for callers
+// Production uses the app-scoped faithful SDK core; this option is only for callers
 // deliberately selecting the prefix adapter ToolFailureAlertHook.
 func ToolFailureAlertOption() logSDK.AlertOption {
 	return logSDK.WithAlertFieldAllowlist("error_code", "stage", "request_id", "task_id", "duration_ms", "category", "provider", "status", "attempts")
@@ -55,9 +55,16 @@ func ToolFailureAlertOption() logSDK.AlertOption {
 
 // ToolFailureAlertHook is the optional legacy prefix-validation adapter.
 // It retains explicit selection and metadata-only unrelated events when chosen;
-// production installs the SDK default hook directly.
+// production installs its separately scoped SDK core.
 func ToolFailureAlertHook(alert *logSDK.Alert) func(zapcore.Entry, []zapcore.Field) error {
-	fetchHook, hook := WebFetchAlertHook(alert), alert.GetZapHook()
+	fetchHook := WebFetchAlertHook(alert)
+	core := alert.GetZapCore()
+	hook := func(entry zapcore.Entry, fields []zapcore.Field) error {
+		if !core.Enabled(entry.Level) {
+			return nil
+		}
+		return core.Write(entry, fields)
+	}
 	return func(entry zapcore.Entry, fields []zapcore.Field) error {
 		if entry.Message != "web_search failed" || !strings.HasSuffix(entry.LoggerName, ".web_search") {
 			return fetchHook(entry, fields)
