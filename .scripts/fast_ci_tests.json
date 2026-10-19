@@ -38,5 +38,29 @@
       "TestAlertDeliveryDocumentWholePayload",
       "TestAlertDeliveryAPIErrorsAreVisibleAndNeverRetried"
     ]
+  },
+  {
+    "package": "./cmd",
+    "tests": [
+      "TestStartupAlertDiagnosticScope",
+      "TestStartupAlertCorePreservesSmallBoundContext",
+      "TestStartupAlertCorePreservesLargeChosenInput",
+      "TestStartupAlertCoreRejectsWholeOversizeRecord"
+    ]
+  },
+  {
+    "package": "./library/log",
+    "tests": [
+      "TestAlertAdoptionScopeCoreSnapshots",
+      "TestAlertAdoptionLegacyHookCoreContracts"
+    ]
+  },
+  {
+    "package": "./internal/web",
+    "tests": [
+      "TestAlertAdoptionActualCallerCompleteContent",
+      "TestAlertAdoptionOversizeKeepsBusinessAndLocalInput",
+      "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet"
+    ]
   }
 ]

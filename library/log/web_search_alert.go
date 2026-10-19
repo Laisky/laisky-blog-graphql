@@ -37,7 +37,7 @@ func WebSearchFailureFields(summary WebSearchFailureSummary) []zapcore.Field {
 }
 
 // WebSearchDiagnosticFields authors one validated scalar set using stable generic aliases.
-// Production sends these directly through the SDK's sanitized default hook.
+// Production faithfully encodes these chosen fields through its scoped SDK core and complete-record budget.
 func WebSearchDiagnosticFields(summary WebSearchFailureSummary) []zapcore.Field {
 	fields := WebSearchFailureFields(summary)
 	for i := range fields {

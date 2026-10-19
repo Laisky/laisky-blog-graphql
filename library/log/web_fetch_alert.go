@@ -93,7 +93,7 @@ func WebFetchFailureFields(summary WebFetchFailureSummary) []zapcore.Field {
 }
 
 // WebFetchDiagnosticFields supplies backward-compatible authored scalar names.
-// SDK default delivery sanitizes these fields without requiring an application field filter.
+// SDK default delivery encodes chosen fields faithfully and rejects an oversized complete record.
 func WebFetchDiagnosticFields(summary WebFetchFailureSummary) []zapcore.Field {
 	fields := WebFetchFailureFields(summary)
 	for i := range fields {
