@@ -21,6 +21,22 @@
   },
   {
     "package": "./internal/web/telegram/formatting",
-    "tests": ["TestEscapeTelegramMarkdown"]
+    "tests": [
+      "TestEscapeTelegramMarkdown"
+    ]
+  },
+  {
+    "package": "./internal/web/telegram/controller",
+    "tests": [
+      "TestAlertControllerFidelityPreservesCompleteInput"
+    ]
+  },
+  {
+    "package": "./internal/web/telegram/service",
+    "tests": [
+      "TestAlertDeliveryLiteralShortText",
+      "TestAlertDeliveryDocumentWholePayload",
+      "TestAlertDeliveryAPIErrorsAreVisibleAndNeverRetried"
+    ]
   }
 ]

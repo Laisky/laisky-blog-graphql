@@ -111,10 +111,10 @@ func canonicalCorrelationID(value string) bool {
 }
 
 // WebFetchAlertOption retains the optional legacy explicit-filter policy.
-// Production uses the SDK's default sanitized diagnostics instead. Callers
+// Production uses the app-scoped faithful SDK core instead. Callers
 // choosing this adapter pair it with WebFetchAlertHook for prefix validation.
-// Its unchanged field list omits worker_signal; the production default SDK
-// diagnostic scopes carry the new bounded field without this optional adapter.
+// Its unchanged field list omits worker_signal; production diagnostic scopes
+// carry the bounded field without this optional adapter.
 func WebFetchAlertOption() logSDK.AlertOption {
 	return logSDK.WithAlertFieldAllowlist("error_code", "stage", "request_id", "task_id", "duration_ms", "worker_stage", "worker_category")
 }
@@ -123,7 +123,13 @@ func WebFetchAlertOption() logSDK.AlertOption {
 // metadata-only selection outside the fixed fetch failure callsite and validates
 // dedicated scalar fields without invoking error/object marshalers.
 func WebFetchAlertHook(alert *logSDK.Alert) func(zapcore.Entry, []zapcore.Field) error {
-	hook := alert.GetZapHook()
+	core := alert.GetZapCore()
+	hook := func(entry zapcore.Entry, fields []zapcore.Field) error {
+		if !core.Enabled(entry.Level) {
+			return nil
+		}
+		return core.Write(entry, fields)
+	}
 	return func(entry zapcore.Entry, fields []zapcore.Field) error {
 		if entry.Message != "web_fetch failed" || !strings.HasSuffix(entry.LoggerName, ".web_fetch") {
 			return hook(entry, nil)

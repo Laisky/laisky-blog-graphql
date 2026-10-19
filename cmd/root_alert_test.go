@@ -20,7 +20,7 @@ import (
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
-// TestStartupAlertDiagnosticScope exercises the actual startup hook and HTTP serializer.
+// TestStartupAlertDiagnosticScope exercises the actual scoped startup core and HTTP serializer.
 func TestStartupAlertDiagnosticScope(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -85,13 +85,15 @@ func TestStartupAlertDiagnosticScope(t *testing.T) {
 				t.Fatal("actual startup alert missing")
 			}
 			require.Contains(t, message, tc.scope)
-			require.NotContains(t, message, "canary")
 			if tc.diagnostic {
+				require.Contains(t, message, "private-key-canary")
+				require.Contains(t, message, "private-body-canary")
 				require.Contains(t, message, `"future_revision":"parser-v2"`)
 				require.Contains(t, message, `"attempt":2`)
 				require.Contains(t, message, "unexpected EOF")
 				require.NotContains(t, message, "{}")
 			} else {
+				require.NotContains(t, message, "canary")
 				require.True(t, strings.HasSuffix(message, "{}"), "unreviewed app logs retain legacy metadata-only export")
 			}
 			select {
