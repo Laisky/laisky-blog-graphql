@@ -1,13 +1,13 @@
-# Keep only public Git metadata needed for standard Go VCS stamping.
-# Checkout-local configuration/auth, hooks, logs, worktrees and external object stores stay out.
-.git/*
-!.git/HEAD
-!.git/index
-!.git/packed-refs
-!.git/refs
-!.git/shallow
-!.git/objects
-.git/objects/info
+# Never send the real checkout's Git store, including unrelated packed/dangling objects.
+.git
+# Only the explicit public shallow-HEAD preparation is allowed for native Go stamping.
+.docker-build-git/*
+!.docker-build-git/HEAD
+!.docker-build-git/index
+!.docker-build-git/shallow
+!.docker-build-git/refs
+!.docker-build-git/objects
+.docker-build-git/objects/info
 **/.DS_Store
 
 # Go build artifacts

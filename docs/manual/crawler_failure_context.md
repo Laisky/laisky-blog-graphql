@@ -81,18 +81,24 @@ website cause and not information the user should have to reconstruct.
 
 ProcessSource selects Go's public build metadata: revision/modified status when
 available, module/Go versions, service, hostname and a once-per-process run ID.
-The release's local Docker context retains only the Git HEAD/index, refs,
-packed refs, shallow boundary and local objects required by standard VCS stamping.
-Tracked .gitignore is retained. Checkout configuration/auth, hooks, logs, linked
-worktree/module metadata and external object-store hints are excluded. Git remains
-in the build stage; the runtime stage copies the binary, not the Git directory.
+The real checkout Git directory is excluded from the Docker context entirely.
+Before both image and cache builds, run
+`python3 .scripts/prepare_docker_context.py` in a fresh owned checkout. It transfers
+only the exact HEAD via Git's local depth-one file transport into a temporary
+repository, checks every stored object against that shallow HEAD's reachable set,
+and prepares public HEAD/index/shallow/objects plus empty refs in the ignored
+`.docker-build-git` directory. Existing output is never overwritten or reused.
+The build moves those public facts to .git for native Go stamping. Unrelated
+historical/dangling objects, configuration/auth, hooks, logs, worktree pointers
+and alternate object stores cannot enter the context or exported builder layers.
+Tracked .gitignore remains, so original working-tree changes are reported truthfully.
+The runtime stage copies the binary, not the Git directory.
 
 The backend builds the module package with `go build ... .`. A named `main.go`
 build does not supply this module's automatic VCS identity. Both select the same
 sole root production Go source. A complete release checkout must produce its exact
-revision and truthful modified bit. A manual linked-worktree pointer whose Git
-metadata is outside the Docker context remains buildable with unavailable
-revision; it does not qualify as a revision-identified release. No revision is
+revision and truthful modified bit. An unprepared manual context, including a linked-worktree pointer,
+remains buildable with unavailable revision; it does not qualify as a revision-identified release. No revision is
 invented from environment configuration or a mutable image tag.
 
 ## Required delivery qualification

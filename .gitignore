@@ -59,3 +59,6 @@ docs/example/config/settings-laisky.yml
 .github/instructions/laisky.instructions.md
 patch
 /.claude/
+
+# Public, generated Docker VCS metadata; never part of source status.
+/.docker-build-git/

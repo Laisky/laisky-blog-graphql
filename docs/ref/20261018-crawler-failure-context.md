@@ -51,11 +51,15 @@ user to reconstruct information that the logs should supply.
 
 Docker's local directory context makes only included files available to COPY/ADD.
 This release uses a local checkout (`context: .`), not a remote Git URL context.
-The needed public Git metadata and tracked .gitignore must survive filtering for
-Go's automatic VCS stamping. Checkout-private configuration and external object
-lookup hints must not cross that boundary. The actual BuildKit scratch-export
-regression tests that boundary with synthetic credential canaries, then compiles
-and runs the real ProcessSource using the production Go command.
+The original .git directory is fully excluded. Explicit preparation uses a fresh
+local depth-one transfer of exact HEAD and validates the complete stored object
+set before publishing only public metadata under an ignored reserved directory.
+The builder uses that minimal metadata for native Go stamping; no checkout auth,
+config, hooks, external lookup hints, dangling objects or historical private blobs
+enter the context or cache layers. Existing reserved paths cause failure rather
+than reuse. Actual BuildKit scratch-export regressions include dangling and packed
+historical canary blobs, then compile and run ProcessSource with the production
+command to check clean/dirty identity and honest unprepared manual builds.
 
 Go's VCS stamping requires main-module information. The named-file form produces
 command-line-arguments; building the module package supplies standard revision and
@@ -72,3 +76,5 @@ These source/build controls qualify public binary provenance only. They do not
 establish complete logging/alert delivery, backend retention or a production
 deployment. The memory-only library/buildidentity package has no storage or
 payload responsibilities.
+
+- [Git fetch depth and tag controls](https://git-scm.com/docs/git-fetch)

@@ -19,8 +19,10 @@ RUN go mod download
 ADD . .
 ENV GOOS=linux
 ENV GOARCH=amd64
-# Build the module package so Go records its standard public VCS metadata.
-RUN go build -a -ldflags '-w -extldflags "-static"' -o main .
+# Only explicitly prepared shallow public metadata enters builder layers.
+# An unprepared manual context remains an honestly unknown VCS build.
+RUN if [ -d .docker-build-git ]; then mv .docker-build-git .git; fi \
+    && go build -a -ldflags '-w -extldflags "-static"' -o main .
 
 # build front-end assets
 FROM node:24-bookworm AS webbuild

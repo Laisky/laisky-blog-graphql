@@ -15,6 +15,7 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '.scripts/test_docker_build_identity.py'
+      - '.scripts/prepare_docker_context.py'
       - 'library/crawlercapture/**'
   workflow_dispatch:
 

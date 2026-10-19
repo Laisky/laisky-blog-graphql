@@ -31,9 +31,9 @@ def run(command, cwd, *, env=None, input_text=None):
                      GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0",
                      GOWORK="off", GOENV="off")
     result = subprocess.run(command, cwd=cwd, env=child_env, input=input_text, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
     if result.returncode:
-        raise AssertionError(f"{command[0]} failed ({result.returncode}):\n{result.stdout}")
+        raise AssertionError(f"{command[0]} failed ({result.returncode}):\n{result.stdout}{result.stderr}")
     return result.stdout
 
 
@@ -112,12 +112,16 @@ func main() {
             path.write_bytes(b"[http]\n\textraheader = " + CANARY + b"\n")
         return revision
 
-    def export_context(self, directory, destination):
+    def export_context(self, directory, destination, *, prepare=True):
         """export_context uses actual BuildKit COPY filtering, with no base image or execution."""
+        if prepare:
+            run(["python3", str(ROOT / ".scripts/prepare_docker_context.py"),
+                 "--root", str(directory)], directory)
         env = dict(os.environ, BUILDX_GIT_INFO="false", BUILDX_GIT_LABELS="false")
         run(["docker", "buildx", "build", "--progress=plain", "--file", "-",
              "--output", "type=local,dest=" + str(destination), str(directory)],
             directory, env=env, input_text="FROM scratch\nCOPY . /\n")
+        self.assertFalse((destination / ".git").exists(), "Real checkout Git store escaped")
         for name in PRIVATE_GIT_PATHS:
             self.assertFalse((destination / name).exists(), name)
         for path in destination.rglob("*"):
@@ -181,11 +185,111 @@ func main() {
             outside = root / "unavailable-outside-git"
             self.assertFalse(outside.exists())
             (root / "context/.git").write_text("gitdir: " + str(outside) + "\n")
-            self.export_context(root / "context", root / "export")
+            self.export_context(root / "context", root / "export", prepare=False)
             source = self.build_source(root / "export")
             self.assertNotIn("revision", source)
             self.assertTrue(source.get("go_version"))
             self.assertFalse(outside.exists())
+
+
+    def test_unrelated_git_objects_never_enter_context(self):
+        """Both dangling blobs and removed historical packed content stay out."""
+        with tempfile.TemporaryDirectory(prefix="graphql-build-objects-") as temporary:
+            root = Path(temporary)
+            self.fixture(root / "context")
+            checkout = root / "context"
+            dangling = run(["git", "hash-object", "-w", "--stdin"], checkout,
+                           input_text=CANARY.decode()).strip()
+            historical = checkout / "old-public-fixture.txt"
+            historical.write_bytes(CANARY + b"-historical")
+            run(["git", "add", historical.name], checkout)
+            commit = ["git", "-c", "user.name=Synthetic Fixture", "-c",
+                      "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
+                      "-c", "core.hooksPath=/dev/null", "commit", "-qm"]
+            run(commit + ["synthetic historical blob"], checkout)
+            old_blob = run(["git", "rev-parse", "HEAD:" + historical.name], checkout).strip()
+            historical.unlink()
+            run(["git", "add", "--all"], checkout)
+            run(commit + ["synthetic clean current revision"], checkout)
+            run(["git", "repack", "-ad"], checkout)
+            expected = run(["git", "rev-parse", "HEAD"], checkout).strip()
+            self.export_context(checkout, root / "export")
+            prepared = root / "export/.docker-build-git"
+            self.assertTrue(prepared.is_dir())
+            self.assertEqual(run(["git", "--git-dir=" + str(prepared), "rev-parse", "HEAD"], root).strip(), expected)
+            output = run(["git", "--git-dir=" + str(prepared), "cat-file",
+                          "--batch-all-objects", "--batch-check=%(objectname)"], root)
+            self.assertNotIn(dangling, output.splitlines())
+            self.assertNotIn(old_blob, output.splitlines())
+            source = self.build_source(root / "export")
+            self.assertEqual(source.get("revision"), expected)
+            self.assertFalse(source.get("modified"))
+
+    def test_reserved_metadata_path_is_never_overwritten(self):
+        """An existing directory or symlink is preserved and prevents preparation."""
+        with tempfile.TemporaryDirectory(prefix="graphql-build-reserved-") as temporary:
+            root = Path(temporary)
+            self.fixture(root / "context")
+            target = root / "context/.docker-build-git"
+            target.mkdir()
+            (target / "sentinel").write_bytes(CANARY)
+            with self.assertRaises(AssertionError):
+                run(["python3", str(ROOT / ".scripts/prepare_docker_context.py"),
+                     "--root", str(root / "context")], root)
+            self.assertEqual(list(target.iterdir()), [target / "sentinel"])
+            self.assertEqual((target / "sentinel").read_bytes(), CANARY)
+            # Only the owned synthetic path is removed, never a caller directory.
+            (target / "sentinel").unlink()
+            target.rmdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "sentinel").write_bytes(CANARY)
+            target.symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(AssertionError):
+                run(["python3", str(ROOT / ".scripts/prepare_docker_context.py"),
+                     "--root", str(root / "context")], root)
+            self.assertTrue(target.is_symlink())
+            self.assertEqual((outside / "sentinel").read_bytes(), CANARY)
+
+    def test_preparation_ignores_git_environment_redirects(self):
+        """The actual preparer does not follow caller-selected Git stores."""
+        with tempfile.TemporaryDirectory(prefix="graphql-build-prepare-env-") as temporary:
+            root = Path(temporary)
+            expected = self.fixture(root / "context")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "sentinel").write_bytes(CANARY)
+            # run() deliberately strips Git variables; invoke the preparer
+            # directly here to exercise its own environment boundary.
+            env = dict(os.environ, GIT_DIR=str(outside), GIT_WORK_TREE=str(outside),
+                       GIT_COMMON_DIR=str(outside), GIT_OBJECT_DIRECTORY=str(outside),
+                       GIT_INDEX_FILE=str(outside / "index"), GIT_CONFIG_COUNT="invalid")
+            result = subprocess.run(
+                ["python3", str(ROOT / ".scripts/prepare_docker_context.py"),
+                 "--root", str(root / "context")], env=env, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["revision"], expected)
+            self.assertEqual(list(outside.iterdir()), [outside / "sentinel"])
+            self.assertEqual((outside / "sentinel").read_bytes(), CANARY)
+
+
+
+    def test_other_object_format_fails_before_preparing_output(self):
+        """Unsupported repository formats fail explicitly rather than stamp unknown."""
+        with tempfile.TemporaryDirectory(prefix="graphql-build-format-") as temporary:
+            root = Path(temporary)
+            run(["git", "init", "--quiet", "--object-format=sha256"], root)
+            (root / "source.txt").write_text("synthetic source")
+            run(["git", "add", "source.txt"], root)
+            run(["git", "-c", "user.name=Synthetic Fixture", "-c",
+                 "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
+                 "-c", "core.hooksPath=/dev/null", "commit", "-qm", "synthetic sha256"], root)
+            with self.assertRaisesRegex(AssertionError, "Only this project's SHA-1"):
+                run(["python3", str(ROOT / ".scripts/prepare_docker_context.py"),
+                     "--root", str(root)], root)
+            self.assertFalse((root / ".docker-build-git").exists())
+
 
 
 if __name__ == "__main__":
