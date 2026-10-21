@@ -18,12 +18,12 @@ import (
 // }
 
 // FetchDynamicURLContent is a wrapper for submit & fetch dynamic url content.
-// Markdown conversion is local on the renderer. apiKey is retained for caller compatibility
+// Direct Markdown conversion is local on the renderer. apiKey is retained for caller compatibility
 // and billing admission; it is never placed in the crawler task or sent downstream.
 //
 // The crawl carries the connection policy request admission produced, and the
-// bound connection receipts are checked before any body is returned. The renderer
-// enforces pinned connections before fetching; verification never re-resolves DNS.
+// acquisition is checked before any body is returned. Direct results require
+// pinned connection receipts; configured provider results are identified as such.
 func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey string, outputMarkdown bool) ([]byte, error) {
 	return fetchDynamicURLContent(ctx, rdb, url, apiKey, outputMarkdown)
 }
@@ -55,6 +55,9 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 	}
 	egressSettings := LoadEgressSettings()
 	policy := admission.Policy(egressSettings.MaxRedirects, egressSettings.AllowSubresources)
+	// AddHTMLCrawlerTaskWithEgress advertises this capability in the queued task.
+	// Keep the expected value here, independently of the returned task envelope.
+	const allowProviderFallback = true
 
 	// submit task
 	taskID, err := rdb.AddHTMLCrawlerTaskWithEgress(ctx, url, "", outputMarkdown, crawlerEgressPolicy(policy))
@@ -90,9 +93,8 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 
 		switch task.Status {
 		case rlibs.TaskStatusSuccess:
-			// No body is returned until the submitted identity and pinned-peer
-			// receipt have passed verification.
-			if egressErr := verifyRenderedTask(ctx, egressSettings, taskID, url, policy, task); egressErr != nil {
+			// No body is returned until identity, policy and acquisition checks pass.
+			if egressErr := verifyAcquiredTask(ctx, taskID, url, policy, allowProviderFallback, task); egressErr != nil {
 				return nil, egressErr
 			}
 			if task.OutputMarkdown != outputMarkdown || len(task.ResultHTML) > crawleregress.MaxResponseBytes || len(task.ResultMarkdown) > crawleregress.MaxResponseBytes {
@@ -101,9 +103,15 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 			if (outputMarkdown && len(task.ResultMarkdown) == 0) || (!outputMarkdown && len(task.ResultHTML) == 0) {
 				return nil, fetchFailure(errors.New("empty crawler result body"), "crawler_result_failed", "result", taskID)
 			}
-			// Observation above is distinct from accepting the verified, nonempty body.
-			logger.Info("html crawler result verified", zap.String("event", "result_verified"),
+			// A provider result is accepted under the explicit capability, without
+			// claiming a verified direct connection to the target.
+			message, event, method, provider := "html crawler result verified", "result_verified", crawleregress.AcquisitionDirect, ""
+			if task.Acquisition != nil && task.Acquisition.Method == crawleregress.AcquisitionProvider {
+				message, event, method, provider = "html crawler result accepted", "result_accepted", crawleregress.AcquisitionProvider, task.Acquisition.Provider
+			}
+			logger.Info(message, zap.String("event", event),
 				zap.String("stage", "verification"), zap.String("status", rlibs.TaskStatusSuccess),
+				zap.String("acquisition_method", method), zap.String("provider", provider),
 				zap.String("caller_context_state", FetchCallerContextState(ctx)),
 				zap.Int64("duration_ms", min(max(time.Since(start).Milliseconds(), 0), 24*60*60*1000)))
 			if task.OutputMarkdown && outputMarkdown {

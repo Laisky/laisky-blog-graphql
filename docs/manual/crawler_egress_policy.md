@@ -31,10 +31,12 @@ each exchange with a Go transport that dials admitted literal IPs. It preserves
 the original HTTP host and normal TLS hostname/CA verification. It does not
 follow HTTP redirects itself; each browser hop is independently checked.
 Browser paths outside interception go through a task-local deny proxy.
-Unsupported requests fail closed before an upstream connection. No browser
-proxy from the environment, credential-bearing external fetch service, LLM
-conversion fallback or unverified legacy cache is used in this task path.
-Markdown conversion is local and needs no provider key.
+Unsupported requests fail closed before an upstream connection. The direct
+renderer uses no browser proxy from the environment, caller credentials, LLM
+conversion or unverified legacy cache. Direct Markdown conversion is local.
+Eligible direct failures may use configured content providers under the explicit
+acquisition capability described below; provider content never claims direct
+target connection evidence.
 
 The renderer bounds request count, response headers, individual decoded
 responses, aggregate response bytes, render duration and returned content.
@@ -50,7 +52,7 @@ URL, request kind, admitted address set and actual connected public peer.
 `RequestChain` remains a legacy audit field; it cannot substitute for this
 receipt in the secure result path.
 
-Before releasing any body, `crawleregress.VerifyReceipt` checks:
+Before releasing a direct result, `crawleregress.VerifyReceipt` checks:
 
 - Supported version and exact task/target/policy binding.
 - Initial document identity, allowing ordinary browser URL normalization
@@ -63,12 +65,62 @@ Before releasing any body, `crawleregress.VerifyReceipt` checks:
 Verification uses the supplied validated pins, not a later DNS answer. A safe
 pinned connection remains valid even if DNS changes after admission. Missing
 receipts are unverified; malformed/mismatched/private-peer evidence is rejected.
-Neither condition releases content under the secure default.
+Neither condition releases direct content.
 
 Receipts are audit evidence from a trusted renderer. They are not signed
 attestations and cannot establish truth against a compromised worker that
 fabricates them. Source and artifact verification, worker access control and
 renderer behavior tests remain part of acceptance.
+
+### Content-first provider acquisition
+
+`HTMLCrawlerTask.allow_provider_fallback` is an additive producer capability.
+Missing or false retains the direct-only contract. New Redis producers advertise
+true, and a compatible worker tries direct retrieval before any eligible configured
+provider. It reports `acquisition.method` as `direct` or `provider`, with the
+actual bounded provider identifier in `acquisition.provider` for provider results.
+Provider identifiers are validated for syntax; the shared contract does not
+hard-code a provider-name list. Configuration and selection stay in the worker.
+
+`crawleregress.VerifyAcquisition` retains receipt verification for absent metadata
+and explicit direct results. A provider result requires the producer's original
+permission, valid public target policy, an echoed capability, an empty direct
+`RequestChain`, and no `EgressReceipt`. Task ID, exact target, output mode, policy
+digest, size limits and nonempty requested output remain checked before release.
+Returned metadata cannot opt a direct-only caller into accepting provider output.
+
+This is trusted-worker provenance, not evidence of the provider's downstream
+connection route. Provider responses cannot establish that the provider used the
+original admitted target pins or followed the same redirects. The worker must
+preserve target eligibility, deny fallback after policy or connection-evidence
+failures, bound its own provider transport, and reject unusable provider responses.
+It must not forward caller API keys, cookies or session credentials. These worker
+behaviors are qualified in the companion go-ramjet correction for issue 94.
+
+The existing MCP JSON `content` field and public byte-returning fetch API remain
+unchanged. Direct lifecycle success retains `result_verified`. Provider acceptance
+emits `result_accepted`, `acquisition_method=provider` and the actual provider name;
+it does not emit a direct-verification claim. For HTML output the worker locally
+renders provider Markdown into HTML; provider Markdown mode retains its text.
+
+| Producer | Worker | Result contract |
+| --- | --- | --- |
+| Old | Old | Existing direct receipt. |
+| Old | New | Direct receipt; missing capability prevents provider use. |
+| New | Old | Direct receipt; the old decoder ignores the additive capability. |
+| New | New | Direct receipt or explicitly identified provider content. |
+
+No queue migration or data rewrite is required. A serialized compatibility
+regression covers all four pairs. Old callers still reject provider results if
+such a result reaches them during an improper rollback. Drain accepted work before
+rolling back a capable caller; preserve a compatible worker for pending tasks.
+Direct retrieval remains available during a mixed-version rollout, while provider
+recovery requires both the capable caller and worker.
+
+Caller cancellation still ends waiting and result acceptance. The existing task
+wire has no distributed deadline/cancellation signal, so an already dequeued
+worker uses its independent bounded context. Fallback must share that context;
+this change does not claim immediate cross-process cancellation.
 
 ## Configuration and compatibility
 
@@ -76,10 +128,10 @@ renderer behavior tests remain part of acceptance.
 | --- | --- | --- |
 | `settings.mcp.tools.web_fetch.egress.max_redirects` | `5` | Document redirect budget published to the renderer. |
 | `settings.mcp.tools.web_fetch.egress.allow_subresources` | `false` | Whether public page subresources may be fetched. |
-| `settings.mcp.tools.web_fetch.egress.require_verified` | Always verified | Deprecated and ignored, including an explicit `false`. |
+| `settings.mcp.tools.web_fetch.egress.require_verified` | Direct receipts required | Deprecated and ignored, including an explicit `false`; it cannot enable provider fallback. |
 
-Final task identity, exact target, echoed policy and connection receipt
-verification are unconditional. Missing or empty receipts never release a body,
+Final task identity, exact target, echoed policy and acquisition checks are
+unconditional. Missing or empty receipts never release a direct body,
 even when the deprecated configuration key is explicitly false or a source
 caller constructs `EgressSettings{RequireVerified: false}`. `LoadEgressSettings`
 always reports `RequireVerified: true`; the field remains for source
@@ -103,7 +155,7 @@ legacy workers continue using `laisky/tasks/html_crawler/pending`, exposed as
 workers never consume both queues and producers never fall back to the old key.
 Do not migrate, delete or drain existing legacy tasks as part of this release.
 Task UUIDs and `laisky/tasks/html_crawler/result/` remain unchanged; a result
-still needs exact submitted identity, policy and receipt verification.
+still needs exact submitted identity, policy and acquisition verification.
 
 A worker upgrade alone cannot isolate tasks on a shared queue. The October 11
 owned fixture produced a legacy result despite deployment of a qualified new
