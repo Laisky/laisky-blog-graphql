@@ -1,6 +1,6 @@
 module github.com/Laisky/laisky-blog-graphql
 
-go 1.27.0
+go 1.27.3
 
 replace github.com/pgvector/pgvector-go => ./third_party/pgvector-go
 

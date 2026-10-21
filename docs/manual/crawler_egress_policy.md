@@ -213,6 +213,27 @@ Admission/authorization rejection precedes paid acceptance. An accepted fetch
 that later fails keeps existing billing behavior. The incident does not justify
 changing charging/refund policy without a separate product decision.
 
+## HOWTO: patch the caller build toolchain
+
+Build the caller with Go 1.27.3 or a later patched Go 1.27 release. The module
+minimum, Docker builder and explicit CI pins select 1.27.3; workflows that read
+`go.mod` inherit that minimum. [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)
+affects `crypto/x509.Certificate.Verify` in earlier toolchains, and the
+[Go 1.27.3 release](https://go.dev/doc/devel/release#go1.27.3) fixes it.
+After selecting the patched compiler, verify the caller's existing MCP HTTPS
+fetch package with the repository-pinned govulncheck v1.8.0:
+
+```sh
+go version
+GOTOOLCHAIN=local GOWORK=off govulncheck ./internal/mcp/imageproc
+```
+
+This build correction preserves shared library source and dependency versions.
+The worker can retain `v1.0.2-0.20261021132434-f1aa1b9483de` because it already
+builds with Go 1.27.3. Each service applies the standard-library fix when its own
+binary is rebuilt with the patched toolchain; the shared task contract and stored
+data do not change.
+
 ## Coordinated acceptance and release
 
 Both repositories require red-to-green behavioral regressions and valid-public
