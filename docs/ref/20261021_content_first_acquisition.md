@@ -12,7 +12,11 @@ return that alternative result to a compatible caller.
 
 Add `allow_provider_fallback` and `acquisition` to the existing JSON task envelope.
 The shared verifier keeps the direct receipt path intact and accepts provider
-provenance only for an opted-in public task without a fabricated direct receipt.
+provenance only when the producer advertised protocol support, for a public task
+without a fabricated direct receipt. Effective worker provider configuration,
+including existing defaults, permits forwarding the whole eligible target URL;
+the capability is not per-request user consent. Direct-only producers retain a
+missing or false capability.
 All existing task identity, policy, output and result limits remain enforced.
 Public byte-returning APIs, the MCP `content` schema, billing and queue keys do
 not change. The worker implementation remains in the companion Ramjet PR.
@@ -38,7 +42,9 @@ go test -count=1 ./library/search ./library/db/redis \
 go test -count=1 ./library/crawleregress ./library/search ./library/db/redis -timeout=90s
 ```
 
-Qualification uses Go 1.27.2 and disposable local Redis fixtures. Permanent
+Initial qualification used Go 1.27.2 and disposable local Redis fixtures. Final
+standalone and paired-process acceptance was repeated with both services built
+on Go 1.27.3 after the build-security follow-up. Permanent
 regressions cover direct legacy receipts, provider capability escalation,
 task/target/policy/output tampering, missing or contradictory provenance,
 provider-name syntax, cancellation, and all four old/new producer-worker JSON

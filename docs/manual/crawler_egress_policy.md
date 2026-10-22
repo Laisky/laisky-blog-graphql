@@ -74,17 +74,24 @@ renderer behavior tests remain part of acceptance.
 
 ### Content-first provider acquisition
 
-`HTMLCrawlerTask.allow_provider_fallback` is an additive producer capability.
-Missing or false retains the direct-only contract. New Redis producers advertise
-true, and a compatible worker tries direct retrieval before any eligible configured
-provider. It reports `acquisition.method` as `direct` or `provider`, with the
-actual bounded provider identifier in `acquisition.provider` for provider results.
+`HTMLCrawlerTask.allow_provider_fallback` is an additive caller protocol
+capability, not a per-request user-consent flag. Direct-only producers omit it or
+send false. New Redis producers advertise true, and a compatible worker tries
+direct retrieval before any eligible configured provider. The effective worker
+provider configuration permits forwarding the whole eligible public target URL,
+including its path and query. Existing worker defaults enable Jina and Defuddle
+unless disabled. Destination admission does not establish that a URL is
+nonconfidential; there are no secret-name or query-name heuristics that silently
+change this forwarding behavior.
+
+The worker reports `acquisition.method` as `direct` or `provider`, with the actual
+bounded provider identifier in `acquisition.provider` for provider results.
 Provider identifiers are validated for syntax; the shared contract does not
 hard-code a provider-name list. Configuration and selection stay in the worker.
 
 `crawleregress.VerifyAcquisition` retains receipt verification for absent metadata
 and explicit direct results. A provider result requires the producer's original
-permission, valid public target policy, an echoed capability, an empty direct
+capability, valid public target policy, an echoed capability, an empty direct
 `RequestChain`, and no `EgressReceipt`. Task ID, exact target, output mode, policy
 digest, size limits and nonempty requested output remain checked before release.
 Returned metadata cannot opt a direct-only caller into accepting provider output.
@@ -225,7 +232,7 @@ fetch package with the repository-pinned govulncheck v1.8.0:
 
 ```sh
 go version
-GOTOOLCHAIN=local GOWORK=off govulncheck ./internal/mcp/imageproc
+GOTOOLCHAIN=local GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./internal/mcp/imageproc
 ```
 
 This build correction preserves shared library source and dependency versions.
