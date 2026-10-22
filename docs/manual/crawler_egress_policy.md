@@ -78,11 +78,20 @@ renderer behavior tests remain part of acceptance.
 capability, not a per-request user-consent flag. Direct-only producers omit it or
 send false. New Redis producers advertise true, and a compatible worker tries
 direct retrieval before any eligible configured provider. The effective worker
-provider configuration permits forwarding the whole eligible public target URL,
-including its path and query. Existing worker defaults enable Jina and Defuddle
-unless disabled. Destination admission does not establish that a URL is
-nonconfidential; there are no secret-name or query-name heuristics that silently
-change this forwarding behavior.
+provider configuration retains Jina and Defuddle enabled by default, but the
+verified fallback no longer forwards a query-bearing URL to a provider by
+default. A worker operator may explicitly authorize intact query forwarding to
+all configured providers with `web_fetch.allow_query_forwarding: true`.
+The provider receives the exact original query when opted in; the setting is
+**not** implied by the caller capability flag. The worker refuses URL userinfo
+and fragments even with the query opt-in. No secret-name or query-name heuristic
+changes selected parameters, and a refused fallback leaves direct retrieval and
+its diagnostics unchanged. The worker's legacy explicit provider API is not
+altered. This is an intentional privacy-first change to provider recovery for
+query-bearing URLs, not a queue, database, MCP response, or direct-path change.
+Operator configuration should reflect whether URL paths or queries may contain
+credentials. Destination admission proves network eligibility, not that a URL
+is nonconfidential.
 
 The worker reports `acquisition.method` as `direct` or `provider`, with the actual
 bounded provider identifier in `acquisition.provider` for provider results.
