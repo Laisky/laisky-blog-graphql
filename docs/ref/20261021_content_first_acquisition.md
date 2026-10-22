@@ -13,10 +13,14 @@ return that alternative result to a compatible caller.
 Add `allow_provider_fallback` and `acquisition` to the existing JSON task envelope.
 The shared verifier keeps the direct receipt path intact and accepts provider
 provenance only when the producer advertised protocol support, for a public task
-without a fabricated direct receipt. Effective worker provider configuration,
-including existing defaults, permits forwarding the whole eligible target URL;
-the capability is not per-request user consent. Direct-only producers retain a
-missing or false capability.
+without a direct receipt (of any kind). The producer capability is not user
+consent to disclose query parameters. The companion worker now blocks verified
+provider fallback for URLs with queries unless its operator explicitly enables
+`web_fetch.allow_query_forwarding: true`; that setting forwards exact query values
+to configured providers and never permits URL userinfo or fragments. Query-free
+provider fallback and direct retrieval retain their original behavior. The
+old explicit provider API is unchanged. No secret-name or query-name filtering
+is used. Direct-only producers retain a missing or false capability.
 All existing task identity, policy, output and result limits remain enforced.
 Public byte-returning APIs, the MCP `content` schema, billing and queue keys do
 not change. The worker implementation remains in the companion Ramjet PR.
@@ -50,6 +54,16 @@ task/target/policy/output tampering, missing or contradictory provenance,
 provider-name syntax, cancellation, and all four old/new producer-worker JSON
 round trips. Provider lifecycle events identify acceptance without labeling it
 direct connection verification. These tests do not establish production recovery.
+
+The October 22 reviewer follow-up added
+[`crawler_provider_query_policy_test.go`](https://github.com/Laisky/go-ramjet/blob/fix/issue94-content-first-crawler/internal/tasks/gptchat/tasks/crawler_provider_query_policy_test.go)
+in the worker PR: its test-only RED run observed both unauthorized query
+forwarding cases failing, and query-free provider and direct-target controls
+passing. The worker now makes one disclosure decision before dispatch to any
+provider. The caller already had a passing
+`TestProviderFallbackRejectsForgedResults/fabricated_direct_receipt` regression
+that rejects *every* non-nil provider-result direct receipt; the documentation
+wording above now matches the executable contract.
 
 ### Cross-process service acceptance
 
