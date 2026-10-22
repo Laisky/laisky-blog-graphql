@@ -78,6 +78,7 @@ func (db *DB) AddHTMLCrawlerTaskWithEgress(ctx context.Context, url, apiKey stri
 		return "", errors.Wrap(policyErr, "validate crawler task policy")
 	}
 	task := NewHTMLCrawlerTaskWithEgress(url, "", outputMarkdown, egress)
+	task.AllowProviderFallback = true
 	payload, err := task.ToString()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to serialize task using ToString")

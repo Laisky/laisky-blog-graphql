@@ -26,6 +26,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
@@ -95,7 +96,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 	workerLog, err := os.Create(workerLogPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, workerLog.Close()) })
-	worker := exec.Command(binary, "-test.run=^TestCrawlerServicePathWorker$", "-test.timeout=2m", "-test.v")
+	worker := exec.Command(binary, "-test.run=^TestCrawlerServicePathWorker$", "-test.timeout=3m", "-test.v")
 	worker.Env = append(os.Environ(), "CRAWLER_SERVICE_TEST_REDIS_SOCKET="+socket,
 		"CRAWLER_SERVICE_TEST_ALERT_URL="+alertSink.URL)
 	worker.Stdout, worker.Stderr = workerLog, workerLog
@@ -153,6 +154,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 		path                                       string
 		markdown                                   bool
 		code, workerCategory, status, workerSignal string
+		provider                                   bool
 	}{
 		{path: "/html", status: rlibs.TaskStatusSuccess},
 		{path: "/markdown", markdown: true, status: rlibs.TaskStatusSuccess},
@@ -162,6 +164,10 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 		{path: "/missing-worker-receipt", code: "crawler_failed", workerCategory: "evidence_rejected", status: rlibs.TaskStatusFailed},
 		{path: "/missing-result-receipt", code: "crawler_egress_unverified", status: rlibs.TaskStatusSuccess},
 		{path: "/forged-result-peer", code: "crawler_egress_rejected", status: rlibs.TaskStatusSuccess},
+		{path: "/provider-challenge", markdown: true, status: rlibs.TaskStatusSuccess, provider: true},
+		{path: "/provider-timeout", status: rlibs.TaskStatusSuccess, provider: true},
+		{path: "/provider-error", code: "crawler_failed", workerCategory: "render_failed", status: rlibs.TaskStatusFailed},
+		{path: "/forged-provider-result", code: "crawler_egress_rejected", status: rlibs.TaskStatusSuccess, provider: true},
 	}
 	for _, tc := range cases {
 		t.Run(strings.TrimPrefix(tc.path, "/"), func(t *testing.T) {
@@ -170,9 +176,16 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 			require.Equal(t, tc.code != "", result.IsError)
 			text := getText(t, result)
 			if tc.code == "" {
-				require.Contains(t, text, "service-body-canary")
+				if tc.provider {
+					require.Contains(t, text, "service-provider-canary")
+					require.NotContains(t, text, "service-body-canary", "challenge HTML must never become accepted provider content")
+				} else {
+					require.Contains(t, text, "service-body-canary")
+				}
 			} else {
 				require.NotContains(t, text, "service-body-canary")
+				require.NotContains(t, text, "service-provider-canary")
+				require.NotContains(t, text, "service-provider-error-canary")
 				require.NotContains(t, text, "service-secret-canary")
 			}
 			requireServiceBill(t, bills, oneapi.PriceWebFetch.Int())
@@ -190,7 +203,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 
 			id := client.Get(ctx, "service-path/case"+tc.path).Val()
 			require.NotEmpty(t, id)
-			lifecycleExpected[id] = serviceLifecycleExpectation{status: tc.status, verified: tc.code == ""}
+			lifecycleExpected[id] = serviceLifecycleExpectation{status: tc.status, accepted: tc.code == "", provider: tc.provider}
 			raw, resultErr := client.Get(ctx, rlibs.KeyPrefixTaskHTMLCrawlerResult+id).Result()
 			require.NoError(t, resultErr)
 			decoded, decodeErr := rlibs.NewHTMLCrawlerTaskFromString(raw)
@@ -200,6 +213,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 			require.Equal(t, tc.markdown, decoded.OutputMarkdown)
 			require.Equal(t, tc.status, decoded.Status)
 			require.Empty(t, decoded.APIKey)
+			require.True(t, decoded.AllowProviderFallback)
 			require.Equal(t, []string{"93.184.216.34"}, decoded.Egress.Addresses)
 			require.Greater(t, client.TTL(ctx, rlibs.KeyPrefixTaskHTMLCrawlerResult+id).Val(), 2*time.Hour)
 			var wire map[string]any
@@ -214,9 +228,22 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 			} else {
 				require.NotContains(t, wire, "failure_signal")
 			}
-			if tc.code == "" {
+			if tc.provider {
+				require.Equal(t, &crawleregress.Acquisition{Method: crawleregress.AcquisitionProvider, Provider: "service-reader"}, decoded.Acquisition)
+				require.Nil(t, decoded.EgressReceipt, "provider content cannot claim a direct target receipt")
+				if tc.code == "" {
+					require.Empty(t, decoded.RequestChain, "provider content cannot fabricate the target request chain")
+					if tc.markdown {
+						require.Equal(t, "# service-provider-canary\n\nOwned provider content.", string(decoded.ResultMarkdown))
+					} else {
+						require.Empty(t, decoded.ResultMarkdown)
+						require.Contains(t, string(decoded.ResultHTML), "<h1>service-provider-canary</h1>")
+					}
+				}
+			} else if tc.code == "" {
 				require.NotNil(t, decoded.EgressReceipt)
 				require.Equal(t, "93.184.216.34", decoded.EgressReceipt.Origins[0].PeerAddress)
+				require.Equal(t, &crawleregress.Acquisition{Method: crawleregress.AcquisitionDirect}, decoded.Acquisition)
 			}
 			if tc.code != "" {
 				logData, readErr := os.ReadFile(operationLogPath)
@@ -234,6 +261,8 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 				}
 				require.Equal(t, 1, matches, "failure fields must belong to this queued task")
 				require.Equal(t, tc.code, failure["error_code"])
+				require.Equal(t, target, failure["original_url"], "existing selected-input failure capture is preserved")
+				require.Equal(t, target, failure["submitted_url"])
 				if tc.workerCategory != "" {
 					require.Equal(t, tc.workerCategory, failure["worker_category"])
 				}
@@ -280,7 +309,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 	})
 	resultKeys, keysErr := client.Keys(ctx, rlibs.KeyPrefixTaskHTMLCrawlerResult+"*").Result()
 	require.NoError(t, keysErr)
-	require.Len(t, resultKeys, 8)
+	require.Len(t, resultKeys, len(cases))
 	select {
 	case workerErr := <-workerDone:
 		workerData, readErr := os.ReadFile(workerLogPath)
@@ -296,10 +325,22 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 	for _, path := range []string{operationLogPath, workerLogPath} {
 		data, readErr := os.ReadFile(path)
 		require.NoError(t, readErr)
-		for _, canary := range []string{"service-secret-canary", "service-query-canary", "service-body-canary", "service-billing-body-canary"} {
-			require.NotContains(t, string(data), canary, "private fixture content escaped to logs")
+		for _, canary := range []string{"service-secret-canary", "service-billing-body-canary", "service-provider-canary", "service-provider-error-canary"} {
+			require.NotContains(t, string(data), canary, "credentials or provider response content escaped to logs")
 		}
 	}
+	workerCapture := serviceLifecycleRows(t, workerLogPath)
+	var capturedChallenge bool
+	for _, row := range workerCapture {
+		if row["task_id"] == challengeTaskID && row["event"] == "processing_completed" {
+			require.Equal(t, "http://93.184.216.34/challenge?private=service-query-canary", row["queued_target_url"])
+			require.Equal(t, "<html><body><div id=\"cf-chl-widget\">service-body-canary</div></body></html>", row["rendered_html"])
+			require.Equal(t, true, row["rendered_html_observed"])
+			require.Equal(t, false, row["conversion_input_observed"])
+			capturedChallenge = true
+		}
+	}
+	require.True(t, capturedChallenge, "existing worker selected-input reproduction capture must survive provider support")
 	require.NotEmpty(t, challengeTaskID)
 	var producerAlert, workerAlert, producerChallenge, workerChallenge bool
 	alertDeadline := time.NewTimer(5 * time.Second)
@@ -307,7 +348,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 	for !producerAlert || !workerAlert || !producerChallenge || !workerChallenge || len(alertMessages) > 0 {
 		select {
 		case message := <-alertMessages:
-			for _, canary := range []string{"service-secret-canary", "service-query-canary", "service-body-canary", "service-billing-body-canary"} {
+			for _, canary := range []string{"service-secret-canary", "service-billing-body-canary", "service-provider-canary", "service-provider-error-canary"} {
 				require.NotContains(t, message, canary)
 			}
 			isProducer := strings.Contains(message, "graphql.laisky-graphql.mcp.web_fetch")
@@ -333,6 +374,7 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 					require.Equal(t, "render", fields["worker_stage"])
 					require.Equal(t, challengeTaskID, fields["task_id"])
 					require.Equal(t, "widget_element", fields["worker_signal"])
+					require.Equal(t, "http://93.184.216.34/challenge?private=service-query-canary", fields["original_url"])
 					producerChallenge = true
 				} else {
 					require.NotContains(t, fields, "worker_signal")
@@ -343,6 +385,8 @@ func TestMCPWebFetchServicePath(t *testing.T) {
 					require.Equal(t, "render", fields["stage"])
 					require.Equal(t, challengeTaskID, fields["task_id"])
 					require.Equal(t, "widget_element", fields["challenge_signal"])
+					require.Equal(t, "http://93.184.216.34/challenge?private=service-query-canary", fields["queued_target_url"])
+					require.Equal(t, "<html><body><div id=\"cf-chl-widget\">service-body-canary</div></body></html>", fields["rendered_html"])
 					workerChallenge = true
 				} else {
 					require.NotContains(t, fields, "challenge_signal")

@@ -13,7 +13,8 @@ import (
 // serviceLifecycleExpectation describes terminal state and consumer body acceptance for one synthetic task.
 type serviceLifecycleExpectation struct {
 	status   string
-	verified bool
+	accepted bool
+	provider bool
 }
 
 // serviceLifecycleRows reads only fixture JSON log lines and returns their decoded scalar fields.
@@ -38,11 +39,19 @@ func assertServiceLifecycleEvidence(t *testing.T, workerPath, callerPath string,
 	t.Helper()
 	workerRows, callerRows := serviceLifecycleRows(t, workerPath), serviceLifecycleRows(t, callerPath)
 	for taskID, want := range expected {
-		processing, published, observed, verified, prepared := -1, -1, -1, -1, -1
+		processing, published, observed, verified, accepted, prepared := -1, -1, -1, -1, -1, -1
+		providerAcquired := -1
 		requestID := ""
 		for i, row := range workerRows {
 			if row["task_id"] != taskID {
 				continue
+			}
+			if row["msg"] == "crawler provider content acquired" {
+				require.True(t, want.provider)
+				require.Equal(t, -1, providerAcquired)
+				providerAcquired = i
+				require.Equal(t, "provider", row["acquisition_method"])
+				require.Equal(t, "service-reader", row["provider"])
 			}
 			switch row["event"] {
 			case "processing_completed":
@@ -66,6 +75,12 @@ func assertServiceLifecycleEvidence(t *testing.T, workerPath, callerPath string,
 		}
 		require.GreaterOrEqual(t, processing, 0, "worker processing event for %s", taskID)
 		require.Greater(t, published, processing, "terminal publication follows processing locally")
+		if want.provider {
+			require.GreaterOrEqual(t, providerAcquired, 0, "worker records the actual provider for %s", taskID)
+			require.Less(t, providerAcquired, processing)
+		} else {
+			require.Equal(t, -1, providerAcquired)
+		}
 		for i, row := range callerRows {
 			if row["task_id"] != taskID {
 				continue
@@ -86,6 +101,13 @@ func assertServiceLifecycleEvidence(t *testing.T, workerPath, callerPath string,
 			case "result_verified":
 				require.Equal(t, -1, verified)
 				verified = i
+				require.Equal(t, "direct", row["acquisition_method"])
+				require.Empty(t, row["provider"])
+			case "result_accepted":
+				require.Equal(t, -1, accepted)
+				accepted = i
+				require.Equal(t, "provider", row["acquisition_method"])
+				require.Equal(t, "service-reader", row["provider"])
 			default:
 				continue
 			}
@@ -104,11 +126,19 @@ func assertServiceLifecycleEvidence(t *testing.T, workerPath, callerPath string,
 				require.NotContains(t, row, "caller_receipt")
 			}
 		}
-		if want.verified {
-			require.Greater(t, verified, observed, "accepted body follows observation")
-			require.Greater(t, prepared, verified, "prepared tool response follows body verification")
+		if want.accepted {
+			if want.provider {
+				require.Equal(t, -1, verified, "provider result must never claim a verified direct acquisition")
+				require.Greater(t, accepted, observed, "provider acceptance follows observation")
+				require.Greater(t, prepared, accepted, "prepared response follows provider acceptance")
+			} else {
+				require.Equal(t, -1, accepted)
+				require.Greater(t, verified, observed, "accepted direct body follows observation")
+				require.Greater(t, prepared, verified, "prepared tool response follows body verification")
+			}
 		} else {
 			require.Equal(t, -1, verified, "failed or rejected body is not accepted")
+			require.Equal(t, -1, accepted, "failed or rejected provider body is not accepted")
 			require.Equal(t, -1, prepared, "failed or rejected body has no successful prepared response")
 		}
 	}

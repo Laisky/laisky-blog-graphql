@@ -54,7 +54,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.27.2'
+          go-version: '1.27.3'
           cache: false
       - name: Real sanitized Docker context and compiled capture identity
         run: python3 .scripts/test_docker_build_identity.py -v
