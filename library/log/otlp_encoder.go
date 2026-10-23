@@ -140,8 +140,7 @@ func groupOTLPMultimap(fields []attribute.KeyValue) []attribute.KeyValue {
 func (encoder *otlpObjectEncoder) clone() *otlpObjectEncoder {
 	clones := make(map[*otlpObjectEncoder]*otlpObjectEncoder)
 	var copyValue func(any) any
-	var copyObject func(*otlpObjectEncoder) *otlpObjectEncoder
-	copyObject = func(source *otlpObjectEncoder) *otlpObjectEncoder {
+	copyObject := func(source *otlpObjectEncoder) *otlpObjectEncoder {
 		target := &otlpObjectEncoder{err: source.err}
 		clones[source] = target
 		for _, field := range source.fields {
@@ -190,9 +189,6 @@ func otlpUint64Value(value uint64) attribute.Value {
 func otlpComplexValue(value complex128, bits int) attribute.Value {
 	return attribute.StringValue(strconv.FormatComplex(value, 'g', -1, bits))
 }
-
-// validOTLPKey validates Unicode keys that the SDK can represent without dropping them.
-func validOTLPKey(key string) bool { return key != "" && utf8.ValidString(key) }
 
 // AddArray encodes a source array once and retains its node even when the application reports an error.
 func (encoder *otlpObjectEncoder) AddArray(key string, value zapcore.ArrayMarshaler) error {

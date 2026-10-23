@@ -35,6 +35,8 @@ func otlpReflectedValue(value any) (attribute.Value, error) {
 }
 
 // decodeOTLPJSONValue maps reflected JSON recursively without normalizing source string bytes.
+//
+//nolint:gocognit // one exhaustive switch over JSON token kinds is clearer than split helpers
 func decodeOTLPJSONValue(decoder *json.Decoder, source []byte) (attribute.Value, error) {
 	start := decoder.InputOffset()
 	token, err := decoder.Token()

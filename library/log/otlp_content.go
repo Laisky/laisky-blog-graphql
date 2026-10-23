@@ -5,11 +5,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// projectOTLPContent maps an ordinary entry without inherited context using native OTLP values.
-func projectOTLPContent(entry zapcore.Entry, fields []zapcore.Field) ([]attribute.KeyValue, error) {
-	return projectOTLPContext(entry, fields, nil)
-}
-
 // projectOTLPContext extends an immutable branch snapshot with callsite fields in source order.
 func projectOTLPContext(entry zapcore.Entry, fields []zapcore.Field, inherited *otlpObjectEncoder) ([]attribute.KeyValue, error) {
 	encoder := newOTLPObjectEncoder()

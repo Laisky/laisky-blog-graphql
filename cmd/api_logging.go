@@ -17,7 +17,7 @@ func runAPIWithLogging(ctx context.Context, run func(context.Context) error) (ru
 		return errors.Wrap(err, "initialize application logging")
 	}
 	defer func() {
-		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if err := shutdown(drainCtx); err != nil {
 			runErr = errors.WithStack(errors.Join(runErr, err))

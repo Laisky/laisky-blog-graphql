@@ -22,7 +22,7 @@ func serveHTTP(ctx context.Context, server *http.Server, listener net.Listener) 
 		}
 		return errors.Wrap(err, "serve HTTP")
 	case <-ctx.Done():
-		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		shutdownErr := server.Shutdown(drainCtx)
 		if shutdownErr != nil {

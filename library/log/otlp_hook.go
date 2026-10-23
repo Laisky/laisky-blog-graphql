@@ -9,25 +9,12 @@ import (
 	otellog "go.opentelemetry.io/otel/log"
 )
 
-// privateOTLPHook is inherited by loggers created before the private provider exists.
-func privateOTLPHook(entry zapcore.Entry, fields []zapcore.Field) error {
-	if runtime := activeOTLP.Load(); runtime != nil {
-		return runtime.emitContext(entry, fields, nil)
-	}
-	return nil
-}
-
 // otlpHookWithContext emits a callsite with its immutable inherited branch snapshot.
 func otlpHookWithContext(entry zapcore.Entry, fields []zapcore.Field, inherited *otlpObjectEncoder) error {
 	if runtime := activeOTLP.Load(); runtime != nil {
 		return runtime.emitContext(entry, fields, inherited)
 	}
 	return nil
-}
-
-// emit preserves application content and reports protocol rejection without modifying stdout.
-func (r *otlpRuntime) emit(entry zapcore.Entry, fields []zapcore.Field) error {
-	return r.emitContext(entry, fields, nil)
 }
 
 // emitContext projects callbacks before admission so they cannot block bounded SDK shutdown.

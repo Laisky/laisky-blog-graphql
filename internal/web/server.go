@@ -160,7 +160,7 @@ func RunServer(addr string, resolver *Resolver) {
 
 // RunServerContext serves the API until cancellation, then drains HTTP requests.
 //
-//nolint:gocognit,maintidx // server setup inherently involves many configuration steps
+//nolint:gocognit,maintidx,contextcheck // server setup inherently involves many configuration steps; handlers use request contexts
 func RunServerContext(ctx context.Context, addr string, resolver *Resolver) error {
 	prefix := newURLPrefixConfig()
 	log.Logger.Info("configuring web url prefix",
@@ -479,7 +479,7 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 	}
 
 	log.Logger.Info("listening on http", zap.String("addr", addr))
-	listener, err := net.Listen("tcp", addr)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
 	if err != nil {
 		return errors.Wrap(err, "listen HTTP")
 	}

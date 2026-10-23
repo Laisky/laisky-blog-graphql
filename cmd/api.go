@@ -79,7 +79,7 @@ func init() {
 	rootCMD.AddCommand(apiCMD)
 }
 
-//nolint:gocognit,maintidx // large but straightforward initialization sequence
+//nolint:gocognit,maintidx,contextcheck // large but straightforward initialization sequence; service constructors do not accept context
 func runAPI(ctx context.Context) error {
 	logger := log.Logger.Named("api")
 	startTime := time.Now()
