@@ -46,7 +46,15 @@ export function parseRedirectTarget(rawValue: string | null, origin: string): Re
   }
 
   try {
-    if (parseBlogCodeTarget(parsed) && !/^https:\/\/blog\.laisky\.com\/?\?/.test(raw)) {
+    const codeBinding = parseBlogCodeTarget(parsed);
+    if (isBlogSsoClient(parsed) && !codeBinding) {
+      if (!/^https?:\/\//i.test(raw) || raw.length > 4096 || raw.includes('\\')
+        || Array.from(raw).some((character) => character.charCodeAt(0) <= 32)) {
+        throw new Error('Invalid Blog SSO bookmark.');
+      }
+      buildBlogBootstrapUrl(parsed);
+    }
+    if (codeBinding && !/^https:\/\/blog\.laisky\.com\/?\?/.test(raw)) {
       throw new Error('Invalid Blog SSO callback spelling.');
     }
   } catch {
@@ -164,6 +172,7 @@ export function isInternalIPv6Address(hostname: string): boolean {
 }
 
 export function buildRedirectUrlWithToken(target: URL, token: string): string {
+  if (isBlogSsoClient(target)) throw new Error('Blog requires a single-use SSO code. Restart sign-in from Blog.');
   if (parseBlogCodeTarget(target)) throw new Error('Blog requires a single-use SSO code.');
   const next = new URL(target.toString());
   next.searchParams.set('sso_token', token);
@@ -172,6 +181,37 @@ export function buildRedirectUrlWithToken(target: URL, token: string): string {
 
 const blogCallback = 'https://blog.laisky.com';
 const codeMarkers = ['sso_flow', 'sso_state', 'sso_challenge', 'sso_challenge_method'];
+const blogNavigationMarkers = [
+  ...codeMarkers, 'sso_token', 'sso_code', 'code_verifier', 'sso_verifier', 'sso_start', 'sso_return', 'sso_issuer',
+];
+
+/** buildBlogBootstrapUrl returns only a fixed HTTPS initiation URL and a bounded internal return route. */
+function buildBlogBootstrapUrl(target: URL): string {
+  const returnPath = target.pathname + target.search + target.hash;
+  if (!['http:', 'https:'].includes(target.protocol) || target.hostname !== 'blog.laisky.com'
+    || target.port || target.username || target.password || returnPath.length > 2048
+    || !returnPath.startsWith('/') || returnPath.startsWith('//') || returnPath.includes('\\')
+    || Array.from(returnPath).some((character) => character.charCodeAt(0) <= 32)
+    || [...target.searchParams.keys(), ...new URLSearchParams(target.hash.slice(1)).keys()]
+      .some((key) => blogNavigationMarkers.includes(key.toLowerCase()))) {
+    throw new Error('Invalid Blog SSO bookmark.');
+  }
+  const bootstrap = new URL(blogCallback);
+  bootstrap.searchParams.set('sso_start', '1');
+  bootstrap.searchParams.set('sso_return', returnPath);
+  // The hint selects a fixed trusted entry only; callback and redemption bindings stay canonical.
+  if (typeof window !== 'undefined' && window.location.origin === 'https://mcp.laisky.com') {
+    bootstrap.searchParams.set('sso_issuer', 'mcp');
+  }
+  return bootstrap.toString();
+}
+
+
+/** isBlogSsoClient identifies the existing Blog hostname across old scheme, port and path variants. */
+export function isBlogSsoClient(target: URL): boolean {
+  return normalizeHostname(target.hostname) === 'blog.laisky.com';
+}
+
 
 /** BlogCodeTarget holds only the public bindings for the registered Blog callback. */
 export interface BlogCodeTarget {
@@ -204,10 +244,13 @@ export function parseBlogCodeTarget(target: URL): BlogCodeTarget | null {
   return { state, challenge };
 }
 
-/** buildSsoRedirectUrl issues an opt-in Blog code or preserves the legacy handoff for other clients. */
+/** buildSsoRedirectUrl issues a bound code, bootstraps an old Blog bookmark, or preserves another client's handoff. */
 export async function buildSsoRedirectUrl(target: URL, token: string): Promise<string> {
   const binding = parseBlogCodeTarget(target);
-  if (!binding) return buildRedirectUrlWithToken(target, token);
+  if (!binding) {
+    if (isBlogSsoClient(target)) return buildBlogBootstrapUrl(target);
+    return buildRedirectUrlWithToken(target, token);
+  }
   const response = await fetch(publicApiPath('/sso/code'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

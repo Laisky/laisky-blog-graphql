@@ -41,8 +41,8 @@ afterEach(() => {
   Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
 });
 
-function loginPage() {
-  render(<MemoryRouter initialEntries={['/sso/login?redirect_to=' + encodeURIComponent(target)]}>
+function loginPage(redirectTo = target) {
+  render(<MemoryRouter initialEntries={['/sso/login?redirect_to=' + encodeURIComponent(redirectTo)]}>
     <SsoLoginPage />
   </MemoryRouter>);
 }
@@ -184,6 +184,108 @@ describe('cancelled GitHub completion preserves cancellation', () => {
     await pending;
     await Promise.resolve();
     expect(loadSsoToken()).toBe('');
+    expect(fetchCode).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+
+/** expectBootstrapNavigation verifies the old bookmark leaves with no bearer or borrowed code binding. */
+async function expectBootstrapNavigation(returnPath: string, issuer?: 'mcp') {
+  await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+  const bootstrap = new URL(assign.mock.calls[0][0]);
+  expect(bootstrap.origin).toBe('https://blog.laisky.com');
+  expect(bootstrap.pathname).toBe('/');
+  expect([...bootstrap.searchParams.keys()]).toEqual(issuer ? ['sso_start', 'sso_return', 'sso_issuer'] : ['sso_start', 'sso_return']);
+  expect(bootstrap.searchParams.get('sso_issuer')).toBe(issuer ?? null);
+  expect(bootstrap.searchParams.get('sso_start')).toBe('1');
+  expect(bootstrap.searchParams.get('sso_return')).toBe(returnPath);
+  expect(bootstrap.toString()).not.toContain('synthetic-bearer');
+  expect(fetchCode).not.toHaveBeenCalled();
+  expect(loadSsoToken()).toBe('synthetic-bearer');
+}
+
+describe('legacy Blog bookmarks restart safely through the current consumer', () => {
+  const bookmark = 'https://blog.laisky.com/p/article/?view=compact#intro';
+  const returnPath = '/p/article/?view=compact#intro';
+
+  it('continues password login without placing the session in a URL', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({ UserLogin: { token: 'synthetic-bearer' } });
+    loginPage(bookmark);
+    fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: 'alice' } });
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'inert-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Login$/ }));
+    await expectBootstrapNavigation(returnPath);
+  });
+
+  it('continues password/TOTP login without weakening the second step', async () => {
+    vi.mocked(fetchGraphQL).mockRejectedValueOnce(new Error('totp_required'))
+      .mockResolvedValueOnce({ UserLogin: { token: 'synthetic-bearer' } });
+    loginPage(bookmark);
+    fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: 'alice' } });
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'inert-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Login$/ }));
+    fireEvent.change(await screen.findByLabelText('TOTP Code'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Verify$/ }));
+    await expectBootstrapNavigation(returnPath);
+  });
+
+  it('continues email-code login without sending a live email', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({ UserLoginWithEmailCode: { token: 'synthetic-bearer' } });
+    loginPage(bookmark);
+    fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: 'alice' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Email Code$/ }));
+    fireEvent.change(screen.getByLabelText('Email Code'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Login$/ }));
+    await expectBootstrapNavigation(returnPath);
+  });
+
+  it('continues an already-verified issuer session without a new login', async () => {
+    storeSsoToken('synthetic-bearer');
+    vi.mocked(fetchGraphQL).mockResolvedValue({ BlogUser: {} });
+    loginPage(bookmark);
+    await expectBootstrapNavigation(returnPath);
+    expect(fetchGraphQL).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a verified MCP-origin session on the fixed MCP login entry', async () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true, value: { origin: 'https://mcp.laisky.com', pathname: '/sso/login', assign },
+    });
+    storeSsoToken('synthetic-bearer');
+    vi.mocked(fetchGraphQL).mockResolvedValue({ BlogUser: {} });
+    loginPage(bookmark);
+    await expectBootstrapNavigation(returnPath, 'mcp');
+    expect(fetchGraphQL).toHaveBeenCalledTimes(1);
+  });
+
+  it('upgrades an old HTTP bookmark after passkey completion', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValueOnce({ UserStartPasskeyLogin: { session: 'inert-session', options_json: '{}' } })
+      .mockResolvedValueOnce({ UserFinishPasskeyLogin: { token: 'synthetic-bearer', redirect_to: 'http://blog.laisky.com/p/article/' } });
+    vi.mocked(getPasskeyCredentialJSON).mockResolvedValue('{}');
+    loginPage(bookmark);
+    fireEvent.click(screen.getByRole('button', { name: /Sign in with Passkey/ }));
+    await expectBootstrapNavigation('/p/article/');
+  });
+
+  it('continues a valid target returned by signed GitHub completion', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({
+      UserGithubOAuthLogin: { token: 'synthetic-bearer', redirect_to: bookmark },
+    });
+    render(<MemoryRouter initialEntries={['/sso/github/callback?code=inert-code&state=inert-state']}>
+      <SsoGithubCallbackPage />
+    </MemoryRouter>);
+    await expectBootstrapNavigation(returnPath);
+  });
+
+  it('rejects a non-default port returned by signed GitHub completion', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({
+      UserGithubOAuthLogin: { token: 'synthetic-bearer', redirect_to: 'https://blog.laisky.com:444/' },
+    });
+    render(<MemoryRouter initialEntries={['/sso/github/callback?code=inert-code&state=inert-state']}>
+      <SsoGithubCallbackPage />
+    </MemoryRouter>);
+    await screen.findByText(/Invalid Blog SSO bookmark/);
     expect(fetchCode).not.toHaveBeenCalled();
     expect(assign).not.toHaveBeenCalled();
   });
