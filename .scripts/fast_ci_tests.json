@@ -52,7 +52,15 @@
     "package": "./library/log",
     "tests": [
       "TestAlertAdoptionScopeCoreSnapshots",
-      "TestAlertAdoptionLegacyHookCoreContracts"
+      "TestAlertAdoptionLegacyHookCoreContracts",
+      "TestOTLPStructuredFieldsUseZapSemantics",
+      "TestOTLPFaithfulDefault",
+      "TestOTLPExistingStartupMessageAndFutureFields",
+      "TestOTLPResourceEnvironmentPreserved",
+      "TestOTLPContentIsNotTruncated",
+      "TestOTLPDisabledBranchDoesNotEvaluateCallbacks",
+      "TestOTLPWithSnapshotsNamespacesAndFieldOrder",
+      "TestOTLPCorePreservesExistingCheckedEntryDecision"
     ]
   },
   {
