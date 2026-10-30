@@ -14,6 +14,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/Laisky/errors/v2"
 	ginMw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
 	glog "github.com/Laisky/go-utils/v6/log"
@@ -150,8 +151,17 @@ func (c urlPrefixConfig) display(value string) string {
 	return value
 }
 
-//nolint:gocognit,maintidx // server setup inherently involves many configuration steps
+// RunServer serves the API with a background lifetime for existing callers.
 func RunServer(addr string, resolver *Resolver) {
+	if err := RunServerContext(context.Background(), addr, resolver); err != nil {
+		log.Logger.Panic("HTTP server exit", zap.Error(err))
+	}
+}
+
+// RunServerContext serves the API until cancellation, then drains HTTP requests.
+//
+//nolint:gocognit,maintidx,contextcheck // server setup inherently involves many configuration steps; handlers use request contexts
+func RunServerContext(ctx context.Context, addr string, resolver *Resolver) error {
 	prefix := newURLPrefixConfig()
 	log.Logger.Info("configuring web url prefix",
 		zap.String("internal_prefix", prefix.display(prefix.internal)),
@@ -469,7 +479,11 @@ func RunServer(addr string, resolver *Resolver) {
 	}
 
 	log.Logger.Info("listening on http", zap.String("addr", addr))
-	log.Logger.Panic("httpServer exit", zap.Error(server.Run(addr)))
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
+	if err != nil {
+		return errors.Wrap(err, "listen HTTP")
+	}
+	return serveHTTP(ctx, &http.Server{Addr: addr, Handler: server, ReadHeaderTimeout: 10 * time.Second}, listener)
 }
 
 // serveMCPTransportRoot dispatches a request to the MCP streamable transport

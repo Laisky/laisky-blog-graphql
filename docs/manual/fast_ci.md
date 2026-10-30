@@ -13,7 +13,7 @@ includes security fixes. Historical timing measurements below retain the
 toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
-29 named unit tests in `cmd`, `library/log`, `internal/web`,
+37 named unit tests in `cmd`, `library/log`, `internal/web`,
 `internal/library/toolpolicy`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller` and
 `internal/web/telegram/service`. These exercise input validation, controlled
@@ -22,7 +22,13 @@ logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
 eager bound-context snapshots, full large selected input, legacy hook behavior,
 whole-record rejection and quiet successful/unauthorized paths using synthetic
-loopback HTTP only. All prior 20 essential tests remain selected. The explicit manifest
+loopback HTTP only. All prior 20 essential tests remain selected. The eight
+`library/log` OTLP cases use disposable loopback TLS receivers to verify operational
+message/field fidelity, unaltered synthetic canaries, native nested/duplicate fields,
+disabled callback behavior, immutable With snapshots, accepted-entry decisions,
+future-field preservation, custom resource attributes with explicit identity precedence
+and absence of implicit truncation. The explicit external-delivery test and
+queue/outage/race campaigns remain deliberate acceptance. The explicit manifest
 is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
@@ -85,7 +91,7 @@ frontend test/build acceptance, and the three-run network security race suite.
 CodeQL no longer runs on master/develop push or PR events or its former Saturday
 schedule. This extends PR #56's earlier cadence change; it deletes no coverage.
 
-`Linter / check` remains the single automatic formatting and 29-essential-unit
+`Linter / check` remains the single automatic formatting and 37-essential-unit
 gate on every PR and master/develop push. `ci.yml` image publishing/deployment
 and the path-filtered `deployment-contract.yml` safety job stay byte-for-byte
 unchanged. Dependency/database acceptance, memory benchmarks and evaluation
