@@ -43,19 +43,6 @@ func TestCloudMonitoringRouteFollowsPrefixes(t *testing.T) {
 	}
 }
 
-// TestCloudMonitoringRouteNeedsTelegramService keeps a deployment without the
-// service from accepting a notification it cannot deliver.
-func TestCloudMonitoringRouteNeedsTelegramService(t *testing.T) {
-	setupGinTestMode()
-	for _, resolver := range []*Resolver{nil, {}} {
-		router := gin.New()
-		registerCloudMonitoringAlertRoutes(router, urlPrefixConfig{}, resolver)
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, cloudMonitoringAlertPath, strings.NewReader(`{}`)))
-		require.Equal(t, http.StatusNotFound, response.Code)
-	}
-}
-
 // newAlertMongo returns an ephemeral database, or skips without the contract URI.
 func newAlertMongo(t *testing.T, ctx context.Context) *mongo.Database {
 	t.Helper()
@@ -198,4 +185,30 @@ func TestMongoCloudMonitoringWebhookEndToEnd(t *testing.T) {
 	bot.mu.Unlock()
 	require.Equal(t, http.StatusServiceUnavailable, post(receiverAlertType, receiverAlertToken).StatusCode,
 		"a partial fan-out must stay visible to the sender")
+}
+
+// TestCloudMonitoringRouteUsesWebhookNamespace pins the published path.
+func TestCloudMonitoringRouteUsesWebhookNamespace(t *testing.T) {
+	setupGinTestMode()
+	router := gin.New()
+	registerCloudMonitoringAlertRoutes(router, urlPrefixConfig{}, &Resolver{args: ResolverArgs{TelegramSvc: new(telegramSvc.Telegram)}})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/webhook/gcp/alerts/cloud-monitoring", strings.NewReader(`{}`)))
+	require.Equal(t, http.StatusUnauthorized, response.Code)
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/alerts/cloud-monitoring", strings.NewReader(`{}`)))
+	require.Equal(t, http.StatusNotFound, response.Code)
+}
+
+// TestCloudMonitoringRouteAnswersUnavailableWithoutTelegram tells the sender a
+// missing backend is transient instead of the route not existing.
+func TestCloudMonitoringRouteAnswersUnavailableWithoutTelegram(t *testing.T) {
+	setupGinTestMode()
+	for _, resolver := range []*Resolver{nil, {}} {
+		router := gin.New()
+		registerCloudMonitoringAlertRoutes(router, urlPrefixConfig{}, resolver)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, cloudMonitoringAlertPath, strings.NewReader(`{}`)))
+		require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	}
 }

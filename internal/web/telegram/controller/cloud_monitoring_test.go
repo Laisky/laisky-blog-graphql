@@ -3,13 +3,16 @@ package telegram
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -18,6 +21,7 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/Laisky/zap/zapcore"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
@@ -75,11 +79,16 @@ type webhookTelegram struct {
 	mu          sync.Mutex
 	validateErr error
 	sendErr     error
+	send        func(context.Context) error
 	sent        []string
+	validations int
 }
 
 // ValidateTokenForAlertType accepts only the synthetic credential.
 func (w *webhookTelegram) ValidateTokenForAlertType(_ context.Context, token, alertType string) (*model.AlertTypes, error) {
+	w.mu.Lock()
+	w.validations++
+	w.mu.Unlock()
 	if w.validateErr != nil {
 		return nil, w.validateErr
 	}
@@ -90,9 +99,14 @@ func (w *webhookTelegram) ValidateTokenForAlertType(_ context.Context, token, al
 }
 
 // SendAlertToUser records one alert, or returns the configured failure.
-func (w *webhookTelegram) SendAlertToUser(_ context.Context, _ int, msg string) error {
+func (w *webhookTelegram) SendAlertToUser(ctx context.Context, _ int, msg string) error {
 	if w.sendErr != nil {
 		return w.sendErr
+	}
+	if w.send != nil {
+		if err := w.send(ctx); err != nil {
+			return err
+		}
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -105,6 +119,13 @@ func (w *webhookTelegram) messages() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return append([]string(nil), w.sent...)
+}
+
+// credentialChecks returns how many times a credential reached the service.
+func (w *webhookTelegram) credentialChecks() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.validations
 }
 
 // webhookResponse is the part of a response that the webhook contract defines.
@@ -161,7 +182,8 @@ func TestCloudMonitoringChallengeThenDelivery(t *testing.T) {
 }
 
 // TestCloudMonitoringResolvedAndSparseIncidents pins the rendered text for closed,
-// sparse and test notifications, including every accepted timestamp spelling.
+// sparse, test and unknown-state notifications, including every accepted
+// timestamp spelling. No state other than a documented one reads as OPEN.
 func TestCloudMonitoringResolvedAndSparseIncidents(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -181,18 +203,52 @@ func TestCloudMonitoringResolvedAndSparseIncidents(t *testing.T) {
 			want: "[SYNTHETIC-PROJECT] OPEN UNSPECIFIED: Disk",
 		},
 		{
-			name: "console test notification with an empty incident",
-			body: `{"version":"test","incident":{}}`,
-			want: "[UNKNOWN] OPEN UNSPECIFIED: unnamed policy",
+			name: "upper-case states are the documented ones",
+			body: `{"version":"1.2","incident":{"state":"CLOSED","policy_name":"Disk"}}`,
+			want: "[UNKNOWN] RESOLVED UNSPECIFIED: Disk",
 		},
 		{
-			name: "null and empty timestamps are absent",
-			body: `{"incident":{"policy_name":"Disk","started_at":null,"ended_at":""}}`,
+			// Shape of the console's Test Connection payload as captured in
+			// docs/ref/cloud_monitoring_webhook_20261103.md: populated and "OPEN".
+			name: "console test connection",
+			body: `{"version":"test","incident":{"incident_id":"12345","state":"OPEN","started_at":0,"ended_at":0,` +
+				`"policy_name":"projects/12345/alertPolicies/12345","summary":"Test Incident","url":"http://www.example.com",` +
+				`"documentation":{"content":"TEST ALERT","subject":"ALERT - No severity","mime_type":"text/markdown"}}}`,
+			want: "[UNKNOWN] TEST UNSPECIFIED: projects/12345/alertPolicies/12345\nTest Incident\nhttp://www.example.com",
+		},
+		{
+			name: "empty test incident",
+			body: `{"version":"TEST","incident":{}}`,
+			want: "[UNKNOWN] TEST UNSPECIFIED: unnamed policy",
+		},
+		{
+			name: "undocumented state",
+			body: `{"version":"1.2","incident":{"state":"acknowledged","policy_name":"Disk"}}`,
+			want: "[UNKNOWN] UNKNOWN-STATE UNSPECIFIED: Disk",
+		},
+		{
+			name: "missing state",
+			body: `{"incident":{"policy_name":"Disk"}}`,
+			want: "[UNKNOWN] UNKNOWN-STATE UNSPECIFIED: Disk",
+		},
+		{
+			name: "null, empty and zero timestamps are absent",
+			body: `{"incident":{"state":"open","policy_name":"Disk","started_at":0,"ended_at":""}}`,
 			want: "[UNKNOWN] OPEN UNSPECIFIED: Disk",
 		},
 		{
+			name: "null timestamp is absent",
+			body: `{"incident":{"state":"open","policy_name":"Disk","started_at":null,"ended_at":null}}`,
+			want: "[UNKNOWN] OPEN UNSPECIFIED: Disk",
+		},
+		{
+			name: "last RFC 3339 second",
+			body: `{"incident":{"state":"closed","policy_name":"Disk","ended_at":253402300799}}`,
+			want: "[UNKNOWN] RESOLVED UNSPECIFIED: Disk\nended: 9999-12-31T23:59:59Z",
+		},
+		{
 			name: "literal markup and unicode stay intact",
-			body: `{"incident":{"policy_name":"a_b *c* <d> 原文🙂","summary":"[x](https://example.test/?a=1&b=2)"}}`,
+			body: `{"incident":{"state":"open","policy_name":"a_b *c* <d> 原文🙂","summary":"[x](https://example.test/?a=1&b=2)"}}`,
 			want: "[UNKNOWN] OPEN UNSPECIFIED: a_b *c* <d> 原文🙂\n[x](https://example.test/?a=1&b=2)",
 		},
 	} {
@@ -376,7 +432,7 @@ func TestCloudMonitoringNeverEchoesSecretsOrContent(t *testing.T) {
 		{name: "wrong token", password: "wrong-" + webhookToken, body: `{"incident":{"summary":"` + summaryCanary + `"}}`},
 		{name: "malformed", password: webhookToken, body: `{"summary":"` + summaryCanary},
 	} {
-		request := httptest.NewRequest(http.MethodPost, "/alerts/cloud-monitoring", strings.NewReader(tc.body))
+		request := httptest.NewRequest(http.MethodPost, "/webhook/gcp/alerts/cloud-monitoring", strings.NewReader(tc.body))
 		request = request.WithContext(gmw.SetLogger(request.Context(), logger))
 		request.SetBasicAuth(webhookAlertType, tc.password)
 		recorder := httptest.NewRecorder()
@@ -391,4 +447,210 @@ func TestCloudMonitoringNeverEchoesSecretsOrContent(t *testing.T) {
 	require.Contains(t, logged, "forwarded cloud monitoring incident", "the capture must see the handler's logs")
 	require.NotContains(t, logged, webhookToken)
 	require.NotContains(t, logged, summaryCanary)
+}
+
+// TestCloudMonitoringChecksCredentialsOnce keeps one notification to one
+// credential lookup, so a token rotated mid-request cannot turn into a 503.
+func TestCloudMonitoringChecksCredentialsOnce(t *testing.T) {
+	enableAlertThrottle(t)
+	svc := new(webhookTelegram)
+	server := startWebhook(t, svc)
+	response := postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody)
+	require.Equal(t, http.StatusNoContent, response.status)
+	require.Equal(t, 1, svc.credentialChecks())
+}
+
+// TestCloudMonitoringBoundsRefusedCredentialLookups proves a caller without a
+// valid push token cannot make the gateway query storage at its own pace, and
+// that the budget never charges the credential-free challenge or an accepted
+// credential.
+func TestCloudMonitoringBoundsRefusedCredentialLookups(t *testing.T) {
+	t.Run("refusals are bounded and answered with a retry hint", func(t *testing.T) {
+		enableAlertThrottle(t)
+		svc := new(webhookTelegram)
+		server := startWebhook(t, svc)
+		started := time.Now()
+		statuses := make(map[int]int)
+		var retryAfter string
+		for range 4 * cloudMonitoringRefusalBurst {
+			response := postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody)
+			statuses[response.status]++
+			if response.status == http.StatusTooManyRequests {
+				retryAfter = response.header.Get("Retry-After")
+				require.Empty(t, response.header.Get("WWW-Authenticate"))
+			}
+		}
+		refilled := int(math.Ceil(time.Since(started).Seconds() * cloudMonitoringRefusalsPerSecond))
+		require.LessOrEqual(t, svc.credentialChecks(), cloudMonitoringRefusalBurst+refilled)
+		require.Equal(t, svc.credentialChecks(), statuses[http.StatusUnauthorized])
+		require.Positive(t, statuses[http.StatusTooManyRequests])
+		seconds, err := strconv.Atoi(retryAfter)
+		require.NoError(t, err)
+		require.Positive(t, seconds)
+	})
+
+	t.Run("accepted credentials and challenges are free", func(t *testing.T) {
+		enableAlertThrottle(t)
+		svc := new(webhookTelegram)
+		server := startWebhook(t, svc)
+		for range 2 * cloudMonitoringRefusalBurst {
+			require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, "", "", openIncidentBody).status)
+			require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		}
+		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status)
+	})
+
+	t.Run("the budget recovers once guessing stops", func(t *testing.T) {
+		enableAlertThrottle(t)
+		svc := new(webhookTelegram)
+		handler := NewCloudMonitoringWebhook(svc)
+		handler.refusals = rate.NewLimiter(rate.Every(20*time.Millisecond), 1)
+		server := httptest.NewServer(handler)
+		t.Cleanup(server.Close)
+		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status)
+		require.Equal(t, http.StatusTooManyRequests, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status,
+			"while the budget is spent even a valid credential waits; this is the documented trade-off")
+		require.Eventually(t, func() bool {
+			return postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status == http.StatusNoContent
+		}, 5*time.Second, 25*time.Millisecond)
+	})
+
+	t.Run("storage failures are charged too", func(t *testing.T) {
+		enableAlertThrottle(t)
+		svc := &webhookTelegram{validateErr: errors.New("mongo unavailable")}
+		server := startWebhook(t, svc)
+		for range 2 * cloudMonitoringRefusalBurst {
+			postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody)
+		}
+		require.Less(t, svc.credentialChecks(), 2*cloudMonitoringRefusalBurst)
+	})
+}
+
+// TestCloudMonitoringRefusesUndefinedTimestamps pins the accepted spellings:
+// anything else is a schema violation, not a guess.
+func TestCloudMonitoringRefusesUndefinedTimestamps(t *testing.T) {
+	for _, value := range []string{`1e300`, `1.7e9`, `"NaN"`, `"Inf"`, `-5`, `"-5"`, `99999999999999`, `253402300800`,
+		`"0x10"`, `"1_0"`, `" 1"`, `"soon"`, `true`, `{}`, `[]`} {
+		t.Run(value, func(t *testing.T) {
+			enableAlertThrottle(t)
+			svc := new(webhookTelegram)
+			server := startWebhook(t, svc)
+			response := postWebhook(t, server.URL, webhookAlertType, webhookToken, `{"incident":{"policy_name":"Disk","started_at":`+value+`}}`)
+			require.Equal(t, http.StatusBadRequest, response.status, svc.messages())
+			require.Empty(t, svc.messages())
+		})
+	}
+}
+
+// TestCloudMonitoringThrottleCarriesRetryAfter gives the sender a retry hint.
+func TestCloudMonitoringThrottleCarriesRetryAfter(t *testing.T) {
+	resetThrottleConfig(t)
+	for _, key := range throttleConfigKeys {
+		gconfig.Shared.Set(key, 1)
+	}
+	NewTelegram(context.Background(), nil)
+	svc := new(webhookTelegram)
+	server := startWebhook(t, svc)
+	var throttled *webhookResponse
+	for range 5 {
+		response := postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody)
+		if response.status == http.StatusTooManyRequests {
+			throttled = &response
+		}
+	}
+	require.NotNil(t, throttled)
+	require.Equal(t, "1", throttled.header.Get("Retry-After"))
+}
+
+// TestCloudMonitoringWithoutTelegramIsUnavailable keeps a gateway whose Telegram
+// service did not start answering a retryable status instead of panicking.
+func TestCloudMonitoringWithoutTelegramIsUnavailable(t *testing.T) {
+	server := httptest.NewServer(NewCloudMonitoringWebhook(nil))
+	t.Cleanup(server.Close)
+	for _, username := range []string{"", webhookAlertType} {
+		response := postWebhook(t, server.URL, username, webhookToken, openIncidentBody)
+		require.Equal(t, http.StatusServiceUnavailable, response.status)
+		require.Empty(t, response.header.Get("WWW-Authenticate"))
+	}
+}
+
+// TestCloudMonitoringBoundsDeliveryTime ends a hung Telegram send with a 503
+// instead of holding the request until the sender gives up.
+func TestCloudMonitoringBoundsDeliveryTime(t *testing.T) {
+	enableAlertThrottle(t)
+	svc := &webhookTelegram{send: func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	handler := NewCloudMonitoringWebhook(svc)
+	handler.deliveryTimeout = 50 * time.Millisecond
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	// The client deadline turns a missing server bound into a failure, not a hang.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, strings.NewReader(openIncidentBody))
+	require.NoError(t, err)
+	request.SetBasicAuth(webhookAlertType, webhookToken)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err, "the handler must answer before the sender gives up")
+	require.NoError(t, response.Body.Close())
+	require.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
+	require.Empty(t, svc.messages())
+}
+
+// TestCloudMonitoringLogsOnlyBoundedMetadata plants a canary in every field the
+// handler could log and proves neither the canary nor a huge value reaches a log,
+// while a well-formed incident ID still does.
+func TestCloudMonitoringLogsOnlyBoundedMetadata(t *testing.T) {
+	enableAlertThrottle(t)
+	const canary = "SYNTHETIC-LOG-CANARY"
+	var output bytes.Buffer
+	core := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&output), zap.DebugLevel)
+	logger, err := glog.NewWithName("cloud_monitoring_test", glog.LevelDebug,
+		zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
+	require.NoError(t, err)
+
+	huge := strings.Repeat("9", 512<<10)
+	handler := NewCloudMonitoringWebhook(new(webhookTelegram))
+	for _, body := range []string{
+		`{"incident":{"incident_id":"0.well-formed","state":"open"}}`,
+		`{"incident":{"incident_id":"` + canary + ` id","policy_name":"` + canary + `","condition_name":"` + canary +
+			`","resource_display_name":"` + canary + `","scoping_project_id":"` + canary + `","url":"` + canary +
+			`","summary":"` + canary + `","severity":"` + canary + `","state":"` + canary + `"}}`,
+		`{"version":"` + canary + strings.Repeat("v", 512<<10) + `"}`,
+		`{"incident":{"started_at":"` + canary + huge + `"}}`,
+		`{"incident":{"started_at":` + huge + `}}`,
+		`{"incident":{"policy_name":` + huge + `}}`,
+		`{"incident":{"policy_name":"` + canary,
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/webhook/gcp/alerts/cloud-monitoring", strings.NewReader(body))
+		request = request.WithContext(gmw.SetLogger(request.Context(), logger))
+		request.SetBasicAuth(webhookAlertType, webhookToken)
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+	}
+	require.NoError(t, logger.Sync())
+	logged := output.String()
+	require.Contains(t, logged, `"incident_id":"0.well-formed"`)
+	require.Contains(t, logged, "refuse cloud monitoring notification", "the capture must see the decode refusals")
+	require.NotContains(t, logged, canary)
+	require.Less(t, len(logged), 32<<10, "log volume must not scale with the request body")
+}
+
+// TestCloudMonitoringDecodeErrorsNeverQuoteTheBody covers decoder errors the
+// incident schema cannot trigger today: encoding/json quotes a number literal
+// that overflows an integer field, so a numeric field added later must not
+// reopen the leak.
+func TestCloudMonitoringDecodeErrorsNeverQuoteTheBody(t *testing.T) {
+	huge := strings.Repeat("9", 4096)
+	var numeric struct {
+		Number int `json:"scoping_project_number"`
+	}
+	raw := json.Unmarshal([]byte(`{"scoping_project_number":`+huge+`}`), &numeric)
+	require.ErrorContains(t, raw, huge, "the probe must reproduce the quoting it guards against")
+	described := describeCloudMonitoringDecodeError(raw)
+	require.EqualError(t, described, `decode cloud monitoring notification: field "scoping_project_number" has the wrong JSON type`)
+
+	raw = json.Unmarshal([]byte(`{"incident":`+huge), new(cloudMonitoringNotification))
+	require.NotContains(t, describeCloudMonitoringDecodeError(raw).Error(), huge)
 }

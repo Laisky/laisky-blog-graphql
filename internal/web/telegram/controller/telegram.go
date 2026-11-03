@@ -213,20 +213,12 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, to
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
 	}
-	const separator = " >>>>>>>>>>>>>>>>>> \n"
-	if len(typeArg) > service.MaxAlertPayloadBytes-len(separator) || len(msg) > service.MaxAlertPayloadBytes-len(separator)-len(typeArg) {
-		return nil, errors.WithStack(service.ErrAlertPayloadTooLarge)
-	}
-	complete := typeArg + separator + msg
-	if err := service.ValidateAlertPayload(complete); err != nil {
+	complete, err := composeAlert(typeArg, msg)
+	if err != nil {
 		return nil, err
 	}
-	logger := gmw.GetLogger(ctx).Named("telegram_monitor_alert")
-	if telegramRatelimiter == nil {
-		return nil, errors.WithStack(errTelegramThrottleUnavailable)
-	}
-	if !telegramRatelimiter.Allow(typeArg) { //nolint:contextcheck // Rate admission does not need request context.
-		return nil, errors.WithStack(errAlertThrottled)
+	if err = admitAlert(typeArg); err != nil { //nolint:contextcheck // Rate admission does not need request context.
+		return nil, err
 	}
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
 	if err != nil {
@@ -235,6 +227,40 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, to
 	if alert == nil {
 		return nil, errors.New("telegram alert authorization returned no alert")
 	}
+	return r.deliverAuthorizedAlert(ctx, alert, complete)
+}
+
+// composeAlert prefixes msg with the alert type header and returns an error when
+// the complete text is over the payload limit, empty or not valid UTF-8.
+func composeAlert(alertType, msg string) (string, error) {
+	const separator = " >>>>>>>>>>>>>>>>>> \n"
+	if len(alertType) > service.MaxAlertPayloadBytes-len(separator) || len(msg) > service.MaxAlertPayloadBytes-len(separator)-len(alertType) {
+		return "", errors.WithStack(service.ErrAlertPayloadTooLarge)
+	}
+	complete := alertType + separator + msg
+	if err := service.ValidateAlertPayload(complete); err != nil {
+		return "", err
+	}
+	return complete, nil
+}
+
+// admitAlert spends one send from the alert type's and the total budget. It fails
+// closed when the throttle is not configured.
+func admitAlert(alertType string) error {
+	if telegramRatelimiter == nil {
+		return errors.WithStack(errTelegramThrottleUnavailable)
+	}
+	if !telegramRatelimiter.Allow(alertType) { //nolint:contextcheck // Rate admission does not need request context.
+		return errors.WithStack(errAlertThrottled)
+	}
+	return nil
+}
+
+// deliverAuthorizedAlert sends complete once to each distinct subscriber of an
+// alert that the caller already authenticated, and returns an *AlertFanoutError
+// unless every send was acknowledged.
+func (r *MutationResolver) deliverAuthorizedAlert(ctx context.Context, alert *model.AlertTypes, complete string) (*model.AlertTypes, error) {
+	logger := gmw.GetLogger(ctx).Named("telegram_monitor_alert")
 	users, err := r.svc.LoadUsersByAlertType(ctx, alert)
 	if err != nil {
 		return nil, errors.WithStack(err)

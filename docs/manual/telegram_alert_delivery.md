@@ -61,17 +61,25 @@ asynchronous sender does not create a recipient-delivery receipt.
 
 ## Cloud Monitoring webhook
 
-`POST /alerts/cloud-monitoring` lets a Google Cloud Monitoring notification channel
-reach an alert type directly, because Monitoring has no Telegram channel and its
-webhook body cannot be shaped into the GraphQL mutation. The route exists only when
-the Telegram service started. With a configured URL prefix it follows the same
-prefix and public-root fallback as the other API routes.
+`POST /webhook/gcp/alerts/cloud-monitoring` lets a Google Cloud Monitoring
+notification channel reach an alert type directly, because Monitoring has no
+Telegram channel and its webhook body cannot be shaped into the GraphQL mutation.
+Inbound third-party webhooks live under `/webhook/<provider>/`.
+
+The route is always mounted. When the Telegram service did not start, it answers
+503, as the GraphQL mutation reports the service unavailable, so Monitoring sees a
+retryable outage instead of a missing route. It follows the same internal prefix
+and public-root fallback as the SSO routes. With the example configuration
+(`url_prefix: /mcp`, `public_url_prefix: /`) it is mounted at both
+`/mcp/webhook/gcp/alerts/cloud-monitoring` and
+`/webhook/gcp/alerts/cloud-monitoring`. Use whichever path your ingress forwards
+to the gateway.
 
 Use the `webhook_basicauth` channel type:
 
 | Label | Value |
 | --- | --- |
-| `url` | `https://<gateway>/alerts/cloud-monitoring?env=<label>` |
+| `url` | `https://<gateway>/webhook/gcp/alerts/cloud-monitoring?env=<label>` |
 | `username` | The alert type |
 | `password` | The alert type's push token |
 
@@ -80,9 +88,9 @@ falls back to the incident's `scoping_project_id`. `webhook_tokenauth` is not
 supported, because it would put the push token in the URL. Refreshing an alert type's
 token also requires updating the channel's password.
 
-The receiver renders the incident as literal text and sends it through
-`TelegramMonitorAlert`, so subscribers, the type header, throttling and the
-acknowledgement rules above all apply unchanged:
+The receiver renders the incident as literal text and sends it through the same
+subscriber path as `TelegramMonitorAlert`, so subscribers, the type header,
+throttling and the acknowledgement rules above all apply unchanged:
 
 ```text
 <alert_type> >>>>>>>>>>>>>>>>>>
@@ -95,33 +103,86 @@ ended: <RFC 3339 UTC, closed incidents only>
 <console URL>
 ```
 
-Empty optional fields are omitted. Credentials are checked before the body is read
-and before the throttle is consulted, so an unauthenticated caller cannot cost a body
-allocation or spend an alert type's send budget. Responses carry a status only:
+Empty optional fields are omitted. The state word is derived, never guessed:
+
+| Notification | State word |
+| --- | --- |
+| `state` is `open`, in any case | `OPEN` |
+| `state` is `closed`, in any case | `RESOLVED` |
+| `version` is `test` (the console's **Test Connection**, which says `OPEN`) | `TEST` |
+| Any other or missing `state` | `UNKNOWN-STATE` |
+
+`started_at` and `ended_at` accept `null`, `""`, `0` (all meaning absent) or
+non-negative decimal Unix seconds, as a JSON number or string, up to
+9999-12-31T23:59:59Z. A fraction is truncated. Any other spelling, such as an
+exponent, sign, hex, `NaN` or a later year, is a schema violation and answers 400.
+
+### Admission order
+
+1. A request without credentials gets the 401 challenge Monitoring requires, with
+   no lookup.
+2. The credential is checked once. A check that does not authenticate is charged
+   to a refusal budget shared by all callers: a burst of 20, refilled at 5 per
+   second. While it is spent, credential checks wait with 429 and `Retry-After`
+   instead of reaching MongoDB. Accepted credentials are never charged. Google
+   publishes no sender addresses, so the budget cannot be per caller, and while
+   someone is guessing, a valid channel can also see 429 and retry. Per-address
+   limits belong at the edge; see below.
+3. `env`, the body (1 MiB at most) and the JSON are checked, and only then is the
+   alert type's send budget spent. A throttled send answers 429 with
+   `Retry-After: 1`, since every throttle bucket refills at least one send per
+   second.
+4. Delivery to all subscribers must finish within 20 seconds, well under
+   Cloudflare's 125-second origin read timeout. Google publishes no webhook
+   timeout. A send still running at the deadline is cancelled and the request
+   answers 503.
+
+Responses carry a status only:
 
 | Status | Meaning | Sender should |
 | --- | --- | --- |
 | 204 | Every subscriber's send was acknowledged | Stop |
-| 400 | Invalid `env`, unreadable body, invalid JSON or no `incident` | Stop; a retry cannot help |
+| 400 | Invalid `env`, unreadable body, invalid JSON, a timestamp outside the forms above, or no `incident` | Stop; a retry cannot help |
 | 401 | Missing or refused credentials, with a `WWW-Authenticate` challenge | Send credentials; Monitoring needs this first response |
 | 413 | Body over 1 MiB, refused rather than truncated | Stop |
-| 429 | The alert type or total throttle denied the send | Retry later |
-| 503 | Storage or throttle unavailable, or some subscribers were not confirmed; carries `Retry-After` when Telegram gave one | Retry; subscribers already accepted may see a duplicate |
+| 429 | Refusal budget spent, or the alert type or total throttle denied the send; carries `Retry-After` | Retry later |
+| 503 | Telegram service, storage or throttle unavailable, delivery deadline reached, or some subscribers not confirmed; carries `Retry-After` when Telegram gave one | Retry; subscribers already accepted may see a duplicate |
+
+Logs carry only the alert type, the derived state, and the incident ID when it
+is 1–64 letters, digits, `.`, `_` or `-` (otherwise only its length). Policy,
+condition, resource, summary, URL and timestamp values are never logged, and no
+decode error quotes the body.
+
+### Edge rate limit
+
+Add a Cloudflare WAF rate-limiting rule for the path, with the **Block** action:
+Monitoring cannot solve a Managed Challenge. On Business or Enterprise plans,
+count only `http.response.code in {401 429}`, so that successful deliveries never
+count. On the Free plan the rule counts every request per IP over 10 seconds.
+Either way, set the threshold well above Monitoring's own bursts: one channel can
+receive up to 1,000 notifications at once, and each may first draw a 401
+challenge.
+
+### Delivery guarantees
 
 The durability is what Monitoring's webhook offers, and it is weaker than a Pub/Sub
 subscription. Monitoring publishes no retry count or window for webhooks. Its only
 statement found is a 2020 blog post saying it retries a few times and then drops the
 notification. There is no queue here either, so an alert that arrives during a
-gateway outage may never reach Telegram. A failed delivery shows up in Monitoring's
-`notification_channel_events` log. Keep an independent channel, such as email, on any
-policy whose alert must not be lost. See
-[the source notes](../ref/cloud_monitoring_webhook_20261103.md).
+gateway outage, or that the refusal budget or throttle defers past Monitoring's
+retries, may never reach Telegram. A failed delivery shows up in Monitoring's
+`notification_channel_events` log. Keep an independent channel, such as email, on
+any policy whose alert must not be lost. If loss is unacceptable, use a Pub/Sub
+channel and a worker that acknowledges only after delivery, rather than this route.
+See [the source notes](../ref/cloud_monitoring_webhook_20261103.md).
 
 To adopt it, run the old and new paths side by side before retiring one:
 
 1. Release the gateway, then confirm through the production ingress that an
-   unauthenticated `POST` answers 401 with a `WWW-Authenticate: Basic` header.
-2. Create the channel and send Monitoring's test notification.
+   unauthenticated `POST /webhook/gcp/alerts/cloud-monitoring` answers 401 with a
+   `WWW-Authenticate: Basic` header.
+2. Create the channel and click **Test Connection**. The subscribers should see a
+   `TEST` message.
 3. Add the channel to one policy next to the existing notification path, and compare
    one open and one resolved incident.
 4. Add it to the remaining policies, then retire the old path.

@@ -86,12 +86,12 @@ receive msg:
 
 Add a `webhook_basicauth` notification channel to Cloud Monitoring:
 
-- `url`: `https://gq.laisky.com/alerts/cloud-monitoring?env=prod` (`env` labels each message and is optional)
+- `url`: `https://gq.laisky.com/webhook/gcp/alerts/cloud-monitoring?env=prod` (`env` labels each message and is optional; with a non-root `public_url_prefix`, put it before `/webhook`)
 - `username`: `<channel_name>`
 - `password`: `<push_token>`
 
 Everyone in this channel then receives each incident when it opens and when it
-resolves. See [the delivery manual](../../../docs/manual/telegram_alert_delivery.md#cloud-monitoring-webhook)
+resolves. The console's **Test Connection** arrives labeled `TEST`. See [the delivery manual](../../../docs/manual/telegram_alert_delivery.md#cloud-monitoring-webhook)
 for the message format, responses and delivery limits.
 
 ### Quit a channel
