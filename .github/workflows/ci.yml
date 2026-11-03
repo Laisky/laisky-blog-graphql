@@ -126,7 +126,8 @@ jobs:
         with:
           host: ${{ secrets.TARGET_HOST }}
           username: ${{ secrets.TARGET_HOST_USERNAME }}
-          password: ${{ secrets.TARGET_HOST_PASSWORD }}
+          key: ${{ secrets.TARGET_HOST_SSH_KEY }}
+          fingerprint: ${{ secrets.TARGET_HOST_FINGERPRINT }}
           port: ${{ secrets.TARGET_HOST_SSH_PORT }}
           command_timeout: 15m
           script: |
