@@ -39,6 +39,15 @@ subscription rows do not produce duplicate sends within a single mutation. It
 preflights invalid/empty subscriber lists before attempting any send. Existing
 fail-closed throttling and constant-time token validation remain authoritative.
 
+Throttling wraps the token check in two steps. Before the lookup, a request spends
+one send from the shared `total_*` budget, which bounds token lookups. A type whose
+own budget is already empty is refused at this step without spending the shared
+send. Only after the token matches does the request spend from the
+`each_title_*` budget of the stored alert type name. An unknown type or a wrong
+token therefore never creates or drains a per-type budget: it gets the token error,
+not a throttle refusal. Per-type budgets refill from elapsed time and run no
+goroutine. Every refusal returns `deny by throttle`.
+
 Text success requires a provider acknowledgement whose text exactly matches the
 sent message. Documents require a message ID and file ID; if file size is present
 it must match. This confirms the provider's response contract, not a user's read

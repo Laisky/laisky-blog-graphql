@@ -77,7 +77,8 @@ func TestNewTelegramWithValidThrottleConfig(t *testing.T) {
 
 	require.NotNil(t, NewTelegram(context.Background(), nil))
 	require.NotNil(t, telegramRatelimiter)
-	require.True(t, telegramRatelimiter.Allow("alert-type"))
+	require.True(t, telegramRatelimiter.AllowAttempt("alert-type"))
+	require.True(t, telegramRatelimiter.AllowAuthorized("alert-type"))
 }
 
 // TestAlertWithoutThrottleReturnsCleanError pins the request-path half: with no
