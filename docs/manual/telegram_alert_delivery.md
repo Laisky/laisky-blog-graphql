@@ -69,17 +69,21 @@ Inbound third-party webhooks live under `/webhook/<provider>/`.
 The route is always mounted. When the Telegram service did not start, it answers
 503, as the GraphQL mutation reports the service unavailable, so Monitoring sees a
 retryable outage instead of a missing route. It follows the same internal prefix
-and public-root fallback as the SSO routes. With the example configuration
-(`url_prefix: /mcp`, `public_url_prefix: /`) it is mounted at both
-`/mcp/webhook/gcp/alerts/cloud-monitoring` and
-`/webhook/gcp/alerts/cloud-monitoring`. Use whichever path your ingress forwards
-to the gateway.
+and public-root fallback as the SSO routes:
+
+| `settings.web` | Mounted paths |
+| --- | --- |
+| Neither prefix set (default `url_prefix` is `/mcp`) | `/mcp/webhook/gcp/alerts/cloud-monitoring` only |
+| `url_prefix: /mcp`, `public_url_prefix: /` (the example and the deployed configuration) | `/mcp/webhook/gcp/alerts/cloud-monitoring` and `/webhook/gcp/alerts/cloud-monitoring` |
+| Any other `public_url_prefix` | `<url_prefix>/webhook/gcp/alerts/cloud-monitoring` only |
+
+Use whichever mounted path your ingress forwards to the gateway.
 
 Use the `webhook_basicauth` channel type:
 
 | Label | Value |
 | --- | --- |
-| `url` | `https://<gateway>/webhook/gcp/alerts/cloud-monitoring?env=<label>` |
+| `url` | `https://<gateway><mounted path>?env=<label>` |
 | `username` | The alert type |
 | `password` | The alert type's push token |
 
@@ -125,9 +129,18 @@ exponent, sign, hex, `NaN` or a later year, is a schema violation and answers 40
    to a refusal budget shared by all callers: a burst of 20, refilled at 5 per
    second. While it is spent, credential checks wait with 429 and `Retry-After`
    instead of reaching MongoDB. Accepted credentials are never charged. Google
-   publishes no sender addresses, so the budget cannot be per caller, and while
-   someone is guessing, a valid channel can also see 429 and retry. Per-address
-   limits belong at the edge; see below.
+   publishes no sender addresses, and the gateway trusts `X-Forwarded-For` from
+   any peer, so the budget cannot be per caller.
+
+   So that guessing cannot lock a channel out, the receiver remembers each alert
+   type's credential once it has authenticated, as a keyed digest in memory only,
+   following OWASP's device-cookie defense against lockout abuse. A remembered
+   credential is not held back by a spent budget, but it is still checked against
+   MongoDB on every request, so a rotated or revoked token is refused at once and
+   loses its exemption at that first refusal. Wrong guesses never match, so they
+   cannot evict it, and a storage outage does not count as a refusal. The memory
+   is per process: after a restart, a channel waits like any caller until its
+   first successful delivery. Per-address limits belong at the edge; see below.
 3. `env`, the body (1 MiB at most) and the JSON are checked, and only then is the
    alert type's send budget spent. A throttled send answers 429 with
    `Retry-After: 1`, since every throttle bucket refills at least one send per
@@ -151,17 +164,25 @@ Responses carry a status only:
 Logs carry only the alert type, the derived state, and the incident ID when it
 is 1–64 letters, digits, `.`, `_` or `-` (otherwise only its length). Policy,
 condition, resource, summary, URL and timestamp values are never logged, and no
-decode error quotes the body.
+decode error quotes the body. Deferred credential checks are counted rather than
+logged one by one: `defer cloud monitoring credential checks after repeated
+refusals` is a WARN entry written at most once a minute while checks are being
+deferred, with `deferred_total` counting every deferral since startup. Alert on
+that message: while it repeats, someone is guessing and any channel that has not
+delivered since the last restart is waiting.
 
 ### Edge rate limit
 
-Add a Cloudflare WAF rate-limiting rule for the path, with the **Block** action:
+Add this rule before you create the channel. Add a Cloudflare WAF rate-limiting
+rule for the path, with the **Block** action:
 Monitoring cannot solve a Managed Challenge. On Business or Enterprise plans,
 count only `http.response.code in {401 429}`, so that successful deliveries never
 count. On the Free plan the rule counts every request per IP over 10 seconds.
 Either way, set the threshold well above Monitoring's own bursts: one channel can
 receive up to 1,000 notifications at once, and each may first draw a 401
-challenge.
+challenge. The rule is what keeps one guessing address from spending the refusal
+budget. The in-process exemption covers only channels that have already
+delivered.
 
 ### Delivery guarantees
 
@@ -181,11 +202,13 @@ To adopt it, run the old and new paths side by side before retiring one:
 1. Release the gateway, then confirm through the production ingress that an
    unauthenticated `POST /webhook/gcp/alerts/cloud-monitoring` answers 401 with a
    `WWW-Authenticate: Basic` header.
-2. Create the channel and click **Test Connection**. The subscribers should see a
+2. Add the [edge rate limit](#edge-rate-limit) and a log alert on the deferral
+   warning above. Both are required before any policy depends on the channel.
+3. Create the channel and click **Test Connection**. The subscribers should see a
    `TEST` message.
-3. Add the channel to one policy next to the existing notification path, and compare
+4. Add the channel to one policy next to the existing notification path, and compare
    one open and one resolved incident.
-4. Add it to the remaining policies, then retire the old path.
+5. Add it to the remaining policies, then retire the old path.
 
 ## Qualification and release
 

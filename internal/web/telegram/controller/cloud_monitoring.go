@@ -3,6 +3,9 @@ package telegram
 import (
 	"cmp"
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,10 +14,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
+	glog "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"golang.org/x/time/rate"
 
@@ -32,12 +38,21 @@ const (
 	cloudMonitoringEnvParam = "env"
 	// cloudMonitoringRefusalBurst and cloudMonitoringRefusalsPerSecond bound the
 	// credential lookups that do not authenticate, across all callers, since
-	// Google publishes no sender addresses to key a budget by. Accepted
-	// credentials and the credential-free first request are not counted, so the
-	// bound only reaches a correctly configured channel while someone else is
-	// guessing. Per-address limits belong at the edge proxy, which sees them.
+	// Google publishes no sender addresses to key a budget by and the gateway
+	// cannot trust a forwarded client address. Accepted credentials and the
+	// credential-free first request are not counted, and a credential that has
+	// already authenticated is not held back by a spent budget, so guessing
+	// cannot lock out a channel that has delivered since the gateway started.
+	// Per-address limits belong at the edge proxy, which sees real addresses.
 	cloudMonitoringRefusalBurst      = 20
 	cloudMonitoringRefusalsPerSecond = 5
+	// maxVerifiedCredentials bounds the credentials remembered as verified. Only
+	// a credential that authenticated is stored, so this is far above the alert
+	// types one deployment defines.
+	maxVerifiedCredentials = 256
+	// cloudMonitoringDeferralLogInterval spaces the warnings about deferred
+	// credential checks, so a guessing caller cannot set the log volume.
+	cloudMonitoringDeferralLogInterval = time.Minute
 	// cloudMonitoringDeliveryTimeout bounds the fan-out to subscribers, so a slow
 	// Telegram answer ends in a 503 the sender can retry rather than in a request
 	// the sender or a proxy has already given up on. Google publishes no webhook
@@ -245,7 +260,11 @@ type CloudMonitoringWebhook struct {
 	svc             service.Interface
 	sender          *MutationResolver
 	refusals        *rate.Limiter
+	verified        *verifiedCredentials
 	deliveryTimeout time.Duration
+	now             func() time.Time
+	deferrals       atomic.Int64
+	deferralLog     rate.Sometimes
 }
 
 // NewCloudMonitoringWebhook returns a webhook that authenticates and delivers
@@ -257,7 +276,10 @@ func NewCloudMonitoringWebhook(svc service.Interface) *CloudMonitoringWebhook {
 		svc:             svc,
 		sender:          NewMutationResolver(svc),
 		refusals:        rate.NewLimiter(cloudMonitoringRefusalsPerSecond, cloudMonitoringRefusalBurst),
+		verified:        newVerifiedCredentials(maxVerifiedCredentials),
 		deliveryTimeout: cloudMonitoringDeliveryTimeout,
+		now:             time.Now,
+		deferralLog:     rate.Sometimes{Interval: cloudMonitoringDeferralLogInterval},
 	}
 }
 
@@ -266,8 +288,9 @@ func NewCloudMonitoringWebhook(svc service.Interface) *CloudMonitoringWebhook {
 // the body is read and before the alert throttle is consulted, so an
 // unauthenticated caller can neither cost a body allocation nor spend an alert
 // type's send budget, and the refusal budget bounds how often such a caller can
-// reach storage. Only a status is returned, so no alert content or credential
-// can echo back.
+// reach storage. A credential that authenticated before still reaches storage
+// while the budget is spent, so it is checked again rather than trusted. Only a
+// status is returned, so no alert content or credential can echo back.
 func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := gmw.GetLogger(ctx).Named("cloud_monitoring_webhook")
@@ -283,8 +306,8 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	if wait := h.refusalWait(); wait > 0 {
-		logger.Warn("defer cloud monitoring credential check after repeated refusals", zap.Duration("wait", wait))
+	if wait := h.refusalWait(); wait > 0 && !h.verified.has(alertType, token) {
+		h.logDeferral(logger, wait)
 		w.Header().Set("Retry-After", retryAfterSeconds(wait))
 		w.WriteHeader(http.StatusTooManyRequests)
 		return
@@ -294,10 +317,12 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		err = errors.New("telegram alert authorization returned no alert")
 	}
 	if err != nil {
-		// Reserve charges the refusal even when concurrent refusals overdrew the
+		// ReserveN charges the refusal even when concurrent refusals overdrew the
 		// budget, so the overdraft is repaid before the next lookup is allowed.
-		h.refusals.Reserve()
+		h.refusals.ReserveN(h.now(), 1)
 		if errors.Is(err, service.ErrAlertUnauthorized) {
+			// A rotated or revoked token loses its exemption at its first refusal.
+			h.verified.forget(alertType, token)
 			logger.Debug("refuse cloud monitoring credentials")
 			w.Header().Set("WWW-Authenticate", cloudMonitoringChallenge)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -307,6 +332,7 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
+	h.verified.remember(alertType, token)
 	logger = logger.With(zap.String("alert_type", alert.Name))
 
 	env := r.URL.Query().Get(cloudMonitoringEnvParam)
@@ -373,11 +399,87 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 // credential lookup, or zero when it allows one now. It spends nothing; only a
 // lookup that does not authenticate is charged.
 func (h *CloudMonitoringWebhook) refusalWait() time.Duration {
-	tokens := h.refusals.Tokens()
+	tokens := h.refusals.TokensAt(h.now())
 	if tokens >= 1 {
 		return 0
 	}
-	return time.Duration((1 - tokens) / float64(h.refusals.Limit()) * float64(time.Second))
+	// Round up: truncating a sub-nanosecond shortfall to zero would allow a lookup.
+	return time.Duration(math.Ceil((1 - tokens) / float64(h.refusals.Limit()) * float64(time.Second)))
+}
+
+// logDeferral counts one credential check deferred by the spent refusal budget
+// and warns at most once per cloudMonitoringDeferralLogInterval, so a sustained
+// guessing attack leaves a steady, alertable signal without one entry per
+// request.
+func (h *CloudMonitoringWebhook) logDeferral(logger glog.Logger, wait time.Duration) {
+	total := h.deferrals.Add(1)
+	h.deferralLog.Do(func() {
+		logger.Warn("defer cloud monitoring credential checks after repeated refusals",
+			zap.Int64("deferred_total", total), zap.Duration("wait", wait))
+	})
+}
+
+// verifiedCredentials remembers, by a keyed digest, the credentials that have
+// authenticated, so a refusal budget spent by guessing does not hold back a
+// sender that already proved itself. It follows OWASP's device-cookie defense
+// against lockout abuse, with the credential itself as the proof, since a
+// webhook sender keeps no cookie. It never authenticates on its own: a
+// remembered credential is still checked against storage on every request.
+type verifiedCredentials struct {
+	mu      sync.Mutex
+	key     []byte
+	limit   int
+	digests map[string][sha256.Size]byte
+}
+
+// newVerifiedCredentials returns an empty set that holds up to limit alert types.
+func newVerifiedCredentials(limit int) *verifiedCredentials {
+	key := make([]byte, sha256.Size)
+	// crypto/rand.Read never returns an error since Go 1.24.
+	_, _ = rand.Read(key)
+	return &verifiedCredentials{key: key, limit: limit, digests: make(map[string][sha256.Size]byte)}
+}
+
+// digest returns the keyed digest of token, so no push token or crackable hash
+// of one stays in memory.
+func (v *verifiedCredentials) digest(token string) [sha256.Size]byte {
+	mac := hmac.New(sha256.New, v.key)
+	mac.Write([]byte(token))
+	var sum [sha256.Size]byte
+	copy(sum[:], mac.Sum(nil))
+	return sum
+}
+
+// has reports whether token is the credential that last authenticated alertType.
+func (v *verifiedCredentials) has(alertType, token string) bool {
+	sum := v.digest(token)
+	v.mu.Lock()
+	stored, ok := v.digests[alertType]
+	v.mu.Unlock()
+	return ok && hmac.Equal(stored[:], sum[:])
+}
+
+// remember records token as the credential that authenticated alertType. A new
+// alert type is dropped once the set is full; it then waits on the budget like
+// any credential not yet seen.
+func (v *verifiedCredentials) remember(alertType, token string) {
+	sum := v.digest(token)
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if _, ok := v.digests[alertType]; ok || len(v.digests) < v.limit {
+		v.digests[alertType] = sum
+	}
+}
+
+// forget drops alertType's entry if token is the remembered credential. A wrong
+// guess never matches, so it cannot evict the real sender.
+func (v *verifiedCredentials) forget(alertType, token string) {
+	sum := v.digest(token)
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if stored, ok := v.digests[alertType]; ok && hmac.Equal(stored[:], sum[:]) {
+		delete(v.digests, alertType)
+	}
 }
 
 // retryAfterSeconds renders wait as a Retry-After value of at least one second.

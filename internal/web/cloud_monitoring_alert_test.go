@@ -200,6 +200,39 @@ func TestCloudMonitoringRouteUsesWebhookNamespace(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, response.Code)
 }
 
+// TestCloudMonitoringDocumentedURLs pins the URL table in the README and the
+// delivery manual: an unset prefix mounts only under /mcp, and the deployed
+// public_url_prefix of "/" also serves the root path.
+func TestCloudMonitoringDocumentedURLs(t *testing.T) {
+	setupGinTestMode()
+	const root, prefixed = "/webhook/gcp/alerts/cloud-monitoring", "/mcp/webhook/gcp/alerts/cloud-monitoring"
+	for _, tc := range []struct {
+		name             string
+		internal, public any
+		want             map[string]int
+	}{
+		{name: "prefixes unset", want: map[string]int{root: http.StatusNotFound, prefixed: http.StatusUnauthorized}},
+		{name: "deployed prefixes", internal: "/mcp", public: "/", want: map[string]int{root: http.StatusUnauthorized, prefixed: http.StatusUnauthorized}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for key, value := range map[string]any{"settings.web.url_prefix": tc.internal, "settings.web.public_url_prefix": tc.public} {
+				prior := gconfig.Shared.Get(key)
+				t.Cleanup(func() { gconfig.Shared.Set(key, prior) })
+				gconfig.Shared.Set(key, value)
+			}
+			router := gin.New()
+			registerCloudMonitoringAlertRoutes(router, newURLPrefixConfig(), &Resolver{args: ResolverArgs{TelegramSvc: new(telegramSvc.Telegram)}})
+			got := make(map[string]int, len(tc.want))
+			for path := range tc.want {
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`)))
+				got[path] = response.Code
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
 // TestCloudMonitoringRouteAnswersUnavailableWithoutTelegram tells the sender a
 // missing backend is transient instead of the route not existing.
 func TestCloudMonitoringRouteAnswersUnavailableWithoutTelegram(t *testing.T) {

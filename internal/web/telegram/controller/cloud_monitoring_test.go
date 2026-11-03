@@ -2,10 +2,10 @@ package telegram
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -21,7 +21,6 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/Laisky/zap/zapcore"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/time/rate"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
@@ -82,21 +81,67 @@ type webhookTelegram struct {
 	send        func(context.Context) error
 	sent        []string
 	validations int
+	// rotated replaces webhookToken as the accepted push token when set.
+	rotated string
 }
 
 // ValidateTokenForAlertType accepts only the synthetic credential.
 func (w *webhookTelegram) ValidateTokenForAlertType(_ context.Context, token, alertType string) (*model.AlertTypes, error) {
 	w.mu.Lock()
 	w.validations++
+	accepted := cmp.Or(w.rotated, webhookToken)
 	w.mu.Unlock()
 	if w.validateErr != nil {
 		return nil, w.validateErr
 	}
-	if token != webhookToken || alertType != webhookAlertType {
+	if token != accepted || alertType != webhookAlertType {
 		return nil, errors.WithStack(service.ErrAlertUnauthorized)
 	}
 	return &model.AlertTypes{Name: alertType}, nil
 }
+
+// rotate makes token the only accepted push token, as an operator rotating it would.
+func (w *webhookTelegram) rotate(token string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.rotated = token
+}
+
+// testClock is a manually advanced clock for the refusal budget, so budget tests
+// never depend on how fast a loaded runner serves loopback requests.
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+// Now returns the current test time.
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+// advance moves the test time forward by d.
+func (c *testClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// startClockedWebhook serves svc like startWebhook, with the refusal budget on a
+// test clock that only moves when the test advances it.
+func startClockedWebhook(t *testing.T, svc service.Interface) (*httptest.Server, *CloudMonitoringWebhook, *testClock) {
+	t.Helper()
+	clock := &testClock{now: time.Unix(1762000000, 0)}
+	handler := NewCloudMonitoringWebhook(svc)
+	handler.now = clock.Now
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server, handler, clock
+}
+
+// refillOne is how long the default refusal budget takes to refill one lookup.
+const refillOne = time.Second / cloudMonitoringRefusalsPerSecond
 
 // SendAlertToUser records one alert, or returns the configured failure.
 func (w *webhookTelegram) SendAlertToUser(ctx context.Context, _ int, msg string) error {
@@ -463,36 +508,29 @@ func TestCloudMonitoringChecksCredentialsOnce(t *testing.T) {
 // TestCloudMonitoringBoundsRefusedCredentialLookups proves a caller without a
 // valid push token cannot make the gateway query storage at its own pace, and
 // that the budget never charges the credential-free challenge or an accepted
-// credential.
+// credential. The budget runs on a test clock, so every count is exact.
 func TestCloudMonitoringBoundsRefusedCredentialLookups(t *testing.T) {
 	t.Run("refusals are bounded and answered with a retry hint", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := new(webhookTelegram)
-		server := startWebhook(t, svc)
-		started := time.Now()
+		server, _, _ := startClockedWebhook(t, svc)
 		statuses := make(map[int]int)
-		var retryAfter string
 		for range 4 * cloudMonitoringRefusalBurst {
 			response := postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody)
 			statuses[response.status]++
 			if response.status == http.StatusTooManyRequests {
-				retryAfter = response.header.Get("Retry-After")
+				require.Equal(t, "1", response.header.Get("Retry-After"), "one lookup refills in a fifth of a second")
 				require.Empty(t, response.header.Get("WWW-Authenticate"))
 			}
 		}
-		refilled := int(math.Ceil(time.Since(started).Seconds() * cloudMonitoringRefusalsPerSecond))
-		require.LessOrEqual(t, svc.credentialChecks(), cloudMonitoringRefusalBurst+refilled)
-		require.Equal(t, svc.credentialChecks(), statuses[http.StatusUnauthorized])
-		require.Positive(t, statuses[http.StatusTooManyRequests])
-		seconds, err := strconv.Atoi(retryAfter)
-		require.NoError(t, err)
-		require.Positive(t, seconds)
+		require.Equal(t, cloudMonitoringRefusalBurst, svc.credentialChecks())
+		require.Equal(t, map[int]int{http.StatusUnauthorized: cloudMonitoringRefusalBurst, http.StatusTooManyRequests: 3 * cloudMonitoringRefusalBurst}, statuses)
 	})
 
 	t.Run("accepted credentials and challenges are free", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := new(webhookTelegram)
-		server := startWebhook(t, svc)
+		server, _, _ := startClockedWebhook(t, svc)
 		for range 2 * cloudMonitoringRefusalBurst {
 			require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, "", "", openIncidentBody).status)
 			require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
@@ -503,27 +541,145 @@ func TestCloudMonitoringBoundsRefusedCredentialLookups(t *testing.T) {
 	t.Run("the budget recovers once guessing stops", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := new(webhookTelegram)
-		handler := NewCloudMonitoringWebhook(svc)
-		handler.refusals = rate.NewLimiter(rate.Every(20*time.Millisecond), 1)
-		server := httptest.NewServer(handler)
-		t.Cleanup(server.Close)
-		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status)
+		server, _, clock := startClockedWebhook(t, svc)
+		for range cloudMonitoringRefusalBurst {
+			require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status)
+		}
 		require.Equal(t, http.StatusTooManyRequests, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status,
-			"while the budget is spent even a valid credential waits; this is the documented trade-off")
-		require.Eventually(t, func() bool {
-			return postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status == http.StatusNoContent
-		}, 5*time.Second, 25*time.Millisecond)
+			"a credential that has not authenticated since startup waits; this is the documented residual")
+		clock.advance(refillOne - time.Nanosecond)
+		require.Equal(t, http.StatusTooManyRequests, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		clock.advance(time.Nanosecond)
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
 	})
 
 	t.Run("storage failures are charged too", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := &webhookTelegram{validateErr: errors.New("mongo unavailable")}
-		server := startWebhook(t, svc)
+		server, _, _ := startClockedWebhook(t, svc)
 		for range 2 * cloudMonitoringRefusalBurst {
 			postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody)
 		}
-		require.Less(t, svc.credentialChecks(), 2*cloudMonitoringRefusalBurst)
+		require.Equal(t, cloudMonitoringRefusalBurst, svc.credentialChecks())
 	})
+}
+
+// TestCloudMonitoringVerifiedSenderOutlastsGuessing proves wrong guesses that
+// spend the shared refusal budget cannot lock out a channel that has already
+// delivered, while each of its requests is still checked against storage.
+func TestCloudMonitoringVerifiedSenderOutlastsGuessing(t *testing.T) {
+	t.Run("a sender that delivered keeps delivering", func(t *testing.T) {
+		enableAlertThrottle(t)
+		svc := new(webhookTelegram)
+		server, _, _ := startClockedWebhook(t, svc)
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		// Guesses for the sender's own alert type reach storage first, so they
+		// must not evict the remembered credential either.
+		for range cloudMonitoringRefusalBurst {
+			require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status)
+		}
+		require.Equal(t, http.StatusTooManyRequests, postWebhook(t, server.URL, "other", "guess", openIncidentBody).status)
+		checks := svc.credentialChecks()
+		for range 5 {
+			require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		}
+		require.Equal(t, checks+5, svc.credentialChecks(), "a remembered credential is still checked, never trusted")
+		require.Len(t, svc.messages(), 6)
+		require.Equal(t, http.StatusTooManyRequests, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status,
+			"the exemption belongs to the credential, not to the alert type")
+	})
+
+	t.Run("a rotated token loses its exemption at its first refusal", func(t *testing.T) {
+		enableAlertThrottle(t)
+		svc := new(webhookTelegram)
+		server, _, clock := startClockedWebhook(t, svc)
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		const rotated = "synthetic-rotated-push-token"
+		svc.rotate(rotated)
+		for range cloudMonitoringRefusalBurst {
+			postWebhook(t, server.URL, "other", "guess", openIncidentBody)
+		}
+		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status,
+			"revocation takes effect at once")
+		require.Equal(t, http.StatusTooManyRequests, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		require.Equal(t, http.StatusTooManyRequests, postWebhook(t, server.URL, webhookAlertType, rotated, openIncidentBody).status)
+		clock.advance(2 * refillOne)
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, rotated, openIncidentBody).status)
+		for range cloudMonitoringRefusalBurst {
+			postWebhook(t, server.URL, "other", "guess", openIncidentBody)
+		}
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, rotated, openIncidentBody).status)
+	})
+
+	t.Run("an outage is not a revocation", func(t *testing.T) {
+		enableAlertThrottle(t)
+		svc := new(webhookTelegram)
+		server, _, _ := startClockedWebhook(t, svc)
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		svc.mu.Lock()
+		svc.validateErr = errors.New("mongo unavailable")
+		svc.mu.Unlock()
+		for range cloudMonitoringRefusalBurst + 1 {
+			require.Equal(t, http.StatusServiceUnavailable, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		}
+		svc.mu.Lock()
+		svc.validateErr = nil
+		svc.mu.Unlock()
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+	})
+}
+
+// TestVerifiedCredentialsStayBounded pins what the set may hold: only the
+// credential that last authenticated each alert type, up to its limit.
+func TestVerifiedCredentialsStayBounded(t *testing.T) {
+	verified := newVerifiedCredentials(2)
+	verified.remember("a", "token-a")
+	verified.remember("b", "token-b")
+	verified.remember("c", "token-c")
+	require.True(t, verified.has("a", "token-a"))
+	require.True(t, verified.has("b", "token-b"))
+	require.False(t, verified.has("c", "token-c"), "a full set drops a new alert type")
+	require.False(t, verified.has("a", "token-b"), "a credential belongs to its own alert type")
+
+	verified.remember("a", "token-a2")
+	require.True(t, verified.has("a", "token-a2"), "a full set still follows a rotation")
+	require.False(t, verified.has("a", "token-a"))
+
+	verified.forget("a", "wrong")
+	require.True(t, verified.has("a", "token-a2"), "a wrong guess cannot evict the sender")
+	verified.forget("a", "token-a2")
+	require.False(t, verified.has("a", "token-a2"))
+	require.Len(t, verified.digests, 1)
+	for _, digest := range verified.digests {
+		require.NotContains(t, string(digest[:]), "token-b")
+	}
+}
+
+// TestCloudMonitoringDeferralWarningsAreSampled keeps a guessing caller from
+// setting the log volume: deferrals are counted, and warned about at most once
+// per interval.
+func TestCloudMonitoringDeferralWarningsAreSampled(t *testing.T) {
+	enableAlertThrottle(t)
+	var output bytes.Buffer
+	core := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&output), zap.DebugLevel)
+	logger, err := glog.NewWithName("cloud_monitoring_test", glog.LevelDebug,
+		zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
+	require.NoError(t, err)
+
+	handler := NewCloudMonitoringWebhook(new(webhookTelegram))
+	clock := &testClock{now: time.Unix(1762000000, 0)}
+	handler.now = clock.Now
+	const deferred = 50
+	for range cloudMonitoringRefusalBurst + deferred {
+		request := httptest.NewRequest(http.MethodPost, "/webhook/gcp/alerts/cloud-monitoring", strings.NewReader(openIncidentBody))
+		request = request.WithContext(gmw.SetLogger(request.Context(), logger))
+		request.SetBasicAuth(webhookAlertType, "wrong")
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+	}
+	require.NoError(t, logger.Sync())
+	require.Equal(t, int64(deferred), handler.deferrals.Load())
+	require.Equal(t, 1, strings.Count(output.String(), "defer cloud monitoring credential checks"), output.String())
+	require.Contains(t, output.String(), `"deferred_total":1`)
 }
 
 // TestCloudMonitoringRefusesUndefinedTimestamps pins the accepted spellings:

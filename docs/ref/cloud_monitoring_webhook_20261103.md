@@ -115,6 +115,24 @@ warns that lockout must not become a denial of service. With one shared credenti
 and no known sender addresses, the receiver therefore has no lockout. It caps only
 failed lookups across all callers, and leaves per-address limits to the edge.
 
+A cap on failed lookups shared by all callers is itself a lockout, though: about 5
+wrong guesses a second would keep a valid channel at 429. OWASP's
+[Slow Down Online Guessing Attacks with Device Cookies](https://community.owasp.org/Slow_Down_Online_Guessing_Attacks_with_Device_Cookies)
+starts from "temporary account lockout after several failed attempts is too simple
+of a target for DoS attacks". It exempts clients that authenticated before, through
+an HMAC-signed cookie, from the lockout applied to untrusted clients. A webhook
+sender keeps no cookie, so the receiver uses the credential itself as the proof. It
+remembers an HMAC of the push token that last authenticated each alert type and
+lets that credential through a spent budget. It still checks the credential against
+storage, so the exemption never authenticates on its own. NIST
+[SP 800-63B-4 §3.2.2](https://pages.nist.gov/800-63-4/sp800-63b.html) likewise lets
+a verifier use extra signals to reduce the chance that an attacker locks out the
+legitimate claimant.
+
+A per-address limit in the process was rejected. The gateway uses gin's default
+proxy trust, so `ClientIP()` returns whatever `X-Forwarded-For` a caller sends, and
+an attacker could rotate it freely.
+
 [Cloudflare rate-limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)
 count per IP. The Free plan allows one rule, matched on path, over a 10-second
 period. Business and higher can count only responses that match, as in Cloudflare's

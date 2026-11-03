@@ -86,7 +86,7 @@ receive msg:
 
 Add a `webhook_basicauth` notification channel to Cloud Monitoring:
 
-- `url`: `https://gq.laisky.com/webhook/gcp/alerts/cloud-monitoring?env=prod` (`env` labels each message and is optional; with a non-root `public_url_prefix`, put it before `/webhook`)
+- `url`: `https://gq.laisky.com/webhook/gcp/alerts/cloud-monitoring?env=prod`. `env` labels each message and is optional. This root path exists only because gq.laisky.com sets `settings.web.public_url_prefix: /`. A deployment without that setting, including one that sets neither prefix, serves `https://<gateway><url_prefix>/webhook/gcp/alerts/cloud-monitoring` (default `/mcp`). See the [mounted paths](../../../docs/manual/telegram_alert_delivery.md#cloud-monitoring-webhook).
 - `username`: `<channel_name>`
 - `password`: `<push_token>`
 
