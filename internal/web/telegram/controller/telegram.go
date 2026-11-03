@@ -28,6 +28,10 @@ var errTelegramServiceUnavailable = errors.New("telegram service not initialized
 // unthrottled, and startup is not aborted for an optional subsystem.
 var errTelegramThrottleUnavailable = errors.New("telegram alert throttle is not configured")
 
+// errAlertThrottled is returned when the alert rate limiter denies a send. The
+// GraphQL error classifier matches this text, so it must stay stable.
+var errAlertThrottled = errors.New("deny by throttle")
+
 // AlertTypeResolver alert type resolver
 type AlertTypeResolver struct {
 	svc service.Interface
@@ -222,7 +226,7 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, to
 		return nil, errors.WithStack(errTelegramThrottleUnavailable)
 	}
 	if !telegramRatelimiter.Allow(typeArg) { //nolint:contextcheck // Rate admission does not need request context.
-		return nil, errors.New("deny by throttle")
+		return nil, errors.WithStack(errAlertThrottled)
 	}
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
 	if err != nil {

@@ -19,7 +19,7 @@ send methods and formatting behavior.
 Messages within that threshold use plain `sendMessage` JSON without a parse
 mode, with link previews disabled. Larger messages use `sendDocument`, a fixed
 `alert.txt` filename, no caption and the exact complete UTF-8 message bytes.
-There is no application file, persistent archive, new endpoint or new recipient.
+Document delivery adds no application file, persistent archive, endpoint or recipient.
 Each recipient/call gets a fresh request/reader.
 
 The complete formatted message is limited to **2 MiB**, including its type and
@@ -58,6 +58,73 @@ recipients already accepted during a partial or ambiguous earlier attempt. Two
 separate identical requests remain two events. No persisted idempotency/history
 store is added. A successful SDK `Send` is still local queue admission; the SDK's
 asynchronous sender does not create a recipient-delivery receipt.
+
+## Cloud Monitoring webhook
+
+`POST /alerts/cloud-monitoring` lets a Google Cloud Monitoring notification channel
+reach an alert type directly, because Monitoring has no Telegram channel and its
+webhook body cannot be shaped into the GraphQL mutation. The route exists only when
+the Telegram service started. With a configured URL prefix it follows the same
+prefix and public-root fallback as the other API routes.
+
+Use the `webhook_basicauth` channel type:
+
+| Label | Value |
+| --- | --- |
+| `url` | `https://<gateway>/alerts/cloud-monitoring?env=<label>` |
+| `username` | The alert type |
+| `password` | The alert type's push token |
+
+`env` is optional: 1–32 ASCII letters, digits, `_` or `-`. It labels each message and
+falls back to the incident's `scoping_project_id`. `webhook_tokenauth` is not
+supported, because it would put the push token in the URL. Refreshing an alert type's
+token also requires updating the channel's password.
+
+The receiver renders the incident as literal text and sends it through
+`TelegramMonitorAlert`, so subscribers, the type header, throttling and the
+acknowledgement rules above all apply unchanged:
+
+```text
+<alert_type> >>>>>>>>>>>>>>>>>>
+[PROD] OPEN CRITICAL: <policy>
+condition: <condition>
+resource: <resource>
+<summary>
+started: <RFC 3339 UTC>
+ended: <RFC 3339 UTC, closed incidents only>
+<console URL>
+```
+
+Empty optional fields are omitted. Credentials are checked before the body is read
+and before the throttle is consulted, so an unauthenticated caller cannot cost a body
+allocation or spend an alert type's send budget. Responses carry a status only:
+
+| Status | Meaning | Sender should |
+| --- | --- | --- |
+| 204 | Every subscriber's send was acknowledged | Stop |
+| 400 | Invalid `env`, unreadable body, invalid JSON or no `incident` | Stop; a retry cannot help |
+| 401 | Missing or refused credentials, with a `WWW-Authenticate` challenge | Send credentials; Monitoring needs this first response |
+| 413 | Body over 1 MiB, refused rather than truncated | Stop |
+| 429 | The alert type or total throttle denied the send | Retry later |
+| 503 | Storage or throttle unavailable, or some subscribers were not confirmed; carries `Retry-After` when Telegram gave one | Retry; subscribers already accepted may see a duplicate |
+
+The durability is what Monitoring's webhook offers, and it is weaker than a Pub/Sub
+subscription. Monitoring publishes no retry count or window for webhooks. Its only
+statement found is a 2020 blog post saying it retries a few times and then drops the
+notification. There is no queue here either, so an alert that arrives during a
+gateway outage may never reach Telegram. A failed delivery shows up in Monitoring's
+`notification_channel_events` log. Keep an independent channel, such as email, on any
+policy whose alert must not be lost. See
+[the source notes](../ref/cloud_monitoring_webhook_20261103.md).
+
+To adopt it, run the old and new paths side by side before retiring one:
+
+1. Release the gateway, then confirm through the production ingress that an
+   unauthenticated `POST` answers 401 with a `WWW-Authenticate: Basic` header.
+2. Create the channel and send Monitoring's test notification.
+3. Add the channel to one policy next to the existing notification path, and compare
+   one open and one resolved incident.
+4. Add it to the remaining policies, then retire the old path.
 
 ## Qualification and release
 

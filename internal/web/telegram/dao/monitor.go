@@ -24,6 +24,21 @@ const (
 	userAlertRelationColName = "user_alert_relations"
 )
 
+// ErrAlertUnauthorized matches an alert type and push token that do not
+// authenticate. A storage failure during the check does not match it, so a
+// caller can tell a refused credential from an outage.
+var ErrAlertUnauthorized = errors.New("telegram alert credentials refused")
+
+// alertRefusalError marks a credential refusal and keeps the wrapped error's message,
+// so existing GraphQL error text and classification are unchanged.
+type alertRefusalError struct{ error }
+
+// Unwrap returns the original refusal error.
+func (e alertRefusalError) Unwrap() error { return e.error }
+
+// Is reports whether target is ErrAlertUnauthorized.
+func (alertRefusalError) Is(target error) bool { return target == ErrAlertUnauthorized }
+
 // Monitor db
 type Monitor struct {
 	db mongo.DB
@@ -306,10 +321,10 @@ func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
 	token, alertType string) (alert *model.AlertTypes, err error) {
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_validate_token")
 	if alertType, err = sanitizeAlertName(alertType); err != nil {
-		return nil, errors.Wrap(err, "sanitize alert type")
+		return nil, alertRefusalError{errors.Wrap(err, "sanitize alert type")}
 	}
 	if token, err = sanitizePushToken(token); err != nil {
-		return nil, errors.Wrap(err, "sanitize push token")
+		return nil, alertRefusalError{errors.Wrap(err, "sanitize push token")}
 	}
 	logger.Debug("ValidateTokenForAlertType", zap.String("alert_type", alertType))
 
@@ -318,13 +333,13 @@ func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
 		bson.M{
 			fieldName: alertType,
 		}).Decode(alert); mongo.NotFound(err) {
-		return nil, errors.Wrapf(err, "alert_type `%s` not found", alertType)
+		return nil, alertRefusalError{errors.Wrapf(err, "alert_type `%s` not found", alertType)}
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "load alert_type `%s` from db", alertType)
 	}
 
 	if !secureCompareString(token, alert.PushToken) {
-		return nil, errors.Errorf("token invalidate for `%s`", alertType)
+		return nil, alertRefusalError{errors.Errorf("token invalidate for `%s`", alertType)}
 	}
 
 	return alert, nil
