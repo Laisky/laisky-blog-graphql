@@ -39,6 +39,12 @@ func (r *recordingTelegram) SendPlainTextToUser(_ int, msg string) error {
 	return nil
 }
 
+// SendAlertToUser records the complete alert wire message without simulating transport routing.
+func (r *recordingTelegram) SendAlertToUser(_ context.Context, _ int, msg string) error {
+	r.plain = append(r.plain, msg)
+	return nil
+}
+
 // LoadAlertTypesByUser is unused by the alert path.
 func (r *recordingTelegram) LoadAlertTypesByUser(context.Context, *model.MonitorUsers) ([]*model.AlertTypes, error) {
 	return nil, nil
@@ -97,9 +103,8 @@ func TestAlertIsDeliveredAsPlainText(t *testing.T) {
 	require.Equal(t, []string{"pieverse_tee_wallet >>>>>>>>>>>>>>>>>> \n" + msg}, svc.plain)
 }
 
-// TestLongAlertIsTruncatedWithoutEscaping proves an oversized alert is cut to
-// the configured length and marked, still as plain text.
-func TestLongAlertIsTruncatedWithoutEscaping(t *testing.T) {
+// TestLongAlertIsPreservedWithoutEscaping keeps complete literal text despite a legacy threshold.
+func TestLongAlertIsPreservedWithoutEscaping(t *testing.T) {
 	enableAlertThrottle(t)
 	gconfig.Shared.Set("settings.telegram.max_len", 20)
 	t.Cleanup(func() { gconfig.Shared.Set("settings.telegram.max_len", 0) })
@@ -109,7 +114,8 @@ func TestLongAlertIsTruncatedWithoutEscaping(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, svc.plain, 1)
 	body := strings.TrimPrefix(svc.plain[0], "t >>>>>>>>>>>>>>>>>> \n")
-	require.True(t, strings.HasSuffix(body, "..."), body)
+	require.Equal(t, strings.Repeat("a-b.", 20), body)
 	require.NotContains(t, body, `\`)
-	require.LessOrEqual(t, len(strings.TrimSuffix(body, "...")), 20)
+	require.Greater(t, len(body), 20)
+	require.Empty(t, svc.markdown)
 }

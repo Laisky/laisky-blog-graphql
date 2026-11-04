@@ -19,6 +19,7 @@ import (
 	gcmd "github.com/Laisky/go-utils/v6/cmd"
 	glog "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+	"github.com/Laisky/zap/zapcore"
 	"github.com/spf13/cobra"
 )
 
@@ -93,14 +94,16 @@ func setupLogger(ctx context.Context) {
 		gconfig.Shared.GetString("settings.logger.push_api"),
 		glog.WithAlertType(gconfig.Shared.GetString("settings.logger.alert_type")),
 		glog.WithAlertToken(gconfig.Shared.GetString("settings.logger.push_token")),
-		log.WebFetchAlertOption(),
+		glog.WithAlertMaxMessageBytes(1<<20),
 	)
 	if err != nil {
 		log.Logger.Panic("create AlertPusher", zap.Error(err))
 	}
 
 	log.Logger = log.Logger.WithOptions(
-		zap.HooksWithFields(log.WebFetchAlertHook(alertPusher)),
+		zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+			return zapcore.NewTee(core, log.WebDiagnosticAlertCore(alertPusher))
+		}),
 	).Named("laisky-graphql")
 
 	lvl := gconfig.Shared.GetString("log-level")

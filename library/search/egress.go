@@ -11,7 +11,7 @@ import (
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 )
 
-// Egress configuration keys control request policy; receipt verification is mandatory.
+// Egress configuration keys control request policy; direct receipt verification is mandatory.
 const (
 	configKeyMaxRedirects      = "settings.mcp.tools.web_fetch.egress.max_redirects"
 	configKeyAllowSubresources = "settings.mcp.tools.web_fetch.egress.allow_subresources"
@@ -60,18 +60,25 @@ func crawlerEgressPolicy(policy toolpolicy.EgressPolicy) *rlibs.CrawlerEgressPol
 	}
 }
 
-// verifyRenderedTask always checks the submitted identity, policy and connection
-// receipt. The retained settings parameter cannot waive missing evidence.
-func verifyRenderedTask(ctx context.Context, _ EgressSettings, taskID, target string, policy toolpolicy.EgressPolicy, task *rlibs.HTMLCrawlerTask) error {
+// verifyAcquiredTask checks the submitted identity, policy and acquisition mode.
+// The immutable allowProviderFallback argument comes from the producer, never
+// from the returned task. Older workers may omit the echoed capability on direct
+// results, while a returned true value cannot expand a direct-only request.
+func verifyAcquiredTask(ctx context.Context, taskID, target string, policy toolpolicy.EgressPolicy, allowProviderFallback bool, task *rlibs.HTMLCrawlerTask) error {
 	if task == nil || task.TaskID != taskID || task.Url != target || task.Egress == nil || crawleregress.PolicyDigest(target, *task.Egress) != crawleregress.PolicyDigest(target, policy) {
 		return fetchFailure(crawleregress.ErrRejected, "crawler_egress_rejected", "verification", taskID)
 	}
-	err := crawleregress.VerifyReceipt(ctx, taskID, target, policy, task.EgressReceipt)
-	if err == nil {
-		return nil
+	if task.AllowProviderFallback && !allowProviderFallback {
+		return fetchFailure(crawleregress.ErrRejected, "crawler_egress_rejected", "verification", taskID)
 	}
-	if errors.Is(err, crawleregress.ErrUnverified) {
-		return fetchFailure(err, "crawler_egress_unverified", "verification", taskID)
+	if task.Acquisition != nil && task.Acquisition.Method == crawleregress.AcquisitionProvider && (!task.AllowProviderFallback || len(task.RequestChain) != 0) {
+		return fetchFailure(crawleregress.ErrRejected, "crawler_egress_rejected", "verification", taskID)
 	}
-	return fetchFailure(err, "crawler_egress_rejected", "verification", taskID)
+	if err := crawleregress.VerifyAcquisition(ctx, taskID, target, policy, allowProviderFallback, task.Acquisition, task.EgressReceipt); err != nil {
+		if errors.Is(err, crawleregress.ErrUnverified) {
+			return fetchFailure(err, "crawler_egress_unverified", "verification", taskID)
+		}
+		return fetchFailure(err, "crawler_egress_rejected", "verification", taskID)
+	}
+	return nil
 }

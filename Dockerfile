@@ -1,4 +1,4 @@
-FROM golang:1.27.2-bookworm AS gobuild
+FROM golang:1.27.3-bookworm AS gobuild
 
 # install dependencies
 RUN apt-get update \
@@ -19,7 +19,10 @@ RUN go mod download
 ADD . .
 ENV GOOS=linux
 ENV GOARCH=amd64
-RUN go build -a -ldflags '-w -extldflags "-static"' -o main main.go
+# Only explicitly prepared shallow public metadata enters builder layers.
+# An unprepared manual context remains an honestly unknown VCS build.
+RUN if [ -d .docker-build-git ]; then mv .docker-build-git .git; fi \
+    && go build -a -ldflags '-w -extldflags "-static"' -o main .
 
 # build front-end assets
 FROM node:24-bookworm AS webbuild
@@ -33,6 +36,12 @@ COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY web/ ./
+# Public browser routing/configuration only; never pass upload auth tokens here.
+ARG VITE_SENTRY_ENABLED
+ARG VITE_SENTRY_SITE
+ARG VITE_SENTRY_DSN
+ARG VITE_SENTRY_ENVIRONMENT
+ARG VITE_SENTRY_RELEASE
 RUN pnpm build
 
 # copy executable file, certs, and assets to a pure container

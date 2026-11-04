@@ -69,7 +69,7 @@ func TestWebSearchHandleBillingError(t *testing.T) {
 
 	textContent, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
-	require.Contains(t, textContent.Text, "billing check failed: quota exceeded")
+	require.Equal(t, "billing check failed", textContent.Text)
 }
 
 func TestWebSearchHandleSearchError(t *testing.T) {
@@ -101,7 +101,7 @@ func TestWebSearchHandleSearchError(t *testing.T) {
 
 	textContent, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
-	require.Contains(t, textContent.Text, "search failed: search backend down")
+	require.Equal(t, "search failed: unknown", textContent.Text)
 }
 
 func TestWebSearchHandleSuccess(t *testing.T) {

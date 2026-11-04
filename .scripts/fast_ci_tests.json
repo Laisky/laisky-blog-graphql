@@ -21,6 +21,54 @@
   },
   {
     "package": "./internal/web/telegram/formatting",
-    "tests": ["TestEscapeTelegramMarkdown"]
+    "tests": [
+      "TestEscapeTelegramMarkdown"
+    ]
+  },
+  {
+    "package": "./internal/web/telegram/controller",
+    "tests": [
+      "TestAlertControllerFidelityPreservesCompleteInput"
+    ]
+  },
+  {
+    "package": "./internal/web/telegram/service",
+    "tests": [
+      "TestAlertDeliveryLiteralShortText",
+      "TestAlertDeliveryDocumentWholePayload",
+      "TestAlertDeliveryAPIErrorsAreVisibleAndNeverRetried"
+    ]
+  },
+  {
+    "package": "./cmd",
+    "tests": [
+      "TestStartupAlertDiagnosticScope",
+      "TestStartupAlertCorePreservesSmallBoundContext",
+      "TestStartupAlertCorePreservesLargeChosenInput",
+      "TestStartupAlertCoreRejectsWholeOversizeRecord"
+    ]
+  },
+  {
+    "package": "./library/log",
+    "tests": [
+      "TestAlertAdoptionScopeCoreSnapshots",
+      "TestAlertAdoptionLegacyHookCoreContracts",
+      "TestOTLPStructuredFieldsUseZapSemantics",
+      "TestOTLPFaithfulDefault",
+      "TestOTLPExistingStartupMessageAndFutureFields",
+      "TestOTLPResourceEnvironmentPreserved",
+      "TestOTLPContentIsNotTruncated",
+      "TestOTLPDisabledBranchDoesNotEvaluateCallbacks",
+      "TestOTLPWithSnapshotsNamespacesAndFieldOrder",
+      "TestOTLPCorePreservesExistingCheckedEntryDecision"
+    ]
+  },
+  {
+    "package": "./internal/web",
+    "tests": [
+      "TestAlertAdoptionActualCallerCompleteContent",
+      "TestAlertAdoptionOversizeKeepsBusinessAndLocalInput",
+      "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet"
+    ]
   }
 ]

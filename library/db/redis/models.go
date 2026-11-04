@@ -102,12 +102,27 @@ type CrawlerEgressPolicy = crawleregress.Policy
 // HTMLCrawlerTask is a task for crawling HTML pages.
 type HTMLCrawlerTask struct {
 	baseTask
+	// FailureStage and FailureCategory are optional reviewed worker diagnostics.
+	// They do not establish connection evidence and are never used to release content.
+	FailureStage    string `json:"failure_stage,omitempty"`
+	FailureCategory string `json:"failure_category,omitempty"`
+	// FailureSignal is an optional finite reason for a failed render challenge.
+	// It carries no page content and is not connection or identity evidence.
+	FailureSignal string `json:"failure_signal,omitempty"`
+	// FailureContext is optional observed metadata, not body-release evidence.
+	FailureContext *crawleregress.FailureContext `json:"failure_context,omitempty"`
 	// Url is the target URL to fetch
 	Url string `json:"url"`
 	// APIKey is the one-api api key used for fetching dynamic content
 	APIKey string `json:"api_key,omitempty"`
 	// OutputMarkdown indicates whether the fetched HTML should be converted to markdown
 	OutputMarkdown bool `json:"output_markdown,omitempty"`
+	// AllowProviderFallback is an explicit producer capability. Missing or false
+	// keeps older callers on the direct-only result contract.
+	AllowProviderFallback bool `json:"allow_provider_fallback,omitempty"`
+	// Acquisition distinguishes provider content from verified direct content.
+	// Missing metadata retains the legacy direct-receipt requirement.
+	Acquisition *crawleregress.Acquisition `json:"acquisition,omitempty"`
 	// Egress is the connection policy the renderer must enforce. It is absent
 	// for a task submitted without admission metadata, which leaves the crawl
 	// unpinned; a renderer that receives no policy must refuse or be treated as
@@ -118,7 +133,8 @@ type HTMLCrawlerTask struct {
 	RequestChain []string `json:"request_chain,omitempty"`
 	// EgressReceipt is connection evidence bound to this exact task and policy.
 	EgressReceipt *crawleregress.Receipt `json:"egress_receipt,omitempty"`
-	// ResultHTML is the raw fetched HTML body, always present no matter OutputMarkdown is true or false
+	// ResultHTML is fetched HTML or locally rendered provider Markdown, present
+	// regardless of OutputMarkdown. Acquisition identifies the content source.
 	ResultHTML []byte `json:"result_html,omitempty"`
 	// ResultMarkdown if OutputMarkdown is true, the fetched HTML body converted to markdown
 	ResultMarkdown []byte `json:"result_markdown,omitempty"`

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { markPrivateError, parsePrivateJson } from '@/lib/private-error';
 import { useApiKey } from '@/lib/api-key-context';
 
 import { callMcpTool, type CallToolResponse } from '../shared/mcp-api';
@@ -92,7 +93,7 @@ function extractStructuredPayload<T>(result: CallToolResponse): T {
     throw new Error('Tool response missing structured payload');
   }
 
-  return JSON.parse(contentText) as T;
+  return parsePrivateJson<T>(contentText, 'Invalid memory JSON response');
 }
 
 function extractToolError(result: CallToolResponse): string {
@@ -137,7 +138,7 @@ function parseJSONArray(text: string, fieldName: string): MemoryResponseItem[] {
     parsed = JSON.parse(trimmed);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid JSON';
-    throw new Error(`${fieldName} is not valid JSON: ${message}`);
+    throw markPrivateError(new Error(`${fieldName} is not valid JSON: ${message}`), 'Invalid memory input');
   }
 
   if (!Array.isArray(parsed)) {
@@ -213,7 +214,7 @@ export function MemoryPage() {
 
     const result = await callMcpTool(apiKey, toolName, args);
     if (result.isError) {
-      throw new Error(extractToolError(result));
+      throw markPrivateError(new Error(extractToolError(result)), 'Memory request failed');
     }
 
     return extractStructuredPayload<T>(result);

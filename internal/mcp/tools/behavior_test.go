@@ -820,7 +820,7 @@ func TestSanitizeURLForLog(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.expected, sanitizeURLForLog(tc.input))
+			require.Equal(t, tc.expected, toolpolicy.URLForLog(tc.input))
 		})
 	}
 }

@@ -1,3 +1,4 @@
+import { markPrivateError, readPrivateJsonResponse, requestWithUnexpectedError } from '@/lib/private-error';
 import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
 
 export interface CallLogEntry {
@@ -67,7 +68,7 @@ export async function fetchCallLogs(apiKey: string, query: CallLogQuery, signal?
   const qs = params.toString();
   const url = `${apiBasePath}api/logs${qs ? `?${qs}` : ''}`;
 
-  const response = await fetch(url, {
+  const response = await requestWithUnexpectedError(url, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -75,12 +76,12 @@ export async function fetchCallLogs(apiKey: string, query: CallLogQuery, signal?
       Pragma: 'no-cache',
     },
     signal,
-  });
+  }, 'call-log');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'Call log request failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid call log JSON response');
 }

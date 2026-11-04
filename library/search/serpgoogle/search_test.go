@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/library/search"
+	"github.com/Laisky/laisky-blog-graphql/library/search/diagnostics"
 )
 
 func TestSearchEngineSuccess(t *testing.T) {
@@ -50,7 +51,9 @@ func TestSearchEngineReportsAPIError(t *testing.T) {
 	items, err := engine.Search(context.Background(), "query")
 	require.Error(t, err)
 	require.Nil(t, items)
-	require.Contains(t, err.Error(), "quota")
+	require.Equal(t, "provider", diagnostics.Summary(err).Stage)
+	require.Equal(t, "unknown", diagnostics.Summary(err).Category)
+	require.NotContains(t, err.Error(), "quota")
 }
 
 func TestSearchEngineHandlesHTTPError(t *testing.T) {
@@ -65,7 +68,8 @@ func TestSearchEngineHandlesHTTPError(t *testing.T) {
 	items, err := engine.Search(context.Background(), "query")
 	require.Error(t, err)
 	require.Nil(t, items)
-	require.Contains(t, err.Error(), "returned status")
+	require.Equal(t, http.StatusInternalServerError, diagnostics.Summary(err).Status)
+	require.Equal(t, "provider_http", diagnostics.Summary(err).Category)
 }
 
 func TestSearchEngineValidatesAPIKey(t *testing.T) {

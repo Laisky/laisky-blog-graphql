@@ -1,3 +1,4 @@
+import { requestWithUnexpectedError, markPrivateError, readPrivateJsonResponse } from '@/lib/private-error';
 import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
 
 // ============================================================================
@@ -56,7 +57,7 @@ export interface UserPreferencesResponse {
 export async function getPreferencesFromServer(apiKey: string, signal?: AbortSignal): Promise<UserPreferencesResponse> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/preferences`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/preferences`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -64,14 +65,14 @@ export async function getPreferencesFromServer(apiKey: string, signal?: AbortSig
       Pragma: 'no-cache',
     },
     signal,
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 /**
@@ -81,7 +82,7 @@ export async function getPreferencesFromServer(apiKey: string, signal?: AbortSig
 export async function setReturnModeOnServer(apiKey: string, mode: ReturnMode): Promise<UserPreferencesResponse> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/preferences`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/preferences`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -90,14 +91,14 @@ export async function setReturnModeOnServer(apiKey: string, mode: ReturnMode): P
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ return_mode: mode }),
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 /**
@@ -106,7 +107,7 @@ export async function setReturnModeOnServer(apiKey: string, mode: ReturnMode): P
 export async function setDisabledToolsOnServer(apiKey: string, disabledTools: string[]): Promise<UserPreferencesResponse> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/preferences`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/preferences`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -115,14 +116,14 @@ export async function setDisabledToolsOnServer(apiKey: string, disabledTools: st
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ disabled_tools: disabledTools }),
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 /**
@@ -134,7 +135,7 @@ export async function setDisabledToolsOnServer(apiKey: string, disabledTools: st
 export async function setCommandTemplateOnServer(apiKey: string, template: string): Promise<UserPreferencesResponse> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/preferences`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/preferences`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -143,14 +144,14 @@ export async function setCommandTemplateOnServer(apiKey: string, template: strin
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ command_template: template }),
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 // ============================================================================
@@ -321,7 +322,7 @@ export async function listUserRequests(
     params.append('limit', options.limit.toString());
   }
 
-  const response = await fetch(`${apiBasePath}api/requests?${params.toString()}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/requests?${params.toString()}`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -329,14 +330,14 @@ export async function listUserRequests(
       Pragma: 'no-cache',
     },
     signal: options?.signal,
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 /**
@@ -357,7 +358,7 @@ export async function searchUserRequests(
     params.append('limit', options.limit.toString());
   }
 
-  const response = await fetch(`${apiBasePath}api/requests/search?${params.toString()}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/requests/search?${params.toString()}`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -365,14 +366,14 @@ export async function searchUserRequests(
       Pragma: 'no-cache',
     },
     signal: options?.signal,
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 export interface CreateUserRequestOptions {
@@ -412,7 +413,7 @@ export async function createUserRequest(
     for (const url of normalized.urls ?? []) {
       form.append('image_urls', url);
     }
-    response = await fetch(`${apiBasePath}api/requests`, {
+    response = await requestWithUnexpectedError(`${apiBasePath}api/requests`, {
       method: 'POST',
       headers: {
         Authorization: authorization,
@@ -420,9 +421,9 @@ export async function createUserRequest(
         Pragma: 'no-cache',
       },
       body: form,
-    });
+    }, 'user-requests');
   } else {
-    response = await fetch(`${apiBasePath}api/requests`, {
+    response = await requestWithUnexpectedError(`${apiBasePath}api/requests`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -431,7 +432,7 @@ export async function createUserRequest(
         Pragma: 'no-cache',
       },
       body: JSON.stringify({ content: normalized.content, task_id: normalized.taskId }),
-    });
+    }, 'user-requests');
   }
 
   if (!response.ok) {
@@ -439,7 +440,7 @@ export async function createUserRequest(
     throw parsed;
   }
 
-  const payload = await response.json();
+  const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
   return payload.request as UserRequest;
 }
 
@@ -472,7 +473,7 @@ async function parseImageError(response: Response): Promise<ImageSubmissionError
   const err = new Error(message) as ImageSubmissionError;
   err.code = code;
   err.attachmentIndex = attachmentIndex;
-  return err;
+  return markPrivateError(err, 'User requests operation failed');
 }
 
 /**
@@ -482,7 +483,7 @@ async function parseImageError(response: Response): Promise<ImageSubmissionError
 export async function getQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaResponse> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/quota`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/quota`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -490,12 +491,12 @@ export async function getQuota(apiKey: string, signal?: AbortSignal): Promise<Qu
       Pragma: 'no-cache',
     },
     signal,
-  });
+  }, 'user-requests');
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 export async function deleteUserRequest(apiKey: string, requestId: string, scope?: TaskScopeOptions): Promise<void> {
@@ -504,18 +505,18 @@ export async function deleteUserRequest(apiKey: string, requestId: string, scope
   const params = new URLSearchParams();
   appendTaskScope(params, scope ? { taskId: scope.taskId } : undefined);
   const query = params.toString();
-  const response = await fetch(query ? `${apiBasePath}api/requests/${requestId}?${query}` : `${apiBasePath}api/requests/${requestId}`, {
+  const response = await requestWithUnexpectedError(query ? `${apiBasePath}api/requests/${requestId}?${query}` : `${apiBasePath}api/requests/${requestId}`, {
     method: 'DELETE',
     headers: {
       Authorization: authorization,
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
     },
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 }
 
@@ -525,21 +526,21 @@ export async function deleteAllUserRequests(apiKey: string, scope?: TaskScopeOpt
   const params = new URLSearchParams();
   appendTaskScope(params, scope);
   const url = params.toString() ? `${apiBasePath}api/requests?${params.toString()}` : `${apiBasePath}api/requests`;
-  const response = await fetch(url, {
+  const response = await requestWithUnexpectedError(url, {
     method: 'DELETE',
     headers: {
       Authorization: authorization,
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
     },
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  const payload = await response.json();
+  const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
   return Number(payload.deleted ?? 0);
 }
 
@@ -560,21 +561,21 @@ export async function deleteConsumedRequests(apiKey: string, options?: DeleteCon
   }
   appendTaskScope(params, options);
 
-  const response = await fetch(`${apiBasePath}api/requests/consumed?${params.toString()}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/requests/consumed?${params.toString()}`, {
     method: 'DELETE',
     headers: {
       Authorization: authorization,
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
     },
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  const payload = await response.json();
+  const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
   return Number(payload.deleted ?? 0);
 }
 
@@ -588,21 +589,21 @@ export async function deleteAllPendingRequests(apiKey: string, scope?: TaskScope
   const params = new URLSearchParams();
   appendTaskScope(params, scope);
   const url = params.toString() ? `${apiBasePath}api/requests/pending?${params.toString()}` : `${apiBasePath}api/requests/pending`;
-  const response = await fetch(url, {
+  const response = await requestWithUnexpectedError(url, {
     method: 'DELETE',
     headers: {
       Authorization: authorization,
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
     },
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  const payload = await response.json();
+  const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
   return Number(payload.deleted ?? 0);
 }
 
@@ -612,7 +613,7 @@ export async function deleteAllPendingRequests(apiKey: string, scope?: TaskScope
 export async function reorderUserRequests(apiKey: string, orderedIds: string[]): Promise<void> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/requests/reorder`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/requests/reorder`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -621,11 +622,11 @@ export async function reorderUserRequests(apiKey: string, orderedIds: string[]):
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ ordered_ids: orderedIds }),
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 }
 
@@ -639,7 +640,7 @@ export async function reorderUserRequests(apiKey: string, orderedIds: string[]):
 export async function listSavedCommands(apiKey: string, signal?: AbortSignal): Promise<SavedCommandListResponse> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/saved-commands`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/saved-commands`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -647,14 +648,14 @@ export async function listSavedCommands(apiKey: string, signal?: AbortSignal): P
       Pragma: 'no-cache',
     },
     signal,
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 /**
@@ -663,7 +664,7 @@ export async function listSavedCommands(apiKey: string, signal?: AbortSignal): P
 export async function createSavedCommand(apiKey: string, label: string, content: string): Promise<SavedCommand> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/saved-commands`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/saved-commands`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -672,14 +673,14 @@ export async function createSavedCommand(apiKey: string, label: string, content:
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ label, content }),
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  const payload = await response.json();
+  const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
   return payload.command as SavedCommand;
 }
 
@@ -693,7 +694,7 @@ export async function updateSavedCommand(
 ): Promise<SavedCommand> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/saved-commands/${commandId}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/saved-commands/${commandId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -702,14 +703,14 @@ export async function updateSavedCommand(
       Pragma: 'no-cache',
     },
     body: JSON.stringify(updates),
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  const payload = await response.json();
+  const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
   return payload.command as SavedCommand;
 }
 
@@ -719,18 +720,18 @@ export async function updateSavedCommand(
 export async function deleteSavedCommand(apiKey: string, commandId: string): Promise<void> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/saved-commands/${commandId}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/saved-commands/${commandId}`, {
     method: 'DELETE',
     headers: {
       Authorization: authorization,
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
     },
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 }
 
@@ -740,7 +741,7 @@ export async function deleteSavedCommand(apiKey: string, commandId: string): Pro
 export async function reorderSavedCommands(apiKey: string, orderedIds: string[]): Promise<void> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
-  const response = await fetch(`${apiBasePath}api/saved-commands/reorder`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/saved-commands/reorder`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -749,11 +750,11 @@ export async function reorderSavedCommands(apiKey: string, orderedIds: string[])
       Pragma: 'no-cache',
     },
     body: JSON.stringify({ ordered_ids: orderedIds }),
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 }
 
@@ -781,7 +782,7 @@ export async function getHoldState(apiKey: string, taskId?: string, signal?: Abo
     params.append('task_id', taskId);
   }
   const query = params.toString();
-  const response = await fetch(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
     cache: 'no-store',
     headers: {
       Authorization: authorization,
@@ -789,14 +790,14 @@ export async function getHoldState(apiKey: string, taskId?: string, signal?: Abo
       Pragma: 'no-cache',
     },
     signal,
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 /**
@@ -812,21 +813,21 @@ export async function setHold(apiKey: string, taskId?: string): Promise<HoldStat
     params.append('task_id', taskId);
   }
   const query = params.toString();
-  const response = await fetch(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
     method: 'POST',
     headers: {
       Authorization: authorization,
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
     },
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
 
 /**
@@ -840,19 +841,19 @@ export async function releaseHold(apiKey: string, taskId?: string): Promise<Hold
     params.append('task_id', taskId);
   }
   const query = params.toString();
-  const response = await fetch(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
+  const response = await requestWithUnexpectedError(`${apiBasePath}api/hold${query ? `?${query}` : ''}`, {
     method: 'DELETE',
     headers: {
       Authorization: authorization,
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
     },
-  });
+  }, 'user-requests');
 
   if (!response.ok) {
     const message = (await response.text()) || response.statusText;
-    throw new Error(message);
+    throw markPrivateError(new Error(message), 'User requests operation failed');
   }
 
-  return response.json();
+  return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }

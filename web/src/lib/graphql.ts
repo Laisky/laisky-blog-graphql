@@ -1,4 +1,5 @@
 import { buildAuthorizationHeader } from '@/features/mcp/shared/auth';
+import { requestWithUnexpectedError, reportUnexpectedRequestError, markPrivateError } from './private-error';
 import { publicApiPath } from './api-base';
 
 export interface GraphQLResponse<T> {
@@ -20,7 +21,15 @@ export class GraphQLRequestError extends Error {
     this.name = 'GraphQLRequestError';
     this.status = status;
     this.errors = errors;
+    if (errors.length > 0) markPrivateError(this, 'GraphQL request failed');
   }
+}
+
+/** invalidGraphQLResponse observes malformed replies without exposing their response body. */
+function invalidGraphQLResponse(message: string, status: number): GraphQLRequestError {
+  const error = new GraphQLRequestError(message, status);
+  if (status >= 200 && status < 300) reportUnexpectedRequestError(error, { operation: 'graphql', status });
+  return error;
 }
 
 /** Execute once against the active public prefix with the canonical bearer header. */
@@ -30,22 +39,22 @@ export async function fetchGraphQL<T>(
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
   const authorization = buildAuthorizationHeader(apiKey);
   if (authorization) headers.Authorization = authorization;
-  const response = await fetch(publicApiPath('/query'), {
+  const response = await requestWithUnexpectedError(publicApiPath('/query'), {
     method: 'POST', headers, cache: 'no-store', signal,
     body: JSON.stringify({ query, variables }),
-  });
+  }, 'graphql');
   const text = await response.text();
   let json: GraphQLResponse<T>;
   try { json = JSON.parse(text) as GraphQLResponse<T>; }
-  catch { throw new GraphQLRequestError(`Invalid GraphQL response (HTTP ${response.status})`, response.status); }
+  catch { throw invalidGraphQLResponse(`Invalid GraphQL response (HTTP ${response.status})`, response.status); }
   if (!json || typeof json !== 'object' || Array.isArray(json)
       || (json.errors !== undefined && (!Array.isArray(json.errors)
         || json.errors.some((error) => !error || typeof error.message !== 'string')))) {
-    throw new GraphQLRequestError('Invalid GraphQL response shape', response.status);
+    throw invalidGraphQLResponse('Invalid GraphQL response shape', response.status);
   }
   if (!response.ok || (json.errors?.length ?? 0) > 0) {
     throw new GraphQLRequestError(json.errors?.[0]?.message || `HTTP ${response.status}`, response.status, json.errors);
   }
-  if (json.data === undefined || json.data === null) throw new GraphQLRequestError('No data returned from GraphQL', response.status);
+  if (json.data === undefined || json.data === null) throw invalidGraphQLResponse('No data returned from GraphQL', response.status);
   return json.data;
 }

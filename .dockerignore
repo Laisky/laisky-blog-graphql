@@ -1,6 +1,13 @@
-# Global ignores
+# Never send the real checkout's Git store, including unrelated packed/dangling objects.
 .git
-.gitignore
+# Only the explicit public shallow-HEAD preparation is allowed for native Go stamping.
+.docker-build-git/*
+!.docker-build-git/HEAD
+!.docker-build-git/index
+!.docker-build-git/shallow
+!.docker-build-git/refs
+!.docker-build-git/objects
+.docker-build-git/objects/info
 **/.DS_Store
 
 # Go build artifacts

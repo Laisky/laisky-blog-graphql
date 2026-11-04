@@ -34,7 +34,7 @@ func TestSearchNeverExposesProviderKey(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "echo: " + key})
 			}))
 			defer server.Close()
-			engine := NewSearchEngine(key, WithEndpoint(server.URL), WithHTTPClient(server.Client()))
+			engine := NewSearchEngine(key, WithEndpoint(server.URL), WithHTTPClient(server.Client()), WithLogger(logger))
 			_, err = engine.Search(gmw.SetLogger(context.Background(), logger), "query")
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), key)

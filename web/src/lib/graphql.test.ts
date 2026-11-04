@@ -1,8 +1,9 @@
+import { getPrivateErrorMessage, setUnexpectedRequestReporter } from './private-error';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configurePublicApiBasePath } from './api-base';
 import { fetchGraphQL, GraphQLRequestError } from './graphql';
 
-afterEach(() => { vi.unstubAllGlobals(); configurePublicApiBasePath(undefined); });
+afterEach(() => { setUnexpectedRequestReporter(); vi.unstubAllGlobals(); configurePublicApiBasePath(undefined); });
 describe('GraphQL transport contract', () => {
   it('uses the public prefix, normalized auth and abort signal', async () => {
     configurePublicApiBasePath('/gateway');
@@ -18,7 +19,25 @@ describe('GraphQL transport contract', () => {
     vi.stubGlobal('fetch', fetch);
     const failure = await fetchGraphQL('key', 'mutation { anything }').catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(GraphQLRequestError);
+    expect((failure as GraphQLRequestError).message).toBe('conflict');
+    expect(getPrivateErrorMessage(failure)).toBe('GraphQL request failed');
     expect((failure as GraphQLRequestError).errors[0].extensions?.code).toBe('VERSION_CONFLICT');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('GraphQL actionable and expected reply observation', () => {
+  it.each([400, 401, 403, 404, 409, 412, 422, 429])('leaves expected HTTP %i failures unreported', async (status) => {
+    const observer = vi.fn(); setUnexpectedRequestReporter(observer);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('synthetic private failure', { status })));
+    await expect(fetchGraphQL('key', '{query}')).rejects.toBeInstanceOf(GraphQLRequestError);
+    expect(observer).not.toHaveBeenCalled();
+  });
+  it.each(['not JSON', '{"errors":{}}', '{"data":null}'])('observes malformed success reply %s exactly once', async (body) => {
+    const observer = vi.fn(); setUnexpectedRequestReporter(observer);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)));
+    const error = await fetchGraphQL('key', '{query}').catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(GraphQLRequestError);
+    expect(observer).toHaveBeenCalledExactlyOnceWith(error, { operation: 'graphql', status: 200 });
   });
 });

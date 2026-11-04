@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
 	"github.com/Laisky/laisky-blog-graphql/library/crawleregress"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 // type htmlToMarkdownConverter interface {
@@ -18,12 +18,12 @@ import (
 // }
 
 // FetchDynamicURLContent is a wrapper for submit & fetch dynamic url content.
-// Markdown conversion is local on the renderer. apiKey is retained for caller compatibility
+// Direct Markdown conversion is local on the renderer. apiKey is retained for caller compatibility
 // and billing admission; it is never placed in the crawler task or sent downstream.
 //
 // The crawl carries the connection policy request admission produced, and the
-// bound connection receipts are checked before any body is returned. The renderer
-// enforces pinned connections before fetching; verification never re-resolves DNS.
+// acquisition is checked before any body is returned. Direct results require
+// pinned connection receipts; configured provider results are identified as such.
 func FetchDynamicURLContent(ctx context.Context, rdb *rlibs.DB, url, apiKey string, outputMarkdown bool) ([]byte, error) {
 	return fetchDynamicURLContent(ctx, rdb, url, apiKey, outputMarkdown)
 }
@@ -38,9 +38,9 @@ type crawlerTaskStore interface {
 //
 //nolint:gocognit // complex but straightforward state-machine loop
 func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiKey string, outputMarkdown bool) ([]byte, error) {
-	// gmw.GetLogger always returns a usable logger, so no nil guard is needed.
-	logger := gmw.GetLogger(ctx).Named("fetch_dynamic_url_content").With(
-		zap.String("url", sanitizeURLForLog(url)),
+	start := time.Now()
+	// Only the application logger carries reviewed operation correlation.
+	logger := reviewedFetchLogger(ctx, appLog.Logger).Named("fetch_dynamic_url_content").With(
 		zap.Bool("output_markdown", outputMarkdown),
 	)
 	logger.Debug("submitting html crawler task")
@@ -50,20 +50,23 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 	// entry points already applied, so an admitted URL cannot be rejected now.
 	admission, err := toolpolicy.AdmitFetchURL(ctx, url)
 	if err != nil {
-		logger.Debug("fetch target is not admissible", zap.Error(err))
+		logger.Debug("fetch target is not admissible")
 		return nil, fetchFailure(err, "fetch_admission_failed", "admission", "")
 	}
 	egressSettings := LoadEgressSettings()
 	policy := admission.Policy(egressSettings.MaxRedirects, egressSettings.AllowSubresources)
+	// AddHTMLCrawlerTaskWithEgress advertises this capability in the queued task.
+	// Keep the expected value here, independently of the returned task envelope.
+	const allowProviderFallback = true
 
 	// submit task
 	taskID, err := rdb.AddHTMLCrawlerTaskWithEgress(ctx, url, "", outputMarkdown, crawlerEgressPolicy(policy))
 	if err != nil {
-		logger.Debug("submit html crawler task failed", zap.Error(err))
+		logger.Debug("submit html crawler task failed")
 		return nil, fetchFailure(err, "crawler_submit_failed", "submit", "")
 	}
 
-	logger = logger.With(zap.String("task_id", taskID))
+	logger = logger.With(zap.String("task_id", safeTaskID(taskID)))
 	logger.Debug("submitted html crawler task")
 
 	// fetch task result
@@ -71,7 +74,7 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 	for {
 		task, err := rdb.GetHTMLCrawlerTaskResult(ctx, taskID)
 		if err != nil {
-			logger.Debug("get html crawler task result failed", zap.Error(err))
+			logger.Debug("get html crawler task result failed")
 			return nil, fetchFailure(err, "crawler_result_failed", "result", taskID)
 		}
 
@@ -79,18 +82,19 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 			return nil, fetchFailure(errors.New("nil crawler result"), "crawler_result_failed", "result", taskID)
 		}
 		if task.Status != lastStatus {
-			logger.Debug("html crawler task status updated",
-				zap.String("status", task.Status),
-				zap.Bool("task_output_markdown", task.OutputMarkdown),
+			logger.Info("html crawler result observed",
+				zap.String("event", "result_observed"), zap.String("stage", "result"),
+				zap.String("status", safeCrawlerStatus(task.Status)),
+				zap.String("caller_context_state", FetchCallerContextState(ctx)),
+				zap.Int64("duration_ms", min(max(time.Since(start).Milliseconds(), 0), 24*60*60*1000)),
 			)
 			lastStatus = task.Status
 		}
 
 		switch task.Status {
 		case rlibs.TaskStatusSuccess:
-			// No body is returned until the submitted identity and pinned-peer
-			// receipt have passed verification.
-			if egressErr := verifyRenderedTask(ctx, egressSettings, taskID, url, policy, task); egressErr != nil {
+			// No body is returned until identity, policy and acquisition checks pass.
+			if egressErr := verifyAcquiredTask(ctx, taskID, url, policy, allowProviderFallback, task); egressErr != nil {
 				return nil, egressErr
 			}
 			if task.OutputMarkdown != outputMarkdown || len(task.ResultHTML) > crawleregress.MaxResponseBytes || len(task.ResultMarkdown) > crawleregress.MaxResponseBytes {
@@ -99,6 +103,17 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 			if (outputMarkdown && len(task.ResultMarkdown) == 0) || (!outputMarkdown && len(task.ResultHTML) == 0) {
 				return nil, fetchFailure(errors.New("empty crawler result body"), "crawler_result_failed", "result", taskID)
 			}
+			// A provider result is accepted under the explicit capability, without
+			// claiming a verified direct connection to the target.
+			message, event, method, provider := "html crawler result verified", "result_verified", crawleregress.AcquisitionDirect, ""
+			if task.Acquisition != nil && task.Acquisition.Method == crawleregress.AcquisitionProvider {
+				message, event, method, provider = "html crawler result accepted", "result_accepted", crawleregress.AcquisitionProvider, task.Acquisition.Provider
+			}
+			logger.Info(message, zap.String("event", event),
+				zap.String("stage", "verification"), zap.String("status", rlibs.TaskStatusSuccess),
+				zap.String("acquisition_method", method), zap.String("provider", provider),
+				zap.String("caller_context_state", FetchCallerContextState(ctx)),
+				zap.Int64("duration_ms", min(max(time.Since(start).Milliseconds(), 0), 24*60*60*1000)))
 			if task.OutputMarkdown && outputMarkdown {
 				logger.Debug("html crawler task completed with markdown",
 					zap.Int("content_len", len(task.ResultMarkdown)),
@@ -121,16 +136,19 @@ func fetchDynamicURLContent(ctx context.Context, rdb crawlerTaskStore, url, apiK
 			}
 			continue
 		case rlibs.TaskStatusFailed:
-			return nil, fetchFailure(errors.New("crawler task failed"), "crawler_failed", "render", taskID)
+			return nil, failedCrawlerTask(taskID, url, policy, outputMarkdown, task)
 		default:
-			logger.Debug("html crawler task returned unknown status", zap.String("status", task.Status))
+			logger.Debug("html crawler task returned unknown status", zap.String("status", safeCrawlerStatus(task.Status)))
 			return nil, fetchFailure(errors.New("unknown crawler task status"), "crawler_status_invalid", "result", taskID)
 		}
 	}
 }
 
-// sanitizeURLForLog removes query and fragment components before logging a URL.
-// It redacts malformed inputs instead of logging their original bytes.
-func sanitizeURLForLog(rawURL string) string {
-	return toolpolicy.URLForLog(rawURL)
+func safeCrawlerStatus(status string) string {
+	switch status {
+	case rlibs.TaskStatusPending, rlibs.TaskStatusRunning, rlibs.TaskStatusSuccess, rlibs.TaskStatusFailed:
+		return status
+	default:
+		return "unknown"
+	}
 }

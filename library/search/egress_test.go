@@ -12,6 +12,12 @@ import (
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 )
 
+// verifyRenderedTask keeps legacy direct-only fixtures on the shared verifier;
+// the obsolete RequireVerified setting cannot relax their receipt requirement.
+func verifyRenderedTask(ctx context.Context, _ EgressSettings, taskID, target string, policy toolpolicy.EgressPolicy, task *rlibs.HTMLCrawlerTask) error {
+	return verifyAcquiredTask(ctx, taskID, target, policy, false, task)
+}
+
 // TestLoadEgressSettingsDefaults pins the shipped defaults: a bounded redirect
 // budget, no subresource egress, and unconditional renderer evidence.
 func TestLoadEgressSettingsDefaults(t *testing.T) {
