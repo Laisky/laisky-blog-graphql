@@ -221,18 +221,27 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, to
 	if err := service.ValidateAlertPayload(complete); err != nil {
 		return nil, err
 	}
+	// Admission and the lookup both use the canonical name, so aliases such as
+	// " name " share the budget of "name" and an invalid name costs nothing.
+	alertName, err := service.NormalizeAlertName(typeArg)
+	if err != nil {
+		return nil, errors.Wrap(err, "sanitize alert type")
+	}
 	logger := gmw.GetLogger(ctx).Named("telegram_monitor_alert")
-	if err := admitAlertAttempt(typeArg); err != nil {
+	admission, err := admitAlertAttempt(ctx, alertName)
+	if err != nil {
 		return nil, err
 	}
-	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
+	// Returns the reserved per-type send unless the credentials match below.
+	defer admission.Cancel()
+	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, alertName)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 	if alert == nil {
 		return nil, errors.New("telegram alert authorization returned no alert")
 	}
-	if err = admitAuthorizedAlert(alert.Name); err != nil {
+	if err = authorizeAlert(ctx, admission, alert.Name); err != nil {
 		return nil, err
 	}
 	users, err := r.svc.LoadUsersByAlertType(ctx, alert)
@@ -284,31 +293,4 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, to
 		return alert, errors.WithStack(outcome)
 	}
 	return alert, nil
-}
-
-// admitAlertAttempt runs before the alert's credential lookup and spends one send
-// from the shared budget, which bounds lookups. It refuses an alert type whose own
-// budget is already empty, and fails closed when the throttle is not configured.
-// It never creates per-type state, so unauthenticated type strings cannot grow it.
-func admitAlertAttempt(alertType string) error {
-	if telegramRatelimiter == nil {
-		return errors.WithStack(errTelegramThrottleUnavailable)
-	}
-	if !telegramRatelimiter.AllowAttempt(alertType) {
-		return errors.WithStack(errAlertThrottled)
-	}
-	return nil
-}
-
-// admitAuthorizedAlert runs after the credential lookup succeeded and spends one
-// send from the budget of the stored alert name. It fails closed when the throttle
-// is not configured.
-func admitAuthorizedAlert(alertName string) error {
-	if telegramRatelimiter == nil {
-		return errors.WithStack(errTelegramThrottleUnavailable)
-	}
-	if !telegramRatelimiter.AllowAuthorized(alertName) {
-		return errors.WithStack(errAlertThrottled)
-	}
-	return nil
 }

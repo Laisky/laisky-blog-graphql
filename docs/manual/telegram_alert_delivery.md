@@ -39,14 +39,44 @@ subscription rows do not produce duplicate sends within a single mutation. It
 preflights invalid/empty subscriber lists before attempting any send. Existing
 fail-closed throttling and constant-time token validation remain authoritative.
 
-Throttling wraps the token check in two steps. Before the lookup, a request spends
-one send from the shared `total_*` budget, which bounds token lookups. A type whose
-own budget is already empty is refused at this step without spending the shared
-send. Only after the token matches does the request spend from the
-`each_title_*` budget of the stored alert type name. An unknown type or a wrong
-token therefore never creates or drains a per-type budget: it gets the token error,
-not a throttle refusal. Per-type budgets refill from elapsed time and run no
-goroutine. Every refusal returns `deny by throttle`.
+Throttling wraps the token check. The requested type is first put in its
+canonical form, the form `alert_types` stores and the token lookup matches:
+surrounding whitespace is trimmed, and an empty name, a null byte or more than
+100 runes is refused with the DAO's `sanitize alert type: …` error before any
+budget or lookup is spent. Both throttle steps use that canonical name, so
+`" name "` and `"name"` share one budget.
+
+1. **Before the lookup**, the request reserves one send from the shared
+   `total_*` budget, which bounds token lookups, and one from the type's own
+   `each_title_*` budget, in one step. If either is empty it is refused with
+   `deny by throttle` and spends nothing, so an exhausted type cannot drain the
+   shared budget, and concurrent requests for one type spend at most as many
+   shared sends as the type has.
+2. **After the lookup**, a matching token keeps the reserved send spent. A wrong
+   token, an unknown type, a lookup failure or a canceled request returns the
+   reserved per-type send; the shared send stays spent because it paid for the
+   lookup.
+
+An authentication failure therefore never drains a type's budget. Admission
+does run before the credential check, though, so a wrong token or unknown type
+can get `deny by throttle` instead of the token error when the shared budget, or
+that type's own budget, is already empty. While a lookup is in flight, even one
+with a wrong token, its reserved send is unavailable to concurrent requests for
+that type; it returns when the lookup does. Holding a type's whole budget that
+way needs one in-flight lookup per send, each paid from the shared budget, so it
+is no cheaper than exhausting the shared budget outright, which an anonymous
+flood can already do.
+
+Budgets are token buckets that refill from elapsed time when read; they run no
+goroutine and need no shutdown. Every budget starts full, at its burst. Earlier
+versions started one with a second's worth (`*_per_sec`) and refilled it to the
+burst, so a start at the burst only matches what an idle type already had. A
+per-type budget that has refilled fully
+is dropped, which changes no decision because a missing budget is a full one, so
+retained state is bounded by recent sends rather than by the number of alert
+types. Validating the throttle settings at startup builds nothing. Every refusal
+returns `deny by throttle`; the server logs which budget refused at debug level
+and a throttle summary with counters at most once a minute.
 
 Text success requires a provider acknowledgement whose text exactly matches the
 sent message. Documents require a message ID and file ID; if file size is present

@@ -477,6 +477,18 @@ func TestClassifyGraphQLClientError(t *testing.T) {
 			expectedReason: "invalid_alert_token",
 		},
 		{
+			name:           "invalid alert type is client-side",
+			errMsg:         "sanitize alert type: alert name exceeds max length 100",
+			expectedClient: true,
+			expectedReason: "invalid_alert_input",
+		},
+		{
+			name:           "invalid alert push token is client-side",
+			errMsg:         "sanitize push token: push token is required",
+			expectedClient: true,
+			expectedReason: "invalid_alert_input",
+		},
+		{
 			name:           "throttle denial is client-side",
 			errMsg:         "deny by throttle",
 			expectedClient: true,

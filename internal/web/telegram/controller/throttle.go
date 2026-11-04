@@ -4,11 +4,12 @@ package telegram
 import (
 	"context"
 
-	"github.com/Laisky/laisky-blog-graphql/library/log"
-	"github.com/Laisky/laisky-blog-graphql/library/throttle"
-
+	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/Laisky/zap"
+
+	"github.com/Laisky/laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/throttle"
 )
 
 var (
@@ -27,12 +28,7 @@ var (
 // than pushing unlimited alerts. The fail-fast contract for an explicitly
 // requested telegram task stays in cmd/api.go, which validates it there.
 func setupTelegramThrottle(ctx context.Context) {
-	cfg := &throttle.TelegramThrottleCfg{
-		TotleBurst:       gconfig.Shared.GetInt("settings.telegram.throttle.total_burst"),
-		TotleNPerSec:     gconfig.Shared.GetInt("settings.telegram.throttle.total_per_sec"),
-		EachTitleNPerSec: gconfig.Shared.GetInt("settings.telegram.throttle.each_title_per_sec"),
-		EachTitleBurst:   gconfig.Shared.GetInt("settings.telegram.throttle.each_title_burst"),
-	}
+	cfg := loadTelegramThrottleCfg()
 	limiter, err := throttle.NewTelegramThrottle(ctx, cfg)
 	if err != nil {
 		telegramRatelimiter = nil
@@ -50,13 +46,22 @@ func setupTelegramThrottle(ctx context.Context) {
 
 // ValidateTelegramThrottleConfig reports why the alert rate limiter cannot be
 // built, so a caller that requires telegram (the "telegram" task) can fail fast
-// at startup instead of discovering the gap on the first alert.
-func ValidateTelegramThrottleConfig(ctx context.Context) error {
-	_, err := throttle.NewTelegramThrottle(ctx, &throttle.TelegramThrottleCfg{
+// at startup instead of discovering the gap on the first alert. It only checks
+// the settings: it builds no limiter, so nothing outlives the call.
+func ValidateTelegramThrottleConfig(_ context.Context) error {
+	if err := loadTelegramThrottleCfg().Validate(); err != nil {
+		return errors.Wrap(err, "validate telegram throttle config")
+	}
+	return nil
+}
+
+// loadTelegramThrottleCfg reads the alert rate limiter settings. It is the one
+// place that maps configuration keys to the throttle, for both setup and validation.
+func loadTelegramThrottleCfg() *throttle.TelegramThrottleCfg {
+	return &throttle.TelegramThrottleCfg{
 		TotleBurst:       gconfig.Shared.GetInt("settings.telegram.throttle.total_burst"),
 		TotleNPerSec:     gconfig.Shared.GetInt("settings.telegram.throttle.total_per_sec"),
 		EachTitleNPerSec: gconfig.Shared.GetInt("settings.telegram.throttle.each_title_per_sec"),
 		EachTitleBurst:   gconfig.Shared.GetInt("settings.telegram.throttle.each_title_burst"),
-	})
-	return err
+	}
 }

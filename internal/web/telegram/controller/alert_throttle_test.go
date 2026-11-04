@@ -3,7 +3,8 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"runtime"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Laisky/errors/v2"
@@ -14,24 +15,59 @@ import (
 )
 
 // tokenGatedTelegram authenticates only the synthetic alert types it stores, and
-// fails like the DAO does for an unknown type or a wrong push token.
+// fails like the DAO does for an unknown type or a wrong push token. Like the DAO,
+// it trims the requested type before its lookup. It is safe for concurrent use.
 type tokenGatedTelegram struct {
 	recordingTelegram
+	mu        sync.Mutex
 	tokens    map[string]string
 	authCalls int
+	// holdToken, when set, makes lookups that present it block until release is
+	// closed, after signaling entered, so a test can keep a lookup in flight.
+	holdToken string
+	entered   chan struct{}
+	release   chan struct{}
 }
 
 // ValidateTokenForAlertType counts every credential lookup, the MongoDB query in production.
-func (s *tokenGatedTelegram) ValidateTokenForAlertType(_ context.Context, token, alertType string) (*model.AlertTypes, error) {
+func (s *tokenGatedTelegram) ValidateTokenForAlertType(ctx context.Context, token, alertType string) (*model.AlertTypes, error) {
+	s.mu.Lock()
 	s.authCalls++
-	stored, ok := s.tokens[alertType]
+	hold := s.holdToken != "" && token == s.holdToken
+	s.mu.Unlock()
+	if hold {
+		s.entered <- struct{}{}
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return nil, errors.WithStack(ctx.Err())
+		}
+	}
+
+	name := strings.TrimSpace(alertType)
+	stored, ok := s.tokens[name]
 	if !ok {
-		return nil, errors.Errorf("alert_type `%s` not found", alertType)
+		return nil, errors.Errorf("alert_type `%s` not found", name)
 	}
 	if token != stored {
-		return nil, errors.Errorf("token invalidate for `%s`", alertType)
+		return nil, errors.Errorf("token invalidate for `%s`", name)
 	}
-	return &model.AlertTypes{Name: alertType}, nil
+	return &model.AlertTypes{Name: name}, nil
+}
+
+// SendAlertToUser records the complete alert wire message.
+func (s *tokenGatedTelegram) SendAlertToUser(_ context.Context, _ int, msg string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.plain = append(s.plain, msg)
+	return nil
+}
+
+// lookups returns how many credential lookups ran.
+func (s *tokenGatedTelegram) lookups() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.authCalls
 }
 
 // configureAlertThrottle installs an alert rate limiter with the given budgets for one test.
@@ -42,7 +78,7 @@ func configureAlertThrottle(t *testing.T, totalPerSec, totalBurst, eachPerSec, e
 	gconfig.Shared.Set("settings.telegram.throttle.total_burst", totalBurst)
 	gconfig.Shared.Set("settings.telegram.throttle.each_title_per_sec", eachPerSec)
 	gconfig.Shared.Set("settings.telegram.throttle.each_title_burst", eachBurst)
-	NewTelegram(context.Background(), nil)
+	NewTelegram(t.Context(), nil)
 	require.NotNil(t, telegramRatelimiter)
 }
 
@@ -51,20 +87,21 @@ func configureAlertThrottle(t *testing.T, totalPerSec, totalBurst, eachPerSec, e
 // goroutine that never stops, for every distinct type string before checking the
 // token, so an anonymous caller grew goroutines and memory without bound.
 func TestAlertThrottleUnauthenticatedTypesDoNotLeak(t *testing.T) {
-	configureAlertThrottle(t, 100, 100, 100, 100)
+	const probes = 1000
+	// The shared budget admits every probe, so each one reaches the credential lookup.
+	configureAlertThrottle(t, 100, probes, 100, 100)
 	svc := &tokenGatedTelegram{tokens: map[string]string{"known_type": "synthetic-token"}}
 	resolver := NewMutationResolver(svc)
 
-	const probes = 1000
-	before := runtime.NumGoroutine()
+	before := rateLimiterGoroutines(t)
 	for i := range probes {
 		_, err := resolver.TelegramMonitorAlert(context.Background(), fmt.Sprintf("probe-%04d", i), "anonymous", "body")
-		require.Error(t, err)
+		require.ErrorContains(t, err, "not found")
 	}
-	grown := runtime.NumGoroutine() - before
-	t.Logf("goroutines grew by %d after %d unauthenticated alert types", grown, probes)
 
-	require.Less(t, grown, 20, "%d unauthenticated alert types must not leave goroutines behind", probes)
+	require.Equal(t, probes, svc.lookups())
+	require.Equal(t, before, rateLimiterGoroutines(t), "%d unauthenticated alert types must not start refill goroutines", probes)
+	require.Zero(t, telegramRatelimiter.Stats().RetainedTitles, "%d unauthenticated alert types must not keep per-type state", probes)
 }
 
 // TestAlertThrottleUnauthenticatedCallerCannotDrainKnownType pins that a caller
