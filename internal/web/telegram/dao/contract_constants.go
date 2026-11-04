@@ -9,6 +9,7 @@ const (
 	fieldCreatedAt   = "created_at"
 	fieldModifiedAt  = "modified_at"
 	fieldName        = "name"
+	fieldPushToken   = "push_token"
 	fieldTelegramUid = "telegram_uid"
 	fieldUid         = "uid"
 )

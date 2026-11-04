@@ -198,6 +198,7 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 
 	registerOneapiProxyRoutes(server, prefix)
 	registerSSOCodeRoutes(server, prefix, resolver)
+	registerCloudMonitoringAlertRoutes(server, prefix, resolver)
 
 	// Shared application state exists independently of transport registration.
 	var activeMCP *mcp.Server

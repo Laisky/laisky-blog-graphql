@@ -19,7 +19,7 @@ send methods and formatting behavior.
 Messages within that threshold use plain `sendMessage` JSON without a parse
 mode, with link previews disabled. Larger messages use `sendDocument`, a fixed
 `alert.txt` filename, no caption and the exact complete UTF-8 message bytes.
-There is no application file, persistent archive, new endpoint or new recipient.
+Document delivery adds no application file, persistent archive, endpoint or recipient.
 Each recipient/call gets a fresh request/reader.
 
 The complete formatted message is limited to **2 MiB**, including its type and
@@ -58,6 +58,165 @@ recipients already accepted during a partial or ambiguous earlier attempt. Two
 separate identical requests remain two events. No persisted idempotency/history
 store is added. A successful SDK `Send` is still local queue admission; the SDK's
 asynchronous sender does not create a recipient-delivery receipt.
+
+## Cloud Monitoring webhook
+
+`POST /webhook/gcp/alerts/cloud-monitoring` lets a Google Cloud Monitoring
+notification channel reach an alert type directly, because Monitoring has no
+Telegram channel and its webhook body cannot be shaped into the GraphQL mutation.
+Inbound third-party webhooks live under `/webhook/<provider>/`.
+
+The route is always mounted. When the Telegram service did not start, it answers
+503, as the GraphQL mutation reports the service unavailable, so Monitoring sees a
+retryable outage instead of a missing route. It follows the same internal prefix
+and public-root fallback as the SSO routes:
+
+| `settings.web` | Mounted paths |
+| --- | --- |
+| Neither prefix set (default `url_prefix` is `/mcp`) | `/mcp/webhook/gcp/alerts/cloud-monitoring` only |
+| `url_prefix: /mcp`, `public_url_prefix: /` (the example and the deployed configuration) | `/mcp/webhook/gcp/alerts/cloud-monitoring` and `/webhook/gcp/alerts/cloud-monitoring` |
+| Any other `public_url_prefix` | `<url_prefix>/webhook/gcp/alerts/cloud-monitoring` only |
+
+Use whichever mounted path your ingress forwards to the gateway.
+
+Use the `webhook_basicauth` channel type:
+
+| Label | Value |
+| --- | --- |
+| `url` | `https://<gateway><mounted path>?env=<label>` |
+| `username` | The alert type |
+| `password` | The alert type's push token |
+
+`env` is optional: 1–32 ASCII letters, digits, `_` or `-`. It labels each message and
+falls back to the incident's `scoping_project_id`. `webhook_tokenauth` is not
+supported, because it would put the push token in the URL. Refreshing an alert type's
+token also requires updating the channel's password.
+
+The receiver renders the incident as literal text and sends it through the same
+subscriber path as `TelegramMonitorAlert`, so subscribers, the type header,
+throttling and the acknowledgement rules above all apply unchanged:
+
+```text
+<alert_type> >>>>>>>>>>>>>>>>>>
+[PROD] OPEN CRITICAL: <policy>
+condition: <condition>
+resource: <resource>
+<summary>
+started: <RFC 3339 UTC>
+ended: <RFC 3339 UTC, closed incidents only>
+<console URL>
+```
+
+Empty optional fields are omitted. The state word is derived, never guessed:
+
+| Notification | State word |
+| --- | --- |
+| `state` is `open`, in any case | `OPEN` |
+| `state` is `closed`, in any case | `RESOLVED` |
+| `version` is `test` (the console's **Test Connection**, which says `OPEN`) | `TEST` |
+| Any other or missing `state` | `UNKNOWN-STATE` |
+
+`started_at` and `ended_at` accept `null`, `""`, `0` (all meaning absent) or
+non-negative decimal Unix seconds, as a JSON number or string, up to
+9999-12-31T23:59:59Z. A fraction is truncated. Any other spelling, such as an
+exponent, sign, hex, `NaN` or a later year, is a schema violation and answers 400.
+
+### Admission order
+
+1. A request without credentials gets the 401 challenge Monitoring requires, with
+   no lookup.
+2. The credential is checked against an in-memory directory of every alert
+   type's name and push token, held as keyed digests. Both parts are trimmed
+   first, as MongoDB's check trims them. The directory is read from MongoDB
+   when the gateway first needs it, and again when a credential misses it, but
+   at most once a second, however many requests arrive.
+   - A credential that matches no alert type is refused with 401 and no MongoDB
+     lookup. Guessing therefore has no shared budget to spend and cannot lock out
+     a channel, including right after a restart or a token rotation.
+   - A credential that matches is checked against MongoDB once, so a rotated or
+     revoked token is refused at once. That refusal removes it from the directory
+     and lets the next miss reread, so the new token delivers on its first use.
+   - A credential that misses less than a second after the last read started is
+     refused without another read. So a token created or rotated after that read
+     and used within the same second can be refused once. Sent again a second
+     later, it is accepted.
+   - If the read fails, credentials the directory already holds still reach
+     MongoDB; any other credential answers 503, since an outage is not a
+     refusal. The read is retried at most once a second.
+   - The directory holds the oldest 10,000 alert types. Alert types are
+     self-service, so storage could hold more. Past that, an alert type it does
+     not hold answers 503, and an ERROR is logged once a minute.
+3. `env`, the body (1 MiB at most) and the JSON are checked, and only then is the
+   alert type's send budget spent. A throttled send answers 429 with
+   `Retry-After: 1`, since every throttle bucket refills at least one send per
+   second.
+4. Delivery to all subscribers must finish within 20 seconds, well under
+   Cloudflare's 125-second origin read timeout. Google publishes no webhook
+   timeout. A send still running at the deadline is cancelled and the request
+   answers 503.
+
+Responses carry a status only:
+
+| Status | Meaning | Sender should |
+| --- | --- | --- |
+| 204 | Every subscriber's send was acknowledged | Stop |
+| 400 | Invalid `env`, unreadable body, invalid JSON, a timestamp outside the forms above, or no `incident` | Stop; a retry cannot help |
+| 401 | Missing or refused credentials, with a `WWW-Authenticate` challenge | Send credentials; Monitoring needs this first response |
+| 413 | Body over 1 MiB, refused rather than truncated | Stop |
+| 429 | The alert type or total throttle denied the send; carries `Retry-After` | Retry later |
+| 503 | Telegram service, storage (including the directory read) or throttle unavailable, an alert type past the directory's oldest 10,000, delivery deadline reached, or some subscribers not confirmed; carries `Retry-After` when Telegram gave one | Retry; subscribers already accepted may see a duplicate |
+
+Logs carry only the alert type, the derived state, and the incident ID when it
+is 1–64 letters, digits, `.`, `_` or `-` (otherwise only its length). Policy,
+condition, resource, summary, URL and timestamp values are never logged, and no
+decode error quotes the body. Refused credentials are counted rather than
+logged one by one: `refuse cloud monitoring credentials` is a WARN entry written
+at most once a minute while credentials are refused, with `refused_total`
+counting every refusal since startup. Alert on that message: while it repeats,
+either a channel's password is wrong or someone is guessing. Guessing costs no
+MongoDB lookup and keeps no channel waiting, so the alert is about finding the
+cause, not about lost deliveries.
+
+### Edge rate limit
+
+A Cloudflare WAF rate-limiting rule for the path is recommended, with the
+**Block** action, because Monitoring cannot solve a Managed Challenge. On
+Business or Enterprise plans, count only `http.response.code eq 401`, so that
+successful deliveries never count. On the Free plan the rule counts every
+request per IP over 10 seconds. Either way, set the threshold well above
+Monitoring's own bursts: one channel can receive up to 1,000 notifications at
+once, and each may first draw a 401 challenge.
+
+The rule only limits the request volume one address can send. It is not what
+keeps channels delivering: guessers below any threshold, or spread over many
+addresses, still cost MongoDB at most one directory read a second and lock out
+no channel, because the directory refuses them in memory.
+
+### Delivery guarantees
+
+The durability is what Monitoring's webhook offers, and it is weaker than a Pub/Sub
+subscription. Monitoring publishes no retry count or window for webhooks. Its only
+statement found is a 2020 blog post saying it retries a few times and then drops the
+notification. There is no queue here either, so an alert that arrives during a
+gateway or storage outage, or that the send throttle defers past Monitoring's
+retries, may never reach Telegram. A failed delivery shows up in Monitoring's
+`notification_channel_events` log. Keep an independent channel, such as email, on
+any policy whose alert must not be lost. If loss is unacceptable, use a Pub/Sub
+channel and a worker that acknowledges only after delivery, rather than this route.
+See [the source notes](../ref/cloud_monitoring_webhook_20261103.md).
+
+To adopt it, run the old and new paths side by side before retiring one:
+
+1. Release the gateway, then confirm through the production ingress that an
+   unauthenticated `POST /webhook/gcp/alerts/cloud-monitoring` answers 401 with a
+   `WWW-Authenticate: Basic` header.
+2. Add a log alert on the refusal warning above, so a wrong channel password is
+   noticed, and the recommended [edge rate limit](#edge-rate-limit).
+3. Create the channel and click **Test Connection**. The subscribers should see a
+   `TEST` message.
+4. Add the channel to one policy next to the existing notification path, and compare
+   one open and one resolved incident.
+5. Add it to the remaining policies, then retire the old path.
 
 ## Qualification and release
 

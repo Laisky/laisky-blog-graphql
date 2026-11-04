@@ -16,6 +16,8 @@ import (
 
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
 )
 
 const (
@@ -32,6 +34,9 @@ var (
 	ErrAlertPayloadTooLarge = errors.New("complete telegram alert exceeds byte limit")
 	// ErrAlertInvalidPayload rejects empty or invalid UTF-8 formatted alert text.
 	ErrAlertInvalidPayload = errors.New("telegram alert requires nonempty valid UTF-8 text")
+	// ErrAlertUnauthorized matches a refused alert credential; a storage failure
+	// during the check does not match it.
+	ErrAlertUnauthorized = dao.ErrAlertUnauthorized
 )
 
 // AlertDeliveryError describes a rejected or unconfirmed attempt without secret-bearing errors.

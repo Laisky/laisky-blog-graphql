@@ -70,6 +70,11 @@ func (r *recordingTelegram) ValidateTokenForAlertType(_ context.Context, _, aler
 	return &model.AlertTypes{Name: alertType}, nil
 }
 
+// LoadAlertCredentials lists no alert types; the GraphQL alert path never reads it.
+func (r *recordingTelegram) LoadAlertCredentials(context.Context, int) ([]*model.AlertTypes, bool, error) {
+	return nil, true, nil
+}
+
 // SetAskUserService is unused by the alert path.
 func (r *recordingTelegram) SetAskUserService(*askuser.Service) {}
 
