@@ -9,6 +9,8 @@ import (
 	"github.com/Laisky/zap"
 	"golang.org/x/time/rate"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 	"github.com/Laisky/laisky-blog-graphql/library/throttle"
 )
 
@@ -18,6 +20,70 @@ const throttleSummaryInterval = time.Minute
 
 // throttleSummaryLog paces the throttle summary across requests.
 var throttleSummaryLog = rate.Sometimes{Interval: throttleSummaryInterval}
+
+// authenticateAlert authenticates token for alertName and spends the alert's
+// send. Both are canonical (service.NormalizeAlertName, NormalizePushToken). It
+// is the GraphQL alert mutation's admission flow:
+//
+//  1. The credential directory refuses a name and token pair that matches no
+//     alert type, with the refusal storage would give. That costs no storage
+//     lookup and no budget, so an anonymous flood spends nothing.
+//  2. A pair the directory knows, or cannot decide on because its copy failed or
+//     is truncated, reserves a send (admitAlertAttempt) and is checked against
+//     storage under the shared budget, as before the directory existed.
+//  3. A matching token keeps the send; any other outcome returns the per-type send.
+//
+// It fails closed with errTelegramThrottleUnavailable when the throttle is not configured.
+func (r *MutationResolver) authenticateAlert(ctx context.Context, alertName, token string) (*model.AlertTypes, error) {
+	if telegramRatelimiter == nil {
+		return nil, errors.WithStack(errTelegramThrottleUnavailable)
+	}
+	logger := gmw.GetLogger(ctx).Named("telegram_alert_credentials")
+	verdict := credentialUnverifiable
+	if r.credentials != nil {
+		verdict = r.credentials.check(ctx, logger, alertName, token)
+	}
+	if verdict == credentialUnknown {
+		if r.credentials.knowsName(alertName) {
+			return nil, service.AlertTokenMismatchError(alertName)
+		}
+		return nil, service.AlertTypeNotFoundError(alertName)
+	}
+
+	admission, err := admitAlertAttempt(ctx, alertName)
+	if err != nil {
+		return nil, err
+	}
+	// Returns the reserved per-type send unless the credentials match below.
+	defer admission.Cancel()
+	alert, err := r.verifyAlertCredential(ctx, verdict, alertName, token)
+	if err != nil {
+		return nil, err
+	}
+	if err = authorizeAlert(ctx, admission, alert.Name); err != nil {
+		return nil, err
+	}
+	return alert, nil
+}
+
+// verifyAlertCredential checks a credential against storage, which decides. If
+// storage refuses a pair the directory knew, as after a token rotation, the pair
+// is dropped and the next miss rereads, so the new token works on its first
+// use. A refusal of a pair the directory could not decide on drops nothing, so
+// it cannot force rereads. Both alert entrypoints use it.
+func (r *MutationResolver) verifyAlertCredential(ctx context.Context, verdict credentialVerdict, alertType, token string) (*model.AlertTypes, error) {
+	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, alertType)
+	if err == nil && alert == nil {
+		err = errors.New("telegram alert authorization returned no alert")
+	}
+	if err != nil {
+		if verdict == credentialKnown && r.credentials != nil && errors.Is(err, service.ErrAlertUnauthorized) {
+			r.credentials.forget(alertType, token)
+		}
+		return nil, errors.WithStack(err)
+	}
+	return alert, nil
+}
 
 // admitAlertAttempt reserves one send for alertName, the canonical requested
 // alert type, before its credential lookup. The caller must settle the returned

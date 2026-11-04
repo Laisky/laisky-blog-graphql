@@ -12,10 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 )
 
 // tokenGatedTelegram authenticates only the synthetic alert types it stores, and
-// fails like the DAO does for an unknown type or a wrong push token. Like the DAO,
+// fails with the DAO's own refusals for an unknown type or a wrong push token. Like the DAO,
 // it trims the requested type before its lookup. It is safe for concurrent use.
 type tokenGatedTelegram struct {
 	recordingTelegram
@@ -27,6 +28,41 @@ type tokenGatedTelegram struct {
 	holdToken string
 	entered   chan struct{}
 	release   chan struct{}
+	// directoryErr, when set, fails every directory read; truncated reports a
+	// copy that holds only some alert types. Either leaves the directory unable
+	// to refuse a credential.
+	directoryErr error
+	truncated    bool
+	reads        int
+}
+
+// LoadAlertCredentials copies the stored alert types, as the DAO does.
+func (s *tokenGatedTelegram) LoadAlertCredentials(context.Context, int) ([]*model.AlertTypes, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reads++
+	if s.directoryErr != nil {
+		return nil, false, s.directoryErr
+	}
+	alerts := make([]*model.AlertTypes, 0, len(s.tokens))
+	for name, token := range s.tokens {
+		alerts = append(alerts, &model.AlertTypes{Name: name, PushToken: token})
+	}
+	return alerts, !s.truncated, nil
+}
+
+// setToken stores or rotates an alert type's push token.
+func (s *tokenGatedTelegram) setToken(name, token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tokens[name] = token
+}
+
+// directoryReads returns how many directory reads ran.
+func (s *tokenGatedTelegram) directoryReads() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reads
 }
 
 // ValidateTokenForAlertType counts every credential lookup, the MongoDB query in production.
@@ -45,12 +81,14 @@ func (s *tokenGatedTelegram) ValidateTokenForAlertType(ctx context.Context, toke
 	}
 
 	name := strings.TrimSpace(alertType)
+	s.mu.Lock()
 	stored, ok := s.tokens[name]
+	s.mu.Unlock()
 	if !ok {
-		return nil, errors.Errorf("alert_type `%s` not found", name)
+		return nil, service.AlertTypeNotFoundError(name)
 	}
 	if token != stored {
-		return nil, errors.Errorf("token invalidate for `%s`", name)
+		return nil, service.AlertTokenMismatchError(name)
 	}
 	return &model.AlertTypes{Name: name}, nil
 }
@@ -85,23 +123,36 @@ func configureAlertThrottle(t *testing.T, totalPerSec, totalBurst, eachPerSec, e
 // TestAlertThrottleUnauthenticatedTypesDoNotLeak reproduces the unauthenticated
 // resource leak: the mutation used to build a per-type rate limiter, with a refill
 // goroutine that never stops, for every distinct type string before checking the
-// token, so an anonymous caller grew goroutines and memory without bound.
+// token, so an anonymous caller grew goroutines and memory without bound. Neither
+// a working credential directory, which refuses the types, nor a degraded one,
+// which sends them to storage, may leave state behind.
 func TestAlertThrottleUnauthenticatedTypesDoNotLeak(t *testing.T) {
 	const probes = 1000
-	// The shared budget admits every probe, so each one reaches the credential lookup.
-	configureAlertThrottle(t, 100, probes, 100, 100)
-	svc := &tokenGatedTelegram{tokens: map[string]string{"known_type": "synthetic-token"}}
-	resolver := NewMutationResolver(svc)
+	for _, tc := range []struct {
+		name         string
+		directoryErr error
+		lookups      int
+	}{
+		{"directory refuses", nil, 0},
+		{"directory unavailable", errors.New("synthetic directory outage"), probes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The shared budget admits every probe, so each one could reach the credential lookup.
+			configureAlertThrottle(t, 100, probes, 100, 100)
+			svc := &tokenGatedTelegram{tokens: map[string]string{"known_type": "synthetic-token"}, directoryErr: tc.directoryErr}
+			resolver := NewMutationResolver(svc)
 
-	before := rateLimiterGoroutines(t)
-	for i := range probes {
-		_, err := resolver.TelegramMonitorAlert(context.Background(), fmt.Sprintf("probe-%04d", i), "anonymous", "body")
-		require.ErrorContains(t, err, "not found")
+			before := rateLimiterGoroutines(t)
+			for i := range probes {
+				_, err := resolver.TelegramMonitorAlert(context.Background(), fmt.Sprintf("probe-%04d", i), "anonymous", "body")
+				require.ErrorContains(t, err, "not found")
+			}
+
+			require.Equal(t, tc.lookups, svc.lookups())
+			require.Equal(t, before, rateLimiterGoroutines(t), "%d unauthenticated alert types must not start refill goroutines", probes)
+			require.Zero(t, telegramRatelimiter.Stats().RetainedTitles, "%d unauthenticated alert types must not keep per-type state", probes)
+		})
 	}
-
-	require.Equal(t, probes, svc.lookups())
-	require.Equal(t, before, rateLimiterGoroutines(t), "%d unauthenticated alert types must not start refill goroutines", probes)
-	require.Zero(t, telegramRatelimiter.Stats().RetainedTitles, "%d unauthenticated alert types must not keep per-type state", probes)
 }
 
 // TestAlertThrottleUnauthenticatedCallerCannotDrainKnownType pins that a caller
@@ -125,11 +176,13 @@ func TestAlertThrottleUnauthenticatedCallerCannotDrainKnownType(t *testing.T) {
 }
 
 // TestAlertThrottleBoundsCredentialLookups keeps a flood of unknown types from
-// turning into one MongoDB lookup each: the shared budget is spent before the lookup.
+// turning into one MongoDB lookup each while the credential directory cannot
+// decide: the shared budget is spent before the lookup.
 func TestAlertThrottleBoundsCredentialLookups(t *testing.T) {
-	// The shared budget holds one send and refills after a second.
+	// The shared budget holds one send and refills after a second. The directory
+	// cannot decide, so the flood reaches admission, as before it existed.
 	configureAlertThrottle(t, 1, 1, 100, 100)
-	svc := &tokenGatedTelegram{tokens: map[string]string{}}
+	svc := &tokenGatedTelegram{tokens: map[string]string{}, directoryErr: errors.New("synthetic directory outage")}
 	resolver := NewMutationResolver(svc)
 
 	throttled := 0

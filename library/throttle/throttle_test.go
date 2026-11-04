@@ -68,10 +68,10 @@ func TestTelegramThrottleCfgValidate(t *testing.T) {
 		want string
 	}{
 		{"nil", nil, "config is nil"},
-		{"zero total rate", &TelegramThrottleCfg{TotleNPerSec: 0, TotleBurst: 1, EachTitleNPerSec: 1, EachTitleBurst: 1}, "NPerSec must bigger than 0"},
-		{"zero title rate", &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 1, EachTitleNPerSec: 0, EachTitleBurst: 1}, "NPerSec must bigger than 0"},
-		{"total burst below rate", &TelegramThrottleCfg{TotleNPerSec: 2, TotleBurst: 1, EachTitleNPerSec: 1, EachTitleBurst: 1}, "burst must bigger than NPerSec"},
-		{"title burst below rate", &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 1, EachTitleNPerSec: 2, EachTitleBurst: 1}, "burst must bigger than NPerSec"},
+		{"zero total rate", &TelegramThrottleCfg{TotalNPerSec: 0, TotalBurst: 1, EachTitleNPerSec: 1, EachTitleBurst: 1}, "NPerSec must bigger than 0"},
+		{"zero title rate", &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 1, EachTitleNPerSec: 0, EachTitleBurst: 1}, "NPerSec must bigger than 0"},
+		{"total burst below rate", &TelegramThrottleCfg{TotalNPerSec: 2, TotalBurst: 1, EachTitleNPerSec: 1, EachTitleBurst: 1}, "burst must bigger than NPerSec"},
+		{"title burst below rate", &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 1, EachTitleNPerSec: 2, EachTitleBurst: 1}, "burst must bigger than NPerSec"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.ErrorContains(t, tc.cfg.Validate(), tc.want)
@@ -81,7 +81,7 @@ func TestTelegramThrottleCfgValidate(t *testing.T) {
 		})
 	}
 
-	require.NoError(t, (&TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 1, EachTitleNPerSec: 1, EachTitleBurst: 1}).Validate())
+	require.NoError(t, (&TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 1, EachTitleNPerSec: 1, EachTitleBurst: 1}).Validate())
 }
 
 // TestNewTelegramThrottleStartsNoGoroutine pins that a throttle needs no
@@ -89,7 +89,7 @@ func TestTelegramThrottleCfgValidate(t *testing.T) {
 func TestNewTelegramThrottleStartsNoGoroutine(t *testing.T) {
 	before := throttleGoroutines(t)
 	for range 100 {
-		th, err := NewTelegramThrottle(context.Background(), &TelegramThrottleCfg{TotleNPerSec: 10, TotleBurst: 20, EachTitleNPerSec: 5, EachTitleBurst: 10})
+		th, err := NewTelegramThrottle(context.Background(), &TelegramThrottleCfg{TotalNPerSec: 10, TotalBurst: 20, EachTitleNPerSec: 5, EachTitleBurst: 10})
 		require.NoError(t, err)
 		require.True(t, th.Allow("alert-type"))
 	}
@@ -100,7 +100,7 @@ func TestNewTelegramThrottleStartsNoGoroutine(t *testing.T) {
 // boundary: every distinct unauthenticated type string used to get its own
 // limiter and refill goroutine. Once their lookups fail, none may keep state.
 func TestAdmitKeepsNoStateForUntrustedTypes(t *testing.T) {
-	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 5000, EachTitleNPerSec: 1, EachTitleBurst: 1})
+	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 5000, EachTitleNPerSec: 1, EachTitleBurst: 1})
 
 	before := throttleGoroutines(t)
 	for i := range 2000 {
@@ -117,7 +117,7 @@ func TestAdmitKeepsNoStateForUntrustedTypes(t *testing.T) {
 // TestAdmitRefusedBySharedBudgetSpendsNoTitleBudget pins that a send the
 // shared budget refuses leaves the alert type's own budget intact.
 func TestAdmitRefusedBySharedBudgetSpendsNoTitleBudget(t *testing.T) {
-	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 2, EachTitleNPerSec: 1, EachTitleBurst: 3})
+	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 2, EachTitleNPerSec: 1, EachTitleBurst: 3})
 	require.True(t, th.Allow("known_type"))
 	require.InDelta(t, 2, th.titles["known_type"].tokens, tokenEpsilon)
 
@@ -131,7 +131,7 @@ func TestAdmitRefusedBySharedBudgetSpendsNoTitleBudget(t *testing.T) {
 // TestAdmitRefusesExhaustedTitleWithoutSpendingSharedBudget keeps one noisy
 // alert type from draining the budget shared by every other type.
 func TestAdmitRefusesExhaustedTitleWithoutSpendingSharedBudget(t *testing.T) {
-	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 2, EachTitleNPerSec: 1, EachTitleBurst: 1})
+	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 2, EachTitleNPerSec: 1, EachTitleBurst: 1})
 	require.True(t, th.Allow("noisy_type"))
 
 	for range 10 {
@@ -148,7 +148,7 @@ func TestAdmitRefusesExhaustedTitleWithoutSpendingSharedBudget(t *testing.T) {
 // check before any of them spent it, so each spent a shared send. Admit reserves
 // both sends in one step, so the shared budget pays only for sends the type has.
 func TestAdmitReservesConcurrentSendsOfOneType(t *testing.T) {
-	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 100, EachTitleNPerSec: 1, EachTitleBurst: 5})
+	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 100, EachTitleNPerSec: 1, EachTitleBurst: 5})
 
 	start := make(chan struct{})
 	admitted := make(chan *Admission, 200)
@@ -177,7 +177,7 @@ func TestAdmitReservesConcurrentSendsOfOneType(t *testing.T) {
 // TestCancelReturnsReservedSend pins that failed authentications never drain a
 // type's budget, however many arrive, while each still pays its shared send.
 func TestCancelReturnsReservedSend(t *testing.T) {
-	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 10, EachTitleNPerSec: 1, EachTitleBurst: 2})
+	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 10, EachTitleNPerSec: 1, EachTitleBurst: 2})
 	require.True(t, th.Allow("known_type"))
 
 	for range 5 {
@@ -197,7 +197,7 @@ func TestCancelReturnsReservedSend(t *testing.T) {
 
 // TestAdmissionSettlesOnce keeps Cancel safe to defer and refuses a second Authorize.
 func TestAdmissionSettlesOnce(t *testing.T) {
-	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 10, EachTitleNPerSec: 1, EachTitleBurst: 2})
+	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 10, EachTitleNPerSec: 1, EachTitleBurst: 2})
 
 	admission, err := th.Admit("known_type")
 	require.NoError(t, err)
@@ -220,7 +220,7 @@ func TestAdmissionSettlesOnce(t *testing.T) {
 // TestAuthorizeMovesReservationToStoredName covers a lookup that matched a
 // differently spelled stored name: the stored name pays, the admitted one does not.
 func TestAuthorizeMovesReservationToStoredName(t *testing.T) {
-	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 10, EachTitleNPerSec: 1, EachTitleBurst: 1})
+	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 10, EachTitleNPerSec: 1, EachTitleBurst: 1})
 
 	admission, err := th.Admit("Known_Type")
 	require.NoError(t, err)
@@ -237,7 +237,7 @@ func TestAuthorizeMovesReservationToStoredName(t *testing.T) {
 // TestBudgetsRefillFromElapsedTime checks the goroutine-free refill of both
 // budgets: they start full, accrue at the configured rate and cap at the burst.
 func TestBudgetsRefillFromElapsedTime(t *testing.T) {
-	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 100, TotleBurst: 100, EachTitleNPerSec: 3, EachTitleBurst: 6})
+	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 100, TotalBurst: 100, EachTitleNPerSec: 3, EachTitleBurst: 6})
 
 	for range 6 {
 		require.True(t, th.Allow("known_type"))
@@ -257,7 +257,7 @@ func TestBudgetsRefillFromElapsedTime(t *testing.T) {
 	clock.advance(-time.Minute)
 	require.False(t, th.Allow("known_type"), "a clock step backwards must not mint sends")
 
-	shared, sharedClock := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 2, TotleBurst: 4, EachTitleNPerSec: 100, EachTitleBurst: 100})
+	shared, sharedClock := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 2, TotalBurst: 4, EachTitleNPerSec: 100, EachTitleBurst: 100})
 	for i := range 4 {
 		require.True(t, shared.Allow(fmt.Sprintf("type-%d", i)), "the shared budget starts at its burst")
 	}
@@ -273,7 +273,7 @@ func TestBudgetsRefillFromElapsedTime(t *testing.T) {
 // as a missing one, while a budget still refilling is kept.
 func TestFullBudgetsAreDroppedWithoutChangingDecisions(t *testing.T) {
 	// An empty per-type budget takes four seconds to refill.
-	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 100, TotleBurst: 1000, EachTitleNPerSec: 1, EachTitleBurst: 4})
+	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 100, TotalBurst: 1000, EachTitleNPerSec: 1, EachTitleBurst: 4})
 	require.Equal(t, 4*time.Second, th.sweepEvery)
 
 	for range 4 {
@@ -307,7 +307,7 @@ func TestFullBudgetsAreDroppedWithoutChangingDecisions(t *testing.T) {
 // TestRetainedBudgetsAreBoundedByRecentSends pins the memory bound: after a
 // burst of distinct authenticated names goes quiet, their budgets are dropped.
 func TestRetainedBudgetsAreBoundedByRecentSends(t *testing.T) {
-	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1000, TotleBurst: 1000, EachTitleNPerSec: 1, EachTitleBurst: 2})
+	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1000, TotalBurst: 1000, EachTitleNPerSec: 1, EachTitleBurst: 2})
 	for i := range 1000 {
 		require.True(t, th.Allow(fmt.Sprintf("type-%04d", i)))
 	}
@@ -322,7 +322,7 @@ func TestRetainedBudgetsAreBoundedByRecentSends(t *testing.T) {
 // refill: the budget may be dropped meanwhile, and the late Cancel must not
 // credit a newer budget of the same name.
 func TestCanceledReservationOutlivedByRefill(t *testing.T) {
-	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 100, TotleBurst: 100, EachTitleNPerSec: 1, EachTitleBurst: 1})
+	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 100, TotalBurst: 100, EachTitleNPerSec: 1, EachTitleBurst: 1})
 
 	slow, err := th.Admit("known_type")
 	require.NoError(t, err)
@@ -349,7 +349,7 @@ func remainingSends(th *TelegramThrottle, name string) float64 {
 // TestAdmitIsSafeForConcurrentUse never admits more sends than the budgets
 // hold while admissions are authorized and canceled concurrently.
 func TestAdmitIsSafeForConcurrentUse(t *testing.T) {
-	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotleNPerSec: 1, TotleBurst: 1000, EachTitleNPerSec: 1, EachTitleBurst: 50})
+	th, _ := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 1000, EachTitleNPerSec: 1, EachTitleBurst: 50})
 
 	var mu sync.Mutex
 	var authorized int
@@ -387,4 +387,27 @@ func TestAdmitIsSafeForConcurrentUse(t *testing.T) {
 	require.InDelta(t, 50, float64(authorized)+remainingSends(th, "known_type"), tokenEpsilon)
 	stats := th.Stats()
 	require.Equal(t, stats.Admitted, stats.Authorized+stats.Canceled)
+}
+
+// TestTelegramThrottleCfgDeprecatedSpelling keeps configurations written with
+// the historical Totle* field names working, and refuses two spellings that
+// disagree instead of silently choosing one.
+func TestTelegramThrottleCfgDeprecatedSpelling(t *testing.T) {
+	legacy := &TelegramThrottleCfg{TotleNPerSec: 2, TotleBurst: 3, EachTitleNPerSec: 1, EachTitleBurst: 1}
+	require.NoError(t, legacy.Validate())
+	th, err := NewTelegramThrottle(t.Context(), legacy)
+	require.NoError(t, err)
+	require.InDelta(t, 2, th.totalRate, tokenEpsilon)
+	require.InDelta(t, 3, th.totalBurst, tokenEpsilon)
+
+	same := &TelegramThrottleCfg{TotalNPerSec: 2, TotleNPerSec: 2, TotalBurst: 3, EachTitleNPerSec: 1, EachTitleBurst: 1}
+	require.NoError(t, same.Validate())
+
+	conflict := &TelegramThrottleCfg{TotalNPerSec: 2, TotleNPerSec: 5, TotalBurst: 5, EachTitleNPerSec: 1, EachTitleBurst: 1}
+	require.ErrorContains(t, conflict.Validate(), "TotalNPerSec is 2 but its deprecated spelling is 5")
+	_, err = NewTelegramThrottle(t.Context(), conflict)
+	require.ErrorContains(t, err, "deprecated spelling")
+
+	burstConflict := &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 2, TotleBurst: 4, EachTitleNPerSec: 1, EachTitleBurst: 1}
+	require.ErrorContains(t, burstConflict.Validate(), "TotalBurst is 2 but its deprecated spelling is 4")
 }

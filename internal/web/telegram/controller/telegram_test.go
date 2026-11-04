@@ -70,9 +70,11 @@ func (r *recordingTelegram) ValidateTokenForAlertType(_ context.Context, _, aler
 	return &model.AlertTypes{Name: alertType}, nil
 }
 
-// LoadAlertCredentials lists no alert types; the GraphQL alert path never reads it.
+// LoadAlertCredentials reports an incomplete, empty copy: this fake accepts every
+// token, which no list can hold, so the directory leaves every credential to
+// ValidateTokenForAlertType.
 func (r *recordingTelegram) LoadAlertCredentials(context.Context, int) ([]*model.AlertTypes, bool, error) {
-	return nil, true, nil
+	return nil, false, nil
 }
 
 // SetAskUserService is unused by the alert path.
@@ -123,4 +125,38 @@ func TestLongAlertIsPreservedWithoutEscaping(t *testing.T) {
 	require.NotContains(t, body, `\`)
 	require.Greater(t, len(body), 20)
 	require.Empty(t, svc.markdown)
+}
+
+// pagedTelegram records the paging the query resolvers ask for.
+type pagedTelegram struct {
+	recordingTelegram
+	cfgs []*dto.QueryCfg
+}
+
+// LoadAlertTypes records cfg.
+func (p *pagedTelegram) LoadAlertTypes(_ context.Context, cfg *dto.QueryCfg) ([]*model.AlertTypes, error) {
+	p.cfgs = append(p.cfgs, cfg)
+	return nil, nil
+}
+
+// LoadUsers records cfg.
+func (p *pagedTelegram) LoadUsers(_ context.Context, cfg *dto.QueryCfg) ([]*model.MonitorUsers, error) {
+	p.cfgs = append(p.cfgs, cfg)
+	return nil, nil
+}
+
+// TestTelegramListQueriesAcceptNullPage reproduces a client-triggered panic: the
+// schema defaults page to {page: 0, size: 10}, but a client may still send
+// page: null, and the resolvers dereferenced it. A null page now gets the default.
+func TestTelegramListQueriesAcceptNullPage(t *testing.T) {
+	svc := new(pagedTelegram)
+	resolver := NewQueryResolver(svc)
+
+	require.NotPanics(t, func() {
+		_, err := resolver.TelegramAlertTypes(t.Context(), nil, "")
+		require.NoError(t, err)
+		_, err = resolver.TelegramMonitorUsers(t.Context(), nil, "name")
+		require.NoError(t, err)
+	})
+	require.Equal(t, []*dto.QueryCfg{{Page: 0, Size: 10}, {Page: 0, Size: 10, Name: "name"}}, svc.cfgs)
 }

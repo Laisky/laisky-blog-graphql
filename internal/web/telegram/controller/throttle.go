@@ -34,8 +34,8 @@ func setupTelegramThrottle(ctx context.Context) {
 		telegramRatelimiter = nil
 		log.Logger.Error("telegram alert throttle is unavailable; telegram alerting is disabled",
 			zap.Error(err),
-			zap.Int("TotleBurst", cfg.TotleBurst),
-			zap.Int("TotleNPerSec", cfg.TotleNPerSec),
+			zap.Int("TotalBurst", cfg.TotalBurst),
+			zap.Int("TotalNPerSec", cfg.TotalNPerSec),
 			zap.Int("EachTitleNPerSec", cfg.EachTitleNPerSec),
 			zap.Int("EachTitleBurst", cfg.EachTitleBurst),
 		)
@@ -59,8 +59,8 @@ func ValidateTelegramThrottleConfig(_ context.Context) error {
 // place that maps configuration keys to the throttle, for both setup and validation.
 func loadTelegramThrottleCfg() *throttle.TelegramThrottleCfg {
 	return &throttle.TelegramThrottleCfg{
-		TotleBurst:       gconfig.Shared.GetInt("settings.telegram.throttle.total_burst"),
-		TotleNPerSec:     gconfig.Shared.GetInt("settings.telegram.throttle.total_per_sec"),
+		TotalBurst:       gconfig.Shared.GetInt("settings.telegram.throttle.total_burst"),
+		TotalNPerSec:     gconfig.Shared.GetInt("settings.telegram.throttle.total_per_sec"),
 		EachTitleNPerSec: gconfig.Shared.GetInt("settings.telegram.throttle.each_title_per_sec"),
 		EachTitleBurst:   gconfig.Shared.GetInt("settings.telegram.throttle.each_title_burst"),
 	}

@@ -3,6 +3,7 @@ package dao
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -38,6 +39,34 @@ func (e alertRefusalError) Unwrap() error { return e.error }
 
 // Is reports whether target is ErrAlertUnauthorized.
 func (alertRefusalError) Is(target error) bool { return target == ErrAlertUnauthorized }
+
+// AlertTypeNotFoundError returns the refusal ValidateTokenForAlertType gives for
+// an alert type that does not exist. A caller that refuses a credential without a
+// storage lookup returns it, so its text and ErrAlertUnauthorized match unchanged.
+func AlertTypeNotFoundError(alertType string) error {
+	return alertTypeNotFound(alertType, mongoLib.ErrNoDocuments)
+}
+
+// AlertTokenMismatchError returns the refusal ValidateTokenForAlertType gives for
+// a push token that does not match alertType's.
+func AlertTokenMismatchError(alertType string) error {
+	return alertRefusalError{errors.Errorf("token invalidate for `%s`", alertType)}
+}
+
+// alertTypeNotFound wraps cause, the storage miss, as the refusal for alertType.
+func alertTypeNotFound(alertType string, cause error) error {
+	return alertRefusalError{errors.Wrapf(cause, "alert_type `%s` not found", alertType)}
+}
+
+// alertCredentialChanges counts the alert types this process created or re-keyed.
+var alertCredentialChanges atomic.Uint64
+
+// AlertCredentialChanges returns how many alert types this process has created or
+// re-keyed. An in-memory copy of the credentials read before the count last moved
+// may lack one of them, so it must reread before refusing a credential.
+func AlertCredentialChanges() uint64 {
+	return alertCredentialChanges.Load()
+}
 
 // Monitor db
 type Monitor struct {
@@ -122,11 +151,14 @@ func (d *Monitor) CreateAlertType(ctx context.Context, name string) (at *model.A
 		options.Update().SetUpsert(true),
 	)
 	if err != nil {
+		// The upsert may still have inserted the alert type.
+		alertCredentialChanges.Add(1)
 		return nil, errors.Wrap(err, "upsert alert_types docu")
 	}
 	if info.MatchedCount != 0 {
 		return nil, errors.New("already exists")
 	}
+	alertCredentialChanges.Add(1)
 
 	at = new(model.AlertTypes)
 	if err = d.GetAlertTypesCol().FindOne(ctx, bson.M{
@@ -333,13 +365,13 @@ func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
 		bson.M{
 			fieldName: alertType,
 		}).Decode(alert); mongo.NotFound(err) {
-		return nil, alertRefusalError{errors.Wrapf(err, "alert_type `%s` not found", alertType)}
+		return nil, alertTypeNotFound(alertType, err)
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "load alert_type `%s` from db", alertType)
 	}
 
 	if !secureCompareString(token, alert.PushToken) {
-		return nil, alertRefusalError{errors.Errorf("token invalidate for `%s`", alertType)}
+		return nil, AlertTokenMismatchError(alertType)
 	}
 
 	return alert, nil
@@ -484,6 +516,8 @@ func (d *Monitor) RefreshAlertTokenAndKey(ctx context.Context, alert *model.Aler
 			},
 		},
 	)
+	// Counted even after an error, since the update may still have applied.
+	alertCredentialChanges.Add(1)
 	return errors.Wrap(err, "update alert token")
 }
 

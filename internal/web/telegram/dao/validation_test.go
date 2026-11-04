@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	mongoLib "go.mongodb.org/mongo-driver/mongo"
 )
 
 // TestSanitizeNotesKeyword_InvalidRegex verifies invalid regex keywords are rejected.
@@ -48,4 +49,39 @@ func TestNormalizeAlertName(t *testing.T) {
 	sanitized, err := sanitizeAlertName(" prod_alert ")
 	require.NoError(t, err)
 	require.Equal(t, "prod_alert", sanitized, "the DAO's lookups use the same form")
+}
+
+// TestNormalizePushToken pins the canonical push token the credential directory
+// and ValidateTokenForAlertType compare.
+func TestNormalizePushToken(t *testing.T) {
+	token, err := NormalizePushToken(" \tsynthetic-token\n")
+	require.NoError(t, err)
+	require.Equal(t, "synthetic-token", token)
+
+	for _, tc := range []struct{ input, want string }{
+		{strings.Repeat("t", maxPushTokenLength+1), "push token exceeds max length 64"},
+		{"  ", "push token is required"},
+		{"tok\x00en", "push token contains invalid null byte"},
+	} {
+		_, err = NormalizePushToken(tc.input)
+		require.EqualError(t, err, tc.want)
+	}
+}
+
+// TestAlertRefusalErrors pins the refusals a caller that decides without
+// storage returns: the same text ValidateTokenForAlertType gives, matching
+// ErrAlertUnauthorized, so clients and the GraphQL error classifier see no change.
+func TestAlertRefusalErrors(t *testing.T) {
+	notFound := AlertTypeNotFoundError("missing_alert")
+	require.EqualError(t, notFound, "alert_type `missing_alert` not found: mongo: no documents in result")
+	require.ErrorIs(t, notFound, ErrAlertUnauthorized)
+	require.ErrorIs(t, notFound, mongoLib.ErrNoDocuments)
+
+	mismatch := AlertTokenMismatchError("known_alert")
+	require.EqualError(t, mismatch, "token invalidate for `known_alert`")
+	require.ErrorIs(t, mismatch, ErrAlertUnauthorized)
+
+	before := AlertCredentialChanges()
+	alertCredentialChanges.Add(1)
+	require.Equal(t, before+1, AlertCredentialChanges())
 }

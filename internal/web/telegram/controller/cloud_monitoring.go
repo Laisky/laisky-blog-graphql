@@ -251,16 +251,21 @@ type CloudMonitoringWebhook struct {
 // every request answer 503, so the sender keeps retrying instead of treating
 // the route as gone.
 func NewCloudMonitoringWebhook(svc service.Interface) *CloudMonitoringWebhook {
-	h := &CloudMonitoringWebhook{
-		svc:             svc,
-		sender:          NewMutationResolver(svc),
+	return NewMutationResolver(svc).CloudMonitoringWebhook()
+}
+
+// CloudMonitoringWebhook returns a webhook that authenticates and delivers
+// through r's service, sharing r's credential directory. Building the GraphQL
+// mutation and the webhook from one resolver keeps one copy of the credentials,
+// one read per interval and one view of rotated tokens for both.
+func (r *MutationResolver) CloudMonitoringWebhook() *CloudMonitoringWebhook {
+	return &CloudMonitoringWebhook{
+		svc:             r.svc,
+		sender:          r,
+		credentials:     r.credentials,
 		deliveryTimeout: cloudMonitoringDeliveryTimeout,
 		refusalLog:      rate.Sometimes{Interval: cloudMonitoringRefusalLogInterval},
 	}
-	if svc != nil {
-		h.credentials = newAlertCredentialDirectory(svc.LoadAlertCredentials, maxMirroredAlertCredentials, alertCredentialRefreshInterval)
-	}
-	return h
 }
 
 // ServeHTTP authenticates one notification, then delivers it through the same
@@ -299,14 +304,11 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		return
 	case credentialKnown:
 	}
-	alert, err := h.svc.ValidateTokenForAlertType(ctx, token, alertType)
-	if err == nil && alert == nil {
-		err = errors.New("telegram alert authorization returned no alert")
-	}
+	// A refusal here means storage changed since the directory read, as when a
+	// token is rotated; verifyAlertCredential drops the stale pair.
+	alert, err := h.sender.verifyAlertCredential(ctx, credentialKnown, alertType, token)
 	if err != nil {
 		if errors.Is(err, service.ErrAlertUnauthorized) {
-			// Storage changed since the directory read, as when a token is rotated.
-			h.credentials.forget(alertType, token)
 			h.logRefusal(logger)
 			w.Header().Set("WWW-Authenticate", cloudMonitoringChallenge)
 			w.WriteHeader(http.StatusUnauthorized)

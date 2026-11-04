@@ -15,7 +15,10 @@ import (
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
 
+	"github.com/Laisky/errors/v2"
+
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 )
 
 const (
@@ -64,24 +67,33 @@ type alertCredentialLoader func(ctx context.Context, limit int) (alerts []*model
 // storage, so a revoked token is refused at once. A credential it does not know
 // rereads storage, at most once per interval, before it is refused, so a new
 // or rotated token is accepted on its first use once that interval has passed.
+// A credential this process created or rotated since the last read rereads at
+// once, so it is accepted on its first use. One directory serves both the
+// GraphQL alert mutation and the Cloud Monitoring webhook.
 type alertCredentialDirectory struct {
 	load     alertCredentialLoader
 	now      func() time.Time
 	interval time.Duration
 	limit    int
 	key      []byte
+	nameKey  []byte
 	reads    singleflight.Group
+	// changes counts the alert types this process created or re-keyed.
+	changes func() uint64
 
 	truncationLog rate.Sometimes
 
 	mu sync.Mutex
-	// digests holds the keyed digest of every copied name and token pair.
-	digests map[[sha256.Size]byte]struct{}
+	// digests holds the keyed digest of every copied name and token pair, and
+	// names the keyed digest of every copied name.
+	digests, names map[[sha256.Size]byte]struct{}
 	// healthy is whether the last read succeeded, complete whether it copied
 	// every alert type. Only a healthy, complete copy can refuse a credential.
 	healthy, complete bool
 	// readAt is when the last read started. Zero lets the next miss read.
 	readAt time.Time
+	// readChanges is what changes returned when the last read started.
+	readChanges uint64
 	// reading is set while a read runs, so a miss waits for it rather than
 	// answering from the copy it is replacing.
 	reading bool
@@ -90,14 +102,18 @@ type alertCredentialDirectory struct {
 // newAlertCredentialDirectory returns an empty directory that reads through load.
 func newAlertCredentialDirectory(load alertCredentialLoader, limit int, interval time.Duration) *alertCredentialDirectory {
 	key := make([]byte, sha256.Size)
+	nameKey := make([]byte, sha256.Size)
 	// crypto/rand.Read never returns an error since Go 1.24.
 	_, _ = rand.Read(key)
+	_, _ = rand.Read(nameKey)
 	return &alertCredentialDirectory{
 		load:          load,
 		now:           time.Now,
 		interval:      interval,
 		limit:         limit,
 		key:           key,
+		nameKey:       nameKey,
+		changes:       service.AlertCredentialChanges,
 		truncationLog: rate.Sometimes{Interval: alertCredentialTruncationLogInterval},
 	}
 }
@@ -136,10 +152,22 @@ func (d *alertCredentialDirectory) lookup(sum [sha256.Size]byte) (verdict creden
 	return credentialUnknown, current
 }
 
-// currentLocked reports whether no read is running and the last one started
-// within the interval. d.mu must be held.
+// knowsName reports whether the copy holds an alert type named alertType, so a
+// refused credential can say whether the name or only its token was wrong, as
+// storage does. Alert type names are public through TelegramAlertTypes.
+func (d *alertCredentialDirectory) knowsName(alertType string) bool {
+	sum := d.nameDigest(strings.TrimSpace(alertType))
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, ok := d.names[sum]
+	return ok
+}
+
+// currentLocked reports whether no read is running, the last one started within
+// the interval, and this process created or re-keyed no alert type since. d.mu
+// must be held.
 func (d *alertCredentialDirectory) currentLocked() bool {
-	return !d.reading && !d.readAt.IsZero() && d.now().Before(d.readAt.Add(d.interval))
+	return !d.reading && !d.readAt.IsZero() && d.now().Before(d.readAt.Add(d.interval)) && d.changes() == d.readChanges
 }
 
 // refresh rereads storage unless a read started within the interval. Concurrent
@@ -169,7 +197,7 @@ func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger)
 		d.mu.Unlock()
 		return
 	}
-	d.readAt, d.reading = d.now(), true
+	d.readAt, d.readChanges, d.reading = d.now(), d.changes(), true
 	d.mu.Unlock()
 	defer func() {
 		d.mu.Lock()
@@ -179,7 +207,7 @@ func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger)
 
 	readCtx, cancel := context.WithTimeout(ctx, alertCredentialLoadTimeout)
 	defer cancel()
-	alerts, complete, err := d.load(readCtx, d.limit)
+	alerts, complete, err := d.loadRecovered(readCtx)
 	if err != nil {
 		d.mu.Lock()
 		d.healthy = false
@@ -188,11 +216,13 @@ func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger)
 		return
 	}
 	digests := make(map[[sha256.Size]byte]struct{}, len(alerts))
+	names := make(map[[sha256.Size]byte]struct{}, len(alerts))
 	for _, alert := range alerts {
 		digests[d.digest(alert.Name, alert.PushToken)] = struct{}{}
+		names[d.nameDigest(alert.Name)] = struct{}{}
 	}
 	d.mu.Lock()
-	d.digests, d.healthy, d.complete = digests, true, complete
+	d.digests, d.names, d.healthy, d.complete = digests, names, true, complete
 	d.mu.Unlock()
 	logger.Debug("read alert credential directory", zap.Int("alert_types", len(alerts)), zap.Bool("complete", complete))
 	if !complete {
@@ -201,6 +231,18 @@ func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger)
 				zap.Int("limit", d.limit))
 		})
 	}
+}
+
+// loadRecovered runs the loader and turns a panic into an error. The read runs
+// on a goroutine shared by every waiting request, where a panic would end the
+// process rather than one request.
+func (d *alertCredentialDirectory) loadRecovered(ctx context.Context) (alerts []*model.AlertTypes, complete bool, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			alerts, complete, err = nil, false, errors.Errorf("alert credential loader panicked: %v", recovered)
+		}
+	}()
+	return d.load(ctx, d.limit)
 }
 
 // forget drops a credential that storage refused and lets the next miss reread,
@@ -221,6 +263,16 @@ func (d *alertCredentialDirectory) digest(alertType, token string) [sha256.Size]
 	mac.Write(binary.AppendUvarint(nil, uint64(len(alertType))))
 	mac.Write([]byte(alertType))
 	mac.Write([]byte(token))
+	var sum [sha256.Size]byte
+	copy(sum[:], mac.Sum(nil))
+	return sum
+}
+
+// nameDigest returns the keyed digest of one alert type name. It uses its own
+// key, so a name digest never equals a pair digest.
+func (d *alertCredentialDirectory) nameDigest(alertType string) [sha256.Size]byte {
+	mac := hmac.New(sha256.New, d.nameKey)
+	mac.Write([]byte(alertType))
 	var sum [sha256.Size]byte
 	copy(sum[:], mac.Sum(nil))
 	return sum

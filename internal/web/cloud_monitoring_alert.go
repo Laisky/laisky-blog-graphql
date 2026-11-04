@@ -17,13 +17,27 @@ const cloudMonitoringAlertPath = "/webhook/gcp/alerts/cloud-monitoring"
 // like the GraphQL alert mutation, so the sender sees a retryable outage rather
 // than a missing route.
 func registerCloudMonitoringAlertRoutes(engine *gin.Engine, prefix urlPrefixConfig, resolver *Resolver) {
-	// A nil *Telegram must stay a nil interface, or the handler would call it.
-	var svc telegramSvc.Interface
-	if resolver != nil && resolver.args.TelegramSvc != nil {
-		svc = resolver.args.TelegramSvc
-	}
-	handler := ginMw.FromStd(telegram.NewCloudMonitoringWebhook(svc).ServeHTTP)
+	handler := ginMw.FromStd(cloudMonitoringWebhook(resolver).ServeHTTP)
 	for _, path := range ssoRoutePaths(prefix, cloudMonitoringAlertPath) {
 		engine.POST(path, handler)
 	}
+}
+
+// cloudMonitoringWebhook builds the webhook from the GraphQL alert mutation's
+// resolver when there is one, so both entrypoints share one credential
+// directory: one copy, one read per interval and one view of rotated tokens.
+func cloudMonitoringWebhook(resolver *Resolver) *telegram.CloudMonitoringWebhook {
+	if resolver == nil {
+		return telegram.NewCloudMonitoringWebhook(nil)
+	}
+	if resolver.mutationResolver != nil {
+		if mutation := resolver.mutationResolver.telegramMutation.MutationResolver; mutation != nil {
+			return mutation.CloudMonitoringWebhook()
+		}
+	}
+	var svc telegramSvc.Interface
+	if resolver.args.TelegramSvc != nil {
+		svc = resolver.args.TelegramSvc
+	}
+	return telegram.NewCloudMonitoringWebhook(svc)
 }

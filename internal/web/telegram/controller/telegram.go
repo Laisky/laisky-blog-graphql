@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"reflect"
 	"strconv"
 
 	"github.com/Laisky/errors/v2"
@@ -50,20 +51,39 @@ type QueryResolver struct {
 // MutationResolver mutation resolver
 type MutationResolver struct {
 	svc service.Interface
+	// credentials is the alert credential directory, nil without a service. The
+	// Cloud Monitoring webhook built by CloudMonitoringWebhook shares it.
+	credentials *alertCredentialDirectory
 }
 
 // NewQueryResolver new query resolver
 func NewQueryResolver(svc service.Interface) QueryResolver {
 	return QueryResolver{
-		svc: svc,
+		svc: presentService(svc),
 	}
 }
 
-// NewMutationResolver new mutation resolver
+// NewMutationResolver new mutation resolver. A nil svc, including a nil
+// pointer, makes every alert answer errTelegramServiceUnavailable.
 func NewMutationResolver(svc service.Interface) *MutationResolver {
-	return &MutationResolver{
-		svc: svc,
+	r := &MutationResolver{svc: presentService(svc)}
+	if r.svc != nil {
+		r.credentials = newAlertCredentialDirectory(r.svc.LoadAlertCredentials, maxMirroredAlertCredentials, alertCredentialRefreshInterval)
 	}
+	return r
+}
+
+// presentService returns svc, or a nil interface when svc holds a nil pointer.
+// A nil *service.Telegram, as when the service failed to start, would otherwise
+// pass every nil check and panic on its first call.
+func presentService(svc service.Interface) service.Interface {
+	if svc == nil {
+		return nil
+	}
+	if value := reflect.ValueOf(svc); value.Kind() == reflect.Pointer && value.IsNil() {
+		return nil
+	}
+	return svc
 }
 
 // Telegram telegram resolver
@@ -77,6 +97,7 @@ type Telegram struct {
 // then returns errTelegramServiceUnavailable instead of dereferencing it.
 func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 	setupTelegramThrottle(ctx)
+	svc = presentService(svc)
 	return &Telegram{
 		TelegramAlertTypeResolver:   &AlertTypeResolver{svc},
 		TelegramMonitorUserResolver: &UserResolver{svc},
@@ -109,6 +130,7 @@ func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
 	}
+	page = pageOrDefault(page)
 	cfg := &dto.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
@@ -124,12 +146,22 @@ func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
 	}
+	page = pageOrDefault(page)
 	cfg := &dto.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
 		Name: name,
 	}
 	return r.svc.LoadAlertTypes(ctx, cfg)
+}
+
+// pageOrDefault returns page, or the schema's default first page of 10 when a
+// client passed page: null explicitly.
+func pageOrDefault(page *models.Pagination) *models.Pagination {
+	if page == nil {
+		return &models.Pagination{Page: 0, Size: 10}
+	}
+	return page
 }
 
 // --------------------------
@@ -207,8 +239,9 @@ func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 // ============================
 
 // TelegramMonitorAlert sends the complete alert through the existing authorized subscriber path.
-// It preserves fail-closed throttling and token validation; partial provider acceptance
-// returns a visible error because retrying the mutation may duplicate accepted sends.
+// It preserves fail-closed throttling and token validation, and refuses credentials that match
+// no alert type in memory before they spend any budget (see authenticateAlert); partial provider
+// acceptance returns a visible error because retrying the mutation may duplicate accepted sends.
 func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, token, msg string) (*model.AlertTypes, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
@@ -217,26 +250,18 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, to
 	if err != nil {
 		return nil, err
 	}
-	// Admission and the lookup both use the canonical name, so aliases such as
-	// " name " share the budget of "name" and an invalid name costs nothing.
+	// Authentication and admission use the canonical name and token, so aliases
+	// such as " name " share the budget of "name", and an input storage can
+	// never match costs nothing. The errors keep the DAO's text.
 	alertName, err := service.NormalizeAlertName(typeArg)
 	if err != nil {
 		return nil, errors.Wrap(err, "sanitize alert type")
 	}
-	admission, err := admitAlertAttempt(ctx, alertName)
+	if token, err = service.NormalizePushToken(token); err != nil {
+		return nil, errors.Wrap(err, "sanitize push token")
+	}
+	alert, err := r.authenticateAlert(ctx, alertName, token)
 	if err != nil {
-		return nil, err
-	}
-	// Returns the reserved per-type send unless the credentials match below.
-	defer admission.Cancel()
-	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, alertName)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	if alert == nil {
-		return nil, errors.New("telegram alert authorization returned no alert")
-	}
-	if err = authorizeAlert(ctx, admission, alert.Name); err != nil {
 		return nil, err
 	}
 	return r.deliverAuthorizedAlert(ctx, alert, complete)

@@ -47,6 +47,13 @@ made before the lookup is returned when the lookup fails. That bounds what an
 unauthenticated caller can hold to the lookups it has in flight, and each of
 those is paid for from the shared budget.
 
+The shared budget is itself a pre-auth lever: every guess spent a shared send and
+a lookup, so an anonymous flood throttled every genuine alert. The GraphQL
+mutation therefore checks the Cloud Monitoring webhook's in-memory credential
+directory first. A guess that matches no stored pair is refused in memory and
+spends nothing. Only pairs the directory knows, or cannot decide on (read failed,
+copy truncated), reach the budgets. Both entrypoints share one directory.
+
 ## Canonical keys
 
 OWASP gives no normalization rule for rate-limit keys, but two CVEs show alias

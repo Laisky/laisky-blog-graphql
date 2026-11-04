@@ -27,27 +27,62 @@ var (
 )
 
 // TelegramThrottleCfg configuration for TelegramThrottle.
-//
-// TotleNPerSec and TotleBurst keep their historical spelling because the type is
-// exported; they configure the total budget shared by every alert type.
 type TelegramThrottleCfg struct {
-	TotleNPerSec, TotleBurst         int
+	// TotalNPerSec and TotalBurst configure the budget shared by every alert type.
+	TotalNPerSec, TotalBurst int
+	// EachTitleNPerSec and EachTitleBurst configure each alert type's own budget.
 	EachTitleNPerSec, EachTitleBurst int
+
+	// TotleNPerSec is the historical spelling of TotalNPerSec, honored when
+	// TotalNPerSec is zero.
+	//
+	// Deprecated: use TotalNPerSec.
+	TotleNPerSec int
+	// TotleBurst is the historical spelling of TotalBurst, honored when
+	// TotalBurst is zero.
+	//
+	// Deprecated: use TotalBurst.
+	TotleBurst int
 }
 
 // Validate reports why cfg cannot build a TelegramThrottle. It has no side
 // effects, so callers may use it to check configuration without building one.
 func (cfg *TelegramThrottleCfg) Validate() error {
+	_, _, err := cfg.totals()
+	return err
+}
+
+// totals returns the shared budget's rate and burst after validating cfg. A
+// correctly spelled field wins over its deprecated spelling; both set to
+// different values is an error rather than a silent choice.
+func (cfg *TelegramThrottleCfg) totals() (rate, burst int, err error) {
 	if cfg == nil {
-		return errors.New("telegram throttle config is nil")
+		return 0, 0, errors.New("telegram throttle config is nil")
 	}
-	if cfg.TotleNPerSec <= 0 || cfg.EachTitleNPerSec <= 0 {
-		return errors.Errorf("NPerSec must bigger than 0")
+	if rate, err = preferredSetting("TotalNPerSec", cfg.TotalNPerSec, cfg.TotleNPerSec); err != nil {
+		return 0, 0, err
 	}
-	if cfg.TotleBurst < cfg.TotleNPerSec || cfg.EachTitleBurst < cfg.EachTitleNPerSec {
-		return errors.Errorf("burst must bigger than NPerSec")
+	if burst, err = preferredSetting("TotalBurst", cfg.TotalBurst, cfg.TotleBurst); err != nil {
+		return 0, 0, err
 	}
-	return nil
+	if rate <= 0 || cfg.EachTitleNPerSec <= 0 {
+		return 0, 0, errors.Errorf("NPerSec must bigger than 0")
+	}
+	if burst < rate || cfg.EachTitleBurst < cfg.EachTitleNPerSec {
+		return 0, 0, errors.Errorf("burst must bigger than NPerSec")
+	}
+	return rate, burst, nil
+}
+
+// preferredSetting returns current, or deprecated when current is zero.
+func preferredSetting(field string, current, deprecated int) (int, error) {
+	if current != 0 && deprecated != 0 && current != deprecated {
+		return 0, errors.Errorf("%s is %d but its deprecated spelling is %d", field, current, deprecated)
+	}
+	if current != 0 {
+		return current, nil
+	}
+	return deprecated, nil
 }
 
 // TelegramThrottle throttle for telegram monitor alerts.
@@ -118,13 +153,14 @@ type bucket struct {
 // full. The throttle starts no goroutine, so ctx bounds nothing and is kept only
 // for API compatibility.
 func NewTelegramThrottle(_ context.Context, cfg *TelegramThrottleCfg) (*TelegramThrottle, error) {
-	if err := cfg.Validate(); err != nil {
+	totalRate, totalBurst, err := cfg.totals()
+	if err != nil {
 		return nil, errors.Wrap(err, "validate telegram throttle config")
 	}
 
 	t := &TelegramThrottle{
-		totalRate:  float64(cfg.TotleNPerSec),
-		totalBurst: float64(cfg.TotleBurst),
+		totalRate:  float64(totalRate),
+		totalBurst: float64(totalBurst),
 		titleRate:  float64(cfg.EachTitleNPerSec),
 		titleBurst: float64(cfg.EachTitleBurst),
 		sweepEvery: time.Duration(float64(time.Second) * float64(cfg.EachTitleBurst) / float64(cfg.EachTitleNPerSec)),

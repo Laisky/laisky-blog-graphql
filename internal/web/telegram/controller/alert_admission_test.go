@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -144,14 +145,16 @@ func TestAlertThrottleConcurrentStormSpendsOneSharedSendPerTypeSend(t *testing.T
 	require.NoError(t, err, "a concurrent storm from one type must not drain the shared budget")
 }
 
-// TestAlertThrottleMayRefuseWrongTokenBeforeAuthentication pins the documented
-// contract: an authentication failure never spends a type's budget, but admission
-// runs before the credential check, so a wrong token can still get the throttle
-// refusal when the shared budget or the type's own budget is already empty.
-func TestAlertThrottleMayRefuseWrongTokenBeforeAuthentication(t *testing.T) {
+// TestAlertThrottleUnverifiableDirectoryAdmitsBeforeAuthentication pins the
+// degraded contract. When the credential directory cannot decide, because its
+// read failed or its copy is truncated, a credential is admitted before storage
+// checks it, as before the directory existed. An authentication failure still
+// never spends a type's budget, but a wrong token can get the throttle refusal
+// when the shared budget or the type's own budget is already empty.
+func TestAlertThrottleUnverifiableDirectoryAdmitsBeforeAuthentication(t *testing.T) {
 	t.Run("type budget empty", func(t *testing.T) {
 		configureAlertThrottle(t, 10, 10, 1, 1)
-		svc := &tokenGatedTelegram{tokens: map[string]string{"known_alert": "known-token"}}
+		svc := &tokenGatedTelegram{tokens: map[string]string{"known_alert": "known-token"}, directoryErr: errors.New("synthetic directory outage")}
 		resolver := NewMutationResolver(svc)
 
 		_, err := resolver.TelegramMonitorAlert(t.Context(), "known_alert", "known-token", "genuine")
@@ -163,7 +166,7 @@ func TestAlertThrottleMayRefuseWrongTokenBeforeAuthentication(t *testing.T) {
 
 	t.Run("shared budget empty", func(t *testing.T) {
 		configureAlertThrottle(t, 1, 1, 10, 10)
-		svc := &tokenGatedTelegram{tokens: map[string]string{"known_alert": "known-token"}}
+		svc := &tokenGatedTelegram{tokens: map[string]string{"known_alert": "known-token"}, truncated: true}
 		resolver := NewMutationResolver(svc)
 
 		_, err := resolver.TelegramMonitorAlert(t.Context(), "unknown_alert", "wrong-token", "probe")
@@ -177,17 +180,20 @@ func TestAlertThrottleMayRefuseWrongTokenBeforeAuthentication(t *testing.T) {
 }
 
 // TestAlertThrottleInFlightLookupHoldsTypeSend pins the admission fairness
-// boundary. A request reserves its type's send before the credential lookup, so
-// while a lookup is in flight, even one with a wrong token, that send is not
-// available to a concurrent request. The reservation is returned as soon as the
-// lookup fails, so a wrong token never drains the type for later requests.
+// boundary when the credential directory cannot decide. A request then reserves
+// its type's send before the credential lookup, so while a lookup is in flight,
+// even one with a wrong token, that send is not available to a concurrent
+// request. The reservation is returned as soon as the lookup fails, so a wrong
+// token never drains the type for later requests. With a working directory a
+// wrong token never gets that far (TestAlertDirectoryWrongTokenHoldsNoSend).
 func TestAlertThrottleInFlightLookupHoldsTypeSend(t *testing.T) {
 	configureAlertThrottle(t, 10, 10, 1, 1)
 	svc := &tokenGatedTelegram{
-		tokens:    map[string]string{"known_alert": "known-token"},
-		holdToken: "wrong-token",
-		entered:   make(chan struct{}, 1),
-		release:   make(chan struct{}),
+		tokens:       map[string]string{"known_alert": "known-token"},
+		holdToken:    "wrong-token",
+		entered:      make(chan struct{}, 1),
+		release:      make(chan struct{}),
+		directoryErr: errors.New("synthetic directory outage"),
 	}
 	resolver := NewMutationResolver(svc)
 

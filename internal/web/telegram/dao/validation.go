@@ -77,10 +77,17 @@ func sanitizeJoinKey(key string) (string, error) {
 	return sanitizeRequiredText(key, maxJoinKeyLength, "join key")
 }
 
+// NormalizePushToken returns the canonical form of an alert push token, the form
+// ValidateTokenForAlertType compares. Surrounding whitespace is trimmed; an empty
+// token, a null byte or more than maxPushTokenLength runes is an error.
+func NormalizePushToken(token string) (string, error) {
+	return sanitizeRequiredText(token, maxPushTokenLength, "push token")
+}
+
 // sanitizePushToken validates a push token string and returns the sanitized value or an error.
 // It accepts the raw token string and returns the sanitized token.
 func sanitizePushToken(token string) (string, error) {
-	return sanitizeRequiredText(token, maxPushTokenLength, "push token")
+	return NormalizePushToken(token)
 }
 
 // sanitizeMonitorName validates an optional monitor name filter and returns the sanitized value or an error.
