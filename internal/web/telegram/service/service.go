@@ -35,6 +35,7 @@ type Interface interface {
 	LoadUsers(ctx context.Context, cfg *dto.QueryCfg) (users []*model.MonitorUsers, err error)
 	LoadUsersByAlertType(ctx context.Context, a *model.AlertTypes) (users []*model.MonitorUsers, err error)
 	ValidateTokenForAlertType(ctx context.Context, token, alertType string) (alert *model.AlertTypes, err error)
+	LoadAlertCredentials(ctx context.Context, limit int) (alerts []*model.AlertTypes, complete bool, err error)
 	SetAskUserService(svc *askuser.Service)
 }
 

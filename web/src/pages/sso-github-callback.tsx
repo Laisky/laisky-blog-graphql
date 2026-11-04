@@ -29,6 +29,10 @@ interface GithubOAuthLoginResponse {
   };
 }
 
+/**
+ * buildGithubCallbackRedirect is the synchronous legacy bearer handoff for non-Blog targets.
+ * It throws for Blog targets; the callback page uses the asynchronous buildSsoRedirectUrl.
+ */
 export function buildGithubCallbackRedirect(redirectTo: string, token: string, origin: string): string {
   const target = redirectTo.trim() ? new URL(redirectTo, origin) : new URL('/profile', origin);
   return buildRedirectUrlWithToken(target, token);

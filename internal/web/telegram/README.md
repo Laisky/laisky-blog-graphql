@@ -82,6 +82,18 @@ receive msg:
 
 ![telegram-bot](https://s2.laisky.com/uploads/2019/10/bot-10.jpg)
 
+### Push Google Cloud Monitoring incidents to a channel
+
+Add a `webhook_basicauth` notification channel to Cloud Monitoring:
+
+- `url`: `https://gq.laisky.com/webhook/gcp/alerts/cloud-monitoring?env=prod`. `env` labels each message and is optional. This root path exists only because gq.laisky.com sets `settings.web.public_url_prefix: /`. A deployment without that setting, including one that sets neither prefix, serves `https://<gateway><url_prefix>/webhook/gcp/alerts/cloud-monitoring` (default `/mcp`). See the [mounted paths](../../../docs/manual/telegram_alert_delivery.md#cloud-monitoring-webhook).
+- `username`: `<channel_name>`
+- `password`: `<push_token>`
+
+Everyone in this channel then receives each incident when it opens and when it
+resolves. The console's **Test Connection** arrives labeled `TEST`. See [the delivery manual](../../../docs/manual/telegram_alert_delivery.md#cloud-monitoring-webhook)
+for the message format, responses and delivery limits.
+
 ### Quit a channel
 
 1. `/monitor`
