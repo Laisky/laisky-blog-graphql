@@ -73,6 +73,12 @@ GitHub user authentication is implemented with GitHub OAuth authorization-code f
 4. Your backend validates `sso_token`.
 5. Your backend creates its own local session and redirects the browser to a clean URL without `sso_token`.
 
+Blog exception: `blog.laisky.com` never receives `sso_token`. Blog uses the opt-in
+single-use code flow (`sso_flow=code` with S256 PKCE, then `sso_code` plus
+`sso_state`, redeemed at `/sso/token`). Any other Blog target is either sent to a
+credential-free bootstrap (`?sso_start=1&sso_return=<route>`) or rejected. See
+[Blog SSO code handoff](../ref/blog-sso-code-handoff.md).
+
 ## Login Entry URL
 
 Standalone SSO site:
@@ -111,7 +117,9 @@ If your callback host is outside this policy, update the allow-list in code befo
 
 ## Callback Contract
 
-After successful login, SSO redirects to `redirect_to` and appends:
+After successful login, SSO redirects to `redirect_to` and appends the following.
+This applies to every client except Blog; see the Blog exception in
+[Client Integration Flow](#client-integration-flow).
 
 ```text
 sso_token=<JWT>
