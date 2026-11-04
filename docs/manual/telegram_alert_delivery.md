@@ -125,22 +125,27 @@ exponent, sign, hex, `NaN` or a later year, is a schema violation and answers 40
 
 1. A request without credentials gets the 401 challenge Monitoring requires, with
    no lookup.
-2. The credential is checked once. A check that does not authenticate is charged
-   to a refusal budget shared by all callers: a burst of 20, refilled at 5 per
-   second. While it is spent, credential checks wait with 429 and `Retry-After`
-   instead of reaching MongoDB. Accepted credentials are never charged. Google
-   publishes no sender addresses, and the gateway trusts `X-Forwarded-For` from
-   any peer, so the budget cannot be per caller.
-
-   So that guessing cannot lock a channel out, the receiver remembers each alert
-   type's credential once it has authenticated, as a keyed digest in memory only,
-   following OWASP's device-cookie defense against lockout abuse. A remembered
-   credential is not held back by a spent budget, but it is still checked against
-   MongoDB on every request, so a rotated or revoked token is refused at once and
-   loses its exemption at that first refusal. Wrong guesses never match, so they
-   cannot evict it, and a storage outage does not count as a refusal. The memory
-   is per process: after a restart, a channel waits like any caller until its
-   first successful delivery. Per-address limits belong at the edge; see below.
+2. The credential is checked against an in-memory directory of every alert
+   type's name and push token, held as keyed digests. Both parts are trimmed
+   first, as MongoDB's check trims them. The directory is read from MongoDB
+   when the gateway first needs it, and again when a credential misses it, but
+   at most once a second, however many requests arrive.
+   - A credential that matches no alert type is refused with 401 and no MongoDB
+     lookup. Guessing therefore has no shared budget to spend and cannot lock out
+     a channel, including right after a restart or a token rotation.
+   - A credential that matches is checked against MongoDB once, so a rotated or
+     revoked token is refused at once. That refusal removes it from the directory
+     and lets the next miss reread, so the new token delivers on its first use.
+   - A credential that misses less than a second after the last read started is
+     refused without another read. So a token created or rotated after that read
+     and used within the same second can be refused once. Sent again a second
+     later, it is accepted.
+   - If the read fails, credentials the directory already holds still reach
+     MongoDB; any other credential answers 503, since an outage is not a
+     refusal. The read is retried at most once a second.
+   - The directory holds the oldest 10,000 alert types. Alert types are
+     self-service, so storage could hold more. Past that, an alert type it does
+     not hold answers 503, and an ERROR is logged once a minute.
 3. `env`, the body (1 MiB at most) and the JSON are checked, and only then is the
    alert type's send budget spent. A throttled send answers 429 with
    `Retry-After: 1`, since every throttle bucket refills at least one send per
@@ -158,31 +163,34 @@ Responses carry a status only:
 | 400 | Invalid `env`, unreadable body, invalid JSON, a timestamp outside the forms above, or no `incident` | Stop; a retry cannot help |
 | 401 | Missing or refused credentials, with a `WWW-Authenticate` challenge | Send credentials; Monitoring needs this first response |
 | 413 | Body over 1 MiB, refused rather than truncated | Stop |
-| 429 | Refusal budget spent, or the alert type or total throttle denied the send; carries `Retry-After` | Retry later |
-| 503 | Telegram service, storage or throttle unavailable, delivery deadline reached, or some subscribers not confirmed; carries `Retry-After` when Telegram gave one | Retry; subscribers already accepted may see a duplicate |
+| 429 | The alert type or total throttle denied the send; carries `Retry-After` | Retry later |
+| 503 | Telegram service, storage (including the directory read) or throttle unavailable, an alert type past the directory's oldest 10,000, delivery deadline reached, or some subscribers not confirmed; carries `Retry-After` when Telegram gave one | Retry; subscribers already accepted may see a duplicate |
 
 Logs carry only the alert type, the derived state, and the incident ID when it
 is 1–64 letters, digits, `.`, `_` or `-` (otherwise only its length). Policy,
 condition, resource, summary, URL and timestamp values are never logged, and no
-decode error quotes the body. Deferred credential checks are counted rather than
-logged one by one: `defer cloud monitoring credential checks after repeated
-refusals` is a WARN entry written at most once a minute while checks are being
-deferred, with `deferred_total` counting every deferral since startup. Alert on
-that message: while it repeats, someone is guessing and any channel that has not
-delivered since the last restart is waiting.
+decode error quotes the body. Refused credentials are counted rather than
+logged one by one: `refuse cloud monitoring credentials` is a WARN entry written
+at most once a minute while credentials are refused, with `refused_total`
+counting every refusal since startup. Alert on that message: while it repeats,
+either a channel's password is wrong or someone is guessing. Guessing costs no
+MongoDB lookup and keeps no channel waiting, so the alert is about finding the
+cause, not about lost deliveries.
 
 ### Edge rate limit
 
-Add this rule before you create the channel. Add a Cloudflare WAF rate-limiting
-rule for the path, with the **Block** action:
-Monitoring cannot solve a Managed Challenge. On Business or Enterprise plans,
-count only `http.response.code in {401 429}`, so that successful deliveries never
-count. On the Free plan the rule counts every request per IP over 10 seconds.
-Either way, set the threshold well above Monitoring's own bursts: one channel can
-receive up to 1,000 notifications at once, and each may first draw a 401
-challenge. The rule is what keeps one guessing address from spending the refusal
-budget. The in-process exemption covers only channels that have already
-delivered.
+A Cloudflare WAF rate-limiting rule for the path is recommended, with the
+**Block** action, because Monitoring cannot solve a Managed Challenge. On
+Business or Enterprise plans, count only `http.response.code eq 401`, so that
+successful deliveries never count. On the Free plan the rule counts every
+request per IP over 10 seconds. Either way, set the threshold well above
+Monitoring's own bursts: one channel can receive up to 1,000 notifications at
+once, and each may first draw a 401 challenge.
+
+The rule only limits the request volume one address can send. It is not what
+keeps channels delivering: guessers below any threshold, or spread over many
+addresses, still cost MongoDB at most one directory read a second and lock out
+no channel, because the directory refuses them in memory.
 
 ### Delivery guarantees
 
@@ -190,7 +198,7 @@ The durability is what Monitoring's webhook offers, and it is weaker than a Pub/
 subscription. Monitoring publishes no retry count or window for webhooks. Its only
 statement found is a 2020 blog post saying it retries a few times and then drops the
 notification. There is no queue here either, so an alert that arrives during a
-gateway outage, or that the refusal budget or throttle defers past Monitoring's
+gateway or storage outage, or that the send throttle defers past Monitoring's
 retries, may never reach Telegram. A failed delivery shows up in Monitoring's
 `notification_channel_events` log. Keep an independent channel, such as email, on
 any policy whose alert must not be lost. If loss is unacceptable, use a Pub/Sub
@@ -202,8 +210,8 @@ To adopt it, run the old and new paths side by side before retiring one:
 1. Release the gateway, then confirm through the production ingress that an
    unauthenticated `POST /webhook/gcp/alerts/cloud-monitoring` answers 401 with a
    `WWW-Authenticate: Basic` header.
-2. Add the [edge rate limit](#edge-rate-limit) and a log alert on the deferral
-   warning above. Both are required before any policy depends on the channel.
+2. Add a log alert on the refusal warning above, so a wrong channel password is
+   noticed, and the recommended [edge rate limit](#edge-rate-limit).
 3. Create the channel and click **Test Connection**. The subscribers should see a
    `TEST` message.
 4. Add the channel to one policy next to the existing notification path, and compare

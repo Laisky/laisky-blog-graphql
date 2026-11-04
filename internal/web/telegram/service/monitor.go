@@ -263,6 +263,12 @@ func (s *Telegram) ValidateTokenForAlertType(ctx context.Context,
 	return s.monitorDao.ValidateTokenForAlertType(ctx, token, alertType)
 }
 
+// LoadAlertCredentials returns the name and push token of up to limit alert
+// types, oldest first, and reports whether that is every alert type.
+func (s *Telegram) LoadAlertCredentials(ctx context.Context, limit int) (alerts []*model.AlertTypes, complete bool, err error) {
+	return s.monitorDao.LoadAlertCredentials(ctx, limit)
+}
+
 func (s *Telegram) listAllMonitorAlerts(ctx context.Context,
 	us *userStat) (err error) {
 	u, err := s.monitorDao.LoadUserByUID(ctx, int(us.user.ID))

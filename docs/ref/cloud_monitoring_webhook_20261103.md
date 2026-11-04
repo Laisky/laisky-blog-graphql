@@ -106,30 +106,59 @@ inside it.
 
 ## Abuse limits
 
+Rechecked 2026-11-04.
+
 The [OWASP Webhook Security Cheat Sheet](https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Webhook_Security_Cheat_Sheet.md)
 (updated 2026-10-03) says to rate limit "at the API gateway or application layer",
 to answer excess with `429` and `Retry-After`, to return a generic `401`, and to
 alert on spikes in authentication failures. The
-[Authentication Cheat Sheet](https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Authentication_Cheat_Sheet.md)
-warns that lockout must not become a denial of service. With one shared credential
-and no known sender addresses, the receiver therefore has no lockout. It caps only
-failed lookups across all callers, and leaves per-address limits to the edge.
+[Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
+(source changed 2026-10-04), under Account Lockout: "care must be taken to prevent
+it from being used to cause a denial of service by locking out other users'
+accounts."
 
-A cap on failed lookups shared by all callers is itself a lockout, though: about 5
-wrong guesses a second would keep a valid channel at 429. OWASP's
-[Slow Down Online Guessing Attacks with Device Cookies](https://community.owasp.org/Slow_Down_Online_Guessing_Attacks_with_Device_Cookies)
-starts from "temporary account lockout after several failed attempts is too simple
-of a target for DoS attacks". It exempts clients that authenticated before, through
-an HMAC-signed cookie, from the lockout applied to untrusted clients. A webhook
-sender keeps no cookie, so the receiver uses the credential itself as the proof. It
-remembers an HMAC of the push token that last authenticated each alert type and
-lets that credential through a spent budget. It still checks the credential against
-storage, so the exemption never authenticates on its own. NIST
-[SP 800-63B-4 §3.2.2](https://pages.nist.gov/800-63-4/sp800-63b.html) likewise lets
-a verifier use extra signals to reduce the chance that an attacker locks out the
-legitimate claimant.
+An earlier revision capped failed MongoDB lookups across all callers (burst 20,
+refilled at 5 a second) and exempted credentials that had authenticated since
+startup, after OWASP's
+[device-cookie defense](https://community.owasp.org/Slow_Down_Online_Guessing_Attacks_with_Device_Cookies).
+Behavior tests showed the shared cap still locked channels out: after every
+restart (each deploy), after a token rotation, once 256 self-service alert types
+had filled the exemption set, and while one address guessed 10 times a second,
+below any edge threshold that passes Monitoring's bursts. The cap was a lockout
+by construction, because whoever spends a shared budget decides who waits.
 
-A per-address limit in the process was rejected. The gateway uses gin's default
+The receiver now removes the reason for the cap: refusals cost no lookup. It keeps
+an in-memory directory of every alert type's name and push token as keyed
+digests, reads it at most once a second on a miss, and refuses a credential the
+directory does not hold without querying MongoDB. A credential it holds is still
+checked against MongoDB, so revocation stays immediate. This is how gateways
+treat credentials:
+
+- Kong caches datastore misses as well as hits: "Kong Gateway also caches
+  database misses… Creation (`POST`, `PUT`) will invalidate cached database
+  misses" ([traditional mode](https://developer.konghq.com/gateway/traditional-mode/);
+  `db_cache_neg_ttl` in the [configuration reference](https://developer.konghq.com/gateway/configuration/)).
+  It can also preload `basicauth_credentials` with `db_cache_warmup_entities`,
+  to keep authenticating during database outages
+  ([DB downtime guide](https://developer.konghq.com/support/keeping-kong-functional-during-db-down-times/)).
+  Kong's plugin guide calls a per-request credential load "very inefficient"
+  ([3.2.x entities cache](https://legacy-gateway--kongdocs.netlify.app/gateway/3.2.x/plugin-development/entities-cache)).
+- Envoy's [basic auth filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/basic_auth_filter)
+  and Traefik's [BasicAuth middleware](https://doc.traefik.io/traefik/middlewares/http/basicauth/)
+  hold the user list in configuration, not in a database queried per request.
+  nginx's `auth_basic_user_file` reads a local file
+  ([module docs](https://nginx.org/en/docs/http/ngx_http_auth_basic_module.html)).
+
+Unlike Kong's per-key negative cache, the directory copies the whole collection,
+so an attacker spraying new names gains nothing; the collection is small, and
+the directory keeps its oldest 10,000 entries. Google still documents no webhook
+retry statuses, count, window or `Retry-After` handling (notification options,
+troubleshooting and channel API pages, all updated 2026-10-26). Any non-2xx
+answer may be the one that drops a notification, so a valid sender must never
+get one that someone else's guesses caused.
+
+A per-address limit in the process was rejected, and with the directory it is not
+needed. The gateway uses gin's default
 proxy trust, so `ClientIP()` returns whatever `X-Forwarded-For` a caller sends, and
 an attacker could rotate it freely.
 

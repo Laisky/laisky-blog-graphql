@@ -114,7 +114,7 @@ func (d *Monitor) CreateAlertType(ctx context.Context, name string) (at *model.A
 		bson.M{fieldName: name},
 		bson.M{mongoSetOnInsert: bson.M{
 			fieldName:       name,
-			"push_token":    generatePushToken(),
+			fieldPushToken:  generatePushToken(),
 			"join_key":      generateJoinKey(),
 			fieldCreatedAt:  utils.Clock.GetUTCNow(),
 			fieldModifiedAt: utils.Clock.GetUTCNow(),
@@ -345,6 +345,56 @@ func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
 	return alert, nil
 }
 
+// LoadAlertCredentials returns the name and push token of up to limit alert
+// types, oldest first, and reports whether that is every alert type. Only those
+// two fields are read. A document whose name or push token is not a string is
+// skipped, because ValidateTokenForAlertType can never accept it either.
+func (d *Monitor) LoadAlertCredentials(ctx context.Context, limit int) (alerts []*model.AlertTypes, complete bool, err error) {
+	logger := gmw.GetLogger(ctx).Named("telegram_monitor_load_alert_credentials")
+	if limit <= 0 {
+		return nil, false, errors.Errorf("alert credential limit must be positive, got %d", limit)
+	}
+	cur, err := d.GetAlertTypesCol().Find(ctx, bson.M{},
+		options.Find().
+			SetProjection(bson.M{fieldDocumentID: 0, fieldName: 1, fieldPushToken: 1}).
+			SetSort(bson.D{{Key: fieldDocumentID, Value: 1}}).
+			SetLimit(int64(limit)+1),
+	)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "find alert credentials")
+	}
+	defer func() {
+		if closeErr := cur.Close(context.WithoutCancel(ctx)); closeErr != nil && err == nil {
+			err = errors.Wrap(closeErr, "close alert credentials cursor")
+		}
+	}()
+
+	var read, skipped int
+	alerts = []*model.AlertTypes{}
+	for cur.Next(ctx) {
+		read++
+		if read > limit {
+			break
+		}
+		var credential struct {
+			Name      string `bson:"name"`
+			PushToken string `bson:"push_token"`
+		}
+		if err = cur.Decode(&credential); err != nil {
+			skipped++
+			continue
+		}
+		alerts = append(alerts, &model.AlertTypes{Name: credential.Name, PushToken: credential.PushToken})
+	}
+	if err = cur.Err(); err != nil {
+		return nil, false, errors.Wrap(err, "iterate alert credentials")
+	}
+	if skipped > 0 {
+		logger.Warn("skip malformed alert types", zap.Int("skipped", skipped))
+	}
+	return alerts, read <= limit, nil
+}
+
 func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,
 	u *model.MonitorUsers,
 	alertName string,
@@ -428,7 +478,7 @@ func (d *Monitor) RefreshAlertTokenAndKey(ctx context.Context, alert *model.Aler
 		bson.D{{Key: fieldDocumentID, Value: alert.ID}},
 		bson.M{
 			mongoSet: bson.M{
-				"push_token":    alert.PushToken,
+				fieldPushToken:  alert.PushToken,
 				"join_key":      alert.JoinKey,
 				fieldModifiedAt: utils.Clock.GetUTCNow(),
 			},

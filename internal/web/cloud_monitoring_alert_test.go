@@ -20,6 +20,7 @@ import (
 
 	telegram "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/controller"
 	telegramDao "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/dao"
+	telegramModel "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	telegramSvc "github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 )
 
@@ -101,6 +102,62 @@ func TestMongoAlertCredentialClasses(t *testing.T) {
 	require.False(t, errors.Is(err, telegramSvc.ErrAlertUnauthorized), "a storage failure must not read as refused credentials")
 }
 
+// TestMongoAlertCredentialDirectoryRead runs the directory's read against
+// MongoDB: oldest alert types first, only the name and push token returned, a
+// limit that reports a cut, and documents no credential check could accept
+// skipped.
+func TestMongoAlertCredentialDirectoryRead(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	db := newAlertMongo(t, ctx)
+	ids := []primitive.ObjectID{primitive.NewObjectID(), primitive.NewObjectID(), primitive.NewObjectID(), primitive.NewObjectID()}
+	// Inserted out of order, so only the sort can yield the oldest first.
+	_, err := db.Collection("alert_types").InsertMany(ctx, []any{
+		bson.M{"_id": ids[2], "name": "third", "push_token": "token-3", "join_key": "join-3"},
+		bson.M{"_id": ids[0], "name": "first", "push_token": "token-1", "join_key": "join-1"},
+		bson.M{"_id": ids[3], "name": 12345, "push_token": "token-4"},
+		bson.M{"_id": ids[1], "name": "second", "push_token": "token-2", "join_key": "join-2"},
+	})
+	require.NoError(t, err)
+	monitor := telegramDao.NewMonitor(ssoMongoDB{db})
+
+	alerts, complete, err := monitor.LoadAlertCredentials(ctx, 10)
+	require.NoError(t, err)
+	require.True(t, complete)
+	require.Equal(t, []string{"first", "second", "third"}, alertNames(alerts), "the malformed document is skipped")
+	for _, alert := range alerts {
+		require.NotEmpty(t, alert.PushToken)
+		require.Empty(t, alert.JoinKey, "only the name and push token are returned")
+		require.True(t, alert.ID.IsZero())
+	}
+
+	alerts, complete, err = monitor.LoadAlertCredentials(ctx, 2)
+	require.NoError(t, err)
+	require.False(t, complete)
+	require.Equal(t, []string{"first", "second"}, alertNames(alerts))
+
+	alerts, complete, err = monitor.LoadAlertCredentials(ctx, 4)
+	require.NoError(t, err)
+	require.True(t, complete, "a limit equal to the document count is not a cut")
+	require.Len(t, alerts, 3)
+
+	_, _, err = monitor.LoadAlertCredentials(ctx, 0)
+	require.Error(t, err)
+	canceled, cancelNow := context.WithCancel(ctx)
+	cancelNow()
+	_, _, err = monitor.LoadAlertCredentials(canceled, 10)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+// alertNames returns the names of alerts in order.
+func alertNames(alerts []*telegramModel.AlertTypes) []string {
+	names := make([]string, 0, len(alerts))
+	for _, alert := range alerts {
+		names = append(names, alert.Name)
+	}
+	return names
+}
+
 // TestMongoCloudMonitoringWebhookEndToEnd drives the whole receiver over real
 // HTTP: gin route, DAO on MongoDB and the actual Telegram sender. Only Telegram's
 // own server is replaced, by the loopback bot that records its wire payloads.
@@ -135,7 +192,8 @@ func TestMongoCloudMonitoringWebhookEndToEnd(t *testing.T) {
 	bot := &receiverBot{failures: map[string]string{}}
 	endpoint := httptest.NewServer(bot)
 	t.Cleanup(endpoint.Close)
-	svc, err := telegramSvc.New(ctx, telegramDao.NewMonitor(ssoMongoDB{db}), nil, nil, nil, receiverAlertToken, endpoint.URL)
+	monitor := telegramDao.NewMonitor(ssoMongoDB{db})
+	svc, err := telegramSvc.New(ctx, monitor, nil, nil, nil, receiverAlertToken, endpoint.URL)
 	require.NoError(t, err)
 	telegram.NewTelegram(ctx, svc)
 	router := gin.New()
@@ -180,10 +238,22 @@ func TestMongoCloudMonitoringWebhookEndToEnd(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{"101", "102"}, recipients)
 
+	// Storage trims both parts, so the directory must match padded credentials too.
+	require.Equal(t, http.StatusNoContent, post(" "+receiverAlertType+" ", " "+receiverAlertToken+" ").StatusCode)
+
+	// Rotating through the bot's DAO path takes effect at once: the old token is
+	// refused and the new one delivers on its first use.
+	alert, err := monitor.ValidateTokenForAlertType(ctx, receiverAlertToken, receiverAlertType)
+	require.NoError(t, err)
+	require.NoError(t, monitor.RefreshAlertTokenAndKey(ctx, alert))
+	require.NotEqual(t, receiverAlertToken, alert.PushToken)
+	require.Equal(t, http.StatusUnauthorized, post(receiverAlertType, receiverAlertToken).StatusCode)
+	require.Equal(t, http.StatusNoContent, post(receiverAlertType, alert.PushToken).StatusCode)
+
 	bot.mu.Lock()
 	bot.failures["102"] = "api"
 	bot.mu.Unlock()
-	require.Equal(t, http.StatusServiceUnavailable, post(receiverAlertType, receiverAlertToken).StatusCode,
+	require.Equal(t, http.StatusServiceUnavailable, post(receiverAlertType, alert.PushToken).StatusCode,
 		"a partial fan-out must stay visible to the sender")
 }
 
