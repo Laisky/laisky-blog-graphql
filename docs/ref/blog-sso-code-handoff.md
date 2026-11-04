@@ -132,3 +132,59 @@ Browser references reviewed 2026-10-11:
   (issuer storage belongs to its origin; the fixed MCP entry preserves that origin).
 - https://developer.mozilla.org/en-US/docs/Web/API/History/replaceState
   (same-origin URL cleanup updates the current history entry without loading a document).
+
+## Cutover acceptance, contract and rollback (2026-11-04)
+
+Acceptance criterion: no supported issuer path navigates to the Blog origin with a
+reusable bearer. That covers the query, any fragment reading, the `sso_return`
+route and encoded or case-variant legacy bookmarks, across password, TOTP, email
+code, stored-session, passkey and GitHub completion.
+
+Every issuer path first calls `planSsoRedirect`, which returns exactly one typed plan:
+
+- `blog-code`: a bound code for the exact registered callback.
+- `blog-bootstrap`: a credential-free bootstrap carrying a validated return route.
+- `token`: the legacy bearer handoff, available only to other hostname clients.
+
+Validation (`parseBlogBookmarkReturnPath`) is separate from serialization.
+The stored-session decision returns `handoff` for Blog plans, so only the
+asynchronous builder can serve them. Errors name the failing input without
+echoing it: an invalid bookmark reports `Invalid Blog SSO bookmark. Restart sign-in
+from Blog.`, and a malformed code request keeps `Invalid Blog SSO code request.`
+
+Length bounds: the return route is limited to 2048 characters, the same limit the
+consumer applies. Form encoding expands it at most threefold, to about 6.2 KiB.
+The serialized bootstrap is also capped at 8000 characters, below nginx's default
+8 KiB request-line buffer, so a future limit change fails closed instead of
+producing an unservable URL.
+
+Shared contract: `web/src/lib/blog-sso-protocol.v1.json` is the canonical v1
+fixture. It holds the reserved marker set, the route limit, accepted bookmarks
+with their exact return routes, and route-level and authority-level rejections.
+The Blog consumer keeps a byte-identical copy and checks its own sanitizer against
+the same cases. Change both repositories together, and bump `version` on any
+semantic change.
+
+Rollback: issuer and consumer rollbacks are coupled once this cutover is live.
+
+- Rolling the issuer back to the issuer61 code-capable release is safe with any
+  bootstrap-capable consumer.
+- Rolling the consumer back to a bundle that expects URL bearers breaks Blog
+  sign-in while this cutover is live. Revert this cutover first, then roll back
+  the consumer.
+- Keep a bootstrap/code-capable consumer deployed whenever this cutover is live.
+
+Availability: a legacy bookmark now costs one extra navigation and depends on the
+Blog root serving the current no-store consumer. A stale cached bundle or an
+unavailable Blog root interrupts that sign-in until Blog is reachable again;
+existing sessions are not affected.
+
+Residual scope, unchanged by this cutover:
+
+- Other hostname clients still receive the JWT in the query string.
+- The long-lived bearer remains in issuer browser storage.
+
+Runtime gate: before cutover, an authorized real sign-in through the deployed Blog
+must confirm the intended account, session and return route. The audit must not
+retain credentials or callback values. Source and synthetic tests cannot close
+this gate.

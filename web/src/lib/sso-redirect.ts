@@ -45,20 +45,22 @@ export function parseRedirectTarget(rawValue: string | null, origin: string): Re
     };
   }
 
+  // Blog rejections never echo the raw target: a legacy spelling may carry a bearer.
   try {
-    const codeBinding = parseBlogCodeTarget(parsed);
-    if (isBlogSsoClient(parsed) && !codeBinding) {
-      if (!/^https?:\/\//i.test(raw) || raw.length > 4096 || raw.includes('\\')
-        || Array.from(raw).some((character) => character.charCodeAt(0) <= 32)) {
-        throw new Error('Invalid Blog SSO bookmark.');
-      }
-      buildBlogBootstrapUrl(parsed);
+    const plan = planSsoRedirect(parsed);
+    // URL parsing silently repairs controls, backslashes and relative spellings, so the
+    // raw input is checked as well before a Blog target is trusted.
+    if (plan.kind === 'blog-bootstrap' && (!/^https?:\/\//i.test(raw) || raw.length > 4096 || raw.includes('\\')
+      || Array.from(raw).some((character) => character.charCodeAt(0) <= 32))) {
+      throw new InvalidBlogBookmarkError();
     }
-    if (codeBinding && !/^https:\/\/blog\.laisky\.com\/?\?/.test(raw)) {
-      throw new Error('Invalid Blog SSO callback spelling.');
+    if (plan.kind === 'blog-code' && !/^https:\/\/blog\.laisky\.com\/?\?/.test(raw)) {
+      throw new Error(invalidBlogCodeRequest);
     }
-  } catch {
-    return { url: null, display: 'Invalid Blog SSO code request', error: 'Invalid Blog SSO code request.' };
+  } catch (error) {
+    return error instanceof InvalidBlogBookmarkError
+      ? { url: null, display: 'Invalid Blog SSO bookmark', error: error.message }
+      : { url: null, display: 'Invalid Blog SSO code request', error: invalidBlogCodeRequest };
   }
   return {
     url: parsed,
@@ -186,6 +188,12 @@ const blogNavigationMarkers = [
 ];
 
 /**
+ * blogSsoProtocolMarkers lists the reserved Blog SSO parameter names. It must equal the
+ * markers in blog-sso-protocol.v1.json, which the Blog consumer copies byte-identically.
+ */
+export const blogSsoProtocolMarkers: readonly string[] = Object.freeze([...blogNavigationMarkers]);
+
+/**
  * fragmentParameterNames lists every parameter name a standard fragment reader can see.
  * The fragment is opaque to URL parsing, but OAuth-style fragment responses read it as
  * form data and hash routers read it as an RFC 3986 relative reference, whose query
@@ -203,19 +211,46 @@ function fragmentParameterNames(hash: string): string[] {
   return names;
 }
 
-/** buildBlogBootstrapUrl returns only a fixed HTTPS initiation URL and a bounded internal return route. */
-function buildBlogBootstrapUrl(target: URL): string {
-  // The return route, including a fragment the browser never sent, becomes a Blog
-  // request-target query value, so markers are rejected under every fragment reading.
+/** maxBlogReturnPathLength bounds the internal route; the paired consumer uses the same limit. */
+const maxBlogReturnPathLength = 2048;
+
+/**
+ * maxBlogBootstrapUrlLength keeps the serialized bootstrap request line within nginx's
+ * default 8 KiB large_client_header_buffers. Form encoding expands a bounded route at
+ * most threefold (about 6.2 KiB), so this final check guards future limit changes.
+ */
+const maxBlogBootstrapUrlLength = 8000;
+
+/** InvalidBlogBookmarkError marks a rejected legacy Blog bookmark without echoing it. */
+export class InvalidBlogBookmarkError extends Error {
+  constructor() {
+    super('Invalid Blog SSO bookmark. Restart sign-in from Blog.');
+    this.name = 'InvalidBlogBookmarkError';
+  }
+}
+
+const invalidBlogCodeRequest = 'Invalid Blog SSO code request.';
+
+/**
+ * parseBlogBookmarkReturnPath validates a legacy Blog bookmark and returns its bounded
+ * internal route. The route, including a fragment the browser never sent, becomes a Blog
+ * request-target query value, so protocol markers are rejected under every fragment reading.
+ */
+function parseBlogBookmarkReturnPath(target: URL): string {
   const returnPath = target.pathname + target.search + target.hash;
   if (!['http:', 'https:'].includes(target.protocol) || target.hostname !== 'blog.laisky.com'
-    || target.port || target.username || target.password || returnPath.length > 2048
+    || target.port || target.username || target.password || returnPath.length > maxBlogReturnPathLength
     || !returnPath.startsWith('/') || returnPath.startsWith('//') || returnPath.includes('\\')
     || Array.from(returnPath).some((character) => character.charCodeAt(0) <= 32)
     || [...target.searchParams.keys(), ...fragmentParameterNames(target.hash)]
       .some((key) => blogNavigationMarkers.includes(key.toLowerCase()))) {
-    throw new Error('Invalid Blog SSO bookmark.');
+    throw new InvalidBlogBookmarkError();
   }
+  return returnPath;
+}
+
+/** buildBlogBootstrapUrl serializes the fixed HTTPS initiation URL for a validated return route. */
+function buildBlogBootstrapUrl(returnPath: string): string {
   const bootstrap = new URL(blogCallback);
   bootstrap.searchParams.set('sso_start', '1');
   bootstrap.searchParams.set('sso_return', returnPath);
@@ -223,15 +258,15 @@ function buildBlogBootstrapUrl(target: URL): string {
   if (typeof window !== 'undefined' && window.location.origin === 'https://mcp.laisky.com') {
     bootstrap.searchParams.set('sso_issuer', 'mcp');
   }
-  return bootstrap.toString();
+  const serialized = bootstrap.toString();
+  if (serialized.length > maxBlogBootstrapUrlLength) throw new InvalidBlogBookmarkError();
+  return serialized;
 }
-
 
 /** isBlogSsoClient identifies the existing Blog hostname across old scheme, port and path variants. */
 export function isBlogSsoClient(target: URL): boolean {
   return normalizeHostname(target.hostname) === 'blog.laisky.com';
 }
-
 
 /** BlogCodeTarget holds only the public bindings for the registered Blog callback. */
 export interface BlogCodeTarget {
@@ -259,18 +294,38 @@ export function parseBlogCodeTarget(target: URL): BlogCodeTarget | null {
     || target.searchParams.get('sso_flow') !== 'code'
     || target.searchParams.get('sso_challenge_method') !== 'S256'
     || !isEncodedSSOEntropy(state) || !isEncodedSSOEntropy(challenge)) {
-    throw new Error('Invalid Blog SSO code request.');
+    throw new Error(invalidBlogCodeRequest);
   }
   return { state, challenge };
 }
 
+/**
+ * SsoRedirectPlan is the single issuance path a target may take: a bound Blog code,
+ * a credential-free Blog bootstrap, or the legacy bearer handoff for other clients.
+ */
+export type SsoRedirectPlan =
+  | { kind: 'blog-code'; binding: BlogCodeTarget }
+  | { kind: 'blog-bootstrap'; returnPath: string }
+  | { kind: 'token' };
+
+/**
+ * planSsoRedirect classifies a target before any credential is attached. It throws
+ * InvalidBlogBookmarkError for an unsafe Blog bookmark and a generic error for a
+ * malformed code request, so Blog targets can never fall back to the bearer handoff.
+ */
+export function planSsoRedirect(target: URL): SsoRedirectPlan {
+  const binding = parseBlogCodeTarget(target);
+  if (binding) return { kind: 'blog-code', binding };
+  if (isBlogSsoClient(target)) return { kind: 'blog-bootstrap', returnPath: parseBlogBookmarkReturnPath(target) };
+  return { kind: 'token' };
+}
+
 /** buildSsoRedirectUrl issues a bound code, bootstraps an old Blog bookmark, or preserves another client's handoff. */
 export async function buildSsoRedirectUrl(target: URL, token: string): Promise<string> {
-  const binding = parseBlogCodeTarget(target);
-  if (!binding) {
-    if (isBlogSsoClient(target)) return buildBlogBootstrapUrl(target);
-    return buildRedirectUrlWithToken(target, token);
-  }
+  const plan = planSsoRedirect(target);
+  if (plan.kind === 'token') return buildRedirectUrlWithToken(target, token);
+  if (plan.kind === 'blog-bootstrap') return buildBlogBootstrapUrl(plan.returnPath);
+  const { binding } = plan;
   const response = await fetch(publicApiPath('/sso/code'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

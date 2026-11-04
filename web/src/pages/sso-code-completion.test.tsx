@@ -298,7 +298,7 @@ describe('hash-route protocol markers never reach a Blog bootstrap from any comp
     storeSsoToken('synthetic-bearer');
     vi.mocked(fetchGraphQL).mockResolvedValue({ BlogUser: {} });
     loginPage(unsafe);
-    await screen.findByText('Invalid Blog SSO code request.');
+    await screen.findByText('Invalid Blog SSO bookmark. Restart sign-in from Blog.');
     expect(assign).not.toHaveBeenCalled();
     expect(fetchCode).not.toHaveBeenCalled();
   });

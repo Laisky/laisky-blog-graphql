@@ -11,7 +11,7 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
-import { buildSsoRedirectUrl, isBlogSsoClient, parseRedirectTarget } from '@/lib/sso-redirect';
+import { buildSsoRedirectUrl, parseRedirectTarget } from '@/lib/sso-redirect';
 import { clearSsoToken, loadSsoToken, resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
 import {
   SSO_SESSION_CHECK_QUERY,
@@ -267,9 +267,16 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         return;
       }
 
-      if (redirectTarget.url && isBlogSsoClient(redirectTarget.url)) {
+      const decision = resolveAuthenticatedRedirect({
+        token,
+        redirectTarget,
+        redirectRequested: hasRedirectParam,
+      });
+
+      if (decision.kind === 'handoff') {
+        // Blog targets never receive the bearer: issue a bound code or bootstrap.
         try {
-          const redirect = await buildSsoRedirectUrl(redirectTarget.url, token);
+          const redirect = await buildSsoRedirectUrl(decision.target, token);
           if (!isCancelled) window.location.assign(redirect);
         } catch {
           if (!isCancelled) {
@@ -279,12 +286,6 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         }
         return;
       }
-
-      const decision = resolveAuthenticatedRedirect({
-        token,
-        redirectTarget,
-        redirectRequested: hasRedirectParam,
-      });
 
       if (decision.kind === 'external') {
         // Hand the live session to the requested app and leave the SPA. Keep the
