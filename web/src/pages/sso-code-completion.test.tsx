@@ -290,3 +290,39 @@ describe('legacy Blog bookmarks restart safely through the current consumer', ()
     expect(assign).not.toHaveBeenCalled();
   });
 });
+
+describe('hash-route protocol markers never reach a Blog bootstrap from any completion', () => {
+  const unsafe = 'https://blog.laisky.com/p/article/#/article?sso_token=old-bearer';
+
+  it('rejects a stored session redirect before any navigation', async () => {
+    storeSsoToken('synthetic-bearer');
+    vi.mocked(fetchGraphQL).mockResolvedValue({ BlogUser: {} });
+    loginPage(unsafe);
+    await screen.findByText('Invalid Blog SSO code request.');
+    expect(assign).not.toHaveBeenCalled();
+    expect(fetchCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a target returned by signed GitHub completion', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValue({
+      UserGithubOAuthLogin: { token: 'synthetic-bearer', redirect_to: unsafe },
+    });
+    render(<MemoryRouter initialEntries={['/sso/github/callback?code=inert-code&state=inert-state']}>
+      <SsoGithubCallbackPage />
+    </MemoryRouter>);
+    await screen.findByText(/Invalid Blog SSO bookmark/);
+    expect(assign).not.toHaveBeenCalled();
+    expect(fetchCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a target returned by passkey completion', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValueOnce({ UserStartPasskeyLogin: { session: 'inert-session', options_json: '{}' } })
+      .mockResolvedValueOnce({ UserFinishPasskeyLogin: { token: 'synthetic-bearer', redirect_to: 'https://blog.laisky.com/#/a#SSO_CODE=old' } });
+    vi.mocked(getPasskeyCredentialJSON).mockResolvedValue('{}');
+    loginPage('https://blog.laisky.com/p/article/');
+    fireEvent.click(screen.getByRole('button', { name: /Sign in with Passkey/ }));
+    await screen.findByText(/Invalid Blog SSO bookmark/);
+    expect(assign).not.toHaveBeenCalled();
+    expect(fetchCode).not.toHaveBeenCalled();
+  });
+});

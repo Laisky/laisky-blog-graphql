@@ -22,6 +22,13 @@ describe('ordered Blog issuer cutover', () => {
     expect(result.hash).toBe('#menu');
   });
 
+  it('keeps another client hash route unchanged because fragment marker checks are Blog-only', async () => {
+    const target = new URL('https://console.laisky.com/#/settings?tab=sso_token');
+    const result = new URL(await buildSsoRedirectUrl(target, 'synthetic-test-bearer'));
+    expect(result.searchParams.get('sso_token')).toBe('synthetic-test-bearer');
+    expect(result.hash).toBe('#/settings?tab=sso_token');
+  });
+
   it('continues issuing a code for the exact registered callback', async () => {
     const code = 'A'.repeat(43);
     const target = new URL('https://blog.laisky.com/?sso_flow=code&sso_state=' + code

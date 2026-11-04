@@ -185,14 +185,34 @@ const blogNavigationMarkers = [
   ...codeMarkers, 'sso_token', 'sso_code', 'code_verifier', 'sso_verifier', 'sso_start', 'sso_return', 'sso_issuer',
 ];
 
+/**
+ * fragmentParameterNames lists every parameter name a standard fragment reader can see.
+ * The fragment is opaque to URL parsing, but OAuth-style fragment responses read it as
+ * form data and hash routers read it as an RFC 3986 relative reference, whose query
+ * follows the first "?" and whose nested fragment follows the first "#". Reading every
+ * "#"-delimited segment both ways covers both encodings and nested fragments in one
+ * linear pass. Names inside values stay ordinary data, matching top-level query parsing.
+ */
+function fragmentParameterNames(hash: string): string[] {
+  const names: string[] = [];
+  for (const segment of hash.slice(1).split('#')) {
+    names.push(...new URLSearchParams(segment).keys());
+    const queryStart = segment.indexOf('?');
+    if (queryStart >= 0) names.push(...new URLSearchParams(segment.slice(queryStart + 1)).keys());
+  }
+  return names;
+}
+
 /** buildBlogBootstrapUrl returns only a fixed HTTPS initiation URL and a bounded internal return route. */
 function buildBlogBootstrapUrl(target: URL): string {
+  // The return route, including a fragment the browser never sent, becomes a Blog
+  // request-target query value, so markers are rejected under every fragment reading.
   const returnPath = target.pathname + target.search + target.hash;
   if (!['http:', 'https:'].includes(target.protocol) || target.hostname !== 'blog.laisky.com'
     || target.port || target.username || target.password || returnPath.length > 2048
     || !returnPath.startsWith('/') || returnPath.startsWith('//') || returnPath.includes('\\')
     || Array.from(returnPath).some((character) => character.charCodeAt(0) <= 32)
-    || [...target.searchParams.keys(), ...new URLSearchParams(target.hash.slice(1)).keys()]
+    || [...target.searchParams.keys(), ...fragmentParameterNames(target.hash)]
       .some((key) => blogNavigationMarkers.includes(key.toLowerCase()))) {
     throw new Error('Invalid Blog SSO bookmark.');
   }

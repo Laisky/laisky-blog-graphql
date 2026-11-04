@@ -98,3 +98,44 @@ it.each([
   await expect(buildSsoRedirectUrl(new URL(raw), 'synthetic-test-bearer')).rejects.toThrow();
   expect(transport).not.toHaveBeenCalled();
 });
+
+// Hash routes carry a nested path?query#fragment reference inside the fragment.
+// Whole-fragment form parsing alone reads "/article?sso_token" as one key, so a
+// marker after the route's "?" or a nested "#" would travel in sso_return to the
+// Blog request target. Every bookmark entry point must reject these spellings.
+it.each([
+  '#/article?sso_token=old',
+  '#/article?SSO_CODE=old',
+  '#/article?view=compact&Sso_State=old',
+  '#!/article?sso_token=old',
+  '#/article?sso%5Ftoken=old',
+  '#/article?sso_return=%2F',
+  '#/article#sso_token=old',
+  '#/article?view=compact#SSO_CODE=old',
+  '#intro#sso_state=old',
+])('rejects a protocol marker inside a hash-route query or nested fragment %s', async (suffix) => {
+  const raw = 'https://blog.laisky.com/p/article/' + suffix;
+  const transport = vi.fn();
+  vi.stubGlobal('fetch', transport);
+  expect(parseRedirectTarget(raw, 'https://sso.laisky.com').url).toBeNull();
+  await expect(buildSsoRedirectUrl(new URL(raw), 'synthetic-test-bearer')).rejects.toThrow();
+  expect(() => buildRedirectUrlWithToken(new URL(raw), 'synthetic-test-bearer')).toThrow();
+  expect(transport).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['https://blog.laisky.com/p/article/#/section?view=compact', '/p/article/#/section?view=compact'],
+  ['https://blog.laisky.com/p/article/#/section?note=sso_token', '/p/article/#/section?note=sso_token'],
+  ['https://blog.laisky.com/p/article/?view=compact#intro#details', '/p/article/?view=compact#intro#details'],
+  ['https://blog.laisky.com/p/article/#sso_tokenizer', '/p/article/#sso_tokenizer'],
+])('preserves an ordinary nonprotocol hash route %s exactly', async (raw, returnPath) => {
+  const transport = vi.fn();
+  vi.stubGlobal('fetch', transport);
+  const parsed = parseRedirectTarget(raw, 'https://sso.laisky.com');
+  expect(parsed.error).toBeUndefined();
+  const bootstrap = new URL(await buildSsoRedirectUrl(parsed.url!, 'synthetic-test-bearer'));
+  expect([...bootstrap.searchParams.keys()]).toEqual(['sso_start', 'sso_return']);
+  expect(bootstrap.searchParams.get('sso_return')).toBe(returnPath);
+  expect(bootstrap.toString()).not.toContain('synthetic-test-bearer');
+  expect(transport).not.toHaveBeenCalled();
+});

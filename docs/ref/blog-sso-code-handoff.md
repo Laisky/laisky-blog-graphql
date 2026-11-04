@@ -100,6 +100,32 @@ and rejected before exchange, App or optional telemetry. A mixed valid code quer
 and reserved fragment cannot redeem. Ordinary nonprotocol article fragments
 remain unchanged; no generic credential-name filtering is introduced.
 
+## Fragment marker readings (2026-11-04)
+
+A fragment is opaque to URL parsing, yet `sso_return` carries the bookmark's
+fragment into the bootstrap query, so it reaches Blog request targets and logs.
+Reading the whole fragment as form data alone treats `#/article?sso_token=old` as
+the single name `/article?sso_token`, which let a hash-route marker travel in
+`sso_return`. The issuer therefore reads every `#`-delimited fragment segment in
+both standard ways: as form data (OAuth-style fragment parameters) and as an
+RFC 3986 relative reference whose query follows the first `?` (hash routes such as
+`#/route?…` or `#!/route?…`). Splitting at `#` first also covers nested fragments.
+A known marker name, including case and percent-encoded aliases, under either
+reading rejects the bookmark in the raw parser and in every completion path
+(password, TOTP, email code, stored session, passkey and GitHub). Names inside
+parameter values stay ordinary data, matching top-level query parsing, and
+ordinary hash routes and article fragments remain unchanged. The check is
+Blog-only; other hostname clients keep their existing handoff and fragments.
+
+Primary references reviewed 2026-11-04:
+
+- RFC 3986 sections 3.5 and 4.2: <https://www.rfc-editor.org/rfc/rfc3986.html#section-3.5>
+- RFC 6749 section 4.2.2: <https://www.rfc-editor.org/rfc/rfc6749.html#section-4.2.2>
+- WHATWG URL application/x-www-form-urlencoded parser (splits on `&` only; `#`
+  stays literal): <https://url.spec.whatwg.org/#concept-urlencoded-parser>
+- React Router hash routing (`createHashHistory` reads the hash through
+  `parsePath`, which splits at `#`, then `?`): <https://reactrouter.com/api/data-routers/createHashRouter>
+
 Browser references reviewed 2026-10-11:
 
 - https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage
