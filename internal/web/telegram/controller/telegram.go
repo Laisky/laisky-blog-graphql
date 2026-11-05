@@ -239,9 +239,10 @@ func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 // ============================
 
 // TelegramMonitorAlert sends the complete alert through the existing authorized subscriber path.
-// It preserves fail-closed throttling and token validation, and refuses credentials that match
-// no alert type in memory before they spend any budget (see authenticateAlert); partial provider
-// acceptance returns a visible error because retrying the mutation may duplicate accepted sends.
+// It preserves fail-closed throttling and token validation. Credentials the shared directory does
+// not know are verified through a separately bounded lookup before they can spend delivery
+// capacity (see authenticateAlert); partial provider acceptance returns a visible error because
+// retrying the mutation may duplicate accepted sends.
 func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, token, msg string) (*model.AlertTypes, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
@@ -284,12 +285,17 @@ func composeAlert(alertType, msg string) (string, error) {
 // admitAlert spends one send from the alert type's and the total budget, for an
 // alert whose credentials the caller already verified, such as the Cloud
 // Monitoring webhook. A caller that has not authenticated yet must use
-// admitAlertAttempt instead. It fails closed when the throttle is not configured.
-func admitAlert(alertType string) error {
+// admitAlertAttempt instead. A request that has already ended spends nothing,
+// since its delivery could no longer happen. It fails closed when the throttle
+// is not configured.
+func admitAlert(ctx context.Context, alertType string) error {
+	if err := ctx.Err(); err != nil {
+		return errors.WithStack(err)
+	}
 	if telegramRatelimiter == nil {
 		return errors.WithStack(errTelegramThrottleUnavailable)
 	}
-	if !telegramRatelimiter.Allow(alertType) { //nolint:contextcheck // Rate admission does not need request context.
+	if !telegramRatelimiter.Allow(alertType) {
 		return errors.WithStack(errAlertThrottled)
 	}
 	return nil

@@ -36,9 +36,10 @@ and selected tests must be deliberately reviewed when changing the manifest.
 
 The Telegram selections also cover cancellation after refill, overlapping
 reservations, isolation of invalid credentials from delivery capacity, remote
-credential first use, canceled contexts, malformed directory loader results, and
-the bound on requests waiting for a slow directory read, both in the directory
-and through the GraphQL and webhook entrypoints.
+credential first use, canceled contexts, requests that end after authentication
+but before a send is kept, malformed directory loader results, and the bound on
+requests waiting for a slow directory read, both in the directory and through
+the GraphQL and webhook entrypoints.
 The manual sweep benchmarks can be run with
 `go test ./library/throttle -run '^$' -bench 'Benchmark(SweepRetainedTitles|AdmissionDuringSweep)' -benchmem`.
 On a Windows Ryzen 7 5700G, two 500 ms runs scanning retained, non-full buckets

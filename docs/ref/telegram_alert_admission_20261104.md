@@ -60,11 +60,14 @@ for the entrypoint-specific response behavior.
 
 ## Bounded waiting on directory reads (checked 2026-11-05)
 
-`golang.org/x/sync/singleflight` (v0.24.0, the latest) `DoChan` makes a
-buffered channel for every caller and appends it to the in-flight call's
-`chans`. The channels are released only when the call returns
-(`singleflight.go` L122, L129 and L176–177). A caller that stops waiting on its
-context still leaves its channel behind, and `Forget` only deletes the map key.
+Inspected version: `golang.org/x/sync` v0.24.0, which `go.mod` requires and
+which `proxy.golang.org/golang.org/x/sync/@latest` reported as the latest
+release on 2026-11-05. In its `singleflight.go`, `DoChan` makes a buffered
+channel for every caller (L122) and appends it to the in-flight call's `chans`
+(L129). The channels are released only when the call returns normally, through
+the loop that sends each waiter its result (L176–177). L164–167 handle a
+panicking call instead. A caller that stops waiting on its context still leaves
+its channel behind, and `Forget` only deletes the map key (L210–212).
 golang/go has no open proposal for removable or capped waiters. Tailscale's
 fork adds `DoChanContext`, but it cancels only the shared work and still does
 not limit waiters.

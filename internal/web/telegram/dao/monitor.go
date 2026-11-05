@@ -41,8 +41,8 @@ func (e alertRefusalError) Unwrap() error { return e.error }
 func (alertRefusalError) Is(target error) bool { return target == ErrAlertUnauthorized }
 
 // AlertTypeNotFoundError returns the refusal ValidateTokenForAlertType gives for
-// an alert type that does not exist. A caller that refuses a credential without a
-// storage lookup returns it, so its text and ErrAlertUnauthorized match unchanged.
+// an alert type that does not exist, so a caller or test double that must
+// reproduce that refusal keeps its text and its ErrAlertUnauthorized match.
 func AlertTypeNotFoundError(alertType string) error {
 	return alertTypeNotFound(alertType, mongoLib.ErrNoDocuments)
 }

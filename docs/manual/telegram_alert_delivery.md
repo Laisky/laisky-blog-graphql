@@ -49,9 +49,11 @@ Authentication and throttling run in this order:
    canonical name, so `" name "` and `"name"` share one budget.
 2. **Credential directory.** Both entrypoints share a keyed-digest directory. In
    GraphQL, a known pair reserves delivery capacity before its authoritative
-   MongoDB check; an invalid or canceled check releases any per-type reservation
-   that has not already been replaced by refill. The shared send pays for the
-   check. The webhook checks credentials before spending delivery capacity.
+   MongoDB check. An invalid or canceled check, or a request that ended before
+   its send is kept (even after a successful check), releases any per-type
+   reservation that has not already been replaced by refill. The shared send
+   pays for the check. The webhook checks credentials before spending delivery
+   capacity.
 3. **Bounded fallback.** Unknown or unverifiable pairs use a separate budget of
    one MongoDB lookup per second, with burst and concurrent lookup limits of five.
    Only a successful lookup can spend delivery capacity. This lets a token
@@ -181,6 +183,8 @@ exponent, sign, hex, `NaN` or a later year, is a schema violation and answers 40
    shared and the alert type's send budgets spent, together. The request is
    already authenticated, so unlike `TelegramMonitorAlert` it reserves nothing
    before the MongoDB check, and neither budget is spent when either is empty.
+   A request that ended while its body was read, such as a sender that
+   disconnected, answers 503 without spending either budget.
    A throttled send answers 429 with
    `Retry-After: 1`, since every throttle bucket refills at least one send per
    second.

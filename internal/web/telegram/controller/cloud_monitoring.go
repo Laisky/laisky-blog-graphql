@@ -364,7 +364,14 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if err = admitAlert(alert.Name); err != nil { //nolint:contextcheck // Rate admission does not need request context.
+	if err = admitAlert(ctx, alert.Name); err != nil {
+		if ctx.Err() != nil {
+			// The sender went away while its body was read; it spends no send
+			// and will retry.
+			logger.Debug("cloud monitoring request ended before admission", zap.Error(err))
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		if errors.Is(err, errAlertThrottled) {
 			logger.Warn("cloud monitoring incident throttled", zap.Error(err))
 			// Every throttle bucket refills at least one send per second.

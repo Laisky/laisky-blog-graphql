@@ -132,8 +132,13 @@ func admitAlertAttempt(ctx context.Context, alertName string) (*throttle.Admissi
 }
 
 // authorizeAlert settles admission once the credentials of alertName, the stored
-// name of the alert, matched, so its reserved send stays spent.
+// name of the alert, matched, so its reserved send stays spent. A request that
+// ended meanwhile, as during its credential lookup, keeps no send: it returns
+// the context's error, and the caller's Cancel returns the per-type send.
 func authorizeAlert(ctx context.Context, admission *throttle.Admission, alertName string) error {
+	if err := ctx.Err(); err != nil {
+		return errors.WithStack(err)
+	}
 	if err := admission.Authorize(alertName); err != nil {
 		return throttleRefusal(ctx, alertName, err)
 	}

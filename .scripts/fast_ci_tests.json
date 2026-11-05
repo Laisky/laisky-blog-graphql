@@ -38,7 +38,9 @@
       "TestCanceledContextDoesNotSpendDeliveryBudget",
       "TestAlertCredentialDirectoryRejectsNilLoaderEntry",
       "TestAlertCredentialDirectoryBoundsReadWaiters",
-      "TestAlertEntrypointsBoundWaitingOnSlowDirectoryRead"
+      "TestAlertEntrypointsBoundWaitingOnSlowDirectoryRead",
+      "TestCloudMonitoringRequestEndedBeforeAdmissionSpendsNoSend",
+      "TestAlertRequestEndedDuringLookupKeepsNoTypeSend"
     ]
   },
   {
