@@ -167,14 +167,26 @@ func TestAlertDirectoryUnverifiableFallsBackToStorage(t *testing.T) {
 
 // TestAlertDirectoryReadPanicIsContained reproduces a crash: the directory read
 // runs on a goroutine shared by every waiting request, where a panicking loader
-// ended the whole process. It now fails that read, and the request goes on.
+// ended the whole process. It now fails that read, the request goes on, and the
+// next read is not blocked by the failed one.
 func TestAlertDirectoryReadPanicIsContained(t *testing.T) {
+	var panics atomic.Bool
+	panics.Store(true)
 	directory := newAlertCredentialDirectory(func(context.Context, int) ([]*model.AlertTypes, bool, error) {
-		panic("synthetic loader panic")
+		if panics.Load() {
+			panic("synthetic loader panic")
+		}
+		return []*model.AlertTypes{{Name: "known_alert", PushToken: "token"}}, true, nil
 	}, 10, time.Second)
+	clock := new(steppedClock)
+	directory.now = clock.Now
 
 	require.Equal(t, credentialUnverifiable, directory.check(t.Context(), glog.Shared, "known_alert", "token"))
-	require.False(t, directory.knowsName("known_alert"))
+	require.Nil(t, directory.readDone, "a panicking read still ends")
+
+	panics.Store(false)
+	clock.advance(time.Second)
+	require.Equal(t, credentialKnown, directory.check(t.Context(), glog.Shared, "known_alert", "token"))
 }
 
 // TestCloudMonitoringWebhookSharesMutationDirectory keeps one credential copy

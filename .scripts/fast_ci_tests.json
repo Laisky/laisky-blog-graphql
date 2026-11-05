@@ -36,7 +36,9 @@
       "TestCloudMonitoringDirectoryFollowsStorage",
       "TestCloudMonitoringRefusalsBoundStorage",
       "TestCanceledContextDoesNotSpendDeliveryBudget",
-      "TestAlertCredentialDirectoryRejectsNilLoaderEntry"
+      "TestAlertCredentialDirectoryRejectsNilLoaderEntry",
+      "TestAlertCredentialDirectoryBoundsReadWaiters",
+      "TestAlertEntrypointsBoundWaitingOnSlowDirectoryRead"
     ]
   },
   {

@@ -245,10 +245,11 @@ func TestCloudMonitoringDirectoryFollowsStorage(t *testing.T) {
 	})
 }
 
-// TestAlertCredentialDirectorySharesOneRead proves concurrent misses wait for a
-// single read, so neither a cold start nor a guessing burst multiplies storage
-// reads, and a valid credential arriving mid-read is not answered from the copy
-// being replaced.
+// TestAlertCredentialDirectorySharesOneRead proves concurrent misses within the
+// waiting limit wait for a single read, so neither a cold start nor a guessing
+// burst multiplies storage reads, and a valid credential arriving mid-read is
+// not answered from the copy being replaced. Misses past the limit are covered
+// by TestAlertCredentialDirectoryBoundsReadWaiters.
 func TestAlertCredentialDirectorySharesOneRead(t *testing.T) {
 	release := make(chan struct{})
 	var mu sync.Mutex
@@ -266,7 +267,8 @@ func TestAlertCredentialDirectorySharesOneRead(t *testing.T) {
 	}, 10, time.Hour)
 	logger := glog.Shared
 
-	const callers = 50
+	// One waiting place stays free for the canceled caller below.
+	const callers = maxAlertCredentialReadWaiters - 1
 	verdicts := make([]credentialVerdict, callers)
 	var wg sync.WaitGroup
 	for i := range callers {
@@ -334,15 +336,15 @@ func TestAlertCredentialDirectoryRejectsNilLoaderEntry(t *testing.T) {
 		}
 		return alerts, true, nil
 	}, 10, time.Hour)
-	directory.read(context.Background(), glog.Shared)
+	readDirectory(directory)
 	malformed = true
 	directory.readAt = time.Time{}
-	require.NotPanics(t, func() { directory.read(context.Background(), glog.Shared) })
+	require.NotPanics(t, func() { readDirectory(directory) })
 	verdict, _ := directory.lookup(directory.digest("missing", "token"))
 	require.Equal(t, credentialUnverifiable, verdict)
 	verdict, _ = directory.lookup(directory.digest("valid", "valid-token"))
 	require.Equal(t, credentialKnown, verdict, "a failed refresh retains the previous good copy")
-	require.False(t, directory.reading)
+	require.Nil(t, directory.readDone, "a failed read ends")
 }
 
 // BenchmarkAlertCredentialDirectoryMiss distinguishes a hot miss from a full
@@ -362,7 +364,7 @@ func BenchmarkAlertCredentialDirectoryMiss(b *testing.B) {
 				directory := newAlertCredentialDirectory(func(context.Context, int) ([]*model.AlertTypes, bool, error) {
 					return alerts, true, nil
 				}, size, time.Hour)
-				directory.read(context.Background(), glog.Shared)
+				readDirectory(directory)
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {

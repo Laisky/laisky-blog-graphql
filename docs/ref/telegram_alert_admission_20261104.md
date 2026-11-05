@@ -58,6 +58,48 @@ misses are separately bounded to one read per second, with an immediate refresh
 after a local credential change. See the [delivery manual](../manual/telegram_alert_delivery.md)
 for the entrypoint-specific response behavior.
 
+## Bounded waiting on directory reads (checked 2026-11-05)
+
+`golang.org/x/sync/singleflight` (v0.24.0, the latest) `DoChan` makes a
+buffered channel for every caller and appends it to the in-flight call's
+`chans`. The channels are released only when the call returns
+(`singleflight.go` L122, L129 and L176–177). A caller that stops waiting on its
+context still leaves its channel behind, and `Forget` only deletes the map key.
+golang/go has no open proposal for removable or capped waiters. Tailscale's
+fork adds `DoChanContext`, but it cancels only the shared work and still does
+not limit waiters.
+<https://github.com/golang/sync/blob/v0.24.0/singleflight/singleflight.go>
+
+Overload guidance asks for small, bounded queues and early rejection:
+
+- AWS Builders' Library: "When a server approaches overload, it should start
+  rejecting excess requests." Also: "Early rejection is important because it's
+  the cheapest place to drop excess traffic."
+  <https://builder.aws.com/content/3Eun1EEyX6p2e3VYNyRLSJzLuMV/using-load-shedding-to-avoid-overload>
+- Google SRE, *Addressing Cascading Failures*: it is "usually better to have
+  small queue lengths relative to the thread pool size". Also: "fail early and
+  cheaply".
+  <https://sre.google/sre-book/addressing-cascading-failures/>
+- RFC 5861 §3: a cache "SHOULD attempt to revalidate it while still serving
+  stale responses (i.e., without blocking)". Caffeine's refresh returns the old
+  value while one deduplicated refresh is in flight.
+  <https://www.rfc-editor.org/rfc/rfc5861.html>
+  <https://github.com/ben-manes/caffeine/wiki/Refresh>
+
+The directory therefore runs one read at a time and signals its end by closing a
+single channel. The Go memory model orders a close before any receive it
+unblocks, so a woken waiter sees the new copy (<https://go.dev/ref/mem>). At most
+`maxAlertCredentialReadWaiters` (32) misses wait, admitted by a non-blocking
+buffered-channel semaphore. Every other miss answers at once from the copy as it
+stands and takes the bounded fallback lookup.
+
+This deliberately mixes pure stale-while-revalidate with waiting. A miss can be
+a credential issued a moment ago, or the start of a cold-start burst. A small
+number of waiters lets those reach storage through the directory instead of
+spending the fallback budget. The limit is at least the shared delivery burst a
+typical deployment configures, so waiting is not what limits a burst of genuine
+deliveries.
+
 ## Canonical keys
 
 OWASP gives no normalization rule for rate-limit keys, but two CVEs show alias

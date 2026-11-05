@@ -64,7 +64,12 @@ Authentication and throttling run in this order:
 The directory reads at most 10,000 oldest credentials and refreshes on misses at
 most once per second, or immediately following a change in this process. Failed
 reads retain known pairs and retry later. MongoDB remains authoritative for every
-accepted credential.
+accepted credential. One read runs at a time, and at most 32 misses wait for it.
+A miss past that limit does not wait: it answers from the copy as it stands, so
+a pair the copy lacks takes the bounded fallback at once. A slow read therefore
+holds at most 32 requests, however many arrive. Known pairs never wait. When
+misses go past the limit, a WARN entry, written at most once a minute, reports
+the limit and the running total.
 
 Budgets are token buckets that refill from elapsed time when read; they run no
 goroutine and need no shutdown. Every budget starts full, at its burst. Earlier
@@ -223,6 +228,8 @@ over many addresses, can consume the bounded authoritative fallback budget.
 That can delay credentials absent from the directory. The separate directory
 refresh is normally limited to one read a second on misses, with an immediate
 refresh after a local credential change; it is not the fallback lookup limit.
+At most 32 requests wait for a refresh; the rest go straight to the fallback,
+so a slow MongoDB read cannot accumulate waiting requests.
 
 ### Delivery guarantees
 

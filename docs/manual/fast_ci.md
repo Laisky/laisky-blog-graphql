@@ -36,7 +36,9 @@ and selected tests must be deliberately reviewed when changing the manifest.
 
 The Telegram selections also cover cancellation after refill, overlapping
 reservations, isolation of invalid credentials from delivery capacity, remote
-credential first use, canceled contexts, and malformed directory loader results.
+credential first use, canceled contexts, malformed directory loader results, and
+the bound on requests waiting for a slow directory read, both in the directory
+and through the GraphQL and webhook entrypoints.
 The manual sweep benchmarks can be run with
 `go test ./library/throttle -run '^$' -bench 'Benchmark(SweepRetainedTitles|AdmissionDuringSweep)' -benchmem`.
 On a Windows Ryzen 7 5700G, two 500 ms runs scanning retained, non-full buckets
@@ -47,8 +49,13 @@ latency. Sweeps hold the throttle mutex, so production latency depends on load.
 For comparison, forced credential-directory refreshes over an in-memory loader
 took 2.331 ms and allocated 1.24 MB for 1,000 entries, and took 16.09 ms and
 allocated 12.11 MB for 10,000 entries. This was one 1-second run while other
-packages compiled. These measurements exclude MongoDB and do not establish
-production latency or demonstrate a performance improvement:
+packages compiled. The directory no longer keeps a second digest per alert name.
+After that change, three 1-second runs on a Linux 16-thread host took 0.96–1.02 ms
+and allocated 0.63 MB at 1,000 entries, and took 8.5–9.2 ms and allocated
+6.18 MB at 10,000 entries. On the same host and runs, the previous code took
+1.86–1.89 ms (1.24 MB) and 17.7–18.6 ms (12.11 MB). A hot miss took 0.8–1.0 µs
+both before and after. These measurements exclude MongoDB and do not establish
+production latency:
 
 ```sh
 go test ./internal/web/telegram/controller -run '^TestAlertCredentialDirectoryRejectsNilLoaderEntry$' -bench '^BenchmarkAlertCredentialDirectoryMiss$' -benchtime=1s -count=1

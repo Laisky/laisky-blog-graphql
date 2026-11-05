@@ -134,7 +134,10 @@ use a separate bounded authoritative lookup, allowing remote token rotations
 to work before refresh. That budget permits one lookup per second, a burst of
 five and five concurrent lookups; saturation yields a retryable 503. Directory
 refresh on misses is separately limited to once per second, except after a
-local credential change. These gateway references informed the caching design:
+local credential change. At most 32 misses wait for a refresh. The rest take the
+fallback at once, so a slow refresh cannot accumulate waiting requests (see
+[admission notes](telegram_alert_admission_20261104.md)). These gateway
+references informed the caching design:
 
 - Kong caches datastore misses as well as hits: "Kong Gateway also caches
   database misses… Creation (`POST`, `PUT`) will invalidate cached database
