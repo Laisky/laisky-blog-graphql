@@ -125,19 +125,19 @@ func configureAlertThrottle(t *testing.T, totalPerSec, totalBurst, eachPerSec, e
 // resource leak: the mutation used to build a per-type rate limiter, with a refill
 // goroutine that never stops, for every distinct type string before checking the
 // token, so an anonymous caller grew goroutines and memory without bound. Neither
-// a working credential directory, which refuses the types, nor a degraded one,
-// which sends them to storage, may leave state behind.
+// a working nor a degraded directory may leave per-type state behind when
+// unknown credentials use the bounded fallback.
 func TestAlertThrottleUnauthenticatedTypesDoNotLeak(t *testing.T) {
 	const probes = 1000
 	for _, tc := range []struct {
 		name         string
 		directoryErr error
 	}{
-		{"directory refuses", nil},
+		{"directory available", nil},
 		{"directory unavailable", errors.New("synthetic directory outage")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// The shared budget admits every probe, so each one could reach the credential lookup.
+			// The delivery budget is large; fallback independently bounds credential lookups.
 			configureAlertThrottle(t, 100, probes, 100, 100)
 			svc := &tokenGatedTelegram{tokens: map[string]string{"known_type": "synthetic-token"}, directoryErr: tc.directoryErr}
 			resolver := NewMutationResolver(svc)

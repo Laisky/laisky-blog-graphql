@@ -13,8 +13,8 @@ includes security fixes. Historical timing measurements below retain the
 toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
-45 named unit tests in `cmd`, `library/log`, `library/throttle`, `internal/web`,
-`internal/library/toolpolicy`,
+the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
+`library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller` and
 `internal/web/telegram/service`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
@@ -116,7 +116,7 @@ frontend test/build acceptance, and the three-run network security race suite.
 CodeQL no longer runs on master/develop push or PR events or its former Saturday
 schedule. This extends PR #56's earlier cadence change; it deletes no coverage.
 
-`Linter / check` remains the single automatic formatting and 43-essential-unit
+`Linter / check` remains the single automatic formatting and essential-unit
 gate on every PR and master/develop push. `ci.yml` image publishing/deployment
 and the path-filtered `deployment-contract.yml` safety job stay byte-for-byte
 unchanged. Dependency/database acceptance, memory benchmarks and evaluation

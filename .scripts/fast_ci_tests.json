@@ -33,6 +33,8 @@
       "TestUnknownCredentialWorkIsBounded",
       "TestUnknownCredentialConcurrencyIsBounded",
       "TestRemoteCredentialFirstUse",
+      "TestCloudMonitoringDirectoryFollowsStorage",
+      "TestCloudMonitoringRefusalsBoundStorage",
       "TestCanceledContextDoesNotSpendDeliveryBudget",
       "TestAlertCredentialDirectoryRejectsNilLoaderEntry"
     ]

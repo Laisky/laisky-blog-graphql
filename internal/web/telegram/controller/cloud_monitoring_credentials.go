@@ -26,8 +26,8 @@ const (
 	// Alert types are self-service, so storage could hold more; the oldest are
 	// kept, and credentials beyond them require a bounded storage lookup.
 	maxMirroredAlertCredentials = 10000
-	// alertCredentialRefreshInterval is the least time between directory reads,
-	// so guessing costs storage at most one read per interval at any rate.
+	// alertCredentialRefreshInterval bounds reads on misses, independently of
+	// authoritative lookups. A local credential change can trigger an earlier read.
 	alertCredentialRefreshInterval = time.Second
 	// alertCredentialLoadTimeout bounds one directory read. The read is shared by
 	// every request waiting on it, so it does not end with the request that
@@ -46,8 +46,8 @@ const (
 type credentialVerdict int
 
 const (
-	// credentialUnknown matches no alert type in a current, complete copy, so
-	// the credential is refused without a storage lookup.
+	// credentialUnknown matches no alert type in a current, complete copy. It
+	// still requires a bounded authoritative lookup before refusal.
 	credentialUnknown credentialVerdict = iota
 	// credentialKnown matches an alert type in the copy. Storage still decides.
 	credentialKnown
@@ -88,7 +88,7 @@ type alertCredentialDirectory struct {
 	// names the keyed digest of every copied name.
 	digests, names map[[sha256.Size]byte]struct{}
 	// healthy is whether the last read succeeded, complete whether it copied
-	// every alert type. Only a healthy, complete copy can refuse a credential.
+	// every alert type. Only a healthy, complete copy can identify a miss as unknown.
 	healthy, complete bool
 	// readAt is when the last read started. Zero lets the next miss read.
 	readAt time.Time

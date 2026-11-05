@@ -60,7 +60,7 @@ func (r *MutationResolver) authenticateAlert(ctx context.Context, alertName, tok
 	if err != nil {
 		return nil, err
 	}
-	// Returns the reserved per-type send unless the credentials match below.
+	// Returns the safely refundable per-type capacity unless credentials match.
 	defer admission.Cancel()
 	alert, err := r.verifyAlertCredential(ctx, verdict, alertName, token)
 	if err != nil {
@@ -96,8 +96,8 @@ func (r *MutationResolver) verifyUnknownCredential(ctx context.Context, verdict 
 
 // verifyAlertCredential checks a credential against storage, which decides. If
 // storage refuses a pair the directory knew, as after a token rotation, the pair
-// is dropped and the next miss rereads, so the new token works on its first
-// use. A refusal of a pair the directory could not decide on drops nothing, so
+// is dropped and the next miss rereads. A new token may also use the bounded
+// fallback, which can be saturated. A refusal of an undecided pair drops nothing, so
 // it cannot force rereads. Both alert entrypoints use it.
 func (r *MutationResolver) verifyAlertCredential(ctx context.Context, verdict credentialVerdict, alertType, token string) (*model.AlertTypes, error) {
 	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, alertType)

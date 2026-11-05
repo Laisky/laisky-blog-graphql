@@ -127,7 +127,7 @@ func TestCloudMonitoringDirectoryReads(t *testing.T) {
 		require.Equal(t, 1, svc.directoryLoads())
 		clock.advance(alertCredentialRefreshInterval - time.Nanosecond)
 		guess(t, server.URL, "unknown", guessingRounds)
-		require.Equal(t, 1, svc.directoryLoads(), "a current copy refuses without reading")
+		require.Equal(t, 1, svc.directoryLoads(), "a current copy avoids another directory read")
 		clock.advance(time.Nanosecond)
 		guess(t, server.URL, "unknown", guessingRounds)
 		require.Equal(t, 2, svc.directoryLoads())
@@ -230,7 +230,7 @@ func TestCloudMonitoringDirectoryFollowsStorage(t *testing.T) {
 			"a failed read keeps the credentials the copy already knew")
 	})
 
-	t.Run("a truncated directory cannot refuse", func(t *testing.T) {
+	t.Run("a truncated directory uses bounded fallback", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := new(webhookTelegram)
 		svc.addAlertType("a-older", "token-a")

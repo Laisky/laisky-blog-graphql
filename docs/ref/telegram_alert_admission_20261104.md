@@ -42,17 +42,21 @@ cause a denial of service by locking out other users' accounts". ASVS 5.0 6.1.1
 asks that rate limiting be configured to "prevent malicious account lockout".
 <https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html>
 
-This is why only authenticated sends keep a per-type send spent. A reservation
-made before the lookup is returned when the lookup fails. That bounds what an
-unauthenticated caller can hold to the lookups it has in flight, and each of
-those is paid for from the shared budget.
+Both entrypoints share an in-memory credential directory, but MongoDB remains
+authoritative. In the GraphQL path, a known pair reserves shared and per-type
+delivery capacity before the lookup; a failed check refunds the per-type send
+only to the extent safe after intervening refill and admissions. The shared send
+remains spent. The webhook checks credentials before spending delivery capacity.
 
-The shared budget is itself a pre-auth lever: every guess spent a shared send and
-a lookup, so an anonymous flood throttled every genuine alert. The GraphQL
-mutation therefore checks the Cloud Monitoring webhook's in-memory credential
-directory first. A guess that matches no stored pair is refused in memory and
-spends nothing. Only pairs the directory knows, or cannot decide on (read failed,
-copy truncated), reach the budgets. Both entrypoints share one directory.
+An unknown or unverifiable pair may be a remotely rotated credential. It uses a
+separate bounded authoritative lookup: one per second with a burst of five and
+at most five in flight. A failed lookup spends no delivery capacity; a successful
+lookup proceeds to delivery admission. Exhaustion returns a retryable throttle
+response, so a guessing flood can delay first-use or remotely rotated credentials,
+while cached known pairs do not use that fallback budget. Directory refreshes on
+misses are separately bounded to one read per second, with an immediate refresh
+after a local credential change. See the [delivery manual](../manual/telegram_alert_delivery.md)
+for the entrypoint-specific response behavior.
 
 ## Canonical keys
 

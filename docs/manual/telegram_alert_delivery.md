@@ -47,10 +47,11 @@ Authentication and throttling run in this order:
    runes (token) is refused with the DAO's `sanitize alert type: …` or
    `sanitize push token: …` error. Nothing is spent. Every later step uses that
    canonical name, so `" name "` and `"name"` share one budget.
-2. **Credential directory.** Both entrypoints share a keyed-digest directory. A
-   known pair reserves delivery capacity before its authoritative MongoDB check;
-   an invalid or canceled check releases any per-type reservation that has not
-   already been replaced by refill. The shared send pays for the check.
+2. **Credential directory.** Both entrypoints share a keyed-digest directory. In
+   GraphQL, a known pair reserves delivery capacity before its authoritative
+   MongoDB check; an invalid or canceled check releases any per-type reservation
+   that has not already been replaced by refill. The shared send pays for the
+   check. The webhook checks credentials before spending delivery capacity.
 3. **Bounded fallback.** Unknown or unverifiable pairs use a separate budget of
    one MongoDB lookup per second, with burst and concurrent lookup limits of five.
    Only a successful lookup can spend delivery capacity. This lets a token
@@ -72,9 +73,11 @@ burst, so a start at the burst only matches what an idle type already had. A
 per-type budget that has refilled fully
 is dropped, which changes no decision because a missing budget is a full one, so
 retained state is bounded by recent sends rather than by the number of alert
-types. Validating the throttle settings at startup builds nothing. Every refusal
-returns `deny by throttle`; the server logs which budget refused at debug level
-and a throttle summary with counters at most once a minute.
+types. Validating the throttle settings at startup builds nothing. A GraphQL
+delivery-budget refusal returns `deny by throttle`; the server logs which budget
+refused at debug level and a throttle summary with counters at most once a minute.
+Fallback saturation returns the same GraphQL error without that delivery-budget
+summary.
 
 Text success requires a provider acknowledgement whose text exactly matches the
 sent message. Documents require a message ID and file ID; if file size is present
@@ -190,7 +193,7 @@ Responses carry a status only:
 | 401 | Missing or refused credentials, with a `WWW-Authenticate` challenge | Send credentials; Monitoring needs this first response |
 | 413 | Body over 1 MiB, refused rather than truncated | Stop |
 | 429 | The alert type or total throttle denied the send; carries `Retry-After` | Retry later |
-| 503 | Telegram service, storage (including the directory read) or throttle unavailable, an alert type past the directory's oldest 10,000, delivery deadline reached, or some subscribers not confirmed; carries `Retry-After` when Telegram gave one | Retry; subscribers already accepted may see a duplicate |
+| 503 | Telegram service, authoritative storage or throttle unavailable; fallback lookup capacity exhausted; delivery deadline reached; or some subscribers not confirmed. Fallback exhaustion carries `Retry-After: 1`; provider retry information is forwarded when available | Retry; subscribers already accepted may see a duplicate |
 
 Logs carry only the alert type, the derived state, and the incident ID when it
 is 1–64 letters, digits, `.`, `_` or `-` (otherwise only its length). Policy,
@@ -199,9 +202,10 @@ decode error quotes the body. Refused credentials are counted rather than
 logged one by one: `refuse cloud monitoring credentials` is a WARN entry written
 at most once a minute while credentials are refused, with `refused_total`
 counting every refusal since startup. Alert on that message: while it repeats,
-either a channel's password is wrong or someone is guessing. Guessing costs no
-MongoDB lookup and keeps no channel waiting, so the alert is about finding the
-cause, not about lost deliveries.
+either a channel's password is wrong or someone is guessing. Guesses can consume
+the separate bounded MongoDB lookup budget and delay credentials that are not
+yet in the directory, including first-use or remotely rotated credentials.
+Already cached pairs do not consume that fallback budget.
 
 ### Edge rate limit
 
@@ -214,9 +218,11 @@ Monitoring's own bursts: one channel can receive up to 1,000 notifications at
 once, and each may first draw a 401 challenge.
 
 The rule only limits the request volume one address can send. It is not what
-keeps channels delivering: guessers below any threshold, or spread over many
-addresses, still cost MongoDB at most one directory read a second and lock out
-no channel, because the directory refuses them in memory.
+keeps channels delivering by itself: guessers below any threshold, or spread
+over many addresses, can consume the bounded authoritative fallback budget.
+That can delay credentials absent from the directory. The separate directory
+refresh is normally limited to one read a second on misses, with an immediate
+refresh after a local credential change; it is not the fallback lookup limit.
 
 ### Delivery guarantees
 

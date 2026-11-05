@@ -127,12 +127,14 @@ had filled the exemption set, and while one address guessed 10 times a second,
 below any edge threshold that passes Monitoring's bursts. The cap was a lockout
 by construction, because whoever spends a shared budget decides who waits.
 
-The receiver now removes the reason for the cap: refusals cost no lookup. It keeps
-an in-memory directory of every alert type's name and push token as keyed
-digests, reads it at most once a second on a miss, and refuses a credential the
-directory does not hold without querying MongoDB. A credential it holds is still
-checked against MongoDB, so revocation stays immediate. This is how gateways
-treat credentials:
+The receiver now keeps an in-memory directory of up to the oldest 10,000 alert
+types' names and push tokens as keyed digests. A known pair is still checked
+against MongoDB, so revocation stays immediate. Unknown or unverifiable pairs
+use a separate bounded authoritative lookup, allowing remote token rotations
+to work before refresh. That budget permits one lookup per second, a burst of
+five and five concurrent lookups; saturation yields a retryable 503. Directory
+refresh on misses is separately limited to once per second, except after a
+local credential change. These gateway references informed the caching design:
 
 - Kong caches datastore misses as well as hits: "Kong Gateway also caches
   database misses… Creation (`POST`, `PUT`) will invalidate cached database
@@ -149,16 +151,16 @@ treat credentials:
   nginx's `auth_basic_user_file` reads a local file
   ([module docs](https://nginx.org/en/docs/http/ngx_http_auth_basic_module.html)).
 
-Unlike Kong's per-key negative cache, the directory copies the whole collection,
-so an attacker spraying new names gains nothing; the collection is small, and
-the directory keeps its oldest 10,000 entries. Google still documents no webhook
-retry statuses, count, window or `Retry-After` handling (notification options,
-troubleshooting and channel API pages, all updated 2026-10-26). Any non-2xx
-answer may be the one that drops a notification, so a valid sender must never
-get one that someone else's guesses caused.
+Unlike Kong's per-key negative cache, this directory holds a bounded prefix of
+the collection. Guessing can exhaust the separate fallback budget and delay a
+first-use, uncached, or remotely rotated credential, though known cached pairs
+do not compete for that budget. Google still documents no webhook retry
+statuses, count, window or `Retry-After` handling (notification options,
+troubleshooting and channel API pages, all updated 2026-10-26). A non-2xx
+response may therefore result in a dropped notification; the fallback trades
+bounded authentication work for this availability risk.
 
-A per-address limit in the process was rejected, and with the directory it is not
-needed. The gateway uses gin's default
+A per-address limit in the process was rejected. The gateway uses gin's default
 proxy trust, so `ClientIP()` returns whatever `X-Forwarded-For` a caller sends, and
 an attacker could rotate it freely.
 
