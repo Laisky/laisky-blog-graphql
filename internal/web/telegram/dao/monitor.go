@@ -4,6 +4,7 @@ package dao
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -396,7 +397,7 @@ func (d *Monitor) LoadAlertCredentials(ctx context.Context, limit int) (alerts [
 		return nil, false, errors.Wrap(err, "find alert credentials")
 	}
 	defer func() {
-		if closeErr := cur.Close(context.WithoutCancel(ctx)); closeErr != nil && err == nil {
+		if closeErr := closeCursor(ctx, cur); closeErr != nil && err == nil {
 			err = errors.Wrap(closeErr, "close alert credentials cursor")
 		}
 	}()
@@ -425,6 +426,28 @@ func (d *Monitor) LoadAlertCredentials(ctx context.Context, limit int) (alerts [
 		logger.Warn("skip malformed alert types", zap.Int("skipped", skipped))
 	}
 	return alerts, read <= limit, nil
+}
+
+// cursorCloseTimeout bounds closing a cursor that was not read to its end,
+// which costs a killCursors round trip. A server cursor that is never killed
+// still closes on its own after cursorTimeoutMillis (10 minutes by default).
+const cursorCloseTimeout = 2 * time.Second
+
+// cursorCloser is the part of *mongo.Cursor that closeCursor uses.
+type cursorCloser interface {
+	Close(ctx context.Context) error
+}
+
+// closeCursor closes cur under a deadline of its own. The deadline does not
+// end with ctx, so a read cut short by its deadline or by cancellation still
+// kills its server cursor. But it is short and fixed, because
+// context.WithoutCancel alone has no deadline: on a stalled connection the close
+// would then block until the driver's own connection timeouts, long after the
+// read's deadline.
+func closeCursor(ctx context.Context, cur cursorCloser) error {
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cursorCloseTimeout)
+	defer cancel()
+	return errors.WithStack(cur.Close(closeCtx))
 }
 
 func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,

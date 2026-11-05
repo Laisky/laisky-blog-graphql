@@ -58,20 +58,50 @@ Authentication and throttling run in this order:
    one MongoDB lookup per second, with burst and concurrent lookup limits of five.
    Only a successful lookup can spend delivery capacity. This lets a token
    created or rotated on another replica work before the directory refreshes.
-   When the fallback budget is exhausted, GraphQL returns `deny by throttle`
+   A pair the fallback lookup accepts is remembered, so its later uses are
+   known and do not spend the fallback budget again. When the fallback budget is exhausted, GraphQL returns `deny by throttle`
    and the webhook returns 503: callers should retry. Under sustained guessing,
    first-use credentials may be delayed; known cached credentials retain their
    delivery capacity. Failed checks never create per-type delivery state.
 
-The directory reads at most 10,000 oldest credentials and refreshes on misses at
-most once per second, or immediately following a change in this process. Failed
-reads retain known pairs and retry later. MongoDB remains authoritative for every
-accepted credential. One read runs at a time, and at most 32 misses wait for it.
+The directory reads at most 10,000 oldest credentials. A miss starts a read
+only when the copy is due:
+
+- every 30 seconds for a healthy copy, however many misses arrive, so anonymous
+  traffic cannot make MongoDB scan the collection more often;
+- one second after a failed read, or after an alert type is created or re-keyed
+  in this process;
+- at once after storage refuses a pair the copy held, such as a rotated token.
+
+Failed reads retain known pairs. MongoDB remains authoritative for every
+accepted credential. Each read has a 5-second deadline that the directory
+enforces itself. At the deadline the read fails and its waiters continue even
+if the loader is still blocked, for example closing its cursor on a stalled
+connection. No other read starts until that loader returns, and its late result
+is dropped. Closing an unfinished cursor has its own 2-second deadline, so a
+stalled `killCursors` no longer waits for the driver's 30-second connection
+timeouts. One read runs at a time, and at most 32 misses wait for it.
 A miss past that limit does not wait: it answers from the copy as it stands, so
 a pair the copy lacks takes the bounded fallback at once. A slow read therefore
 holds at most 32 requests, however many arrive. Known pairs never wait. When
 misses go past the limit, a WARN entry, written at most once a minute, reports
 the limit and the running total.
+
+After a read, an INFO entry `alert credential directory reads`, written at most
+once a minute, gives the counters since startup:
+
+- reads by reason (`initial`, `interval`, `local_change`, `retry`,
+  `storage_refusal`);
+- failed and timed-out reads, and late loaders whose results were dropped;
+- alert types copied in total and by the last read;
+- the last and the longest read's duration;
+- pairs remembered after the fallback accepted them;
+- misses that did not wait.
+
+Alert on `timed_out_total` or `late_loaders_total` growing. A rising
+`reads_interval` with a rising `alert_types_copied_total` shows how much
+scanning the refresh cadence costs. Each copied alert type allocates about
+0.6 KB while a read runs.
 
 Budgets are token buckets that refill from elapsed time when read; they run no
 goroutine and need no shutdown. Every budget starts full, at its burst. Earlier
@@ -230,10 +260,10 @@ The rule only limits the request volume one address can send. It is not what
 keeps channels delivering by itself: guessers below any threshold, or spread
 over many addresses, can consume the bounded authoritative fallback budget.
 That can delay credentials absent from the directory. The separate directory
-refresh is normally limited to one read a second on misses, with an immediate
-refresh after a local credential change; it is not the fallback lookup limit.
-At most 32 requests wait for a refresh; the rest go straight to the fallback,
-so a slow MongoDB read cannot accumulate waiting requests.
+refresh happens at most every 30 seconds on misses. It runs sooner after a
+failed read or a local credential change, and it is not the fallback lookup
+limit. At most 32 requests wait for a refresh; the rest go straight to the
+fallback, so a slow MongoDB read cannot accumulate waiting requests.
 
 ### Delivery guarantees
 

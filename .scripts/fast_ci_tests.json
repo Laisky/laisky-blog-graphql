@@ -40,7 +40,18 @@
       "TestAlertCredentialDirectoryBoundsReadWaiters",
       "TestAlertEntrypointsBoundWaitingOnSlowDirectoryRead",
       "TestCloudMonitoringRequestEndedBeforeAdmissionSpendsNoSend",
-      "TestAlertRequestEndedDuringLookupKeepsNoTypeSend"
+      "TestAlertRequestEndedDuringLookupKeepsNoTypeSend",
+      "TestAlertCredentialDirectoryAnonymousMissesCannotDriveFrequentReads",
+      "TestAlertCredentialDirectoryRereadsPromptlyWhenItMatters",
+      "TestAlertFallbackVerifiedCredentialIsRemembered",
+      "TestAlertCredentialDirectoryReadDeadlineHoldsWhenLoaderOverruns",
+      "TestAlertCredentialDirectoryReadSummary"
+    ]
+  },
+  {
+    "package": "./internal/web/telegram/dao",
+    "tests": [
+      "TestCloseCursorIsBoundedAfterTheReadEnds"
     ]
   },
   {

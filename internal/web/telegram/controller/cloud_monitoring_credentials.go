@@ -26,9 +26,16 @@ const (
 	// Alert types are self-service, so storage could hold more; the oldest are
 	// kept, and credentials beyond them require a bounded storage lookup.
 	maxMirroredAlertCredentials = 10000
-	// alertCredentialRefreshInterval bounds reads on misses, independently of
-	// authoritative lookups. A local credential change can trigger an earlier read.
-	alertCredentialRefreshInterval = time.Second
+	// alertCredentialRefreshInterval is the least time between reads of a healthy
+	// copy. Misses start reads, and anyone can send a miss, so this interval, not
+	// the miss rate, sets how often storage is scanned. Meanwhile a credential the
+	// copy lacks is verified through the bounded fallback lookup and remembered.
+	alertCredentialRefreshInterval = 30 * time.Second
+	// alertCredentialRetryInterval is the least time between reads after a failed
+	// read, or after this process created or re-keyed an alert type, so either is
+	// read on the next miss without letting storage be scanned more than once a
+	// second.
+	alertCredentialRetryInterval = time.Second
 	// alertCredentialLoadTimeout bounds one directory read. The read is shared by
 	// every request waiting on it, so it does not end with the request that
 	// started it.
@@ -71,18 +78,25 @@ const (
 type alertCredentialLoader func(ctx context.Context, limit int) (alerts []*model.AlertTypes, complete bool, err error)
 
 // alertCredentialDirectory is an in-memory copy of every alert type's
-// credential, held as keyed digests. It never
-// authenticates on its own: a credential it knows is still checked against
-// storage, so a revoked token is refused at once. Cache misses may use a
-// separately bounded authoritative lookup, which permits a remote rotation to
-// work before the next directory refresh. One directory and fallback budget
-// serve both the GraphQL alert mutation and the Cloud Monitoring webhook.
+// credential, held as keyed digests. It never authenticates on its own: a
+// credential it knows is still checked against storage, so a revoked token is
+// refused at once. A pair it lacks takes a separately bounded authoritative
+// lookup, and a pair storage accepts that way is remembered, so a credential
+// created or rotated by another process needs that lookup once rather than until
+// the next read. Reads are spaced by alertCredentialRefreshInterval whatever the
+// request rate, and each is bounded by its own deadline. One directory and
+// fallback budget serve both the GraphQL alert mutation and the Cloud Monitoring
+// webhook.
 type alertCredentialDirectory struct {
-	load     alertCredentialLoader
-	now      func() time.Time
-	interval time.Duration
-	limit    int
-	key      []byte
+	load alertCredentialLoader
+	now  func() time.Time
+	// interval spaces reads of a healthy copy, and retryInterval reads after a
+	// failed read or a local credential change.
+	interval, retryInterval time.Duration
+	// loadTimeout bounds one read; alertCredentialLoadTimeout outside tests.
+	loadTimeout time.Duration
+	limit       int
+	key         []byte
 	// waiters holds one token per miss waiting for a read. A miss that finds it
 	// full answers without waiting.
 	waiters chan struct{}
@@ -93,6 +107,8 @@ type alertCredentialDirectory struct {
 	changes func() uint64
 
 	truncationLog rate.Sometimes
+	// summaryLog spaces the read summary.
+	summaryLog rate.Sometimes
 	// overflowLog spaces the warning about misses past the waiting limit, and
 	// overflows counts them.
 	overflowLog rate.Sometimes
@@ -112,6 +128,12 @@ type alertCredentialDirectory struct {
 	// Every waiting miss selects on the same channel, so waiting allocates
 	// nothing per request and a miss that stops waiting leaves nothing behind.
 	readDone chan struct{}
+	// loading is set from a read's start until its loader returns, which can be
+	// after the read's deadline ended it for its waiters. No read starts while it
+	// is set, so a loader that overruns its deadline never has company.
+	loading bool
+	// stats counts reads and remembered credentials for the read summary.
+	stats alertCredentialReadStats
 }
 
 // newAlertCredentialDirectory returns an empty directory that reads through load.
@@ -126,26 +148,27 @@ func newAlertCredentialDirectory(load alertCredentialLoader, limit int, interval
 		fallbackSlots: make(chan struct{}, 5),
 		now:           time.Now,
 		interval:      interval,
+		retryInterval: min(interval, alertCredentialRetryInterval),
+		loadTimeout:   alertCredentialLoadTimeout,
 		limit:         limit,
 		key:           key,
 		changes:       service.AlertCredentialChanges,
 		truncationLog: rate.Sometimes{Interval: alertCredentialTruncationLogInterval},
+		summaryLog:    rate.Sometimes{Interval: alertCredentialSummaryLogInterval},
 		overflowLog:   rate.Sometimes{Interval: alertCredentialWaitOverflowLogInterval},
 	}
 }
 
-// check returns what the directory can tell about a Basic credential. It trims
-// both parts, as ValidateTokenForAlertType does, so the copy never refuses a
-// credential storage would accept. A pair the copy lacks starts a read unless a
-// current one exists, and waits for it only while a waiting place is free (see
-// awaitRead); otherwise it answers from the copy as it stands. Either way the
-// caller sends a pair the copy lacks to the bounded fallback lookup.
+// check returns what the directory can tell about a Basic credential. A pair
+// the copy lacks starts a read when the copy is not current (see startRead), and
+// waits for it only while a waiting place is free (see awaitRead); otherwise it
+// answers from the copy as it stands. Either way the caller sends a pair the
+// copy lacks to the bounded fallback lookup.
 func (d *alertCredentialDirectory) check(ctx context.Context, logger glog.Logger, alertType, token string) credentialVerdict {
-	alertType, token = strings.TrimSpace(alertType), strings.TrimSpace(token)
-	if alertType == "" || token == "" || len(alertType) > maxCloudMonitoringCredentialBytes || len(token) > maxCloudMonitoringCredentialBytes {
+	sum, ok := d.pairDigest(alertType, token)
+	if !ok {
 		return credentialUnknown
 	}
-	sum := d.digest(alertType, token)
 	verdict, current := d.lookup(sum)
 	if verdict == credentialKnown || current {
 		return verdict
@@ -157,9 +180,8 @@ func (d *alertCredentialDirectory) check(ctx context.Context, logger glog.Logger
 	return verdict
 }
 
-// lookup answers from the copy as it stands, and reports whether the last read
-// finished and started within the interval, so the answer stands without
-// another read.
+// lookup answers from the copy as it stands, and reports whether the copy is
+// current (see currentLocked), so the answer stands without another read.
 func (d *alertCredentialDirectory) lookup(sum [sha256.Size]byte) (verdict credentialVerdict, current bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -173,30 +195,59 @@ func (d *alertCredentialDirectory) lookup(sum [sha256.Size]byte) (verdict creden
 	return credentialUnknown, current
 }
 
-// currentLocked reports whether no read is running, the last one started within
-// the interval, and this process created or re-keyed no alert type since. d.mu
-// must be held.
+// currentLocked reports whether the copy needs no read yet: none is running,
+// and the last one started within interval, or within retryInterval if it
+// failed or this process created or re-keyed an alert type since. A zero readAt,
+// before the first read or after storage refused a pair the copy held, needs a
+// read at once. d.mu must be held.
 func (d *alertCredentialDirectory) currentLocked() bool {
-	return d.readDone == nil && !d.readAt.IsZero() && d.now().Before(d.readAt.Add(d.interval)) && d.changes() == d.readChanges
+	if d.readDone != nil || d.readAt.IsZero() {
+		return false
+	}
+	spacing := d.interval
+	if !d.healthy || d.changes() != d.readChanges {
+		spacing = d.retryInterval
+	}
+	return d.now().Before(d.readAt.Add(spacing))
+}
+
+// readReasonLocked names why a read starts now, for the read summary. d.mu
+// must be held.
+func (d *alertCredentialDirectory) readReasonLocked() alertCredentialReadReason {
+	switch {
+	case d.stats.Reads == 0:
+		return readReasonInitial
+	case d.readAt.IsZero():
+		return readReasonStorageRefusal
+	case !d.healthy:
+		return readReasonRetry
+	case d.changes() != d.readChanges:
+		return readReasonLocalChange
+	default:
+		return readReasonInterval
+	}
 }
 
 // startRead returns a channel that is closed when the directory's read ends,
-// starting that read unless one is running. It returns nil when a read started
-// within the interval and this process changed no credential since, so the copy
-// already answers. The read runs on its own goroutine, shared by every miss, and
-// does not end with the request that started it. Only one read runs at a time.
+// starting that read unless one is running. It returns nil when the copy is
+// current, or when a loader that overran its deadline has not returned yet, so
+// the copy answers as it stands. The read runs on its own goroutine, shared by
+// every miss, and does not end with the request that started it. Only one
+// loader runs at a time.
 func (d *alertCredentialDirectory) startRead(ctx context.Context, logger glog.Logger) <-chan struct{} {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.readDone != nil {
 		return d.readDone
 	}
-	if d.currentLocked() {
+	if d.loading || d.currentLocked() {
 		return nil
 	}
+	reason := d.readReasonLocked()
 	done := make(chan struct{})
-	d.readAt, d.readChanges, d.readDone = d.now(), d.changes(), done
-	go d.read(context.WithoutCancel(ctx), logger, done)
+	d.readAt, d.readChanges, d.readDone, d.loading = d.now(), d.changes(), done, true
+	d.stats.started(reason)
+	go d.read(context.WithoutCancel(ctx), logger, reason, done)
 	return done
 }
 
@@ -224,69 +275,151 @@ func (d *alertCredentialDirectory) awaitRead(ctx context.Context, logger glog.Lo
 	}
 }
 
-// read replaces the copy with storage's alert types, then closes done. A failed
+// read replaces the copy with storage's alert types, then closes done. The
+// read's deadline is enforced here rather than trusted to the loader: once it
+// passes, the read fails and its waiters are released even if the loader is
+// still blocked, and whatever the loader returns later is dropped. A failed
 // read keeps the previous copy, so known credentials still reach storage, but
 // the copy no longer tells that a miss is unknown until a later read succeeds.
-// Errors are logged here, once per read, rather than by every waiting request.
-// A panic, as from a malformed loader result, fails the read: on this shared
-// goroutine it would otherwise end the process rather than one request.
-func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger, done chan struct{}) {
-	defer func() {
-		recovered := recover()
-		d.mu.Lock()
-		if recovered != nil {
-			d.healthy = false
-		}
-		d.readDone = nil
-		d.mu.Unlock()
-		// The copy is published before done is closed, so a woken miss sees it.
-		close(done)
-		if recovered != nil {
-			logger.Error("read alert credential directory", zap.Error(errors.Errorf("alert credential directory read panicked: %v", recovered)))
-		}
-	}()
-
-	readCtx, cancel := context.WithTimeout(ctx, alertCredentialLoadTimeout)
+// Each outcome is logged once, here, before the waiting requests are released,
+// rather than by every waiting request.
+func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger, reason alertCredentialReadReason, done chan struct{}) {
+	readCtx, cancel := context.WithTimeout(ctx, d.loadTimeout)
 	defer cancel()
-	alerts, complete, err := d.load(readCtx, d.limit)
-	if err != nil {
+	var once sync.Once
+	// finish publishes the read's outcome, reports it, and releases the
+	// waiters, once: either when the loader returns in time or at the deadline.
+	// The copy is published before done is closed, so a woken miss sees it.
+	finish := func(publish, report func()) {
+		once.Do(func() {
+			d.mu.Lock()
+			publish()
+			d.readDone = nil
+			d.mu.Unlock()
+			report()
+			d.logSummary(logger)
+			close(done)
+		})
+	}
+	expire := context.AfterFunc(readCtx, func() {
+		finish(func() {
+			d.healthy = false
+			d.stats.Failed++
+			d.stats.TimedOut++
+		}, func() {
+			logger.Error("read alert credential directory",
+				zap.Error(errors.Errorf("alert credential directory read did not finish within %s", d.loadTimeout)))
+		})
+	})
+
+	started := time.Now()
+	digests, alerts, complete, err := d.loadDigests(readCtx)
+	elapsed := time.Since(started)
+	if !expire() {
+		// The deadline already ended this read for its waiters. The loader has
+		// returned now, so another read may start; this result is dropped.
 		d.mu.Lock()
-		d.healthy = false
+		d.loading = false
+		d.stats.Late++
 		d.mu.Unlock()
-		logger.Error("read alert credential directory", zap.Error(err))
+		logger.Warn("drop alert credential directory read that returned after its deadline", zap.Duration("elapsed", elapsed))
 		return
 	}
-	digests := make(map[[sha256.Size]byte]struct{}, len(alerts))
-	for _, alert := range alerts {
+	if err != nil {
+		finish(func() {
+			d.loading, d.healthy = false, false
+			d.stats.Failed++
+			if errors.Is(err, context.DeadlineExceeded) {
+				d.stats.TimedOut++
+			}
+		}, func() {
+			logger.Error("read alert credential directory", zap.Error(err))
+		})
+		return
+	}
+	finish(func() {
+		d.loading = false
+		d.digests, d.healthy, d.complete = digests, true, complete
+		d.stats.copied(alerts, elapsed)
+	}, func() {
+		logger.Debug("read alert credential directory", zap.String("reason", string(reason)),
+			zap.Int("alert_types", alerts), zap.Bool("complete", complete), zap.Duration("elapsed", elapsed))
+		if !complete {
+			d.truncationLog.Do(func() {
+				logger.Error("alert credential directory holds only the oldest alert types; newer ones require bounded storage lookups",
+					zap.Int("limit", d.limit))
+			})
+		}
+	})
+}
+
+// loadDigests runs the loader and hashes its result. A panic, as from a
+// malformed loader result, becomes an error: on the directory's shared read
+// goroutine it would otherwise end the process rather than one request.
+func (d *alertCredentialDirectory) loadDigests(ctx context.Context) (digests map[[sha256.Size]byte]struct{}, alerts int, complete bool, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			digests, alerts, complete, err = nil, 0, false, errors.Errorf("alert credential directory read panicked: %v", recovered)
+		}
+	}()
+	loaded, complete, err := d.load(ctx, d.limit)
+	if err != nil {
+		return nil, 0, false, errors.WithStack(err)
+	}
+	digests = make(map[[sha256.Size]byte]struct{}, len(loaded))
+	for _, alert := range loaded {
 		if alert == nil {
-			d.mu.Lock()
-			d.healthy = false
-			d.mu.Unlock()
-			logger.Error("read alert credential directory", zap.Error(errors.New("alert credential loader returned a nil entry")))
-			return
+			return nil, 0, false, errors.New("alert credential loader returned a nil entry")
 		}
 		digests[d.digest(alert.Name, alert.PushToken)] = struct{}{}
 	}
-	d.mu.Lock()
-	d.digests, d.healthy, d.complete = digests, true, complete
-	d.mu.Unlock()
-	logger.Debug("read alert credential directory", zap.Int("alert_types", len(alerts)), zap.Bool("complete", complete))
-	if !complete {
-		d.truncationLog.Do(func() {
-			logger.Error("alert credential directory holds only the oldest alert types; newer ones require bounded storage lookups",
-				zap.Int("limit", d.limit))
-		})
+	return digests, len(loaded), complete, nil
+}
+
+// remember adds a pair storage has just accepted through the fallback lookup,
+// so its next uses are known and spend no fallback lookup. The next read
+// replaces it with storage's own copy. The copy never grows past the directory's
+// limit, and only storage's acceptance adds a pair, so guessing cannot grow it.
+func (d *alertCredentialDirectory) remember(alertType, token string) {
+	sum, ok := d.pairDigest(alertType, token)
+	if !ok {
+		return
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, ok := d.digests[sum]; ok || len(d.digests) >= d.limit {
+		return
+	}
+	if d.digests == nil {
+		d.digests = make(map[[sha256.Size]byte]struct{})
+	}
+	d.digests[sum] = struct{}{}
+	d.stats.Remembered++
 }
 
 // forget drops a credential that storage refused and lets the next miss reread,
 // so a token rotated since the last read is accepted on its first use.
 func (d *alertCredentialDirectory) forget(alertType, token string) {
-	sum := d.digest(strings.TrimSpace(alertType), strings.TrimSpace(token))
+	sum, ok := d.pairDigest(alertType, token)
+	if !ok {
+		return
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	delete(d.digests, sum)
 	d.readAt = time.Time{}
+}
+
+// pairDigest returns the digest of a credential, after trimming both parts as
+// ValidateTokenForAlertType does, so the copy never refuses a credential storage
+// would accept. It reports false for a part that is empty or longer than storage
+// accepts, which no alert type can match.
+func (d *alertCredentialDirectory) pairDigest(alertType, token string) (sum [sha256.Size]byte, ok bool) {
+	alertType, token = strings.TrimSpace(alertType), strings.TrimSpace(token)
+	if alertType == "" || token == "" || len(alertType) > maxCloudMonitoringCredentialBytes || len(token) > maxCloudMonitoringCredentialBytes {
+		return sum, false
+	}
+	return d.digest(alertType, token), true
 }
 
 // digest returns the keyed digest of one name and token pair. The name's length

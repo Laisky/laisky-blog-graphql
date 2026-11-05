@@ -15,8 +15,8 @@ toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
-`internal/web/telegram/formatting`, `internal/web/telegram/controller` and
-`internal/web/telegram/service`. These exercise input validation, controlled
+`internal/web/telegram/formatting`, `internal/web/telegram/controller`,
+`internal/web/telegram/dao` and `internal/web/telegram/service`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
@@ -39,7 +39,12 @@ reservations, isolation of invalid credentials from delivery capacity, remote
 credential first use, canceled contexts, requests that end after authentication
 but before a send is kept, malformed directory loader results, and the bound on
 requests waiting for a slow directory read, both in the directory and through
-the GraphQL and webhook entrypoints.
+the GraphQL and webhook entrypoints. They also cover the directory's read
+cadence under anonymous misses, the prompt rereads that remain, remembered
+fallback verifications, a read deadline that holds when the loader overruns it,
+the read summary, and the bounded cursor close. The cursor close is also checked
+against MongoDB by `TestMongoAlertCredentialCursorCleanupIsBounded` in the
+manual `mongo-query-contract` job.
 The manual sweep benchmarks can be run with
 `go test ./library/throttle -run '^$' -bench 'Benchmark(SweepRetainedTitles|AdmissionDuringSweep)' -benchmem`.
 On a Windows Ryzen 7 5700G, two 500 ms runs scanning retained, non-full buckets

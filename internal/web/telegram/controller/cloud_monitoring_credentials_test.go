@@ -195,7 +195,7 @@ func TestCloudMonitoringDirectoryFollowsStorage(t *testing.T) {
 		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, "synthetic-rotated-push-token", openIncidentBody).status)
 	})
 
-	t.Run("a failed read uses fallback and is retried once per interval", func(t *testing.T) {
+	t.Run("a failed read uses fallback and is retried after a second", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := &webhookTelegram{loadErr: errors.New("mongo unavailable")}
 		server, _, clock := startClockedWebhook(t, svc)
@@ -205,10 +205,14 @@ func TestCloudMonitoringDirectoryFollowsStorage(t *testing.T) {
 		svc.mu.Lock()
 		svc.loadErr = nil
 		svc.mu.Unlock()
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status,
+			"the pair the fallback accepted is remembered")
+		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status)
+		require.Equal(t, 1, svc.directoryLoads(), "no reread within a second of the failed one")
+		clock.advance(alertCredentialRetryInterval)
+		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status)
+		require.Equal(t, 2, svc.directoryLoads(), "the next miss after a second retries the read")
 		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
-		clock.advance(alertCredentialRefreshInterval)
-		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
-		require.Equal(t, 2, svc.directoryLoads())
 	})
 
 	t.Run("an outage is not a revocation", func(t *testing.T) {

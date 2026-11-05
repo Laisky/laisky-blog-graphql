@@ -74,7 +74,8 @@ func (r *MutationResolver) authenticateAlert(ctx context.Context, alertName, tok
 
 // verifyUnknownCredential bounds authoritative lookups independently of the
 // delivery budgets. A miss can be a token rotated by another process, so a
-// rate-limited miss is retryable rather than an authentication refusal.
+// rate-limited miss is retryable rather than an authentication refusal. A pair
+// storage accepts is remembered by the directory.
 func (r *MutationResolver) verifyUnknownCredential(ctx context.Context, verdict credentialVerdict, alertName, token string) (*model.AlertTypes, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, errors.WithStack(err)
@@ -91,7 +92,14 @@ func (r *MutationResolver) verifyUnknownCredential(ctx context.Context, verdict 
 	if !r.credentials.fallback.Allow() {
 		return nil, errors.WithStack(errAlertThrottled)
 	}
-	return r.verifyAlertCredential(ctx, verdict, alertName, token)
+	alert, err := r.verifyAlertCredential(ctx, verdict, alertName, token)
+	if err != nil {
+		return nil, err
+	}
+	// Storage accepted a pair the copy lacked, such as one another process
+	// created or rotated, so its next uses are known and skip this lookup.
+	r.credentials.remember(alertName, token)
+	return alert, nil
 }
 
 // verifyAlertCredential checks a credential against storage, which decides. If

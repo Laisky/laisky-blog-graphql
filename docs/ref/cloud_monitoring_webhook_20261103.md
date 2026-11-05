@@ -132,9 +132,10 @@ types' names and push tokens as keyed digests. A known pair is still checked
 against MongoDB, so revocation stays immediate. Unknown or unverifiable pairs
 use a separate bounded authoritative lookup, allowing remote token rotations
 to work before refresh. That budget permits one lookup per second, a burst of
-five and five concurrent lookups; saturation yields a retryable 503. Directory
-refresh on misses is separately limited to once per second, except after a
-local credential change. At most 32 misses wait for a refresh. The rest take the
+five and five concurrent lookups; saturation yields a retryable 503. A pair
+the fallback accepts is remembered. Directory refresh on misses is separately
+limited to once every 30 seconds for a healthy copy. A failed read or a local
+credential change is reread after a second. At most 32 misses wait for a refresh. The rest take the
 fallback at once, so a slow refresh cannot accumulate waiting requests (see
 [admission notes](telegram_alert_admission_20261104.md)). These gateway
 references informed the caching design:

@@ -91,7 +91,11 @@ func TestAlertDirectoryWrongTokenHoldsNoSend(t *testing.T) {
 	require.LessOrEqual(t, svc.lookups(), 6)
 }
 
-// TestAlertDirectoryAcceptsInProcessCredentialAtOnce covers in-process and remote credential creation.
+// TestAlertDirectoryAcceptsInProcessCredentialAtOnce covers in-process and
+// remote credential creation. Both work on their first use. An in-process
+// change is read on the next miss once a second has passed since the last
+// read; sooner, and for another process's change, the credential is verified
+// through the fallback lookup and then remembered.
 func TestAlertDirectoryAcceptsInProcessCredentialAtOnce(t *testing.T) {
 	configureAlertThrottle(t, 10, 10, 10, 10)
 	svc := &tokenGatedTelegram{tokens: map[string]string{"known_alert": "known-token"}}
@@ -105,15 +109,23 @@ func TestAlertDirectoryAcceptsInProcessCredentialAtOnce(t *testing.T) {
 	changes.Add(1)
 	_, err = resolver.TelegramMonitorAlert(t.Context(), "bot_alert", "bot-token", "first use")
 	require.NoError(t, err, "an alert type this process created must work on its first use")
-	require.Equal(t, 2, svc.directoryReads())
+	require.Equal(t, 1, svc.directoryReads(), "within a second of the last read it is verified, not reread")
+
+	clock.advance(alertCredentialRetryInterval)
+	svc.setToken("bot_alert_2", "bot-token-2")
+	changes.Add(1)
+	lookups := svc.lookups()
+	_, err = resolver.TelegramMonitorAlert(t.Context(), "bot_alert_2", "bot-token-2", "first use")
+	require.NoError(t, err)
+	require.Equal(t, 2, svc.directoryReads(), "a local change is read on the next miss after a second")
+	require.Equal(t, lookups+1, svc.lookups(), "the reread made it known, so only its delivery check reached storage")
 
 	svc.setToken("replica_alert", "replica-token")
-	_, err = resolver.TelegramMonitorAlert(t.Context(), "replica_alert", "replica-token", "too soon")
+	_, err = resolver.TelegramMonitorAlert(t.Context(), "replica_alert", "replica-token", "first use")
 	require.NoError(t, err, "another process's new type is checked against storage")
-	clock.advance(alertCredentialRefreshInterval)
-	_, err = resolver.TelegramMonitorAlert(t.Context(), "replica_alert", "replica-token", "after the interval")
-	require.NoError(t, err)
-	require.Equal(t, 3, svc.directoryReads())
+	require.Equal(t, credentialKnown, resolver.credentials.check(t.Context(), glog.Shared, "replica_alert", "replica-token"),
+		"and remembered once storage accepted it")
+	require.Equal(t, 2, svc.directoryReads())
 }
 
 // TestAlertDirectoryRotatedTokenWorksOnFirstUse covers a token rotated since the
