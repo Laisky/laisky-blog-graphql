@@ -63,7 +63,11 @@ type userStat struct {
 	data  map[string]string
 }
 
-// New create new telegram client
+// monitorIndexTimeout bounds making sure, at start, that the monitor indexes exist.
+const monitorIndexTimeout = time.Minute
+
+// New creates the telegram client. It first makes sure the monitor collections
+// carry the indexes the alert lookups rely on, and fails if it cannot.
 func New(ctx context.Context,
 	monitorDao *dao.Monitor,
 	telegramDao *dao.Telegram,
@@ -71,6 +75,16 @@ func New(ctx context.Context,
 	askUserTokenDao *dao.AskUserToken,
 	token, api string,
 ) (*Telegram, error) {
+	// A nil monitorDao has no storage to index.
+	if monitorDao != nil {
+		indexCtx, cancel := context.WithTimeout(ctx, monitorIndexTimeout)
+		err := monitorDao.EnsureIndexes(indexCtx)
+		cancel()
+		if err != nil {
+			return nil, errors.Wrap(err, "ensure monitor indexes")
+		}
+	}
+
 	client := &http.Client{Timeout: time.Minute}
 	bot, err := tb.NewBot(tb.Settings{
 		Client: client,

@@ -154,6 +154,74 @@ rather than trusted to the loader. The cursor close gets
   10 minutes by default. A bounded best-effort kill is therefore safe.
   <https://www.mongodb.com/docs/manual/core/cursors/>
 
+## Monitor indexes (checked 2026-11-05)
+
+No code created an index on `alert_types.name`, and every credential check finds
+an alert type by name. A read-only check of production on 2026-11-05 found only
+the `_id` index on the monitor collections, and `explain("executionStats")`
+showed a `COLLSCAN` for that lookup. No two alert types there share a name and
+none lacks one, so the unique index builds there. The telegram
+service now runs `Monitor.EnsureIndexes` when it starts. Sources, from the
+current manual (9.0 when checked), cross-checked against the 8.0 server source:
+
+- **Idempotency.** "If you call `db.collection.createIndex()` for an index that
+  already exists, MongoDB does not recreate the index."
+  <https://www.mongodb.com/docs/manual/reference/method/db.collection.createIndex/>
+  The same keys and options under another name fail with `IndexOptionsConflict`
+  (85), and the same name with another key or `unique` setting fails with
+  `IndexKeySpecsConflict` (86)
+  (<https://www.mongodb.com/docs/manual/reference/command/createIndexes/>,
+  <https://www.mongodb.com/docs/manual/reference/error-codes/>). `EnsureIndexes`
+  therefore lists the indexes first and keeps any single-field index on the
+  field, rather than asking for one and failing on an operator's.
+- **Unique builds over existing data.** "MongoDB cannot create a unique index …
+  if the collection already contains data that would violate the unique
+  constraint." Missing fields are indexed as null: "If there is more than one
+  document with a `null` value in its index entry, the index build fails with a
+  duplicate key error." <https://www.mongodb.com/docs/manual/core/index-unique/>
+  The fallback to an index without uniqueness keeps such deployments starting
+  and their lookups indexed.
+- **Upserts.** "Upserts can create duplicate documents, unless there is a unique
+  index to prevent duplicates." With one, a losing concurrent upsert becomes an
+  update when the filter is an equality on the unique key, as
+  `CreateAlertType`'s `{name: X}` is, so it reports "already exists" rather than
+  a duplicate key error. <https://www.mongodb.com/docs/manual/reference/command/update/>
+  (server retry since 4.2, <https://jira.mongodb.org/browse/SERVER-37124>).
+- **Converting in place.** `collMod` with `prepareUnique: true` and then
+  `unique: true`, new in 6.0. "If duplicates are detected during the initial
+  scan, `collMod` returns `CannotConvertIndexToUnique` and a list of conflicting
+  documents." <https://www.mongodb.com/docs/manual/core/index-unique/convert-to-unique/>
+  It is left to an operator, since `prepareUnique` stays set even when the
+  conversion fails.
+- **Indexes a lookup cannot use.** Hidden: "not visible to the query planner and
+  cannot be used to support a query"
+  (<https://www.mongodb.com/docs/manual/core/index-hidden/>). Partial: "a query
+  must contain the filter expression (or a modified filter expression that
+  specifies a subset of the filter expression)"
+  (<https://www.mongodb.com/docs/manual/core/index-partial/>). Collation: "If an
+  operation specifies a different collation than the index specifies, the index
+  cannot support string comparisons on the indexed fields"
+  (<https://www.mongodb.com/docs/manual/reference/collation/>). These are
+  reported, not changed.
+- **Builds.** Since 4.2 a build "holds an exclusive lock on the collection
+  briefly at the beginning and end of the index build". The rest yields to reads
+  and writes. <https://www.mongodb.com/docs/manual/core/index-creation/>
+  mongo-go-driver v1.17 sends no `maxTimeMS` for a plain context deadline, so a
+  build that outlives the start's one-minute bound continues on the server.
+- **Driver.** v1.17.10 `IndexView.List` returns an empty cursor for a collection
+  that does not exist (`mongo/index_view.go`), and a failed build surfaces as a
+  `mongo.CommandError` that `mongo.IsDuplicateKeyError` recognizes.
+- **Explain on 8.0.** A limit-1 equality on a unique single-field index may skip
+  regular planning and show `EXPRESS_IXSCAN`
+  (<https://www.mongodb.com/docs/manual/release-notes/8.0/>), so the contract
+  tests accept any stage but `COLLSCAN` and check the index name and the keys
+  and documents examined.
+
+Measured with mongo-go-driver v1.17.10 on `mongo:6.0` (6.0.28) and `mongo:8.0`
+(8.0.34): 16 concurrent `UpdateOne({name}, {$setOnInsert}, upsert)` calls per
+name inserted more than one document in 175 and 194 of 200 rounds respectively
+without the index, and in none of 200 with it, with no errors.
+
 ## Canonical keys
 
 OWASP gives no normalization rule for rate-limit keys, but two CVEs show alias

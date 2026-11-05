@@ -42,9 +42,14 @@ requests waiting for a slow directory read, both in the directory and through
 the GraphQL and webhook entrypoints. They also cover the directory's read
 cadence under anonymous misses, the prompt rereads that remain, remembered
 fallback verifications, a read deadline that holds when the loader overruns it,
-the read summary, and the bounded cursor close. The cursor close is also checked
-against MongoDB by `TestMongoAlertCredentialCursorCleanupIsBounded` in the
-manual `mongo-query-contract` job.
+the read summary, the bounded cursor close, and how the start-up index step
+judges an index already present. The cursor close is also checked against
+MongoDB by `TestMongoAlertCredentialCursorCleanupIsBounded` in the manual
+`mongo-query-contract` job, and the monitor indexes by
+`TestMongoMonitorIndexesServeAlertLookups`,
+`TestMongoConcurrentAlertTypeCreationKeepsOneDocument`,
+`TestMongoMonitorIndexesKeepStoredData` and
+`TestMongoTelegramServiceEnsuresMonitorIndexes`.
 The manual sweep benchmarks can be run with
 `go test ./library/throttle -run '^$' -bench 'Benchmark(SweepRetainedTitles|AdmissionDuringSweep)' -benchmem`.
 On a Windows Ryzen 7 5700G, two 500 ms runs scanning retained, non-full buckets

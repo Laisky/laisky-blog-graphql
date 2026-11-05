@@ -51,7 +51,10 @@
   {
     "package": "./internal/web/telegram/dao",
     "tests": [
-      "TestCloseCursorIsBoundedAfterTheReadEnds"
+      "TestCloseCursorIsBoundedAfterTheReadEnds",
+      "TestMonitorIndexesCoverAlertLookups",
+      "TestMonitorIndexMatching",
+      "TestFindIndexPrefersTheOneThatServesLookups"
     ]
   },
   {

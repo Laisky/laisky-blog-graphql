@@ -136,6 +136,44 @@ separate identical requests remain two events. No persisted idempotency/history
 store is added. A successful SDK `Send` is still local queue admission; the SDK's
 asynchronous sender does not create a recipient-delivery receipt.
 
+## MongoDB indexes
+
+Each time the telegram service starts, it makes sure the monitor database has two
+indexes before it serves anything:
+
+- **`alert_types` `name_1`, unique on `name`.** Every credential check by name
+  uses it: the GraphQL mutation's, the webhook's and the fallback lookup's.
+  Without it, each check read the collection until it found the name, and a
+  guessed name read every alert type. Uniqueness also keeps concurrent creations
+  of one name to one alert type. `CreateAlertType` creates by upserting on
+  `name`, and MongoDB lets concurrent upserts each insert a document unless a
+  unique index covers the filter. With the index, one creation wins and the
+  others report that the name already exists.
+- **`user_alert_relations` `alert_id_1`, not unique.** It serves the subscriber
+  lookup of every delivered alert. Duplicate subscription rows stay allowed.
+
+The step is idempotent and changes no stored document:
+
+- An index already on the field is kept as it is, whatever its name. If it is
+  not unique where it should be, is hidden or partial, or has another collation
+  than the collection's, a WARN entry `monitor index falls short and is kept as
+  it is` lists the problems at every start.
+- A missing index is created, with an INFO entry `create monitor index`.
+- If stored alert types repeat a name, or more than one lacks a name, the unique
+  build fails. The index is then created without uniqueness, so lookups are
+  still indexed, and an ERROR entry reports it.
+
+To make such an index unique, remove the duplicate alert types, drop the index
+with `db.alert_types.dropIndex("name_1")` and restart: the next start creates it
+unique. On MongoDB 6.0 or later, `collMod` with `prepareUnique` and then
+`unique` converts it in place instead.
+
+If the indexes cannot be listed or created within a minute, for example because
+the database user lacks `createIndex` (the `readWrite` role includes it), the
+telegram service does not start. That aborts startup when the `telegram` task is
+enabled, as any other telegram service error does. A rollback leaves the indexes
+in place, and earlier releases work with them.
+
 ## Cloud Monitoring webhook
 
 `POST /webhook/gcp/alerts/cloud-monitoring` lets a Google Cloud Monitoring
