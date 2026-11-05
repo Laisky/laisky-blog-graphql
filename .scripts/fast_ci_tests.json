@@ -28,7 +28,20 @@
   {
     "package": "./internal/web/telegram/controller",
     "tests": [
-      "TestAlertControllerFidelityPreservesCompleteInput"
+      "TestAlertControllerFidelityPreservesCompleteInput",
+      "TestUnknownCredentialCannotSpendDeliveryBudget",
+      "TestUnknownCredentialWorkIsBounded",
+      "TestUnknownCredentialConcurrencyIsBounded",
+      "TestRemoteCredentialFirstUse",
+      "TestCanceledContextDoesNotSpendDeliveryBudget",
+      "TestAlertCredentialDirectoryRejectsNilLoaderEntry"
+    ]
+  },
+  {
+    "package": "./library/throttle",
+    "tests": [
+      "TestLateCancelDoesNotMintTypeTokens",
+      "TestOverlappingReservationsCancelOutOfOrder"
     ]
   },
   {

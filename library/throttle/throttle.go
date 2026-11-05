@@ -96,7 +96,7 @@ func preferredSetting(field string, current, deprecated int) (int, error) {
 // credential lookup, then settles the returned Admission. Admit reserves a send
 // from both budgets in one step, so concurrent requests for one type cannot spend
 // more of the total budget than the type has sends. A failed authentication
-// returns the reserved per-type send through Cancel.
+// returns the reserved per-type send through Cancel when it can do so safely.
 //
 // A missing per-type budget is a full one. A budget is dropped as soon as it is
 // full again, so retained state is bounded by recent sends rather than by the
@@ -121,7 +121,7 @@ type TelegramThrottleStats struct {
 	Admitted uint64
 	// Authorized counts admissions settled by Authorize.
 	Authorized uint64
-	// Canceled counts admissions whose per-type send was returned by Cancel.
+	// Canceled counts admissions settled by Cancel.
 	Canceled uint64
 	// TotalRefusals counts refusals because the shared budget was empty.
 	TotalRefusals uint64
@@ -136,17 +136,19 @@ type TelegramThrottleStats struct {
 // otherwise. Cancel is a no-op after Authorize, so callers may defer it right
 // after Admit.
 type Admission struct {
-	throttle *TelegramThrottle
-	name     string
-	budget   *bucket
+	throttle   *TelegramThrottle
+	name       string
+	budget     *bucket
+	reservedAt time.Time
 	// settled is guarded by throttle.mu.
 	settled bool
 }
 
 // bucket is a token bucket refilled from elapsed time when it is read.
 type bucket struct {
-	tokens float64
-	last   time.Time
+	tokens   float64
+	last     time.Time
+	lastTake time.Time
 }
 
 // NewTelegramThrottle builds a TelegramThrottle from cfg. Every budget starts
@@ -179,8 +181,8 @@ func NewTelegramThrottle(_ context.Context, cfg *TelegramThrottleCfg) (*Telegram
 // refusal spends nothing.
 //
 // alertName is untrusted and must already be in its canonical form, the form the
-// credential lookup matches. A budget created for it is dropped again when
-// Cancel returns its send, so names that never authenticate keep no state.
+// credential lookup matches. Cancel drops a fully refunded budget; any budget
+// that cannot safely be fully refunded is swept after it refills.
 func (t *TelegramThrottle) Admit(alertName string) (*Admission, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -206,9 +208,9 @@ func (t *TelegramThrottle) Admit(alertName string) (*Admission, error) {
 		t.titles[alertName] = budget
 	}
 	t.total.take()
-	budget.take()
+	budget.takeAt(now)
 	t.stats.Admitted++
-	return &Admission{throttle: t, name: alertName, budget: budget}, nil
+	return &Admission{throttle: t, name: alertName, budget: budget, reservedAt: now}, nil
 }
 
 // Allow spends one send from the shared budget and one from alertName's own
@@ -264,15 +266,16 @@ func (a *Admission) Authorize(storedName string) error {
 		t.stats.TitleRefusals++
 		return errors.WithStack(ErrTitleBudgetExhausted)
 	}
-	budget.take()
+	budget.takeAt(now)
 	t.stats.Authorized++
 	return nil
 }
 
-// Cancel returns a's reserved send to its alert type's budget, for an alert whose
-// credentials did not match or could not be checked. The shared send stays spent,
-// because it paid for the credential lookup. Cancel is a no-op on a nil or settled
-// admission.
+// Cancel returns as much of a's reserved send as is safe to its alert type's
+// budget, for an alert whose credentials did not match or could not be checked.
+// A later take can make part of the refund unsafe; that capacity refills normally.
+// The shared send stays spent because it paid for the credential lookup. Cancel
+// is a no-op on a nil or settled admission.
 func (a *Admission) Cancel() {
 	if a == nil {
 		return
@@ -297,7 +300,12 @@ func (t *TelegramThrottle) refundLocked(a *Admission, now time.Time) {
 		return
 	}
 	a.budget.refill(now, t.titleRate, t.titleBurst)
-	a.budget.tokens = min(t.titleBurst, a.budget.tokens+1)
+	// Refills earned between this reservation and the latest subsequent take
+	// may already have replaced its token and been spent. Restoring that part
+	// again would mint capacity. This conservative bound also handles multiple
+	// outstanding reservations canceled in any order.
+	restored := max(0, 1-max(0, a.budget.lastTake.Sub(a.reservedAt).Seconds())*t.titleRate)
+	a.budget.tokens = min(t.titleBurst, a.budget.tokens+restored)
 	if a.budget.full(t.titleBurst) {
 		delete(t.titles, a.name)
 	}
@@ -343,4 +351,12 @@ func (b *bucket) full(burst float64) bool {
 // take spends one send from b, which must hold one.
 func (b *bucket) take() {
 	b.tokens = max(0, b.tokens-1)
+}
+
+// takeAt records the most recent per-type reservation for safe refunds.
+func (b *bucket) takeAt(now time.Time) {
+	b.take()
+	if now.After(b.lastTake) {
+		b.lastTake = now
+	}
 }

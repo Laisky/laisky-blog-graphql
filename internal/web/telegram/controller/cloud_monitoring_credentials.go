@@ -24,7 +24,7 @@ import (
 const (
 	// maxMirroredAlertCredentials bounds the alert types the directory copies.
 	// Alert types are self-service, so storage could hold more; the oldest are
-	// kept, and a credential beyond them cannot be verified.
+	// kept, and credentials beyond them require a bounded storage lookup.
 	maxMirroredAlertCredentials = 10000
 	// alertCredentialRefreshInterval is the least time between directory reads,
 	// so guessing costs storage at most one read per interval at any rate.
@@ -61,15 +61,12 @@ const (
 type alertCredentialLoader func(ctx context.Context, limit int) (alerts []*model.AlertTypes, complete bool, err error)
 
 // alertCredentialDirectory is an in-memory copy of every alert type's
-// credential, held as keyed digests, so a refused credential is decided without
-// a storage lookup and guessing has no shared budget to spend. It never
+// credential, held as keyed digests. It never
 // authenticates on its own: a credential it knows is still checked against
-// storage, so a revoked token is refused at once. A credential it does not know
-// rereads storage, at most once per interval, before it is refused, so a new
-// or rotated token is accepted on its first use once that interval has passed.
-// A credential this process created or rotated since the last read rereads at
-// once, so it is accepted on its first use. One directory serves both the
-// GraphQL alert mutation and the Cloud Monitoring webhook.
+// storage, so a revoked token is refused at once. Cache misses may use a
+// separately bounded authoritative lookup, which permits a remote rotation to
+// work before the next directory refresh. One directory and fallback budget
+// serve both the GraphQL alert mutation and the Cloud Monitoring webhook.
 type alertCredentialDirectory struct {
 	load     alertCredentialLoader
 	now      func() time.Time
@@ -78,6 +75,9 @@ type alertCredentialDirectory struct {
 	key      []byte
 	nameKey  []byte
 	reads    singleflight.Group
+	// fallback bounds the rate and concurrency of cache-miss lookups.
+	fallback      *rate.Limiter
+	fallbackSlots chan struct{}
 	// changes counts the alert types this process created or re-keyed.
 	changes func() uint64
 
@@ -108,6 +108,8 @@ func newAlertCredentialDirectory(load alertCredentialLoader, limit int, interval
 	_, _ = rand.Read(nameKey)
 	return &alertCredentialDirectory{
 		load:          load,
+		fallback:      rate.NewLimiter(1, 5),
+		fallbackSlots: make(chan struct{}, 5),
 		now:           time.Now,
 		interval:      interval,
 		limit:         limit,
@@ -200,9 +202,16 @@ func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger)
 	d.readAt, d.readChanges, d.reading = d.now(), d.changes(), true
 	d.mu.Unlock()
 	defer func() {
+		recovered := recover()
 		d.mu.Lock()
 		d.reading = false
+		if recovered != nil {
+			d.healthy = false
+		}
 		d.mu.Unlock()
+		if recovered != nil {
+			logger.Error("read alert credential directory", zap.Error(errors.New("alert credential directory read panicked")))
+		}
 	}()
 
 	readCtx, cancel := context.WithTimeout(ctx, alertCredentialLoadTimeout)
@@ -218,6 +227,13 @@ func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger)
 	digests := make(map[[sha256.Size]byte]struct{}, len(alerts))
 	names := make(map[[sha256.Size]byte]struct{}, len(alerts))
 	for _, alert := range alerts {
+		if alert == nil {
+			d.mu.Lock()
+			d.healthy = false
+			d.mu.Unlock()
+			logger.Error("read alert credential directory", zap.Error(errors.New("alert credential loader returned a nil entry")))
+			return
+		}
 		digests[d.digest(alert.Name, alert.PushToken)] = struct{}{}
 		names[d.nameDigest(alert.Name)] = struct{}{}
 	}
@@ -227,7 +243,7 @@ func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger)
 	logger.Debug("read alert credential directory", zap.Int("alert_types", len(alerts)), zap.Bool("complete", complete))
 	if !complete {
 		d.truncationLog.Do(func() {
-			logger.Error("alert credential directory holds only the oldest alert types; newer ones answer 503",
+			logger.Error("alert credential directory holds only the oldest alert types; newer ones require bounded storage lookups",
 				zap.Int("limit", d.limit))
 		})
 	}

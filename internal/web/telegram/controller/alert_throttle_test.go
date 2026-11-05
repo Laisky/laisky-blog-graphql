@@ -10,6 +10,7 @@ import (
 	"github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
@@ -131,24 +132,24 @@ func TestAlertThrottleUnauthenticatedTypesDoNotLeak(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		directoryErr error
-		lookups      int
 	}{
-		{"directory refuses", nil, 0},
-		{"directory unavailable", errors.New("synthetic directory outage"), probes},
+		{"directory refuses", nil},
+		{"directory unavailable", errors.New("synthetic directory outage")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// The shared budget admits every probe, so each one could reach the credential lookup.
 			configureAlertThrottle(t, 100, probes, 100, 100)
 			svc := &tokenGatedTelegram{tokens: map[string]string{"known_type": "synthetic-token"}, directoryErr: tc.directoryErr}
 			resolver := NewMutationResolver(svc)
+			resolver.credentials.fallback = rate.NewLimiter(0, 5)
 
 			before := rateLimiterGoroutines(t)
 			for i := range probes {
 				_, err := resolver.TelegramMonitorAlert(context.Background(), fmt.Sprintf("probe-%04d", i), "anonymous", "body")
-				require.ErrorContains(t, err, "not found")
+				require.Error(t, err)
 			}
 
-			require.Equal(t, tc.lookups, svc.lookups())
+			require.Equal(t, 5, svc.lookups())
 			require.Equal(t, before, rateLimiterGoroutines(t), "%d unauthenticated alert types must not start refill goroutines", probes)
 			require.Zero(t, telegramRatelimiter.Stats().RetainedTitles, "%d unauthenticated alert types must not keep per-type state", probes)
 		})
@@ -177,13 +178,13 @@ func TestAlertThrottleUnauthenticatedCallerCannotDrainKnownType(t *testing.T) {
 
 // TestAlertThrottleBoundsCredentialLookups keeps a flood of unknown types from
 // turning into one MongoDB lookup each while the credential directory cannot
-// decide: the shared budget is spent before the lookup.
+// decide: a separate work budget bounds the lookup.
 func TestAlertThrottleBoundsCredentialLookups(t *testing.T) {
-	// The shared budget holds one send and refills after a second. The directory
-	// cannot decide, so the flood reaches admission, as before it existed.
+	// The directory cannot decide; the independent work budget bounds the flood.
 	configureAlertThrottle(t, 1, 1, 100, 100)
 	svc := &tokenGatedTelegram{tokens: map[string]string{}, directoryErr: errors.New("synthetic directory outage")}
 	resolver := NewMutationResolver(svc)
+	resolver.credentials.fallback = rate.NewLimiter(0, 5)
 
 	throttled := 0
 	for i := range 50 {
@@ -194,8 +195,7 @@ func TestAlertThrottleBoundsCredentialLookups(t *testing.T) {
 		}
 	}
 
-	// One refill is tolerated in case a slow race-detector run crosses a second.
-	require.LessOrEqual(t, svc.authCalls, 2)
+	require.Equal(t, 5, svc.authCalls)
 	require.Equal(t, 50-svc.authCalls, throttled)
 }
 

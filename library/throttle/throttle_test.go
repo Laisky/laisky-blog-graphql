@@ -411,3 +411,29 @@ func TestTelegramThrottleCfgDeprecatedSpelling(t *testing.T) {
 	burstConflict := &TelegramThrottleCfg{TotalNPerSec: 1, TotalBurst: 2, TotleBurst: 4, EachTitleNPerSec: 1, EachTitleBurst: 1}
 	require.ErrorContains(t, burstConflict.Validate(), "TotalBurst is 2 but its deprecated spelling is 4")
 }
+
+func TestLateCancelDoesNotMintTypeTokens(t *testing.T) {
+	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 100, TotalBurst: 100, EachTitleNPerSec: 1, EachTitleBurst: 2})
+	slow, err := th.Admit("known_type")
+	require.NoError(t, err)
+	clock.advance(time.Second)
+	require.True(t, th.Allow("known_type"))
+	slow.Cancel()
+	require.True(t, th.Allow("known_type"))
+	require.False(t, th.Allow("known_type"))
+}
+
+func TestOverlappingReservationsCancelOutOfOrder(t *testing.T) {
+	th, clock := newTestThrottle(t, &TelegramThrottleCfg{TotalNPerSec: 100, TotalBurst: 100, EachTitleNPerSec: 1, EachTitleBurst: 3})
+	first, err := th.Admit("known_type")
+	require.NoError(t, err)
+	clock.advance(time.Second / 2)
+	second, err := th.Admit("known_type")
+	require.NoError(t, err)
+	clock.advance(time.Second / 2)
+	require.True(t, th.Allow("known_type"))
+	second.Cancel()
+	first.Cancel()
+	require.True(t, th.Allow("known_type"))
+	require.False(t, th.Allow("known_type"))
+}

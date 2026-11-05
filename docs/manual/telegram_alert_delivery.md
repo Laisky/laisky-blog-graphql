@@ -47,41 +47,23 @@ Authentication and throttling run in this order:
    runes (token) is refused with the DAO's `sanitize alert type: …` or
    `sanitize push token: …` error. Nothing is spent. Every later step uses that
    canonical name, so `" name "` and `"name"` share one budget.
-2. **Credential directory.** The pair is checked against the in-memory directory
-   of every alert type's name and push token that the Cloud Monitoring webhook
-   uses (see *Admission order* below); both entrypoints share one directory. A
-   pair that matches no alert type is refused with the error MongoDB would give,
-   ``alert_type `…` not found: …`` or ``token invalidate for `…` ``, with no MongoDB
-   lookup and no budget spent. An anonymous flood of guesses therefore costs at
-   most one directory read a second and cannot throttle genuine alerts.
-3. **Reservation.** A pair the directory knows reserves one send from the shared
-   `total_*` budget, which bounds token lookups, and one from the type's own
-   `each_title_*` budget, in one step. If either is empty it is refused with
-   `deny by throttle` and spends nothing, so an exhausted type cannot drain the
-   shared budget, and concurrent requests for one type spend at most as many
-   shared sends as the type has.
-4. **MongoDB check.** A matching token keeps the reserved send spent. Any other
-   outcome (a wrong token, a lookup failure or a canceled request) returns the
-   reserved per-type send; the shared send stays spent because it paid for the
-   lookup. If MongoDB refuses a pair the directory knew, as after a token
-   rotation, the pair is dropped and the next miss rereads, so the new token
-   works on its first use.
+2. **Credential directory.** Both entrypoints share a keyed-digest directory. A
+   known pair reserves delivery capacity before its authoritative MongoDB check;
+   an invalid or canceled check releases any per-type reservation that has not
+   already been replaced by refill. The shared send pays for the check.
+3. **Bounded fallback.** Unknown or unverifiable pairs use a separate budget of
+   one MongoDB lookup per second, with burst and concurrent lookup limits of five.
+   Only a successful lookup can spend delivery capacity. This lets a token
+   created or rotated on another replica work before the directory refreshes.
+   When the fallback budget is exhausted, GraphQL returns `deny by throttle`
+   and the webhook returns 503: callers should retry. Under sustained guessing,
+   first-use credentials may be delayed; known cached credentials retain their
+   delivery capacity. Failed checks never create per-type delivery state.
 
-A token the Telegram bot creates or rotates in this process makes the directory
-reread on the next miss, so it works on its first use, as it did before the
-directory existed. A type created or rotated by another process can be refused
-once if it is used less than a second after the last read started; sent again a
-second later, it is accepted.
-
-When the directory cannot decide, because its read failed or because there are
-more than 10,000 alert types and the pair is not among the copied ones, the
-mutation does not refuse: the pair goes through steps 3 and 4, as before the
-directory existed. In that degraded mode a wrong token or unknown type can get
-`deny by throttle` instead of the token error when a budget is already empty, and
-a lookup in flight, even one with a wrong token, holds its reserved send from
-concurrent requests for that type until it returns. A refusal there never drops
-anything from the directory, so it cannot force rereads. An authentication
-failure never drains a type's budget in either mode.
+The directory reads at most 10,000 oldest credentials and refreshes on misses at
+most once per second, or immediately following a change in this process. Failed
+reads retain known pairs and retry later. MongoDB remains authoritative for every
+accepted credential.
 
 Budgets are token buckets that refill from elapsed time when read; they run no
 goroutine and need no shutdown. Every budget starts full, at its burst. Earlier
@@ -180,32 +162,13 @@ exponent, sign, hex, `NaN` or a later year, is a schema violation and answers 40
 
 1. A request without credentials gets the 401 challenge Monitoring requires, with
    no lookup.
-2. The credential is checked against an in-memory directory of every alert
-   type's name and push token, held as keyed digests. Both parts are trimmed
-   first, as MongoDB's check trims them. The directory is read from MongoDB
-   when the gateway first needs it, and again when a credential misses it, but
-   at most once a second, however many requests arrive.
-   - A credential that matches no alert type is refused with 401 and no MongoDB
-     lookup. Guessing therefore has no shared budget to spend and cannot lock out
-     a channel, including right after a restart or a token rotation.
-   - A credential that matches is checked against MongoDB once, so a rotated or
-     revoked token is refused at once. That refusal removes it from the directory
-     and lets the next miss reread, so the new token delivers on its first use.
-   - A credential that misses less than a second after the last read started is
-     refused without another read, unless this process has created or rotated an
-     alert type since that read, in which case the directory rereads first. So a
-     token created or rotated by another process after that read and used within
-     the same second can be refused once. Sent again a second later, it is
-     accepted.
-   - If the read fails, credentials the directory already holds still reach
-     MongoDB; any other credential answers 503, since an outage is not a
-     refusal. The read is retried at most once a second. A loader that panics
-     counts as a failed read; it does not stop the process.
-   - The GraphQL `TelegramMonitorAlert` mutation shares this directory, so one
-     copy, one read a second and one view of rotated tokens serve both.
-   - The directory holds the oldest 10,000 alert types. Alert types are
-     self-service, so storage could hold more. Past that, an alert type it does
-     not hold answers 503, and an ERROR is logged once a minute.
+2. Both parts are normalized, then checked against the shared credential
+   directory. Known pairs are checked against MongoDB. Unknown or unverifiable
+   pairs use the separate bounded fallback described above; a valid remote
+   rotation can therefore work immediately. An exhausted fallback answers 503
+   so the sender retries. An invalid credential answers 401 after verification.
+   A failed directory read retains known pairs, while a truncated read copies
+   at most the oldest 10,000 alert types.
 3. `env`, the body (1 MiB at most) and the JSON are checked, and only then are the
    shared and the alert type's send budgets spent, together. The request is
    already authenticated, so unlike `TelegramMonitorAlert` it reserves nothing

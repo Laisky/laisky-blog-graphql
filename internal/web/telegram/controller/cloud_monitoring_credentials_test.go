@@ -17,6 +17,7 @@ import (
 	"github.com/Laisky/zap"
 	"github.com/Laisky/zap/zapcore"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 )
@@ -99,18 +100,18 @@ func TestCloudMonitoringGuessingCannotLockOutValidChannels(t *testing.T) {
 	})
 }
 
-// TestCloudMonitoringRefusalsNeverQueryStorage proves a refused credential costs
-// no per-request storage lookup, so guessing has nothing to exhaust, and every
-// refusal is the same challenge whatever was wrong.
-func TestCloudMonitoringRefusalsNeverQueryStorage(t *testing.T) {
+// TestCloudMonitoringRefusalsBoundStorage proves guesses use only the separate
+// fallback budget and exhaustion returns a retryable status.
+func TestCloudMonitoringRefusalsBoundStorage(t *testing.T) {
 	enableAlertThrottle(t)
 	svc := new(webhookTelegram)
-	server, _, _ := startClockedWebhook(t, svc)
-	for _, alertType := range []string{webhookAlertType, "unknown", ""} {
-		statuses := guess(t, server.URL, alertType, guessingRounds)
-		require.Equal(t, map[int]int{http.StatusUnauthorized: guessingRounds}, statuses, alertType)
-	}
-	require.Zero(t, svc.credentialChecks(), "a refusal must be decided without a per-request lookup")
+	server, handler, _ := startClockedWebhook(t, svc)
+	handler.credentials.fallback = rate.NewLimiter(0, 5)
+	require.Equal(t, map[int]int{http.StatusUnauthorized: 5, http.StatusServiceUnavailable: guessingRounds - 5},
+		guess(t, server.URL, webhookAlertType, guessingRounds))
+	require.Equal(t, map[int]int{http.StatusServiceUnavailable: guessingRounds}, guess(t, server.URL, "unknown", guessingRounds))
+	require.Equal(t, 5, svc.credentialChecks(), "guesses must not exceed the fallback budget")
+	require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, "", "wrong", openIncidentBody).status)
 }
 
 // TestCloudMonitoringDirectoryReads pins when the credential directory reads
@@ -120,7 +121,8 @@ func TestCloudMonitoringDirectoryReads(t *testing.T) {
 	t.Run("guessing costs one read per interval", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := new(webhookTelegram)
-		server, _, clock := startClockedWebhook(t, svc)
+		server, handler, clock := startClockedWebhook(t, svc)
+		handler.credentials.fallback = rate.NewLimiter(0, 5)
 		guess(t, server.URL, webhookAlertType, guessingRounds)
 		require.Equal(t, 1, svc.directoryLoads())
 		clock.advance(alertCredentialRefreshInterval - time.Nanosecond)
@@ -129,7 +131,7 @@ func TestCloudMonitoringDirectoryReads(t *testing.T) {
 		clock.advance(time.Nanosecond)
 		guess(t, server.URL, "unknown", guessingRounds)
 		require.Equal(t, 2, svc.directoryLoads())
-		require.Zero(t, svc.credentialChecks())
+		require.Equal(t, 5, svc.credentialChecks())
 	})
 
 	t.Run("challenges and oversized credentials never read", func(t *testing.T) {
@@ -164,19 +166,18 @@ func TestCloudMonitoringDirectoryReads(t *testing.T) {
 	})
 }
 
-// TestCloudMonitoringDirectoryFollowsStorage proves the copy never keeps a valid
-// channel out for longer than one interval, and never lets storage be skipped.
+// TestCloudMonitoringDirectoryFollowsStorage checks bounded fallback and that
+// the copy never authenticates without storage.
 func TestCloudMonitoringDirectoryFollowsStorage(t *testing.T) {
-	t.Run("a new alert type is accepted once the interval passes", func(t *testing.T) {
+	t.Run("a new alert type is accepted before the interval passes", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := new(webhookTelegram)
 		server, _, clock := startClockedWebhook(t, svc)
 		guess(t, server.URL, webhookAlertType, 1)
 		svc.addAlertType("fresh", "fresh-token")
-		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, "fresh", "fresh-token", openIncidentBody).status,
-			"an alert type created after a read that started under an interval ago is refused; this is the documented window")
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, "fresh", "fresh-token", openIncidentBody).status)
 		clock.advance(alertCredentialRefreshInterval - time.Nanosecond)
-		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, "fresh", "fresh-token", openIncidentBody).status)
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, "fresh", "fresh-token", openIncidentBody).status)
 		clock.advance(time.Nanosecond)
 		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, "fresh", "fresh-token", openIncidentBody).status)
 	})
@@ -189,25 +190,22 @@ func TestCloudMonitoringDirectoryFollowsStorage(t *testing.T) {
 		svc.rotate("synthetic-rotated-push-token")
 		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
 		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
-		require.Equal(t, 2, svc.credentialChecks(), "after storage refused it, the old token is refused by the reread copy")
+		require.Equal(t, 3, svc.credentialChecks(), "an unknown pair uses the bounded authoritative fallback")
 		require.Equal(t, 2, svc.directoryLoads())
 		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, "synthetic-rotated-push-token", openIncidentBody).status)
 	})
 
-	t.Run("a failed read answers 503 and is retried once per interval", func(t *testing.T) {
+	t.Run("a failed read uses fallback and is retried once per interval", func(t *testing.T) {
 		enableAlertThrottle(t)
 		svc := &webhookTelegram{loadErr: errors.New("mongo unavailable")}
 		server, _, clock := startClockedWebhook(t, svc)
-		for _, password := range []string{webhookToken, "wrong"} {
-			response := postWebhook(t, server.URL, webhookAlertType, password, openIncidentBody)
-			require.Equal(t, http.StatusServiceUnavailable, response.status, "an outage must not read as refused credentials")
-			require.Empty(t, response.header.Get("WWW-Authenticate"))
-		}
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, webhookAlertType, "wrong", openIncidentBody).status)
 		require.Equal(t, 1, svc.directoryLoads())
 		svc.mu.Lock()
 		svc.loadErr = nil
 		svc.mu.Unlock()
-		require.Equal(t, http.StatusServiceUnavailable, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
 		clock.advance(alertCredentialRefreshInterval)
 		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
 		require.Equal(t, 2, svc.directoryLoads())
@@ -241,10 +239,9 @@ func TestCloudMonitoringDirectoryFollowsStorage(t *testing.T) {
 		handler.credentials.limit = 2
 		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, webhookAlertType, webhookToken, openIncidentBody).status)
 		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, "a-older", "token-a", openIncidentBody).status)
-		require.Equal(t, http.StatusServiceUnavailable, postWebhook(t, server.URL, "b-newer", "token-b", openIncidentBody).status,
-			"an alert type past the limit is not refused as if it did not exist")
-		require.Equal(t, http.StatusServiceUnavailable, postWebhook(t, server.URL, "unknown", "guess", openIncidentBody).status)
-		require.Equal(t, 2, svc.credentialChecks(), "a credential the copy does not hold never reaches storage")
+		require.Equal(t, http.StatusNoContent, postWebhook(t, server.URL, "b-newer", "token-b", openIncidentBody).status)
+		require.Equal(t, http.StatusUnauthorized, postWebhook(t, server.URL, "unknown", "guess", openIncidentBody).status)
+		require.Equal(t, 4, svc.credentialChecks())
 	})
 }
 
@@ -326,6 +323,59 @@ func TestAlertCredentialDirectoryHoldsOnlyDigests(t *testing.T) {
 	require.True(t, directory.readAt.IsZero(), "a storage refusal lets the next miss reread")
 }
 
+// A malformed storage result must not terminate the shared reader or make a
+// partial directory authoritative for rejecting credentials.
+func TestAlertCredentialDirectoryRejectsNilLoaderEntry(t *testing.T) {
+	malformed := false
+	directory := newAlertCredentialDirectory(func(context.Context, int) ([]*model.AlertTypes, bool, error) {
+		alerts := []*model.AlertTypes{{Name: "valid", PushToken: "valid-token"}}
+		if malformed {
+			alerts = append(alerts, nil)
+		}
+		return alerts, true, nil
+	}, 10, time.Hour)
+	directory.read(context.Background(), glog.Shared)
+	malformed = true
+	directory.readAt = time.Time{}
+	require.NotPanics(t, func() { directory.read(context.Background(), glog.Shared) })
+	verdict, _ := directory.lookup(directory.digest("missing", "token"))
+	require.Equal(t, credentialUnverifiable, verdict)
+	verdict, _ = directory.lookup(directory.digest("valid", "valid-token"))
+	require.Equal(t, credentialKnown, verdict, "a failed refresh retains the previous good copy")
+	require.False(t, directory.reading)
+}
+
+// BenchmarkAlertCredentialDirectoryMiss distinguishes a hot miss from a full
+// refresh; the latter excludes MongoDB latency and measures hashing and copying.
+func BenchmarkAlertCredentialDirectoryMiss(b *testing.B) {
+	for _, size := range []int{1000, 10000} {
+		alerts := make([]*model.AlertTypes, size)
+		for i := range alerts {
+			alerts[i] = &model.AlertTypes{Name: "alert-" + strconv.Itoa(i), PushToken: "token-" + strconv.Itoa(i)}
+		}
+		for _, refresh := range []bool{false, true} {
+			name := "hot/"
+			if refresh {
+				name = "refresh/"
+			}
+			b.Run(name+strconv.Itoa(size), func(b *testing.B) {
+				directory := newAlertCredentialDirectory(func(context.Context, int) ([]*model.AlertTypes, bool, error) {
+					return alerts, true, nil
+				}, size, time.Hour)
+				directory.read(context.Background(), glog.Shared)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for range b.N {
+					if refresh {
+						directory.readAt = time.Time{}
+					}
+					directory.check(context.Background(), glog.Shared, "missing", "token")
+				}
+			})
+		}
+	}
+}
+
 // TestCloudMonitoringRefusalWarningsAreSampled keeps a guessing caller from
 // setting the log volume: refusals are counted, and warned about at most once
 // per interval.
@@ -338,6 +388,7 @@ func TestCloudMonitoringRefusalWarningsAreSampled(t *testing.T) {
 	require.NoError(t, err)
 
 	handler := NewCloudMonitoringWebhook(new(webhookTelegram))
+	handler.credentials.fallback = rate.NewLimiter(rate.Inf, 50)
 	const refused = 50
 	for range refused {
 		request := httptest.NewRequest(http.MethodPost, "/webhook/gcp/alerts/cloud-monitoring", strings.NewReader(openIncidentBody))

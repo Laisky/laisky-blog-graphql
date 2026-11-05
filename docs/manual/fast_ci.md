@@ -13,7 +13,7 @@ includes security fixes. Historical timing measurements below retain the
 toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
-37 named unit tests in `cmd`, `library/log`, `internal/web`,
+45 named unit tests in `cmd`, `library/log`, `library/throttle`, `internal/web`,
 `internal/library/toolpolicy`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller` and
 `internal/web/telegram/service`. These exercise input validation, controlled
@@ -33,6 +33,31 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The Telegram selections also cover cancellation after refill, overlapping
+reservations, isolation of invalid credentials from delivery capacity, remote
+credential first use, canceled contexts, and malformed directory loader results.
+The manual sweep benchmarks can be run with
+`go test ./library/throttle -run '^$' -bench 'Benchmark(SweepRetainedTitles|AdmissionDuringSweep)' -benchmem`.
+On a Windows Ryzen 7 5700G, two 500 ms runs scanning retained, non-full buckets
+took 30–40 µs at 1,000 titles and 348–379 µs at 10,000 titles, with no sweep
+allocations. Forcing a sweep on every parallel admission took 42–43 µs/op and
+313–446 µs/op respectively; those are aggregate throughput figures, not tail
+latency. Sweeps hold the throttle mutex, so production latency depends on load.
+For comparison, forced credential-directory refreshes over an in-memory loader
+took 2.331 ms and allocated 1.24 MB for 1,000 entries, and took 16.09 ms and
+allocated 12.11 MB for 10,000 entries. This was one 1-second run while other
+packages compiled. These measurements exclude MongoDB and do not establish
+production latency or demonstrate a performance improvement:
+
+```sh
+go test ./internal/web/telegram/controller -run '^TestAlertCredentialDirectoryRejectsNilLoaderEntry$' -bench '^BenchmarkAlertCredentialDirectoryMiss$' -benchtime=1s -count=1
+```
+
+The Go team's [`rate.Reservation.CancelAt` documentation](https://pkg.go.dev/golang.org/x/time/rate#Reservation.CancelAt)
+describes cancellation in the presence of subsequent reservations. It is a
+useful comparison for reservation semantics; the local limiter retains its
+own atomic shared and per-title admission contract.
 
 ```sh
 python3 .scripts/test_fast_ci.py
@@ -91,7 +116,7 @@ frontend test/build acceptance, and the three-run network security race suite.
 CodeQL no longer runs on master/develop push or PR events or its former Saturday
 schedule. This extends PR #56's earlier cadence change; it deletes no coverage.
 
-`Linter / check` remains the single automatic formatting and 37-essential-unit
+`Linter / check` remains the single automatic formatting and 43-essential-unit
 gate on every PR and master/develop push. `ci.yml` image publishing/deployment
 and the path-filtered `deployment-contract.yml` safety job stay byte-for-byte
 unchanged. Dependency/database acceptance, memory benchmarks and evaluation

@@ -19,6 +19,7 @@ import (
 	"github.com/Laisky/zap"
 	"golang.org/x/time/rate"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 )
 
@@ -272,10 +273,9 @@ func (r *MutationResolver) CloudMonitoringWebhook() *CloudMonitoringWebhook {
 // subscriber path as TelegramMonitorAlert. Credentials are checked before the
 // body is read and before the alert throttle is consulted, so an
 // unauthenticated caller can neither cost a body allocation nor spend an alert
-// type's send budget. The credential directory refuses an unknown credential
-// without a storage lookup, so guessing has no budget to spend and cannot lock
-// out a valid channel; a known one is checked against storage once. Only a
-// status is returned, so no alert content or credential can echo back.
+// type's send budget. A credential absent from the directory is checked through
+// a separately bounded storage lookup, so a remote rotation can be accepted.
+// Only a status is returned, so no alert content or credential can echo back.
 func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := gmw.GetLogger(ctx).Named("cloud_monitoring_webhook")
@@ -291,23 +291,35 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	switch h.credentials.check(ctx, logger, alertType, token) {
-	case credentialUnknown:
-		h.logRefusal(logger)
+	alertType, err := service.NormalizeAlertName(alertType)
+	if err != nil {
 		w.Header().Set("WWW-Authenticate", cloudMonitoringChallenge)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
-	case credentialUnverifiable:
-		// The directory logs why when it reads; logging here would let a
-		// guessing caller set the log volume.
+	}
+	token, err = service.NormalizePushToken(token)
+	if err != nil {
+		w.Header().Set("WWW-Authenticate", cloudMonitoringChallenge)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	verdict := h.credentials.check(ctx, logger, alertType, token)
+	if ctx.Err() != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
-	case credentialKnown:
 	}
-	// A refusal here means storage changed since the directory read, as when a
-	// token is rotated; verifyAlertCredential drops the stale pair.
-	alert, err := h.sender.verifyAlertCredential(ctx, credentialKnown, alertType, token)
+	var alert *model.AlertTypes
+	if verdict == credentialKnown {
+		alert, err = h.sender.verifyAlertCredential(ctx, verdict, alertType, token)
+	} else {
+		alert, err = h.sender.verifyUnknownCredential(ctx, verdict, alertType, token)
+	}
 	if err != nil {
+		if errors.Is(err, errAlertThrottled) {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		if errors.Is(err, service.ErrAlertUnauthorized) {
 			h.logRefusal(logger)
 			w.Header().Set("WWW-Authenticate", cloudMonitoringChallenge)

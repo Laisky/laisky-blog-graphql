@@ -21,20 +21,14 @@ const throttleSummaryInterval = time.Minute
 // throttleSummaryLog paces the throttle summary across requests.
 var throttleSummaryLog = rate.Sometimes{Interval: throttleSummaryInterval}
 
-// authenticateAlert authenticates token for alertName and spends the alert's
-// send. Both are canonical (service.NormalizeAlertName, NormalizePushToken). It
-// is the GraphQL alert mutation's admission flow:
-//
-//  1. The credential directory refuses a name and token pair that matches no
-//     alert type, with the refusal storage would give. That costs no storage
-//     lookup and no budget, so an anonymous flood spends nothing.
-//  2. A pair the directory knows, or cannot decide on because its copy failed or
-//     is truncated, reserves a send (admitAlertAttempt) and is checked against
-//     storage under the shared budget, as before the directory existed.
-//  3. A matching token keeps the send; any other outcome returns the per-type send.
-//
-// It fails closed with errTelegramThrottleUnavailable when the throttle is not configured.
+// authenticateAlert verifies canonical credentials and spends a delivery send.
+// Known pairs reserve before storage; all other pairs use a separately bounded
+// lookup before admission, so guessing cannot spend delivery capacity. A miss
+// may represent a remote rotation, so a full lookup budget is retryable.
 func (r *MutationResolver) authenticateAlert(ctx context.Context, alertName, token string) (*model.AlertTypes, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, errors.WithStack(err)
+	}
 	if telegramRatelimiter == nil {
 		return nil, errors.WithStack(errTelegramThrottleUnavailable)
 	}
@@ -43,11 +37,23 @@ func (r *MutationResolver) authenticateAlert(ctx context.Context, alertName, tok
 	if r.credentials != nil {
 		verdict = r.credentials.check(ctx, logger, alertName, token)
 	}
-	if verdict == credentialUnknown {
-		if r.credentials.knowsName(alertName) {
-			return nil, service.AlertTokenMismatchError(alertName)
+	if err := ctx.Err(); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	if verdict != credentialKnown {
+		alert, err := r.verifyUnknownCredential(ctx, verdict, alertName, token)
+		if err != nil {
+			return nil, err
 		}
-		return nil, service.AlertTypeNotFoundError(alertName)
+		admission, err := admitAlertAttempt(ctx, alert.Name)
+		if err != nil {
+			return nil, err
+		}
+		defer admission.Cancel()
+		if err = authorizeAlert(ctx, admission, alert.Name); err != nil {
+			return nil, err
+		}
+		return alert, nil
 	}
 
 	admission, err := admitAlertAttempt(ctx, alertName)
@@ -64,6 +70,28 @@ func (r *MutationResolver) authenticateAlert(ctx context.Context, alertName, tok
 		return nil, err
 	}
 	return alert, nil
+}
+
+// verifyUnknownCredential bounds authoritative lookups independently of the
+// delivery budgets. A miss can be a token rotated by another process, so a
+// rate-limited miss is retryable rather than an authentication refusal.
+func (r *MutationResolver) verifyUnknownCredential(ctx context.Context, verdict credentialVerdict, alertName, token string) (*model.AlertTypes, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	if r.credentials == nil {
+		return nil, errors.WithStack(errTelegramThrottleUnavailable)
+	}
+	select {
+	case r.credentials.fallbackSlots <- struct{}{}:
+		defer func() { <-r.credentials.fallbackSlots }()
+	default:
+		return nil, errors.WithStack(errAlertThrottled)
+	}
+	if !r.credentials.fallback.Allow() {
+		return nil, errors.WithStack(errAlertThrottled)
+	}
+	return r.verifyAlertCredential(ctx, verdict, alertName, token)
 }
 
 // verifyAlertCredential checks a credential against storage, which decides. If
@@ -90,6 +118,9 @@ func (r *MutationResolver) verifyAlertCredential(ctx context.Context, verdict cr
 // admission with authorizeAlert or Cancel. It fails closed when the throttle is
 // not configured.
 func admitAlertAttempt(ctx context.Context, alertName string) (*throttle.Admission, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, errors.WithStack(err)
+	}
 	if telegramRatelimiter == nil {
 		return nil, errors.WithStack(errTelegramThrottleUnavailable)
 	}
