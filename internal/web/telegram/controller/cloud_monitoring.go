@@ -19,6 +19,7 @@ import (
 	"github.com/Laisky/zap"
 	"golang.org/x/time/rate"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/model"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/telegram/service"
 )
 
@@ -251,26 +252,30 @@ type CloudMonitoringWebhook struct {
 // every request answer 503, so the sender keeps retrying instead of treating
 // the route as gone.
 func NewCloudMonitoringWebhook(svc service.Interface) *CloudMonitoringWebhook {
-	h := &CloudMonitoringWebhook{
-		svc:             svc,
-		sender:          NewMutationResolver(svc),
+	return NewMutationResolver(svc).CloudMonitoringWebhook()
+}
+
+// CloudMonitoringWebhook returns a webhook that authenticates and delivers
+// through r's service, sharing r's credential directory. Building the GraphQL
+// mutation and the webhook from one resolver keeps one copy of the credentials,
+// one read per interval and one view of rotated tokens for both.
+func (r *MutationResolver) CloudMonitoringWebhook() *CloudMonitoringWebhook {
+	return &CloudMonitoringWebhook{
+		svc:             r.svc,
+		sender:          r,
+		credentials:     r.credentials,
 		deliveryTimeout: cloudMonitoringDeliveryTimeout,
 		refusalLog:      rate.Sometimes{Interval: cloudMonitoringRefusalLogInterval},
 	}
-	if svc != nil {
-		h.credentials = newAlertCredentialDirectory(svc.LoadAlertCredentials, maxMirroredAlertCredentials, alertCredentialRefreshInterval)
-	}
-	return h
 }
 
 // ServeHTTP authenticates one notification, then delivers it through the same
 // subscriber path as TelegramMonitorAlert. Credentials are checked before the
 // body is read and before the alert throttle is consulted, so an
 // unauthenticated caller can neither cost a body allocation nor spend an alert
-// type's send budget. The credential directory refuses an unknown credential
-// without a storage lookup, so guessing has no budget to spend and cannot lock
-// out a valid channel; a known one is checked against storage once. Only a
-// status is returned, so no alert content or credential can echo back.
+// type's send budget. A credential absent from the directory is checked through
+// a separately bounded storage lookup, so a remote rotation can be accepted.
+// Only a status is returned, so no alert content or credential can echo back.
 func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := gmw.GetLogger(ctx).Named("cloud_monitoring_webhook")
@@ -286,27 +291,36 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	switch h.credentials.check(ctx, logger, alertType, token) {
-	case credentialUnknown:
-		h.logRefusal(logger)
+	alertType, err := service.NormalizeAlertName(alertType)
+	if err != nil {
 		w.Header().Set("WWW-Authenticate", cloudMonitoringChallenge)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
-	case credentialUnverifiable:
-		// The directory logs why when it reads; logging here would let a
-		// guessing caller set the log volume.
+	}
+	token, err = service.NormalizePushToken(token)
+	if err != nil {
+		w.Header().Set("WWW-Authenticate", cloudMonitoringChallenge)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	verdict := h.credentials.check(ctx, logger, alertType, token)
+	if ctx.Err() != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
-	case credentialKnown:
 	}
-	alert, err := h.svc.ValidateTokenForAlertType(ctx, token, alertType)
-	if err == nil && alert == nil {
-		err = errors.New("telegram alert authorization returned no alert")
+	var alert *model.AlertTypes
+	if verdict == credentialKnown {
+		alert, err = h.sender.verifyAlertCredential(ctx, verdict, alertType, token)
+	} else {
+		alert, err = h.sender.verifyUnknownCredential(ctx, verdict, alertType, token)
 	}
 	if err != nil {
+		if errors.Is(err, errAlertThrottled) {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		if errors.Is(err, service.ErrAlertUnauthorized) {
-			// Storage changed since the directory read, as when a token is rotated.
-			h.credentials.forget(alertType, token)
 			h.logRefusal(logger)
 			w.Header().Set("WWW-Authenticate", cloudMonitoringChallenge)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -350,7 +364,14 @@ func (h *CloudMonitoringWebhook) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if err = admitAlert(alert.Name); err != nil { //nolint:contextcheck // Rate admission does not need request context.
+	if err = admitAlert(ctx, alert.Name); err != nil {
+		if ctx.Err() != nil {
+			// The sender went away while its body was read; it spends no send
+			// and will retry.
+			logger.Debug("cloud monitoring request ended before admission", zap.Error(err))
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		if errors.Is(err, errAlertThrottled) {
 			logger.Warn("cloud monitoring incident throttled", zap.Error(err))
 			// Every throttle bucket refills at least one send per second.

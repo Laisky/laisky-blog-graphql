@@ -102,6 +102,44 @@ func TestMongoAlertCredentialClasses(t *testing.T) {
 	require.False(t, errors.Is(err, telegramSvc.ErrAlertUnauthorized), "a storage failure must not read as refused credentials")
 }
 
+// TestMongoAlertRefusalsMatchInMemoryRefusals pins that a credential the
+// directory refuses in memory gets exactly the error MongoDB's check gives, so
+// clients and the GraphQL error classifier cannot tell the two paths apart. It
+// also proves that creating and re-keying an alert type in this process move
+// the count the directory uses to reread before refusing.
+func TestMongoAlertRefusalsMatchInMemoryRefusals(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	db := newAlertMongo(t, ctx)
+	monitor := telegramDao.NewMonitor(ssoMongoDB{db})
+
+	before := telegramSvc.AlertCredentialChanges()
+	alert, err := monitor.CreateAlertType(ctx, " synthetic_alert ")
+	require.NoError(t, err)
+	require.Equal(t, "synthetic_alert", alert.Name)
+	require.Greater(t, telegramSvc.AlertCredentialChanges(), before, "creating an alert type must make the directory reread")
+
+	_, err = monitor.CreateAlertType(ctx, "synthetic_alert")
+	require.EqualError(t, err, "already exists")
+
+	rotated := telegramSvc.AlertCredentialChanges()
+	oldToken := alert.PushToken
+	require.NoError(t, monitor.RefreshAlertTokenAndKey(ctx, alert))
+	require.NotEqual(t, oldToken, alert.PushToken)
+	require.Greater(t, telegramSvc.AlertCredentialChanges(), rotated, "re-keying an alert type must make the directory reread")
+
+	_, err = monitor.ValidateTokenForAlertType(ctx, "wrong-token", "synthetic_alert")
+	require.EqualError(t, err, telegramSvc.AlertTokenMismatchError("synthetic_alert").Error())
+	_, err = monitor.ValidateTokenForAlertType(ctx, oldToken, "synthetic_alert")
+	require.EqualError(t, err, telegramSvc.AlertTokenMismatchError("synthetic_alert").Error())
+	_, err = monitor.ValidateTokenForAlertType(ctx, "synthetic-token", "missing_alert")
+	require.EqualError(t, err, telegramSvc.AlertTypeNotFoundError("missing_alert").Error())
+
+	accepted, err := monitor.ValidateTokenForAlertType(ctx, " "+alert.PushToken+" ", " synthetic_alert ")
+	require.NoError(t, err)
+	require.Equal(t, "synthetic_alert", accepted.Name)
+}
+
 // TestMongoAlertCredentialDirectoryRead runs the directory's read against
 // MongoDB: oldest alert types first, only the name and push token returned, a
 // limit that reports a cut, and documents no credential check could accept
@@ -307,7 +345,9 @@ func TestCloudMonitoringDocumentedURLs(t *testing.T) {
 // missing backend is transient instead of the route not existing.
 func TestCloudMonitoringRouteAnswersUnavailableWithoutTelegram(t *testing.T) {
 	setupGinTestMode()
-	for _, resolver := range []*Resolver{nil, {}} {
+	// NewResolver builds the GraphQL alert mutation the route shares its
+	// credential directory with; a nil Telegram service must still answer 503.
+	for _, resolver := range []*Resolver{nil, {}, NewResolver(ResolverArgs{})} {
 		router := gin.New()
 		registerCloudMonitoringAlertRoutes(router, urlPrefixConfig{}, resolver)
 		response := httptest.NewRecorder()

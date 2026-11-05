@@ -56,10 +56,19 @@ func sanitizeRequiredText(input string, maxLen int, field string) (string, error
 	return trimmed, nil
 }
 
+// NormalizeAlertName returns the canonical form of an alert type name: the form
+// alert_types stores and ValidateTokenForAlertType matches. Surrounding whitespace
+// is trimmed; an empty name, a null byte or more than maxAlertNameLength runes is
+// an error. Anything keyed by an alert type name, such as its rate limit, must use
+// this form, so that aliases like " name " share one key with "name".
+func NormalizeAlertName(name string) (string, error) {
+	return sanitizeRequiredText(name, maxAlertNameLength, "alert name")
+}
+
 // sanitizeAlertName validates an alert name and returns the sanitized value or an error.
 // It accepts the raw alert name and returns the sanitized alert name string.
 func sanitizeAlertName(name string) (string, error) {
-	return sanitizeRequiredText(name, maxAlertNameLength, "alert name")
+	return NormalizeAlertName(name)
 }
 
 // sanitizeJoinKey validates a join key and returns the sanitized value or an error.
@@ -68,10 +77,17 @@ func sanitizeJoinKey(key string) (string, error) {
 	return sanitizeRequiredText(key, maxJoinKeyLength, "join key")
 }
 
+// NormalizePushToken returns the canonical form of an alert push token, the form
+// ValidateTokenForAlertType compares. Surrounding whitespace is trimmed; an empty
+// token, a null byte or more than maxPushTokenLength runes is an error.
+func NormalizePushToken(token string) (string, error) {
+	return sanitizeRequiredText(token, maxPushTokenLength, "push token")
+}
+
 // sanitizePushToken validates a push token string and returns the sanitized value or an error.
 // It accepts the raw token string and returns the sanitized token.
 func sanitizePushToken(token string) (string, error) {
-	return sanitizeRequiredText(token, maxPushTokenLength, "push token")
+	return NormalizePushToken(token)
 }
 
 // sanitizeMonitorName validates an optional monitor name filter and returns the sanitized value or an error.

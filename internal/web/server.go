@@ -765,6 +765,11 @@ func classifyGraphQLClientError(errMsg string) (isClientSideErr bool, reason str
 		return true, "invalid_alert_token"
 	}
 
+	if strings.Contains(lowerMsg, "sanitize alert type: ") ||
+		strings.Contains(lowerMsg, "sanitize push token: ") {
+		return true, "invalid_alert_input"
+	}
+
 	if strings.Contains(lowerMsg, "deny by throttle") {
 		return true, "throttled_request"
 	}

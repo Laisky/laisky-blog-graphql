@@ -3,6 +3,8 @@ package dao
 
 import (
 	"context"
+	"sync/atomic"
+	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -38,6 +40,34 @@ func (e alertRefusalError) Unwrap() error { return e.error }
 
 // Is reports whether target is ErrAlertUnauthorized.
 func (alertRefusalError) Is(target error) bool { return target == ErrAlertUnauthorized }
+
+// AlertTypeNotFoundError returns the refusal ValidateTokenForAlertType gives for
+// an alert type that does not exist, so a caller or test double that must
+// reproduce that refusal keeps its text and its ErrAlertUnauthorized match.
+func AlertTypeNotFoundError(alertType string) error {
+	return alertTypeNotFound(alertType, mongoLib.ErrNoDocuments)
+}
+
+// AlertTokenMismatchError returns the refusal ValidateTokenForAlertType gives for
+// a push token that does not match alertType's.
+func AlertTokenMismatchError(alertType string) error {
+	return alertRefusalError{errors.Errorf("token invalidate for `%s`", alertType)}
+}
+
+// alertTypeNotFound wraps cause, the storage miss, as the refusal for alertType.
+func alertTypeNotFound(alertType string, cause error) error {
+	return alertRefusalError{errors.Wrapf(cause, "alert_type `%s` not found", alertType)}
+}
+
+// alertCredentialChanges counts the alert types this process created or re-keyed.
+var alertCredentialChanges atomic.Uint64
+
+// AlertCredentialChanges returns how many alert types this process has created or
+// re-keyed. An in-memory copy of the credentials read before the count last moved
+// may lack one of them, so it must reread before refusing a credential.
+func AlertCredentialChanges() uint64 {
+	return alertCredentialChanges.Load()
+}
 
 // Monitor db
 type Monitor struct {
@@ -122,11 +152,14 @@ func (d *Monitor) CreateAlertType(ctx context.Context, name string) (at *model.A
 		options.Update().SetUpsert(true),
 	)
 	if err != nil {
+		// The upsert may still have inserted the alert type.
+		alertCredentialChanges.Add(1)
 		return nil, errors.Wrap(err, "upsert alert_types docu")
 	}
 	if info.MatchedCount != 0 {
 		return nil, errors.New("already exists")
 	}
+	alertCredentialChanges.Add(1)
 
 	at = new(model.AlertTypes)
 	if err = d.GetAlertTypesCol().FindOne(ctx, bson.M{
@@ -333,13 +366,13 @@ func (d *Monitor) ValidateTokenForAlertType(ctx context.Context,
 		bson.M{
 			fieldName: alertType,
 		}).Decode(alert); mongo.NotFound(err) {
-		return nil, alertRefusalError{errors.Wrapf(err, "alert_type `%s` not found", alertType)}
+		return nil, alertTypeNotFound(alertType, err)
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "load alert_type `%s` from db", alertType)
 	}
 
 	if !secureCompareString(token, alert.PushToken) {
-		return nil, alertRefusalError{errors.Errorf("token invalidate for `%s`", alertType)}
+		return nil, AlertTokenMismatchError(alertType)
 	}
 
 	return alert, nil
@@ -364,7 +397,7 @@ func (d *Monitor) LoadAlertCredentials(ctx context.Context, limit int) (alerts [
 		return nil, false, errors.Wrap(err, "find alert credentials")
 	}
 	defer func() {
-		if closeErr := cur.Close(context.WithoutCancel(ctx)); closeErr != nil && err == nil {
+		if closeErr := closeCursor(ctx, cur); closeErr != nil && err == nil {
 			err = errors.Wrap(closeErr, "close alert credentials cursor")
 		}
 	}()
@@ -393,6 +426,28 @@ func (d *Monitor) LoadAlertCredentials(ctx context.Context, limit int) (alerts [
 		logger.Warn("skip malformed alert types", zap.Int("skipped", skipped))
 	}
 	return alerts, read <= limit, nil
+}
+
+// cursorCloseTimeout bounds closing a cursor that was not read to its end,
+// which costs a killCursors round trip. A server cursor that is never killed
+// still closes on its own after cursorTimeoutMillis (10 minutes by default).
+const cursorCloseTimeout = 2 * time.Second
+
+// cursorCloser is the part of *mongo.Cursor that closeCursor uses.
+type cursorCloser interface {
+	Close(ctx context.Context) error
+}
+
+// closeCursor closes cur under a deadline of its own. The deadline does not
+// end with ctx, so a read cut short by its deadline or by cancellation still
+// kills its server cursor. But it is short and fixed, because
+// context.WithoutCancel alone has no deadline: on a stalled connection the close
+// would then block until the driver's own connection timeouts, long after the
+// read's deadline.
+func closeCursor(ctx context.Context, cur cursorCloser) error {
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cursorCloseTimeout)
+	defer cancel()
+	return errors.WithStack(cur.Close(closeCtx))
 }
 
 func (d *Monitor) RegisterUserAlertRelation(ctx context.Context,
@@ -484,6 +539,8 @@ func (d *Monitor) RefreshAlertTokenAndKey(ctx context.Context, alert *model.Aler
 			},
 		},
 	)
+	// Counted even after an error, since the update may still have applied.
+	alertCredentialChanges.Add(1)
 	return errors.Wrap(err, "update alert token")
 }
 

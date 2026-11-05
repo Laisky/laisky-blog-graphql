@@ -157,6 +157,12 @@ func (service *receiverService) ValidateTokenForAlertType(_ context.Context, tok
 	return &telegramModel.AlertTypes{Name: alertType}, nil
 }
 
+// LoadAlertCredentials lists the one synthetic credential, so the credential
+// directory decides refusals as it does against MongoDB.
+func (service *receiverService) LoadAlertCredentials(context.Context, int) ([]*telegramModel.AlertTypes, bool, error) {
+	return []*telegramModel.AlertTypes{{Name: receiverAlertType, PushToken: receiverAlertToken}}, true, nil
+}
+
 // LoadUsersByAlertType supplies synthetic recipients without accessing MongoDB.
 func (service *receiverService) LoadUsersByAlertType(context.Context, *telegramModel.AlertTypes) ([]*telegramModel.MonitorUsers, error) {
 	return service.users, nil

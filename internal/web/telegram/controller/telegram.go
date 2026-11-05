@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"reflect"
 	"strconv"
 
 	"github.com/Laisky/errors/v2"
@@ -50,20 +51,39 @@ type QueryResolver struct {
 // MutationResolver mutation resolver
 type MutationResolver struct {
 	svc service.Interface
+	// credentials is the alert credential directory, nil without a service. The
+	// Cloud Monitoring webhook built by CloudMonitoringWebhook shares it.
+	credentials *alertCredentialDirectory
 }
 
 // NewQueryResolver new query resolver
 func NewQueryResolver(svc service.Interface) QueryResolver {
 	return QueryResolver{
-		svc: svc,
+		svc: presentService(svc),
 	}
 }
 
-// NewMutationResolver new mutation resolver
+// NewMutationResolver new mutation resolver. A nil svc, including a nil
+// pointer, makes every alert answer errTelegramServiceUnavailable.
 func NewMutationResolver(svc service.Interface) *MutationResolver {
-	return &MutationResolver{
-		svc: svc,
+	r := &MutationResolver{svc: presentService(svc)}
+	if r.svc != nil {
+		r.credentials = newAlertCredentialDirectory(r.svc.LoadAlertCredentials, maxMirroredAlertCredentials, alertCredentialRefreshInterval)
 	}
+	return r
+}
+
+// presentService returns svc, or a nil interface when svc holds a nil pointer.
+// A nil *service.Telegram, as when the service failed to start, would otherwise
+// pass every nil check and panic on its first call.
+func presentService(svc service.Interface) service.Interface {
+	if svc == nil {
+		return nil
+	}
+	if value := reflect.ValueOf(svc); value.Kind() == reflect.Pointer && value.IsNil() {
+		return nil
+	}
+	return svc
 }
 
 // Telegram telegram resolver
@@ -77,6 +97,7 @@ type Telegram struct {
 // then returns errTelegramServiceUnavailable instead of dereferencing it.
 func NewTelegram(ctx context.Context, svc service.Interface) *Telegram {
 	setupTelegramThrottle(ctx)
+	svc = presentService(svc)
 	return &Telegram{
 		TelegramAlertTypeResolver:   &AlertTypeResolver{svc},
 		TelegramMonitorUserResolver: &UserResolver{svc},
@@ -109,6 +130,7 @@ func (r *QueryResolver) TelegramMonitorUsers(ctx context.Context,
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
 	}
+	page = pageOrDefault(page)
 	cfg := &dto.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
@@ -124,12 +146,22 @@ func (r *QueryResolver) TelegramAlertTypes(ctx context.Context,
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
 	}
+	page = pageOrDefault(page)
 	cfg := &dto.QueryCfg{
 		Page: page.Page,
 		Size: page.Size,
 		Name: name,
 	}
 	return r.svc.LoadAlertTypes(ctx, cfg)
+}
+
+// pageOrDefault returns page, or the schema's default first page of 10 when a
+// client passed page: null explicitly.
+func pageOrDefault(page *models.Pagination) *models.Pagination {
+	if page == nil {
+		return &models.Pagination{Page: 0, Size: 10}
+	}
+	return page
 }
 
 // --------------------------
@@ -207,8 +239,10 @@ func (t *AlertTypeResolver) SubUsers(ctx context.Context,
 // ============================
 
 // TelegramMonitorAlert sends the complete alert through the existing authorized subscriber path.
-// It preserves fail-closed throttling and token validation; partial provider acceptance
-// returns a visible error because retrying the mutation may duplicate accepted sends.
+// It preserves fail-closed throttling and token validation. Credentials the shared directory does
+// not know are verified through a separately bounded lookup before they can spend delivery
+// capacity (see authenticateAlert); partial provider acceptance returns a visible error because
+// retrying the mutation may duplicate accepted sends.
 func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, token, msg string) (*model.AlertTypes, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.WithStack(errTelegramServiceUnavailable)
@@ -217,15 +251,19 @@ func (r *MutationResolver) TelegramMonitorAlert(ctx context.Context, typeArg, to
 	if err != nil {
 		return nil, err
 	}
-	if err = admitAlert(typeArg); err != nil { //nolint:contextcheck // Rate admission does not need request context.
-		return nil, err
-	}
-	alert, err := r.svc.ValidateTokenForAlertType(ctx, token, typeArg)
+	// Authentication and admission use the canonical name and token, so aliases
+	// such as " name " share the budget of "name", and an input storage can
+	// never match costs nothing. The errors keep the DAO's text.
+	alertName, err := service.NormalizeAlertName(typeArg)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "sanitize alert type")
 	}
-	if alert == nil {
-		return nil, errors.New("telegram alert authorization returned no alert")
+	if token, err = service.NormalizePushToken(token); err != nil {
+		return nil, errors.Wrap(err, "sanitize push token")
+	}
+	alert, err := r.authenticateAlert(ctx, alertName, token)
+	if err != nil {
+		return nil, err
 	}
 	return r.deliverAuthorizedAlert(ctx, alert, complete)
 }
@@ -244,13 +282,20 @@ func composeAlert(alertType, msg string) (string, error) {
 	return complete, nil
 }
 
-// admitAlert spends one send from the alert type's and the total budget. It fails
-// closed when the throttle is not configured.
-func admitAlert(alertType string) error {
+// admitAlert spends one send from the alert type's and the total budget, for an
+// alert whose credentials the caller already verified, such as the Cloud
+// Monitoring webhook. A caller that has not authenticated yet must use
+// admitAlertAttempt instead. A request that has already ended spends nothing,
+// since its delivery could no longer happen. It fails closed when the throttle
+// is not configured.
+func admitAlert(ctx context.Context, alertType string) error {
+	if err := ctx.Err(); err != nil {
+		return errors.WithStack(err)
+	}
 	if telegramRatelimiter == nil {
 		return errors.WithStack(errTelegramThrottleUnavailable)
 	}
-	if !telegramRatelimiter.Allow(alertType) { //nolint:contextcheck // Rate admission does not need request context.
+	if !telegramRatelimiter.Allow(alertType) {
 		return errors.WithStack(errAlertThrottled)
 	}
 	return nil

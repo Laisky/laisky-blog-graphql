@@ -13,10 +13,10 @@ includes security fixes. Historical timing measurements below retain the
 toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
-37 named unit tests in `cmd`, `library/log`, `internal/web`,
-`internal/library/toolpolicy`,
-`internal/web/telegram/formatting`, `internal/web/telegram/controller` and
-`internal/web/telegram/service`. These exercise input validation, controlled
+the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
+`library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
+`internal/web/telegram/formatting`, `internal/web/telegram/controller`,
+`internal/web/telegram/dao` and `internal/web/telegram/service`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
@@ -33,6 +33,49 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The Telegram selections also cover cancellation after refill, overlapping
+reservations, isolation of invalid credentials from delivery capacity, remote
+credential first use, canceled contexts, requests that end after authentication
+but before a send is kept, malformed directory loader results, and the bound on
+requests waiting for a slow directory read, both in the directory and through
+the GraphQL and webhook entrypoints. They also cover the directory's read
+cadence under anonymous misses, the prompt rereads that remain, remembered
+fallback verifications, a read deadline that holds when the loader overruns it,
+the read summary, the bounded cursor close, and how the start-up index step
+judges an index already present. The cursor close is also checked against
+MongoDB by `TestMongoAlertCredentialCursorCleanupIsBounded` in the manual
+`mongo-query-contract` job, and the monitor indexes by
+`TestMongoMonitorIndexesServeAlertLookups`,
+`TestMongoConcurrentAlertTypeCreationKeepsOneDocument`,
+`TestMongoMonitorIndexesKeepStoredData` and
+`TestMongoTelegramServiceEnsuresMonitorIndexes`.
+The manual sweep benchmarks can be run with
+`go test ./library/throttle -run '^$' -bench 'Benchmark(SweepRetainedTitles|AdmissionDuringSweep)' -benchmem`.
+On a Windows Ryzen 7 5700G, two 500 ms runs scanning retained, non-full buckets
+took 30–40 µs at 1,000 titles and 348–379 µs at 10,000 titles, with no sweep
+allocations. Forcing a sweep on every parallel admission took 42–43 µs/op and
+313–446 µs/op respectively; those are aggregate throughput figures, not tail
+latency. Sweeps hold the throttle mutex, so production latency depends on load.
+For comparison, forced credential-directory refreshes over an in-memory loader
+took 2.331 ms and allocated 1.24 MB for 1,000 entries, and took 16.09 ms and
+allocated 12.11 MB for 10,000 entries. This was one 1-second run while other
+packages compiled. The directory no longer keeps a second digest per alert name.
+After that change, three 1-second runs on a Linux 16-thread host took 0.96–1.02 ms
+and allocated 0.63 MB at 1,000 entries, and took 8.5–9.2 ms and allocated
+6.18 MB at 10,000 entries. On the same host and runs, the previous code took
+1.86–1.89 ms (1.24 MB) and 17.7–18.6 ms (12.11 MB). A hot miss took 0.8–1.0 µs
+both before and after. These measurements exclude MongoDB and do not establish
+production latency:
+
+```sh
+go test ./internal/web/telegram/controller -run '^TestAlertCredentialDirectoryRejectsNilLoaderEntry$' -bench '^BenchmarkAlertCredentialDirectoryMiss$' -benchtime=1s -count=1
+```
+
+The Go team's [`rate.Reservation.CancelAt` documentation](https://pkg.go.dev/golang.org/x/time/rate#Reservation.CancelAt)
+describes cancellation in the presence of subsequent reservations. It is a
+useful comparison for reservation semantics; the local limiter retains its
+own atomic shared and per-title admission contract.
 
 ```sh
 python3 .scripts/test_fast_ci.py
@@ -91,7 +134,7 @@ frontend test/build acceptance, and the three-run network security race suite.
 CodeQL no longer runs on master/develop push or PR events or its former Saturday
 schedule. This extends PR #56's earlier cadence change; it deletes no coverage.
 
-`Linter / check` remains the single automatic formatting and 37-essential-unit
+`Linter / check` remains the single automatic formatting and essential-unit
 gate on every PR and master/develop push. `ci.yml` image publishing/deployment
 and the path-filtered `deployment-contract.yml` safety job stay byte-for-byte
 unchanged. Dependency/database acceptance, memory benchmarks and evaluation
