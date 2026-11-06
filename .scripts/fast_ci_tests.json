@@ -45,7 +45,11 @@
       "TestAlertCredentialDirectoryRereadsPromptlyWhenItMatters",
       "TestAlertFallbackVerifiedCredentialIsRemembered",
       "TestAlertCredentialDirectoryReadDeadlineHoldsWhenLoaderOverruns",
-      "TestAlertCredentialDirectoryReadSummary"
+      "TestAlertCredentialDirectoryReadSummary",
+      "TestAlertCredentialRefreshPreservesFallback",
+      "TestAlertCredentialRefreshConcurrentMutation",
+      "TestAlertCredentialRefreshFailureKeepsConcurrentRemember",
+      "TestAlertCredentialRefreshFallbackAtCapacity"
     ]
   },
   {

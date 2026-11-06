@@ -117,6 +117,9 @@ type alertCredentialDirectory struct {
 	mu sync.Mutex
 	// digests holds the keyed digest of every copied name and token pair.
 	digests map[[sha256.Size]byte]struct{}
+	// mutations tracks successful fallback verifications and storage refusals
+	// so a read cannot overwrite changes made while its snapshot was in flight.
+	mutations uint64
 	// healthy is whether the last read succeeded, complete whether it copied
 	// every alert type. Only a healthy, complete copy can identify a miss as unknown.
 	healthy, complete bool
@@ -247,7 +250,7 @@ func (d *alertCredentialDirectory) startRead(ctx context.Context, logger glog.Lo
 	done := make(chan struct{})
 	d.readAt, d.readChanges, d.readDone, d.loading = d.now(), d.changes(), done, true
 	d.stats.started(reason)
-	go d.read(context.WithoutCancel(ctx), logger, reason, done)
+	go d.read(context.WithoutCancel(ctx), logger, reason, done, d.mutations)
 	return done
 }
 
@@ -275,7 +278,8 @@ func (d *alertCredentialDirectory) awaitRead(ctx context.Context, logger glog.Lo
 	}
 }
 
-// read replaces the copy with storage's alert types, then closes done. The
+// read replaces the copy with storage's alert types unless a concurrent
+// remember or forget changed it, then closes done. The
 // read's deadline is enforced here rather than trusted to the loader: once it
 // passes, the read fails and its waiters are released even if the loader is
 // still blocked, and whatever the loader returns later is dropped. A failed
@@ -283,7 +287,7 @@ func (d *alertCredentialDirectory) awaitRead(ctx context.Context, logger glog.Lo
 // the copy no longer tells that a miss is unknown until a later read succeeds.
 // Each outcome is logged once, here, before the waiting requests are released,
 // rather than by every waiting request.
-func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger, reason alertCredentialReadReason, done chan struct{}) {
+func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger, reason alertCredentialReadReason, done chan struct{}, mutations uint64) {
 	readCtx, cancel := context.WithTimeout(ctx, d.loadTimeout)
 	defer cancel()
 	var once sync.Once
@@ -337,11 +341,23 @@ func (d *alertCredentialDirectory) read(ctx context.Context, logger glog.Logger,
 		})
 		return
 	}
+	discarded := false
 	finish(func() {
 		d.loading = false
+		if d.mutations != mutations {
+			// The snapshot may predate a successful fallback or a refusal. Keep
+			// the bounded copy and retry at the failed-read cadence.
+			d.healthy = false
+			discarded = true
+			return
+		}
 		d.digests, d.healthy, d.complete = digests, true, complete
 		d.stats.copied(alerts, elapsed)
 	}, func() {
+		if discarded {
+			logger.Debug("discard alert credential directory snapshot after concurrent credential change")
+			return
+		}
 		logger.Debug("read alert credential directory", zap.String("reason", string(reason)),
 			zap.Int("alert_types", alerts), zap.Bool("complete", complete), zap.Duration("elapsed", elapsed))
 		if !complete {
@@ -377,8 +393,8 @@ func (d *alertCredentialDirectory) loadDigests(ctx context.Context) (digests map
 }
 
 // remember adds a pair storage has just accepted through the fallback lookup,
-// so its next uses are known and spend no fallback lookup. The next read
-// replaces it with storage's own copy. The copy never grows past the directory's
+// so its next uses are known and spend no fallback lookup. A later uncontended
+// read replaces it with storage's own copy. The copy never grows past the directory's
 // limit, and only storage's acceptance adds a pair, so guessing cannot grow it.
 func (d *alertCredentialDirectory) remember(alertType, token string) {
 	sum, ok := d.pairDigest(alertType, token)
@@ -387,13 +403,18 @@ func (d *alertCredentialDirectory) remember(alertType, token string) {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if _, ok := d.digests[sum]; ok || len(d.digests) >= d.limit {
+	if _, ok := d.digests[sum]; ok {
+		d.mutations++
+		return
+	}
+	if len(d.digests) >= d.limit {
 		return
 	}
 	if d.digests == nil {
 		d.digests = make(map[[sha256.Size]byte]struct{})
 	}
 	d.digests[sum] = struct{}{}
+	d.mutations++
 	d.stats.Remembered++
 }
 
@@ -407,6 +428,7 @@ func (d *alertCredentialDirectory) forget(alertType, token string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	delete(d.digests, sum)
+	d.mutations++
 	d.readAt = time.Time{}
 }
 
