@@ -48,7 +48,8 @@
       "TestAlertCredentialDirectoryReadSummary",
       "TestAlertCredentialRefreshPreservesFallback",
       "TestAlertCredentialRefreshConcurrentMutation",
-      "TestAlertCredentialRefreshFailureKeepsConcurrentRemember"
+      "TestAlertCredentialRefreshFailureKeepsConcurrentRemember",
+      "TestAlertCredentialRefreshFallbackAtCapacity"
     ]
   },
   {

@@ -134,3 +134,45 @@ func TestAlertCredentialRefreshFailureKeepsConcurrentRemember(t *testing.T) {
 		})
 	}
 }
+
+// TestAlertCredentialRefreshFallbackAtCapacity verifies that a successful
+// fallback during a read cannot grow a full directory or bypass its budget.
+func TestAlertCredentialRefreshFallbackAtCapacity(t *testing.T) {
+	configureAlertThrottle(t, 10, 10, 10, 10)
+	svc := &tokenGatedTelegram{tokens: map[string]string{"old": "old-token"}}
+	resolver, _, _ := newDirectoryResolver(t, svc)
+	d := resolver.credentials
+	d.limit = 1
+	d.remember("old", "old-token")
+	d.fallback = rate.NewLimiter(0, 1)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	d.load = func(ctx context.Context, limit int) ([]*model.AlertTypes, bool, error) {
+		alerts, complete, err := svc.LoadAlertCredentials(ctx, limit)
+		close(entered)
+		<-release
+		return alerts, complete, err
+	}
+	done := d.startRead(t.Context(), glog.Shared)
+	<-entered
+	svc.setToken("remote", "remote-token")
+	for range cap(d.waiters) {
+		d.waiters <- struct{}{}
+	}
+	_, err := resolver.TelegramMonitorAlert(t.Context(), "remote", "remote-token", "first")
+	require.NoError(t, err)
+	d.mu.Lock()
+	count := len(d.digests)
+	d.mu.Unlock()
+	require.Equal(t, 1, count)
+	once.Do(func() { close(release) })
+	<-done
+	verdict, current := d.lookup(d.digest("old", "old-token"))
+	require.Equal(t, credentialKnown, verdict)
+	require.True(t, current, "a rejected remember must not invalidate an otherwise successful read")
+	verdict, _ = d.lookup(d.digest("remote", "remote-token"))
+	require.Equal(t, credentialUnknown, verdict)
+	_, err = resolver.TelegramMonitorAlert(t.Context(), "remote", "remote-token", "second")
+	require.ErrorIs(t, err, errAlertThrottled, "an entry beyond capacity still uses the bounded fallback")
+}
