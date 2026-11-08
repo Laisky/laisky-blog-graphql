@@ -121,7 +121,10 @@
       "TestDefaultPolicyResolution",
       "TestExplicitEmptyPolicyIgnoresEveryHeader",
       "TestFromContextWithoutMiddlewareUsesPeerOnly",
-      "TestNetworkKeyGroupsIPv6By64"
+      "TestNetworkKeyGroupsIPv6By64",
+      "TestLoadPolicyNormalizesIPv4MappedPrefixes",
+      "TestPolicyTrustsEveryPeer",
+      "TestGinTrustAgreesWithPolicy"
     ]
   },
   {

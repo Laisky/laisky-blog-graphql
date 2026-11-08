@@ -67,6 +67,8 @@ func TestLoadPolicyRejectsInvalidEntries(t *testing.T) {
 		"not an address":   {map[string]any{ConfigKeyTrustedProxies: []any{"10.0.0.1", "proxy.internal"}}, `"proxy.internal"`},
 		"bad cidr":         {map[string]any{ConfigKeyTrustedProxies: []any{"10.0.0.0/33"}}, `"10.0.0.0/33"`},
 		"host bits set":    {map[string]any{ConfigKeyTrustedProxies: []any{"10.0.0.1/8"}}, `"10.0.0.0/8"`},
+		"mapped too short": {map[string]any{ConfigKeyTrustedProxies: []any{"::ffff:0:0/80"}}, "shorter than /96"},
+		"mapped host bits": {map[string]any{ConfigKeyTrustedProxies: []any{"::ffff:10.0.0.1/104"}}, `"10.0.0.0/8"`},
 		"empty entry":      {map[string]any{ConfigKeyTrustedProxies: []any{" "}}, "empty entry"},
 		"ipv6 zone":        {map[string]any{ConfigKeyTrustedProxies: []any{"fe80::1%eth0"}}, "zone"},
 		"non-string item":  {map[string]any{ConfigKeyTrustedProxies: []any{"10.0.0.1", 42}}, "[1] must be a string"},
@@ -97,6 +99,30 @@ func TestPolicyTrustsEveryPeer(t *testing.T) {
 	policy, err = NewPolicy([]string{"::/0"}, DefaultHeaders())
 	require.NoError(t, err)
 	require.True(t, policy.TrustsEveryPeer())
+
+	// gin matches an IPv4-mapped /96 against every IPv4 peer, so the policy
+	// must report it (and the startup warning fire) exactly like 0.0.0.0/0.
+	policy, err = NewPolicy([]string{"::ffff:0:0/96"}, DefaultHeaders())
+	require.NoError(t, err)
+	require.Equal(t, []string{"0.0.0.0/0"}, policy.TrustedProxies())
+	require.True(t, policy.TrustsEveryPeer())
+}
+
+// TestLoadPolicyNormalizesIPv4MappedPrefixes verifies an IPv4-mapped prefix
+// of /96 or longer becomes the IPv4 prefix it covers, the same entry as its
+// IPv4 spelling, and a mapped bare address the same as the IPv4 address.
+func TestLoadPolicyNormalizesIPv4MappedPrefixes(t *testing.T) {
+	mapped, err := NewPolicy([]string{"::ffff:10.0.0.0/104", "::ffff:192.168.1.7/128", "::ffff:172.16.0.9"}, DefaultHeaders())
+	require.NoError(t, err)
+	plain, err := NewPolicy([]string{"10.0.0.0/8", "192.168.1.7/32", "172.16.0.9"}, DefaultHeaders())
+	require.NoError(t, err)
+	require.Equal(t, []string{"10.0.0.0/8", "192.168.1.7/32", "172.16.0.9/32"}, mapped.TrustedProxies())
+	require.Equal(t, plain.TrustedProxies(), mapped.TrustedProxies())
+	require.False(t, mapped.TrustsEveryPeer())
+
+	deduped, err := NewPolicy([]string{"10.0.0.0/8", "::ffff:10.0.0.0/104"}, DefaultHeaders())
+	require.NoError(t, err)
+	require.Equal(t, []string{"10.0.0.0/8"}, deduped.TrustedProxies())
 }
 
 // TestDefaultsAreCopies verifies callers cannot mutate the shared defaults.

@@ -60,6 +60,12 @@ hostname, a malformed CIDR, a CIDR with host bits set (`10.0.0.1/8`), an IPv6
 zone, or a malformed header name. The service never falls back to trusting
 every peer.
 
+An IPv4-mapped entry (`::ffff:a.b.c.d/n` with `n` of 96 or more, or a mapped
+bare address) means the IPv4 network it covers, because that is how gin
+matches peers. For example `::ffff:10.0.0.0/104` is `10.0.0.0/8`, and
+`::ffff:0:0/96` is `0.0.0.0/0`, which trusts every IPv4 peer and triggers the
+startup warning. A mapped prefix shorter than /96 is rejected.
+
 At startup the service logs the effective policy once:
 `configured client identity policy` with `trusted_proxies`,
 `trusted_proxies_source` (`default` or `config`), `client_ip_headers` and

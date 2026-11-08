@@ -214,9 +214,14 @@ func parseStringList(key string, raw any) ([]string, error) {
 	}
 }
 
+// ipv4MappedPrefixBits is the length of the ::ffff:0:0/96 IPv4-mapped block.
+const ipv4MappedPrefixBits = 96
+
 // parseTrustedProxies validates IP addresses and CIDRs and returns them as
-// canonical prefixes. A CIDR with host bits set is rejected because it usually
-// means the operator wrote a host where a network was expected, or vice versa.
+// canonical prefixes, in the form gin matches peers against (see
+// normalizeTrustedPrefix). A CIDR with host bits set is rejected because it
+// usually means the operator wrote a host where a network was expected, or
+// vice versa.
 func parseTrustedProxies(entries []string) ([]netip.Prefix, error) {
 	result := make([]netip.Prefix, 0, len(entries))
 	for _, raw := range entries {
@@ -225,31 +230,55 @@ func parseTrustedProxies(entries []string) ([]netip.Prefix, error) {
 			return nil, errors.Errorf("%s contains an empty entry", ConfigKeyTrustedProxies)
 		}
 
+		var prefix netip.Prefix
 		if strings.Contains(entry, "/") {
-			prefix, err := netip.ParsePrefix(entry)
+			parsed, err := netip.ParsePrefix(entry)
 			if err != nil {
 				return nil, errors.Wrapf(err, "%s entry %q is not a valid CIDR", ConfigKeyTrustedProxies, entry)
 			}
-			if prefix.Masked() != prefix {
-				return nil, errors.Errorf("%s entry %q has host bits set; use %q for the network or a bare address for one host",
-					ConfigKeyTrustedProxies, entry, prefix.Masked().String())
+			prefix = parsed
+		} else {
+			addr, err := netip.ParseAddr(entry)
+			if err != nil {
+				return nil, errors.Wrapf(err, "%s entry %q is not a valid IP address", ConfigKeyTrustedProxies, entry)
 			}
-			result = appendUniquePrefix(result, prefix)
-			continue
+			if addr.Zone() != "" {
+				return nil, errors.Errorf("%s entry %q must not carry an IPv6 zone", ConfigKeyTrustedProxies, entry)
+			}
+			prefix = netip.PrefixFrom(addr, addr.BitLen())
 		}
 
-		addr, err := netip.ParseAddr(entry)
+		normalized, err := normalizeTrustedPrefix(entry, prefix)
 		if err != nil {
-			return nil, errors.Wrapf(err, "%s entry %q is not a valid IP address", ConfigKeyTrustedProxies, entry)
+			return nil, err
 		}
-		if addr.Zone() != "" {
-			return nil, errors.Errorf("%s entry %q must not carry an IPv6 zone", ConfigKeyTrustedProxies, entry)
+		if normalized.Masked() != normalized {
+			return nil, errors.Errorf("%s entry %q has host bits set; use %q for the network or a bare address for one host",
+				ConfigKeyTrustedProxies, entry, normalized.Masked().String())
 		}
-		addr = addr.Unmap()
-		result = appendUniquePrefix(result, netip.PrefixFrom(addr, addr.BitLen()))
+		result = appendUniquePrefix(result, normalized)
 	}
 
 	return result, nil
+}
+
+// normalizeTrustedPrefix rewrites an IPv4-mapped IPv6 prefix (::ffff:a.b.c.d/n)
+// as the IPv4 prefix it denotes. gin matches peers with net.IPNet.Contains,
+// which treats a mapped network of /96 or longer as the IPv4 network
+// a.b.c.d/(n-96) and matches IPv4 peers against it, so ::ffff:0:0/96 trusts
+// every IPv4 peer. Rewriting keeps TrustsEveryPeer, the startup log and the
+// networks handed to gin in agreement. A mapped prefix shorter than /96 is
+// rejected: it does not cover a whole IPv4 network and gin would match it as
+// an IPv6 network that no IPv4 peer reaches.
+func normalizeTrustedPrefix(entry string, prefix netip.Prefix) (netip.Prefix, error) {
+	if !prefix.Addr().Is4In6() {
+		return prefix, nil
+	}
+	if prefix.Bits() < ipv4MappedPrefixBits {
+		return netip.Prefix{}, errors.Errorf("%s entry %q is an IPv4-mapped prefix shorter than /%d; write the IPv4 network instead",
+			ConfigKeyTrustedProxies, entry, ipv4MappedPrefixBits)
+	}
+	return netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-ipv4MappedPrefixBits), nil
 }
 
 // appendUniquePrefix appends prefix unless it is already present.

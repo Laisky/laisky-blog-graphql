@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"testing"
 
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -213,4 +214,32 @@ func TestNetworkKeyGroupsIPv6By64(t *testing.T) {
 	require.NotEqual(t, NetworkKey("2001:db8:1:2::1"), NetworkKey("2001:db8:1:3::1"))
 	require.Equal(t, "fe80::/64", NetworkKey("fe80::1%eth0"))
 	require.Empty(t, NetworkKey("unknown"))
+}
+
+// TestGinTrustAgreesWithPolicy verifies the engine trusts exactly the peers the
+// policy's normalized prefixes contain, including for IPv4-mapped entries that
+// gin's net.IPNet matching treats as IPv4 networks.
+func TestGinTrustAgreesWithPolicy(t *testing.T) {
+	peers := []string{"10.1.2.3", "192.168.1.7", "192.168.1.8", "203.0.113.1", "100.64.0.10", "2001:db8::1", "fd00::1"}
+	for _, entries := range [][]string{
+		{"::ffff:10.0.0.0/104", "::ffff:192.168.1.7"},
+		{"::ffff:0:0/96"},
+		{"::/0"},
+		{"fd00::/8", "100.64.0.0/10"},
+	} {
+		policy, err := NewPolicy(entries, DefaultHeaders())
+		require.NoError(t, err)
+		engine := resolvingEngine(t, policy)
+		for _, peer := range peers {
+			addr := netip.MustParseAddr(peer)
+			want := false
+			for _, trusted := range policy.TrustedProxies() {
+				want = want || netip.MustParsePrefix(trusted).Contains(addr)
+			}
+
+			remote := netip.AddrPortFrom(addr, 4000).String()
+			got := resolve(t, engine, remote, http.Header{"X-Forwarded-For": {"198.51.100.200"}}) == "198.51.100.200"
+			require.Equal(t, want, got, "entries %v, peer %s: gin trust must match the policy", entries, peer)
+		}
+	}
 }
