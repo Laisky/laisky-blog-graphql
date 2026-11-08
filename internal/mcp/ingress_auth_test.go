@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,11 +59,16 @@ func newOneAPITokenFixture(t *testing.T, issued ...string) *oneAPITokenFixture {
 }
 
 // authenticator returns the production one-api validator pointed at the fixture.
-func (f *oneAPITokenFixture) authenticator(t *testing.T) *mcpauth.Authenticator {
+func (f *oneAPITokenFixture) authenticator(t *testing.T, options ...mcpauth.AuthenticatorOptions) *mcpauth.Authenticator {
 	t.Helper()
 	validator, err := mcpauth.NewOneAPITokenValidator(f.URL, nil)
 	require.NoError(t, err)
-	authenticator, err := mcpauth.NewAuthenticator(validator, mcpauth.AuthenticatorOptions{Name: "oneapi"})
+	opts := mcpauth.AuthenticatorOptions{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	opts.Name = "oneapi"
+	authenticator, err := mcpauth.NewAuthenticator(validator, opts)
 	require.NoError(t, err)
 	return authenticator
 }
@@ -180,11 +186,20 @@ func TestIngressGateIsToolAgnostic(t *testing.T) {
 	fixture := newOneAPITokenFixture(t, issuedIngressKey)
 	s, effects := newIngressTestServer(t, fixture)
 	names := append(s.AvailableToolNames(), "file_write", "file_delete", "get_user_request", "memory_after_turn", "ask_user", "web_fetch")
-	for _, name := range names {
-		message := map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-			"params": map[string]any{"name": name, "arguments": map[string]any{}}}
-		headers := http.Header{"Mcp-Protocol-Version": {mcpgo.ProtocolVersion20250618}, "Authorization": {"Bearer sk-random-" + name}}
-		requireInvalidTokenChallenge(t, sendSDKWireRequest(t, s.Handler(), message, headers))
+	for i, name := range names {
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+			"params": map[string]any{"name": name, "arguments": map[string]any{}}})
+		require.NoError(t, err)
+		request := httptest.NewRequest(http.MethodPost, "/mcp/", bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json, text/event-stream")
+		request.Header.Set("Mcp-Protocol-Version", mcpgo.ProtocolVersion20250618)
+		request.Header.Set("Authorization", "Bearer sk-random-"+name)
+		// Distinct callers, so the per-source budget does not turn rejections into 503s.
+		request.RemoteAddr = fmt.Sprintf("192.0.2.%d:1000", i+1)
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, request)
+		requireInvalidTokenChallenge(t, response)
 	}
 	require.Zero(t, effects.Load())
 }
@@ -290,4 +305,35 @@ func newModernRequest(t *testing.T, method mcpgo.MCPMethod, authorization string
 		request.Header.Set("Authorization", authorization)
 	}
 	return request
+}
+
+// TestIngressSourceFloodCannotLockOutOtherCallers threads the peer address into
+// the per-source budget: one address spraying random bearers exhausts only its
+// own budget, and a different caller's never-seen key still validates.
+func TestIngressSourceFloodCannotLockOutOtherCallers(t *testing.T) {
+	fixture := newOneAPITokenFixture(t, issuedIngressKey)
+	s, effects := newIngressTestServer(t, fixture, WithAuthenticator(fixture.authenticator(t, mcpauth.AuthenticatorOptions{
+		UpstreamRatePerSecond: 0.001, UpstreamBurst: 10, PerSourceRatePerSecond: 0.001, PerSourceBurst: 3,
+	})))
+	unavailable := 0
+	for i := range 40 {
+		request := newModernToolCallRequest(t, context.Background(), "/mcp/", fmt.Sprintf("Bearer sk-spray-%02d", i))
+		request.RemoteAddr = "203.0.113.50:5555"
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, request)
+		if response.Code == http.StatusServiceUnavailable {
+			unavailable++
+			continue
+		}
+		requireInvalidTokenChallenge(t, response)
+	}
+	require.Equal(t, 37, unavailable, "beyond its own budget the source is refused without one-api calls")
+	require.Equal(t, int64(3), fixture.calls.Load())
+
+	request := newModernToolCallRequest(t, context.Background(), "/mcp/", "Bearer "+issuedIngressKey)
+	request.RemoteAddr = "198.51.100.60:443"
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Equal(t, int64(1), effects.Load())
 }

@@ -44,6 +44,9 @@ settings:
         max_concurrent: 8
         upstream_rate_per_second: 1 # shares one-api's per-IP GLOBAL_API_RATE_LIMIT with billing
         upstream_burst: 30
+        per_source_rate_per_second: 0.1 # each client source (IPv4 or IPv6 /64) refills one validation per 10s
+        per_source_burst: 5
+        max_sources: 10000
     tools:
       web_search:
         enabled: true # Enable/disable web_search tool

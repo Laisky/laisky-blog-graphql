@@ -116,7 +116,9 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 			return
 		}
 
-		authCtx, err := resolve().Authenticate(r.Context(), header)
+		// The per-source validation budget is keyed on the client address.
+		ctx := mcpauth.EnsureClientAddress(r.Context(), r.RemoteAddr)
+		authCtx, err := resolve().Authenticate(ctx, header)
 		if err != nil {
 			if mcpauth.IsUnavailable(err) {
 				if logger != nil {
@@ -131,7 +133,7 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 			writeInvalidToken(w)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(mcpauth.WithContext(r.Context(), authCtx)))
+		next.ServeHTTP(w, r.WithContext(mcpauth.WithContext(ctx, authCtx)))
 	})
 }
 

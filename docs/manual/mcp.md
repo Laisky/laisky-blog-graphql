@@ -84,8 +84,12 @@ Every entrypoint that derives a tenant from a bearer — the MCP transport, the 
 - **Anonymous discovery.** Requests without any credential keep working for `initialize`, `tools/list` and similar discovery calls. This includes an `Authorization: Bearer` header with an empty token. Tools still require a valid key.
 - **One validation per request.** The verified identity travels in the request context, so nested `mcp_pipe` steps and every handler reuse it.
 - **Caching.** An accepted key is trusted for `positive_ttl` (default 5 minutes), which is also the revocation lag. A rejected key is refused for `negative_ttl` (default 30 seconds) without asking one-api again. Concurrent lookups of the same key share one upstream call.
-- **Upstream protection.** Upstream calls for uncached keys are limited to `upstream_rate_per_second` (default 1) with `upstream_burst` (default 30), and to `max_concurrent` (default 8) at a time. A flood of random bearers therefore cannot amplify into one-api traffic. Keys above that budget receive `503`.
+- **Upstream protection.** Every upstream call for an uncached key is charged to two budgets, and only when the call is about to start. Cache hits, negative-cache hits and coalesced waiters are free.
+  - **Per-source budget.** Each client source (an IPv4 address, or an IPv6 `/64`) may start at most `per_source_burst` validations (default 5), refilled at `per_source_rate_per_second` (default 0.1, i.e. one per 10 seconds). Sources are tracked in an LRU bounded by `max_sources` (default 10,000). A source over its budget gets `503` with `Retry-After` without spending the global budget. One caller spraying random bearers therefore cannot lock out other callers' new or long-idle keys.
+  - **Global budget.** All sources together are limited to `upstream_rate_per_second` (default 1) with `upstream_burst` (default 30), and to `max_concurrent` (default 8) calls at a time. This protects one-api's per-IP limit. Keys beyond it receive `503`.
+  - **Client source.** The source is the address the gin layer records for each request (`mcpauth.WithClientAddress`), currently gin's `ClientIP()`. The MCP transport and console middleware fall back to the TCP peer address. Until the shared client identity helper (`library/clientip`, PR #92) replaces that source, gin trusts `X-Forwarded-For` from any peer, so a caller can rotate spoofed addresses and act as many sources. If the edge proxy does not forward the client address at all, every caller shares the proxy's source, and new keys are limited to `per_source_burst` across all users. Verify the proxy sets `X-Forwarded-For`, or raise `per_source_burst` until PR #92 lands.
 - **Outages.** During a one-api outage, timeout, `429` or `5xx`, a key that one-api accepted within `positive_ttl + stale_grace` (default grace 30 minutes) stays usable (stale-if-error). Any other key fails closed with `503`.
+- **Residual risk.** A flood from many distinct sources (a botnet, or spoofed forwarding headers before PR #92) can still exhaust the global budget. During such a flood, keys never seen before and keys idle longer than `positive_ttl + stale_grace` get `503`. Keys validated recently keep working through the positive cache and the stale grace window. The global budget cannot be removed, because it protects one-api's per-IP limit, which billing also uses.
 
 Consequences to know:
 
@@ -108,6 +112,9 @@ Settings (`settings.mcp.auth.validation.*`):
 | `max_concurrent`           | `8`                        | Concurrent upstream validations.                             |
 | `upstream_rate_per_second` | `1`                        | Rate of upstream validations for uncached keys.              |
 | `upstream_burst`           | `30`                       | Burst of upstream validations.                               |
+| `per_source_rate_per_second` | `0.1`                    | Refill rate of each client source's validation budget.       |
+| `per_source_burst`         | `5`                        | Validations one client source (IPv4 address or IPv6 /64) may start at once. |
+| `max_sources`              | `10000`                    | Client sources tracked (least recently used evicted).        |
 
 ### Request Size and Time Limits
 

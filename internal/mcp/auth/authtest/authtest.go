@@ -13,7 +13,7 @@ import (
 // NewAcceptAll returns an Authenticator that accepts every syntactically valid
 // key, standing in for one-api in tests that use synthetic bearers.
 func NewAcceptAll() *mcpauth.Authenticator {
-	authenticator, err := mcpauth.NewAuthenticator(mcpauth.InsecureAcceptAllValidator{}, mcpauth.AuthenticatorOptions{Name: "test-accept-all"})
+	authenticator, err := mcpauth.NewAuthenticator(mcpauth.InsecureAcceptAllValidator{}, mcpauth.UnmeteredOptions("test-accept-all"))
 	if err != nil {
 		panic(err)
 	}

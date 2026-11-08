@@ -47,20 +47,29 @@ type ValidationSettings struct {
 	// leaving one-api's per-IP API budget for billing calls.
 	UpstreamRatePerSecond float64
 	UpstreamBurst         int
+	// PerSourceRatePerSecond and PerSourceBurst bound the upstream validations
+	// one client source (an IPv4 address or IPv6 /64) may start.
+	PerSourceRatePerSecond float64
+	PerSourceBurst         int
+	// MaxSources bounds the tracked client sources (least recently used evicted).
+	MaxSources int
 }
 
 // DefaultValidationSettings returns the production defaults: one-api validation enabled.
 func DefaultValidationSettings() ValidationSettings {
 	return ValidationSettings{
-		Enabled:               true,
-		Timeout:               5 * time.Second,
-		PositiveTTL:           5 * time.Minute,
-		NegativeTTL:           30 * time.Second,
-		StaleGrace:            30 * time.Minute,
-		MaxEntries:            10000,
-		MaxConcurrent:         8,
-		UpstreamRatePerSecond: 1,
-		UpstreamBurst:         30,
+		Enabled:                true,
+		Timeout:                5 * time.Second,
+		PositiveTTL:            5 * time.Minute,
+		NegativeTTL:            30 * time.Second,
+		StaleGrace:             30 * time.Minute,
+		MaxEntries:             10000,
+		MaxConcurrent:          8,
+		UpstreamRatePerSecond:  1,
+		UpstreamBurst:          30,
+		PerSourceRatePerSecond: 0.1,
+		PerSourceBurst:         5,
+		MaxSources:             10000,
 	}
 }
 
@@ -93,6 +102,12 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 		settings.UpstreamRatePerSecond = DefaultValidationSettings().UpstreamRatePerSecond
 	}
 	settings.UpstreamBurst = max(1, intValue(value("upstream_burst"), settings.UpstreamBurst))
+	settings.PerSourceRatePerSecond = floatValue(value("per_source_rate_per_second"), settings.PerSourceRatePerSecond)
+	if settings.PerSourceRatePerSecond <= 0 {
+		settings.PerSourceRatePerSecond = DefaultValidationSettings().PerSourceRatePerSecond
+	}
+	settings.PerSourceBurst = max(1, intValue(value("per_source_burst"), settings.PerSourceBurst))
+	settings.MaxSources = max(1, intValue(value("max_sources"), settings.MaxSources))
 	return settings
 }
 
@@ -100,22 +115,24 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 // validator when enabled, otherwise an explicit accept-all opt-out logged at WARN.
 func NewAuthenticatorFromSettings(settings ValidationSettings, logger logSDK.Logger) (*Authenticator, error) {
 	options := AuthenticatorOptions{
-		PositiveTTL:           settings.PositiveTTL,
-		NegativeTTL:           settings.NegativeTTL,
-		StaleGrace:            settings.StaleGrace,
-		Timeout:               settings.Timeout,
-		MaxEntries:            settings.MaxEntries,
-		MaxConcurrent:         settings.MaxConcurrent,
-		UpstreamRatePerSecond: settings.UpstreamRatePerSecond,
-		UpstreamBurst:         settings.UpstreamBurst,
+		PositiveTTL:            settings.PositiveTTL,
+		NegativeTTL:            settings.NegativeTTL,
+		StaleGrace:             settings.StaleGrace,
+		Timeout:                settings.Timeout,
+		MaxEntries:             settings.MaxEntries,
+		MaxConcurrent:          settings.MaxConcurrent,
+		UpstreamRatePerSecond:  settings.UpstreamRatePerSecond,
+		UpstreamBurst:          settings.UpstreamBurst,
+		PerSourceRatePerSecond: settings.PerSourceRatePerSecond,
+		PerSourceBurst:         settings.PerSourceBurst,
+		MaxSources:             settings.MaxSources,
 	}
 	if !settings.Enabled {
 		if logger != nil {
 			logger.Warn("MCP API key validation is DISABLED (settings.mcp.auth.validation.enabled=false); " +
 				"any non-empty bearer becomes a tenant. Never use this outside local development.")
 		}
-		options.Name = "disabled"
-		authenticator, err := NewAuthenticator(InsecureAcceptAllValidator{}, options)
+		authenticator, err := NewAuthenticator(InsecureAcceptAllValidator{}, UnmeteredOptions("disabled"))
 		return authenticator, errors.WithStack(err)
 	}
 

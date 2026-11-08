@@ -60,8 +60,29 @@ type AuthenticatorOptions struct {
 	// UpstreamRatePerSecond and UpstreamBurst bound upstream validations of uncached keys.
 	UpstreamRatePerSecond float64
 	UpstreamBurst         int
+	// PerSourceRatePerSecond and PerSourceBurst bound the upstream validations
+	// one client source may start, so it cannot drain the global budget.
+	PerSourceRatePerSecond float64
+	PerSourceBurst         int
+	// MaxSources bounds how many client sources are tracked (LRU).
+	MaxSources int
 	// Now overrides the clock in tests.
 	Now func() time.Time
+}
+
+// UnmeteredOptions returns options for a validator that consults no external
+// authority (the accept-all opt-out and test doubles): there is no upstream to
+// protect, so the global and per-source budgets are effectively unlimited.
+func UnmeteredOptions(name string) AuthenticatorOptions {
+	const unlimited = 1 << 20
+	return AuthenticatorOptions{
+		Name:                   name,
+		MaxConcurrent:          unlimited,
+		UpstreamRatePerSecond:  unlimited,
+		UpstreamBurst:          unlimited,
+		PerSourceRatePerSecond: unlimited,
+		PerSourceBurst:         unlimited,
+	}
 }
 
 // positiveEntry records when a key was last accepted by the authority.
@@ -80,6 +101,7 @@ type Authenticator struct {
 	flights   singleflight.Group
 	slots     chan struct{}
 	limiter   *rate.Limiter
+	sources   *sourceBudgets
 }
 
 // NewAuthenticator builds an Authenticator around an authoritative validator.
@@ -104,6 +126,15 @@ func NewAuthenticator(validator Validator, opts AuthenticatorOptions) (*Authenti
 	if opts.UpstreamBurst <= 0 {
 		opts.UpstreamBurst = defaults.UpstreamBurst
 	}
+	if opts.PerSourceRatePerSecond <= 0 {
+		opts.PerSourceRatePerSecond = defaults.PerSourceRatePerSecond
+	}
+	if opts.PerSourceBurst <= 0 {
+		opts.PerSourceBurst = defaults.PerSourceBurst
+	}
+	if opts.MaxSources <= 0 {
+		opts.MaxSources = defaults.MaxSources
+	}
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -118,6 +149,7 @@ func NewAuthenticator(validator Validator, opts AuthenticatorOptions) (*Authenti
 		negative:  newTTLCache[struct{}](opts.MaxEntries),
 		slots:     make(chan struct{}, opts.MaxConcurrent),
 		limiter:   rate.NewLimiter(rate.Limit(opts.UpstreamRatePerSecond), opts.UpstreamBurst),
+		sources:   newSourceBudgets(opts.PerSourceRatePerSecond, opts.PerSourceBurst, opts.MaxSources),
 	}, nil
 }
 
@@ -196,9 +228,12 @@ func (a *Authenticator) lookup(ctx context.Context, candidate *Context) error {
 	}
 }
 
-// validateUpstream asks the authority once, within the rate, concurrency and
-// time budgets, and records the verdict. Shared by every coalesced caller, it
-// is detached from the first caller's cancellation.
+// validateUpstream asks the authority once, within the per-source, global,
+// concurrency and time budgets, and records the verdict. Shared by every
+// coalesced caller, it is detached from the first caller's cancellation. Only
+// a call that is about to start is charged: cache hits and coalesced waiters
+// never reach the budgets, and a source over its own budget is refused without
+// spending the global one.
 func (a *Authenticator) validateUpstream(parent context.Context, candidate *Context) error {
 	logger := gmw.GetLogger(parent)
 	key := candidate.APIKeyHash
@@ -209,7 +244,12 @@ func (a *Authenticator) validateUpstream(parent context.Context, candidate *Cont
 	if _, rejected := a.negative.get(key, now); rejected {
 		return errors.WithStack(ErrCredentialRejected)
 	}
-	if !a.limiter.Allow() {
+	reservation, ok := a.sources.reserve(sourceKey(ClientAddressFromContext(parent)), now)
+	if !ok {
+		return errors.Wrap(ErrValidationUnavailable, "api key validation budget of this client source exhausted")
+	}
+	if !a.limiter.AllowN(now, 1) {
+		reservation.CancelAt(now)
 		return errors.Wrap(ErrValidationUnavailable, "api key validation rate exceeded")
 	}
 

@@ -38,6 +38,23 @@ Sources verified for issues #86 (any non-empty bearer became a tenant) and #88
   environments can opt to disable caching entirely."
 - OWASP Microservices Security Cheat Sheet: bound cache duration to the
   required freshness.
+- Shared refusal budgets on credential paths become lockout levers. This repo
+  already rejected them in `cloud_monitoring_webhook_20261103.md` and
+  `telegram_alert_admission_20261104.md`, citing the OWASP Authentication Cheat
+  Sheet. The global upstream budget is still required, because it protects
+  one-api's per-IP limit. A per-source token bucket in front of it therefore
+  keeps one source from spending all of it:
+  - a source is an IPv4 address or an IPv6 /64;
+  - sources live in a bounded LRU;
+  - a source is charged only when an upstream call starts;
+  - a source over its budget is refused without spending the global budget.
+- Residual risk: a distributed flood from many sources can still exhaust the
+  global budget. Recently validated keys survive it through the positive cache
+  and stale grace.
+- Until PR #92's `library/clientip` lands, the source is gin's `ClientIP()`,
+  which trusts `X-Forwarded-For` from any peer (gin 1.12 default trusted
+  CIDRs). The source is threaded through `mcpauth.WithClientAddress` so that
+  it can be swapped for `clientip.FromContext`.
 - No normative source covers negative caching or stale-if-error. Our choices:
   - Short negative TTL (≤ 5m).
   - Stale-if-error only for keys accepted within a bounded grace window.

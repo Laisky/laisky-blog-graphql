@@ -37,13 +37,14 @@ func HTTPMiddlewareWith(authenticator *Authenticator, next http.Handler) http.Ha
 		if active == nil {
 			active = Installed()
 		}
-		authCtx, err := active.Authenticate(r.Context(), r.Header.Get("Authorization"))
+		ctx := EnsureClientAddress(r.Context(), r.RemoteAddr)
+		authCtx, err := active.Authenticate(ctx, r.Header.Get("Authorization"))
 		if err != nil {
 			WriteHTTPAuthError(w, r, err)
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(WithContext(r.Context(), authCtx)))
+		next.ServeHTTP(w, r.WithContext(WithContext(ctx, authCtx)))
 	})
 }
 

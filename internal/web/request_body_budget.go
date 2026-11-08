@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/httpbody"
 )
 
@@ -158,6 +159,15 @@ func (p *requestBodyPolicy) middleware() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// clientAddressMiddleware records each caller's client address for the
+// per-source API key validation budget used by the MCP transport, console APIs
+// and GraphQL shared fields. It uses gin's ClientIP until the shared client
+// identity helper (library/clientip, PR #92) replaces this single source.
+func clientAddressMiddleware(c *gin.Context) {
+	c.Request = c.Request.WithContext(mcpauth.WithClientAddress(c.Request.Context(), c.ClientIP()))
+	c.Next()
 }
 
 // newHTTPServer configures connection timeouts. ReadTimeout and WriteTimeout

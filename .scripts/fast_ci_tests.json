@@ -117,7 +117,8 @@
       "TestHTTPServerTimeoutsKeepStreamsAlive",
       "TestRequestBodyPolicyClassifiesRegisteredRoutes",
       "TestGinBodyBudgetRejectsOversizedBodiesPerRouteFamily",
-      "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain"
+      "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain",
+      "TestClientAddressMiddlewareRecordsCallerSource"
     ]
   },
   {
@@ -168,7 +169,12 @@
       "TestUninstalledAuthenticatorFailsClosed",
       "TestFromContextIgnoresUnverifiedContexts",
       "TestOneAPITokenValidatorClassifiesAuthorityStatuses",
-      "TestNewAuthenticatorFromSettingsSelectsOneAPIByDefault"
+      "TestNewAuthenticatorFromSettingsSelectsOneAPIByDefault",
+      "TestAuthenticatorSourceFloodCannotStarveOtherSources",
+      "TestAuthenticatorSourceBudgetsGroupIPv6By64",
+      "TestAuthenticatorSourceBudgetsStayBounded",
+      "TestAuthenticatorCacheHitsDoNotChargeSourceBudget",
+      "TestEnsureClientAddressPrefersOuterLayer"
     ]
   },
   {
@@ -181,7 +187,8 @@
       "TestIngressSSEStreamOutlivesReadBudget",
       "TestIngressRejectsOversizedBodyBeforeAuthOrBuffering",
       "TestIngressTerminatesSlowBodyWithinReadBudget",
-      "TestIngressReadBudgetDoesNotCutHeldRequests"
+      "TestIngressReadBudgetDoesNotCutHeldRequests",
+      "TestIngressSourceFloodCannotLockOutOtherCallers"
     ]
   },
   {
