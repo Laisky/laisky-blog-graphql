@@ -11,7 +11,9 @@ This manual covers Laisky SSO integration for client applications and operationa
   - [Client Integration Flow](#client-integration-flow)
   - [Login Entry URL](#login-entry-url)
   - [`redirect_to` Validation Rules](#redirect_to-validation-rules)
+  - [Registered Client Code Flow](#registered-client-code-flow)
   - [Callback Contract](#callback-contract)
+  - [Legacy Bearer Cutover](#legacy-bearer-cutover)
   - [JWT Token Specification](#jwt-token-specification)
   - [Token Validation](#token-validation)
   - [Account and Profile Flows](#account-and-profile-flows)
@@ -63,15 +65,23 @@ GitHub user authentication is implemented with GitHub OAuth authorization-code f
 
 ## Client Integration Flow
 
-1. Your application redirects the browser to the SSO login page with a validated callback URL in `redirect_to`.
-2. The user signs in with one of the enabled methods:
+New and migrating clients use the [registered client code flow](#registered-client-code-flow):
+
+1. The operator registers your client ID and its exact callback URI.
+2. Your application redirects the browser to the SSO login page with a code request in `redirect_to`.
+3. The user signs in with one of the enabled methods:
    - Password, plus TOTP when the user has TOTP enabled.
    - Email verification code.
    - Passkey.
    - GitHub.
-3. SSO redirects the browser to your callback URL with `sso_token=<JWT>`.
-4. Your backend validates `sso_token`.
-5. Your backend creates its own local session and redirects the browser to a clean URL without `sso_token`.
+4. SSO redirects the browser to your exact callback with a single-use `sso_code` and your `sso_state`.
+5. Your application redeems the code at `https://sso.laisky.com/sso/token` with its PKCE verifier.
+6. Your backend creates its own local session and redirects the browser to a clean URL.
+
+Legacy flow (deprecated, unregistered clients only): SSO redirects to `redirect_to` with
+`sso_token=<JWT>` in the query; your backend validates it, creates its own session and
+removes the token from the URL. The operator can switch it off; see
+[Legacy Bearer Cutover](#legacy-bearer-cutover).
 
 Blog exception: `blog.laisky.com` never receives `sso_token`. Blog uses the opt-in
 single-use code flow (`sso_flow=code` with S256 PKCE, then `sso_code` plus
@@ -103,23 +113,123 @@ https://sso.laisky.com/?redirect_to=https%3A%2F%2Fapp.laisky.com%2Fauth%2Fsso%2F
 
 ## `redirect_to` Validation Rules
 
-The SSO frontend and backend accept only these redirect targets:
+The SSO frontend and backend enforce one policy, implemented in
+`internal/library/ssoredirect` and `web/src/lib/sso-redirect-policy.ts` and pinned by the
+shared vectors in `web/src/lib/sso-redirect-policy.v1.json`. The checks run on the raw
+`redirect_to` string before URL parsing, so parser repairs cannot change the outcome.
 
-- Protocol: `http` or `https`.
-- Host:
+- Form: an absolute `https://` URL, an absolute `http://` URL on a development host, or a
+  path starting with a single `/` (an issuer page).
+- At most 2048 characters of printable ASCII. Spaces, control characters, backslashes and
+  non-ASCII characters are rejected; browsers already percent-encode them in `location.href`.
+- No userinfo (`user@` or `user:pass@`) in the authority.
+- Production hosts, `https` only:
   - `laisky.com`.
   - Any `*.laisky.com` subdomain.
-  - Internal IP ranges:
-    - IPv4: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `100.64.0.0/10`.
-    - IPv6: `::1`, `fc00::/7`.
+- Development hosts, `http` or `https`:
+  - `localhost`.
+  - Canonical dotted-decimal IPv4 in `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`,
+    `192.168.0.0/16` or `100.64.0.0/10` (CGNAT, for example Tailscale).
+  - IPv6 `[::1]` and `fc00::/7`, in hexadecimal form.
+  - Development hosts exist for local work only; never expose a production session on them.
+- Numeric IPv4 spellings that parsers rewrite (`0x7f.1`, `127.1`, `010.0.0.1`, `2130706433`),
+  IPv4-mapped or zone-scoped IPv6, ports outside 1–65535, and leading-zero ports are rejected.
 
-If your callback host is outside this policy, update the allow-list in code before release.
+The accepted target then takes exactly one path:
+
+| Target | Result |
+| --- | --- |
+| `blog.laisky.com` | Blog code flow or bootstrap ([Blog SSO code handoff](../ref/blog-sso-code-handoff.md)); never the bearer |
+| A registered client's exact code request | Single-use code to the registered callback |
+| Any other URL on a registered client's hostname | Rejected (`code_flow_required`) |
+| An issuer page (same origin as the login page) | Opened without a URL bearer; the session is already stored there |
+| Any other accepted target | Legacy `sso_token` handoff, only while `legacy_token_redirect` is `allow` |
+
+`sso_flow` without `sso_client_id` is the Blog-only format and is rejected on other hosts.
+Without `redirect_to`, sign-in opens `/profile` on the issuer origin that completes it (for
+GitHub, the configured callback origin), so no bearer crosses to another origin.
+
+Plain `http` on `*.laisky.com` was accepted before 2026-11-08 and is now rejected. All
+known consumers send `https` (Accounting from its configured callback; go-ramjet CV and
+GPTChat from the page URL), so a page opened over plain `http` must upgrade to `https`
+before it starts sign-in.
+
+## Registered Client Code Flow
+
+A registered client receives only a single-use code bound to its client ID, its exact
+callback URI, its `sso_state` and its S256 PKCE challenge. The reusable bearer never
+appears in its URLs. This generalizes the Blog handoff; Blog keeps its own fixed format.
+
+### Registration
+
+The operator adds the client to `settings.web.sso.clients` (see
+[Admin Configuration](#sso-redirect-policy-and-client-registry)). Registration rules:
+
+- Client ID: `^[a-z][a-z0-9_-]{1,63}$`, not `blog`.
+- One to eight callback URIs, each canonical and compared byte for byte: lower-case
+  `https://` (or `http://` on a development host), lower-case host without a trailing dot
+  or default port, an explicit path (`/` for the root) without `.`/`..` segments or
+  percent escapes, and no query or fragment. A URI belongs to only one client.
+- Registering a callback reserves its whole hostname: other URLs on that hostname are
+  refused instead of receiving the bearer.
+
+### Code request
+
+Generate a fresh `state` and PKCE verifier per sign-in, each from 32 random bytes encoded
+as unpadded base64url (43 characters). Keep both in the user's browser session. Compute
+`challenge = BASE64URL(SHA-256(verifier))` and send the browser to:
+
+```text
+https://sso.laisky.com/?redirect_to=URL_ENCODE(
+  https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting
+  &sso_state={state}&sso_challenge={challenge}&sso_challenge_method=S256)
+```
+
+The `redirect_to` value is the registered callback followed by exactly these five query
+parameters in any order, each once, with no fragment. `https://mcp.laisky.com/sso/login`
+accepts the same `redirect_to`.
+
+### Callback
+
+```text
+{registered_callback}?sso_code={code}&sso_state={state}
+```
+
+1. Remove `sso_code` and `sso_state` from the URL before loading any third-party script.
+2. Compare `sso_state` with the stored value; discard the stored state and verifier after use.
+3. Redeem within 60 seconds:
+
+```bash
+curl -X POST 'https://sso.laisky.com/sso/token' \
+  -H 'Content-Type: application/json' \
+  -d '{"client_id":"accounting","redirect_uri":"https://accounting.laisky.com/api/auth/sso/callback",
+       "code":"<sso_code>","state":"<state>","code_verifier":"<verifier>"}'
+```
+
+The response is `{"access_token":"<JWT>","token_type":"Bearer","expires_in":<seconds>}`
+with `Cache-Control: no-store`. The access token is the same SSO JWT described below.
+
+Redemption rules:
+
+- A code is redeemed once. Wrong bindings fail with `invalid_grant` and do not consume it.
+- Server-side redemption sends no `Origin`. Browser redemption is allowed only from the
+  origin of the client's registered callback; any other origin gets `403`.
+- Redemption rechecks that the session is still active.
+
+### Migration from the legacy handoff
+
+Follow the same issuer, consumer, cutover order Blog used:
+
+1. Issuer: register the client with `legacy_token_redirect: allow` on the client entry.
+   Code requests now work, and the client's old `sso_token` handoff keeps working.
+2. Consumer: ship the code request, callback and redemption above, and stop reading `sso_token`.
+3. Cutover: remove the client's `legacy_token_redirect` (default `deny`). Its hostname now
+   accepts only code requests.
 
 ## Callback Contract
 
-After successful login, SSO redirects to `redirect_to` and appends the following.
-This applies to every client except Blog; see the Blog exception in
-[Client Integration Flow](#client-integration-flow).
+Legacy handoff (deprecated, unregistered clients while `legacy_token_redirect` is `allow`).
+Blog and registered clients never receive it.
 
 ```text
 sso_token=<JWT>
@@ -130,6 +240,8 @@ Behavior:
 - Existing query parameters are preserved.
 - Existing `sso_token` is overwritten.
 - GitHub and passkey login use a signed server state/session before redirecting, so the callback target is not trusted from the browser at finish time.
+- GitHub and passkey completion re-apply the current policy to the signed target, so a
+  sign-in started before a policy change cannot finish toward a now-refused target.
 
 Your callback endpoint should:
 
@@ -138,6 +250,29 @@ Your callback endpoint should:
 3. Validate `sso_token`.
 4. Create your own session, preferably with an HttpOnly secure cookie.
 5. Redirect to a clean URL without `sso_token`.
+
+## Legacy Bearer Cutover
+
+`settings.web.sso.legacy_token_redirect` controls the legacy handoff for unregistered targets:
+
+- `allow` (default): unregistered targets that pass the redirect policy receive `sso_token`.
+- `deny`: unregistered targets are refused on every path (password, TOTP, email code,
+  existing session, passkey and GitHub, in the frontend and in the GraphQL start and
+  completion mutations). Blog, registered clients and issuer pages keep working.
+
+The issuer frontend reads the policy from `runtime-config.json` (`ssoRedirect`). If the
+runtime configuration cannot be loaded, or the policy in it is malformed, the frontend
+fails closed as if `deny` were set and asks the user to reload.
+
+Remaining risk while `allow` is set: an unregistered client receives the 90-day SSO JWT in
+its URL query, where browser history, the client's access logs, proxies and analytics can
+retain it. Anyone who obtains that URL can act as the user until the token expires. https
+is now required on production hosts, which removes network observers, but not the other
+exposures. The JWT lifetime is unchanged because clients use it as their session.
+
+Owner cutover step: when every consumer that still reads `sso_token` (go-ramjet CV and
+GPTChat, Accounting) has moved to the code flow, set `legacy_token_redirect: deny` and
+restart the issuer. Roll back by setting `allow` again.
 
 ## JWT Token Specification
 
@@ -380,6 +515,32 @@ Follow the [OneAPI SSO migration runbook](sso_oneapi_migration.md) before
 changing the production selector.
 
 ## Admin Configuration
+
+### SSO Redirect Policy and Client Registry
+
+```yaml
+settings:
+  web:
+    sso:
+      # allow (default) keeps the legacy sso_token handoff for unregistered targets;
+      # deny refuses them. Blog, registered clients and issuer pages are unaffected.
+      legacy_token_redirect: allow
+      clients:
+        accounting: # client ID
+          redirect_uris:
+            - https://accounting.laisky.com/api/auth/sso/callback
+        cv:
+          redirect_uris:
+            - https://cv.laisky.com/cv/sso/callback
+          # Migration aid only: the client's hostname keeps the legacy handoff while its
+          # consumer ships the code flow. Omit it (default deny) to finish the cutover.
+          legacy_token_redirect: allow
+```
+
+Startup validation rejects an unknown `legacy_token_redirect`, an invalid client ID, a
+non-canonical or disallowed callback, unknown client fields and a callback registered by
+two clients. Changes take effect after a restart. The registry is public: it is published
+in `runtime-config.json` so the login page can recognize code requests.
 
 ### Authoritative OneAPI User Database
 
@@ -795,10 +956,11 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 
 ## Security Notes
 
-1. Always use HTTPS in production.
+1. Always use HTTPS in production. The issuer refuses plain `http` targets on production hosts.
 2. Always validate your own `state` in callback handlers.
 3. Treat `sso_token` as a credential and never log full token values.
-4. Remove `sso_token` from URLs immediately after callback processing.
+4. Remove `sso_token` from URLs immediately after callback processing. Prefer the
+   registered client code flow, which never puts the bearer in a URL.
 5. Use HttpOnly, Secure, SameSite cookies for local application sessions.
 6. Keep GitHub OAuth client secrets, SMTP passwords, and Turnstile secret keys out of frontend bundles.
 7. Passkey sessions and GitHub OAuth states are signed by the server and expire after a short window.
@@ -808,25 +970,30 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 ## Common Failure Cases
 
 1. `Missing redirect_to parameter`: the password login redirect flow needs a callback target.
-2. `Unsupported redirect protocol`: callback URL is not `http` or `https`.
-3. `Unsupported redirect host`: callback host is outside the SSO allow-list.
-4. `turnstile token is required`: Turnstile is configured but the client did not provide a token.
-5. GitHub login returns no verified email: the GitHub account has no verified email visible through the granted scopes.
-6. GitHub binding fails because the GitHub identity is already bound to another SSO user.
-7. Passkey registration fails on HTTP: WebAuthn requires a secure context, except for browser-supported local development cases.
-8. `WhoAmI` returns unauthorized: token is missing, malformed, expired, or not sent as `Authorization: Bearer <token>`.
-9. Callback loops after success: local callback did not persist a session before removing `sso_token`.
-10. `turnstile_required` / `turnstile_failed`: show (or re-show) the Turnstile widget and retry with a fresh token.
-11. `login_unavailable`: the credentials could not be evaluated because a backing dependency failed; retry later. It does not mean the password is wrong.
-12. `totp_required`: the password was accepted; prompt for the TOTP code and resubmit.
+2. `Unsupported redirect protocol`: callback URL is not an absolute `https`/`http` URL or a `/` path.
+3. `Unsupported redirect host`: callback host is outside the SSO allow-list or uses a non-canonical spelling.
+4. `Insecure redirect target`: a production host was given with `http://`; use `https://`.
+5. `This application must use the SSO code flow`: the hostname belongs to a registered client; send a code request.
+6. `This application is not registered for SSO`: `legacy_token_redirect` is `deny` and the client is not registered.
+7. `Invalid SSO code request` or `Unknown SSO client`: the code request does not match a registration exactly.
+8. `SSO configuration could not be loaded`: the login page could not read `runtime-config.json`; reload.
+9. `turnstile token is required`: Turnstile is configured but the client did not provide a token.
+10. GitHub login returns no verified email: the GitHub account has no verified email visible through the granted scopes.
+11. GitHub binding fails because the GitHub identity is already bound to another SSO user.
+12. Passkey registration fails on HTTP: WebAuthn requires a secure context, except for browser-supported local development cases.
+13. `WhoAmI` returns unauthorized: token is missing, malformed, expired, or not sent as `Authorization: Bearer <token>`.
+14. Callback loops after success: local callback did not persist a session before removing `sso_token`.
+15. `turnstile_required` / `turnstile_failed`: show (or re-show) the Turnstile widget and retry with a fresh token.
+16. `login_unavailable`: the credentials could not be evaluated because a backing dependency failed; retry later. It does not mean the password is wrong.
+17. `totp_required`: the password was accepted; prompt for the TOTP code and resubmit.
 
 ## Go-Live Checklist
 
 1. SSO site routing and public base path are configured.
-2. Callback URL passes `redirect_to` validation.
-3. Callback handler validates `state`.
-4. Callback handler validates `sso_token` with `WhoAmI` or approved local verification.
-5. Callback handler removes `sso_token` from the browser URL.
+2. The client is registered in `settings.web.sso.clients` and uses the code flow; its callback passes `redirect_to` validation over https.
+3. Callback handler validates `state` and the PKCE verifier is redeemed once at `/sso/token`.
+4. Legacy clients only: callback handler validates `sso_token` with `WhoAmI` or approved local verification.
+5. Callback handler removes `sso_code`, `sso_state` and any `sso_token` from the browser URL.
 6. GitHub OAuth callback URL exactly matches the deployed SSO callback route.
 7. WebAuthn `origin` and `rp_id` are stable for the deployed hostname.
 8. Turnstile site key and secret key are configured together when Turnstile is required.
