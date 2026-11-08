@@ -82,7 +82,8 @@
       "TestStartupAlertDiagnosticScope",
       "TestStartupAlertCorePreservesSmallBoundContext",
       "TestStartupAlertCorePreservesLargeChosenInput",
-      "TestStartupAlertCoreRejectsWholeOversizeRecord"
+      "TestStartupAlertCoreRejectsWholeOversizeRecord",
+      "TestValidateStartupConfigRejectsInvalidTrustedProxies"
     ]
   },
   {
@@ -105,7 +106,32 @@
     "tests": [
       "TestAlertAdoptionActualCallerCompleteContent",
       "TestAlertAdoptionOversizeKeepsBusinessAndLocalInput",
-      "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet"
+      "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet",
+      "TestServerEngineDirectPeerCannotChooseRiskKey",
+      "TestServerEngineTrustedProxyChains",
+      "TestServerEngineDirectDeploymentPolicy"
+    ]
+  },
+  {
+    "package": "./library/clientip",
+    "tests": [
+      "TestLoadPolicyDefaultsWhenUnset",
+      "TestLoadPolicyExplicitEmptyTrustsNoProxy",
+      "TestLoadPolicyRejectsInvalidEntries",
+      "TestDefaultPolicyResolution",
+      "TestExplicitEmptyPolicyIgnoresEveryHeader",
+      "TestFromContextWithoutMiddlewareUsesPeerOnly",
+      "TestNetworkKeyGroupsIPv6By64"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/controller",
+    "tests": [
+      "TestAuthChallengeTrackerAccountBudgetSurvivesClientRotation",
+      "TestAuthChallengeTrackerAccountBudgetClearance",
+      "TestAuthChallengeTrackerAccountTableBounded",
+      "TestAuthChallengeTrackerClientTableBounded",
+      "TestValidateTurnstileTokenAccountBudgetAcrossAddresses"
     ]
   }
 ]
