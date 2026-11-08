@@ -1,0 +1,650 @@
+{
+  "version": 1,
+  "description": "Shared SSO redirect policy vectors. Consumed unchanged by the Go policy (internal/library/ssoredirect) and the frontend policy (web/src/lib/sso-redirect-policy.ts). Each case lists the expected decision under settings.web.sso.legacy_token_redirect allow and deny. A case with pad appends that many \"a\" characters to target. Bump version on any semantic change.",
+  "issuerOrigin": "https://sso.laisky.com",
+  "clients": [
+    {
+      "client_id": "accounting",
+      "redirect_uris": [
+        "https://accounting.laisky.com/api/auth/sso/callback"
+      ],
+      "legacy_token_redirect": "deny"
+    },
+    {
+      "client_id": "cv",
+      "redirect_uris": [
+        "http://100.75.198.70:5173/cv/sso/callback",
+        "https://cv.laisky.com/cv/sso/callback"
+      ],
+      "legacy_token_redirect": "allow"
+    }
+  ],
+  "cases": [
+    {
+      "target": "https://chat.laisky.com/gptchat?state=abc",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "unregistered production target keeps the legacy handoff only under allow"
+    },
+    {
+      "target": "https://chat.laisky.com/#/settings?tab=sso_token",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "HTTPS://chat.laisky.com/x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "scheme case is not significant for the legacy handoff"
+    },
+    {
+      "target": "https://laisky.com/",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "https://chat.laisky.com:8443/x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "https://chat.laisky.com./x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "one trailing root dot stays compatible"
+    },
+    {
+      "target": "  https://chat.laisky.com/x\t",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "surrounding ASCII whitespace is trimmed"
+    },
+    {
+      "target": "https://chat.laisky.com/x?sso_token=old",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "an existing sso_token is overwritten by the builder"
+    },
+    {
+      "target": "https://chat.laisky.com/x?sso_state=legacy",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "Blog markers are not reserved on other clients"
+    },
+    {
+      "target": "https://xn--80ak6aa92e.laisky.com/",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "https://chat.laisky.com/",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "pad": 2024,
+      "note": "exactly 2048 characters"
+    },
+    {
+      "target": "https://sso.laisky.com/profile",
+      "allow": "self",
+      "deny": "self"
+    },
+    {
+      "target": "/profile",
+      "allow": "self",
+      "deny": "self",
+      "note": "root-relative paths resolve against the issuer origin"
+    },
+    {
+      "target": "/sso/callback?state=abc",
+      "allow": "self",
+      "deny": "self"
+    },
+    {
+      "target": "https://SSO.laisky.com:443/profile",
+      "allow": "self",
+      "deny": "self"
+    },
+    {
+      "target": "http://sso.laisky.com/profile",
+      "allow": "reject:insecure_scheme",
+      "deny": "reject:insecure_scheme"
+    },
+    {
+      "target": "https://blog.laisky.com/p/article/",
+      "allow": "blog",
+      "deny": "blog"
+    },
+    {
+      "target": "http://blog.laisky.com/p/article/",
+      "allow": "blog",
+      "deny": "blog",
+      "note": "old http Blog bookmarks upgrade to the fixed https bootstrap"
+    },
+    {
+      "target": "https://user@blog.laisky.com/",
+      "allow": "blog",
+      "deny": "blog",
+      "note": "the Blog protocol rejects it with its own error"
+    },
+    {
+      "target": "https://blog.laisky.com/?sso_flow=code&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "blog",
+      "deny": "blog"
+    },
+    {
+      "target": "https://BLOG.laisky.com./",
+      "allow": "blog",
+      "deny": "blog"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "client:accounting",
+      "deny": "client:accounting"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_client_id=accounting&sso_flow=code&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "client:accounting",
+      "deny": "client:accounting",
+      "note": "marker order is free"
+    },
+    {
+      "target": "HTTPS://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request",
+      "note": "the callback must match byte for byte"
+    },
+    {
+      "target": "https://ACCOUNTING.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com:443/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback/?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/other?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256&extra=1",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256#x",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=plain",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request",
+      "note": "non-canonical 32-byte entropy"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso%5Fclient_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=unknown&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:unregistered_client",
+      "deny": "reject:unregistered_client"
+    },
+    {
+      "target": "https://chat.laisky.com/cb?sso_flow=code&sso_client_id=blog&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:unregistered_client",
+      "deny": "reject:unregistered_client",
+      "note": "blog is only the built-in Blog format"
+    },
+    {
+      "target": "http://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:insecure_scheme",
+      "deny": "reject:insecure_scheme"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?state=legacy",
+      "allow": "reject:code_flow_required",
+      "deny": "reject:code_flow_required",
+      "note": "a registered hostname never receives the bearer"
+    },
+    {
+      "target": "https://accounting.laisky.com/",
+      "allow": "reject:code_flow_required",
+      "deny": "reject:code_flow_required"
+    },
+    {
+      "target": "https://accounting.laisky.com./other",
+      "allow": "reject:code_flow_required",
+      "deny": "reject:code_flow_required"
+    },
+    {
+      "target": "https://accounting.laisky.com:8443/other",
+      "allow": "reject:code_flow_required",
+      "deny": "reject:code_flow_required"
+    },
+    {
+      "target": "https://cv.laisky.com/cv",
+      "allow": "legacy",
+      "deny": "reject:code_flow_required",
+      "note": "legacy_token_redirect: allow is a per-client migration aid"
+    },
+    {
+      "target": "https://cv.laisky.com/cv/sso/callback?sso_flow=code&sso_client_id=cv&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "client:cv",
+      "deny": "client:cv"
+    },
+    {
+      "target": "http://100.75.198.70:5173/cv/sso/callback?sso_flow=code&sso_client_id=cv&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "client:cv",
+      "deny": "client:cv",
+      "note": "explicit development-only registration"
+    },
+    {
+      "target": "http://100.75.198.70:5173/other",
+      "allow": "legacy",
+      "deny": "reject:code_flow_required",
+      "note": "a registration reserves its whole hostname"
+    },
+    {
+      "target": "https://chat.laisky.com/?sso_flow=code&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request",
+      "note": "sso_flow without sso_client_id is the Blog-only format"
+    },
+    {
+      "target": "http://localhost:5173/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://localhost./cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://127.0.0.1:8080/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://10.20.30.40/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://172.16.0.1/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://192.168.1.10/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://100.64.0.1/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://[::1]:8080/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://[fd00::1]/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "http://[FC00::1]/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "https://[::1]/",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "",
+      "allow": "reject:missing",
+      "deny": "reject:missing"
+    },
+    {
+      "target": "   ",
+      "allow": "reject:missing",
+      "deny": "reject:missing"
+    },
+    {
+      "target": "http://cv.laisky.com/cv",
+      "allow": "reject:insecure_scheme",
+      "deny": "reject:insecure_scheme"
+    },
+    {
+      "target": "http://laisky.com/",
+      "allow": "reject:insecure_scheme",
+      "deny": "reject:insecure_scheme"
+    },
+    {
+      "target": "http://chat.laisky.com:80/",
+      "allow": "reject:insecure_scheme",
+      "deny": "reject:insecure_scheme"
+    },
+    {
+      "target": "https://user@chat.laisky.com/",
+      "allow": "reject:userinfo",
+      "deny": "reject:userinfo"
+    },
+    {
+      "target": "https://user:pass@chat.laisky.com/",
+      "allow": "reject:userinfo",
+      "deny": "reject:userinfo"
+    },
+    {
+      "target": "https://@chat.laisky.com/",
+      "allow": "reject:userinfo",
+      "deny": "reject:userinfo"
+    },
+    {
+      "target": "https://evil.example@chat.laisky.com/",
+      "allow": "reject:userinfo",
+      "deny": "reject:userinfo"
+    },
+    {
+      "target": "https://chat.laisky.com\\@evil.example/",
+      "allow": "reject:invalid_character",
+      "deny": "reject:invalid_character"
+    },
+    {
+      "target": "https://chat.laisky.com/\tx",
+      "allow": "reject:invalid_character",
+      "deny": "reject:invalid_character"
+    },
+    {
+      "target": "https://chat.laisky.com/\u00e9",
+      "allow": "reject:invalid_character",
+      "deny": "reject:invalid_character"
+    },
+    {
+      "target": "https://chat.laisky.com/ x",
+      "allow": "reject:invalid_character",
+      "deny": "reject:invalid_character"
+    },
+    {
+      "target": "https://chat.laisky.com/",
+      "allow": "reject:too_long",
+      "deny": "reject:too_long",
+      "pad": 2025
+    },
+    {
+      "target": "javascript:alert(1)",
+      "allow": "reject:unsupported_reference",
+      "deny": "reject:unsupported_reference"
+    },
+    {
+      "target": "//chat.laisky.com/x",
+      "allow": "reject:unsupported_reference",
+      "deny": "reject:unsupported_reference"
+    },
+    {
+      "target": "profile",
+      "allow": "reject:unsupported_reference",
+      "deny": "reject:unsupported_reference"
+    },
+    {
+      "target": "https:chat.laisky.com",
+      "allow": "reject:unsupported_reference",
+      "deny": "reject:unsupported_reference"
+    },
+    {
+      "target": "ftp://chat.laisky.com/",
+      "allow": "reject:unsupported_reference",
+      "deny": "reject:unsupported_reference"
+    },
+    {
+      "target": "https://evil.example/",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "https://laisky.com.evil.example/",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "https://evillaisky.com/",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "https://chat_app.laisky.com/",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "https://chat%2elaisky.com/",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "https:///path",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "http://0x7f.1/cb",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host",
+      "note": "numeric IPv4 spellings that URL parsers rewrite"
+    },
+    {
+      "target": "http://2130706433/cb",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "http://127.1/cb",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "http://010.0.0.1/cb",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "http://127.0.0.1./cb",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "http://[::ffff:a00:1]/cb",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "http://[::ffff:10.0.0.1]/cb",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "http://[fe80::1%25eth0]/cb",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "http://[2001:db8::1]/cb",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "http://[fd00::1/cb",
+      "allow": "reject:invalid_host",
+      "deny": "reject:invalid_host"
+    },
+    {
+      "target": "http://169.254.1.1/cb",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "http://172.32.0.1/cb",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "http://100.128.0.1/cb",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "http://8.8.8.8/cb",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "http://sub.localhost/cb",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "https://chat.laisky.com:0/",
+      "allow": "reject:invalid_port",
+      "deny": "reject:invalid_port"
+    },
+    {
+      "target": "https://chat.laisky.com:65536/",
+      "allow": "reject:invalid_port",
+      "deny": "reject:invalid_port"
+    },
+    {
+      "target": "https://chat.laisky.com:/",
+      "allow": "reject:invalid_port",
+      "deny": "reject:invalid_port"
+    },
+    {
+      "target": "https://chat.laisky.com:0443/",
+      "allow": "reject:invalid_port",
+      "deny": "reject:invalid_port"
+    },
+    {
+      "target": "https://chat.laisky.com:44a/",
+      "allow": "reject:invalid_port",
+      "deny": "reject:invalid_port"
+    }
+  ],
+  "registrations": [
+    {
+      "uri": "https://accounting.laisky.com/api/auth/sso/callback",
+      "valid": true
+    },
+    {
+      "uri": "https://x.laisky.com/",
+      "valid": true
+    },
+    {
+      "uri": "https://x.laisky.com:8443/cb",
+      "valid": true
+    },
+    {
+      "uri": "http://127.0.0.1:8080/cb",
+      "valid": true,
+      "note": "development-only registration"
+    },
+    {
+      "uri": "http://[::1]:8080/cb",
+      "valid": true
+    },
+    {
+      "uri": "http://100.75.198.70:5173/cv/sso/callback",
+      "valid": true
+    },
+    {
+      "uri": "http://x.laisky.com/cb",
+      "valid": false,
+      "note": "production callbacks require https"
+    },
+    {
+      "uri": "https://X.laisky.com/cb",
+      "valid": false
+    },
+    {
+      "uri": "HTTPS://x.laisky.com/cb",
+      "valid": false
+    },
+    {
+      "uri": "https://x.laisky.com",
+      "valid": false,
+      "note": "the canonical root has an explicit /"
+    },
+    {
+      "uri": "https://x.laisky.com/cb?x=1",
+      "valid": false
+    },
+    {
+      "uri": "https://x.laisky.com/cb#x",
+      "valid": false
+    },
+    {
+      "uri": "https://x.laisky.com:443/cb",
+      "valid": false
+    },
+    {
+      "uri": "https://x.laisky.com./cb",
+      "valid": false
+    },
+    {
+      "uri": "https://x.laisky.com/a/../cb",
+      "valid": false
+    },
+    {
+      "uri": "https://x.laisky.com/a/./cb",
+      "valid": false
+    },
+    {
+      "uri": "https://x.laisky.com/a%2Fb",
+      "valid": false
+    },
+    {
+      "uri": "https://x.laisky.com/a|b",
+      "valid": false
+    },
+    {
+      "uri": "https://blog.laisky.com/cb",
+      "valid": false,
+      "note": "the Blog hostname is reserved for the built-in client"
+    },
+    {
+      "uri": "https://evil.example/cb",
+      "valid": false
+    },
+    {
+      "uri": "https://user@x.laisky.com/cb",
+      "valid": false
+    },
+    {
+      "uri": "/relative",
+      "valid": false
+    }
+  ]
+}
