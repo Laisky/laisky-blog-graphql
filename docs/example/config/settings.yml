@@ -95,6 +95,24 @@ settings:
         # How often the DB-side image GC sweeps expired refs, in seconds. Set
         # to 0 to disable the worker. Optional. Default: 3600 (= 1h).
         gc_sweep_seconds: 3600
+        # Process-wide cap, in bytes, on the summed estimated memory of
+        # concurrent image decodes (decode + resize + PNG encode). Uploads wait
+        # for budget; an image whose estimate alone exceeds it is rejected as
+        # decode_failed. The default admits every 8-bit image up to 8192x8192.
+        # Optional. Default: 1342177280 (= 1.25 GiB).
+        decode_memory_budget_bytes: 1342177280
+        # How often the orphan reconciler deletes stored image objects that no
+        # image ref owns, in seconds. Set to 0 to disable it (only advisable
+        # when the bucket lifecycle rule is installed).
+        # Optional. Default: 3600 (= 1h).
+        orphan_sweep_seconds: 3600
+        # Minimum object age, in seconds, before the reconciler may delete it.
+        # Must exceed the longest create request. Values below 60 use the
+        # default. Optional. Default: 3600 (= 1h).
+        orphan_grace_seconds: 3600
+        # Maximum objects one reconciler pass lists; the next pass resumes
+        # after the last key. Optional. Default: 1000.
+        orphan_sweep_batch: 1000
         url_fetch:
           # Allow plain http:// image_url inputs. Not recommended for
           # production. Optional. Default: false (HTTPS only).

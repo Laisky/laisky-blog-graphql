@@ -16,7 +16,8 @@ The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
-`internal/web/telegram/dao` and `internal/web/telegram/service`. These exercise input validation, controlled
+`internal/web/telegram/dao`, `internal/web/telegram/service`,
+`internal/mcp/imageproc`, `internal/mcp/userrequests` and `internal/mcp/storage`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
@@ -33,6 +34,22 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The user-request image selections (issues #83 and #87) cover first-frame-only
+GIF decoding with frame-count-independent allocation, the decode memory
+budget (contract coverage, rejection before allocation, queuing, header-only
+bombs), no object left without an image ref after every post-upload failure,
+quota reservation before upload, shared-object safety, expired-ref revival
+charging, the GC revival race, the orphan reconciler and its scope lock, and
+lifecycle rules preserved on shared buckets. The estimator-versus-allocation
+sweep and the PostgreSQL lock tests (`TestPostgres*` with
+`MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database) stay
+deliberate acceptance:
+
+```sh
+go test -count=1 ./internal/mcp/imageproc -run TestEstimateDecodeBytesBoundsActualAllocation
+MCP_USER_REQUESTS_TEST_POSTGRES_DSN=postgres://... go test -race -count=5 ./internal/mcp/userrequests -run TestPostgres
+```
 
 The Telegram selections also cover cancellation after refill, overlapping
 reservations, isolation of invalid credentials from delivery capacity, remote
