@@ -129,6 +129,48 @@ func (m *MinIOClient) Get(ctx context.Context, key string) (io.ReadCloser, int64
 	return obj, stat.Size, nil
 }
 
+// Delete removes an object. S3 and MinIO answer 204 for missing keys, so the
+// call is idempotent.
+func (m *MinIOClient) Delete(ctx context.Context, key string) error {
+	client, err := m.ensureClient()
+	if err != nil {
+		return errors.Wrap(err, "storage: delete ensure client")
+	}
+	if err := client.RemoveObject(ctx, m.cfg.Bucket, key, minio.RemoveObjectOptions{}); err != nil {
+		return errors.Wrapf(err, "storage: delete object %q", key)
+	}
+	return nil
+}
+
+// List returns up to limit objects under prefix that sort after startAfter.
+func (m *MinIOClient) List(ctx context.Context, prefix, startAfter string, limit int) ([]ObjectInfo, error) {
+	client, err := m.ensureClient()
+	if err != nil {
+		return nil, errors.Wrap(err, "storage: list ensure client")
+	}
+	if limit <= 0 {
+		limit = 1000
+	}
+	listCtx, cancel := context.WithCancel(ctx)
+	defer cancel() // stops the listing goroutine once enough objects were read
+	out := make([]ObjectInfo, 0, min(limit, 1000))
+	for obj := range client.ListObjects(listCtx, m.cfg.Bucket, minio.ListObjectsOptions{
+		Prefix:     prefix,
+		StartAfter: startAfter,
+		Recursive:  true,
+		MaxKeys:    min(limit, 1000),
+	}) {
+		if obj.Err != nil {
+			return nil, errors.Wrapf(obj.Err, "storage: list objects under %q", prefix)
+		}
+		out = append(out, ObjectInfo{Key: obj.Key, Size: obj.Size, LastModified: obj.LastModified.UTC()})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 // PresignedGet returns a short-lived URL pointing at the object.
 func (m *MinIOClient) PresignedGet(ctx context.Context, key string, ttl time.Duration) (string, error) {
 	client, err := m.ensureClient()
@@ -144,7 +186,11 @@ func (m *MinIOClient) PresignedGet(ctx context.Context, key string, ttl time.Dur
 
 // EnsureLifecycle installs an expiry rule restricted to the provided prefix.
 // The rule is keyed by a deterministic ID so repeated calls replace, not
-// duplicate, the previous rule.
+// duplicate, the previous rule. S3 PutBucketLifecycleConfiguration replaces
+// the bucket's whole configuration, so the current configuration is read and
+// only this prefix's rules are swapped; rules other applications installed on
+// a shared bucket are preserved. If the current configuration cannot be read
+// the call fails instead of risking those rules.
 func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days int) error {
 	client, err := m.ensureClient()
 	if err != nil {
@@ -153,9 +199,42 @@ func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days i
 	if days <= 0 {
 		return errors.Errorf("storage: lifecycle days must be positive, got %d", days)
 	}
-	ruleID := fmt.Sprintf("mcp-images-%s-%dd", sanitizeForID(prefix), days)
-	rule := lifecycle.Rule{
-		ID:     ruleID,
+	existing, err := client.GetBucketLifecycle(ctx, m.cfg.Bucket)
+	if err != nil {
+		if minio.ToErrorResponse(err).Code != "NoSuchLifecycleConfiguration" {
+			return errors.Wrap(err, "storage: get bucket lifecycle")
+		}
+		existing = lifecycle.NewConfiguration()
+	}
+	cfg := mergeLifecycleRule(existing, prefix, days)
+	if err := client.SetBucketLifecycle(ctx, m.cfg.Bucket, cfg); err != nil {
+		return errors.Wrap(err, "storage: set bucket lifecycle")
+	}
+	return nil
+}
+
+// lifecycleRuleIDPrefix returns the ID prefix shared by every expiry rule this
+// package installs for prefix, whatever its TTL.
+func lifecycleRuleIDPrefix(prefix string) string {
+	return fmt.Sprintf("mcp-images-%s-", sanitizeForID(prefix))
+}
+
+// mergeLifecycleRule returns a copy of existing in which every rule this
+// package installed for prefix (any TTL) is replaced by one rule expiring
+// objects under prefix after days. Other rules are kept unchanged and in order.
+func mergeLifecycleRule(existing *lifecycle.Configuration, prefix string, days int) *lifecycle.Configuration {
+	idPrefix := lifecycleRuleIDPrefix(prefix)
+	cfg := lifecycle.NewConfiguration()
+	if existing != nil {
+		for _, rule := range existing.Rules {
+			if strings.HasPrefix(rule.ID, idPrefix) {
+				continue
+			}
+			cfg.Rules = append(cfg.Rules, rule)
+		}
+	}
+	cfg.Rules = append(cfg.Rules, lifecycle.Rule{
+		ID:     fmt.Sprintf("%s%dd", idPrefix, days),
 		Status: "Enabled",
 		RuleFilter: lifecycle.Filter{
 			Prefix: prefix,
@@ -163,12 +242,8 @@ func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days i
 		Expiration: lifecycle.Expiration{
 			Days: lifecycle.ExpirationDays(days),
 		},
-	}
-	cfg := &lifecycle.Configuration{Rules: []lifecycle.Rule{rule}}
-	if err := client.SetBucketLifecycle(ctx, m.cfg.Bucket, cfg); err != nil {
-		return errors.Wrap(err, "storage: set bucket lifecycle")
-	}
-	return nil
+	})
+	return cfg
 }
 
 // sanitizeForID strips characters that are not safe inside a lifecycle rule ID.
