@@ -333,7 +333,7 @@ func (r *UserResolver) ID(ctx context.Context,
 // It accepts credentials, an optional Turnstile token, and an optional TOTP code, returning a JWT response.
 func (r *MutationResolver) UserLogin(ctx context.Context,
 	account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error) {
-	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+	if err := validateTurnstileTokenForLogin(ctx, turnstileToken, account); err != nil {
 		return nil, turnstileGateError(err)
 	}
 
@@ -344,7 +344,7 @@ func (r *MutationResolver) UserLogin(ctx context.Context,
 // It accepts account, email code, and optional Turnstile token, returning a JWT response.
 func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
 	account string, emailCode string, turnstileToken *string) (*models.BlogLoginResponse, error) {
-	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+	if err := validateTurnstileTokenForLogin(ctx, turnstileToken, account); err != nil {
 		return nil, turnstileGateError(err)
 	}
 
@@ -357,18 +357,18 @@ func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
 		return nil, errors.Wrap(err, "validate input length")
 	}
 
-	clientKey := resolveAuthClientKey(ctx)
 	tracker := getAuthChallengeTracker()
+	subject := resolveAuthRiskSubject(ctx, tracker, account)
 	user, err := r.svc.ValidateEmailCodeLogin(ctx, account, emailCode)
 	if err != nil {
 		clientErr, countsAsFailure := credentialFailure(ctx, "email_code", err)
 		if countsAsFailure {
-			tracker.recordFailure(clientKey)
+			tracker.recordFailure(subject)
 		}
 		return nil, clientErr
 	}
 
-	tracker.recordSuccess(clientKey)
+	tracker.recordSuccess(subject)
 	return r.newLoginResponse(ctx, user)
 }
 
@@ -383,7 +383,7 @@ func (r *MutationResolver) UserRequestEmailCode(ctx context.Context,
 			return nil, turnstileGateError(err)
 		}
 	case model.EmailVerificationPurposeLogin:
-		if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+		if err := validateTurnstileTokenForLogin(ctx, turnstileToken, account); err != nil {
 			return nil, turnstileGateError(err)
 		}
 	default:
@@ -492,7 +492,7 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
 ) (resp *models.BlogLoginResponse, err error) {
-	if err := validateTurnstileTokenForLogin(ctx, nil); err != nil {
+	if err := validateTurnstileTokenForLogin(ctx, nil, account); err != nil {
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
 
@@ -515,14 +515,14 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 		return nil, errors.Wrap(err, "validate input length")
 	}
 
-	clientKey := resolveAuthClientKey(ctx)
 	tracker := getAuthChallengeTracker()
+	subject := resolveAuthRiskSubject(ctx, tracker, account)
 
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
 		clientErr, countsAsFailure := credentialFailure(ctx, "password", err)
 		if countsAsFailure {
-			tracker.recordFailure(clientKey)
+			tracker.recordFailure(subject)
 		}
 		return nil, clientErr
 	}
@@ -542,11 +542,11 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 	}
 
 	if err = r.svc.ValidateTOTPCode(ctx, user, code); err != nil {
-		tracker.recordFailure(clientKey)
+		tracker.recordFailure(subject)
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
 
-	tracker.recordSuccess(clientKey)
+	tracker.recordSuccess(subject)
 	return r.newLoginResponse(ctx, user)
 }
 

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,7 +214,7 @@ func TestMongoTOTPStepReusesSolvedChallenge(t *testing.T) {
 	secret := gotp.RandomSecret(20)
 	password := h.insertUser(t, "totp-risk@example.test", bson.M{"totp_enabled": true, "totp_secret": secret})
 	for range 3 {
-		h.tracker.recordFailure(ip)
+		h.tracker.recordFailure(clientSubject(ip))
 	}
 	require.True(t, h.tracker.challengeRequired(ip))
 
@@ -233,7 +234,7 @@ func TestMongoTOTPStepReusesSolvedChallenge(t *testing.T) {
 
 	// A fresh failure after the allowance must bring the challenge back.
 	for range 3 {
-		h.tracker.recordFailure(ip)
+		h.tracker.recordFailure(clientSubject(ip))
 	}
 	_, err = h.resolver.UserLogin(ctx, "totp-risk@example.test", password, nil, nil)
 	require.ErrorIs(t, err, model.ErrTurnstileRequired)
@@ -259,7 +260,7 @@ func TestMongoRejectedTurnstileIsNotReportedAsBadPassword(t *testing.T) {
 	ctx := requestContext(t, ip)
 	password := h.insertUser(t, "turnstile-rejected@example.test", nil)
 	for range 3 {
-		h.tracker.recordFailure(ip)
+		h.tracker.recordFailure(clientSubject(ip))
 	}
 
 	token := "stale-turnstile-token"
@@ -267,4 +268,96 @@ func TestMongoRejectedTurnstileIsNotReportedAsBadPassword(t *testing.T) {
 	require.Error(t, err)
 	require.NotErrorIs(t, err, model.ErrInvalidCredentials)
 	require.ErrorIs(t, err, model.ErrTurnstileFailed)
+}
+
+// TestMongoAccountFailureBudgetSurvivesIPRotation proves that rotating client
+// addresses cannot keep an attacked account below the challenge threshold
+// (issue #84), that the account owner still signs in after one challenge from
+// a fresh address, and that the success resets the account budget.
+func TestMongoAccountFailureBudgetSurvivesIPRotation(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	calls := stubTurnstile(t, true)
+	password := h.insertUser(t, "victim@example.test", nil)
+
+	for i, account := range []string{"victim@example.test", "Victim@Example.test", " VICTIM@example.test "} {
+		ctx := requestContext(t, fmt.Sprintf("198.51.100.%d", 20+i))
+		_, err := h.resolver.UserLogin(ctx, account, "wrong-"+password, nil, nil)
+		require.ErrorIs(t, err, model.ErrInvalidCredentials, "guess %d is below the threshold", i+1)
+	}
+
+	_, err := h.resolver.UserLogin(requestContext(t, "198.51.100.30"), "victim@example.test", "wrong-again", nil, nil)
+	require.ErrorIs(t, err, model.ErrTurnstileRequired, "a fresh address must not get a fresh failure budget for the same account")
+	require.Zero(t, calls.Load())
+
+	_, err = h.resolver.UserLogin(requestContext(t, "198.51.100.31"), "other@example.test", "whatever", nil, nil)
+	require.ErrorIs(t, err, model.ErrInvalidCredentials, "other accounts are not challenged")
+
+	owner := requestContext(t, "192.0.2.44")
+	_, err = h.resolver.UserLogin(owner, "victim@example.test", password, nil, nil)
+	require.ErrorIs(t, err, model.ErrTurnstileRequired)
+	token := "solved-turnstile-token"
+	resp, err := h.resolver.UserLogin(owner, "victim@example.test", password, &token, nil)
+	require.NoError(t, err, "the owner signs in after one challenge")
+	require.NotEmpty(t, resp.Token)
+	require.EqualValues(t, 1, calls.Load())
+
+	_, err = h.resolver.UserLogin(requestContext(t, "198.51.100.32"), "victim@example.test", "wrong-after-success", nil, nil)
+	require.ErrorIs(t, err, model.ErrInvalidCredentials, "a successful sign-in resets the account budget")
+}
+
+// TestMongoAccountBudgetCountsWrongTOTPAcrossAddresses proves a correct
+// password with wrong TOTP codes from rotating addresses escalates the account.
+func TestMongoAccountBudgetCountsWrongTOTPAcrossAddresses(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	stubTurnstile(t, true)
+	secret := gotp.RandomSecret(20)
+	password := h.insertUser(t, "totp-victim@example.test", bson.M{"totp_enabled": true, "totp_secret": secret})
+	bad := "000000"
+	if bad == gotp.NewDefaultTOTP(secret).Now() {
+		bad = "111111"
+	}
+
+	for i := range 3 {
+		_, err := h.resolver.UserLogin(requestContext(t, fmt.Sprintf("198.51.100.%d", 40+i)), "totp-victim@example.test", password, nil, &bad)
+		require.ErrorIs(t, err, model.ErrInvalidCredentials)
+	}
+	_, err := h.resolver.UserLogin(requestContext(t, "198.51.100.50"), "totp-victim@example.test", password, nil, &bad)
+	require.ErrorIs(t, err, model.ErrTurnstileRequired, "wrong TOTP codes count against the account")
+}
+
+// TestMongoEmailCodeAccountBudgetSurvivesIPRotation proves wrong email codes
+// from rotating addresses escalate both the code login and new code requests
+// for that account.
+func TestMongoEmailCodeAccountBudgetSurvivesIPRotation(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	stubTurnstile(t, true)
+	h.insertUser(t, "code-victim@example.test", nil)
+
+	for i := range 3 {
+		_, err := h.resolver.UserLoginWithEmailCode(requestContext(t, fmt.Sprintf("198.51.100.%d", 60+i)), "code-victim@example.test", "123456", nil)
+		require.ErrorIs(t, err, model.ErrInvalidCredentials)
+	}
+
+	_, err := h.resolver.UserLoginWithEmailCode(requestContext(t, "198.51.100.70"), "code-victim@example.test", "654321", nil)
+	require.ErrorIs(t, err, model.ErrTurnstileRequired)
+	_, err = h.resolver.UserRequestEmailCode(requestContext(t, "198.51.100.71"), "Code-Victim@example.test", "login", nil)
+	require.ErrorIs(t, err, model.ErrTurnstileRequired, "requesting a new code for an attacked account also needs a challenge")
+}
+
+// TestMongoAccountBudgetIgnoresInfrastructureFailures proves a database
+// outage seen from many addresses never consumes the account budget.
+func TestMongoAccountBudgetIgnoresInfrastructureFailures(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	stubTurnstile(t, true)
+	password := h.insertUser(t, "outage@example.test", nil)
+
+	h.db.down.Store(true)
+	for i := range 5 {
+		_, err := h.resolver.UserLogin(requestContext(t, fmt.Sprintf("198.51.100.%d", 80+i)), "outage@example.test", password+"x", nil, nil)
+		require.ErrorIs(t, err, model.ErrLoginUnavailable)
+	}
+	h.db.down.Store(false)
+
+	_, err := h.resolver.UserLogin(requestContext(t, "198.51.100.90"), "outage@example.test", password+"x", nil, nil)
+	require.ErrorIs(t, err, model.ErrInvalidCredentials, "outages must not push the account toward a challenge")
 }

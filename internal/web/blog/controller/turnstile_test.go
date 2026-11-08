@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 // TestNormalizeTurnstileHost verifies host normalization removes ports and normalizes case.
@@ -93,7 +95,7 @@ func TestValidateTurnstileTokenSkippedForLowRiskLogin(t *testing.T) {
 	setTurnstileEnabledSite(t)
 	withAuthChallengeTracker(t, newAuthChallengeTracker(time.Minute, 5, 15*time.Minute, 3, 100))
 
-	require.NoError(t, validateTurnstileTokenForLogin(context.Background(), nil))
+	require.NoError(t, validateTurnstileTokenForLogin(context.Background(), nil, ""))
 }
 
 // TestValidateTurnstileTokenRequiredForHighRiskLogin verifies a suspicious client
@@ -102,7 +104,7 @@ func TestValidateTurnstileTokenRequiredForHighRiskLogin(t *testing.T) {
 	setTurnstileEnabledSite(t)
 	withAuthChallengeTracker(t, highRiskTrackerForUnknown())
 
-	err := validateTurnstileTokenForLogin(context.Background(), nil)
+	err := validateTurnstileTokenForLogin(context.Background(), nil, "")
 	require.Error(t, err)
 	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
 }
@@ -124,8 +126,8 @@ func TestValidateTurnstileTokenRequiredForFrequentLogin(t *testing.T) {
 	setTurnstileEnabledSite(t)
 	withAuthChallengeTracker(t, newAuthChallengeTracker(time.Minute, 1, 15*time.Minute, 100, 100))
 
-	require.NoError(t, validateTurnstileTokenForLogin(context.Background(), nil))
-	err := validateTurnstileTokenForLogin(context.Background(), nil)
+	require.NoError(t, validateTurnstileTokenForLogin(context.Background(), nil, ""))
+	err := validateTurnstileTokenForLogin(context.Background(), nil, "")
 	require.Error(t, err)
 	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
 }
@@ -152,4 +154,35 @@ func TestBlogLoginRejectedForHighRiskClient(t *testing.T) {
 	_, err := (&MutationResolver{}).BlogLogin(context.Background(), "user@example.com", "password")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid credentials")
+}
+
+// TestValidateTurnstileTokenAccountBudgetAcrossAddresses verifies the login
+// gate challenges a request for an account that accumulated failures from
+// other addresses, while account-less flows from the same address are not.
+func TestValidateTurnstileTokenAccountBudgetAcrossAddresses(t *testing.T) {
+	setTurnstileEnabledSite(t)
+	tracker := newAuthChallengeTracker(time.Minute, 100, 15*time.Minute, 3, 100)
+	withAuthChallengeTracker(t, tracker)
+
+	for i := range 3 {
+		ctx := clientip.WithIP(context.Background(), fmt.Sprintf("203.0.113.%d", i+1))
+		require.NoError(t, validateTurnstileTokenForLogin(ctx, nil, "victim@example.test"))
+		tracker.recordFailure(resolveAuthRiskSubject(ctx, tracker, "victim@example.test"))
+	}
+
+	fresh := clientip.WithIP(context.Background(), "203.0.113.99")
+	err := validateTurnstileTokenForLogin(fresh, nil, " Victim@Example.test")
+	require.ErrorIs(t, err, model.ErrTurnstileRequired)
+	require.NoError(t, validateTurnstileTokenForLogin(fresh, nil, ""), "passkey and GitHub starts name no account")
+	require.NoError(t, validateTurnstileTokenForRegister(fresh, nil), "registration names no attacked account")
+}
+
+// TestResolveAuthClientKeyUsesSharedIdentity verifies the risk key comes from
+// the shared client-identity rule, groups IPv6 by /64 and buckets unknowns.
+func TestResolveAuthClientKeyUsesSharedIdentity(t *testing.T) {
+	require.Equal(t, "203.0.113.5", resolveAuthClientKey(clientip.WithIP(context.Background(), "203.0.113.5")))
+	require.Equal(t, "2001:db8:1:2::/64", resolveAuthClientKey(clientip.WithIP(context.Background(), "2001:db8:1:2::77")))
+	require.Equal(t, unknownAuthClientKey, resolveAuthClientKey(context.Background()))
+	require.Equal(t, "2001:db8:1:2::77", resolveTurnstileClientIP(clientip.WithIP(context.Background(), "2001:db8:1:2::77")),
+		"siteverify receives the full address")
 }

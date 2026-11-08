@@ -261,7 +261,7 @@ func (r *MutationResolver) UserStartPasskeyLogin(ctx context.Context,
 	redirectTo *string,
 	turnstileToken *string,
 ) (*models.PasskeyStartResponse, error) {
-	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+	if err := validateTurnstileTokenForLogin(ctx, turnstileToken, ""); err != nil {
 		return nil, turnstileGateError(err)
 	}
 	validatedRedirect, err := resolveGitHubOAuthRedirectTarget(ctx, redirectTo)

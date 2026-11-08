@@ -40,6 +40,13 @@
 - Only credential rejections count toward the Turnstile failure threshold;
   infrastructure failures are reported as `login_unavailable`, and a rejected
   Turnstile token as `turnstile_failed`, never as invalid credentials.
+- The adaptive-authentication client key comes from the single client identity
+  policy (`library/clientip`). Forwarding headers are honored only from
+  configured trusted proxies, so a caller cannot choose its own risk key.
+- Credential failures also count per account, across all clients. An account
+  over its threshold is challenged from any address. This only escalates to a
+  Turnstile challenge and never locks out. Account keys are keyed hashes in a
+  bounded table.
 - Before redirecting to an external client, the SSO page persists the issued
   session on the SSO origin so return visits reuse it.
 - Provider subjects and passkey credential IDs have one owner; all mutations

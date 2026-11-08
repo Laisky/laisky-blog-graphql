@@ -75,7 +75,7 @@ func (r *MutationResolver) UserGithubOAuthStart(ctx context.Context,
 	redirectTo *string,
 	turnstileToken *string,
 ) (*models.GithubOAuthStartResponse, error) {
-	if err := validateTurnstileTokenForLogin(ctx, turnstileToken); err != nil {
+	if err := validateTurnstileTokenForLogin(ctx, turnstileToken, ""); err != nil {
 		return nil, turnstileGateError(err)
 	}
 

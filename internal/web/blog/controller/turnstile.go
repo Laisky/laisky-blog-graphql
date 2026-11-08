@@ -16,6 +16,7 @@ import (
 	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 const (
@@ -37,33 +38,37 @@ type turnstileVerifyResult struct {
 }
 
 // validateTurnstileTokenForLogin validates Turnstile token before allowing SSO login.
-// Parameters: ctx carries request context and metadata, turnstileToken is the optional token from the client.
+// Parameters: ctx carries request context and metadata, turnstileToken is the optional token from the client,
+// and account is the raw account the login names, or empty for flows that name none (GitHub OAuth, passkey).
 // Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
-func validateTurnstileTokenForLogin(ctx context.Context, turnstileToken *string) error {
-	return validateTurnstileTokenForAuth(ctx, turnstileToken, "login")
+func validateTurnstileTokenForLogin(ctx context.Context, turnstileToken *string, account string) error {
+	return validateTurnstileTokenForAuth(ctx, turnstileToken, "login", account)
 }
 
 // validateTurnstileTokenForRegister validates Turnstile token before allowing SSO registration.
 // Parameters: ctx carries request context and metadata, turnstileToken is the optional token from the client.
 // Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
 func validateTurnstileTokenForRegister(ctx context.Context, turnstileToken *string) error {
-	return validateTurnstileTokenForAuth(ctx, turnstileToken, "register")
+	return validateTurnstileTokenForAuth(ctx, turnstileToken, "register", "")
 }
 
 // validateTurnstileTokenForAuth validates Turnstile token for an authentication action.
-// Parameters: ctx carries request context, turnstileToken is the optional token, and action names the auth flow.
+// Parameters: ctx carries request context, turnstileToken is the optional token, action names the auth flow,
+// and account is the raw targeted account (empty when the flow names none). A request is challenged when its
+// client or its account is high risk, so rotating client addresses alone cannot keep an attacked account unchallenged.
 // Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
-func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, action string) error {
+func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, action string, account string) error {
 	secret := resolveTurnstileSecretForLogin(resolveTurnstileRequestHost(ctx))
 	if secret == "" {
 		return nil
 	}
 
+	logger := gmw.GetLogger(ctx).Named("turnstile")
 	// Record the attempt up front so request frequency is tracked even when the
 	// client ultimately skips the challenge.
-	clientKey := resolveAuthClientKey(ctx)
 	tracker := getAuthChallengeTracker()
-	tracker.recordAttempt(clientKey)
+	subject := resolveAuthRiskSubject(ctx, tracker, account)
+	tracker.recordAttempt(subject.client)
 
 	token := ""
 	if turnstileToken != nil {
@@ -74,25 +79,32 @@ func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, 
 		return errors.Wrapf(model.ErrTurnstileFailed, "validate turnstile token length: %v", err)
 	}
 
-	// Low-risk clients proceed without a challenge; any token they happen to send
-	// is ignored so a stale one cannot block them. A high-risk client that just
-	// solved a challenge spends its allowance here instead of solving another.
-	if tracker.admitWithoutChallenge(clientKey) {
+	// Requests whose client and account are both low risk proceed without a
+	// challenge; any token they happen to send is ignored so a stale one cannot
+	// block them. A client that just solved a challenge spends its allowance here
+	// instead of solving another.
+	if tracker.admitWithoutChallenge(subject) {
 		return nil
 	}
 
 	if token == "" {
+		// The account itself is never logged; only whether the flow named one.
+		logger.Debug("turnstile challenge required",
+			zap.String("action", action),
+			zap.String("client_key", subject.client),
+			zap.Bool("account_scoped", subject.account != ""),
+		)
 		return errors.Wrap(model.ErrTurnstileRequired, action)
 	}
 
 	if err := verifyTurnstileToken(ctx, secret, token, resolveTurnstileClientIP(ctx)); err != nil {
-		gmw.GetLogger(ctx).Named("turnstile").Info("turnstile token rejected",
+		logger.Info("turnstile token rejected",
 			zap.String("action", action),
 			zap.Error(err),
 		)
 		return errors.Wrap(model.ErrTurnstileFailed, action)
 	}
-	tracker.recordChallengePassed(clientKey)
+	tracker.recordChallengePassed(subject)
 
 	return nil
 }
@@ -169,22 +181,11 @@ func resolveTurnstileRequestHost(ctx context.Context) string {
 	return normalizeTurnstileHost(gctx.Request.Host)
 }
 
-// resolveTurnstileClientIP extracts a validated client IP from context.
-// Parameters: ctx carries optional Gin request context.
-// Returns: A canonical client IP string, or empty string when unavailable.
+// resolveTurnstileClientIP returns the client IP sent to siteverify as remoteip.
+// Parameters: ctx carries the request context.
+// Returns: The canonical client IP resolved by the shared trusted-proxy policy, or empty string when unavailable.
 func resolveTurnstileClientIP(ctx context.Context) string {
-	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
-	if !ok || gctx == nil {
-		return ""
-	}
-
-	ip := strings.TrimSpace(gctx.ClientIP())
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
-		return ""
-	}
-
-	return parsed.String()
+	return clientip.FromContext(ctx)
 }
 
 // resolveTurnstileSecretForLogin selects the turnstile secret key for the current request host.

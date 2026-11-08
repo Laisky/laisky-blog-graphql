@@ -533,19 +533,51 @@ Turnstile is enforced on:
 
 Risk policy:
 
-- A client (keyed by resolved client IP) is high risk after more than
-  `frequency_threshold` (default 5) auth requests within
-  `frequency_window_seconds` (default 60) or `failure_threshold` (default 3)
-  credential failures within `failure_window_seconds` (default 900).
+- A client is high risk after either of these:
+  - more than `frequency_threshold` (default 5) auth requests within
+    `frequency_window_seconds` (default 60);
+  - `failure_threshold` (default 3) credential failures within
+    `failure_window_seconds` (default 900).
+- The client key is the client address resolved by the
+  [client identity policy](client_identity.md). Forwarding headers count only
+  from trusted proxies, and IPv6 clients are grouped by /64.
+- An account is high risk after `account_failure_threshold` credential failures
+  within `failure_window_seconds`, counted across every client. The threshold
+  defaults to `failure_threshold`. This applies to the flows that name an
+  account:
+  - `UserLogin` and `BlogLogin`, including the TOTP step;
+  - `UserLoginWithEmailCode`;
+  - `UserRequestEmailCode` with purpose `login`.
+
+  Rotating client addresses therefore cannot keep an attacked account below the
+  threshold. Registration, GitHub OAuth start and passkey start name no account
+  and are keyed by client only.
+- A request is challenged when its client or its account is high risk.
+- The policy only ever asks for a Turnstile challenge. It never locks an account
+  out. Once the challenge is solved, the request proceeds.
+- A fully successful sign-in resets that account's and that client's failure
+  counts.
 - Only rejections caused by the submitted credentials count as failures. A
-  database or signing outage returns `login_unavailable` and never counts.
-- Solving a challenge earns a short allowance: the next `clearance_uses`
-  (default 3) auth requests within `clearance_seconds` (default 300) are not
-  challenged again, so the TOTP step after a verified password needs no second
-  challenge. Any credential failure revokes the allowance immediately.
-- A supplied token that Cloudflare does not accept returns `turnstile_failed`;
-  the client must show a fresh challenge. It is never reported as invalid
+  database or signing outage returns `login_unavailable` and never counts,
+  against either the client or the account.
+- Solving a challenge earns the client a short allowance: its next
+  `clearance_uses` (default 3) auth requests within `clearance_seconds`
+  (default 300) are not challenged again. The TOTP step after a verified
+  password therefore needs no second challenge, even for an attacked account.
+  Any credential failure revokes the allowance immediately, so each further
+  guess against a high-risk account needs a fresh challenge.
+- A supplied token that Cloudflare does not accept returns `turnstile_failed`.
+  The client must show a fresh challenge. It is never reported as invalid
   credentials.
+- The tracker is in memory and bounded:
+  - at most `max_tracked_clients` (default 10000) clients and
+    `max_tracked_accounts` (default 10000) accounts;
+  - records expire with their windows;
+  - when a table is full, the records with the least evidence of attack are
+    evicted first, so a flood of one-off accounts cannot push out an account
+    under attack;
+  - accounts are stored only as HMAC-SHA256 keyed hashes of the normalized
+    (trimmed, lower-cased) account, with a random per-process key.
 
 ```yaml
 settings:
@@ -556,8 +588,11 @@ settings:
         frequency_threshold: 5
         failure_window_seconds: 900
         failure_threshold: 3
+        account_failure_threshold: 3 # defaults to failure_threshold
         clearance_seconds: 300
         clearance_uses: 3
+        max_tracked_clients: 10000
+        max_tracked_accounts: 10000
 ```
 
 The deprecated `BlogLogin` mutation cannot carry a Turnstile token. When Turnstile is configured, that legacy path fails closed and clients must use `UserLogin`.
@@ -830,6 +865,7 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 6. GitHub OAuth callback URL exactly matches the deployed SSO callback route.
 7. WebAuthn `origin` and `rp_id` are stable for the deployed hostname.
 8. Turnstile site key and secret key are configured together when Turnstile is required.
-9. SSO JWT private key is explicitly configured and the published public key is available from the login/profile page modal.
-10. User `uid` is indexed uniquely and downstream systems use UID instead of database IDs.
-11. Logs and monitoring do not expose JWTs, OAuth codes, email verification codes, Turnstile tokens, TOTP secrets, passwords, SMTP passwords, or passkey credential JSON.
+9. `settings.web.trusted_proxies` matches the ingress, every vhost sets `X-Forwarded-For` and `X-Real-IP`, and origin access is restricted to the CDN ([client identity](client_identity.md#ingress-requirements-operator-action)).
+10. SSO JWT private key is explicitly configured and the published public key is available from the login/profile page modal.
+11. User `uid` is indexed uniquely and downstream systems use UID instead of database IDs.
+12. Logs and monitoring do not expose JWTs, OAuth codes, email verification codes, Turnstile tokens, TOTP secrets, passwords, SMTP passwords, or passkey credential JSON.
