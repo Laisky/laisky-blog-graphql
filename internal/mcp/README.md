@@ -9,7 +9,7 @@
 ## Architecture
 
 - `internal/mcp/server.go` builds the MCP server, wires hooks, and wraps the streamable HTTP handler with request/response logging capped at 4 KB per body.
-- Authorization is propagated through the request context so tools can extract a Bearer token via `Authorization` headers.
+- The transport chain is body budget → request logging → bearer validation (`internal/mcp/auth`, one-api) → tools/list filter → auth normalization → SDK. A presented bearer is validated once per HTTP request; the verified identity is propagated through the request context, and tools read it from there. See `docs/manual/mcp.md#credential-validation`.
 - Each tool implementation resides in `internal/mcp/tools`. Tools return structured JSON payloads using `mcp.NewToolResultJSON` and map recoverable errors to MCP tool errors.
 - When a `callRecorder` is provided, every tool invocation is persisted through `calllog.Service`, storing timing, status, parameters, and billing cost.
 - Auxiliary HTTP services:
@@ -61,7 +61,7 @@
 - **Input:** `{ "question": "What should I do next?" }`.
 - **Flow:**
   1.  Tool validates and trims the question.
-  2.  Authorization header is parsed into `AuthorizationContext` (API key hash, user identity prefix).
+  2.  The verified caller from the request context becomes the `AuthorizationContext` (API key hash, user identity prefix).
   3.  Stores the question via `Service.CreateRequest` and blocks until `WaitForAnswer` returns or timeout (`default 5 min`).
   4.  On timeout, the request is marked `expired`; otherwise the supplied answer is returned.
 - **Output:** JSON containing `request_id`, `question`, `answer`, `asked_at`, and optionally `answered_at`.

@@ -114,7 +114,7 @@ func (t *GetUserRequestTool) Definition() mcp.Tool {
 // Handle executes the core tool logic.
 func (t *GetUserRequestTool) Handle(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { //nolint:gocognit // tool handler with multiple parameter extraction steps
 	authHeader := t.headerProvider(ctx)
-	authCtx, err := t.parser(authHeader)
+	authCtx, err := t.parser(ctx, authHeader)
 	if err != nil {
 		t.log().Warn("get_user_request authorization failed", zap.Error(err))
 		return mcp.NewToolResultError("invalid authorization header"), nil

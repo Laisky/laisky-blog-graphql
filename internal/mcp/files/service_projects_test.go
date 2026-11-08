@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 )
 
@@ -23,8 +24,7 @@ func TestProjectDiscoveryBehavior(t *testing.T) {
 			f := newRaceFixture(t, backend, nil)
 			a, err := mcpauth.DeriveFromAPIKey("sk-project-owner-a")
 			require.NoError(t, err)
-			b, err := mcpauth.DeriveFromAPIKey("sk-project-owner-b")
-			require.NoError(t, err)
+			b := authtest.Verified("sk-project-owner-b")
 			authA := files.AuthContext{APIKeyHash: a.APIKeyHash, UserID: b.UserID, UserIdentity: b.UserIdentity}
 			authB := files.AuthContext{APIKeyHash: b.APIKeyHash}
 			write := func(auth files.AuthContext, project, path string) {

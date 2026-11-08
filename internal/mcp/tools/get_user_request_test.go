@@ -43,7 +43,7 @@ func TestGetUserRequestToolSuccess(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-alpha", KeySuffix: "abcd"}, nil
 	})
 
@@ -86,7 +86,7 @@ func TestGetUserRequestToolEmpty(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-bravo"}, nil
 	})
 
@@ -100,7 +100,7 @@ func TestGetUserRequestToolEmpty(t *testing.T) {
 }
 
 func TestGetUserRequestToolAuthorizationFailure(t *testing.T) {
-	tool := mustGetUserRequestTool(t, &fakeUserRequestService{}, nil, func(context.Context) string { return "token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, &fakeUserRequestService{}, nil, func(context.Context) string { return "token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return nil, errors.New("invalid header")
 	})
 
@@ -125,7 +125,7 @@ func TestGetUserRequestToolTaskIDForwarding(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-task", KeySuffix: "abcd"}, nil
 	})
 
@@ -160,7 +160,7 @@ func TestGetUserRequestToolHoldTimeout(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-hold"}, nil
 	})
 
@@ -206,7 +206,7 @@ func TestGetUserRequestToolHoldWithPendingCommands(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-hold-pending"}, nil
 	})
 
@@ -329,7 +329,7 @@ func TestGetUserRequestToolIgnoresAgentReturnMode(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-first", KeySuffix: "abcd"}, nil
 	})
 
@@ -384,7 +384,7 @@ func TestGetUserRequestToolReturnModeFromUserPreference(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-pref", KeySuffix: "abcd"}, nil
 	})
 
@@ -446,7 +446,7 @@ func TestGetUserRequestToolAgentModeDoesNotOverridePreference(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-override", KeySuffix: "abcd"}, nil
 	})
 
@@ -489,7 +489,7 @@ func TestGetUserRequestToolReturnModeFirstEmpty(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-empty"}, nil
 	})
 
@@ -524,7 +524,7 @@ func TestGetUserRequestToolEmptyTemplatePreservesLegacyBytes(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "u"}, nil
 	})
 
@@ -578,7 +578,7 @@ func TestGetUserRequestToolNonEmptyTemplateWraps(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "u"}, nil
 	})
 
@@ -635,7 +635,7 @@ func TestGetUserRequestToolTemplateAppliesInMixedContent(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, nil, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "u"}, nil
 	})
 	tool.WithImageIssuer(issuer)
@@ -705,7 +705,7 @@ func TestGetUserRequestToolReturnModeFirstWithHold(t *testing.T) {
 		},
 	}
 
-	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustGetUserRequestTool(t, service, waiter, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{UserIdentity: "user-hold-first"}, nil
 	})
 

@@ -13,7 +13,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/stretchr/testify/require"
 
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
 	mcptools "github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
@@ -180,10 +180,7 @@ func execute(t *testing.T, resolver *Resolver, authorize bool, query string) gra
 	request := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(string(body)))
 	request.Header.Set("Content-Type", "application/json")
 	if authorize {
-		request = request.WithContext(mcpauth.WithContext(request.Context(), &mcpauth.Context{
-			APIKey: "sk-contract-test", APIKeyHash: "hash-contract-test",
-			UserID: "user-1", UserIdentity: "user-1",
-		}))
+		request = request.WithContext(authtest.WithVerified(request.Context(), "sk-contract-test"))
 	}
 	recorder := httptest.NewRecorder()
 	server.ServeHTTP(recorder, request)

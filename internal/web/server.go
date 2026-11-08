@@ -23,6 +23,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
@@ -187,6 +188,14 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 		log.Logger.Info("configured client identity policy", identityPolicy.LogFields()...)
 	}
 
+	// Every MCP entrypoint (transport, console APIs, GraphQL shared fields)
+	// validates bearers with this one authenticator.
+	authenticator, err := configureMCPAuthentication(log.Logger.Named("mcp_auth"))
+	if err != nil {
+		return errors.Wrap(err, "configure mcp api key validation")
+	}
+	bodySettings := loadRequestBodySettingsFromConfig()
+
 	server, err := newServerEngine(identityPolicy, prefix)
 	if err != nil {
 		return errors.Wrap(err, "build http engine")
@@ -218,7 +227,11 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 		resolver.args.Rdb != nil ||
 		resolver.args.MCPToolsSettings.MCPPipeEnabled ||
 		resolver.args.MCPToolsSettings.FindToolEnabled) {
-		options := []mcp.ServerOption{mcp.WithUserRequestHoldManager(sharedHolds)}
+		options := []mcp.ServerOption{
+			mcp.WithUserRequestHoldManager(sharedHolds),
+			mcp.WithAuthenticator(authenticator),
+			mcp.WithRequestBodyBudget(bodySettings.MCP),
+		}
 		if resolver.args.FilesService != nil {
 			options = append(options, mcp.WithFileHistoryReader(resolver.args.FilesService))
 		}
@@ -251,6 +264,7 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 				}
 				mcpHandler.ServeHTTP(ctx.Writer, ctx.Request)
 			}
+			// The same helper classifies these routes for the request-body budget.
 			for _, rootPath := range prefix.rootVariants() {
 				server.Any(rootPath, rootHandler)
 			}
@@ -265,7 +279,7 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 				}
 				serveMCPTransportRoot(ctx, mcpHandler)
 			}
-			server.Any("/.well-known/mcp", mcpDiscoveryHandler)
+			server.Any(mcpDiscoveryPath, mcpDiscoveryHandler)
 		}
 	} else {
 		searchNil := resolver != nil && resolver.args.WebSearchProvider == nil
@@ -359,23 +373,9 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 
 	graphqlHandler := ginMw.FromStd(h.ServeHTTP)
 	queryPath := prefix.join("/query/")
-	server.Any(queryPath, graphqlHandler)
-	if trimmed := strings.TrimSuffix(queryPath, "/"); trimmed != queryPath {
-		server.Any(trimmed, graphqlHandler)
-	}
-	if prefix.public == "" {
-		server.Any("/query/", graphqlHandler)
-		server.Any("/query", graphqlHandler)
-	}
-
-	queryV2Path := prefix.join("/query/v2/")
-	server.Any(queryV2Path, graphqlHandler)
-	if trimmed := strings.TrimSuffix(queryV2Path, "/"); trimmed != queryV2Path {
-		server.Any(trimmed, graphqlHandler)
-	}
-	if prefix.public == "" {
-		server.Any("/query/v2/", graphqlHandler)
-		server.Any("/query/v2", graphqlHandler)
+	// The same helper classifies these routes for the request-body budget.
+	for _, path := range graphqlRoutePaths(prefix) {
+		server.Any(path, graphqlHandler)
 	}
 
 	playgroundHandler := ginMw.FromStd(playground.Handler("GraphQL playground", queryPath))
@@ -486,7 +486,20 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 	if err != nil {
 		return errors.Wrap(err, "listen HTTP")
 	}
-	return serveHTTP(ctx, &http.Server{Addr: addr, Handler: server, ReadHeaderTimeout: 10 * time.Second}, listener)
+	idleTimeout := configDuration(gconfig.Shared.Get("settings.web.idle_timeout"), defaultHTTPIdleTimeout)
+	return serveHTTP(ctx, newHTTPServer(addr, server, idleTimeout), listener)
+}
+
+// configureMCPAuthentication builds the API key authenticator from
+// settings.mcp.auth.validation.* (one-api validation enabled by default) and
+// installs it process-wide for the console APIs and GraphQL shared fields.
+func configureMCPAuthentication(logger glog.Logger) (*mcpauth.Authenticator, error) {
+	authenticator, err := mcpauth.NewAuthenticatorFromSettings(mcpauth.LoadValidationSettingsFromConfig(), logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "build mcp api key authenticator")
+	}
+	mcpauth.Install(authenticator)
+	return authenticator, nil
 }
 
 // newServerEngine builds the gin engine every route is served by. It applies
@@ -502,6 +515,8 @@ func newServerEngine(policy clientip.Policy, prefix urlPrefixConfig) (*gin.Engin
 	accessLogger := log.Logger.Named("gin")
 	engine.Use(
 		gin.Recovery(),
+		// The body budget precedes every middleware and handler that reads a body.
+		newRequestBodyPolicy(prefix, loadRequestBodySettingsFromConfig()).middleware(),
 		requestIdentity(policy, accessLogger),
 		ginMw.NewLoggerMiddleware(
 			ginMw.WithLoggerMwColored(),
@@ -593,7 +608,7 @@ func registerAgentAPIProbeRoutes(router gin.IRouter) {
 func newAgentAPIProbeHandler() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		ctx.Header("Allow", "GET, HEAD, OPTIONS, POST")
-		ctx.Header("WWW-Authenticate", `Bearer resource_metadata="https://mcp.laisky.com/.well-known/oauth-protected-resource"`)
+		ctx.Header("WWW-Authenticate", `Bearer resource_metadata="`+mcpauth.ResourceMetadataURL+`"`)
 
 		switch ctx.Request.Method {
 		case http.MethodOptions:
@@ -603,7 +618,7 @@ func newAgentAPIProbeHandler() gin.HandlerFunc {
 			ctx.JSON(http.StatusUnauthorized, gin.H{
 				"error":             "authentication_required",
 				"error_description": "Use a Laisky MCP API key in the Authorization header.",
-				"resource_metadata": "https://mcp.laisky.com/.well-known/oauth-protected-resource",
+				"resource_metadata": mcpauth.ResourceMetadataURL,
 			})
 		default:
 			ctx.AbortWithStatus(http.StatusMethodNotAllowed)

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
@@ -24,9 +24,7 @@ func (p interfaceIsolationSearchProvider) Search(context.Context, string) (*sear
 // builder with either MCP switch state. Inputs fail shared validation before
 // billing, DNS or backend effects, not because the peer interface is disabled.
 func TestGraphQLFieldsIgnoreMCPRegistrationFlags(t *testing.T) {
-	auth, err := mcpauth.DeriveFromAPIKey("sk-interface-isolation-test-only")
-	require.NoError(t, err)
-	ctx := mcpauth.WithContext(context.Background(), auth)
+	ctx := authtest.WithVerified(context.Background(), "sk-interface-isolation-test-only")
 	for _, enabled := range []bool{false, true} {
 		args := ResolverArgs{
 			WebSearchProvider: interfaceIsolationSearchProvider{t: t},

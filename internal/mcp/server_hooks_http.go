@@ -217,6 +217,12 @@ func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 	return nil, nil, errors.New("hijacker not supported")
 }
 
+// Unwrap exposes the underlying writer so http.ResponseController can reach
+// connection controls such as per-request read and write deadlines.
+func (lrw *loggingResponseWriter) Unwrap() http.ResponseWriter {
+	return lrw.ResponseWriter
+}
+
 func (lrw *loggingResponseWriter) Push(target string, opts *http.PushOptions) error {
 	if pusher, ok := lrw.ResponseWriter.(http.Pusher); ok {
 		return pusher.Push(target, opts)

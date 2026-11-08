@@ -13,6 +13,8 @@ import (
 	"github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
 const (
@@ -243,7 +245,7 @@ func isAgentAPIProbePath(clean string) bool {
 
 func serveAgentAPIProbe(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Allow", "GET, HEAD, OPTIONS, POST")
-	w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://mcp.laisky.com/.well-known/oauth-protected-resource"`)
+	w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+mcpauth.ResourceMetadataURL+`"`)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	if r.Method == http.MethodHead {

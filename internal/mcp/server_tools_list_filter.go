@@ -14,6 +14,7 @@ import (
 	srv "github.com/mark3labs/mcp-go/server"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 )
 
@@ -61,7 +62,14 @@ func withToolsListFiltering(next http.Handler, logger logSDK.Logger, preferenceS
 	})
 }
 
+// toolsListPeekLimit bounds how much of a request body the filter inspects. A
+// tools/list request is tiny; anything larger is not filtered. Filtering is a
+// presentation preference, not an access control, so skipping it is safe.
+const toolsListPeekLimit = 64 << 10
+
 // loadDisabledToolsForListRequest inspects the request and returns disabled tools for tools/list calls.
+// It runs after the bearer gate and only for a verified caller, so neither an
+// anonymous nor a rejected request causes a body read or a preference lookup.
 func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userrequests.Service, logger logSDK.Logger) (bool, map[string]struct{}) {
 	if r == nil || preferenceService == nil {
 		return false, nil
@@ -70,38 +78,24 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 		return false, nil
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
+	shared, verified := mcpauth.FromContext(r.Context())
+	if !verified {
 		if logger != nil {
-			logger.Warn("read request body for tools/list filtering", zap.Error(err))
-		}
-		return false, nil
-	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
-
-	var payload struct {
-		Method string `json:"method"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return false, nil
-	}
-	if payload.Method != string(mcp.MethodToolsList) {
-		return false, nil
-	}
-
-	auth, authSource := resolveAuthorizationForListRequest(r)
-	if auth == nil {
-		if logger != nil {
-			logger.Debug("skip tools/list filtering: authorization unavailable",
+			logger.Debug("skip tools/list filtering: no verified authorization",
 				zap.Bool("has_session_header", strings.TrimSpace(r.Header.Get(srv.HeaderKeySessionID)) != ""),
 			)
 		}
-		return true, nil
+		return false, nil
 	}
 
+	method, ok := peekJSONRPCMethod(r, toolsListPeekLimit)
+	if !ok || method != string(mcp.MethodToolsList) {
+		return false, nil
+	}
+
+	auth := askuser.FromSharedContext(shared)
 	if logger != nil {
 		logger.Debug("tools/list filtering authorization resolved",
-			zap.String("auth_source", authSource),
 			zap.String("user_identity", auth.UserIdentity),
 		)
 	}
@@ -111,7 +105,6 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 		if logger != nil {
 			logger.Warn("load disabled tools failed",
 				zap.Error(err),
-				zap.String("auth_source", authSource),
 				zap.String("user_identity", auth.UserIdentity),
 			)
 		}
@@ -134,7 +127,6 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 
 	if logger != nil {
 		logger.Debug("tools/list filtering loaded disabled tools",
-			zap.String("auth_source", authSource),
 			zap.String("user_identity", auth.UserIdentity),
 			zap.Int("disabled_tools_count", len(set)),
 		)
@@ -143,15 +135,27 @@ func loadDisabledToolsForListRequest(r *http.Request, preferenceService *userreq
 	return true, set
 }
 
-// resolveAuthorizationForListRequest uses only the current request's credentials.
-// Transport session IDs must never supply an identity or resurrect credentials.
-func resolveAuthorizationForListRequest(r *http.Request) (*askuser.AuthorizationContext, string) {
-	header, source := resolveRequestAuthorizationHeader(r)
-	auth, err := askuser.ParseAuthorizationContext(header)
-	if err != nil {
-		return nil, authSourceNone
+// peekJSONRPCMethod reads at most limit+1 bytes, which the transport body
+// budget already bounds in size and time, decodes only the JSON-RPC method,
+// and replays the inspected bytes (and any read error) to the SDK.
+func peekJSONRPCMethod(r *http.Request, limit int) (string, bool) {
+	if r.Body == nil || r.Body == http.NoBody {
+		return "", false
 	}
-	return auth, source
+	source := r.Body
+	prefix, err := io.ReadAll(io.LimitReader(source, int64(limit)+1))
+	r.Body = &loggingReplayBody{ReadCloser: source, prefix: bytes.NewReader(prefix), readErr: err}
+	if err != nil || len(prefix) > limit {
+		return "", false
+	}
+
+	var payload struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(prefix, &payload); err != nil {
+		return "", false
+	}
+	return payload.Method, true
 }
 
 // filterToolsListBody removes disabled tool definitions from a JSON-RPC tools/list response body.

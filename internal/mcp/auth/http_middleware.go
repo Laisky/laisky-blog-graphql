@@ -3,18 +3,43 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+
+	errors "github.com/Laisky/errors/v2"
+	gmw "github.com/Laisky/gin-middlewares/v7"
+	"github.com/Laisky/zap"
 )
 
-// HTTPMiddleware enforces authorization and injects canonical auth context into request contexts.
+const (
+	// RetryAfterSeconds is the Retry-After hint sent when validation is unavailable.
+	RetryAfterSeconds = 5
+	// ResourceMetadataURL is the RFC 9728 protected-resource metadata document
+	// advertised in Bearer challenges.
+	ResourceMetadataURL = "https://mcp.laisky.com/.well-known/oauth-protected-resource"
+)
+
+// HTTPMiddleware enforces authorization with the installed Authenticator and
+// injects the verified auth context into request contexts.
 func HTTPMiddleware(next http.Handler) http.Handler {
+	return HTTPMiddlewareWith(nil, next)
+}
+
+// HTTPMiddlewareWith enforces authorization with authenticator, or with the
+// installed Authenticator when it is nil. Rejected credentials receive the
+// console's 401 JSON shape; an unavailable authority receives 503.
+func HTTPMiddlewareWith(authenticator *Authenticator, next http.Handler) http.Handler {
 	if next == nil {
 		return nil
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authCtx, err := ParseAuthorizationContext(r.Header.Get("Authorization"))
+		active := authenticator
+		if active == nil {
+			active = Installed()
+		}
+		authCtx, err := active.Authenticate(r.Context(), r.Header.Get("Authorization"))
 		if err != nil {
-			writeUnauthorized(w, err.Error())
+			WriteHTTPAuthError(w, r, err)
 			return
 		}
 
@@ -22,9 +47,35 @@ func HTTPMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// writeUnauthorized writes a standardized 401 body for auth middleware failures.
-func writeUnauthorized(w http.ResponseWriter, message string) {
+// WriteHTTPAuthError writes the console JSON error for an Authenticate failure:
+// 503 with Retry-After when no verdict was available, otherwise 401.
+func WriteHTTPAuthError(w http.ResponseWriter, r *http.Request, err error) {
+	if IsUnavailable(err) {
+		gmw.GetLogger(r.Context()).Warn("api key validation unavailable", zap.Error(err))
+		w.Header().Set("Retry-After", strconv.Itoa(RetryAfterSeconds))
+		writeJSONError(w, http.StatusServiceUnavailable, ErrValidationUnavailable.Error())
+		return
+	}
+	writeJSONError(w, http.StatusUnauthorized, PublicMessage(err))
+}
+
+// PublicMessage maps an Authenticate failure to a stable, non-sensitive message.
+func PublicMessage(err error) string {
+	switch {
+	case errors.Is(err, ErrMissingAuthorization):
+		return ErrMissingAuthorization.Error()
+	case errors.Is(err, ErrCredentialRejected):
+		return ErrCredentialRejected.Error()
+	case errors.Is(err, ErrValidationUnavailable):
+		return ErrValidationUnavailable.Error()
+	default:
+		return ErrInvalidAuthorization.Error()
+	}
+}
+
+// writeJSONError writes the standardized {"error": message} body.
+func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusUnauthorized)
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": message}) //nolint:errchkjson // best-effort error response
 }

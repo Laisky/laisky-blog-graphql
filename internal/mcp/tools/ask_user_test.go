@@ -20,7 +20,7 @@ import (
 
 func TestAskUserHandleInvalidAuthorization(t *testing.T) {
 	parserErr := errors.New("invalid header")
-	tool := mustAskUserTool(t, &fakeAskUserService{}, func(context.Context) string { return "token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustAskUserTool(t, &fakeAskUserService{}, func(context.Context) string { return "token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return nil, parserErr
 	}, 5*time.Minute)
 
@@ -42,7 +42,7 @@ func TestAskUserHandleInvalidAuthorization(t *testing.T) {
 }
 
 func TestAskUserHandleEmptyQuestion(t *testing.T) {
-	tool := mustAskUserTool(t, &fakeAskUserService{}, func(context.Context) string { return "token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustAskUserTool(t, &fakeAskUserService{}, func(context.Context) string { return "token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{}, nil
 	}, 5*time.Minute)
 
@@ -81,7 +81,7 @@ func TestAskUserHandleTimeout(t *testing.T) {
 		},
 	}
 
-	tool := mustAskUserTool(t, service, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustAskUserTool(t, service, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{}, nil
 	}, time.Millisecond)
 
@@ -125,7 +125,7 @@ func TestAskUserHandleSuccess(t *testing.T) {
 		},
 	}
 
-	tool := mustAskUserTool(t, service, func(context.Context) string { return "Bearer token" }, func(string) (*askuser.AuthorizationContext, error) {
+	tool := mustAskUserTool(t, service, func(context.Context) string { return "Bearer token" }, func(context.Context, string) (*askuser.AuthorizationContext, error) {
 		return &askuser.AuthorizationContext{APIKey: "token"}, nil
 	}, 5*time.Minute)
 

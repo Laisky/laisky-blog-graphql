@@ -22,12 +22,14 @@ type requestSessionIDResolver struct{}
 var _ srv.SessionIdManagerResolver = requestSessionIDResolver{}
 
 // ResolveSessionIdManager selects public or credential-bound session validation.
-// API-key parsing identifies a namespace; tool authorization/billing still runs
-// independently. A session ID never authenticates a missing or invalid API key.
+// Only a credential the bearer gate verified binds a session; a session ID
+// never authenticates a missing or invalid API key.
 func (requestSessionIDResolver) ResolveSessionIdManager(r *http.Request) srv.SessionIdManager {
-	header, _ := resolveRequestAuthorizationHeader(r)
-	auth, err := mcpauth.ParseAuthorizationContext(header)
-	if err != nil {
+	if r == nil {
+		return &publicSessionIDManager{}
+	}
+	auth, ok := mcpauth.FromContext(r.Context())
+	if !ok {
 		return &publicSessionIDManager{}
 	}
 	return &credentialSessionIDManager{key: []byte(auth.APIKey)}

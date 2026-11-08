@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/google/uuid"
+
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 )
 
 // NewHTTPHandler builds an HTTP multiplexer exposing the ask_user dashboard and APIs.
@@ -151,7 +154,7 @@ func (h *httpHandler) listRequests(w http.ResponseWriter, r *http.Request) {
 
 	auth, err := ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		writeAuthorizationError(w, err)
 		return
 	}
 	if h.service == nil {
@@ -186,7 +189,7 @@ func (h *httpHandler) answerRequest(w http.ResponseWriter, r *http.Request, id u
 	}
 	auth, err := ParseAuthorizationFromContext(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		writeAuthorizationError(w, err)
 		return
 	}
 
@@ -220,6 +223,17 @@ func (h *httpHandler) answerRequest(w http.ResponseWriter, r *http.Request, id u
 	writeJSON(w, map[string]any{
 		"request": serializeRequest(*req),
 	})
+}
+
+// writeAuthorizationError keeps the console's plain-text 401 for refused
+// credentials and answers a retryable 503 when the authority is unavailable.
+func writeAuthorizationError(w http.ResponseWriter, err error) {
+	if mcpauth.IsUnavailable(err) {
+		w.Header().Set("Retry-After", strconv.Itoa(mcpauth.RetryAfterSeconds))
+		http.Error(w, mcpauth.ErrValidationUnavailable.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusUnauthorized)
 }
 
 func serializeRequests(reqs []Request) []map[string]any {

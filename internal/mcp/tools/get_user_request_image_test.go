@@ -33,7 +33,7 @@ func (f *fakeImageIssuer) FetchInline(_ context.Context, image userrequests.Requ
 }
 
 func TestBuildCommandsResponse_PureTextCompatibility(t *testing.T) {
-	tool, err := NewGetUserRequestTool(&fakeUserRequestService{}, nil, testLogger(), func(context.Context) string { return "" }, func(string) (*askuser.AuthorizationContext, error) { return nil, nil })
+	tool, err := NewGetUserRequestTool(&fakeUserRequestService{}, nil, testLogger(), func(context.Context) string { return "" }, func(context.Context, string) (*askuser.AuthorizationContext, error) { return nil, nil })
 	require.NoError(t, err)
 
 	req := userrequests.Request{
@@ -53,7 +53,7 @@ func TestBuildCommandsResponse_PureTextCompatibility(t *testing.T) {
 }
 
 func TestBuildCommandsResponse_WithImages(t *testing.T) {
-	tool, err := NewGetUserRequestTool(&fakeUserRequestService{}, nil, testLogger(), func(context.Context) string { return "" }, func(string) (*askuser.AuthorizationContext, error) { return nil, nil })
+	tool, err := NewGetUserRequestTool(&fakeUserRequestService{}, nil, testLogger(), func(context.Context) string { return "" }, func(context.Context, string) (*askuser.AuthorizationContext, error) { return nil, nil })
 	require.NoError(t, err)
 
 	inlineBody := []byte("fake-png-bytes-small")
@@ -100,7 +100,7 @@ func TestBuildCommandsResponse_WithImages(t *testing.T) {
 }
 
 func TestBuildCommandsResponse_LargeImageGoesLinkOnly(t *testing.T) {
-	tool, err := NewGetUserRequestTool(&fakeUserRequestService{}, nil, testLogger(), func(context.Context) string { return "" }, func(string) (*askuser.AuthorizationContext, error) { return nil, nil })
+	tool, err := NewGetUserRequestTool(&fakeUserRequestService{}, nil, testLogger(), func(context.Context) string { return "" }, func(context.Context, string) (*askuser.AuthorizationContext, error) { return nil, nil })
 	require.NoError(t, err)
 
 	issuer := &fakeImageIssuer{bodies: map[string][]byte{}}
