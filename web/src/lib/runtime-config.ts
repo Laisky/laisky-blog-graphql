@@ -65,6 +65,9 @@ export interface RuntimeConfig {
   // false so users never trigger a "github oauth client is not configured" error.
   githubOAuthEnabled?: boolean;
   ssoJwt?: SsoJwtConfig | null;
+  // ssoRedirect is the issuer's redirect policy: the legacy bearer handoff mode and the
+  // registered code-flow clients. It is validated by configureSsoRedirectPolicy.
+  ssoRedirect?: unknown;
 }
 
 // Default tools config with all tools enabled
