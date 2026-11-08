@@ -112,7 +112,12 @@
       "TestServerEngineTrustedProxyChains",
       "TestServerEngineDirectDeploymentPolicy",
       "TestServerEngineHostCannotDisableChallenge",
-      "TestRuntimeConfigServesTheVerifyingWidgetKey"
+      "TestRuntimeConfigServesTheVerifyingWidgetKey",
+      "TestProductionWiringInstallsOneAPIValidator",
+      "TestHTTPServerTimeoutsKeepStreamsAlive",
+      "TestRequestBodyPolicyClassifiesRegisteredRoutes",
+      "TestGinBodyBudgetRejectsOversizedBodiesPerRouteFamily",
+      "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain"
     ]
   },
   {
@@ -148,6 +153,65 @@
       "TestAuthChallengeTrackerAccountGapForUnpresentableChallenge",
       "TestResolveTurnstileSiteNeverDisablesTheGate",
       "TestAdmitAuthRequestAccountEscalationNeedsPresentableChallenge"
+    ]
+  },
+  {
+    "package": "./internal/mcp/auth",
+    "tests": [
+      "TestAuthenticatorCachesAcceptedKeyForPositiveTTL",
+      "TestAuthenticatorRejectsAndNegativelyCachesUnknownKey",
+      "TestAuthenticatorHonorsRevocationAfterPositiveTTL",
+      "TestAuthenticatorCoalescesConcurrentValidations",
+      "TestAuthenticatorBoundsUpstreamCallsUnderRandomBearerFlood",
+      "TestAuthenticatorStaleIfErrorOnlyForRecentlyAcceptedKeys",
+      "TestAuthenticatorRejectsMalformedAndOversizedKeysWithoutUpstream",
+      "TestUninstalledAuthenticatorFailsClosed",
+      "TestFromContextIgnoresUnverifiedContexts",
+      "TestOneAPITokenValidatorClassifiesAuthorityStatuses",
+      "TestNewAuthenticatorFromSettingsSelectsOneAPIByDefault"
+    ]
+  },
+  {
+    "package": "./internal/mcp",
+    "tests": [
+      "TestIngressRejectsUnissuedBearerBeforeSessionAndTools",
+      "TestIngressGateIsToolAgnostic",
+      "TestIngressFailsClosedWhenAuthorityUnavailable",
+      "TestIngressKeepsAnonymousDiscovery",
+      "TestIngressSSEStreamOutlivesReadBudget",
+      "TestIngressRejectsOversizedBodyBeforeAuthOrBuffering",
+      "TestIngressTerminatesSlowBodyWithinReadBudget",
+      "TestIngressReadBudgetDoesNotCutHeldRequests"
+    ]
+  },
+  {
+    "package": "./library/httpbody",
+    "tests": [
+      "TestEnforceRejectsDeclaredOversizeWithoutReading",
+      "TestEnforceCapsStreamedBodies",
+      "TestEnforceLeavesBodylessRequestsAlone",
+      "TestTightenLowersTheCap",
+      "TestReadDeadlineCutsSlowBodyButNotTheResponse",
+      "TestReadDeadlineReachesThroughUnwrappingWriters"
+    ]
+  },
+  {
+    "package": "./internal/mcp/userrequests",
+    "tests": [
+      "TestConsoleAPIRejectsUnissuedBearerWithoutStorage",
+      "TestConsoleAPIFailsClosedWhenAuthorityUnavailable"
+    ]
+  },
+  {
+    "package": "./internal/mcp/askuser",
+    "tests": [
+      "TestAskUserConsoleValidatesBearer"
+    ]
+  },
+  {
+    "package": "./internal/library/fileio",
+    "tests": [
+      "TestGraphQLSharedToolRejectsUnissuedBearer"
     ]
   }
 ]

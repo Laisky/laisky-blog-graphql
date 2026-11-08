@@ -10,6 +10,8 @@ This guide explains how to connect to the remote Model Context Protocol (MCP) en
   - [Deployment Prerequisites](#deployment-prerequisites)
   - [Authentication Model](#authentication-model)
     - [Bearer Tokens](#bearer-tokens)
+    - [Credential Validation](#credential-validation)
+    - [Request Size and Time Limits](#request-size-and-time-limits)
   - [HTTP Endpoints](#http-endpoints)
   - [Tool Reference](#tool-reference)
     - [`web_search`](#web_search)
@@ -70,7 +72,59 @@ Within the identity segment you can optionally separate user and AI identities w
 - `Authorization: Bearer user:assistant@sk-example` → `user-id=user`, `ai-id=assistant`.
 - `Authorization: Bearer workspace@sk-example` → `user-id=workspace`, `ai-id=workspace`.
 
-The raw token is checked against the external billing service, hashed with SHA-256, and the last four characters are kept for display in the ask_user dashboard. Store tokens securely; the server does not persist them in plain text.
+The raw token is validated with one-api (see below), hashed with SHA-256 to derive the tenant namespace, and the last four characters are kept for display in the ask_user dashboard. Store tokens securely; the server does not persist them in plain text.
+
+### Credential Validation
+
+Every entrypoint that derives a tenant from a bearer — the MCP transport, the `/tools/*/api` console APIs, the ask_user console and the GraphQL fields shared with MCP tools — authenticates it through one authenticator (`internal/mcp/auth`). A tenant exists only for a key that one-api accepted; a key that is merely non-empty never becomes a tenant.
+
+- **Authority.** The key is sent to one-api's read-only `GET /api/token/balance` (behind one-api `TokenAuth`, no billing side effect). `200` accepts the key. `401` and `403` reject it.
+- **MCP transport responses.** A presented but rejected key receives `401` with `WWW-Authenticate: Bearer error="invalid_token", error_description="…", resource_metadata="https://mcp.laisky.com/.well-known/oauth-protected-resource"` before any session is issued or any tool runs. If one-api cannot give a verdict, the response is `503` with `Retry-After: 5`, never `401` and never a tenant.
+- **Console and GraphQL responses.** Console APIs keep their `{"error": "..."}` JSON with `401`, or `503` during an outage. GraphQL keeps its normal error path.
+- **Anonymous discovery.** Requests without any credential keep working for `initialize`, `tools/list` and similar discovery calls. This includes an `Authorization: Bearer` header with an empty token. Tools still require a valid key.
+- **One validation per request.** The verified identity travels in the request context, so nested `mcp_pipe` steps and every handler reuse it.
+- **Caching.** An accepted key is trusted for `positive_ttl` (default 5 minutes), which is also the revocation lag. A rejected key is refused for `negative_ttl` (default 30 seconds) without asking one-api again. Concurrent lookups of the same key share one upstream call.
+- **Upstream protection.** Upstream calls for uncached keys are limited to `upstream_rate_per_second` (default 1) with `upstream_burst` (default 30), and to `max_concurrent` (default 8) at a time. A flood of random bearers therefore cannot amplify into one-api traffic. Keys above that budget receive `503`.
+- **Outages.** During a one-api outage, timeout, `429` or `5xx`, a key that one-api accepted within `positive_ttl + stale_grace` (default grace 30 minutes) stays usable (stale-if-error). Any other key fails closed with `503`.
+
+Consequences to know:
+
+- **Exhausted tokens.** one-api's `TokenAuth` rejects quota-exhausted tokens with `401`, and one-api offers no quota-agnostic validation route. Such keys therefore lose access to free tools too (file, memory, user-request tools) until the token is topped up or replaced. Stored data stays intact under the same key.
+- **Subnet-restricted tokens.** one-api compares the subnet with *this server's* egress IP, so a token restricted to the end user's network is rejected with `403` → `401` here. Paid tools already failed the same way at `/api/token/consume`.
+- **Token-store failures.** one-api answers its own token-store failures with `401` as well. During such a failure, keys whose positive cache expired are rejected until it recovers. This matches one-api's own behavior for its relay.
+- **Rate limits.** one-api's per-IP REST rate limit (`GLOBAL_API_RATE_LIMIT`, default 480 per 3 minutes) is shared by these validations and by paid-tool `/api/token/consume` calls. Keep `upstream_rate_per_second × 180 + upstream_burst` well below it.
+
+Settings (`settings.mcp.auth.validation.*`):
+
+| Key                        | Default                    | Meaning                                                      |
+| -------------------------- | -------------------------- | ------------------------------------------------------------ |
+| `enabled`                  | `true`                     | One-api validation. `false` is a development-only opt-out that logs a WARN at startup and accepts any non-empty bearer. |
+| `base_url`                 | `oneapi.BillingAPI`        | one-api origin.                                              |
+| `timeout`                  | `5s` (100ms–30s)           | Upstream timeout per validation.                             |
+| `positive_ttl`             | `5m` (≤ 1h)                | Trust period for an accepted key (revocation lag).           |
+| `negative_ttl`             | `30s` (≤ 5m)               | Refusal period for a rejected key.                           |
+| `stale_grace`              | `30m` (≤ 24h)              | Extra period during which an accepted key survives an outage. |
+| `max_entries`              | `10000`                    | Cardinality bound of each of the positive and negative caches. |
+| `max_concurrent`           | `8`                        | Concurrent upstream validations.                             |
+| `upstream_rate_per_second` | `1`                        | Rate of upstream validations for uncached keys.              |
+| `upstream_burst`           | `30`                       | Burst of upstream validations.                               |
+
+### Request Size and Time Limits
+
+Request bodies are budgeted per route family before any middleware or handler reads them. A declared `Content-Length` above the cap is refused with `413` before a byte is read or a credential is validated. Bodies without a declared length are capped while streaming. A body that is not delivered within the read timeout is cut. Requests without a body (SSE `GET` streams, held long polls after their body was read, websockets) are never limited by it.
+
+Settings (`settings.web.request_body.*`, plus `settings.web.idle_timeout`):
+
+| Key                       | Default   | Applies to                                                                                     |
+| ------------------------- | --------- | ---------------------------------------------------------------------------------------------- |
+| `mcp_max_bytes`           | 32 MiB    | MCP transport requests that carry a validated key. This leaves room for the largest tool call, `extract_key_info` with 10 MB of materials. |
+| `mcp_anonymous_max_bytes` | 1 MiB     | MCP transport requests without credentials (discovery only).                                   |
+| `graphql_max_bytes`       | 64 MiB    | `/query` and `/query/v2`. gqlgen's multipart upload limit (32 MiB) still applies inside.        |
+| `default_max_bytes`       | 1 MiB     | Every other route (one-api balance proxy, SSO code exchange, webhooks). Routes with tighter own caps keep them. |
+| `read_timeout`            | `60s`     | Time to read one request body, on every route.                                                  |
+| `idle_timeout`            | `120s`    | Keep-alive idle connections (`http.Server.IdleTimeout`).                                         |
+
+The `/tools/<name>/api` console routes keep their own byte caps (for example user-request image uploads, `per_image_max_bytes × max_per_request + 2 MiB`) and get only the read timeout. The server sets `ReadHeaderTimeout` (10s) and `IdleTimeout`. It intentionally sets no `ReadTimeout` or `WriteTimeout`, because those would apply to SSE streams and long polls.
 
 ## HTTP Endpoints
 
@@ -429,6 +483,9 @@ mutation {
 | `ask_user tool is not available`       | PostgreSQL connection could not be opened, or configuration missing.                            | Verify `settings.db.mcp.*` values and database connectivity.                                                        |
 | `web search is not configured`         | No web search engines enabled, or required credentials missing.                                 | Configure an engine under `settings.websearch.engines` (e.g. supply Google `api_key`/`cx` and set `enabled: true`). |
 | Repeated `billing check failed` errors | External OneAPI billing request rejected.                                                       | Confirm the bearer token has sufficient quota or check OneAPI service health.                                       |
+| `401` with `error="invalid_token"`     | one-api does not accept the key: unknown, revoked, expired, disabled, quota-exhausted or subnet-restricted. | Use an active one-api key with remaining quota; see [Credential Validation](#credential-validation).               |
+| `503` with `Retry-After`               | one-api could not validate an uncached key (outage, timeout, rate limit).                       | Retry after the indicated delay; check one-api health and `settings.mcp.auth.validation.*` rate settings.          |
+| `413 request_too_large`                | The request body exceeds the route budget.                                                      | Reduce the payload or raise `settings.web.request_body.*`.                                                          |
 | Console shows no pending questions     | The AI has not called `ask_user`, or the API key entered does not match the one used by the AI. | Ensure matching API key and review server logs for request creation.                                                |
 
 For additional diagnostics, enable debug logging or monitor the `/mcp` request logs emitted by the `mcp` logger namespace.
