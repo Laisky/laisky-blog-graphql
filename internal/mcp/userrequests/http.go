@@ -246,7 +246,9 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var uploaded []UploadedImage
+	// Normalize every attachment first; nothing is uploaded yet, so a bad
+	// attachment cannot leave an object behind.
+	var prepared []UploadedImage
 	if len(attachments) > 0 {
 		if h.imageManager == nil || !h.imageManager.Settings().Enabled {
 			h.writeImageError(w, logger, errors.WithStack(ErrImageFeatureDisabled), -1)
@@ -257,16 +259,22 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			h.writeImageError(w, logger, errors.WithStack(ErrTooManyImages), -1)
 			return
 		}
-		processed, processErr := h.imageManager.Process(ctx, auth, attachments)
-		if processErr != nil {
-			idx := extractAttachmentIndex(processErr)
-			h.writeImageError(w, logger, processErr, idx)
+		images, prepareErr := h.imageManager.Prepare(ctx, auth, attachments)
+		if prepareErr != nil {
+			idx := extractAttachmentIndex(prepareErr)
+			h.writeImageError(w, logger, prepareErr, idx)
 			return
 		}
-		uploaded = processed
+		prepared = images
 	}
 
-	req, err := service.CreateRequestWithImages(ctx, auth, content, taskID, uploaded)
+	// Quota is reserved, objects are uploaded, and the request is committed
+	// as one workflow; on failure the uploaded objects are released.
+	var objects ImageObjectWriter
+	if h.imageManager != nil {
+		objects = h.imageManager
+	}
+	req, err := service.CreateRequestWithImages(ctx, auth, content, taskID, prepared, objects)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrEmptyContent):
@@ -277,6 +285,8 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
 		case errors.Is(err, ErrQuotaExceeded), errors.Is(err, ErrTooManyImages):
 			h.writeImageError(w, logger, err, -1)
+		case errors.Is(err, ErrStorageUnavailable):
+			h.writeImageError(w, logger, err, extractAttachmentIndex(err))
 		default:
 			logger.Error("create user request", zap.Error(err))
 			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to create user request")

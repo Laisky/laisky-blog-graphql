@@ -451,6 +451,7 @@ func runAPI(ctx context.Context) error {
 			} else if imageManager != nil {
 				args.UserRequestImages = imageManager
 				userSvc.StartImageGCWorker(ctx)
+				userSvc.StartImageReconcileWorker(ctx, imageManager)
 			}
 		} else {
 			logger.Warn("user_requests service unavailable")
