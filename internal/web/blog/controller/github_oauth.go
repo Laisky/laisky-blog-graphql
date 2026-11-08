@@ -7,9 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
-	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +16,12 @@ import (
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
+	"github.com/Laisky/zap"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
+	"github.com/Laisky/laisky-blog-graphql/internal/library/ssoredirect"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 )
 
@@ -157,6 +157,9 @@ func (r *MutationResolver) UserGithubOAuthLogin(ctx context.Context,
 	if err != nil {
 		return nil, maskLoginError(err)
 	}
+	if err = ensureSSORedirectStillAllowed(ctx, payload.RedirectTo); err != nil {
+		return nil, errors.Wrap(err, "complete github oauth login")
+	}
 
 	settings, err := loadGitHubOAuthSettingsWithRedirect(ctx, payload.CallbackURL)
 	if err != nil {
@@ -277,95 +280,57 @@ func resolveGitHubOAuthCallbackURL(ctx context.Context) string {
 	return strings.TrimRight(base, "/") + "/github/callback"
 }
 
+// defaultSSORedirectTarget is the issuer profile page. It stays relative so the page that
+// completes the ceremony (for example the configured GitHub callback origin) opens its own
+// profile with the session it just stored, without handing a bearer to another origin.
+const defaultSSORedirectTarget = "/profile"
+
 // resolveGitHubOAuthRedirectTarget validates and normalizes an optional redirect target.
 // It accepts request context and raw redirect value, returning a safe redirect URL string.
+// An absent target selects the issuer profile page.
 func resolveGitHubOAuthRedirectTarget(ctx context.Context, raw *string) (string, error) {
 	if raw == nil || strings.TrimSpace(*raw) == "" {
-		base := resolveRequestBaseURL(ctx)
-		if base == "" {
-			return "/profile", nil
-		}
-		return strings.TrimRight(base, "/") + "/profile", nil
+		return defaultSSORedirectTarget, nil
 	}
 
 	redirectTo := strings.TrimSpace(*raw)
-	if err := validateInputLength(2048, redirectTo); err != nil {
+	if err := validateInputLength(ssoredirect.MaxTargetLength, redirectTo); err != nil {
 		return "", errors.Wrap(err, "validate redirect target length")
 	}
-
-	target, err := url.Parse(redirectTo)
+	decision, err := classifySSORedirectTarget(ctx, redirectTo)
 	if err != nil {
-		return "", errors.Wrap(err, "parse redirect target")
+		return "", errors.Wrap(err, "validate redirect target")
 	}
-	if !target.IsAbs() {
-		base := resolveRequestBaseURL(ctx)
-		if base == "" {
-			return "", errors.New("request base url is unavailable")
-		}
-		baseURL, parseErr := url.Parse(base)
-		if parseErr != nil {
-			return "", errors.Wrap(parseErr, "parse request base url")
-		}
-		target = baseURL.ResolveReference(target)
-	}
-
-	if !isAllowedSSORedirectURL(target) {
-		return "", errors.New("unsupported redirect target")
-	}
-
-	return target.String(), nil
+	return decision.Target, nil
 }
 
-// isAllowedSSORedirectURL reports whether a URL is allowed as an SSO redirect target.
-// It accepts a parsed URL and returns true for HTTP(S) targets on allowed domains or internal IPs.
-func isAllowedSSORedirectURL(target *url.URL) bool {
-	if target == nil {
-		return false
+// classifySSORedirectTarget applies the shared SSO redirect policy (internal/library/ssoredirect)
+// to raw, resolving issuer-relative targets against the request origin. Blog targets are
+// delegated to the Blog protocol that the issuer frontend enforces; registered clients only
+// pass as exact code requests; other targets follow settings.web.sso.legacy_token_redirect.
+func classifySSORedirectTarget(ctx context.Context, raw string) (ssoredirect.Decision, error) {
+	policy, err := ssoredirect.Load()
+	if err != nil {
+		// Load already returned the fail-closed policy; only report the configuration problem.
+		gmw.GetLogger(ctx).Error("sso redirect policy is invalid; refusing legacy and client redirects", zap.Error(err))
 	}
-	protocol := strings.ToLower(target.Scheme)
-	if protocol != "http" && protocol != "https" {
-		return false
+	decision := ssoredirect.Classify(raw, resolveRequestBaseURL(ctx), policy)
+	if !decision.Allowed() {
+		return decision, errors.Errorf("unsupported redirect target: %s", decision.Reason)
 	}
-
-	hostname := normalizeSSORedirectHostname(target.Hostname())
-	return isAllowedLaiskyRedirectDomain(hostname) || isInternalRedirectIP(hostname)
+	return decision, nil
 }
 
-// normalizeSSORedirectHostname normalizes a redirect hostname for comparison.
-// It accepts a hostname and returns a trimmed, lower-cased value without a trailing dot.
-func normalizeSSORedirectHostname(hostname string) string {
-	normalized := strings.TrimSpace(strings.ToLower(hostname))
-	return strings.TrimSuffix(normalized, ".")
-}
-
-// isAllowedLaiskyRedirectDomain reports whether a hostname belongs to laisky.com.
-// It accepts a normalized hostname and returns true for laisky.com or subdomains.
-func isAllowedLaiskyRedirectDomain(hostname string) bool {
-	return hostname == "laisky.com" || strings.HasSuffix(hostname, ".laisky.com")
-}
-
-// isInternalRedirectIP reports whether a hostname is an internal IP literal.
-// It accepts a normalized hostname and returns true for private, loopback, unique-local, or CGNAT addresses.
-func isInternalRedirectIP(hostname string) bool {
-	ip := net.ParseIP(strings.Trim(hostname, "[]"))
-	if ip == nil {
-		return false
+// ensureSSORedirectStillAllowed re-applies the current policy to a redirect target signed earlier,
+// so a ceremony started under an older policy cannot complete toward a now-refused target.
+func ensureSSORedirectStillAllowed(ctx context.Context, redirectTo string) error {
+	if strings.TrimSpace(redirectTo) == "" {
+		return nil
 	}
-	if ip.IsLoopback() || ip.IsPrivate() {
-		return true
+	if _, err := classifySSORedirectTarget(ctx, redirectTo); err != nil {
+		return errors.Wrap(err, "redirect target is no longer allowed; restart sign-in")
 	}
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return isUniqueLocalIPv6(ip)
-	}
-
-	return ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127
-}
-
-// isUniqueLocalIPv6 reports whether an IP is within fc00::/7.
-// It accepts a parsed IP and returns true for IPv6 unique-local addresses.
-func isUniqueLocalIPv6(ip net.IP) bool {
-	return len(ip) == net.IPv6len && ip[0]&0xfe == 0xfc
+	return nil
 }
 
 // resolveRequestBaseURL resolves scheme and host from the incoming request context.

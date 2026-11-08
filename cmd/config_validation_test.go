@@ -363,3 +363,47 @@ func newMapConfigGetter(root map[string]any) configGetter {
 		return current
 	}
 }
+
+// ssoRedirectConfigFixture nests SSO redirect settings at their documented configuration keys.
+func ssoRedirectConfigFixture(sso map[string]any) map[string]any {
+	return map[string]any{"settings": map[string]any{"web": map[string]any{"sso": sso}}}
+}
+
+// TestValidateStartupConfigSSORedirectPolicy verifies the legacy bearer switch and client registry fail fast when malformed.
+func TestValidateStartupConfigSSORedirectPolicy(t *testing.T) {
+	valid := map[string]any{"redirect_uris": []any{"https://accounting.laisky.com/api/auth/sso/callback"}}
+	for _, sso := range []map[string]any{
+		{},
+		{"legacy_token_redirect": "allow"},
+		{"legacy_token_redirect": "deny", "clients": map[string]any{"accounting": valid}},
+		{"clients": map[string]any{"cv": map[string]any{
+			"redirect_uris":         []any{"https://cv.laisky.com/cv/sso/callback", "http://100.75.198.70:5173/cv/sso/callback"},
+			"legacy_token_redirect": "allow",
+		}}},
+	} {
+		require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(ssoRedirectConfigFixture(sso))), "%v", sso)
+	}
+
+	for name, sso := range map[string]map[string]any{
+		"unknown mode":           {"legacy_token_redirect": "maybe"},
+		"non-string mode":        {"legacy_token_redirect": true},
+		"reserved blog id":       {"clients": map[string]any{"blog": valid}},
+		"invalid client id":      {"clients": map[string]any{"Bad ID": valid}},
+		"missing redirect uris":  {"clients": map[string]any{"accounting": map[string]any{}}},
+		"plain http production":  {"clients": map[string]any{"accounting": map[string]any{"redirect_uris": []any{"http://accounting.laisky.com/cb"}}}},
+		"query in callback":      {"clients": map[string]any{"accounting": map[string]any{"redirect_uris": []any{"https://accounting.laisky.com/cb?x=1"}}}},
+		"fragment in callback":   {"clients": map[string]any{"accounting": map[string]any{"redirect_uris": []any{"https://accounting.laisky.com/cb#x"}}}},
+		"non-canonical callback": {"clients": map[string]any{"accounting": map[string]any{"redirect_uris": []any{"https://Accounting.laisky.com/cb"}}}},
+		"blog hostname":          {"clients": map[string]any{"accounting": map[string]any{"redirect_uris": []any{"https://blog.laisky.com/cb"}}}},
+		"foreign host":           {"clients": map[string]any{"accounting": map[string]any{"redirect_uris": []any{"https://evil.example/cb"}}}},
+		"unknown client field":   {"clients": map[string]any{"accounting": map[string]any{"redirect_uris": []any{"https://accounting.laisky.com/cb"}, "secret": "x"}}},
+		"shared callback": {"clients": map[string]any{
+			"accounting": valid,
+			"other":      valid,
+		}},
+	} {
+		err := validateStartupConfigWithGetter(newMapConfigGetter(ssoRedirectConfigFixture(sso)))
+		require.Error(t, err, name)
+		require.Contains(t, err.Error(), "settings.web.sso", name)
+	}
+}

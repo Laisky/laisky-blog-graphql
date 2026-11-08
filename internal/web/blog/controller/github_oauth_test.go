@@ -1,7 +1,7 @@
 package controller
 
 import (
-	"net/url"
+	"context"
 	"testing"
 
 	gconfig "github.com/Laisky/go-config/v2"
@@ -134,19 +134,15 @@ func TestIsGithubOAuthConfigured(t *testing.T) {
 	require.True(t, IsGithubOAuthConfigured())
 }
 
-// TestIsAllowedSSORedirectURL verifies redirect target allow-list behavior.
+// TestIsAllowedSSORedirectURL verifies redirect target allow-list behavior through the shared policy.
 func TestIsAllowedSSORedirectURL(t *testing.T) {
-	require.True(t, isAllowedSSORedirectURL(mustParseURL(t, "https://app.laisky.com/callback")))
-	require.True(t, isAllowedSSORedirectURL(mustParseURL(t, "http://10.20.30.40/callback")))
-	require.True(t, isAllowedSSORedirectURL(mustParseURL(t, "http://100.75.198.70/callback")))
-	require.False(t, isAllowedSSORedirectURL(mustParseURL(t, "https://laisky.com.evil.com/callback")))
-	require.False(t, isAllowedSSORedirectURL(mustParseURL(t, "javascript:alert(1)")))
-}
-
-// mustParseURL parses a URL string for tests.
-func mustParseURL(t *testing.T, raw string) *url.URL {
-	t.Helper()
-	parsed, err := url.Parse(raw)
-	require.NoError(t, err)
-	return parsed
+	ctx := context.Background()
+	for _, allowed := range []string{"https://app.laisky.com/callback", "http://10.20.30.40/callback", "http://100.75.198.70/callback"} {
+		_, err := classifySSORedirectTarget(ctx, allowed)
+		require.NoError(t, err, allowed)
+	}
+	for _, refused := range []string{"https://laisky.com.evil.com/callback", "javascript:alert(1)"} {
+		_, err := classifySSORedirectTarget(ctx, refused)
+		require.Error(t, err, refused)
+	}
 }
