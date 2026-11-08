@@ -407,6 +407,18 @@ settings:
           pdf:
             text_parser: 'pdfcpu' # "pdfcpu" | "dslipak"
             outline_parser: 'pdfcpu' # only pdfcpu exposes outlines today
+          # Absolute structure and spending ceilings (§3.1, issues #85/#91). Never
+          # derived from document structure; 0 or negative selects the default.
+          limits:
+            max_nodes_per_document: 2000
+            max_llm_calls_per_document: 256
+            max_tokens_per_document: 2000000
+            window: '1h'
+            tenant_llm_calls_per_window: 1000
+            tenant_tokens_per_window: 4000000
+            global_llm_calls_per_window: 5000
+            global_tokens_per_window: 20000000
+            max_tracked_tenants: 10000
 ```
 
 Existing `settings.mcp.files.*` keys move under `settings.mcp.tools.memory.plugins.rag.*` with a
@@ -571,8 +583,8 @@ Under PageIndex we synthesize this from a tree-reasoning loop:
 4. Merge and sort across docs; truncate to `limit`.
 
 This loop is fully encapsulated inside the plugin — the MCP tool schema is unchanged. Cost
-and latency are bounded by the budgets above; budgets are tracked by an `atomic.Int64`
-counter shared across the goroutines spawned for the candidate-doc fan-out, exposed as
+and latency are bounded by the budgets above; budgets are tracked by a lock-protected
+budget gate shared across the goroutines spawned for the candidate-doc fan-out, exposed as
 settings, and emitted as billing metadata (`mcp.memory.pageindex.tokens_in`, `tokens_out`,
 `llm_calls`).
 
@@ -663,8 +675,13 @@ The indexer is a Go object owned by the plugin; liveness is the Go process's own
 ##### 2.6.4.1 Pipeline
 
 The pipeline mirrors the upstream PageIndex flow, expressed in Go primitives. Counts are
-typical for a 200-page PDF; budgets are enforced by a single `atomic.Int64` token counter
-seeded from `algo.max_token_num_each_node × N + tree_query.max_tokens`.
+typical for a 200-page PDF. Budgets are enforced by one operation budget per indexing
+run. Its token ceiling is `min(algo.max_token_num_each_node × N + tree_query.max_tokens,
+limits.max_tokens_per_document)`, and it also caps calls at
+`limits.max_llm_calls_per_document` and nodes at `limits.max_nodes_per_document`. These
+ceilings are absolute: the caller-chosen page, root or heading count can only lower the
+allowance, never raise it (issue #85; operator contract in
+[../manual/mcp_memory_plugins.md §6.6](../manual/mcp_memory_plugins.md#66-structural-and-spending-limits)).
 
 | Phase                               | What runs                                                                                                                                                 | LLM calls            | Implementation                                                  |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------- |
@@ -924,12 +941,20 @@ PageIndex query is LLM-bound. A typical search over a 200-page doc is 1× struct
 (small, cached) + 1 LLM "pick ranges" + 1–3 `get_page_content` reads (in-process JSON
 traversal, no LLM) + answer composition upstream. We **must** cap with
 `tree_query.max_steps` and `tree_query.max_tokens` and emit per-call token billing so
-operators can see the bill before it surprises them. The `atomic.Int64` budget gate
+operators can see the bill before it surprises them. The budget gate
 (§2.6.4.2) is shared across the goroutines spawned for candidate-doc fan-out, so
 concurrent search work cannot collectively over-spend a single call's budget.
 
 Indexing cost is one-shot: an N-page PDF is ~8–30 LLM calls per §2.6.4.1 pipeline
-(typical 200-page PDF: ~25 calls). The bbolt cache (§2.6.4.3) makes any subsequent
+(typical 200-page PDF: ~25 calls). The document shape is caller-controlled, so every
+call and token ceiling is an absolute service-side setting (`limits.*`): per indexing
+run (calls, tokens, nodes) and per rolling window for each API-key tenant and for the
+whole process. Every upstream call, for indexing and for search, is admitted against
+those budgets before it is sent; a refused leaf summary becomes a deterministic local
+summary, so an exhausted budget degrades the tree instead of failing the write.
+Markdown heading extraction is linear in the document size (issue #91): one newline
+index, inline parsing only inside headings, and a linear fallback scanner for nesting
+or link-reference layouts that would make goldmark's block parser super-linear. The bbolt cache (§2.6.4.3) makes any subsequent
 re-index of the same bytes free, and bumping `algorithm_version` is the explicit
 invalidation handle.
 
@@ -1063,7 +1088,7 @@ declares `v1_runtime: pure-Go`). A PR that violates any one of them fails CI.
 | `internal/mcp/memory/plugins/pageindex/llm.go`               | `LLM` interface + `openaiLLM` (Responses API only); `tiktoken-go/tokenizer` counter        |
 | `internal/mcp/memory/plugins/pageindex/prompts.go`           | The 13 prompt templates ported from upstream PageIndex (§2.6.4.1 phase table)              |
 | `internal/mcp/memory/plugins/pageindex/cache.go`             | `bbolt`-backed content-addressable cache for LLM responses (§2.6.4.3)                      |
-| `internal/mcp/memory/plugins/pageindex/budget.go`            | `atomic.Int64` token-budget gate shared across goroutines                                  |
+| `internal/mcp/memory/plugins/pageindex/budget.go`            | Lock-protected call, token and node budget shared across goroutines                        |
 | `internal/mcp/memory/plugins/pageindex/progress.go`          | `Progress` event type + MCP `report_progress` adapter                                      |
 | `internal/mcp/memory/plugins/pageindex/{...}_test.go`        | Unit + golden tests (canned tree, byte-offset synthesis, budget exhaustion, retry)         |
 | `internal/mcp/memory/plugins/pageindex/testdata/`            | Frozen sample PDFs/MD + expected tree JSONs for golden tests                               |
@@ -1354,7 +1379,7 @@ becoming fragile to internal renames.
 | P14 | Streaming progress: `Index` writes one `Progress` event per phase to a buffered channel; events are forwarded to a captured logger and to billing metadata; the final tool response still arrives as one unit.                                    |
 | P15 | bbolt cache hit: re-running `Index` on the same bytes with the same `algorithm_version` makes zero `LLM.Respond` calls.                                                                                                                           |
 | P16 | bbolt cache invalidation: bumping `algorithm_version` makes the next `Index` re-run all prompts.                                                                                                                                                  |
-| P17 | Token budget enforcement: a stub `LLM` reporting outsized usage causes the shared `atomic.Int64` budget to fall below zero; subsequent goroutines short-circuit with `ErrBudgetExceeded`.                                                         |
+| P17 | Token budget enforcement: a stub `LLM` reporting outsized usage causes the shared budget to fall below zero; subsequent goroutines short-circuit with `ErrBudgetExceeded`.                                                         |
 | P18 | PDF parser swap: setting `pdf.text_parser="dslipak"` routes through the dslipak adapter; the same golden test in P01 still passes (modulo documented text-quality differences).                                                                   |
 
 #### 5.5.3 Manager / settings regression

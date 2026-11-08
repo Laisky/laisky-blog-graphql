@@ -16,7 +16,8 @@ The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
-`internal/web/telegram/dao` and `internal/web/telegram/service`. These exercise input validation, controlled
+`internal/web/telegram/dao`, `internal/web/telegram/service` and
+`internal/mcp/memory/plugins/pageindex`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
@@ -33,6 +34,20 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The PageIndex selections (issues #85 and #91) count upstream calls with a fake
+model: per-document call and token ceilings that do not grow with heading, root or
+table-of-contents count, a planner prompt that fits `tree_query.max_tokens`, a tenant
+budget that holds across repeated writes and searches while another tenant keeps its
+own, the global ceiling across tenant identities, cancellation polled while Markdown
+is parsed, an empty heading that no longer crashes tree building, and heading
+extraction identical to the previous full goldmark parse on the repository's own
+documents. The timing-ratio checks of the same issues are deliberate performance
+acceptance, because a shared runner's load can distort timings:
+
+```sh
+go test -count=1 -v ./internal/mcp/memory/plugins/pageindex -run 'TestExtractHeadersDenseHeadingsScaleLinearly|TestExtractHeadersPathologicalMarkdownCostsLikePlainText|TestTokenizerCountBoundsLongRuns'
+```
 
 The Telegram selections also cover cancellation after refill, overlapping
 reservations, isolation of invalid credentials from delivery capacity, remote

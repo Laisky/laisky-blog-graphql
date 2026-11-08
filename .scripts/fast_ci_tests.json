@@ -107,5 +107,19 @@
       "TestAlertAdoptionOversizeKeepsBusinessAndLocalInput",
       "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet"
     ]
+  },
+  {
+    "package": "./internal/mcp/memory/plugins/pageindex",
+    "tests": [
+      "TestMarkdownSummaryCallsDoNotScaleWithHeadings",
+      "TestMarkdownTokenBudgetDoesNotScaleWithRoots",
+      "TestPDFSummaryCallsDoNotScaleWithTOCEntries",
+      "TestSearchPromptStaysWithinTreeQueryBudget",
+      "TestTenantBudgetHoldsAcrossRepeatedWrites",
+      "TestSpendGovernorTenantAndGlobalCeilings",
+      "TestIndexMarkdownStopsWhenCanceledMidParse",
+      "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
+      "TestExtractHeadersMatchesFullGoldmarkParse"
+    ]
   }
 ]
