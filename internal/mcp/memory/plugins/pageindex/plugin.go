@@ -185,7 +185,7 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 		kind = KindMarkdown
 	}
 	docID := docIDFromAuth(auth, project, path)
-	tree, _, indexErr := p.indexer.Index(ctx, kind, fullBytes, IndexOptions{DocID: docID}, nil)
+	tree, _, indexErr := p.indexDocument(ctx, kind, fullBytes, IndexOptions{DocID: docID, Tenant: pageIndexTenant(auth)})
 	if indexErr != nil {
 		// Indexing errors should not silently fail the write; surface as warning and
 		// still publish a deterministic user-row summary for the content generation.
@@ -262,6 +262,23 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 		return res, errors.Wrap(err, "persist pageindex catalog")
 	}
 	return res, nil
+}
+
+// indexDocument builds the tree within indexer.timeout_index, the documented wall
+// time of one synchronous index. Persistence after it keeps the caller's context.
+func (p *Plugin) indexDocument(ctx context.Context, kind DocKind, content []byte, opts IndexOptions) (*Tree, *Stats, error) {
+	if timeout := p.cfg.Indexer.TimeoutIndex; timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	return p.indexer.Index(ctx, kind, content, opts, nil)
+}
+
+// pageIndexTenant returns the identity whose rolling LLM budget a request draws
+// from: the caller's API-key hash, the same identity that scopes its catalog.
+func pageIndexTenant(auth files.AuthContext) string {
+	return auth.APIKeyHash
 }
 
 // publishUserRowSummary publishes bounded summary catalog metadata onto the user file
@@ -354,6 +371,7 @@ func (p *Plugin) Search(ctx context.Context, auth files.AuthContext, project, qu
 		Query:      query,
 		PathPrefix: pathPrefix,
 		Limit:      limit,
+		Tenant:     pageIndexTenant(auth),
 		ValidateSource: func(validateCtx context.Context, userPath, expectedHash string) (bool, error) {
 			if expectedHash == "" {
 				return false, nil

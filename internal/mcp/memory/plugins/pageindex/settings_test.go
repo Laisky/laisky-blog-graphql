@@ -42,6 +42,15 @@ func TestLoadSettingsDefaults(t *testing.T) {
 		settingsPrefix + ".tree_query.candidate_docs",
 		settingsPrefix + ".pdf.text_parser",
 		settingsPrefix + ".pdf.outline_parser",
+		settingsPrefix + ".limits.max_nodes_per_document",
+		settingsPrefix + ".limits.max_llm_calls_per_document",
+		settingsPrefix + ".limits.max_tokens_per_document",
+		settingsPrefix + ".limits.window",
+		settingsPrefix + ".limits.tenant_llm_calls_per_window",
+		settingsPrefix + ".limits.tenant_tokens_per_window",
+		settingsPrefix + ".limits.global_llm_calls_per_window",
+		settingsPrefix + ".limits.global_tokens_per_window",
+		settingsPrefix + ".limits.max_tracked_tenants",
 	}
 	prior := make(map[string]any, len(keys))
 	for _, k := range keys {
@@ -83,6 +92,46 @@ func TestLoadSettingsDefaults(t *testing.T) {
 
 	require.Equal(t, "pdfcpu", s.PDF.TextParser)
 	require.Equal(t, "pdfcpu", s.PDF.OutlineParser)
+
+	require.Equal(t, LimitsSettings{
+		MaxNodesPerDocument:     2000,
+		MaxLLMCallsPerDocument:  256,
+		MaxTokensPerDocument:    2_000_000,
+		Window:                  time.Hour,
+		TenantLLMCallsPerWindow: 1000,
+		TenantTokensPerWindow:   4_000_000,
+		GlobalLLMCallsPerWindow: 5000,
+		GlobalTokensPerWindow:   20_000_000,
+		MaxTrackedTenants:       10_000,
+	}, s.Limits)
+}
+
+// TestLoadSettingsLimitsOverridesAndFloors checks that operators can tune every
+// ceiling and that a zero or negative value falls back to the default instead of
+// disabling the ceiling.
+func TestLoadSettingsLimitsOverridesAndFloors(t *testing.T) {
+	overrides := map[string]any{
+		settingsPrefix + ".limits.max_llm_calls_per_document":  32,
+		settingsPrefix + ".limits.tenant_llm_calls_per_window": 0,
+		settingsPrefix + ".limits.global_tokens_per_window":    -5,
+		settingsPrefix + ".limits.window":                      "10m",
+	}
+	prior := make(map[string]any, len(overrides))
+	for k, v := range overrides {
+		prior[k] = gconfig.Shared.Get(k)
+		gconfig.Shared.Set(k, v)
+	}
+	defer func() {
+		for k, v := range prior {
+			gconfig.Shared.Set(k, v)
+		}
+	}()
+
+	limits := LoadSettings().Limits
+	require.Equal(t, 32, limits.MaxLLMCallsPerDocument)
+	require.Equal(t, 10*time.Minute, limits.Window)
+	require.Equal(t, DefaultTenantLLMCallsPerWindow, limits.TenantLLMCallsPerWindow)
+	require.Equal(t, DefaultGlobalTokensPerWindow, limits.GlobalTokensPerWindow)
 }
 
 // TestSettingsEnabledGate documents the proposal §2.7 enablement contract.

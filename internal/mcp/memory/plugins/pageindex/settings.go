@@ -72,6 +72,8 @@ type Settings struct {
 	Algo      AlgoSettings
 	TreeQuery TreeQuerySettings
 	PDF       PDFSettings
+	// Limits holds the absolute structure and spending ceilings (limits.go).
+	Limits LimitsSettings
 }
 
 const settingsPrefix = "settings.mcp.tools.memory.plugins.pageindex"
@@ -119,6 +121,17 @@ func LoadSettings() Settings {
 			TextParser:    stringOr(settingsPrefix+".pdf.text_parser", parserPdfcpu),
 			OutlineParser: stringOr(settingsPrefix+".pdf.outline_parser", parserPdfcpu),
 		},
+		Limits: LimitsSettings{
+			MaxNodesPerDocument:     intOr(settingsPrefix+".limits.max_nodes_per_document", DefaultMaxNodesPerDocument),
+			MaxLLMCallsPerDocument:  intOr(settingsPrefix+".limits.max_llm_calls_per_document", DefaultMaxLLMCallsPerDocument),
+			MaxTokensPerDocument:    int64Or(settingsPrefix+".limits.max_tokens_per_document", DefaultMaxTokensPerDocument),
+			Window:                  durationOr(settingsPrefix+".limits.window", DefaultBudgetWindow),
+			TenantLLMCallsPerWindow: int64Or(settingsPrefix+".limits.tenant_llm_calls_per_window", DefaultTenantLLMCallsPerWindow),
+			TenantTokensPerWindow:   int64Or(settingsPrefix+".limits.tenant_tokens_per_window", DefaultTenantTokensPerWindow),
+			GlobalLLMCallsPerWindow: int64Or(settingsPrefix+".limits.global_llm_calls_per_window", DefaultGlobalLLMCallsPerWindow),
+			GlobalTokensPerWindow:   int64Or(settingsPrefix+".limits.global_tokens_per_window", DefaultGlobalTokensPerWindow),
+			MaxTrackedTenants:       intOr(settingsPrefix+".limits.max_tracked_tenants", DefaultMaxTrackedTenants),
+		}.WithDefaults(),
 	}
 }
 

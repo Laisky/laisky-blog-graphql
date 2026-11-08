@@ -10,7 +10,14 @@ import (
 )
 
 // runPDF executes the §2.6.4.1 nine-phase PDF pipeline.
-func (idx *Indexer) runPDF(ctx context.Context, data []byte, rep *Reporter, stats *Stats) (*Tree, error) {
+//
+// Every phase draws from one operation budget whose call, token and node ceilings
+// are absolute (Limits). The per-page token allowance of earlier releases still
+// applies when it is smaller. When the budget runs out, the table-of-contents
+// phases keep what they found (or fall back to one "Document" node), leaves get
+// a local summary, verification treats the remaining samples as correct and
+// expansion stops, so a large PDF is indexed with less detail instead of failing.
+func (idx *Indexer) runPDF(ctx context.Context, data []byte, tenant string, rep *Reporter, stats *Stats) (*Tree, error) {
 	rep.Report(Progress{Phase: "pdf:extract", Percent: 5})
 	pages, err := idx.pdf.PagesText(ctx, data)
 	if err != nil {
@@ -20,7 +27,9 @@ func (idx *Indexer) runPDF(ctx context.Context, data []byte, rep *Reporter, stat
 		return nil, errors.New("pdf has zero pages")
 	}
 	pageCount := len(pages)
-	budget := NewBudget(int64(idx.cfg.Algo.MaxTokenNumEachNode*pageCount + idx.cfg.TreeQuery.MaxTokens))
+	limits := idx.cfg.Limits.WithDefaults()
+	allowance := int64(idx.cfg.Algo.MaxTokenNumEachNode)*int64(pageCount) + int64(idx.cfg.TreeQuery.MaxTokens)
+	budget := newOperationBudget(limits.documentTokenCeiling(allowance), limits.MaxLLMCallsPerDocument, limits.MaxNodesPerDocument, tenant)
 
 	rep.Report(Progress{Phase: "pdf:toc-detect", Percent: 15})
 	tocPages, tocContent, hasPageIndex, err := idx.detectTOC(ctx, pages, budget, stats)
@@ -39,6 +48,11 @@ func (idx *Indexer) runPDF(ctx context.Context, data []byte, rep *Reporter, stat
 	}
 
 	rep.Report(Progress{Phase: "pdf:tree-assemble", Percent: 65})
+	if left := budget.nodesLeft(); left >= 0 && len(flat) > left {
+		flat = flat[:left]
+		stats.markTruncated()
+	}
+	budget.takeNodes(len(flat))
 	rootNodes := assembleTree(flat, pageCount)
 
 	if idx.cfg.Algo.GenerateNodeSummary {
@@ -106,6 +120,9 @@ func (idx *Indexer) detectTOC(ctx context.Context, pages []string, budget *Budge
 		}
 		req := Request{Input: userInput(text)}
 		resp, err := idx.callLLM(ctx, req, budget, stats)
+		if errors.Is(err, ErrBudgetExceeded) {
+			break
+		}
 		if err != nil {
 			return nil, "", false, err
 		}
@@ -132,6 +149,9 @@ func (idx *Indexer) detectTOC(ctx context.Context, pages []string, budget *Budge
 		return nil, "", false, err
 	}
 	resp, err := idx.callLLM(ctx, Request{Input: userInput(text)}, budget, stats)
+	if errors.Is(err, ErrBudgetExceeded) {
+		return tocPages, tocContent, false, nil
+	}
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -147,6 +167,7 @@ func transformDotsToColon(in string) string {
 }
 
 // buildFlatTOC dispatches to mode A/B/C parity with upstream meta_processor.
+// Each mode returns the entries it has when the budget runs out.
 func (idx *Indexer) buildFlatTOC(ctx context.Context, pages []string, tocPages []int, tocContent string, hasPageIndex bool, budget *Budget, stats *Stats) ([]map[string]any, error) {
 	switch {
 	case len(tocPages) > 0 && hasPageIndex:
@@ -165,6 +186,9 @@ func (idx *Indexer) modeAWithPageNumbers(ctx context.Context, pages []string, to
 		return nil, err
 	}
 	resp, err := idx.callLLM(ctx, Request{Input: userInput(transformerPrompt)}, budget, stats)
+	if errors.Is(err, ErrBudgetExceeded) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +216,9 @@ func (idx *Indexer) modeAWithPageNumbers(ctx context.Context, pages []string, to
 		return nil, err
 	}
 	resp2, err := idx.callLLM(ctx, Request{Input: userInput(extractorPrompt)}, budget, stats)
+	if errors.Is(err, ErrBudgetExceeded) {
+		return flat, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +256,9 @@ func (idx *Indexer) modeBNoPageNumbers(ctx context.Context, pages []string, tocC
 		return nil, err
 	}
 	resp, err := idx.callLLM(ctx, Request{Input: userInput(transformerPrompt)}, budget, stats)
+	if errors.Is(err, ErrBudgetExceeded) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +277,9 @@ func (idx *Indexer) modeBNoPageNumbers(ctx context.Context, pages []string, tocC
 			return nil, err
 		}
 		respFill, err := idx.callLLM(ctx, Request{Input: userInput(filler)}, budget, stats)
+		if errors.Is(err, ErrBudgetExceeded) {
+			break
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -269,6 +302,9 @@ func (idx *Indexer) modeCNoTOC(ctx context.Context, pages []string, budget *Budg
 		return nil, err
 	}
 	resp, err := idx.callLLM(ctx, Request{Input: userInput(initPrompt)}, budget, stats)
+	if errors.Is(err, ErrBudgetExceeded) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -286,6 +322,9 @@ func (idx *Indexer) modeCNoTOC(ctx context.Context, pages []string, budget *Budg
 			return nil, err
 		}
 		respC, err := idx.callLLM(ctx, Request{Input: userInput(contPrompt)}, budget, stats)
+		if errors.Is(err, ErrBudgetExceeded) {
+			break
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -400,23 +439,25 @@ func assignNodeIDs(nodes []*Node, counter int) int {
 }
 
 // summarizeNodes runs PromptGenerateNodeSummary on every leaf node sequentially.
+// A leaf the budget cannot pay for gets a local summary of its first pages.
 func (idx *Indexer) summarizeNodes(ctx context.Context, nodes []*Node, pages []string, budget *Budget, stats *Stats) error {
 	var visit func(n *Node) error
 	visit = func(n *Node) error {
 		if len(n.Children) == 0 {
-			text := pageRangeText(pages, n.StartIndex, n.EndIndex)
-			prompt, err := RenderPrompt(PromptGenerateNodeSummary, GenerateNodeSummaryVars{Text: text})
+			if err := ctx.Err(); err != nil {
+				return errors.WithStack(err)
+			}
+			if idx.wouldRefuse(budget) {
+				stats.addRefusal()
+				stats.addLocalSummary()
+				n.Summary = localNodeSummary(pageRangePrefix(pages, n.StartIndex, n.EndIndex, localSummaryScanBytes))
+				return nil
+			}
+			summary, err := idx.summarizeLeaf(ctx, pageRangeText(pages, n.StartIndex, n.EndIndex), budget, stats)
 			if err != nil {
 				return err
 			}
-			resp, err := idx.callLLM(ctx, Request{Input: userInput(prompt)}, budget, stats)
-			if err != nil {
-				if errors.Is(err, ErrBudgetExceeded) {
-					return nil
-				}
-				return err
-			}
-			n.Summary = strings.TrimSpace(resp.Text)
+			n.Summary = summary
 			return nil
 		}
 		for _, child := range n.Children {
@@ -432,6 +473,25 @@ func (idx *Indexer) summarizeNodes(ctx context.Context, nodes []*Node, pages []s
 		}
 	}
 	return nil
+}
+
+// pageRangePrefix returns at most limit bytes of the pages in [start,end], one
+// page per line, without building the whole range.
+func pageRangePrefix(pages []string, start, end, limit int) string {
+	if start < 1 {
+		start = 1
+	}
+	if end > len(pages) || end <= 0 {
+		end = len(pages)
+	}
+	var sb strings.Builder
+	for i := start - 1; i < end && i < len(pages) && sb.Len() < limit; i++ {
+		if sb.Len() > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(prefixOnRuneBoundary(pages[i], max(limit-sb.Len(), 0)))
+	}
+	return sb.String()
 }
 
 func pageRangeText(pages []string, start, end int) string {
