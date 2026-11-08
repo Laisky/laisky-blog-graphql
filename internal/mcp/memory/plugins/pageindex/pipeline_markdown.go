@@ -98,11 +98,17 @@ func (idx *Indexer) summarizeMarkdownNodes(ctx context.Context, nodes []*Node, b
 }
 
 // summarizeLeaf returns the LLM summary of text, or its local summary when the
-// budget refuses the call. It checks ctx first so a canceled run stops even
-// when every remaining leaf would be summarized locally.
+// budget refuses the call or the indexing deadline (indexer.timeout_index) has
+// passed. It checks ctx first so a canceled run stops even when every remaining
+// leaf would be summarized locally.
 func (idx *Indexer) summarizeLeaf(ctx context.Context, text string, budget *Budget, stats *Stats) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", errors.WithStack(err)
+		if !deadlinePassed(ctx) {
+			return "", errors.WithStack(err)
+		}
+		stats.markDeadline()
+		stats.addLocalSummary()
+		return localNodeSummary(text), nil
 	}
 	if idx.wouldRefuse(budget) {
 		stats.addRefusal()
@@ -115,11 +121,21 @@ func (idx *Indexer) summarizeLeaf(ctx context.Context, text string, budget *Budg
 	}
 	resp, err := idx.callLLM(ctx, Request{Input: userInput(prompt)}, budget, stats)
 	if err != nil {
-		if errors.Is(err, ErrBudgetExceeded) {
+		if errors.Is(err, ErrBudgetExceeded) || deadlinePassed(ctx) {
+			if deadlinePassed(ctx) {
+				stats.markDeadline()
+			}
 			stats.addLocalSummary()
 			return localNodeSummary(text), nil
 		}
 		return "", err
 	}
 	return strings.TrimSpace(resp.Text), nil
+}
+
+// deadlinePassed reports that ctx ended because its deadline passed, which the
+// pipelines treat like an exhausted budget, as opposed to a cancellation, which
+// aborts the run.
+func deadlinePassed(ctx context.Context) bool {
+	return errors.Is(ctx.Err(), context.DeadlineExceeded)
 }

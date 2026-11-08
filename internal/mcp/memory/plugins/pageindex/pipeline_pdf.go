@@ -33,13 +33,13 @@ func (idx *Indexer) runPDF(ctx context.Context, data []byte, tenant string, rep 
 
 	rep.Report(Progress{Phase: "pdf:toc-detect", Percent: 15})
 	tocPages, tocContent, hasPageIndex, err := idx.detectTOC(ctx, pages, budget, stats)
-	if err != nil {
+	if err != nil && !deadlinePassed(ctx) {
 		return nil, err
 	}
 
 	rep.Report(Progress{Phase: "pdf:tree-build", Percent: 40})
 	flat, err := idx.buildFlatTOC(ctx, pages, tocPages, tocContent, hasPageIndex, budget, stats)
-	if err != nil {
+	if err != nil && !deadlinePassed(ctx) {
 		return nil, err
 	}
 	if len(flat) == 0 {
@@ -62,23 +62,28 @@ func (idx *Indexer) runPDF(ctx context.Context, data []byte, tenant string, rep 
 		}
 	}
 
-	// Phase 7: title-appearance verification + targeted fix.
+	// Phase 7: title-appearance verification + targeted fix. Once the indexing
+	// deadline has passed, the remaining LLM phases are skipped and the tree is
+	// kept as built so far.
 	rep.Report(Progress{Phase: "pdf:verify", Percent: 80})
 	tmpTree := &Tree{Structure: rootNodes}
-	if err := idx.verifyAndFix(ctx, tmpTree, pages, budget, stats); err != nil {
+	if err := idx.verifyAndFix(ctx, tmpTree, pages, budget, stats); err != nil && !deadlinePassed(ctx) {
 		return nil, errors.Wrap(err, "verify and fix")
 	}
 
 	// Phase 8: bounded recursive expansion of oversized leaf nodes.
 	rep.Report(Progress{Phase: "pdf:expand", Percent: 88})
-	if err := idx.expandLargeNodes(ctx, rootNodes, pages, 0, budget, stats); err != nil {
+	if err := idx.expandLargeNodes(ctx, rootNodes, pages, 0, budget, stats); err != nil && !deadlinePassed(ctx) {
 		return nil, errors.Wrap(err, "expand large nodes")
 	}
 	// Re-stamp node IDs so newly inserted children get stable identifiers.
 	assignNodeIDs(rootNodes, 0)
+	if deadlinePassed(ctx) {
+		stats.markDeadline()
+	}
 
 	docDescription := ""
-	if idx.cfg.Algo.GenerateDocDescription {
+	if idx.cfg.Algo.GenerateDocDescription && !deadlinePassed(ctx) {
 		rep.Report(Progress{Phase: "pdf:doc-description", Percent: 95})
 		desc, err := idx.generateDocDescription(ctx, rootNodes, budget, stats)
 		if err == nil {
@@ -444,10 +449,10 @@ func (idx *Indexer) summarizeNodes(ctx context.Context, nodes []*Node, pages []s
 	var visit func(n *Node) error
 	visit = func(n *Node) error {
 		if len(n.Children) == 0 {
-			if err := ctx.Err(); err != nil {
+			if err := ctx.Err(); err != nil && !deadlinePassed(ctx) {
 				return errors.WithStack(err)
 			}
-			if idx.wouldRefuse(budget) {
+			if deadlinePassed(ctx) || idx.wouldRefuse(budget) {
 				stats.addRefusal()
 				stats.addLocalSummary()
 				n.Summary = localNodeSummary(pageRangePrefix(pages, n.StartIndex, n.EndIndex, localSummaryScanBytes))

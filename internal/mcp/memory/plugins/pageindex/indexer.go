@@ -32,6 +32,8 @@ type Stats struct {
 	LocalSummaries int
 	// StructureTruncated reports that the node ceiling cut the tree short.
 	StructureTruncated bool
+	// DeadlineReached reports that indexer.timeout_index ended LLM work early.
+	DeadlineReached bool
 }
 
 // addLLMCall accumulates one LLM-call's accounting under the stats lock so
@@ -74,6 +76,16 @@ func (s *Stats) markTruncated() {
 	}
 	s.mu.Lock()
 	s.StructureTruncated = true
+	s.mu.Unlock()
+}
+
+// markDeadline records that the indexing deadline ended LLM work early.
+func (s *Stats) markDeadline() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.DeadlineReached = true
 	s.mu.Unlock()
 }
 
@@ -202,13 +214,14 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 	tree.AlgorithmVer = algoVer
 	tree.IndexedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	stats.Wallclock = time.Since(start)
-	if idx.log != nil && (stats.BudgetRefusals > 0 || stats.StructureTruncated) {
+	if idx.log != nil && (stats.BudgetRefusals > 0 || stats.StructureTruncated || stats.DeadlineReached) {
 		idx.log.Debug("pageindex.index.limited",
 			glog.String("kind", string(kind)),
 			glog.Int("llm_calls", stats.LLMCalls),
 			glog.Int("budget_refusals", stats.BudgetRefusals),
 			glog.Int("local_summaries", stats.LocalSummaries),
 			glog.Bool("structure_truncated", stats.StructureTruncated),
+			glog.Bool("deadline_reached", stats.DeadlineReached),
 		)
 	}
 	rep.Report(Progress{Phase: "done", Percent: 100, TokensIn: stats.InputTokens, TokensOut: stats.OutputTokens, LLMCalls: stats.LLMCalls})

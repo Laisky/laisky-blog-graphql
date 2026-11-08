@@ -261,8 +261,11 @@ Tool-result `structuredContent` for `pageindex`-routed `file_search` carries
 `tokens_in`, `tokens_out`, `llm_calls`, and `truncated` per [Section 8.2](#82-per-call-billing-metadata).
 Phase 2 indexing is **synchronous**: a `file_write` of a fresh document blocks the
 caller until the tree is built, for at most `indexer.timeout_index`. When that time
-runs out the write still succeeds: the file is stored and gets a deterministic
-summary, and the previous tree (if any) stays inactive until the next write. Search
+runs out during LLM work, the remaining LLM phases are skipped like an exhausted
+budget (§6.6): leaves get local summaries, a PDF keeps the structure found so far,
+and the tree is stored. If it runs out before the structure is extracted, the write
+still succeeds with a deterministic file summary and the previous tree (if any)
+stays inactive until the next write. Search
 loops the tree-reasoning prompt over the configured `tree_query.candidate_docs` and
 issues at most one planner call per candidate and `tree_query.max_steps` in total.
 `tree_query.max_tokens` is enforced before each call is sent: the planner prompt
@@ -323,7 +326,8 @@ How the ceilings are enforced:
   table-of-contents call keeps what was found so far, or one `Document` node for the
   whole PDF. A write therefore never fails because a budget was exhausted; it gets a
   less detailed tree. A refused planner call in search returns the first section's
-  pages.
+  pages. Reaching `indexer.timeout_index` during LLM work degrades the same way; only
+  an explicit cancellation of the request aborts the run.
 - Rolling budgets are token buckets that refill linearly over `window`. A caller's
   bucket that has refilled completely is dropped from memory, so retained state is
   bounded by recent spenders; when `max_tracked_tenants` callers are active, a new
@@ -343,9 +347,9 @@ and summarization poll the request context. Measurements and sources are in
 
 Operator guidance: raise `max_llm_calls_per_document` only together with
 `indexer.timeout_index`, because summaries run one at a time; lower the global
-values to cap spend per hour. An indexing run that hit a ceiling logs
+values to cap spend per hour. An indexing run that hit a ceiling or the deadline logs
 `pageindex.index.limited` at debug level with its `budget_refusals`,
-`local_summaries` and `structure_truncated` counts.
+`local_summaries`, `structure_truncated` and `deadline_reached` values.
 
 ## 6.7 Phase 3: Shadow replay (deferred)
 

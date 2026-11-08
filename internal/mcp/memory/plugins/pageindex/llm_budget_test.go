@@ -386,10 +386,45 @@ func TestWriteBoundsIndexingByTimeoutIndex(t *testing.T) {
 
 	start := time.Now()
 	_, err = plugin.Write(ctx, auth, "project", "/stalled.md", "# Stalled\n\nThe upstream never answers.", "utf-8", 0, files.WriteModeTruncate)
-	require.NoError(t, err, "an indexing timeout degrades to the deterministic summary")
+	require.NoError(t, err, "an indexing timeout degrades summaries instead of failing the write")
 	require.Less(t, time.Since(start), 3*time.Second, "indexing must stop at indexer.timeout_index")
 	require.Equal(t, 1, llm.Calls())
+	tree, err := plugin.store.GetTree(ctx, PageIndexStorageProject(auth, "project"), docIDFromAuth(auth, "project", "/stalled.md"))
+	require.NoError(t, err, "the tree is still stored when the deadline passes during summarization")
+	require.Equal(t, "Stalled The upstream never answers.", tree.Structure[0].Summary)
 	read, err := plugin.Read(ctx, auth, "project", "/stalled.md", 0, -1)
 	require.NoError(t, err)
 	require.Equal(t, "# Stalled\n\nThe upstream never answers.", read.Content)
+}
+
+// TestPDFIndexDeadlineDegradesToDocumentNode checks that a deadline reached in
+// the table-of-contents phase still yields a tree, with the remaining LLM phases
+// skipped, while an explicit cancellation still aborts the run.
+func TestPDFIndexDeadlineDegradesToDocumentNode(t *testing.T) {
+	cfg := summarizingSettings()
+	cfg.Algo.GenerateDocDescription = true
+	tok, err := NewTokenizer("gpt-5.4-mini")
+	require.NoError(t, err)
+	llm := &blockingLLM{}
+	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, PDF: fixedPagesPDF{pages: []string{"alpha page", "beta page"}}})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	tree, stats, err := idx.Index(ctx, KindPDF, []byte("%PDF"), IndexOptions{DocID: "pdf-deadline"}, nil)
+	require.NoError(t, err)
+	require.True(t, stats.DeadlineReached)
+	require.Equal(t, 1, llm.Calls(), "no further call is attempted after the deadline")
+	require.Len(t, tree.Structure, 1)
+	require.Equal(t, "Document", tree.Structure[0].Title)
+	require.Equal(t, "alpha page beta page", tree.Structure[0].Summary)
+	require.Empty(t, tree.DocDescription)
+
+	canceled, cancelNow := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancelNow()
+	}()
+	_, _, err = idx.Index(canceled, KindPDF, []byte("%PDF"), IndexOptions{DocID: "pdf-cancel"}, nil)
+	require.ErrorIs(t, err, context.Canceled)
 }
