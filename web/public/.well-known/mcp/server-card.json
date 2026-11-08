@@ -164,28 +164,122 @@
         "oneOf": [
           {
             "required": [
+              "project",
+              "path",
+              "content",
               "expected_version"
             ],
             "properties": {
+              "project": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "expected_version": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$",
+                "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT."
+              },
+              "plugin": {
+                "type": "string",
+                "enum": [
+                  "rag",
+                  "pageindex",
+                  "auto"
+                ],
+                "default": "auto"
+              },
               "create_only": {
+                "type": "boolean",
+                "description": "Require an absent file; mutually exclusive with expected_version.",
                 "const": false
+              },
+              "content_encoding": {
+                "type": "string",
+                "enum": [
+                  "utf-8"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "APPEND",
+                  "OVERWRITE",
+                  "TRUNCATE"
+                ]
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
               }
-            }
+            },
+            "type": "object"
           },
           {
             "required": [
+              "project",
+              "path",
+              "content",
               "create_only"
             ],
             "properties": {
+              "project": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "expected_version": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$",
+                "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT."
+              },
+              "plugin": {
+                "type": "string",
+                "enum": [
+                  "rag",
+                  "pageindex",
+                  "auto"
+                ],
+                "default": "auto"
+              },
               "create_only": {
+                "type": "boolean",
+                "description": "Require an absent file; mutually exclusive with expected_version.",
                 "const": true
+              },
+              "content_encoding": {
+                "type": "string",
+                "enum": [
+                  "utf-8"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "APPEND",
+                  "OVERWRITE",
+                  "TRUNCATE"
+                ]
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
               }
             },
             "not": {
               "required": [
                 "expected_version"
               ]
-            }
+            },
+            "type": "object"
           }
         ]
       }
@@ -618,28 +712,86 @@
         "oneOf": [
           {
             "required": [
+              "project",
+              "path",
+              "history_id",
               "expected_version"
             ],
             "properties": {
+              "project": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "history_id": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,18}$",
+                "description": "Exact positive decimal history ID (maximum 9223372036854775807), never a live file version."
+              },
+              "expected_version": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$"
+              },
               "create_only": {
+                "type": "boolean",
                 "const": false
+              },
+              "plugin": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "rag",
+                  "pageindex"
+                ],
+                "default": "auto"
               }
-            }
+            },
+            "type": "object"
           },
           {
             "required": [
+              "project",
+              "path",
+              "history_id",
               "create_only"
             ],
             "properties": {
+              "project": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "history_id": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,18}$",
+                "description": "Exact positive decimal history ID (maximum 9223372036854775807), never a live file version."
+              },
+              "expected_version": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$"
+              },
               "create_only": {
+                "type": "boolean",
                 "const": true
+              },
+              "plugin": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "rag",
+                  "pageindex"
+                ],
+                "default": "auto"
               }
             },
             "not": {
               "required": [
                 "expected_version"
               ]
-            }
+            },
+            "type": "object"
           }
         ]
       }

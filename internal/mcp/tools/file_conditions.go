@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"maps"
+	"slices"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -86,23 +88,34 @@ func expectedFileVersionOption(required ...bool) mcp.ToolOption {
 	return mcp.WithString(expectedVersionKey, opts...)
 }
 
-// requireFileWriteSchema publishes the alternative preconditions as an actual
-// JSON Schema constraint, not just prose. Install after all property options.
+// requireFileWriteSchema publishes mandatory mutation conditions for write and
+// restore. Keep both root fields and complete union objects: some tool clients
+// render each oneOf alternative independently and do not merge sibling fields.
 func requireFileWriteSchema() mcp.ToolOption {
 	return func(tool *mcp.Tool) {
+		branch := func(createOnly bool, required string) map[string]any {
+			properties := maps.Clone(tool.InputSchema.Properties)
+			condition := maps.Clone(properties[createOnlyKey].(map[string]any))
+			condition["const"] = createOnly
+			properties[createOnlyKey] = condition
+			return map[string]any{
+				schemaTypeKey:       "object",
+				schemaPropertiesKey: properties,
+				schemaRequiredKey:   append(slices.Clone(tool.InputSchema.Required), required),
+			}
+		}
+		edit := branch(false, expectedVersionKey)
+		create := branch(true, createOnlyKey)
+		create["not"] = map[string]any{schemaRequiredKey: []string{expectedVersionKey}}
 		schema := map[string]any{
 			schemaTypeKey: "object", schemaPropertiesKey: tool.InputSchema.Properties, schemaRequiredKey: tool.InputSchema.Required,
-			"oneOf": []any{
-				map[string]any{schemaRequiredKey: []string{expectedVersionKey}, schemaPropertiesKey: map[string]any{createOnlyKey: map[string]any{"const": false}}},
-				map[string]any{schemaRequiredKey: []string{createOnlyKey}, schemaPropertiesKey: map[string]any{createOnlyKey: map[string]any{"const": true}},
-					"not": map[string]any{schemaRequiredKey: []string{expectedVersionKey}}},
-			},
+			"oneOf": []any{edit, create},
 		}
 		encoded, err := json.Marshal(schema)
 		if err != nil {
 			// This schema contains only static JSON values. A programming error
 			// must fail startup, never advertise an unguarded fallback schema.
-			panic(errors.Wrap(err, "encode mandatory file_write precondition schema"))
+			panic(errors.Wrap(err, "encode mandatory file mutation precondition schema"))
 		}
 		tool.InputSchema = mcp.ToolInputSchema{}
 		tool.RawInputSchema = encoded
