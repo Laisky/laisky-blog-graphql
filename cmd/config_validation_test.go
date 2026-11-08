@@ -337,6 +337,37 @@ func TestValidateStartupConfigWithGetterRejectsIncompleteOneAPIStore(t *testing.
 	require.Contains(t, err.Error(), "max_idle_conns must be <=")
 }
 
+// TestValidateStartupConfigRejectsInvalidTrustedProxies verifies a mistyped
+// trusted proxy or header fails startup with the offending entry named.
+func TestValidateStartupConfigRejectsInvalidTrustedProxies(t *testing.T) {
+	cfg := map[string]any{"settings": map[string]any{"web": map[string]any{
+		"trusted_proxies":   []any{"100.64.0.0/10", "nginx.internal"},
+		"turnstile":         map[string]any{"risk": map[string]any{"max_tracked_accounts": "many"}},
+		"client_ip_headers": []any{"X-Forwarded-For"},
+	}}}
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `"nginx.internal"`)
+	require.Contains(t, err.Error(), "max_tracked_accounts must be an integer")
+
+	cfg = map[string]any{"settings": map[string]any{"web": map[string]any{
+		"client_ip_headers": []any{"X Forwarded For"},
+	}}}
+	require.ErrorContains(t, validateStartupConfigWithGetter(newMapConfigGetter(cfg)), "not a valid header name")
+}
+
+// TestValidateStartupConfigAcceptsTrustedProxyForms verifies the default, an
+// explicit empty list and explicit networks all pass validation.
+func TestValidateStartupConfigAcceptsTrustedProxyForms(t *testing.T) {
+	for _, proxies := range []any{nil, []any{}, []any{"100.64.0.10", "172.17.0.0/16", "fd00::/8"}} {
+		web := map[string]any{}
+		if proxies != nil {
+			web["trusted_proxies"] = proxies
+		}
+		require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(map[string]any{"settings": map[string]any{"web": web}})))
+	}
+}
+
 // newMapConfigGetter builds a dotted-path getter for nested map-based test configuration.
 // It accepts a nested map and returns a getter function compatible with validateStartupConfigWithGetter.
 func newMapConfigGetter(root map[string]any) configGetter {

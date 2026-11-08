@@ -9,6 +9,8 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 const (
@@ -44,6 +46,7 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	validateMCPMemoryConfig(get, &validationErrs)
 	validateWebsearchConfig(get, &validationErrs)
 	validateWebSiteConfig(get, &validationErrs)
+	validateClientIdentityConfig(get, &validationErrs)
 	validateSSOConfig(get, &validationErrs)
 	validateOpenAIConfig(get, &validationErrs)
 
@@ -52,6 +55,23 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	}
 
 	return errors.Errorf("invalid configuration:\n - %s", strings.Join(validationErrs, "\n - "))
+}
+
+// validateClientIdentityConfig validates the trusted-proxy policy and the
+// adaptive-authentication bounds, so a mistyped proxy network fails startup
+// instead of silently trusting more or fewer peers than intended.
+func validateClientIdentityConfig(get configGetter, errs *[]string) {
+	if _, err := clientip.LoadPolicy(clientip.ConfigGetter(get)); err != nil {
+		appendValidationErrorf(errs, "%s", err.Error())
+	}
+
+	for _, key := range []string{
+		"settings.web.turnstile.risk.account_failure_threshold",
+		"settings.web.turnstile.risk.max_tracked_accounts",
+		"settings.web.turnstile.risk.max_tracked_clients",
+	} {
+		validateOptionalIntMin(get, key, 0, errs)
+	}
 }
 
 // validateSSOConfig validates the selected SSO user store and OneAPI database
