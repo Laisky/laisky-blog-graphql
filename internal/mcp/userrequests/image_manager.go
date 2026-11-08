@@ -99,7 +99,7 @@ func (m *ImageManager) processOne(ctx context.Context, auth *askuser.Authorizati
 		return UploadedImage{}, errors.Wrap(imageproc.ErrDecodeFailed, "empty attachment")
 	}
 
-	result, err := imageproc.Normalize(raw, filename)
+	result, err := imageproc.Normalize(ctx, raw, filename)
 	if err != nil {
 		return UploadedImage{}, errors.WithStack(err)
 	}
