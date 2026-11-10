@@ -83,7 +83,8 @@
       "TestStartupAlertCorePreservesSmallBoundContext",
       "TestStartupAlertCorePreservesLargeChosenInput",
       "TestStartupAlertCoreRejectsWholeOversizeRecord",
-      "TestValidateStartupConfigRejectsInvalidTrustedProxies"
+      "TestValidateStartupConfigRejectsInvalidTrustedProxies",
+      "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs"
     ]
   },
   {
@@ -109,7 +110,9 @@
       "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet",
       "TestServerEngineDirectPeerCannotChooseRiskKey",
       "TestServerEngineTrustedProxyChains",
-      "TestServerEngineDirectDeploymentPolicy"
+      "TestServerEngineDirectDeploymentPolicy",
+      "TestServerEngineHostCannotDisableChallenge",
+      "TestRuntimeConfigServesTheVerifyingWidgetKey"
     ]
   },
   {
@@ -124,7 +127,9 @@
       "TestNetworkKeyGroupsIPv6By64",
       "TestLoadPolicyNormalizesIPv4MappedPrefixes",
       "TestPolicyTrustsEveryPeer",
-      "TestGinTrustAgreesWithPolicy"
+      "TestGinTrustAgreesWithPolicy",
+      "TestForwardedHostOnlyFromTrustedProxy",
+      "TestPolicyTrustsPeerMatchesGin"
     ]
   },
   {
@@ -134,7 +139,15 @@
       "TestAuthChallengeTrackerAccountBudgetClearance",
       "TestAuthChallengeTrackerAccountTableBounded",
       "TestAuthChallengeTrackerClientTableBounded",
-      "TestValidateTurnstileTokenAccountBudgetAcrossAddresses"
+      "TestValidateTurnstileTokenAccountBudgetAcrossAddresses",
+      "TestAuthChallengeTrackerConcurrentGuessesAreBounded",
+      "TestAuthChallengeTrackerOneChallengeAdmitsOneGuessAtATime",
+      "TestAccountKeyFoldsCollationVariants",
+      "TestAuthChallengeTrackerIdentityUnifiesSpellings",
+      "TestAuthChallengeTrackerFloodCannotEvictAttackedAccount",
+      "TestAuthChallengeTrackerAccountGapForUnpresentableChallenge",
+      "TestResolveTurnstileSiteNeverDisablesTheGate",
+      "TestAdmitAuthRequestAccountEscalationNeedsPresentableChallenge"
     ]
   }
 ]
