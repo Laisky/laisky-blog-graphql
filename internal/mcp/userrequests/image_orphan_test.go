@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -190,7 +191,9 @@ func TestCreateWithImagesLeavesNoOrphanObjects(t *testing.T) {
 		require.NoError(t, err)
 		rec := h.post(t, context.Background(), "sk-orphan-reqins-12345", first)
 		require.Equal(t, http.StatusInternalServerError, rec.Code, "body=%s", rec.Body.String())
-		require.Empty(t, h.store.PutKeys())
+		// The request row is written by the finalize step, after the upload.
+		require.Len(t, h.store.PutKeys(), 1)
+		require.Equal(t, h.store.PutKeys(), h.store.DeletedKeys(), "compensation must delete the upload")
 		h.requireNoUnreferencedObjects(t)
 	})
 
@@ -201,7 +204,8 @@ func TestCreateWithImagesLeavesNoOrphanObjects(t *testing.T) {
 		require.NoError(t, err)
 		rec := h.post(t, context.Background(), "sk-orphan-link-1234567", first, second)
 		require.Equal(t, http.StatusInternalServerError, rec.Code, "body=%s", rec.Body.String())
-		require.Empty(t, h.store.PutKeys())
+		require.Len(t, h.store.PutKeys(), 2)
+		require.ElementsMatch(t, h.store.PutKeys(), h.store.DeletedKeys(), "compensation must delete both uploads")
 		h.requireNoUnreferencedObjects(t)
 	})
 
@@ -296,4 +300,115 @@ func TestCreateWithImagesSuccessKeepsObjects(t *testing.T) {
 	for key := range h.referencedKeys(t) {
 		require.True(t, strings.HasPrefix(key, "mcp/images/"), key)
 	}
+}
+
+// TestCreateWithImagesHoldsNoTransactionDuringUpload pins the review
+// invariant "no database transaction or connection is held across
+// object-store I/O": while the store is uploading, another connection can
+// write to the image tables. A file database without shared cache makes an
+// open write transaction visible as "database is locked".
+func TestCreateWithImagesHoldsNoTransactionDuringUpload(t *testing.T) {
+	dsn := "file:" + filepath.Join(t.TempDir(), "upload.db") + "?_busy_timeout=200"
+	h := newOrphanHarnessWithDSN(t, defaultImageSettings(), dsn)
+	var probeErrs []error
+	h.store.BeforePut = func(context.Context, string) error {
+		_, err := h.db.Exec(`UPDATE mcp_user_image_refs SET size_bytes = size_bytes WHERE 1 = 1`)
+		probeErrs = append(probeErrs, err)
+		return nil
+	}
+	rec := h.post(t, context.Background(), "sk-no-tx-upload-123456", testPNG(t, 40, 30), testPNG(t, 22, 22))
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	require.Len(t, probeErrs, 2, "the probe ran during both uploads")
+	for _, err := range probeErrs {
+		require.NoError(t, err, "a transaction was open while the object store was being written")
+	}
+}
+
+// TestCreateWithImagesLateDeleteCannotRemoveCommittedObject covers the
+// review's late-delete race: a compensation delete that reports failure may
+// still reach the store later. Its lease stays until it expires, so another
+// request cannot upload (and commit) the same key meanwhile; once the lease
+// has expired, the key may be uploaded again.
+func TestCreateWithImagesLateDeleteCannotRemoveCommittedObject(t *testing.T) {
+	h := newOrphanHarness(t, defaultImageSettings(), "")
+	const token = "sk-late-delete-1234567"
+	img := testPNG(t, 40, 30)
+
+	// Request A uploads, fails, and its compensating delete is lost in flight.
+	h.store.AfterPut = putCounter(1, errs.New("injected ambiguous put failure"))
+	h.store.DeleteErr = errs.New("delete timed out client-side")
+	rec := h.post(t, context.Background(), token, img)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
+	inFlightKey := h.store.PutKeys()[0]
+	h.store.AfterPut, h.store.DeleteErr = nil, nil
+
+	// Request B for the same image must not upload while A's delete may land.
+	rec = h.post(t, context.Background(), token, img)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, "image_busy", errorCode(t, rec))
+	require.Len(t, h.store.PutKeys(), 1, "B uploaded nothing")
+
+	// A's delete lands late. Every committed ref must still have its object.
+	require.NoError(t, h.store.Delete(context.Background(), inFlightKey))
+	for key := range h.referencedKeys(t) {
+		_, ok := h.store.ObjectBytes(key)
+		require.True(t, ok, "committed ref %q lost its object to a late delete", key)
+	}
+
+	// After the lease expires the image can be attached again.
+	h.setClock(reconcileNow.Add(imageDeleteLeaseTTL))
+	rec = h.post(t, context.Background(), token, img)
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	_, ok := h.store.ObjectBytes(inFlightKey)
+	require.True(t, ok)
+}
+
+// TestCreateWithImagesFailsWhenReservationIsLost: if the upload claims are
+// gone by the time the request finalizes (they expired and were reclaimed),
+// the request fails and its uploads are released instead of committing refs
+// whose objects the reconciler may already have deleted.
+func TestCreateWithImagesFailsWhenReservationIsLost(t *testing.T) {
+	h := newOrphanHarness(t, defaultImageSettings(), "")
+	h.store.AfterPut = func(context.Context, string) error {
+		_, err := h.db.Exec(`DELETE FROM mcp_user_image_claims`)
+		return err
+	}
+	rec := h.post(t, context.Background(), "sk-lost-claims-1234567", testPNG(t, 40, 30))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
+	require.Empty(t, h.referencedKeys(t))
+	require.Equal(t, h.store.PutKeys(), h.store.DeletedKeys())
+	h.requireNoUnreferencedObjects(t)
+}
+
+// TestHandleCreateImageBusyWhenCreateCapIsFull: requests over the per-user
+// create cap wait in process and get image_busy (503, Retry-After) when their
+// deadline passes; another user is not affected.
+func TestHandleCreateImageBusyWhenCreateCapIsFull(t *testing.T) {
+	settings := defaultImageSettings()
+	settings.MaxConcurrentCreatesPerUser = 1
+	h := newOrphanHarness(t, settings, "")
+	started, unblock := make(chan struct{}), make(chan struct{})
+	h.store.BeforePut = func(ctx context.Context, key string) error {
+		if strings.Contains(key, mustAuth(t, "sk-cap-busy-user-123456").UserIdentity[len("user-"):]) {
+			close(started)
+			<-unblock
+		}
+		return nil
+	}
+	done := make(chan int, 1)
+	go func() { done <- h.post(t, context.Background(), "sk-cap-busy-user-123456", testPNG(t, 40, 30)).Code }()
+	<-started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	rec := h.post(t, ctx, "sk-cap-busy-user-123456", testPNG(t, 22, 22))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, "image_busy", errorCode(t, rec))
+	require.Equal(t, "5", rec.Header().Get("Retry-After"))
+
+	rec = h.post(t, context.Background(), "sk-cap-other-user-12345", testPNG(t, 22, 22))
+	require.Equal(t, http.StatusOK, rec.Code, "another user is not limited")
+
+	close(unblock)
+	require.Equal(t, http.StatusOK, <-done)
 }

@@ -2,144 +2,90 @@ package userrequests
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"path"
 	"sort"
-	"strings"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
-
-	"github.com/Laisky/laisky-blog-graphql/internal/mcp/storage"
 )
 
 // imageReconcileTimeout bounds one reconciler pass.
 const imageReconcileTimeout = 5 * time.Minute
 
-// minImageOrphanGracePeriod is the smallest accepted grace period. It must
-// comfortably exceed the create request deadline so an upload whose
-// transaction is still open is never mistaken for an orphan by age alone.
-const minImageOrphanGracePeriod = time.Minute
-
 // ImageReconcileResult summarizes one ReconcileImageObjects pass.
 type ImageReconcileResult struct {
-	// Scanned is how many objects the pass listed.
-	Scanned int
-	// Candidates is how many listed objects were managed image keys older
-	// than the grace period.
-	Candidates int
-	// Deleted is how many candidates no image ref owned and were deleted.
+	// Claims is how many due claims the pass processed.
+	Claims int
+	// Keys is how many distinct storage keys those claims named.
+	Keys int
+	// Deleted is how many objects were deleted because nothing referenced or
+	// claimed them any more.
 	Deleted int
-	// NextCursor is the key the next pass resumes after; empty once the
-	// listing is exhausted, so the next pass starts over.
-	NextCursor string
 }
 
-// listImageObjects lists objects under the image prefix after startAfter.
-func (m *ImageManager) listImageObjects(ctx context.Context, startAfter string, limit int) ([]storage.ObjectInfo, error) {
-	if m == nil || m.store == nil {
-		return nil, errors.Wrap(ErrStorageUnavailable, "image manager unconfigured")
-	}
-	objects, err := m.store.List(ctx, m.settings.Prefix+"/", startAfter, limit)
-	if err != nil {
-		return nil, errors.Wrap(err, "list image objects")
-	}
-	return objects, nil
-}
-
-// isManagedImageKey reports whether key has exactly the shape buildKey
-// produces (<prefix>/<segment>/<64 hex>.png). The reconciler never touches
-// anything else, even under the image prefix.
-func (m *ImageManager) isManagedImageKey(key string) bool {
-	rest, ok := strings.CutPrefix(key, m.settings.Prefix+"/")
-	if !ok {
-		return false
-	}
-	segment, file, ok := strings.Cut(rest, "/")
-	if !ok || segment == "" || strings.Contains(file, "/") || sanitizeKeySegment(segment) != segment {
-		return false
-	}
-	sha, ok := strings.CutSuffix(file, ".png")
-	if !ok || len(sha) != 64 {
-		return false
-	}
-	for i := 0; i < len(sha); i++ {
-		c := sha[i]
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
+// dueImageClaim is a claim whose deadline passed (or an orphan claim).
+type dueImageClaim struct {
+	id           string
+	key          string
+	userIdentity string
 }
 
 // ReconcileImageObjects is one bounded pass of the orphan-object reconciler.
-// It lists up to OrphanSweepBatch objects after cursor and deletes each
-// managed image object that is older than OrphanGracePeriod and that no image
-// ref owns. Ownership is re-checked under the image scope lock right before
-// the delete, so an object a request is reserving or committing is never
-// removed. It backstops compensation for objects left by crashes or failed
-// compensating deletes, and objects of refs the GC expired, even when the
-// bucket lifecycle rule could not be installed.
-func (s *Service) ReconcileImageObjects(ctx context.Context, manager *ImageManager, cursor string) (ImageReconcileResult, error) {
+// It works only from this database's claims, never from a bucket listing, so
+// it cannot touch objects another deployment or application wrote:
+//
+//   - expired upload claims (a create that crashed between reserving and
+//     finalizing, or whose release failed),
+//   - expired delete leases (a delete that failed or timed out),
+//   - orphan claims (refs the GC expired).
+//
+// For each named key it releases the due claims and, under the image scope
+// lock, leases the key unless an image ref or a live claim protects it, then
+// deletes the object outside any transaction. A key whose delete fails keeps
+// its lease and is retried once that expires. At most OrphanSweepBatch claims
+// are processed per pass.
+func (s *Service) ReconcileImageObjects(ctx context.Context, objects ImageObjectWriter) (ImageReconcileResult, error) {
 	var result ImageReconcileResult
-	if manager == nil {
-		return result, errors.Wrap(ErrStorageUnavailable, "image manager unconfigured")
+	if objects == nil {
+		return result, errors.Wrap(ErrStorageUnavailable, "image object writer unavailable")
 	}
 	batch := s.settings.Images.OrphanSweepBatch
 	if batch <= 0 {
 		batch = DefaultImageOrphanSweepBatch
 	}
-	grace := s.settings.Images.OrphanGracePeriod
-	if grace < minImageOrphanGracePeriod {
-		grace = DefaultImageOrphanGracePeriod
-	}
-
-	objects, err := manager.listImageObjects(ctx, cursor, batch)
+	due, err := s.dueImageClaims(ctx, batch)
 	if err != nil {
 		return result, errors.WithStack(err)
 	}
-	result.Scanned = len(objects)
-	if len(objects) == batch {
-		result.NextCursor = objects[len(objects)-1].Key
+	result.Claims = len(due)
+	byKey := make(map[string][]dueImageClaim)
+	for _, claim := range due {
+		byKey[claim.key] = append(byKey[claim.key], claim)
 	}
-
-	cutoff := s.clock().Add(-grace)
-	candidates := make([]string, 0)
-	for _, obj := range objects {
-		if !manager.isManagedImageKey(obj.Key) || obj.LastModified.IsZero() || obj.LastModified.After(cutoff) {
-			continue
+	keys := make([]string, 0, len(byKey))
+	for key := range byKey {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if di, dj := path.Dir(keys[i]), path.Dir(keys[j]); di != dj {
+			return di < dj
 		}
-		candidates = append(candidates, obj.Key)
-	}
-	result.Candidates = len(candidates)
-	if len(candidates) == 0 {
-		return result, nil
-	}
-
-	// Cheap unlocked pre-filter: most objects are referenced. Unreferenced
-	// ones are re-checked under the scope lock before anything is deleted.
-	referenced, err := s.referencedImageKeys(ctx, s.db, candidates)
-	if err != nil {
-		return result, errors.WithStack(err)
-	}
-	byScope := make(map[string][]string)
-	for _, key := range candidates {
-		if !referenced[key] {
-			byScope[path.Dir(key)] = append(byScope[path.Dir(key)], key)
-		}
-	}
-	scopes := make([]string, 0, len(byScope))
-	for scope := range byScope {
-		scopes = append(scopes, scope)
-	}
-	sort.Strings(scopes)
+		return keys[i] < keys[j]
+	})
+	result.Keys = len(keys)
 
 	var failed []error
-	for _, scope := range scopes {
-		deleted, deleteErr := s.deleteUnreferencedImageObjects(ctx, manager, byScope[scope])
-		result.Deleted += len(deleted)
-		if deleteErr != nil {
-			failed = append(failed, errors.Wrapf(deleteErr, "reconcile scope %q", scope))
+	for _, key := range keys {
+		deleted, err := s.reconcileImageKey(ctx, objects, key, byKey[key])
+		if deleted {
+			result.Deleted++
+		}
+		if err != nil {
+			failed = append(failed, errors.Wrapf(err, "reconcile %q", key))
 		}
 	}
 	if len(failed) > 0 {
@@ -148,35 +94,85 @@ func (s *Service) ReconcileImageObjects(ctx context.Context, manager *ImageManag
 	return result, nil
 }
 
+// dueImageClaims lists up to limit claims whose deadline has passed (orphan
+// claims are due when created), oldest first.
+func (s *Service) dueImageClaims(ctx context.Context, limit int) ([]dueImageClaim, error) {
+	rows, err := s.queryContext(ctx,
+		fmt.Sprintf(`SELECT id, storage_key, user_identity FROM mcp_user_image_claims
+			WHERE expires_at <= ? ORDER BY expires_at LIMIT %d`, limit),
+		s.clock(),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "list due image claims")
+	}
+	defer func() { _ = rows.Close() }()
+	var out []dueImageClaim
+	for rows.Next() {
+		var c dueImageClaim
+		if err := rows.Scan(&c.id, &c.key, &c.userIdentity); err != nil {
+			return nil, errors.Wrap(err, "scan due image claim")
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate due image claims")
+	}
+	return out, nil
+}
+
+// reconcileImageKey releases the due claims of key and deletes its object if
+// nothing protects it. It reports whether the object was deleted.
+func (s *Service) reconcileImageKey(ctx context.Context, objects ImageObjectWriter, key string, claims []dueImageClaim) (bool, error) {
+	run := gutils.UUID7Bytes()
+	ids := make([]string, len(claims))
+	for i, c := range claims {
+		ids[i] = c.id
+	}
+	leased, err := s.leaseUnprotectedImageKeys(ctx, run, claims[0].userIdentity, []string{key}, []string{key},
+		func(ctx context.Context, tx *sql.Tx, now time.Time) error {
+			in, args := inPlaceholders(ids)
+			// Only claims that are still due: one refreshed meanwhile is kept.
+			if _, err := tx.ExecContext(ctx,
+				rebindQuery(fmt.Sprintf(`DELETE FROM mcp_user_image_claims WHERE id IN (%s) AND expires_at <= ?`, in), s.useDollar),
+				append(args, now)...,
+			); err != nil {
+				return errors.Wrap(err, "release due image claims")
+			}
+			return nil
+		})
+	if err != nil {
+		return false, errors.WithStack(err)
+	}
+	deleted, err := s.deleteLeasedImageObjects(ctx, objects, run, leased)
+	return len(deleted) > 0, errors.WithStack(err)
+}
+
 // StartImageReconcileWorker runs ReconcileImageObjects every
-// OrphanSweepInterval until ctx is canceled. Each pass resumes after the last
-// key of the previous one, so a large bucket is covered over several passes.
-func (s *Service) StartImageReconcileWorker(ctx context.Context, manager *ImageManager) {
-	if s == nil || manager == nil || s.settings.Images.OrphanSweepInterval <= 0 {
+// OrphanSweepInterval until ctx is canceled.
+func (s *Service) StartImageReconcileWorker(ctx context.Context, objects ImageObjectWriter) {
+	if s == nil || objects == nil || s.settings.Images.OrphanSweepInterval <= 0 {
 		return
 	}
 	logger := s.log().Named("image_reconciler")
 	go func() {
 		ticker := time.NewTicker(s.settings.Images.OrphanSweepInterval)
 		defer ticker.Stop()
-		cursor := ""
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				passCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), imageReconcileTimeout) //nolint:contextcheck // detached context for background sweep
-				result, err := s.ReconcileImageObjects(passCtx, manager, cursor)
+				result, err := s.ReconcileImageObjects(passCtx, objects)
 				cancel()
-				cursor = result.NextCursor
 				if err != nil {
-					logger.Error("reconcile orphan image objects", zap.Error(err),
-						zap.Int("scanned", result.Scanned), zap.Int("deleted", result.Deleted))
+					logger.Error("reconcile image objects", zap.Error(err),
+						zap.Int("claims", result.Claims), zap.Int("deleted", result.Deleted))
 					continue
 				}
 				if result.Deleted > 0 {
 					logger.Info("deleted orphan image objects",
-						zap.Int("scanned", result.Scanned), zap.Int("deleted", result.Deleted))
+						zap.Int("claims", result.Claims), zap.Int("deleted", result.Deleted))
 				}
 			}
 		}

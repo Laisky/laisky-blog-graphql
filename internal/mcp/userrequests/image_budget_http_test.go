@@ -15,7 +15,7 @@ import (
 // TestHandleCreateDecodeMemoryBudget covers the HTTP contract of the decode
 // memory budget: an image whose estimated working set exceeds the whole budget
 // is rejected as decode_failed (422), and a request that cannot be admitted
-// before its context ends gets decode_busy (503). Neither uploads anything.
+// before its context ends gets image_busy (503). Neither uploads anything.
 func TestHandleCreateDecodeMemoryBudget(t *testing.T) {
 	t.Run("estimate over budget", func(t *testing.T) {
 		settings := defaultImageSettings()
@@ -40,7 +40,8 @@ func TestHandleCreateDecodeMemoryBudget(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
-		require.Equal(t, "decode_busy", errorCode(t, rec))
+		require.Equal(t, "image_busy", errorCode(t, rec))
+		require.Equal(t, "5", rec.Header().Get("Retry-After"))
 		require.Zero(t, store.ObjectCount())
 	})
 }

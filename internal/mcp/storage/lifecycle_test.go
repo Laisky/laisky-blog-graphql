@@ -154,3 +154,58 @@ func TestMergeLifecycleRuleKeepsForeignRules(t *testing.T) {
 	fresh := mergeLifecycleRule(nil, "p/", 1)
 	require.Len(t, fresh.Rules, 1)
 }
+
+// multiTransitionLifecycle is a foreign rule minio-go cannot model exactly: it
+// keeps only one of the two Transition elements (review finding).
+const multiTransitionLifecycle = `<LifecycleConfiguration><Rule><ID>archive</ID><Filter><Prefix>logs/</Prefix></Filter><Status>Enabled</Status>` +
+	`<Transition><Days>30</Days><StorageClass>STANDARD_IA</StorageClass></Transition>` +
+	`<Transition><Days>90</Days><StorageClass>GLACIER</StorageClass></Transition></Rule></LifecycleConfiguration>`
+
+// TestEnsureLifecycleRefusesLossyRewrite: when a foreign rule would not
+// survive the read-modify-write unchanged, EnsureLifecycle must not write at
+// all (the caller logs an ERROR asking the operator to add the rule).
+func TestEnsureLifecycleRefusesLossyRewrite(t *testing.T) {
+	client, backend := newFakeS3Client(t)
+	backend.lifecycle = []byte(multiTransitionLifecycle)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrLifecycleMergeUnsafe)
+	require.Contains(t, err.Error(), "mcp-images-mcp-images--7d", "the error names the rule to add manually")
+
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	require.Zero(t, backend.puts, "nothing may be written")
+	require.Equal(t, multiTransitionLifecycle, string(backend.lifecycle))
+}
+
+// TestCheckLifecycleRoundTrip covers the structural comparison directly.
+func TestCheckLifecycleRoundTrip(t *testing.T) {
+	cases := map[string]struct {
+		raw  string
+		safe bool
+	}{
+		"simple expiry rule": {`<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Rule><ID>logs</ID>` +
+			`<Filter><Prefix>logs/</Prefix></Filter><Status>Enabled</Status><Expiration><Days>30</Days></Expiration></Rule></LifecycleConfiguration>`, true},
+		"element order differs": {`<LifecycleConfiguration><Rule><Status>Enabled</Status><Expiration><Days>30</Days></Expiration>` +
+			`<ID>logs</ID><Filter><Prefix>logs/</Prefix></Filter></Rule></LifecycleConfiguration>`, true},
+		"two transitions": {multiTransitionLifecycle, false},
+		"element minio-go does not know": {`<LifecycleConfiguration><Rule><ID>x</ID><Filter><Prefix>a/</Prefix></Filter>` +
+			`<Status>Enabled</Status><Expiration><Days>3</Days></Expiration><FutureElement>1</FutureElement></Rule></LifecycleConfiguration>`, false},
+		"own rule is ignored": {`<LifecycleConfiguration><Rule><ID>mcp-images-p--7d</ID><Bogus>1</Bogus><Bogus>2</Bogus></Rule></LifecycleConfiguration>`, true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := lifecycle.NewConfiguration()
+			require.NoError(t, xml.Unmarshal([]byte(tc.raw), cfg))
+			err := checkLifecycleRoundTrip([]byte(tc.raw), cfg, "mcp-images-p--")
+			if tc.safe {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, ErrLifecycleMergeUnsafe)
+			}
+		})
+	}
+}

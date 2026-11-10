@@ -36,17 +36,14 @@ type FakeStore struct {
 	// returned from Put while the object stays stored, which models a client
 	// that gave up (for example on a timeout) after the server committed it.
 	AfterPut func(ctx context.Context, key string) error
-	// Now supplies object modification times. Defaults to time.Now in UTC.
-	Now func() time.Time
 	// HostBase is the synthetic base URL used when building presigned URLs.
 	HostBase string
 }
 
 type fakeObject struct {
-	Body         []byte
-	ContentType  string
-	UserMeta     map[string]string
-	LastModified time.Time
+	Body        []byte
+	ContentType string
+	UserMeta    map[string]string
 }
 
 // NewFakeStore constructs an empty FakeStore with a default host base suitable for tests.
@@ -81,10 +78,9 @@ func (f *FakeStore) Put(ctx context.Context, key string, body io.Reader, size in
 	}
 	f.mu.Lock()
 	f.objects[key] = fakeObject{
-		Body:         buf.Bytes(),
-		ContentType:  contentType,
-		UserMeta:     metaCopy,
-		LastModified: f.now(),
+		Body:        buf.Bytes(),
+		ContentType: contentType,
+		UserMeta:    metaCopy,
 	}
 	f.puts = append(f.puts, key)
 	f.mu.Unlock()
@@ -93,14 +89,6 @@ func (f *FakeStore) Put(ctx context.Context, key string, body io.Reader, size in
 		return f.AfterPut(ctx, key)
 	}
 	return nil
-}
-
-// now returns the configured clock in UTC; callers must hold f.mu.
-func (f *FakeStore) now() time.Time {
-	if f.Now != nil {
-		return f.Now().UTC()
-	}
-	return time.Now().UTC()
 }
 
 // Delete removes an object; deleting a missing key succeeds, like S3.
@@ -116,28 +104,6 @@ func (f *FakeStore) Delete(ctx context.Context, key string) error {
 	delete(f.objects, key)
 	f.deletes = append(f.deletes, key)
 	return nil
-}
-
-// List returns up to limit objects under prefix whose keys sort after
-// startAfter, in lexical key order.
-func (f *FakeStore) List(ctx context.Context, prefix, startAfter string, limit int) ([]ObjectInfo, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, errors.Wrap(err, "fake list context canceled")
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := make([]ObjectInfo, 0)
-	for _, key := range f.sortedKeysLocked() {
-		if len(key) < len(prefix) || key[:len(prefix)] != prefix || key <= startAfter {
-			continue
-		}
-		if limit > 0 && len(out) >= limit {
-			break
-		}
-		obj := f.objects[key]
-		out = append(out, ObjectInfo{Key: key, Size: int64(len(obj.Body)), LastModified: obj.LastModified})
-	}
-	return out, nil
 }
 
 // sortedKeysLocked returns the stored keys in lexical order; callers must hold f.mu.
@@ -169,20 +135,6 @@ func (f *FakeStore) DeletedKeys() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.deletes...)
-}
-
-// SetLastModified overrides an object's modification time; it reports
-// whether the object exists.
-func (f *FakeStore) SetLastModified(key string, at time.Time) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	obj, ok := f.objects[key]
-	if !ok {
-		return false
-	}
-	obj.LastModified = at.UTC()
-	f.objects[key] = obj
-	return true
 }
 
 // Get returns a reader for an object that was previously stored.

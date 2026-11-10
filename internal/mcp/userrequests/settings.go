@@ -39,12 +39,15 @@ const (
 	// DefaultImageOrphanSweepInterval is how often the orphan-object
 	// reconciler runs. Default: 1h.
 	DefaultImageOrphanSweepInterval = time.Hour
-	// DefaultImageOrphanGracePeriod is how old an object must be before the
-	// reconciler may delete it for lack of an image ref. Default: 1h.
-	DefaultImageOrphanGracePeriod = time.Hour
-	// DefaultImageOrphanSweepBatch is how many objects one reconciler pass
-	// lists at most. Default: 1000.
+	// DefaultImageOrphanSweepBatch is how many due claims one reconciler pass
+	// processes at most. Default: 1000.
 	DefaultImageOrphanSweepBatch = 1000
+	// DefaultImageMaxConcurrentCreates caps image create requests running at
+	// once in one process. Default: 8.
+	DefaultImageMaxConcurrentCreates = 8
+	// DefaultImageMaxConcurrentCreatesPerUser caps image create requests of
+	// one user identity running at once in one process. Default: 2.
+	DefaultImageMaxConcurrentCreatesPerUser = 2
 
 	// DefaultImageMinIOEndpoint is the endpoint the MinIO client uses when one is
 	// not provided. Default: "s3.laisky.com".
@@ -130,18 +133,23 @@ type ImageSettings struct {
 	// budget; an image whose estimate alone exceeds it is rejected as
 	// decode_failed. Non-positive values use the default. Default: 1.25 GiB.
 	DecodeMemoryBudgetBytes int64
-	// OrphanSweepInterval is how often the reconciler deletes stored objects
-	// that no image ref owns (left by crashes, failed compensating deletes,
-	// or expired refs). Zero or negative disables it. Default: 1h.
+	// OrphanSweepInterval is how often the reconciler processes due image
+	// claims: it deletes objects this database recorded writing (crashed
+	// uploads, failed deletes, refs the GC expired) once nothing references
+	// or claims them. It never lists the bucket. Zero or negative disables
+	// it. Default: 1h.
 	OrphanSweepInterval time.Duration
-	// OrphanGracePeriod is the minimum object age before the reconciler may
-	// delete it; it must exceed the longest create request. Values below one
-	// minute use the default. Default: 1h.
-	OrphanGracePeriod time.Duration
-	// OrphanSweepBatch caps how many objects one reconciler pass lists; the
-	// next pass resumes after the last key. Non-positive values use the
-	// default. Default: 1000.
+	// OrphanSweepBatch caps how many due claims one reconciler pass
+	// processes. Non-positive values use the default. Default: 1000.
 	OrphanSweepBatch int
+	// MaxConcurrentCreates caps image create requests running at once in this
+	// process; further requests wait (until their deadline, then 503
+	// image_busy). Non-positive values use the default. Default: 8.
+	MaxConcurrentCreates int
+	// MaxConcurrentCreatesPerUser caps image create requests of one user
+	// identity running at once in this process. Non-positive values use the
+	// default. Default: 2.
+	MaxConcurrentCreatesPerUser int
 	// URLAllowHTTP allows unencrypted http:// image_url inputs. Default: false
 	// (HTTPS only). Not recommended for production.
 	URLAllowHTTP bool
@@ -188,9 +196,11 @@ func loadImageSettings() ImageSettings {
 			DefaultImageDecodeMemoryBudgetBytes),
 		OrphanSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_seconds",
 			int(DefaultImageOrphanSweepInterval/time.Second))) * time.Second,
-		OrphanGracePeriod: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.orphan_grace_seconds",
-			int(DefaultImageOrphanGracePeriod/time.Second))) * time.Second,
-		OrphanSweepBatch:   intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_batch", DefaultImageOrphanSweepBatch),
+		OrphanSweepBatch: intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_batch", DefaultImageOrphanSweepBatch),
+		MaxConcurrentCreates: intFromConfig("settings.mcp.tools.user_requests.images.max_concurrent_requests",
+			DefaultImageMaxConcurrentCreates),
+		MaxConcurrentCreatesPerUser: intFromConfig("settings.mcp.tools.user_requests.images.max_concurrent_requests_per_user",
+			DefaultImageMaxConcurrentCreatesPerUser),
 		URLAllowHTTP:       boolFromConfig("settings.mcp.tools.user_requests.images.url_fetch.allow_http", DefaultImageURLAllowHTTP),
 		URLMaxRedirects:    intFromConfig("settings.mcp.tools.user_requests.images.url_fetch.max_redirects", DefaultImageURLMaxRedirects),
 		URLTotalTimeout:    time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.url_fetch.total_timeout_seconds", DefaultImageURLTotalTimeoutSeconds)) * time.Second,

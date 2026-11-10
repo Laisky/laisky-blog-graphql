@@ -17,9 +17,10 @@ import (
 // buildUserRequestImageManager also installs the bucket lifecycle rule when the
 // feature is enabled. A failure to install the rule does not prevent the
 // service from starting (local dev MinIOs frequently lack permission), but it
-// is logged at ERROR: without the rule only the orphan reconciler removes
-// image objects, so operators must fix the permission or keep the reconciler
-// enabled (see "Image Messages" in docs/manual/mcp.md).
+// is logged at ERROR: without the rule only the reconciler removes objects of
+// expired refs, so operators must fix the permission or install the named
+// rule by hand, and keep the reconciler enabled (see "Image Messages" in
+// docs/manual/mcp.md).
 func buildUserRequestImageManager(ctx context.Context, svc *userrequests.Service, logger logSDK.Logger) (*userrequests.ImageManager, error) {
 	settings := svc.ImageSettings()
 	if !settings.Enabled {
@@ -47,7 +48,7 @@ func buildUserRequestImageManager(ctx context.Context, svc *userrequests.Service
 
 	if settings.ObjectTTLDays > 0 {
 		if lifecycleErr := store.EnsureLifecycle(ctx, settings.Prefix+"/", settings.ObjectTTLDays); lifecycleErr != nil {
-			logger.Error("install image bucket lifecycle rule failed; expired and orphaned image objects are removed only by the orphan reconciler",
+			logger.Error("install image bucket lifecycle rule failed; add it by hand, until then only the reconciler removes objects of expired refs",
 				zap.String("bucket", settings.Bucket),
 				zap.String("prefix", settings.Prefix),
 				zap.Int("ttl_days", settings.ObjectTTLDays),

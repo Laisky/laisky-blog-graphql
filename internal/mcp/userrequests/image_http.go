@@ -176,9 +176,10 @@ func (h *httpHandler) writeImageError(w http.ResponseWriter, logger logSDK.Logge
 	case errors.Is(err, ErrStorageUnavailable):
 		status = http.StatusServiceUnavailable
 		code = "storage_unavailable"
-	case errors.Is(err, imageproc.ErrDecodeBusy):
+	case errors.Is(err, imageproc.ErrDecodeBusy), errors.Is(err, ErrImageBusy):
 		status = http.StatusServiceUnavailable
-		code = "decode_busy"
+		code = "image_busy"
+		w.Header().Set("Retry-After", "5")
 	}
 
 	if status >= 500 {

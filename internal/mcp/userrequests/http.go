@@ -259,6 +259,12 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			h.writeImageError(w, logger, errors.WithStack(ErrTooManyImages), -1)
 			return
 		}
+		release, admitErr := h.imageManager.AdmitCreate(ctx, auth)
+		if admitErr != nil {
+			h.writeImageError(w, logger, admitErr, -1)
+			return
+		}
+		defer release()
 		images, prepareErr := h.imageManager.Prepare(ctx, auth, attachments)
 		if prepareErr != nil {
 			idx := extractAttachmentIndex(prepareErr)
@@ -283,7 +289,7 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
 		case errors.Is(err, ErrInvalidAuthorization):
 			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
-		case errors.Is(err, ErrQuotaExceeded), errors.Is(err, ErrTooManyImages):
+		case errors.Is(err, ErrQuotaExceeded), errors.Is(err, ErrTooManyImages), errors.Is(err, ErrImageBusy):
 			h.writeImageError(w, logger, err, -1)
 		case errors.Is(err, ErrStorageUnavailable):
 			h.writeImageError(w, logger, err, extractAttachmentIndex(err))

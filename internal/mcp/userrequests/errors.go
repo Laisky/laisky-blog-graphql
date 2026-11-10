@@ -29,4 +29,8 @@ var (
 	ErrImageFeatureDisabled = errors.New("image attachments feature is disabled")
 	// ErrStorageUnavailable is returned when the object store could not accept an upload.
 	ErrStorageUnavailable = errors.New("image storage unavailable")
+	// ErrImageBusy is returned when an image request cannot proceed right now
+	// and may be retried: too many image requests are in flight, or a previous
+	// copy of the same image is still being deleted.
+	ErrImageBusy = errors.New("image service is busy, retry later")
 )

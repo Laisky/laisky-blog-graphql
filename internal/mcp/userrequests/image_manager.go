@@ -27,19 +27,37 @@ type ImageManager struct {
 	fetcher  URLFetcher
 	settings ImageSettings
 	budget   *imageproc.DecodeBudget
+	creates  *imageCreateLimiter
 }
 
 // NewImageManager constructs an ImageManager. store is required; fetcher may
 // be nil when image_url inputs are not accepted (e.g. in tests that only feed
 // uploaded files). Every image the manager normalizes is admitted through one
-// decode budget sized by settings.DecodeMemoryBudgetBytes.
+// decode budget sized by settings.DecodeMemoryBudgetBytes, and create
+// requests are capped by settings.MaxConcurrentCreates (per process) and
+// settings.MaxConcurrentCreatesPerUser.
 func NewImageManager(store storage.ObjectStore, fetcher URLFetcher, settings ImageSettings) *ImageManager {
 	return &ImageManager{
 		store:    store,
 		fetcher:  fetcher,
 		settings: settings,
 		budget:   imageproc.NewDecodeBudget(settings.DecodeMemoryBudgetBytes),
+		creates:  newImageCreateLimiter(settings.MaxConcurrentCreates, settings.MaxConcurrentCreatesPerUser),
 	}
+}
+
+// AdmitCreate takes one of the image-create slots for auth's identity,
+// waiting until one is free or ctx ends (ErrImageBusy). The handler holds it
+// across Prepare and Service.CreateRequestWithImages; release must be called once.
+func (m *ImageManager) AdmitCreate(ctx context.Context, auth *askuser.AuthorizationContext) (func(), error) {
+	if m == nil || m.creates == nil {
+		return func() {}, nil
+	}
+	release, err := m.creates.acquire(ctx, auth.UserIdentity)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return release, nil
 }
 
 // AttachmentInput represents one caller-provided attachment — either raw
@@ -106,7 +124,7 @@ func (m *ImageManager) prepareOne(ctx context.Context, auth *askuser.Authorizati
 		return UploadedImage{}, errors.Wrap(imageproc.ErrDecodeFailed, "empty attachment")
 	}
 
-	result, err := m.budget.Normalize(ctx, raw, filename)
+	result, err := m.budget.NormalizeFor(ctx, auth.UserIdentity, raw, filename)
 	if err != nil {
 		return UploadedImage{}, errors.WithStack(err)
 	}
