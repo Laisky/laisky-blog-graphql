@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/httpbody"
 )
 
@@ -34,7 +33,6 @@ const (
 
 // Default request-body budgets of the HTTP server.
 const (
-	defaultBodyReadTimeout          = 60 * time.Second
 	defaultBodyMaxBytes       int64 = 1 << 20
 	defaultGraphQLBodyMaxByte int64 = 64 << 20
 	defaultHTTPIdleTimeout          = 120 * time.Second
@@ -44,10 +42,14 @@ const (
 
 // requestBodySettings is the single table of request-body budgets.
 type requestBodySettings struct {
-	ReadTimeout     time.Duration
-	DefaultMaxBytes int64
-	GraphQLMaxBytes int64
-	MCP             mcp.RequestBodyBudget
+	// MinBytesPerSecond, ReadGrace and MaxReadDuration form the minimum
+	// data-rate read rule shared by every route family.
+	MinBytesPerSecond float64
+	ReadGrace         time.Duration
+	MaxReadDuration   time.Duration
+	DefaultMaxBytes   int64
+	GraphQLMaxBytes   int64
+	MCP               mcp.RequestBodyBudget
 }
 
 // loadRequestBodySettings reads settings.web.request_body.* through get.
@@ -59,16 +61,24 @@ func loadRequestBodySettings(get func(string) any) requestBodySettings {
 		return get(requestBodyConfigPrefix + name)
 	}
 	settings := requestBodySettings{
-		ReadTimeout:     configDuration(value("read_timeout"), defaultBodyReadTimeout),
-		DefaultMaxBytes: configInt64(value("default_max_bytes"), defaultBodyMaxBytes),
-		GraphQLMaxBytes: configInt64(value("graphql_max_bytes"), defaultGraphQLBodyMaxByte),
+		MinBytesPerSecond: configFloat(value("min_data_rate"), mcp.DefaultBodyMinBytesPerSecond),
+		ReadGrace:         configDuration(value("read_grace"), mcp.DefaultBodyReadGrace),
+		MaxReadDuration:   configDuration(value("max_read_duration"), mcp.DefaultBodyMaxReadDuration),
+		DefaultMaxBytes:   configInt64(value("default_max_bytes"), defaultBodyMaxBytes),
+		GraphQLMaxBytes:   configInt64(value("graphql_max_bytes"), defaultGraphQLBodyMaxByte),
 		MCP: mcp.RequestBodyBudget{
 			MaxBytes:          configInt64(value("mcp_max_bytes"), mcp.DefaultMCPMaxBodyBytes),
 			AnonymousMaxBytes: configInt64(value("mcp_anonymous_max_bytes"), mcp.DefaultMCPAnonymousMaxBodyBytes),
 		},
 	}
-	if settings.ReadTimeout <= 0 {
-		settings.ReadTimeout = defaultBodyReadTimeout
+	if settings.MinBytesPerSecond <= 0 {
+		settings.MinBytesPerSecond = mcp.DefaultBodyMinBytesPerSecond
+	}
+	if settings.ReadGrace <= 0 {
+		settings.ReadGrace = mcp.DefaultBodyReadGrace
+	}
+	if settings.MaxReadDuration <= 0 {
+		settings.MaxReadDuration = mcp.DefaultBodyMaxReadDuration
 	}
 	if settings.DefaultMaxBytes <= 0 {
 		settings.DefaultMaxBytes = defaultBodyMaxBytes
@@ -76,7 +86,9 @@ func loadRequestBodySettings(get func(string) any) requestBodySettings {
 	if settings.GraphQLMaxBytes <= 0 {
 		settings.GraphQLMaxBytes = defaultGraphQLBodyMaxByte
 	}
-	settings.MCP.ReadTimeout = settings.ReadTimeout
+	settings.MCP.MinBytesPerSecond = settings.MinBytesPerSecond
+	settings.MCP.ReadGrace = settings.ReadGrace
+	settings.MCP.MaxReadDuration = settings.MaxReadDuration
 	return settings
 }
 
@@ -123,16 +135,23 @@ func (p *requestBodyPolicy) classify(fullPath string) requestBodyClass {
 	return bodyClassDefault
 }
 
-// budget returns the gin-level budget of a family.
+// budget returns the gin-level budget of a family. Every family shares the
+// minimum data-rate rule; its absolute cap derives from the family's byte cap
+// (tool consoles, which own their byte caps, get MaxReadDuration).
 func (p *requestBodyPolicy) budget(class requestBodyClass) httpbody.Budget {
+	budget := httpbody.Budget{
+		MinBytesPerSecond: p.settings.MinBytesPerSecond,
+		Grace:             p.settings.ReadGrace,
+		MaxDuration:       p.settings.MaxReadDuration,
+	}
 	switch class {
 	case bodyClassGraphQL:
-		return httpbody.Budget{MaxBytes: p.settings.GraphQLMaxBytes, ReadTimeout: p.settings.ReadTimeout}
+		budget.MaxBytes = p.settings.GraphQLMaxBytes
 	case bodyClassToolConsole:
-		return httpbody.Budget{ReadTimeout: p.settings.ReadTimeout}
 	default:
-		return httpbody.Budget{MaxBytes: p.settings.DefaultMaxBytes, ReadTimeout: p.settings.ReadTimeout}
+		budget.MaxBytes = p.settings.DefaultMaxBytes
 	}
+	return budget
 }
 
 // middleware enforces the budget of the matched route before any handler or
@@ -159,15 +178,6 @@ func (p *requestBodyPolicy) middleware() gin.HandlerFunc {
 		}
 		c.Next()
 	}
-}
-
-// clientAddressMiddleware records each caller's client address for the
-// per-source API key validation budget used by the MCP transport, console APIs
-// and GraphQL shared fields. It uses gin's ClientIP until the shared client
-// identity helper (library/clientip, PR #92) replaces this single source.
-func clientAddressMiddleware(c *gin.Context) {
-	c.Request = c.Request.WithContext(mcpauth.WithClientAddress(c.Request.Context(), c.ClientIP()))
-	c.Next()
 }
 
 // newHTTPServer configures connection timeouts. ReadTimeout and WriteTimeout
@@ -239,6 +249,19 @@ func configDuration(raw any, fallback time.Duration) time.Duration {
 		return time.Duration(value) * time.Second
 	case float64:
 		return time.Duration(value * float64(time.Second))
+	}
+	return fallback
+}
+
+// configFloat coerces numeric config values.
+func configFloat(raw any, fallback float64) float64 {
+	switch value := raw.(type) {
+	case float64:
+		return value
+	case int:
+		return float64(value)
+	case int64:
+		return float64(value)
 	}
 	return fallback
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	errors "github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
@@ -37,7 +38,7 @@ func HTTPMiddlewareWith(authenticator *Authenticator, next http.Handler) http.Ha
 		if active == nil {
 			active = Installed()
 		}
-		ctx := EnsureClientAddress(r.Context(), r.RemoteAddr)
+		ctx := EnsureClientIP(r.Context(), r.RemoteAddr)
 		authCtx, err := active.Authenticate(ctx, r.Header.Get("Authorization"))
 		if err != nil {
 			WriteHTTPAuthError(w, r, err)
@@ -48,11 +49,19 @@ func HTTPMiddlewareWith(authenticator *Authenticator, next http.Handler) http.Ha
 	})
 }
 
+// unavailableLog samples the console's validation-unavailable WARN lines.
+var unavailableLog = NewLogSampler(time.Minute)
+
 // WriteHTTPAuthError writes the console JSON error for an Authenticate failure:
 // 503 with Retry-After when no verdict was available, otherwise 401.
 func WriteHTTPAuthError(w http.ResponseWriter, r *http.Request, err error) {
 	if IsUnavailable(err) {
-		gmw.GetLogger(r.Context()).Warn("api key validation unavailable", zap.Error(err))
+		logger := gmw.GetLogger(r.Context())
+		if emit, suppressed := unavailableLog.Allow(time.Now()); emit {
+			logger.Warn("api key validation unavailable", zap.Int64("suppressed_since_last", suppressed), zap.Error(err))
+		} else {
+			logger.Debug("api key validation unavailable", zap.Error(err))
+		}
 		w.Header().Set("Retry-After", strconv.Itoa(RetryAfterSeconds))
 		writeJSONError(w, http.StatusServiceUnavailable, ErrValidationUnavailable.Error())
 		return

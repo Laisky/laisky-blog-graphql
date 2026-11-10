@@ -18,10 +18,16 @@ import (
 // legitimate tool call: extract_key_info materials default to 10 MB of text,
 // whose JSON encoding plus envelope stays well below 32 MiB. Anonymous callers
 // may only discover the server (initialize, tools/list, ping, notifications).
+//
+// Body reads follow a minimum data rate (like Kestrel's MinRequestBodyDataRate):
+// after a grace period the client must keep delivering at least the minimum
+// rate, and the whole read is capped absolutely.
 const (
 	DefaultMCPMaxBodyBytes          int64 = 32 << 20
 	DefaultMCPAnonymousMaxBodyBytes int64 = 1 << 20
-	DefaultMCPBodyReadTimeout             = 60 * time.Second
+	DefaultBodyMinBytesPerSecond          = 4096
+	DefaultBodyReadGrace                  = 10 * time.Second
+	DefaultBodyMaxReadDuration            = 30 * time.Minute
 )
 
 // RequestBodyBudget bounds MCP transport request bodies.
@@ -30,8 +36,12 @@ type RequestBodyBudget struct {
 	MaxBytes int64
 	// AnonymousMaxBytes caps a request without any credential.
 	AnonymousMaxBytes int64
-	// ReadTimeout bounds the time spent reading one body.
-	ReadTimeout time.Duration
+	// MinBytesPerSecond is the delivery rate a body must sustain after ReadGrace.
+	MinBytesPerSecond float64
+	// ReadGrace is the time allowed before the first bytes must arrive.
+	ReadGrace time.Duration
+	// MaxReadDuration caps one whole body read.
+	MaxReadDuration time.Duration
 }
 
 // DefaultRequestBodyBudget returns the transport defaults.
@@ -39,8 +49,15 @@ func DefaultRequestBodyBudget() RequestBodyBudget {
 	return RequestBodyBudget{
 		MaxBytes:          DefaultMCPMaxBodyBytes,
 		AnonymousMaxBytes: DefaultMCPAnonymousMaxBodyBytes,
-		ReadTimeout:       DefaultMCPBodyReadTimeout,
+		MinBytesPerSecond: DefaultBodyMinBytesPerSecond,
+		ReadGrace:         DefaultBodyReadGrace,
+		MaxReadDuration:   DefaultBodyMaxReadDuration,
 	}
+}
+
+// httpbody returns the transport budget in the shared mechanism's terms.
+func (b RequestBodyBudget) httpbody() httpbody.Budget {
+	return httpbody.Budget{MaxBytes: b.MaxBytes, MinBytesPerSecond: b.MinBytesPerSecond, Grace: b.ReadGrace, MaxDuration: b.MaxReadDuration}
 }
 
 // normalized fills unset fields with defaults and keeps the anonymous cap within the authenticated one.
@@ -53,8 +70,14 @@ func (b RequestBodyBudget) normalized() RequestBodyBudget {
 		b.AnonymousMaxBytes = defaults.AnonymousMaxBytes
 	}
 	b.AnonymousMaxBytes = min(b.AnonymousMaxBytes, b.MaxBytes)
-	if b.ReadTimeout <= 0 {
-		b.ReadTimeout = defaults.ReadTimeout
+	if b.MinBytesPerSecond <= 0 {
+		b.MinBytesPerSecond = defaults.MinBytesPerSecond
+	}
+	if b.ReadGrace <= 0 {
+		b.ReadGrace = defaults.ReadGrace
+	}
+	if b.MaxReadDuration <= 0 {
+		b.MaxReadDuration = defaults.MaxReadDuration
 	}
 	return b
 }
@@ -80,7 +103,7 @@ func withRequestBodyBudget(next http.Handler, budget RequestBodyBudget, logger l
 	}
 	budget = budget.normalized()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		result, err := httpbody.Enforce(w, r, httpbody.Budget{MaxBytes: budget.MaxBytes, ReadTimeout: budget.ReadTimeout})
+		result, err := httpbody.Enforce(w, r, budget.httpbody())
 		if err != nil {
 			writeRequestTooLarge(w, httpbody.Limit(err))
 			return
@@ -102,6 +125,7 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 	if next == nil {
 		return nil
 	}
+	unavailableLog := mcpauth.NewLogSampler(time.Minute)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header, source := resolveRequestAuthorizationHeader(r)
 		// A bearer scheme without a token (e.g. a client whose key variable is
@@ -116,13 +140,20 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 			return
 		}
 
-		// The per-source validation budget is keyed on the client address.
-		ctx := mcpauth.EnsureClientAddress(r.Context(), r.RemoteAddr)
+		// The per-source validation budget is keyed on the client identity
+		// resolved by the request-identity middleware (clientip), or the peer.
+		ctx := mcpauth.EnsureClientIP(r.Context(), r.RemoteAddr)
 		authCtx, err := resolve().Authenticate(ctx, header)
 		if err != nil {
 			if mcpauth.IsUnavailable(err) {
+				// A flood must yield one summary per interval, not a WARN per request.
 				if logger != nil {
-					logger.Warn("mcp api key validation unavailable", zap.String("auth_source", source), zap.Error(err))
+					if emit, suppressed := unavailableLog.Allow(time.Now()); emit {
+						logger.Warn("mcp api key validation unavailable", zap.String("auth_source", source),
+							zap.Int64("suppressed_since_last", suppressed), zap.Error(err))
+					} else {
+						logger.Debug("mcp api key validation unavailable", zap.String("auth_source", source), zap.Error(err))
+					}
 				}
 				writeValidationUnavailable(w)
 				return

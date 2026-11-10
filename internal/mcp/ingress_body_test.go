@@ -79,7 +79,7 @@ func TestIngressRejectsOversizedBodyBeforeAuthOrBuffering(t *testing.T) {
 func TestIngressTerminatesSlowBodyWithinReadBudget(t *testing.T) {
 	const budget = 300 * time.Millisecond
 	s, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, nil, nil, ToolsSettings{MCPPipeEnabled: true}, glog.Shared,
-		WithRequestBodyBudget(RequestBodyBudget{ReadTimeout: budget}))
+		WithRequestBodyBudget(RequestBodyBudget{ReadGrace: budget, MinBytesPerSecond: 1024}))
 	require.NoError(t, err)
 	server := httptest.NewServer(s.Handler())
 	t.Cleanup(server.Close)
@@ -117,7 +117,7 @@ func errorsAsNet(err error, target *net.Error) bool {
 func TestIngressReadBudgetDoesNotCutHeldRequests(t *testing.T) {
 	// The tool outlives the body read budget fourfold; it must still finish.
 	s, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, nil, nil, ToolsSettings{MCPPipeEnabled: true}, glog.Shared,
-		WithRequestBodyBudget(RequestBodyBudget{ReadTimeout: 200 * time.Millisecond}))
+		WithRequestBodyBudget(RequestBodyBudget{ReadGrace: 200 * time.Millisecond, MinBytesPerSecond: 1024}))
 	require.NoError(t, err)
 	s.billingReporter = nil
 	s.toolHandlers["test_session_effect"] = func(ctx context.Context, _ mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {

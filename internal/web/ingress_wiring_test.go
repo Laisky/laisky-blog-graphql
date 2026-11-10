@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp"
 	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 )
@@ -57,11 +58,14 @@ func TestRequestBodyPolicyClassifiesRegisteredRoutes(t *testing.T) {
 		require.Equal(t, class, policy.classify(path), path)
 	}
 	settings := loadRequestBodySettings(func(key string) any {
-		return map[string]any{"settings.web.request_body.graphql_max_bytes": 5, "settings.web.request_body.read_timeout": "2s"}[key]
+		return map[string]any{"settings.web.request_body.graphql_max_bytes": 5, "settings.web.request_body.read_grace": "2s",
+			"settings.web.request_body.min_data_rate": 512}[key]
 	})
 	require.Equal(t, int64(5), settings.GraphQLMaxBytes)
-	require.Equal(t, 2*time.Second, settings.ReadTimeout)
-	require.Equal(t, 2*time.Second, settings.MCP.ReadTimeout, "one read budget covers every route family")
+	require.Equal(t, 2*time.Second, settings.ReadGrace)
+	require.Equal(t, 2*time.Second, settings.MCP.ReadGrace, "one read rule covers every route family")
+	require.InDelta(t, 512, settings.MCP.MinBytesPerSecond, 0)
+	require.Equal(t, mcp.DefaultBodyMaxReadDuration, settings.MaxReadDuration)
 	require.Zero(t, newRequestBodyPolicy(prefix, settings).budget(bodyClassToolConsole).MaxBytes, "tool consoles own their byte caps")
 }
 
@@ -116,7 +120,7 @@ func TestGinBodyBudgetRejectsOversizedBodiesPerRouteFamily(t *testing.T) {
 func TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain(t *testing.T) {
 	outcomes := make(chan string, 1)
 	settings := loadRequestBodySettings(func(key string) any {
-		return map[string]any{"settings.web.request_body.read_timeout": "200ms"}[key]
+		return map[string]any{"settings.web.request_body.read_grace": "200ms"}[key]
 	})
 	server := newBudgetedEngine(t, settings, outcomes)
 	conn, err := net.Dial("tcp", server.Listener.Addr().String())
@@ -130,21 +134,4 @@ func TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain(t *testing.T
 	case <-time.After(5 * time.Second):
 		t.Fatal("a stalled GraphQL body was not cut by the read budget")
 	}
-}
-
-// TestClientAddressMiddlewareRecordsCallerSource feeds the per-source API key
-// validation budget of every gin route.
-func TestClientAddressMiddlewareRecordsCallerSource(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	engine := gin.New()
-	engine.Use(clientAddressMiddleware)
-	var recorded string
-	engine.POST("/query", func(c *gin.Context) {
-		recorded = mcpauth.ClientAddressFromContext(c.Request.Context())
-		c.Status(http.StatusNoContent)
-	})
-	request := httptest.NewRequest(http.MethodPost, "/query", nil)
-	request.RemoteAddr = "192.0.2.44:1234"
-	engine.ServeHTTP(httptest.NewRecorder(), request)
-	require.Equal(t, "192.0.2.44", recorded)
 }

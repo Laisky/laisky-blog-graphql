@@ -513,7 +513,8 @@ func (h *httpHandler) handleReorder(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		OrderedIDs []string `json:"ordered_ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	// Bounded like the sibling handlers: a reorder list is small.
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid request body")
 		return
 	}

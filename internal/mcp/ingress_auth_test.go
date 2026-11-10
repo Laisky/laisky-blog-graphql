@@ -13,7 +13,11 @@ import (
 	"testing"
 	"time"
 
+	errors "github.com/Laisky/errors/v2"
 	glog "github.com/Laisky/go-utils/v6/log"
+	"github.com/Laisky/zap"
+	"github.com/Laisky/zap/zapcore"
+	"github.com/Laisky/zap/zaptest/observer"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
@@ -266,7 +270,7 @@ func TestIngressKeepsAnonymousDiscovery(t *testing.T) {
 func TestIngressSSEStreamOutlivesReadBudget(t *testing.T) {
 	const budget = 200 * time.Millisecond
 	fixture := newOneAPITokenFixture(t, issuedIngressKey)
-	s, _ := newIngressTestServer(t, fixture, WithRequestBodyBudget(RequestBodyBudget{ReadTimeout: budget}))
+	s, _ := newIngressTestServer(t, fixture, WithRequestBodyBudget(RequestBodyBudget{ReadGrace: budget, MinBytesPerSecond: 1024}))
 	server := httptest.NewServer(s.Handler())
 	t.Cleanup(server.Close)
 
@@ -336,4 +340,29 @@ func TestIngressSourceFloodCannotLockOutOtherCallers(t *testing.T) {
 	s.Handler().ServeHTTP(response, request)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	require.Equal(t, int64(1), effects.Load())
+}
+
+// TestIngressOutageLogsOneWarnPerInterval: a flood during an outage yields one
+// sampled WARN summary per interval and DEBUG lines otherwise, never a WARN
+// line (with a full error chain) per request.
+func TestIngressOutageLogsOneWarnPerInterval(t *testing.T) {
+	core, observed := observer.New(zap.DebugLevel)
+	logger, err := glog.NewWithName("ingress-log", glog.LevelDebug, zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
+	require.NoError(t, err)
+	outage, err := mcpauth.NewAuthenticator(mcpauth.ValidatorFunc(func(context.Context, string) error {
+		return errors.New("one-api connection refused")
+	}), mcpauth.AuthenticatorOptions{})
+	require.NoError(t, err)
+	gate := withBearerAuthentication(http.NotFoundHandler(), func() *mcpauth.Authenticator { return outage }, DefaultMCPAnonymousMaxBodyBytes, logger)
+
+	for i := range 50 {
+		request := httptest.NewRequest(http.MethodPost, "/mcp/", strings.NewReader(`{}`))
+		request.Header.Set("Authorization", fmt.Sprintf("Bearer sk-outage-%d", i))
+		request.RemoteAddr = fmt.Sprintf("192.0.2.%d:1000", i+1)
+		response := httptest.NewRecorder()
+		gate.ServeHTTP(response, request)
+		require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	}
+	require.Equal(t, 1, observed.FilterLevelExact(zap.WarnLevel).Len(), "one WARN summary per interval")
+	require.Equal(t, 49, observed.FilterMessage("mcp api key validation unavailable").FilterLevelExact(zap.DebugLevel).Len())
 }

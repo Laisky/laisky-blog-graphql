@@ -16,6 +16,10 @@ import (
 // validationConfigPrefix is the settings namespace of API key validation.
 const validationConfigPrefix = "settings.mcp.auth.validation."
 
+// legacyBalanceURLKey is the older balance endpoint override, honored as the
+// one-api origin when settings.mcp.auth.validation.base_url is unset.
+const legacyBalanceURLKey = "settings.oneapi.balance_url"
+
 // Validation bounds that keep a misconfiguration from disabling revocation or flooding one-api.
 const (
 	maxPositiveTTL = time.Hour
@@ -53,6 +57,10 @@ type ValidationSettings struct {
 	PerSourceBurst         int
 	// MaxSources bounds the tracked client sources (least recently used evicted).
 	MaxSources int
+	// RevalidationRatePerSecond and RevalidationBurst reserve upstream calls
+	// for keys one-api accepted before; 0 disables the reserve.
+	RevalidationRatePerSecond float64
+	RevalidationBurst         int
 }
 
 // DefaultValidationSettings returns the production defaults: one-api validation enabled.
@@ -70,6 +78,10 @@ func DefaultValidationSettings() ValidationSettings {
 		PerSourceRatePerSecond: 0.1,
 		PerSourceBurst:         5,
 		MaxSources:             10000,
+		// 0.2/s supports about 60 active keys per 5-minute TTL; with the
+		// global budget this stays at most 266 calls per 3 minutes.
+		RevalidationRatePerSecond: 0.2,
+		RevalidationBurst:         20,
 	}
 }
 
@@ -91,6 +103,12 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 	if raw, ok := value("base_url").(string); ok {
 		settings.BaseURL = strings.TrimSpace(raw)
 	}
+	if settings.BaseURL == "" {
+		// Honor the pre-existing balance-proxy override for self-hosted one-api.
+		if raw, ok := get(legacyBalanceURLKey).(string); ok {
+			settings.BaseURL = strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(raw), "/"), OneAPITokenBalancePath)
+		}
+	}
 	settings.Timeout = clampDuration(durationValue(value("timeout"), settings.Timeout), minTimeout, maxTimeout)
 	settings.PositiveTTL = clampDuration(durationValue(value("positive_ttl"), settings.PositiveTTL), time.Second, maxPositiveTTL)
 	settings.NegativeTTL = clampDuration(durationValue(value("negative_ttl"), settings.NegativeTTL), time.Second, maxNegativeTTL)
@@ -108,6 +126,9 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 	}
 	settings.PerSourceBurst = max(1, intValue(value("per_source_burst"), settings.PerSourceBurst))
 	settings.MaxSources = max(1, intValue(value("max_sources"), settings.MaxSources))
+	// An explicit 0 disables the reserve; unset keeps the default.
+	settings.RevalidationRatePerSecond = max(0, floatValue(value("revalidation_rate_per_second"), settings.RevalidationRatePerSecond))
+	settings.RevalidationBurst = max(1, intValue(value("revalidation_burst"), settings.RevalidationBurst))
 	return settings
 }
 
@@ -115,17 +136,19 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 // validator when enabled, otherwise an explicit accept-all opt-out logged at WARN.
 func NewAuthenticatorFromSettings(settings ValidationSettings, logger logSDK.Logger) (*Authenticator, error) {
 	options := AuthenticatorOptions{
-		PositiveTTL:            settings.PositiveTTL,
-		NegativeTTL:            settings.NegativeTTL,
-		StaleGrace:             settings.StaleGrace,
-		Timeout:                settings.Timeout,
-		MaxEntries:             settings.MaxEntries,
-		MaxConcurrent:          settings.MaxConcurrent,
-		UpstreamRatePerSecond:  settings.UpstreamRatePerSecond,
-		UpstreamBurst:          settings.UpstreamBurst,
-		PerSourceRatePerSecond: settings.PerSourceRatePerSecond,
-		PerSourceBurst:         settings.PerSourceBurst,
-		MaxSources:             settings.MaxSources,
+		PositiveTTL:               settings.PositiveTTL,
+		NegativeTTL:               settings.NegativeTTL,
+		Timeout:                   settings.Timeout,
+		MaxEntries:                settings.MaxEntries,
+		MaxConcurrent:             settings.MaxConcurrent,
+		UpstreamRatePerSecond:     settings.UpstreamRatePerSecond,
+		UpstreamBurst:             settings.UpstreamBurst,
+		PerSourceRatePerSecond:    settings.PerSourceRatePerSecond,
+		PerSourceBurst:            settings.PerSourceBurst,
+		MaxSources:                settings.MaxSources,
+		StaleGrace:                disabledIfZero(settings.StaleGrace),
+		RevalidationRatePerSecond: disabledIfZeroRate(settings.RevalidationRatePerSecond),
+		RevalidationBurst:         settings.RevalidationBurst,
 	}
 	if !settings.Enabled {
 		if logger != nil {
@@ -159,6 +182,22 @@ func NewAuthenticatorFromSettings(settings ValidationSettings, logger logSDK.Log
 		)
 	}
 	return authenticator, nil
+}
+
+// disabledIfZero maps an explicit zero setting to the options' "disabled" marker.
+func disabledIfZero(value time.Duration) time.Duration {
+	if value == 0 {
+		return -1
+	}
+	return value
+}
+
+// disabledIfZeroRate maps an explicit zero rate to the options' "disabled" marker.
+func disabledIfZeroRate(value float64) float64 {
+	if value == 0 {
+		return -1
+	}
+	return value
 }
 
 // clampDuration keeps a duration within [low, high].

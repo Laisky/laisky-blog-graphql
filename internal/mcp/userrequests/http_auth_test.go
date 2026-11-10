@@ -3,6 +3,7 @@ package userrequests
 import (
 	"context"
 	"database/sql"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -80,4 +81,52 @@ func TestConsoleAPIFailsClosedWhenAuthorityUnavailable(t *testing.T) {
 	var rows int
 	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM mcp_user_requests`).Scan(&rows))
 	require.Zero(t, rows)
+}
+
+// TestReorderBodyIsBounded keeps the reorder decoder within the 1 MiB budget
+// its sibling handlers use, so an unbounded JSON array cannot be decoded.
+func TestReorderBodyIsBounded(t *testing.T) {
+	db, err := sql.Open("sqlite3", "file:"+t.Name()+"?mode=memory&cache=shared")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	svc, err := NewService(db, nil, func() time.Time { return time.Now().UTC() }, Settings{RetentionDays: DefaultRetentionDays})
+	require.NoError(t, err)
+	handler := NewCombinedHTTPHandler(svc, nil, log.Logger.Named("test"), func() []string { return nil })
+
+	reader := &repeatingReader{prefix: []byte(`{"ordered_ids":["`), fill: 'a', remaining: 4 << 20}
+	request := httptest.NewRequest(http.MethodPut, "/api/requests/reorder", reader)
+	request.Header.Set("Authorization", "Bearer sk-reorder-bound")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	require.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+	require.LessOrEqual(t, reader.read, int64(1<<20)+4096, "the decoder must stop at the 1 MiB budget")
+}
+
+// repeatingReader streams a JSON prefix followed by filler bytes and counts reads.
+type repeatingReader struct {
+	prefix    []byte
+	fill      byte
+	remaining int64
+	read      int64
+}
+
+// Read serves the prefix, then filler until remaining is spent.
+func (r *repeatingReader) Read(p []byte) (int, error) {
+	if len(r.prefix) > 0 {
+		n := copy(p, r.prefix)
+		r.prefix = r.prefix[n:]
+		r.read += int64(n)
+		return n, nil
+	}
+	if r.remaining <= 0 {
+		return 0, io.EOF
+	}
+	n := min(int64(len(p)), r.remaining)
+	for i := range p[:n] {
+		p[i] = r.fill
+	}
+	r.remaining -= n
+	r.read += n
+	return int(n), nil
 }

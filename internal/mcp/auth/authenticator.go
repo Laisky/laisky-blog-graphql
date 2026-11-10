@@ -9,7 +9,6 @@ import (
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	"github.com/Laisky/zap"
 	"golang.org/x/sync/singleflight"
-	"golang.org/x/time/rate"
 )
 
 // MaxAPIKeyLength bounds a presented API key before hashing or any upstream call.
@@ -41,7 +40,8 @@ type InsecureAcceptAllValidator struct{}
 func (InsecureAcceptAllValidator) ValidateAPIKey(context.Context, string) error { return nil }
 
 // AuthenticatorOptions bounds caching and upstream pressure of an Authenticator.
-// Zero values take the defaults of DefaultValidationSettings.
+// Zero values take the defaults of DefaultValidationSettings. For StaleGrace
+// and RevalidationRatePerSecond a negative value disables the feature.
 type AuthenticatorOptions struct {
 	// Name labels the validator in logs and wiring checks, e.g. "oneapi".
 	Name string
@@ -49,59 +49,83 @@ type AuthenticatorOptions struct {
 	PositiveTTL time.Duration
 	// NegativeTTL is how long a rejected key is refused without asking again.
 	NegativeTTL time.Duration
-	// StaleGrace extends a previous acceptance only while the authority is unavailable.
+	// StaleGrace extends a previous acceptance only while one-api itself is
+	// unavailable; this server's own budget refusals never use it.
 	StaleGrace time.Duration
-	// Timeout bounds one upstream validation.
+	// Timeout bounds one upstream call, including the wait for a slot.
 	Timeout time.Duration
-	// MaxEntries bounds each of the positive and negative caches.
+	// MaxEntries bounds each of the key caches.
 	MaxEntries int
-	// MaxConcurrent bounds simultaneous upstream validations.
+	// MaxConcurrent bounds simultaneous upstream calls.
 	MaxConcurrent int
-	// UpstreamRatePerSecond and UpstreamBurst bound upstream validations of uncached keys.
+	// UpstreamRatePerSecond and UpstreamBurst bound upstream calls for new keys
+	// and balance queries across all sources.
 	UpstreamRatePerSecond float64
 	UpstreamBurst         int
-	// PerSourceRatePerSecond and PerSourceBurst bound the upstream validations
-	// one client source may start, so it cannot drain the global budget.
+	// PerSourceRatePerSecond and PerSourceBurst bound the upstream calls one
+	// client source may start, so it cannot drain the global budget.
 	PerSourceRatePerSecond float64
 	PerSourceBurst         int
 	// MaxSources bounds how many client sources are tracked (LRU).
 	MaxSources int
+	// RevalidationRatePerSecond and RevalidationBurst reserve upstream calls
+	// for keys accepted before, which unknown-key traffic cannot spend.
+	RevalidationRatePerSecond float64
+	RevalidationBurst         int
 	// Now overrides the clock in tests.
 	Now func() time.Time
 }
 
 // UnmeteredOptions returns options for a validator that consults no external
 // authority (the accept-all opt-out and test doubles): there is no upstream to
-// protect, so the global and per-source budgets are effectively unlimited.
+// protect, so every budget is effectively unlimited.
 func UnmeteredOptions(name string) AuthenticatorOptions {
 	const unlimited = 1 << 20
 	return AuthenticatorOptions{
-		Name:                   name,
-		MaxConcurrent:          unlimited,
-		UpstreamRatePerSecond:  unlimited,
-		UpstreamBurst:          unlimited,
-		PerSourceRatePerSecond: unlimited,
-		PerSourceBurst:         unlimited,
+		Name:                      name,
+		MaxConcurrent:             unlimited,
+		UpstreamRatePerSecond:     unlimited,
+		UpstreamBurst:             unlimited,
+		PerSourceRatePerSecond:    unlimited,
+		PerSourceBurst:            unlimited,
+		RevalidationRatePerSecond: unlimited,
+		RevalidationBurst:         unlimited,
 	}
 }
 
-// positiveEntry records when a key was last accepted by the authority.
+// Timing constants of the key caches.
+const (
+	// knownKeyRetention keeps a key "known" (eligible for the reserved
+	// revalidation budget) long after its trust period, independently of the
+	// stale grace window.
+	knownKeyRetention = 24 * time.Hour
+	// unavailableRetry spaces upstream retries of one known key after one-api
+	// failed for it, so an outage cannot spend the reserve on a single key.
+	unavailableRetry = 15 * time.Second
+	// balanceTTL is how long a balance answer is reused for the same key.
+	balanceTTL = 30 * time.Second
+)
+
+// positiveEntry records when one-api last accepted a key.
 type positiveEntry struct {
 	validatedAt time.Time
+	// retryAt delays the next upstream call after one-api failed for the key.
+	retryAt time.Time
 }
 
 // Authenticator is the single credential gate shared by every MCP entrypoint:
-// it parses a bearer, validates it with an authoritative Validator, and caches
-// the verdict by key hash. Only its results satisfy FromContext.
+// it parses a bearer, validates it with an authoritative Validator through the
+// UpstreamGate, and caches the verdict by key hash. Only its results satisfy
+// FromContext. It also serves one-api balance queries through the same gate.
 type Authenticator struct {
 	validator Validator
 	opts      AuthenticatorOptions
 	positive  *ttlCache[positiveEntry]
 	negative  *ttlCache[struct{}]
+	balances  *ttlCache[Balance]
 	flights   singleflight.Group
-	slots     chan struct{}
-	limiter   *rate.Limiter
-	sources   *sourceBudgets
+	gate      *UpstreamGate
+	staleLog  *LogSampler
 }
 
 // NewAuthenticator builds an Authenticator around an authoritative validator.
@@ -109,31 +133,48 @@ func NewAuthenticator(validator Validator, opts AuthenticatorOptions) (*Authenti
 	if validator == nil {
 		return nil, errors.New("api key validator is required")
 	}
+	opts = normalizeOptions(opts)
+	return &Authenticator{
+		validator: validator,
+		opts:      opts,
+		positive:  newTTLCache[positiveEntry](opts.MaxEntries),
+		negative:  newTTLCache[struct{}](opts.MaxEntries),
+		balances:  newTTLCache[Balance](opts.MaxEntries),
+		gate:      newUpstreamGate(opts),
+		staleLog:  NewLogSampler(time.Minute),
+	}, nil
+}
+
+// normalizeOptions applies defaults to zero values and turns the negative
+// "disabled" markers into an effective zero.
+func normalizeOptions(opts AuthenticatorOptions) AuthenticatorOptions {
 	defaults := DefaultValidationSettings()
 	opts.PositiveTTL = durationOrDefault(opts.PositiveTTL, defaults.PositiveTTL)
 	opts.NegativeTTL = durationOrDefault(opts.NegativeTTL, defaults.NegativeTTL)
-	opts.StaleGrace = durationOrDefault(opts.StaleGrace, defaults.StaleGrace)
 	opts.Timeout = durationOrDefault(opts.Timeout, defaults.Timeout)
-	if opts.MaxEntries <= 0 {
-		opts.MaxEntries = defaults.MaxEntries
+	switch {
+	case opts.StaleGrace < 0:
+		opts.StaleGrace = 0
+	case opts.StaleGrace == 0:
+		opts.StaleGrace = defaults.StaleGrace
 	}
-	if opts.MaxConcurrent <= 0 {
-		opts.MaxConcurrent = defaults.MaxConcurrent
+	switch {
+	case opts.RevalidationRatePerSecond < 0:
+		opts.RevalidationRatePerSecond = 0
+	case opts.RevalidationRatePerSecond == 0:
+		opts.RevalidationRatePerSecond = defaults.RevalidationRatePerSecond
 	}
+	opts.MaxEntries = intOrDefault(opts.MaxEntries, defaults.MaxEntries)
+	opts.MaxConcurrent = intOrDefault(opts.MaxConcurrent, defaults.MaxConcurrent)
+	opts.UpstreamBurst = intOrDefault(opts.UpstreamBurst, defaults.UpstreamBurst)
+	opts.PerSourceBurst = intOrDefault(opts.PerSourceBurst, defaults.PerSourceBurst)
+	opts.MaxSources = intOrDefault(opts.MaxSources, defaults.MaxSources)
+	opts.RevalidationBurst = intOrDefault(opts.RevalidationBurst, defaults.RevalidationBurst)
 	if opts.UpstreamRatePerSecond <= 0 {
 		opts.UpstreamRatePerSecond = defaults.UpstreamRatePerSecond
 	}
-	if opts.UpstreamBurst <= 0 {
-		opts.UpstreamBurst = defaults.UpstreamBurst
-	}
 	if opts.PerSourceRatePerSecond <= 0 {
 		opts.PerSourceRatePerSecond = defaults.PerSourceRatePerSecond
-	}
-	if opts.PerSourceBurst <= 0 {
-		opts.PerSourceBurst = defaults.PerSourceBurst
-	}
-	if opts.MaxSources <= 0 {
-		opts.MaxSources = defaults.MaxSources
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -141,16 +182,7 @@ func NewAuthenticator(validator Validator, opts AuthenticatorOptions) (*Authenti
 	if opts.Name == "" {
 		opts.Name = "custom"
 	}
-
-	return &Authenticator{
-		validator: validator,
-		opts:      opts,
-		positive:  newTTLCache[positiveEntry](opts.MaxEntries),
-		negative:  newTTLCache[struct{}](opts.MaxEntries),
-		slots:     make(chan struct{}, opts.MaxConcurrent),
-		limiter:   rate.NewLimiter(rate.Limit(opts.UpstreamRatePerSecond), opts.UpstreamBurst),
-		sources:   newSourceBudgets(opts.PerSourceRatePerSecond, opts.PerSourceBurst, opts.MaxSources),
-	}, nil
+	return opts
 }
 
 // ValidatorName reports which validator the authenticator consults.
@@ -173,8 +205,9 @@ func (a *Authenticator) Validator() Validator {
 // only when the credential authority accepts the key. It returns
 // ErrMissingAuthorization for an absent header, ErrInvalidAuthorization for a
 // malformed one, ErrCredentialRejected for a refused key, and
-// ErrValidationUnavailable when no verdict can be obtained; a nil receiver
-// fails closed with ErrValidationUnavailable.
+// ErrValidationUnavailable when no verdict can be obtained (with
+// ErrUpstreamThrottled when this server's own budget refused the call). A nil
+// receiver fails closed with ErrValidationUnavailable.
 func (a *Authenticator) Authenticate(ctx context.Context, header string) (*Context, error) {
 	candidate, err := parseAuthorizationHeader(header)
 	if err != nil {
@@ -188,37 +221,53 @@ func (a *Authenticator) Authenticate(ctx context.Context, header string) (*Conte
 	}
 
 	now := a.opts.Now()
-	if entry, ok := a.positive.get(candidate.APIKeyHash, now); ok && now.Sub(entry.validatedAt) < a.opts.PositiveTTL {
+	entry, known := a.positive.get(candidate.APIKeyHash, now)
+	if known && now.Sub(entry.validatedAt) < a.opts.PositiveTTL {
 		return markVerified(candidate), nil
 	}
 	if _, rejected := a.negative.get(candidate.APIKeyHash, now); rejected {
 		return nil, errors.WithStack(ErrCredentialRejected)
 	}
+	if known && now.Before(entry.retryAt) {
+		// one-api failed for this key moments ago; do not ask again yet.
+		return a.staleOr(ctx, candidate, entry, now, errors.Wrap(ErrValidationUnavailable, "one-api was unavailable moments ago"))
+	}
 
-	lookupErr := a.lookup(ctx, candidate)
+	class := callNewKey
+	if known {
+		class = callRevalidation
+	}
+	lookupErr := a.lookup(ctx, candidate, class)
 	switch {
 	case lookupErr == nil:
 		return markVerified(candidate), nil
-	case errors.Is(lookupErr, ErrCredentialRejected):
+	case errors.Is(lookupErr, ErrCredentialRejected), errors.Is(lookupErr, ErrUpstreamThrottled), !known:
+		// A refusal by this server's own budget never grants stale-if-error.
 		return nil, errors.WithStack(lookupErr)
 	}
+	return a.staleOr(ctx, candidate, entry, a.opts.Now(), lookupErr)
+}
 
-	// Stale-if-error: only a key the authority accepted within the grace window
-	// survives an outage; a never-seen key fails closed.
-	if _, ok := a.positive.get(candidate.APIKeyHash, a.opts.Now()); ok {
-		gmw.GetLogger(ctx).Warn("api key authority unavailable; serving recent validation",
-			zap.String("key_suffix", candidate.MaskedKey()),
-			zap.Error(lookupErr),
-		)
-		return markVerified(candidate), nil
+// staleOr serves a key one-api accepted within PositiveTTL+StaleGrace while
+// one-api itself is unavailable, and otherwise returns cause.
+func (a *Authenticator) staleOr(ctx context.Context, candidate *Context, entry positiveEntry, now time.Time, cause error) (*Context, error) {
+	if a.opts.StaleGrace <= 0 || now.Sub(entry.validatedAt) >= a.opts.PositiveTTL+a.opts.StaleGrace {
+		return nil, errors.WithStack(cause)
 	}
-	return nil, errors.WithStack(lookupErr)
+	logger := gmw.GetLogger(ctx)
+	if emit, suppressed := a.staleLog.Allow(now); emit {
+		logger.Warn("one-api unavailable; serving recent api key validations",
+			zap.Int64("suppressed_since_last", suppressed), zap.Error(cause))
+	} else {
+		logger.Debug("one-api unavailable; serving recent api key validation", zap.String("key_suffix", candidate.MaskedKey()))
+	}
+	return markVerified(candidate), nil
 }
 
 // lookup coalesces concurrent validations of the same key into one upstream call.
-func (a *Authenticator) lookup(ctx context.Context, candidate *Context) error {
-	results := a.flights.DoChan(candidate.APIKeyHash, func() (any, error) {
-		return nil, a.validateUpstream(ctx, candidate)
+func (a *Authenticator) lookup(ctx context.Context, candidate *Context, class callClass) error {
+	results := a.flights.DoChan("validate:"+candidate.APIKeyHash, func() (any, error) {
+		return nil, a.validateUpstream(ctx, candidate, class)
 	})
 	select {
 	case result := <-results:
@@ -228,14 +277,11 @@ func (a *Authenticator) lookup(ctx context.Context, candidate *Context) error {
 	}
 }
 
-// validateUpstream asks the authority once, within the per-source, global,
-// concurrency and time budgets, and records the verdict. Shared by every
-// coalesced caller, it is detached from the first caller's cancellation. Only
-// a call that is about to start is charged: cache hits and coalesced waiters
-// never reach the budgets, and a source over its own budget is refused without
-// spending the global one.
-func (a *Authenticator) validateUpstream(parent context.Context, candidate *Context) error {
-	logger := gmw.GetLogger(parent)
+// validateUpstream asks the authority once, through the gate's budgets, and
+// records the verdict. Shared by every coalesced caller, it is detached from
+// the first caller's cancellation. Only a call that is about to start is
+// charged: cache hits and coalesced waiters never reach the gate.
+func (a *Authenticator) validateUpstream(parent context.Context, candidate *Context, class callClass) error {
 	key := candidate.APIKeyHash
 	now := a.opts.Now()
 	if entry, ok := a.positive.get(key, now); ok && now.Sub(entry.validatedAt) < a.opts.PositiveTTL {
@@ -244,40 +290,104 @@ func (a *Authenticator) validateUpstream(parent context.Context, candidate *Cont
 	if _, rejected := a.negative.get(key, now); rejected {
 		return errors.WithStack(ErrCredentialRejected)
 	}
-	reservation, ok := a.sources.reserve(sourceKey(ClientAddressFromContext(parent)), now)
-	if !ok {
-		return errors.Wrap(ErrValidationUnavailable, "api key validation budget of this client source exhausted")
-	}
-	if !a.limiter.AllowN(now, 1) {
-		reservation.CancelAt(now)
-		return errors.Wrap(ErrValidationUnavailable, "api key validation rate exceeded")
-	}
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), a.opts.Timeout)
 	defer cancel()
-	select {
-	case a.slots <- struct{}{}:
-		defer func() { <-a.slots }()
-	case <-ctx.Done():
-		return errors.Wrap(errors.Join(ErrValidationUnavailable, ctx.Err()), "wait for an api key validation slot")
-	}
-
-	err := a.validator.ValidateAPIKey(ctx, candidate.APIKey)
-	now = a.opts.Now()
-	switch {
-	case err == nil:
-		a.negative.remove(key)
-		a.positive.put(key, positiveEntry{validatedAt: now}, now.Add(a.opts.PositiveTTL+a.opts.StaleGrace))
-		logger.Debug("api key validated", zap.String("key_suffix", candidate.MaskedKey()))
-		return nil
-	case errors.Is(err, ErrCredentialRejected):
-		a.positive.remove(key)
-		a.negative.put(key, struct{}{}, now.Add(a.opts.NegativeTTL))
+	release, err := a.gate.admit(ctx, class)
+	if err != nil {
 		return errors.WithStack(err)
-	case errors.Is(err, ErrValidationUnavailable):
+	}
+	defer release()
+
+	err = a.validator.ValidateAPIKey(ctx, candidate.APIKey)
+	a.recordVerdict(key, err)
+	switch {
+	case err == nil, errors.Is(err, ErrCredentialRejected), errors.Is(err, ErrValidationUnavailable):
 		return errors.WithStack(err)
 	default:
 		return errors.Wrap(errors.Join(ErrValidationUnavailable, err), "validate api key")
+	}
+}
+
+// recordVerdict stores the outcome of one upstream call for key.
+func (a *Authenticator) recordVerdict(key string, err error) {
+	now := a.opts.Now()
+	switch {
+	case err == nil:
+		a.negative.remove(key)
+		a.positive.put(key, positiveEntry{validatedAt: now}, a.positiveExpiry(now))
+	case errors.Is(err, ErrCredentialRejected):
+		a.positive.remove(key)
+		a.balances.remove(key)
+		a.negative.put(key, struct{}{}, now.Add(a.opts.NegativeTTL))
+	default:
+		if entry, ok := a.positive.get(key, now); ok {
+			entry.retryAt = now.Add(unavailableRetry)
+			a.positive.put(key, entry, a.positiveExpiry(entry.validatedAt))
+		}
+	}
+}
+
+// positiveExpiry is when an acceptance at validatedAt stops being "known".
+func (a *Authenticator) positiveExpiry(validatedAt time.Time) time.Time {
+	return validatedAt.Add(a.opts.PositiveTTL + max(a.opts.StaleGrace, knownKeyRetention))
+}
+
+// Balance returns the one-api quota of apiKey and validates the key in the
+// same call. Answers are reused for a short time per key hash, and every
+// upstream call is charged to the caller's per-source and the global budget.
+// It fails like Authenticate: ErrCredentialRejected or ErrValidationUnavailable.
+func (a *Authenticator) Balance(ctx context.Context, apiKey string) (Balance, error) {
+	candidate, err := parseAuthorizationHeader("Bearer " + apiKey)
+	if err != nil {
+		return Balance{}, errors.WithStack(err)
+	}
+	if len(candidate.APIKey) > MaxAPIKeyLength {
+		return Balance{}, errors.Wrap(ErrInvalidAuthorization, "api key exceeds the maximum length")
+	}
+	if a == nil {
+		return Balance{}, errors.Wrap(ErrValidationUnavailable, "no api key authenticator is installed")
+	}
+	fetcher, ok := a.validator.(BalanceValidator)
+	if !ok {
+		return Balance{}, errors.Wrap(ErrValidationUnavailable, "the configured validator reports no balance")
+	}
+
+	key := candidate.APIKeyHash
+	now := a.opts.Now()
+	if _, rejected := a.negative.get(key, now); rejected {
+		return Balance{}, errors.WithStack(ErrCredentialRejected)
+	}
+	if balance, cached := a.balances.get(key, now); cached {
+		return balance, nil
+	}
+
+	results := a.flights.DoChan("balance:"+key, func() (any, error) {
+		callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.opts.Timeout)
+		defer cancel()
+		release, err := a.gate.admit(callCtx, callNewKey)
+		if err != nil {
+			return Balance{}, errors.WithStack(err)
+		}
+		defer release()
+
+		balance, err := fetcher.FetchBalance(callCtx, candidate.APIKey)
+		a.recordVerdict(key, err)
+		if err != nil {
+			return Balance{}, errors.WithStack(err)
+		}
+		a.balances.put(key, balance, a.opts.Now().Add(balanceTTL))
+		return balance, nil
+	})
+	select {
+	case result := <-results:
+		if result.Err != nil {
+			return Balance{}, errors.WithStack(result.Err)
+		}
+		balance, _ := result.Val.(Balance)
+		return balance, nil
+	case <-ctx.Done():
+		return Balance{}, errors.Wrap(errors.Join(ErrValidationUnavailable, ctx.Err()), "wait for one-api balance")
 	}
 }
 
@@ -289,6 +399,14 @@ func markVerified(candidate *Context) *Context {
 
 // durationOrDefault keeps positive durations and falls back otherwise.
 func durationOrDefault(value, fallback time.Duration) time.Duration {
+	if value > 0 {
+		return value
+	}
+	return fallback
+}
+
+// intOrDefault keeps positive integers and falls back otherwise.
+func intOrDefault(value, fallback int) int {
 	if value > 0 {
 		return value
 	}

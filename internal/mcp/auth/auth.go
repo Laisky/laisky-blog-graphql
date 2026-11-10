@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	errors "github.com/Laisky/errors/v2"
-	gmw "github.com/Laisky/gin-middlewares/v7"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/ctxkeys"
 	"github.com/Laisky/laisky-blog-graphql/library"
@@ -190,11 +189,8 @@ func FromContextOrHeader(ctx context.Context, header string) (*Context, error) {
 		return auth, nil
 	}
 
-	if ClientAddressFromContext(ctx) == "" {
-		if ginCtx, ok := gmw.GetGinCtxFromStdCtx(ctx); ok && ginCtx != nil && ginCtx.Request != nil {
-			ctx = WithClientAddress(ctx, ginCtx.ClientIP())
-		}
-	}
+	// The client source of the validation budget comes from clientip.FromContext,
+	// which also reads the gin context GraphQL resolvers run in.
 	authenticated, err := Authenticate(ctx, header)
 	if err != nil {
 		return nil, errors.WithStack(err)

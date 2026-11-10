@@ -10,6 +10,9 @@ import (
 
 	gconfig "github.com/Laisky/go-config/v2"
 	"github.com/stretchr/testify/require"
+
+	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 )
 
 // TestValidateOneapiAPIKey_Success verifies the resolver can validate a OneAPI key and parse quota response.
@@ -39,6 +42,7 @@ func TestValidateOneapiAPIKey_Success(t *testing.T) {
 	t.Cleanup(func() {
 		gconfig.Shared.Set("settings.oneapi.balance_url", old)
 	})
+	installAuthenticatorFromConfig(t)
 
 	r := &QueryResolver{}
 	quota, err := r.ValidateOneapiAPIKey(context.Background(), apiKey)
@@ -62,6 +66,7 @@ func TestValidateOneapiAPIKey_Non200(t *testing.T) {
 	t.Cleanup(func() {
 		gconfig.Shared.Set("settings.oneapi.balance_url", old)
 	})
+	installAuthenticatorFromConfig(t)
 
 	r := &QueryResolver{}
 	quota, err := r.ValidateOneapiAPIKey(context.Background(), apiKey)
@@ -90,6 +95,7 @@ func TestValidateOneapiAPIKey_Unsuccessful(t *testing.T) {
 	t.Cleanup(func() {
 		gconfig.Shared.Set("settings.oneapi.balance_url", old)
 	})
+	installAuthenticatorFromConfig(t)
 
 	r := &QueryResolver{}
 	quota, err := r.ValidateOneapiAPIKey(context.Background(), apiKey)
@@ -119,6 +125,7 @@ func TestValidateOneapiApiKey_BackCompat(t *testing.T) {
 	t.Cleanup(func() {
 		gconfig.Shared.Set("settings.oneapi.balance_url", old)
 	})
+	installAuthenticatorFromConfig(t)
 
 	r := &QueryResolver{}
 	quota, err := r.ValidateOneapiApiKey(context.Background(), apiKey)
@@ -126,4 +133,14 @@ func TestValidateOneapiApiKey_BackCompat(t *testing.T) {
 	require.NotNil(t, quota)
 	require.Equal(t, 1.0, quota.RemainQuota)
 	require.Equal(t, 2.0, quota.UsedQuota)
+}
+
+// installAuthenticatorFromConfig installs the production authenticator built
+// from the current config, so the resolver reaches the fixture through the
+// shared one-api gate exactly as in production (legacy balance_url override).
+func installAuthenticatorFromConfig(t *testing.T) {
+	t.Helper()
+	authenticator, err := mcpauth.NewAuthenticatorFromSettings(mcpauth.LoadValidationSettingsFromConfig(), nil)
+	require.NoError(t, err)
+	authtest.Swap(t, authenticator)
 }

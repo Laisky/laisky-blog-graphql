@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 // fakeClock is a manually advanced clock for cache expiry tests.
@@ -161,7 +162,7 @@ func TestAuthenticatorBoundsUpstreamCallsUnderRandomBearerFlood(t *testing.T) {
 
 	rejected, unavailable := 0, 0
 	for i := range 500 {
-		ctx := WithClientAddress(context.Background(), fmt.Sprintf("10.%d.%d.1", i/256, i%256))
+		ctx := clientip.WithIP(context.Background(), fmt.Sprintf("10.%d.%d.1", i/256, i%256))
 		_, err := authenticator.Authenticate(ctx, fmt.Sprintf("Bearer sk-flood-%04d", i))
 		switch {
 		case errors.Is(err, ErrCredentialRejected):
@@ -186,13 +187,13 @@ func TestAuthenticatorSourceFloodCannotStarveOtherSources(t *testing.T) {
 		UpstreamRatePerSecond: 0.001, UpstreamBurst: 20, PerSourceRatePerSecond: 0.001, PerSourceBurst: 5,
 	})
 
-	attacker := WithClientAddress(context.Background(), "203.0.113.7:4711")
+	attacker := clientip.WithIP(context.Background(), "203.0.113.7")
 	for i := range 200 {
 		_, err := authenticator.Authenticate(attacker, fmt.Sprintf("Bearer sk-spray-%04d", i))
 		require.Error(t, err)
 	}
 
-	victim := WithClientAddress(context.Background(), "198.51.100.9:443")
+	victim := clientip.WithIP(context.Background(), "198.51.100.9")
 	authCtx, err := authenticator.Authenticate(victim, "Bearer sk-valid-elsewhere")
 	require.NoError(t, err, "another source's never-seen valid key must still validate")
 	require.True(t, authCtx.Verified())
@@ -204,16 +205,16 @@ func TestAuthenticatorSourceFloodCannotStarveOtherSources(t *testing.T) {
 
 // TestAuthenticatorSourceBudgetsGroupIPv6By64 treats one /64 as one source.
 func TestAuthenticatorSourceBudgetsGroupIPv6By64(t *testing.T) {
-	require.Equal(t, "2001:db8:1:2::/64", sourceKey("[2001:db8:1:2::1]:443"))
+	require.Equal(t, "2001:db8:1:2::/64", sourceKey("2001:db8:1:2::1"))
 	require.Equal(t, "2001:db8:1:2::/64", sourceKey("2001:db8:1:2:ffff:ffff:ffff:ffff"))
-	require.Equal(t, "192.0.2.1", sourceKey("[::ffff:192.0.2.1]:80"))
+	require.Equal(t, "192.0.2.1", sourceKey("::ffff:192.0.2.1"))
 	require.Equal(t, unknownSource, sourceKey(""))
 	require.Equal(t, unknownSource, sourceKey("not-an-ip"))
 
 	authority := &scriptedAuthority{verdict: map[string]error{}}
 	authenticator, _ := newScriptedAuthenticator(t, authority, AuthenticatorOptions{PerSourceRatePerSecond: 0.001, PerSourceBurst: 2})
 	for i, address := range []string{"2001:db8:1:2::1", "2001:db8:1:2::2", "2001:db8:1:2::3", "2001:db8:1:3::1"} {
-		_, err := authenticator.Authenticate(WithClientAddress(context.Background(), address), fmt.Sprintf("Bearer sk-v6-%d", i))
+		_, err := authenticator.Authenticate(clientip.WithIP(context.Background(), address), fmt.Sprintf("Bearer sk-v6-%d", i))
 		require.Error(t, err)
 	}
 	require.Equal(t, int64(3), authority.calls.Load(), "the third address of the same /64 is over budget; the next /64 is not")
@@ -225,11 +226,11 @@ func TestAuthenticatorSourceBudgetsStayBounded(t *testing.T) {
 	authority := &scriptedAuthority{verdict: map[string]error{}}
 	authenticator, _ := newScriptedAuthenticator(t, authority, AuthenticatorOptions{MaxSources: 50, UpstreamBurst: 10000})
 	for i := range 2000 {
-		ctx := WithClientAddress(context.Background(), fmt.Sprintf("10.1.%d.%d", i/256, i%256))
+		ctx := clientip.WithIP(context.Background(), fmt.Sprintf("10.1.%d.%d", i/256, i%256))
 		_, err := authenticator.Authenticate(ctx, fmt.Sprintf("Bearer sk-unique-%05d", i))
 		require.ErrorIs(t, err, ErrCredentialRejected)
 	}
-	require.LessOrEqual(t, authenticator.sources.buckets.sizeForTest(), 50)
+	require.LessOrEqual(t, authenticator.gate.sources.buckets.sizeForTest(), 50)
 }
 
 // TestAuthenticatorCacheHitsDoNotChargeSourceBudget charges a source only when
@@ -238,7 +239,7 @@ func TestAuthenticatorCacheHitsDoNotChargeSourceBudget(t *testing.T) {
 	authority := &scriptedAuthority{verdict: map[string]error{"sk-known": nil, "sk-next": nil, "sk-burst": nil}, gate: make(chan struct{})}
 	close(authority.gate)
 	authenticator, _ := newScriptedAuthenticator(t, authority, AuthenticatorOptions{PerSourceRatePerSecond: 0.001, PerSourceBurst: 4})
-	source := WithClientAddress(context.Background(), "192.0.2.10")
+	source := clientip.WithIP(context.Background(), "192.0.2.10")
 
 	_, err := authenticator.Authenticate(source, "Bearer sk-known")
 	require.NoError(t, err)
@@ -344,6 +345,11 @@ func TestOneAPITokenValidatorClassifiesAuthorityStatuses(t *testing.T) {
 			http.Redirect(w, r, "https://attacker.invalid/collect", http.StatusFound)
 			return
 		}
+		if statuses[key] == http.StatusOK {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"remain_quota":7,"used_quota":3,"unlimited_quota":false}}`))
+			return
+		}
 		w.WriteHeader(statuses[key])
 	}))
 	t.Cleanup(server.Close)
@@ -352,6 +358,9 @@ func TestOneAPITokenValidatorClassifiesAuthorityStatuses(t *testing.T) {
 	require.Equal(t, server.URL+OneAPITokenBalancePath, validator.Endpoint())
 
 	require.NoError(t, validator.ValidateAPIKey(context.Background(), "sk-ok"))
+	balance, err := validator.FetchBalance(context.Background(), "sk-ok")
+	require.NoError(t, err)
+	require.Equal(t, Balance{RemainQuota: 7, UsedQuota: 3}, balance)
 	for _, key := range []string{"sk-unknown", "sk-subnet"} {
 		require.ErrorIs(t, validator.ValidateAPIKey(context.Background(), key), ErrCredentialRejected, key)
 	}
@@ -440,9 +449,9 @@ func TestTTLCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	require.False(t, ok, "expired entries are never served")
 }
 
-func TestEnsureClientAddressPrefersOuterLayer(t *testing.T) {
-	require.Equal(t, "192.0.2.5:9999", ClientAddressFromContext(EnsureClientAddress(context.Background(), "192.0.2.5:9999")))
-	recorded := WithClientAddress(context.Background(), "198.51.100.1")
-	require.Equal(t, "198.51.100.1", ClientAddressFromContext(EnsureClientAddress(recorded, "192.0.2.5:9999")),
-		"an address recorded by the gin layer wins over the peer address")
+func TestEnsureClientIPPrefersRequestIdentity(t *testing.T) {
+	require.Equal(t, "192.0.2.5", clientip.FromContext(EnsureClientIP(context.Background(), "192.0.2.5:9999")))
+	recorded := clientip.WithIP(context.Background(), "198.51.100.1")
+	require.Equal(t, "198.51.100.1", clientip.FromContext(EnsureClientIP(recorded, "192.0.2.5:9999")),
+		"the identity resolved by the request-identity middleware wins over the peer address")
 }
