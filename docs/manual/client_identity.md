@@ -140,9 +140,13 @@ Every nginx vhost that proxies to this service must set:
 ```nginx
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; # or $remote_addr to overwrite
 proxy_set_header X-Real-IP $remote_addr;
-proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Forwarded-Host $http_host;
 proxy_set_header X-Forwarded-Proto $scheme; # or https behind a TLS-terminating CDN
 ```
+
+`$http_host` keeps a non-default port, which the service needs to build redirect
+bases, the GitHub callback and the WebAuthn origin; `$host` drops it. Site and
+Turnstile matching ignore the port either way.
 
 nginx inherits `proxy_set_header` from an enclosing level only when the current
 level defines none, so repeat them in every `location` that sets its own headers.
