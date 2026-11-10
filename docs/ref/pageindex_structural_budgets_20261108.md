@@ -25,6 +25,25 @@ markers on a line, or a list item prefix over 256 bytes) or link-reference layou
 super-linear to a linear ATX scanner (M1, M2, M5). The previous extractor is kept
 as a test oracle over the repository's own documents.
 
+### Block-level work (review of #96, 2026-11-10)
+
+| Ref | Source | Fact and application |
+| --- | --- | --- |
+| M6 | Local measurement, heading-only goldmark parse, 2 MB inputs | Block structure alone still costs seconds and hundreds of MB: a tab-indented list 254 deep 3.7-5.5 s and 801 MB; `"- a\n"` 0.8-1.8 s and 543 MB; `"*\n"` 0.6-1.0 s and 441 MB; `"#\n"` 0.46 s and 315 MB; items at depth 4 0.5-0.8 s and 370 MB; one list item followed by blank lines 1.4-1.7 s and 520 MB; `"a\n\n"` 0.66-0.9 s and 330 MB. Plain prose of the same size: 33-50 ms and 11 MB. Per unit: about 1 KB of AST per list item, 470 B per paragraph, 300 B per heading, 320-750 B per content line (fenced, quoted, list continuation), 250 B per blank line inside an open list; blank lines at top level are free. |
+| M7 | goldmark v1.8.6 `parser.Parse` | `Parse` takes no context, so neither cancellation nor a deadline can stop a parse in progress; bounding its input before the call is the only control. |
+
+Applied: one linear pre-scan classifies lines (fenced and indented code, HTML blocks
+of the seven CommonMark types, thematic breaks, ATX and setext headings, list items,
+block quotes, paragraphs), measures indentation in columns with tab stops of 4, and
+sends a document to the linear scanner when a container line nests deeper than 32,
+the summed nesting exceeds 400,000, or it has more than 40,000 blocks or 80,000
+content lines. Under those bounds a 2 MB document costs at most about 60 ms and 40 MB.
+The linear scanner renders titles with goldmark, one heading at a time and with the
+document's link-reference definitions, and matches goldmark on all 108 documents of
+the repository corpus. Inline parsing is limited to 256 KiB of heading source and
+32 Ki markup characters per document, because 2,000 headings of 1 KiB of `[` cost
+1 s and 114 MB otherwise; with the limits, at most about 160 ms.
+
 ## Token counting (tiktoken-go)
 
 | Ref | Source | Fact and application |
@@ -44,8 +63,16 @@ token, which keeps estimates conservative.
 | S1 | [`library/throttle`](../../library/throttle/throttle.go) (Telegram alert admission) | The repository's established admission pattern: lazily refilled token buckets, one shared and one per key, admitted in one step; a refusal spends nothing; a bucket that has refilled completely is dropped because dropping it changes no decision. |
 | S2 | [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate#Reservation.CancelAt) | Reservation and cancellation semantics for token buckets; a refund must not mint capacity that later reservations already consumed. |
 
+| S3 | [Linux ext4 reserved blocks](https://www.kernel.org/doc/html/latest/admin-guide/ext4.html) (`resuid`/`resgid`, `reserved` space) | A standard way to keep a shared pool usable for a protected class: the last share of capacity is only for that class, while the total stays fixed. |
+| S4 | [OpenAI API error codes](https://developers.openai.com/api/docs/guides/error-codes) (checked 2026-11-10) | Rate-limit 429s and 500/503 are retried after `Retry-After` or with exponential backoff; 400 and 401 are request or credential problems and 403 an unsupported region, which fail again unchanged. Quota or billing 429s are not restored by retrying, so the small default attempt count bounds them too. |
+
 Applied: `SpendGovernor` keeps a call bucket and a token bucket per tenant and one
-global pair, refilled over `limits.window`. Calls reserve their estimated input
-tokens before they are sent and settle to the provider-reported total afterwards
-(debt is repaid by refill). A call that was never sent returns its operation budget
-and its tokens but keeps its call spent, which cannot mint capacity.
+global pair, refilled over `limits.window`. Every upstream request, retries included,
+reserves its estimated input tokens before it is sent and settles to the
+provider-reported total afterwards (debt is repaid by refill). A call that was never
+sent returns its operation budget and its tokens but keeps its call spent, which
+cannot mint capacity. A bucket with a request in flight is never swept, so a late
+settle charges the bucket that admitted it. The last `global_reserve_percent` of the
+global budget is reserved for tenants under one document's allowance in the window
+(S3). Only timeouts, 408, 409, 429 and 5xx are retried (S4). Tests inject the
+governor's clock, so no budget decision depends on how long a test runs.

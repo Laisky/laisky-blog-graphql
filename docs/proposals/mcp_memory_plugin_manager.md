@@ -368,7 +368,7 @@ settings:
             timeout_query: '60s'
             max_concurrency: 8 # bounded LLM-call fan-out per indexing job
             retry:
-              max_attempts: 10 # parity with upstream PageIndex defaults
+              max_attempts: 3 # upstream requests per call, each admitted by the budgets
               initial_backoff: '250ms'
               max_backoff: '8s'
             cache:
@@ -418,6 +418,7 @@ settings:
             tenant_tokens_per_window: 4000000
             global_llm_calls_per_window: 5000
             global_tokens_per_window: 20000000
+            global_reserve_percent: 20
             max_tracked_tenants: 10000
 ```
 
@@ -696,8 +697,11 @@ allowance, never raise it (issue #85; operator contract in
 | 9. Optional summarization           | `generate_node_summary` per leaf, `generate_doc_description` once                                                                                         | 5–25                 | `errgroup` + `sem`                                              |
 
 Each LLM call uses `LLM.Respond(ctx, req)` (§2.6.5), wrapped in
-`avast/retry-go/v4` with exponential backoff (`250 ms × 2^n` up to 8 s, max 10 attempts —
-parity with upstream's retry budget). Cancellation: `context.Context` propagates from the
+`avast/retry-go/v4` with exponential backoff (`250 ms × 2^n` up to 8 s) and
+`indexer.retry.max_attempts` requests per call (default 3; upstream PageIndex used 10,
+but every request is operator-paid). Only timeouts, connection failures, 408, 409, 429
+and 5xx are retried, and every retry is admitted by the same budgets as a new call
+before it is sent (§3.1). Cancellation: `context.Context` propagates from the
 MCP request through `errgroup.WithContext`; sibling LLM calls cancel on first error.
 
 ##### 2.6.4.2 Concurrency
@@ -949,12 +953,20 @@ Indexing cost is one-shot: an N-page PDF is ~8–30 LLM calls per §2.6.4.1 pipe
 (typical 200-page PDF: ~25 calls). The document shape is caller-controlled, so every
 call and token ceiling is an absolute service-side setting (`limits.*`): per indexing
 run (calls, tokens, nodes) and per rolling window for each API-key tenant and for the
-whole process. Every upstream call, for indexing and for search, is admitted against
-those budgets before it is sent; a refused leaf summary becomes a deterministic local
-summary, so an exhausted budget degrades the tree instead of failing the write.
+whole process. Every upstream request, for indexing and for search and including retries, is
+admitted against those budgets before it is sent; a refused leaf summary becomes a
+deterministic local summary, so an exhausted budget degrades the tree instead of
+failing the write. The last `limits.global_reserve_percent` of the global budget is
+reserved for tenants that have spent less than one document's allowance in the
+window, so a heavy tenant cannot starve another tenant's first document. A degraded
+tree is published with summary status `degraded` and a safe error code
+(file_search_file_summaries §4.6), re-indexed on the next write, and, when a rolling
+budget or the deadline caused it, refreshed later with bounded backoff.
 Markdown heading extraction is linear in the document size (issue #91): one newline
-index, inline parsing only inside headings, and a linear fallback scanner for nesting
-or link-reference layouts that would make goldmark's block parser super-linear. The bbolt cache (§2.6.4.3) makes any subsequent
+index, inline parsing only inside headings, and, because goldmark's parse cannot be
+interrupted, a linear pre-scan that routes any document whose predicted nesting,
+block, line or link-reference work exceeds fixed bounds to a linear scanner with the
+same heading results. The bbolt cache (§2.6.4.3) makes any subsequent
 re-index of the same bytes free, and bumping `algorithm_version` is the explicit
 invalidation handle.
 

@@ -42,11 +42,20 @@ budget that holds across repeated writes and searches while another tenant keeps
 own, the global ceiling across tenant identities, cancellation polled while Markdown
 is parsed, an empty heading that no longer crashes tree building, and heading
 extraction identical to the previous full goldmark parse on the repository's own
-documents. The timing-ratio checks of the same issues are deliberate performance
-acceptance, because a shared runner's load can distort timings:
+documents. The review follow-ups add, with fake clocks only: the global reserve
+that keeps a light tenant's first document whole while heavy tenants are refused,
+degraded publication and a single deduplicated refresh after the budget refills, a
+final `document_limit` state, debt that survives a slow call, counted and
+rate-limited refusal logs, the goldmark work bounds decided before parsing, ordinary
+documents (spaced breaks, logs in fences, indented code) kept on goldmark, the
+fallback scanner matching goldmark on the corpus and stopping at the heading cap,
+client errors not retried, and every retry admitted by the budgets. The timing-ratio
+and allocation checks of the same issues are deliberate performance acceptance,
+because a shared runner's load can distort them (their timing assertions skip under
+`-race`):
 
 ```sh
-go test -count=1 -v ./internal/mcp/memory/plugins/pageindex -run 'TestExtractHeadersDenseHeadingsScaleLinearly|TestExtractHeadersPathologicalMarkdownCostsLikePlainText|TestTokenizerCountBoundsLongRuns'
+go test -count=1 -v ./internal/mcp/memory/plugins/pageindex -run 'TestExtractHeadersDenseHeadingsScaleLinearly|TestExtractHeadersPathologicalMarkdownCostsLikePlainText|TestTokenizerCountBoundsLongRuns|TestListShapedMarkdownStaysBounded|TestTenantBudgetIndependentOfWallClock'
 ```
 
 The Telegram selections also cover cancellation after refill, overlapping

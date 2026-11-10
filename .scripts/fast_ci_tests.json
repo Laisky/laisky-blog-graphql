@@ -119,7 +119,19 @@
       "TestSpendGovernorTenantAndGlobalCeilings",
       "TestIndexMarkdownStopsWhenCanceledMidParse",
       "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
-      "TestExtractHeadersMatchesFullGoldmarkParse"
+      "TestExtractHeadersMatchesFullGoldmarkParse",
+      "TestHeavyTenantsCannotStarveLightTenant",
+      "TestSpendGovernorReservesGlobalHeadroomForLightTenants",
+      "TestBudgetDegradedTreeIsPublishedDegradedAndRefreshed",
+      "TestDocumentLimitTreeIsDegradedButFinal",
+      "TestSlowCallDebtIsNotForgiven",
+      "TestGovernorLogsRateLimitedRefusalSummary",
+      "TestGoldmarkWorkBoundsRouteBeforeParsing",
+      "TestOrdinaryDocumentsKeepGoldmark",
+      "TestLinearScannerMatchesGoldmarkOnCorpus",
+      "TestLinearScannerStopsAtHeadingCap",
+      "TestOpenAILLMDoesNotRetryClientErrors",
+      "TestEveryUpstreamAttemptIsAdmitted"
     ]
   }
 ]
