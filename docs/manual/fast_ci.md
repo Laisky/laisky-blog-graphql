@@ -37,18 +37,26 @@ and selected tests must be deliberately reviewed when changing the manifest.
 
 The user-request image selections (issues #83 and #87) cover first-frame-only
 GIF decoding with frame-count-independent allocation, the decode memory
-budget (contract coverage, rejection before allocation, queuing, header-only
-bombs), no object left without an image ref after every post-upload failure,
-quota reservation before upload, shared-object safety, expired-ref revival
-charging, the GC revival race, the orphan reconciler and its scope lock, and
-lifecycle rules preserved on shared buckets. The estimator-versus-allocation
-sweep and the PostgreSQL lock tests (`TestPostgres*` with
-`MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database) stay
-deliberate acceptance:
+budget (contract coverage, rejection before allocation, queuing, backfill
+past a large waiter, no starvation, per-identity caps, header-only bombs),
+byte-identical single-copy EXIF orientation and the hostile-IFD parser fix,
+TIFF layout parsing, no object left without an image ref after every
+post-upload failure, quota reservation before upload, no transaction held
+across uploads, the delete lease against late deletes, lost reservations,
+shared-object safety, expired-ref revival charging, the GC revival race, the
+claims-driven reconciler (crashed uploads, protected and unclaimed keys), the
+image create caps, and lifecycle rules preserved or left untouched on shared
+buckets. The estimator-versus-allocation sweep, the timing-based heavy/light
+admission test, the fuzz targets and the PostgreSQL tests (`TestPostgres*`
+with `MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database; they
+cover the pool-starvation repros and REPEATABLE READ) stay deliberate
+acceptance:
 
 ```sh
-go test -count=1 ./internal/mcp/imageproc -run TestEstimateDecodeBytesBoundsActualAllocation
-MCP_USER_REQUESTS_TEST_POSTGRES_DSN=postgres://... go test -race -count=5 ./internal/mcp/userrequests -run TestPostgres
+go test -count=1 ./internal/mcp/imageproc -run 'TestEstimateDecodeBytesBoundsActualAllocation|TestDecodeBudgetHeavyCallerCannotStallLightCaller'
+go test ./internal/mcp/imageproc -run '^$' -fuzz FuzzReadJPEGOrientation -fuzztime 30s
+go test ./internal/mcp/imageproc -run '^$' -fuzz FuzzEstimateDecodeBytes -fuzztime 30s
+MCP_USER_REQUESTS_TEST_POSTGRES_DSN=postgres://... go test -race -count=3 ./internal/mcp/userrequests -run TestPostgres
 ```
 
 The Telegram selections also cover cancellation after refill, overlapping

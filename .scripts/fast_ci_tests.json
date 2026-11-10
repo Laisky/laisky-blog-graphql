@@ -119,7 +119,14 @@
       "TestDecodeBudgetRejectsBeforeDecoding",
       "TestDecodeBudgetQueuesUntilCapacityIsReleased",
       "TestNormalizeRejectsHeaderOnlyBombsWithoutAllocating",
-      "TestNormalizeRejectsDimensionsOverContract"
+      "TestNormalizeRejectsDimensionsOverContract",
+      "TestDecodeBudgetBackfillsPastLargeWaiter",
+      "TestDecodeBudgetAgedWaiterIsNotStarved",
+      "TestDecodeBudgetCapsDecodesPerOwner",
+      "TestApplyOrientationMatchesLegacy",
+      "TestApplyOrientationAllocatesOneCopy",
+      "TestReadJPEGOrientationHostileIFD",
+      "TestParseTIFFLayout"
     ]
   },
   {
@@ -131,8 +138,14 @@
       "TestCreateWithImagesSuccessKeepsObjects",
       "TestCreateRequestWithImages_RevivingExpiredImageIsCharged",
       "TestGCExpiredImageRefsKeepsRefRevivedDuringSweep",
-      "TestReconcileImageObjectsDeletesSeededOrphans",
-      "TestReconcileImageObjectsSkipsObjectsOfOpenRequests",
+      "TestCreateWithImagesHoldsNoTransactionDuringUpload",
+      "TestCreateWithImagesLateDeleteCannotRemoveCommittedObject",
+      "TestCreateWithImagesFailsWhenReservationIsLost",
+      "TestReconcileImageObjectsDeletesCrashedUploads",
+      "TestReconcileImageObjectsKeepsProtectedKeys",
+      "TestReconcileImageObjectsNeverTouchesUnclaimedObjects",
+      "TestImageCreateLimiterCaps",
+      "TestHandleCreateImageBusyWhenCreateCapIsFull",
       "TestHandleCreateDecodeMemoryBudget"
     ]
   },
@@ -140,6 +153,7 @@
     "package": "./internal/mcp/storage",
     "tests": [
       "TestEnsureLifecyclePreservesOtherRules",
+      "TestEnsureLifecycleRefusesLossyRewrite",
       "TestMinIODeleteIsIdempotent"
     ]
   }

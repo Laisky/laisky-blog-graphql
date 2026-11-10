@@ -70,3 +70,64 @@ and `docs/proposals/get_user_request_image_support.md` §3.9.
   advisory lock, waiting if necessary"; transaction-level locks "are held
   until the current transaction ends; there is no provision for manual
   release" — https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+
+## Review follow-ups (2026-11-10)
+
+### Decoder buffers missed by the first estimator
+
+- `golang.org/x/image/tiff`: "Maximum data per pixel is 8 bytes (RGBA64)",
+  `blockMaxDataSize := int64(blockWidth) * int64(blockHeight) * 8`; LZW,
+  Deflate and CCITT blocks are read with `readBuf(r, d.buf, blockMaxDataSize)`
+  into a `bytes.Buffer` (PackBits via `unpackBits` with the same limit) —
+  https://raw.githubusercontent.com/golang/image/master/tiff/reader.go. A
+  compressed strip may therefore inflate to 8 bytes per pixel of the block
+  whatever the bit depth; doubling growth allocates up to ~4x the final size
+  in total (measured 3.5x).
+- `image/png`: a grayscale image with `tRNS` decodes to `*image.NRGBA`
+  (8-bit) or `*image.NRGBA64` (16-bit), but `DecodeConfig` stops after IHDR and
+  reports `color.GrayModel` / `color.Gray16Model` —
+  https://raw.githubusercontent.com/golang/go/master/src/image/png/reader.go.
+- `image/gif`: `uninterlace` copies the frame once more.
+- The previous EXIF orientation code allocated up to three RGBA copies and
+  boxed one `color.Color` per pixel (`src.At`); the replacement writes one copy
+  with typed accessors and is byte-identical.
+
+### Transaction isolation and locks
+
+- PostgreSQL: "a query in a repeatable read transaction sees a snapshot as of
+  the start of the first non-transaction-control statement in the
+  transaction"; "Read Committed mode starts each command with a new snapshot
+  that includes all transactions committed up to that instant" —
+  https://www.postgresql.org/docs/current/transaction-iso.html. A transaction
+  whose first statement waits on `pg_advisory_xact_lock` under REPEATABLE READ
+  therefore cannot see what the previous lock holder committed; image
+  transactions pin READ COMMITTED (`sql.TxOptions`). `mattn/go-sqlite3`
+  ignores the requested level.
+
+### Claims as a transactional outbox
+
+- Transactional outbox: the service first stores the message in its database
+  in the same transaction as the business data; a separate process forwards it
+  — https://microservices.io/patterns/data/transactional-outbox.html. Image
+  object claims follow the same idea for blob writes and deletes: the intent is
+  committed (under the scope lock) before the object store is touched, and the
+  reconciler acts only on recorded intents, never on a bucket listing.
+
+### Object store permissions (S3 / MinIO action names)
+
+- Mapping table — https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-with-s3-policy-actions.html:
+  HeadBucket requires `s3:ListBucket`; DeleteObject `s3:DeleteObject`;
+  GetBucketLocation `s3:GetBucketLocation`; PutObject `s3:PutObject`;
+  GetObject `s3:GetObject`. Lifecycle: `s3:GetLifecycleConfiguration` and
+  `s3:PutLifecycleConfiguration` (API pages
+  https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLifecycleConfiguration.html,
+  https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycleConfiguration.html).
+- Presigned URLs carry the signer's permissions —
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html.
+- MinIO uses the same action names —
+  https://docs.min.io/enterprise/aistor-object-store/administration/iam/access/;
+  its HeadBucket handler accepts `s3:ListBucket`.
+- minio-go's lifecycle model keeps one `Transition` per rule and drops
+  unknown elements, so a read-modify-write can silently change other
+  applications' rules; the configuration is now read raw and compared as an
+  order-insensitive XML tree before any write.
