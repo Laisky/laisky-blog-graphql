@@ -58,7 +58,9 @@
       "TestCloseCursorIsBoundedAfterTheReadEnds",
       "TestMonitorIndexesCoverAlertLookups",
       "TestMonitorIndexMatching",
-      "TestFindIndexPrefersTheOneThatServesLookups"
+      "TestFindIndexPrefersTheOneThatServesLookups",
+      "TestUploadFileCacheRefusalDoesNotRaceWithCaller",
+      "TestNewUploadKeepsNilArdriveNil"
     ]
   },
   {

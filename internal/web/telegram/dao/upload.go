@@ -31,10 +31,16 @@ const (
 
 var oneapiKeyRegexp = regexp.MustCompile(`^(?:laisky|sk)-[a-zA-Z0-9]{48}$`)
 
+// arweaveUploader stores raw data permanently and returns its transaction ID.
+// *arweave.Ardrive implements it; tests substitute a fake.
+type arweaveUploader interface {
+	Upload(ctx context.Context, data []byte, opts ...arweave.UploadOption) (string, error)
+}
+
 // Upload db
 type Upload struct {
 	db    mongo.DB
-	ar    *arweave.Ardrive
+	ar    arweaveUploader
 	minio *minio.Client
 }
 
@@ -44,11 +50,15 @@ func NewUpload(
 	ar *arweave.Ardrive,
 	minio *minio.Client,
 ) *Upload {
-	return &Upload{
+	upload := &Upload{
 		db:    db,
-		ar:    ar,
 		minio: minio,
 	}
+	// A nil *Ardrive stored in the interface would not compare equal to nil.
+	if ar != nil {
+		upload.ar = ar
+	}
+	return upload
 }
 
 func (d *Upload) GetUsersCol() *mongoLib.Collection {
@@ -187,7 +197,10 @@ func (d *Upload) UploadFile(ctx context.Context, cnt []byte, contentType string)
 		return fileID, errors.Wrap(err, "upload to arweave")
 	}
 
-	// also upload to minio as cache
+	// Also cache the file in minio. The goroutine outlives the request, so it
+	// uses its own variables: writing the named return err from here raced with
+	// the caller reading the result.
+	cachedFileID := fileID
 	go func() { //nolint:gosec,contextcheck // G118: goroutine intentionally outlives request to cache file in minio
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
@@ -195,9 +208,9 @@ func (d *Upload) UploadFile(ctx context.Context, cnt []byte, contentType string)
 		objkey := fmt.Sprintf(
 			"%s/%s",
 			strings.TrimSuffix(gconfig.S.GetString("settings.arweave.s3.prefix"), "/"),
-			fileID,
+			cachedFileID,
 		)
-		_, err = d.minio.PutObject(ctx,
+		if _, putErr := d.minio.PutObject(ctx,
 			gconfig.S.GetString("settings.arweave.s3.bucket"),
 			objkey,
 			bytes.NewReader(cnt),
@@ -205,9 +218,9 @@ func (d *Upload) UploadFile(ctx context.Context, cnt []byte, contentType string)
 			minio.PutObjectOptions{
 				ContentType: contentType,
 			},
-		)
-		if err != nil {
-			logger.Error("upload to minio", zap.Error(err))
+		); putErr != nil {
+			logger.Error("upload to minio", zap.String("objkey", objkey), zap.Error(putErr))
+			return
 		}
 
 		logger.Info("upload to minio", zap.String("objkey", objkey))
