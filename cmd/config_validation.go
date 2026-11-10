@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -71,6 +72,41 @@ func validateClientIdentityConfig(get configGetter, errs *[]string) {
 		"settings.web.turnstile.risk.max_tracked_clients",
 	} {
 		validateOptionalIntMin(get, key, 0, errs)
+	}
+	validateTurnstileSecretSelection(get, errs)
+}
+
+// validateTurnstileSecretSelection rejects a Turnstile configuration in which
+// a request for a host that matches no site would have no unambiguous pair:
+// several sites carry secrets, none of them is marked default, and there is no
+// global settings.web.turnstile.secret_key. The gate never falls back to "no
+// challenge" for such a host, so the operator must say which pair applies.
+func validateTurnstileSecretSelection(get configGetter, errs *[]string) {
+	if global, _ := parseStrictString(get("settings.web.turnstile.secret_key")); strings.TrimSpace(global) != "" {
+		return
+	}
+	sites := toStringMap(get("settings.web.sites"))
+	withSecret := make([]string, 0, len(sites))
+	for siteKey, siteVal := range sites {
+		siteCfg := toStringMap(siteVal)
+		if siteCfg == nil {
+			continue
+		}
+		secret, _ := parseStrictString(siteCfg["turnstile_secret_key"])
+		if strings.TrimSpace(secret) == "" {
+			continue
+		}
+		if isDefault, ok := parseStrictBool(siteCfg["default"]); ok && isDefault {
+			return
+		}
+		withSecret = append(withSecret, siteKey)
+	}
+	if len(withSecret) > 1 {
+		sort.Strings(withSecret)
+		appendValidationErrorf(errs,
+			"settings.web.sites %s all set turnstile_secret_key but none is default: true and settings.web.turnstile.secret_key is unset, "+
+				"so requests for other hosts have no unambiguous Turnstile pair; mark one site default or set the global pair",
+			strings.Join(withSecret, ", "))
 	}
 }
 

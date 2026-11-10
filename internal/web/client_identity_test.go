@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
+	blogCtl "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
@@ -26,15 +27,33 @@ const identityPasskeyStart = `mutation { UserStartPasskeyLogin { session } }`
 // enables Turnstile so every login start is risk-tracked.
 func newIdentityEngine(t *testing.T, policyConfig map[string]any) *gin.Engine {
 	t.Helper()
-	ssoGlobalsMu.Lock()
-	t.Cleanup(ssoGlobalsMu.Unlock)
-	restoreSSOConfig(t, map[string]any{
-		"settings.secret":                   ssoE2ESecret,
-		"settings.web.webauthn.origin":      ssoE2EOrigin,
-		"settings.web.webauthn.rp_id":       ssoE2ERPID,
+	return newIdentityEngineWithTurnstile(t, policyConfig, map[string]any{
 		"settings.web.turnstile.secret_key": "identity-test-turnstile-secret",
+		"settings.web.turnstile.site_key":   "",
 		"settings.web.sites":                map[string]any{},
 	})
+}
+
+// newIdentityEngineWithTurnstile is newIdentityEngine with explicit Turnstile
+// site and global settings.
+func newIdentityEngineWithTurnstile(t *testing.T, policyConfig map[string]any, turnstile map[string]any) *gin.Engine {
+	t.Helper()
+	ssoGlobalsMu.Lock()
+	t.Cleanup(ssoGlobalsMu.Unlock)
+	overrides := map[string]any{
+		"settings.secret":              ssoE2ESecret,
+		"settings.web.webauthn.origin": ssoE2EOrigin,
+		"settings.web.webauthn.rp_id":  ssoE2ERPID,
+	}
+	for key, value := range turnstile {
+		overrides[key] = value
+	}
+	restoreSSOConfig(t, overrides)
+
+	// Each test starts from an empty process-wide risk tracker, so repeated
+	// runs (-count=N) see the same thresholds.
+	blogCtl.ResetAuthChallengeTracker()
+	t.Cleanup(blogCtl.ResetAuthChallengeTracker)
 
 	policy, err := clientip.LoadPolicy(func(key string) any { return policyConfig[key] })
 	require.NoError(t, err)
@@ -51,9 +70,15 @@ func newIdentityEngine(t *testing.T, policyConfig map[string]any) *gin.Engine {
 // the request was admitted.
 func startPasskeyLogin(t *testing.T, engine *gin.Engine, remoteAddr string, headers map[string]string) string {
 	t.Helper()
+	return startPasskeyLoginOn(t, engine, "example.com", remoteAddr, headers)
+}
+
+// startPasskeyLoginOn is startPasskeyLogin for a request addressed to host.
+func startPasskeyLoginOn(t *testing.T, engine *gin.Engine, host string, remoteAddr string, headers map[string]string) string {
+	t.Helper()
 	body, err := json.Marshal(map[string]any{"query": identityPasskeyStart})
 	require.NoError(t, err)
-	request := httptest.NewRequest(http.MethodPost, "/query", bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "http://"+host+"/query", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	request.RemoteAddr = remoteAddr
 	for name, value := range headers {

@@ -23,6 +23,7 @@ import (
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/models"
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 const (
@@ -75,9 +76,11 @@ func (r *MutationResolver) UserGithubOAuthStart(ctx context.Context,
 	redirectTo *string,
 	turnstileToken *string,
 ) (*models.GithubOAuthStartResponse, error) {
-	if err := validateTurnstileTokenForLogin(ctx, turnstileToken, ""); err != nil {
+	attempt, err := admitAuthRequest(ctx, turnstileToken, loginFlow(""))
+	if err != nil {
 		return nil, turnstileGateError(err)
 	}
+	defer attempt.finish()
 
 	settings, err := loadGitHubOAuthSettings(ctx)
 	if err != nil {
@@ -368,7 +371,8 @@ func isUniqueLocalIPv6(ip net.IP) bool {
 	return len(ip) == net.IPv6len && ip[0]&0xfe == 0xfc
 }
 
-// resolveRequestBaseURL resolves scheme and host from the incoming request context.
+// resolveRequestBaseURL resolves scheme and host from the incoming request context, believing
+// X-Forwarded-Host and X-Forwarded-Proto only from a trusted proxy.
 // It accepts request context and returns an origin URL without a trailing slash.
 func resolveRequestBaseURL(ctx context.Context) string {
 	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
@@ -376,20 +380,13 @@ func resolveRequestBaseURL(ctx context.Context) string {
 		return ""
 	}
 
-	host := strings.TrimSpace(gctx.Request.Header.Get("X-Forwarded-Host"))
-	if host != "" {
-		host = strings.TrimSpace(strings.Split(host, ",")[0])
-	} else {
-		host = strings.TrimSpace(gctx.Request.Host)
-	}
+	// Forwarded host and scheme count only when a trusted proxy reported them.
+	host := clientip.RequestHost(gctx.Request)
 	if host == "" {
 		return ""
 	}
 
-	scheme := strings.TrimSpace(gctx.Request.Header.Get("X-Forwarded-Proto"))
-	if scheme != "" {
-		scheme = strings.TrimSpace(strings.Split(scheme, ",")[0])
-	}
+	scheme := clientip.ForwardedProto(gctx.Request)
 	if scheme == "" {
 		if gctx.Request.TLS != nil {
 			scheme = "https"

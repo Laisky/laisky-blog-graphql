@@ -333,20 +333,24 @@ func (r *UserResolver) ID(ctx context.Context,
 // It accepts credentials, an optional Turnstile token, and an optional TOTP code, returning a JWT response.
 func (r *MutationResolver) UserLogin(ctx context.Context,
 	account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error) {
-	if err := validateTurnstileTokenForLogin(ctx, turnstileToken, account); err != nil {
+	attempt, err := admitAuthRequest(ctx, turnstileToken, loginFlow(account))
+	if err != nil {
 		return nil, turnstileGateError(err)
 	}
+	defer attempt.finish()
 
-	return r.loginWithPassword(ctx, account, password, totpCode)
+	return r.loginWithPassword(ctx, attempt, account, password, totpCode)
 }
 
 // UserLoginWithEmailCode authenticates a user with an emailed verification code.
 // It accepts account, email code, and optional Turnstile token, returning a JWT response.
 func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
 	account string, emailCode string, turnstileToken *string) (*models.BlogLoginResponse, error) {
-	if err := validateTurnstileTokenForLogin(ctx, turnstileToken, account); err != nil {
+	attempt, err := admitAuthRequest(ctx, turnstileToken, loginFlow(account))
+	if err != nil {
 		return nil, turnstileGateError(err)
 	}
+	defer attempt.finish()
 
 	logger := ginMw.GetLogger(ctx).Named("user_login_email_code")
 	if err := validateInputLength(100, account, emailCode); err != nil {
@@ -357,18 +361,16 @@ func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
 		return nil, errors.Wrap(err, "validate input length")
 	}
 
-	tracker := getAuthChallengeTracker()
-	subject := resolveAuthRiskSubject(ctx, tracker, account)
 	user, err := r.svc.ValidateEmailCodeLogin(ctx, account, emailCode)
 	if err != nil {
 		clientErr, countsAsFailure := credentialFailure(ctx, "email_code", err)
 		if countsAsFailure {
-			tracker.recordFailure(subject)
+			attempt.failed(model.RejectedIdentity(err))
 		}
 		return nil, clientErr
 	}
 
-	tracker.recordSuccess(subject)
+	attempt.succeeded(user.RiskIdentity())
 	return r.newLoginResponse(ctx, user)
 }
 
@@ -377,18 +379,20 @@ func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
 func (r *MutationResolver) UserRequestEmailCode(ctx context.Context,
 	account string, purpose string, turnstileToken *string) (*models.UserEmailCodeResponse, error) {
 	purpose = strings.TrimSpace(strings.ToLower(purpose))
+	var flow authFlow
 	switch purpose {
 	case model.EmailVerificationPurposeRegister:
-		if err := validateTurnstileTokenForRegister(ctx, turnstileToken); err != nil {
-			return nil, turnstileGateError(err)
-		}
+		flow = registerFlow()
 	case model.EmailVerificationPurposeLogin:
-		if err := validateTurnstileTokenForLogin(ctx, turnstileToken, account); err != nil {
-			return nil, turnstileGateError(err)
-		}
+		flow = loginFlow(account)
 	default:
 		return nil, errors.Errorf("unsupported email verification purpose %q", purpose)
 	}
+	attempt, err := admitAuthRequest(ctx, turnstileToken, flow)
+	if err != nil {
+		return nil, turnstileGateError(err)
+	}
+	defer attempt.finish()
 
 	logger := ginMw.GetLogger(ctx).Named("user_request_email_code")
 	if err := validateInputLength(100, account, purpose); err != nil {
@@ -432,10 +436,12 @@ func (r *MutationResolver) UserRegister(ctx context.Context,
 		)
 		return nil, err
 	}
-	if err := validateTurnstileTokenForRegister(ctx, turnstileToken); err != nil {
+	attempt, err := admitAuthRequest(ctx, turnstileToken, registerFlow())
+	if err != nil {
 		return nil, turnstileGateError(err)
 	}
-	_, err := r.svc.UserRegister(ctx, account, password, displayName, emailCode)
+	defer attempt.finish()
+	_, err = r.svc.UserRegister(ctx, account, password, displayName, emailCode)
 	if err != nil {
 		return nil, errors.Wrap(err, "register user")
 	}
@@ -492,16 +498,22 @@ func (r *MutationResolver) BlogLogin(ctx context.Context,
 	account string,
 	password string,
 ) (resp *models.BlogLoginResponse, err error) {
-	if err := validateTurnstileTokenForLogin(ctx, nil, account); err != nil {
+	// The legacy mutation cannot carry a Turnstile token, so the account
+	// signal never applies here (a third party could otherwise keep the owner
+	// out); failures still count toward the account for the other flows.
+	attempt, err := admitAuthRequest(ctx, nil, authFlow{action: authActionLogin, account: account})
+	if err != nil {
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
+	defer attempt.finish()
 
-	return r.loginWithPassword(ctx, account, password, nil)
+	return r.loginWithPassword(ctx, attempt, account, password, nil)
 }
 
 // loginWithPassword authenticates a user with password and optional TOTP code.
 // It accepts credentials and returns a signed JWT response when authentication succeeds.
 func (r *MutationResolver) loginWithPassword(ctx context.Context,
+	attempt *authAttempt,
 	account string,
 	password string,
 	totpCode *string,
@@ -515,14 +527,11 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 		return nil, errors.Wrap(err, "validate input length")
 	}
 
-	tracker := getAuthChallengeTracker()
-	subject := resolveAuthRiskSubject(ctx, tracker, account)
-
 	var user *model.User
 	if user, err = r.svc.ValidateLogin(ctx, account, password); err != nil {
 		clientErr, countsAsFailure := credentialFailure(ctx, "password", err)
 		if countsAsFailure {
-			tracker.recordFailure(subject)
+			attempt.failed(model.RejectedIdentity(err))
 		}
 		return nil, clientErr
 	}
@@ -542,11 +551,11 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 	}
 
 	if err = r.svc.ValidateTOTPCode(ctx, user, code); err != nil {
-		tracker.recordFailure(subject)
+		attempt.failed(user.RiskIdentity())
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
 
-	tracker.recordSuccess(subject)
+	attempt.succeeded(user.RiskIdentity())
 	return r.newLoginResponse(ctx, user)
 }
 

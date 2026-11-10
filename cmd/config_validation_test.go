@@ -368,6 +368,34 @@ func TestValidateStartupConfigAcceptsTrustedProxyForms(t *testing.T) {
 	}
 }
 
+// TestValidateStartupConfigRejectsAmbiguousTurnstilePairs verifies that several
+// sites with Turnstile secrets need a default site or a global pair, so the
+// pair for an unmatched host is never ambiguous.
+func TestValidateStartupConfigRejectsAmbiguousTurnstilePairs(t *testing.T) {
+	site := func(secret string, isDefault bool) map[string]any {
+		cfg := map[string]any{"host": "x.example", "turnstile_site_key": "k", "turnstile_secret_key": secret}
+		if isDefault {
+			cfg["default"] = true
+		}
+		return cfg
+	}
+	build := func(sites map[string]any, global string) configGetter {
+		web := map[string]any{"sites": sites}
+		if global != "" {
+			web["turnstile"] = map[string]any{"secret_key": global}
+		}
+		return newMapConfigGetter(map[string]any{"settings": map[string]any{"web": web}})
+	}
+
+	err := validateStartupConfigWithGetter(build(map[string]any{"a": site("s1", false), "b": site("s2", false)}, ""))
+	require.ErrorContains(t, err, "a, b all set turnstile_secret_key but none is default")
+
+	require.NoError(t, validateStartupConfigWithGetter(build(map[string]any{"a": site("s1", false), "b": site("s2", true)}, "")))
+	require.NoError(t, validateStartupConfigWithGetter(build(map[string]any{"a": site("s1", false), "b": site("s2", false)}, "global")))
+	require.NoError(t, validateStartupConfigWithGetter(build(map[string]any{"a": site("s1", false), "mcp": map[string]any{"host": "m"}}, "")),
+		"a single secret is unambiguous")
+}
+
 // newMapConfigGetter builds a dotted-path getter for nested map-based test configuration.
 // It accepts a nested map and returns a getter function compatible with validateStartupConfigWithGetter.
 func newMapConfigGetter(root map[string]any) configGetter {

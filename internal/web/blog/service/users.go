@@ -58,7 +58,7 @@ func (s *Blog) ValidateLogin(ctx context.Context, account, password string) (u *
 		return nil, errors.Wrap(err, "validate login")
 	}
 	if !u.IsActive() {
-		return nil, errors.WithStack(model.ErrInvalidCredentials)
+		return nil, model.NewCredentialRejection(u.RiskIdentity())
 	}
 
 	return u, nil

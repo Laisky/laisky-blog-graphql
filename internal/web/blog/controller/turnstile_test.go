@@ -14,6 +14,30 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
+// validateTurnstileTokenForLogin runs the login gate once and settles the
+// attempt, the view of a request that then does no credential check.
+func validateTurnstileTokenForLogin(ctx context.Context, turnstileToken *string, account string) error {
+	attempt, err := admitAuthRequest(ctx, turnstileToken, loginFlow(account))
+	if err == nil {
+		attempt.finish()
+	}
+	return err
+}
+
+// validateTurnstileTokenForRegister runs the registration gate once.
+func validateTurnstileTokenForRegister(ctx context.Context, turnstileToken *string) error {
+	attempt, err := admitAuthRequest(ctx, turnstileToken, registerFlow())
+	if err == nil {
+		attempt.finish()
+	}
+	return err
+}
+
+// resolveTurnstileSecretForLogin returns the secret of the pair selected for requestHost.
+func resolveTurnstileSecretForLogin(requestHost string) string {
+	return resolveTurnstileSite(requestHost).secret
+}
+
 // TestNormalizeTurnstileHost verifies host normalization removes ports and normalizes case.
 func TestNormalizeTurnstileHost(t *testing.T) {
 	require.Equal(t, "sso.laisky.com", normalizeTurnstileHost(" SSO.LAISKY.COM:443 "))
@@ -84,6 +108,7 @@ func setTurnstileEnabledSite(t *testing.T) {
 	gconfig.Shared.Set("settings.web.sites", map[string]any{
 		"sso": map[string]any{
 			"default":              true,
+			"turnstile_site_key":   "sso-site-key",
 			"turnstile_secret_key": "sso-secret",
 		},
 	})

@@ -241,3 +241,27 @@ func TestRepoPasskeyAndTOTP(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, user.TOTPEnabled)
 }
+
+// TestRepoWrongPasswordCarriesOneIdentityPerAccount verifies a wrong password
+// reports the same account identity whether the username or the email was
+// used, so the adaptive-authentication budget is per account rather than per
+// spelling, and reports none for an unknown login.
+func TestRepoWrongPasswordCarriesOneIdentityPerAccount(t *testing.T) {
+	repo, db := newTestRepo(t)
+	user, err := repo.CreateUser(t.Context(), "carol@example.com", "correct-horse", "Carol")
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&User{}).Where("id = ?", user.OneAPIID).Update("username", "carol").Error)
+
+	_, byEmail := repo.ValidateLogin(t.Context(), "carol@example.com", "wrong")
+	_, byName := repo.ValidateLogin(t.Context(), "carol", "wrong")
+	require.ErrorIs(t, byEmail, blogmodel.ErrInvalidCredentials)
+	require.ErrorIs(t, byName, blogmodel.ErrInvalidCredentials)
+	require.Equal(t, blogmodel.OneAPIRiskIdentity(user.OneAPIID), blogmodel.RejectedIdentity(byEmail))
+	require.Equal(t, blogmodel.RejectedIdentity(byEmail), blogmodel.RejectedIdentity(byName))
+	require.Equal(t, user.RiskIdentity(), blogmodel.RejectedIdentity(byName), "the success path reports the same identity")
+	require.Equal(t, blogmodel.ErrInvalidCredentials.Error(), byName.Error(), "the identity never reaches the error text")
+
+	_, unknown := repo.ValidateLogin(t.Context(), "nobody@example.com", "wrong")
+	require.ErrorIs(t, unknown, blogmodel.ErrInvalidCredentials)
+	require.Empty(t, blogmodel.RejectedIdentity(unknown))
+}

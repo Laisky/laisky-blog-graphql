@@ -27,6 +27,30 @@ func withAuthChallengeTracker(t *testing.T, tracker *authChallengeTracker) {
 	})
 }
 
+// recordFailure records a credential failure that revealed no store identity.
+func (t *authChallengeTracker) recordFailure(subject authRiskSubject) {
+	t.recordFailureFor(subject, "")
+}
+
+// recordSuccess records a successful authentication without a store identity.
+func (t *authChallengeTracker) recordSuccess(subject authRiskSubject) {
+	t.recordSuccessFor(subject, "")
+}
+
+// admitWithoutChallenge admits one request with the account signal applied
+// and immediately releases its reservations, the sequential-request view.
+func (t *authChallengeTracker) admitWithoutChallenge(subject authRiskSubject) bool {
+	decision := t.admit(subject, true)
+	t.release(decision.reservation)
+	return decision.admitted
+}
+
+// recordChallengePassed admits a request carrying a verified token and
+// immediately releases it, granting the allowance.
+func (t *authChallengeTracker) recordChallengePassed(subject authRiskSubject) {
+	t.release(t.admitVerified(subject, ""))
+}
+
 // clientSubject returns a risk subject for a flow that names no account.
 func clientSubject(clientKey string) authRiskSubject {
 	return authRiskSubject{client: clientKey}

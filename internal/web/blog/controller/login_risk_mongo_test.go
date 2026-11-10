@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Laisky/errors/v2"
 	ginMw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
@@ -360,4 +362,86 @@ func TestMongoAccountBudgetIgnoresInfrastructureFailures(t *testing.T) {
 
 	_, err := h.resolver.UserLogin(requestContext(t, "198.51.100.90"), "outage@example.test", password+"x", nil, nil)
 	require.ErrorIs(t, err, model.ErrInvalidCredentials, "outages must not push the account toward a challenge")
+}
+
+// TestMongoConcurrentGuessesRespectAccountBudget reproduces review finding 2
+// end to end: 50 wrong passwords against one account, sent at once from 50
+// addresses, may only reach the password check up to the account threshold.
+func TestMongoConcurrentGuessesRespectAccountBudget(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	stubTurnstile(t, true)
+	password := h.insertUser(t, "burst@example.test", nil)
+
+	const n = 50
+	var checked, challenged atomic.Int32
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := h.resolver.UserLogin(requestContext(t, fmt.Sprintf("198.51.100.%d", 100+i)), "burst@example.test", password+"-wrong", nil, nil)
+			switch {
+			case errors.Is(err, model.ErrInvalidCredentials):
+				checked.Add(1)
+			case errors.Is(err, model.ErrTurnstileRequired):
+				challenged.Add(1)
+			default:
+				t.Errorf("unexpected login error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	require.LessOrEqual(t, checked.Load(), int32(3), "concurrent guesses must not exceed the account threshold")
+	require.EqualValues(t, n, checked.Load()+challenged.Load())
+}
+
+// TestMongoBlogLoginOwnerIsNotLockedOut reproduces review finding 4: a third
+// party failing against an account from fresh addresses must not keep its
+// owner out of the legacy BlogLogin, which cannot present a challenge.
+func TestMongoBlogLoginOwnerIsNotLockedOut(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	stubTurnstile(t, true)
+	password := h.insertUser(t, "legacy-owner@example.test", nil)
+	for i := range 3 {
+		_, err := h.resolver.UserLogin(requestContext(t, fmt.Sprintf("198.51.100.%d", 160+i)), "legacy-owner@example.test", "wrong", nil, nil)
+		require.ErrorIs(t, err, model.ErrInvalidCredentials)
+	}
+	_, err := h.resolver.UserLogin(requestContext(t, "198.51.100.170"), "legacy-owner@example.test", password, nil, nil)
+	require.ErrorIs(t, err, model.ErrTurnstileRequired, "token-capable flows are still challenged")
+
+	resp, err := h.resolver.BlogLogin(requestContext(t, "192.0.2.77"), "legacy-owner@example.test", password)
+	require.NoError(t, err, "the owner's legacy login is not denied by someone else's failures")
+	require.NotEmpty(t, resp.Token)
+}
+
+// TestMongoAccountBudgetFoldsSpellingVariants reproduces review finding 3
+// end to end: guesses spread over case, accent and width variants of one
+// account share its budget.
+func TestMongoAccountBudgetFoldsSpellingVariants(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	stubTurnstile(t, true)
+	h.insertUser(t, "alice@example.test", nil)
+	for i, variant := range []string{"alicé@example.test", "ａｌｉｃｅ@example.test", "àlîcë@example.test"} {
+		_, err := h.resolver.UserLogin(requestContext(t, fmt.Sprintf("198.51.100.%d", 180+i)), variant, "wrong", nil, nil)
+		require.ErrorIs(t, err, model.ErrInvalidCredentials)
+	}
+	_, err := h.resolver.UserLogin(requestContext(t, "198.51.100.190"), "alice@example.test", "wrong", nil, nil)
+	require.ErrorIs(t, err, model.ErrTurnstileRequired)
+}
+
+// TestMongoWrongPasswordCarriesAccountIdentity verifies the MongoDB store
+// reports which account a wrong password was tried against, without changing
+// the client-visible error, and reports nothing for unknown accounts.
+func TestMongoWrongPasswordCarriesAccountIdentity(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	h.insertUser(t, "identity@example.test", nil)
+	_, err := h.resolver.svc.ValidateLogin(context.Background(), "identity@example.test", "wrong")
+	require.ErrorIs(t, err, model.ErrInvalidCredentials)
+	require.True(t, strings.HasPrefix(model.RejectedIdentity(err), "mongo:"))
+	require.NotContains(t, err.Error(), "mongo:", "the identity never reaches the error text")
+
+	_, err = h.resolver.svc.ValidateLogin(context.Background(), "nobody@example.test", "wrong")
+	require.ErrorIs(t, err, model.ErrInvalidCredentials)
+	require.Empty(t, model.RejectedIdentity(err))
 }

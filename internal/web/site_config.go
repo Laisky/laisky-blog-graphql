@@ -10,6 +10,9 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+
+	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 const (
@@ -282,21 +285,21 @@ func isMCPConsolePath(path string) bool {
 	}
 }
 
-// requestHost extracts and normalizes the host for the incoming request.
+// withTurnstileSiteKey replaces the site's Turnstile widget key with the key of
+// the pair the server verifies tokens against for this request's host (see
+// blog.TurnstileSiteKeyForHost). A host whose own site has no Turnstile pair
+// thus renders the fallback pair's widget, so every host where a challenge can
+// be demanded can also present one, and a token always matches its secret.
+func withTurnstileSiteKey(site SiteConfig, r *http.Request) SiteConfig {
+	site.TurnstileSiteKey = blog.TurnstileSiteKeyForHost(requestHost(r))
+	return site
+}
+
+// requestHost extracts and normalizes the host for the incoming request. An
+// X-Forwarded-Host counts only when a trusted proxy reported it (see
+// clientip.RequestHost); otherwise the Host header is used.
 func requestHost(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-
-	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 {
-			return normalizeHost(parts[0])
-		}
-	}
-
-	return normalizeHost(r.Host)
+	return normalizeHost(clientip.RequestHost(r))
 }
 
 // requestPathFromReferer extracts the path from the Referer header when available.

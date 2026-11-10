@@ -410,7 +410,7 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 		toolsConfig := mcpToolGroups(catalog)
 		consoleTools := consoleGroups(catalog)
 
-		siteConfig := siteConfigs.resolveForRequest(ctx.Request)
+		siteConfig := withTurnstileSiteKey(siteConfigs.resolveForRequest(ctx.Request), ctx.Request)
 		if siteConfig.PublicBasePath == "" {
 			siteConfig.PublicBasePath = prefix.public
 		}
@@ -502,7 +502,7 @@ func newServerEngine(policy clientip.Policy, prefix urlPrefixConfig) (*gin.Engin
 	accessLogger := log.Logger.Named("gin")
 	engine.Use(
 		gin.Recovery(),
-		requestIdentity(accessLogger),
+		requestIdentity(policy, accessLogger),
 		ginMw.NewLoggerMiddleware(
 			ginMw.WithLoggerMwColored(),
 			ginMw.WithLevel(log.Logger.Level().String()),
@@ -517,12 +517,14 @@ func newServerEngine(policy clientip.Policy, prefix urlPrefixConfig) (*gin.Engin
 }
 
 // requestIdentity resolves the client address once with the engine's
-// trusted-proxy policy and seeds the request logger with it, so the access log
-// and every handler log carry the identity the risk controls use. It runs
-// before the logger middleware, which adopts a logger already in the context.
-func requestIdentity(base glog.Logger) gin.HandlerFunc {
+// trusted-proxy policy, records the forwarded host and scheme only when a
+// trusted proxy reported them, and seeds the request logger with the address,
+// so the access log and every handler log carry the identity the risk
+// controls use. It runs before the logger middleware, which adopts a logger
+// already in the context.
+func requestIdentity(policy clientip.Policy, base glog.Logger) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		ip := clientip.Attach(ctx)
+		ip := policy.Attach(ctx)
 		ginMw.SetLogger(ctx, base.With(zap.String("client_ip", ip)))
 		ctx.Next()
 	}

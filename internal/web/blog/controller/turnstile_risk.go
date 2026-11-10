@@ -1,20 +1,15 @@
 package controller
 
 import (
-	"cmp"
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
-	"slices"
 	"sync"
 	"time"
 
 	gconfig "github.com/Laisky/go-config/v2"
 	gutils "github.com/Laisky/go-utils/v6"
 
-	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
@@ -39,26 +34,17 @@ const (
 	// unknownAuthClientKey buckets requests whose client IP cannot be resolved so
 	// they are still rate-tracked collectively rather than escaping the check.
 	unknownAuthClientKey = "unknown"
-
-	// accountKeyBytes is how much of the account HMAC is kept: 128 bits make a
-	// collision between two tracked accounts negligible.
-	accountKeyBytes = 16
-	// maxAccountKeyInput bounds the account bytes hashed per request. The gate
-	// runs before the resolvers' length checks, and every login store rejects
-	// accounts far shorter than this, so longer inputs only collide with other
-	// invalid accounts.
-	maxAccountKeyInput = 1024
 )
 
 // authRiskSubject names who an authentication request is attributed to: the
 // network client sending it and, for flows that name an account, the account
-// it targets. A client rotating addresses gets a fresh client record, but every
-// guess against one account lands on the same account record.
+// spelling it targets. A client rotating addresses gets a fresh client record,
+// but every guess against one account lands on the same account records.
 type authRiskSubject struct {
 	// client is the network identity key (see resolveAuthClientKey).
 	client string
-	// account is the keyed hash of the normalized account, or empty when the
-	// flow names no account (GitHub OAuth, passkey and registration flows).
+	// account is the keyed hash of the folded account spelling, or empty when
+	// the flow names no account (GitHub OAuth, passkey and registration flows).
 	account string
 }
 
@@ -68,9 +54,14 @@ type authRiskSubject struct {
 // failures from any client. Low-risk requests authenticate without a challenge.
 // It only ever escalates to a challenge; it never locks an account out.
 //
-// Both tables are bounded: records expire with their signal windows and, when a
-// table is full, the records carrying the least evidence are evicted first.
-// Accounts are held only as keyed hashes.
+// Accounts are tracked twice: per folded spelling, and per store identity once
+// a failure revealed which account the spelling resolves to, so username, email
+// and case or accent variants of one account share a budget. Admission reserves
+// an in-flight slot on each, so concurrent guesses count before their outcome
+// is known.
+//
+// Both tables are bounded (see turnstile_risk_table.go) and accounts are held
+// only as keyed hashes.
 //
 // It is safe for concurrent use.
 type authChallengeTracker struct {
@@ -87,6 +78,12 @@ type authChallengeTracker struct {
 	maxAccounts             int
 	clearanceTTL            time.Duration
 	clearanceUses           int
+
+	// accountsSaturated is set while the account table is full of records that
+	// may not be evicted; untracked accounts are then treated as high risk.
+	accountsSaturated bool
+	// saturationCheckedAt rate-limits the sweep that clears accountsSaturated.
+	saturationCheckedAt time.Time
 
 	// accountHashKey is a per-process random HMAC key, so the account table
 	// never holds account names and its keys cannot be matched against a
@@ -106,6 +103,10 @@ type clientAuthRisk struct {
 	// clearedUntil and clearanceLeft describe the solved-challenge allowance.
 	clearedUntil  time.Time
 	clearanceLeft int
+	// clearanceBusy counts in-flight requests admitted by a solved challenge
+	// or by spending the allowance. The allowance can only be spent while it
+	// is zero, so one solved challenge never admits parallel guesses.
+	clearanceBusy int
 }
 
 // hasClearance reports whether the solved-challenge allowance is still usable.
@@ -117,6 +118,11 @@ func (c *clientAuthRisk) hasClearance(now time.Time) bool {
 func (c *clientAuthRisk) revokeClearance() {
 	c.clearedUntil = time.Time{}
 	c.clearanceLeft = 0
+}
+
+// idle reports whether the record carries no signal and can be dropped.
+func (c *clientAuthRisk) idle(now time.Time) bool {
+	return len(c.attempts) == 0 && len(c.failures) == 0 && !c.hasClearance(now) && c.clearanceBusy == 0
 }
 
 // lastSeen returns the newest signal timestamp of the client.
@@ -131,10 +137,50 @@ func (c *clientAuthRisk) lastSeen() time.Time {
 	return latest
 }
 
-// accountAuthRisk holds the recent credential failures against one account,
-// from any client.
+// accountAuthRisk holds the recent credential failures against one account
+// spelling or one account identity, from any client.
 type accountAuthRisk struct {
+	// failures are the timestamps inside the failure window, newest last,
+	// capped at the threshold plus one.
 	failures []time.Time
+	// total counts every failure since the record was created; it ranks
+	// records for eviction where the capped window list ties.
+	total int
+	// inflight counts admitted requests whose outcome is not known yet.
+	inflight int
+	// alias is the identity key this spelling resolved to at its last failure.
+	alias string
+}
+
+// idle reports whether the record carries no signal and can be dropped.
+func (a *accountAuthRisk) idle() bool {
+	return len(a.failures) == 0 && a.inflight == 0
+}
+
+// authReservation is what an admission holds until the request's outcome is
+// known: in-flight slots on account records and the client's allowance slot.
+type authReservation struct {
+	accounts []reservedAccount
+	client   *clientAuthRisk
+}
+
+// reservedAccount is one account record holding an in-flight slot.
+type reservedAccount struct {
+	key    string
+	record *accountAuthRisk
+}
+
+// authAdmission is the tracker's decision for one request.
+type authAdmission struct {
+	// admitted reports whether the request may proceed without a token.
+	admitted bool
+	// identity is the identity key the account spelling resolved to, if known.
+	identity string
+	// accountGap reports that the account is high risk but the entry point
+	// cannot present a challenge, so only the client signal was applied.
+	accountGap bool
+	// reservation must be released once the outcome is known.
+	reservation authReservation
 }
 
 // newAuthChallengeTracker builds a tracker with the provided thresholds,
@@ -184,27 +230,9 @@ func newAuthChallengeTracker(
 }
 
 // subject builds the risk subject for a request from its client key and the
-// raw account the request names, which may be empty. The account is normalized
-// exactly as the login lookup normalizes it, so case or whitespace variants of
-// one account share a record.
+// raw account the request names, which may be empty.
 func (t *authChallengeTracker) subject(clientKey string, account string) authRiskSubject {
 	return authRiskSubject{client: clientKey, account: t.accountKey(account)}
-}
-
-// accountKey returns the keyed hash of the normalized account, or "" when the
-// account is blank.
-func (t *authChallengeTracker) accountKey(account string) string {
-	if len(account) > maxAccountKeyInput {
-		account = account[:maxAccountKeyInput]
-	}
-	normalized := service.NormalizeLoginAccount(account)
-	if normalized == "" {
-		return ""
-	}
-
-	mac := hmac.New(sha256.New, t.accountHashKey)
-	_, _ = mac.Write([]byte(normalized)) // hash.Hash.Write never returns an error
-	return hex.EncodeToString(mac.Sum(nil)[:accountKeyBytes])
 }
 
 // recordAttempt notes that a client started an authentication request. Every
@@ -218,11 +246,94 @@ func (t *authChallengeTracker) recordAttempt(clientKey string) {
 	client.attempts = appendRecent(client.attempts, now, now.Add(-t.frequencyWindow), t.frequencyThreshold+1)
 }
 
-// recordFailure notes that a credential check failed. It drives the client's
-// and the account's repeated-failure signals and revokes the client's
-// solved-challenge allowance, so every further guess from a high-risk client,
-// or against a high-risk account, needs a fresh challenge.
-func (t *authChallengeTracker) recordFailure(subject authRiskSubject) {
+// admit decides whether the current auth request may proceed without a
+// Turnstile token. A request whose client and account are both low risk
+// always may; otherwise it may only by spending the client's solved-challenge
+// allowance, and only while no other request admitted by that allowance is in
+// flight. The account signal applies only when accountEscalation is true,
+// that is when the entry point can carry a token and the host can render the
+// widget. An admitted request reserves in-flight slots that the caller must
+// release.
+func (t *authChallengeTracker) admit(subject authRiskSubject, accountEscalation bool) authAdmission {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := t.now()
+	decision := authAdmission{identity: t.aliasLocked(subject.account)}
+	client, known := t.clients[subject.client]
+	clientRisky := known && t.highRiskLocked(subject.client, client, now)
+	accountRisky := t.accountRiskyLocked(subject.account, now) || t.accountRiskyLocked(decision.identity, now)
+	if accountRisky && !accountEscalation {
+		decision.accountGap = true
+		accountRisky = false
+	}
+
+	if !clientRisky && !accountRisky {
+		decision.admitted = true
+		decision.reservation = t.reserveAccountsLocked(now, subject.account, decision.identity)
+		return decision
+	}
+
+	// highRiskLocked may have dropped an idle record; re-read it.
+	client, known = t.clients[subject.client]
+	if !known || !client.hasClearance(now) || client.clearanceBusy > 0 {
+		return decision
+	}
+	client.clearanceLeft--
+	client.clearanceBusy++
+	decision.admitted = true
+	decision.reservation = t.reserveAccountsLocked(now, subject.account, decision.identity)
+	decision.reservation.client = client
+	return decision
+}
+
+// admitVerified admits a request that just presented a verified Turnstile
+// token and grants the client the bounded allowance: its next clearanceUses
+// auth requests within clearanceTTL are admitted without another challenge,
+// one at a time, unless a credential failure revokes it first. The returned
+// reservation includes the allowance slot this request now occupies.
+func (t *authChallengeTracker) admitVerified(subject authRiskSubject, identity string) authReservation {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := t.now()
+	client := t.clientLocked(subject.client, now)
+	client.clearedUntil = now.Add(t.clearanceTTL)
+	client.clearanceLeft = t.clearanceUses
+	client.clearanceBusy++
+
+	reservation := t.reserveAccountsLocked(now, subject.account, identity)
+	reservation.client = client
+	return reservation
+}
+
+// release returns the in-flight slots held by an admission.
+func (t *authChallengeTracker) release(reservation authReservation) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if reservation.client != nil && reservation.client.clearanceBusy > 0 {
+		reservation.client.clearanceBusy--
+	}
+	for _, reserved := range reservation.accounts {
+		if reserved.record.inflight > 0 {
+			reserved.record.inflight--
+		}
+		// The record may have been replaced meanwhile; only drop the one held.
+		if reserved.record.idle() && t.accounts[reserved.key] == reserved.record {
+			delete(t.accounts, reserved.key)
+		}
+	}
+}
+
+// recordFailureFor notes that a credential check failed. It drives the
+// client's and the account's repeated-failure signals and revokes the
+// client's solved-challenge allowance, so every further guess from a high-risk
+// client, or against a high-risk account, needs a fresh challenge. identity is
+// the identity key the store resolved the account to, or empty when the store
+// did not reveal it; the spelling then keeps whatever identity it resolved to
+// before.
+func (t *authChallengeTracker) recordFailureFor(subject authRiskSubject, identity string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -234,57 +345,46 @@ func (t *authChallengeTracker) recordFailure(subject authRiskSubject) {
 	if subject.account == "" {
 		return
 	}
-	account := t.accountLocked(subject.account, now)
-	account.failures = appendRecent(account.failures, now, now.Add(-t.failureWindow), t.accountFailureThreshold+1)
-}
-
-// recordChallengePassed grants the allowance earned by a verified Turnstile
-// token: the client's next clearanceUses auth requests within clearanceTTL are
-// admitted without another challenge unless a credential failure revokes it.
-func (t *authChallengeTracker) recordChallengePassed(subject authRiskSubject) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	now := t.now()
-	client := t.clientLocked(subject.client, now)
-	client.clearedUntil = now.Add(t.clearanceTTL)
-	client.clearanceLeft = t.clearanceUses
-}
-
-// admitWithoutChallenge decides whether the current auth request may proceed
-// without a Turnstile token. A request whose client and account are both low
-// risk always may. Otherwise it may only by spending one unit of the client's
-// solved-challenge allowance.
-func (t *authChallengeTracker) admitWithoutChallenge(subject authRiskSubject) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	now := t.now()
-	client, known := t.clients[subject.client]
-	clientRisky := known && t.highRiskLocked(subject.client, client, now)
-	if !clientRisky && !t.accountHighRiskLocked(subject.account, now) {
-		return true
+	if spelling := t.accountLocked(subject.account, now); spelling != nil {
+		spelling.failures = appendRecent(spelling.failures, now, now.Add(-t.failureWindow), t.accountFailureThreshold+1)
+		spelling.total++
+		if identity != "" {
+			spelling.alias = identity
+		}
+		identity = spelling.alias
 	}
-
-	// highRiskLocked may have dropped an idle record; re-read it.
-	client, known = t.clients[subject.client]
-	if !known || !client.hasClearance(now) {
-		return false
+	if identity == "" {
+		return
 	}
-	client.clearanceLeft--
-	return true
+	if account := t.accountLocked(identity, now); account != nil {
+		account.failures = appendRecent(account.failures, now, now.Add(-t.failureWindow), t.accountFailureThreshold+1)
+		account.total++
+	}
 }
 
-// recordSuccess clears the failure history of the client and of the account
-// after a successful authentication, so a legitimate user is not challenged
-// for past typos (NIST SP 800-63B-4 §3.2.2 resets the retry count of the
-// authenticators used once authentication succeeds).
-func (t *authChallengeTracker) recordSuccess(subject authRiskSubject) {
+// recordSuccessFor clears the failure history of the client, of the account
+// spelling and of its identity after a successful authentication, so a
+// legitimate user is not challenged for past typos (NIST SP 800-63B-4 §3.2.2
+// resets the retry count of the authenticators used once authentication
+// succeeds). In-flight slots held by concurrent requests are kept.
+func (t *authChallengeTracker) recordSuccessFor(subject authRiskSubject, identity string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if subject.account != "" {
-		delete(t.accounts, subject.account)
+	if identity == "" {
+		identity = t.aliasLocked(subject.account)
+	}
+	for _, key := range []string{subject.account, identity} {
+		account, ok := t.accounts[key]
+		if key == "" || !ok {
+			continue
+		}
+		account.failures = nil
+		account.total = 0
+		account.alias = ""
+		if account.idle() {
+			delete(t.accounts, key)
+		}
 	}
 
 	client, ok := t.clients[subject.client]
@@ -292,7 +392,7 @@ func (t *authChallengeTracker) recordSuccess(subject authRiskSubject) {
 		return
 	}
 	client.failures = nil
-	if len(client.attempts) == 0 {
+	if client.idle(t.now()) {
 		delete(t.clients, subject.client)
 	}
 }
@@ -303,7 +403,7 @@ func (t *authChallengeTracker) highRiskLocked(key string, client *clientAuthRisk
 	client.attempts = keepRecent(client.attempts, now.Add(-t.frequencyWindow))
 	client.failures = keepRecent(client.failures, now.Add(-t.failureWindow))
 
-	if len(client.attempts) == 0 && len(client.failures) == 0 && !client.hasClearance(now) {
+	if client.idle(now) {
 		delete(t.clients, key)
 		return false
 	}
@@ -311,146 +411,57 @@ func (t *authChallengeTracker) highRiskLocked(key string, client *clientAuthRisk
 	return len(client.attempts) > t.frequencyThreshold || len(client.failures) >= t.failureThreshold
 }
 
-// accountHighRiskLocked prunes expired failures and reports whether the
-// account has reached its failure threshold. The caller must hold the mutex.
-func (t *authChallengeTracker) accountHighRiskLocked(key string, now time.Time) bool {
+// accountRiskyLocked prunes expired failures and reports whether the account
+// record has reached its threshold, counting requests still in flight. An
+// account that cannot be tracked because the table is saturated is treated as
+// high risk. The caller must hold the mutex.
+func (t *authChallengeTracker) accountRiskyLocked(key string, now time.Time) bool {
 	if key == "" {
 		return false
 	}
 	account, ok := t.accounts[key]
 	if !ok {
-		return false
+		return t.accountsSaturatedLocked(now)
 	}
 
 	account.failures = keepRecent(account.failures, now.Add(-t.failureWindow))
-	if len(account.failures) == 0 {
+	if account.idle() {
 		delete(t.accounts, key)
 		return false
 	}
 
-	return len(account.failures) >= t.accountFailureThreshold
+	return len(account.failures)+account.inflight >= t.accountFailureThreshold
 }
 
-// clientLocked returns the risk record for a client, creating it if absent and
-// keeping the table within maxClients. The caller must hold the mutex.
-func (t *authChallengeTracker) clientLocked(key string, now time.Time) *clientAuthRisk {
-	if client, ok := t.clients[key]; ok {
-		return client
+// aliasLocked returns the identity key an account spelling last resolved to.
+// The caller must hold the mutex.
+func (t *authChallengeTracker) aliasLocked(spelling string) string {
+	if spelling == "" {
+		return ""
 	}
-
-	if len(t.clients) >= t.maxClients {
-		t.shrinkClientsLocked(now)
+	if account, ok := t.accounts[spelling]; ok {
+		return account.alias
 	}
-	client := &clientAuthRisk{}
-	t.clients[key] = client
-	return client
+	return ""
 }
 
-// accountLocked returns the risk record for an account, creating it if absent
-// and keeping the table within maxAccounts. The caller must hold the mutex.
-func (t *authChallengeTracker) accountLocked(key string, now time.Time) *accountAuthRisk {
-	if account, ok := t.accounts[key]; ok {
-		return account
-	}
-
-	if len(t.accounts) >= t.maxAccounts {
-		t.shrinkAccountsLocked(now)
-	}
-	account := &accountAuthRisk{}
-	t.accounts[key] = account
-	return account
-}
-
-// shrinkTarget is the size a full table is cut down to: an eighth below its
-// bound, so the sweep and sort that make room run once per many inserts.
-func shrinkTarget(limit int) int {
-	return limit - max(1, limit/8)
-}
-
-// shrinkClientsLocked drops expired client records and, if the table is still
-// above its shrink target, evicts the records carrying the least evidence of
-// abuse: fewest failures, then no allowance, then fewest attempts, then the
-// longest idle. A flood of one-off addresses therefore displaces other one-off
-// addresses instead of a client close to its challenge threshold. The caller
-// must hold the mutex.
-func (t *authChallengeTracker) shrinkClientsLocked(now time.Time) {
-	target := shrinkTarget(t.maxClients)
-	type candidate struct {
-		key    string
-		client *clientAuthRisk
-	}
-	candidates := make([]candidate, 0, len(t.clients))
-	for key, client := range t.clients {
-		client.attempts = keepRecent(client.attempts, now.Add(-t.frequencyWindow))
-		client.failures = keepRecent(client.failures, now.Add(-t.failureWindow))
-		if len(client.attempts) == 0 && len(client.failures) == 0 && !client.hasClearance(now) {
-			delete(t.clients, key)
+// reserveAccountsLocked takes an in-flight slot on each named account record,
+// creating records as needed. A record the saturated table cannot hold is
+// skipped. The caller must hold the mutex.
+func (t *authChallengeTracker) reserveAccountsLocked(now time.Time, keys ...string) authReservation {
+	var reservation authReservation
+	for _, key := range keys {
+		if key == "" {
 			continue
 		}
-		candidates = append(candidates, candidate{key: key, client: client})
-	}
-	if len(t.clients) <= target {
-		return
-	}
-
-	slices.SortFunc(candidates, func(a, b candidate) int {
-		return cmp.Or(
-			cmp.Compare(len(a.client.failures), len(b.client.failures)),
-			compareBool(a.client.hasClearance(now), b.client.hasClearance(now)),
-			cmp.Compare(len(a.client.attempts), len(b.client.attempts)),
-			a.client.lastSeen().Compare(b.client.lastSeen()),
-		)
-	})
-	for _, c := range candidates[:len(t.clients)-target] {
-		delete(t.clients, c.key)
-	}
-}
-
-// shrinkAccountsLocked drops expired account records and, if the table is
-// still above its shrink target, evicts the accounts with the fewest recent
-// failures, oldest first. A flood of failures against unique (for example
-// non-existent) accounts therefore evicts other single-failure records, not an
-// account under sustained attack. The caller must hold the mutex.
-func (t *authChallengeTracker) shrinkAccountsLocked(now time.Time) {
-	target := shrinkTarget(t.maxAccounts)
-	type candidate struct {
-		key     string
-		account *accountAuthRisk
-	}
-	candidates := make([]candidate, 0, len(t.accounts))
-	for key, account := range t.accounts {
-		account.failures = keepRecent(account.failures, now.Add(-t.failureWindow))
-		if len(account.failures) == 0 {
-			delete(t.accounts, key)
+		account := t.accountLocked(key, now)
+		if account == nil {
 			continue
 		}
-		candidates = append(candidates, candidate{key: key, account: account})
+		account.inflight++
+		reservation.accounts = append(reservation.accounts, reservedAccount{key: key, record: account})
 	}
-	if len(t.accounts) <= target {
-		return
-	}
-
-	slices.SortFunc(candidates, func(a, b candidate) int {
-		return cmp.Or(
-			cmp.Compare(len(a.account.failures), len(b.account.failures)),
-			a.account.failures[len(a.account.failures)-1].Compare(b.account.failures[len(b.account.failures)-1]),
-		)
-	})
-	for _, c := range candidates[:len(t.accounts)-target] {
-		delete(t.accounts, c.key)
-	}
-}
-
-// compareBool orders false before true.
-func compareBool(a bool, b bool) int {
-	switch {
-	case a == b:
-		return 0
-	case !a:
-		return -1
-	default:
-		return 1
-	}
+	return reservation
 }
 
 // appendRecent appends now to times, drops entries at or before cutoff, and
@@ -485,28 +496,44 @@ func getAuthChallengeTracker() *authChallengeTracker {
 	authChallengeMu.Lock()
 	defer authChallengeMu.Unlock()
 	if authChallengeInst == nil {
-		base := "settings.web.turnstile.risk"
-		authChallengeInst = newAuthChallengeTracker(
-			time.Duration(gconfig.Shared.GetInt(base+".frequency_window_seconds"))*time.Second,
-			gconfig.Shared.GetInt(base+".frequency_threshold"),
-			time.Duration(gconfig.Shared.GetInt(base+".failure_window_seconds"))*time.Second,
-			gconfig.Shared.GetInt(base+".failure_threshold"),
-			gconfig.Shared.GetInt(base+".max_tracked_clients"),
-		)
-		if threshold := gconfig.Shared.GetInt(base + ".account_failure_threshold"); threshold > 0 {
-			authChallengeInst.accountFailureThreshold = threshold
-		}
-		if limit := gconfig.Shared.GetInt(base + ".max_tracked_accounts"); limit > 0 {
-			authChallengeInst.maxAccounts = limit
-		}
-		if seconds := gconfig.Shared.GetInt(base + ".clearance_seconds"); seconds > 0 {
-			authChallengeInst.clearanceTTL = time.Duration(seconds) * time.Second
-		}
-		if uses := gconfig.Shared.GetInt(base + ".clearance_uses"); uses > 0 {
-			authChallengeInst.clearanceUses = uses
-		}
+		authChallengeInst = newAuthChallengeTrackerFromConfig()
 	}
 	return authChallengeInst
+}
+
+// ResetAuthChallengeTracker discards all adaptive-authentication risk state and
+// rebuilds the process-wide tracker from the current configuration on next
+// use. Tests that drive the tracker through the HTTP engine call it to start
+// from a clean state; it is safe to call concurrently with requests.
+func ResetAuthChallengeTracker() {
+	authChallengeMu.Lock()
+	defer authChallengeMu.Unlock()
+	authChallengeInst = nil
+}
+
+// newAuthChallengeTrackerFromConfig builds a tracker from settings.web.turnstile.risk.
+func newAuthChallengeTrackerFromConfig() *authChallengeTracker {
+	base := "settings.web.turnstile.risk"
+	tracker := newAuthChallengeTracker(
+		time.Duration(gconfig.Shared.GetInt(base+".frequency_window_seconds"))*time.Second,
+		gconfig.Shared.GetInt(base+".frequency_threshold"),
+		time.Duration(gconfig.Shared.GetInt(base+".failure_window_seconds"))*time.Second,
+		gconfig.Shared.GetInt(base+".failure_threshold"),
+		gconfig.Shared.GetInt(base+".max_tracked_clients"),
+	)
+	if threshold := gconfig.Shared.GetInt(base + ".account_failure_threshold"); threshold > 0 {
+		tracker.accountFailureThreshold = threshold
+	}
+	if limit := gconfig.Shared.GetInt(base + ".max_tracked_accounts"); limit > 0 {
+		tracker.maxAccounts = limit
+	}
+	if seconds := gconfig.Shared.GetInt(base + ".clearance_seconds"); seconds > 0 {
+		tracker.clearanceTTL = time.Duration(seconds) * time.Second
+	}
+	if uses := gconfig.Shared.GetInt(base + ".clearance_uses"); uses > 0 {
+		tracker.clearanceUses = uses
+	}
+	return tracker
 }
 
 // resolveAuthClientKey derives the network identity key for the current

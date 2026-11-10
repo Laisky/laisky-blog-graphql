@@ -6,14 +6,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/Laisky/errors/v2"
 	gmw "github.com/Laisky/gin-middlewares/v7"
 	gconfig "github.com/Laisky/go-config/v2"
-	"github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/model"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
@@ -35,78 +33,6 @@ var turnstileVerifyHTTPClient = &http.Client{
 type turnstileVerifyResult struct {
 	Success    bool     `json:"success"`
 	ErrorCodes []string `json:"error-codes"`
-}
-
-// validateTurnstileTokenForLogin validates Turnstile token before allowing SSO login.
-// Parameters: ctx carries request context and metadata, turnstileToken is the optional token from the client,
-// and account is the raw account the login names, or empty for flows that name none (GitHub OAuth, passkey).
-// Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
-func validateTurnstileTokenForLogin(ctx context.Context, turnstileToken *string, account string) error {
-	return validateTurnstileTokenForAuth(ctx, turnstileToken, "login", account)
-}
-
-// validateTurnstileTokenForRegister validates Turnstile token before allowing SSO registration.
-// Parameters: ctx carries request context and metadata, turnstileToken is the optional token from the client.
-// Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
-func validateTurnstileTokenForRegister(ctx context.Context, turnstileToken *string) error {
-	return validateTurnstileTokenForAuth(ctx, turnstileToken, "register", "")
-}
-
-// validateTurnstileTokenForAuth validates Turnstile token for an authentication action.
-// Parameters: ctx carries request context, turnstileToken is the optional token, action names the auth flow,
-// and account is the raw targeted account (empty when the flow names none). A request is challenged when its
-// client or its account is high risk, so rotating client addresses alone cannot keep an attacked account unchallenged.
-// Returns: Nil when verification is disabled or succeeds; otherwise returns a wrapped error.
-func validateTurnstileTokenForAuth(ctx context.Context, turnstileToken *string, action string, account string) error {
-	secret := resolveTurnstileSecretForLogin(resolveTurnstileRequestHost(ctx))
-	if secret == "" {
-		return nil
-	}
-
-	logger := gmw.GetLogger(ctx).Named("turnstile")
-	// Record the attempt up front so request frequency is tracked even when the
-	// client ultimately skips the challenge.
-	tracker := getAuthChallengeTracker()
-	subject := resolveAuthRiskSubject(ctx, tracker, account)
-	tracker.recordAttempt(subject.client)
-
-	token := ""
-	if turnstileToken != nil {
-		token = strings.TrimSpace(*turnstileToken)
-	}
-
-	if err := validateInputLength(turnstileTokenLengthLimit, token); err != nil {
-		return errors.Wrapf(model.ErrTurnstileFailed, "validate turnstile token length: %v", err)
-	}
-
-	// Requests whose client and account are both low risk proceed without a
-	// challenge; any token they happen to send is ignored so a stale one cannot
-	// block them. A client that just solved a challenge spends its allowance here
-	// instead of solving another.
-	if tracker.admitWithoutChallenge(subject) {
-		return nil
-	}
-
-	if token == "" {
-		// The account itself is never logged; only whether the flow named one.
-		logger.Debug("turnstile challenge required",
-			zap.String("action", action),
-			zap.String("client_key", subject.client),
-			zap.Bool("account_scoped", subject.account != ""),
-		)
-		return errors.Wrap(model.ErrTurnstileRequired, action)
-	}
-
-	if err := verifyTurnstileToken(ctx, secret, token, resolveTurnstileClientIP(ctx)); err != nil {
-		logger.Info("turnstile token rejected",
-			zap.String("action", action),
-			zap.Error(err),
-		)
-		return errors.Wrap(model.ErrTurnstileFailed, action)
-	}
-	tracker.recordChallengePassed(subject)
-
-	return nil
 }
 
 // turnstileGateError converts a Turnstile gate failure into the stable client
@@ -161,24 +87,16 @@ func verifyTurnstileToken(ctx context.Context, secret string, token string, remo
 	return nil
 }
 
-// resolveTurnstileRequestHost extracts normalized request host from context.
+// resolveTurnstileRequestHost extracts the normalized request host from context.
 // Parameters: ctx carries optional Gin request context.
-// Returns: A normalized host string, or empty string when unavailable.
+// Returns: The X-Forwarded-Host reported by a trusted proxy, else the Host header, normalized; empty when unavailable.
 func resolveTurnstileRequestHost(ctx context.Context) string {
 	gctx, ok := gmw.GetGinCtxFromStdCtx(ctx)
 	if !ok || gctx == nil || gctx.Request == nil {
 		return ""
 	}
 
-	forwarded := strings.TrimSpace(gctx.Request.Header.Get("X-Forwarded-Host"))
-	if forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 {
-			return normalizeTurnstileHost(parts[0])
-		}
-	}
-
-	return normalizeTurnstileHost(gctx.Request.Host)
+	return normalizeTurnstileHost(clientip.RequestHost(gctx.Request))
 }
 
 // resolveTurnstileClientIP returns the client IP sent to siteverify as remoteip.
@@ -186,46 +104,6 @@ func resolveTurnstileRequestHost(ctx context.Context) string {
 // Returns: The canonical client IP resolved by the shared trusted-proxy policy, or empty string when unavailable.
 func resolveTurnstileClientIP(ctx context.Context) string {
 	return clientip.FromContext(ctx)
-}
-
-// resolveTurnstileSecretForLogin selects the turnstile secret key for the current request host.
-// Parameters: requestHost is the normalized request host used to match site settings.
-// Returns: The matched secret key when configured; otherwise an empty string.
-func resolveTurnstileSecretForLogin(requestHost string) string {
-	globalSecret := strings.TrimSpace(gconfig.Shared.GetString("settings.web.turnstile.secret_key"))
-	rawSites := gconfig.Shared.GetStringMap("settings.web.sites")
-	if len(rawSites) == 0 {
-		return globalSecret
-	}
-
-	keys := make([]string, 0, len(rawSites))
-	for key := range rawSites {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	defaultSecret := ""
-	for _, key := range keys {
-		base := "settings.web.sites." + key
-		secret := strings.TrimSpace(gconfig.Shared.GetString(base + ".turnstile_secret_key"))
-		if secret == "" {
-			continue
-		}
-
-		if defaultSecret == "" && gconfig.Shared.GetBool(base+".default") {
-			defaultSecret = secret
-		}
-
-		if requestHost != "" && isTurnstileHostMatched(base, requestHost) {
-			return secret
-		}
-	}
-
-	if defaultSecret != "" {
-		return defaultSecret
-	}
-
-	return globalSecret
 }
 
 // isTurnstileHostMatched checks whether the request host matches the configured hosts for a site.

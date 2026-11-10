@@ -199,7 +199,7 @@ func (s *Blog) ValidateEmailCodeLogin(ctx context.Context, account string, code 
 		return nil, errors.Wrap(err, "load email code login account")
 	}
 	if !user.IsActive() {
-		return nil, errors.WithStack(model.ErrInvalidCredentials)
+		return nil, model.NewCredentialRejection(user.RiskIdentity())
 	}
 
 	return user, nil
