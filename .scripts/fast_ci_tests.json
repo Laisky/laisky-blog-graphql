@@ -118,7 +118,9 @@
       "TestRequestBodyPolicyClassifiesRegisteredRoutes",
       "TestGinBodyBudgetRejectsOversizedBodiesPerRouteFamily",
       "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain",
-      "TestClientAddressMiddlewareRecordsCallerSource"
+      "TestRV95SingleHostXFFRotationLocksOutNewValidKeys",
+      "TestRV95BalanceProxyFloodExhaustsOneAPIBudgetAndLocksOutValidation",
+      "TestProductionEngineAdmitsSlowSteadyLargeUploads"
     ]
   },
   {
@@ -174,7 +176,16 @@
       "TestAuthenticatorSourceBudgetsGroupIPv6By64",
       "TestAuthenticatorSourceBudgetsStayBounded",
       "TestAuthenticatorCacheHitsDoNotChargeSourceBudget",
-      "TestEnsureClientAddressPrefersOuterLayer"
+      "TestEnsureClientIPPrefersRequestIdentity",
+      "TestRV95RevokedKeyOutlivesPositiveTTLBySelfDrainingSourceBudget",
+      "TestRV95ZeroStaleGraceCannotBeConfigured",
+      "TestRV95OneAPIFailureEnvelopeAndHTMLAreAccepted",
+      "TestRV95SustainedFloodEventuallyLocksOutActiveKey",
+      "TestLocalBudgetRefusalNeverGrantsStaleGrace",
+      "TestZeroStaleGraceRefusesDuringOutage",
+      "TestOutageRetriesOfOneKnownKeyAreSpaced",
+      "TestBalanceSharesVerdictCachesAndGate",
+      "TestOneAPIValidatorRequiresJSONContentType"
     ]
   },
   {
@@ -188,7 +199,8 @@
       "TestIngressRejectsOversizedBodyBeforeAuthOrBuffering",
       "TestIngressTerminatesSlowBodyWithinReadBudget",
       "TestIngressReadBudgetDoesNotCutHeldRequests",
-      "TestIngressSourceFloodCannotLockOutOtherCallers"
+      "TestIngressSourceFloodCannotLockOutOtherCallers",
+      "TestIngressOutageLogsOneWarnPerInterval"
     ]
   },
   {
@@ -199,14 +211,18 @@
       "TestEnforceLeavesBodylessRequestsAlone",
       "TestTightenLowersTheCap",
       "TestReadDeadlineCutsSlowBodyButNotTheResponse",
-      "TestReadDeadlineReachesThroughUnwrappingWriters"
+      "TestReadDeadlineReachesThroughUnwrappingWriters",
+      "TestMinDataRateAdmitsSlowButLiveBodies",
+      "TestMinDataRateCutsTrickleBelowTheRate",
+      "TestAbsoluteReadCapBoundsFastEnoughClients"
     ]
   },
   {
     "package": "./internal/mcp/userrequests",
     "tests": [
       "TestConsoleAPIRejectsUnissuedBearerWithoutStorage",
-      "TestConsoleAPIFailsClosedWhenAuthorityUnavailable"
+      "TestConsoleAPIFailsClosedWhenAuthorityUnavailable",
+      "TestReorderBodyIsBounded"
     ]
   },
   {

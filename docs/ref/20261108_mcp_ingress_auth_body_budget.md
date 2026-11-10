@@ -51,10 +51,34 @@ Sources verified for issues #86 (any non-empty bearer became a tenant) and #88
 - Residual risk: a distributed flood from many sources can still exhaust the
   global budget. Recently validated keys survive it through the positive cache
   and stale grace.
-- Until PR #92's `library/clientip` lands, the source is gin's `ClientIP()`,
-  which trusts `X-Forwarded-For` from any peer (gin 1.12 default trusted
-  CIDRs). The source is threaded through `mcpauth.WithClientAddress` so that
-  it can be swapped for `clientip.FromContext`.
+- The client source is `clientip.FromContext`, the identity PR #92's
+  request-identity middleware resolves with the trusted-proxy policy. A direct
+  peer cannot choose its source with `X-Forwarded-For`. IPv6 is grouped by /64
+  via `clientip.NetworkKey`.
+- Review follow-ups (2026-11-10):
+  - **One gate for every one-api call.** All calls to one-api's per-IP-limited
+    REST API go through a single `UpstreamGate`: validation, revalidation, the
+    `/api/oneapi/balance` proxy and GraphQL `ValidateOneapiAPIKey`. Before
+    this, the anonymous balance proxies called one-api unthrottled. About
+    2.7 req/s kept one-api answering 429, which made every uncached valid key
+    503.
+  - **Revalidation reserve.** Known keys revalidate from a reserved budget
+    that unknown-key traffic cannot spend. Stale-if-error alone could not
+    help here: a sustained unknown-key flood still locked active keys out
+    after positive TTL + grace (35 minutes).
+  - **Genuine failures only.** Stale-if-error applies only to failures
+    reported by one-api itself. A refusal by this server's own budget never
+    applies it; otherwise emptying one's own budget extended a revoked key
+    for about 35 minutes.
+- one-api reports some controller failures as HTTP 200 `{"success": false}`
+  (`helper.RespondError`), and its SPA serves 200 HTML outside `/api`. The
+  validator accepts only `application/json` with `"success": true` from a
+  bounded read.
+- Minimum request-body data rate: modeled on ASP.NET Core Kestrel's
+  `MinRequestBodyDataRate` (default 240 B/s after a 5 s grace; see
+  <https://learn.microsoft.com/aspnet/core/fundamentals/servers/kestrel/options>).
+  We use 4 KiB/s after 10 s, with an absolute cap of
+  min(30 min, grace + cap / rate).
 - No normative source covers negative caching or stale-if-error. Our choices:
   - Short negative TTL (≤ 5m).
   - Stale-if-error only for keys accepted within a bounded grace window.
