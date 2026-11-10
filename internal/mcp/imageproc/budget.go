@@ -1,12 +1,11 @@
 package imageproc
 
 import (
-	"context"
+	"encoding/binary"
 	"image"
 	"image/color"
 
 	errors "github.com/Laisky/errors/v2"
-	"golang.org/x/sync/semaphore"
 )
 
 // DefaultDecodeMemoryBudgetBytes is the default process-wide budget for the
@@ -17,10 +16,6 @@ import (
 // shared API process. Only 16-bit interlaced PNG / 16-bit TIFF and progressive
 // full-chroma or CMYK JPEG above roughly 40-60 MP (depending on layout) exceed it.
 const DefaultDecodeMemoryBudgetBytes int64 = 1280 << 20
-
-// ErrDecodeBusy indicates Normalize could not be admitted to the decode memory
-// budget before its context ended because other images were being decoded.
-var ErrDecodeBusy = errors.New("image decoder is busy")
 
 const (
 	// resizeSampleBytes is what x/image/draw's kernel scaler keeps per
@@ -35,57 +30,6 @@ const (
 	// worstCaseBytesPerPixel is used for color models the estimator does not know.
 	worstCaseBytesPerPixel = 8
 )
-
-// DecodeBudget bounds the summed estimated working set of in-flight Normalize
-// calls. Decoding is admitted only once the estimate fits in the remaining
-// budget; an image whose estimate alone exceeds the whole budget is rejected
-// with ErrDimensionsTooLarge. Waiting honors the caller's context.
-//
-// A DecodeBudget is safe for concurrent use. One budget should be shared by
-// every Normalize caller in a process so the bound is process-wide.
-type DecodeBudget struct {
-	capacity int64
-	sem      *semaphore.Weighted
-}
-
-// defaultDecodeBudget backs the package-level Normalize helper.
-var defaultDecodeBudget = NewDecodeBudget(DefaultDecodeMemoryBudgetBytes)
-
-// NewDecodeBudget returns a DecodeBudget of capacityBytes. Non-positive values
-// fall back to DefaultDecodeMemoryBudgetBytes.
-func NewDecodeBudget(capacityBytes int64) *DecodeBudget {
-	if capacityBytes <= 0 {
-		capacityBytes = DefaultDecodeMemoryBudgetBytes
-	}
-	return &DecodeBudget{capacity: capacityBytes, sem: semaphore.NewWeighted(capacityBytes)}
-}
-
-// Capacity reports the budget size in bytes.
-func (b *DecodeBudget) Capacity() int64 {
-	if b == nil {
-		return DefaultDecodeMemoryBudgetBytes
-	}
-	return b.capacity
-}
-
-// acquire reserves cost bytes, blocking until they are available or ctx ends.
-// The returned release function must be called exactly once.
-func (b *DecodeBudget) acquire(ctx context.Context, cost int64) (func(), error) {
-	if cost > b.capacity {
-		return nil, errors.Wrapf(ErrDimensionsTooLarge,
-			"estimated decode working set %d bytes exceeds the %d byte decode memory budget", cost, b.capacity)
-	}
-	if cost < 1 {
-		cost = 1
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, errors.Wrap(ErrDecodeBusy, err.Error())
-	}
-	if err := b.sem.Acquire(ctx, cost); err != nil {
-		return nil, errors.Wrap(ErrDecodeBusy, err.Error())
-	}
-	return func() { b.sem.Release(cost) }, nil
-}
 
 // estimateDecodeBytes returns a conservative upper bound of the transient heap
 // that decoding raw, resizing it and re-encoding it as PNG will allocate. It
@@ -102,27 +46,30 @@ func estimateDecodeBytes(raw []byte, mime string, cfg image.Config) (int64, erro
 	switch mime {
 	case mimeImageJpeg:
 		decoded = estimateJPEGDecodeBytes(raw, cfg)
+		if orientation := readJPEGOrientation(raw); orientation >= 2 && orientation <= 8 {
+			// applyOrientation writes one oriented RGBA copy.
+			decoded += 4 * pixels
+		}
 	case mimeImagePng:
 		if err := checkPNGPixelData(raw, cfg); err != nil {
 			return 0, errors.WithStack(err)
 		}
-		decoded = pixels * bytesPerPixel(cfg.ColorModel)
+		decoded = pixels * pngBytesPerPixel(raw, cfg)
 		if pngInterlaced(raw) {
 			// Each Adam7 pass is decoded into its own image before being merged.
 			decoded *= 2
 		}
 	case mimeImageGif:
-		// Only the first frame is decoded and it cannot exceed the logical screen.
-		decoded = pixels
+		// Only the first frame is decoded and it cannot exceed the logical
+		// screen; an interlaced frame is copied once more when de-interlaced.
+		decoded = 2 * pixels
 	case mimeImageBmp:
 		if err := checkBMPPixelData(raw, cfg); err != nil {
 			return 0, errors.WithStack(err)
 		}
 		decoded = pixels * bytesPerPixel(cfg.ColorModel)
 	case mimeImageTiff:
-		// The image plus one decompressed strip or tile, which may span the
-		// image and is read into a growing buffer (up to 2x its final size).
-		decoded = 3 * pixels * bytesPerPixel(cfg.ColorModel)
+		decoded = pixels*bytesPerPixel(cfg.ColorModel) + tiffBlockBufferBytes(parseTIFFLayout(raw, cfg), int64(len(raw)), pixels)
 	case mimeImageWebp:
 		decoded = estimateWebPDecodeBytes(cfg)
 	default:
@@ -173,6 +120,207 @@ func resizedDimensions(w, h, maxEdge int) (int, int) {
 		return w, h
 	}
 	return max(w*maxEdge/longest, 1), max(h*maxEdge/longest, 1)
+}
+
+// pngBytesPerPixel returns the size of one pixel of the image image/png
+// returns. DecodeConfig reports a gray model for grayscale PNGs, but with a
+// tRNS chunk the decoder returns NRGBA (8-bit) or NRGBA64 (16-bit) instead.
+func pngBytesPerPixel(raw []byte, cfg image.Config) int64 {
+	const bitDepthOffset, colorTypeOffset = 8 + 8 + 8, 8 + 8 + 9
+	bpp := bytesPerPixel(cfg.ColorModel)
+	if len(raw) > colorTypeOffset && raw[colorTypeOffset] == 0 && pngHasTRNS(raw) {
+		if raw[bitDepthOffset] == 16 {
+			return 8
+		}
+		return 4
+	}
+	return bpp
+}
+
+// pngMaxScannedChunks bounds the chunk walk of pngHasTRNS.
+const pngMaxScannedChunks = 1024
+
+// pngHasTRNS reports whether a tRNS chunk precedes the first IDAT. It walks
+// chunk headers only (skipping their data by length), at most
+// pngMaxScannedChunks of them, without allocating.
+func pngHasTRNS(raw []byte) bool {
+	pos := int64(8)
+	for range pngMaxScannedChunks {
+		if pos+8 > int64(len(raw)) {
+			return false
+		}
+		length := int64(binary.BigEndian.Uint32(raw[pos : pos+4]))
+		switch string(raw[pos+4 : pos+8]) {
+		case "tRNS":
+			return true
+		case "IDAT", "IEND":
+			return false
+		}
+		pos += 12 + length
+	}
+	return false
+}
+
+// tiffLayout is the part of the first TIFF IFD that sizes the decoder's
+// per-strip (or per-tile) inflate buffer.
+type tiffLayout struct {
+	ok            bool
+	compression   int64
+	blocks        int64 // strips or tiles
+	blockPixels   int64 // pixels per strip or tile, as the decoder pads them
+	maxBlockBytes int64 // largest StripByteCounts / TileByteCounts value
+}
+
+const (
+	// tiffDecoderBytesPerPixel is the per-pixel ceiling golang.org/x/image/tiff
+	// lets one block inflate to, whatever the real bit depth (RGBA64).
+	tiffDecoderBytesPerPixel = 8
+	// growingBufferFactor bounds the cumulative allocation of a bytes.Buffer or
+	// append-grown slice that ends at n bytes: doubling allocates about 2n in
+	// total and the final capacity may overshoot up to 2n.
+	growingBufferFactor = 4
+	// packBitsMaxRatio is PackBits' maximum expansion (a 2-byte run emits 128).
+	packBitsMaxRatio = 64
+	// tiffMaxBlockEntries bounds how many byte-count entries are inspected.
+	tiffMaxBlockEntries = 1 << 20
+	// tiffSafeReadChunk is the chunk x/image/tiff reads large uncompressed blocks in.
+	tiffSafeReadChunk = 10 << 20
+)
+
+// tiffBlockBufferBytes bounds what golang.org/x/image/tiff allocates to read
+// strips or tiles on top of the image. Uncompressed blocks are read as is, so
+// they are bounded by the file. Compressed blocks are inflated into a buffer
+// limited to blockPixels x 8 bytes (for every bit depth); deflate data cannot
+// expand by more than deflateMaxRatio, PackBits by packBitsMaxRatio. LZW and
+// CCITT get the decoder's own limit. Without a parsable layout the whole
+// image is assumed to be one compressed block.
+func tiffBlockBufferBytes(layout tiffLayout, rawLen, pixels int64) int64 {
+	if !layout.ok {
+		return growingBufferFactor * pixels * tiffDecoderBytesPerPixel
+	}
+	blockMax := layout.blockPixels * tiffDecoderBytesPerPixel
+	switch layout.compression {
+	case 0, 1: // none
+		return 2*rawLen + tiffSafeReadChunk
+	case 8, 32946: // deflate; one buffer is reused across blocks
+		return growingBufferFactor * min(blockMax, deflateMaxRatio*layout.maxBlockBytes+64<<10)
+	case 32773: // PackBits; each block gets a fresh buffer
+		return growingBufferFactor * min(layout.blocks*blockMax, packBitsMaxRatio*rawLen+layout.blocks*128)
+	default: // LZW, CCITT; one buffer is reused across blocks
+		return growingBufferFactor * blockMax
+	}
+}
+
+// parseTIFFLayout reads compression, strip/tile geometry and block byte
+// counts from the first IFD of a classic TIFF, mirroring how
+// golang.org/x/image/tiff derives its block size. Every read is bounds
+// checked; ok is false when the IFD cannot be parsed.
+func parseTIFFLayout(raw []byte, cfg image.Config) tiffLayout {
+	var bo binary.ByteOrder
+	switch {
+	case len(raw) < 8:
+		return tiffLayout{}
+	case raw[0] == 'I' && raw[1] == 'I':
+		bo = binary.LittleEndian
+	case raw[0] == 'M' && raw[1] == 'M':
+		bo = binary.BigEndian
+	default:
+		return tiffLayout{}
+	}
+	ifd := int64(bo.Uint32(raw[4:8]))
+	if ifd+2 > int64(len(raw)) {
+		return tiffLayout{}
+	}
+	count := int64(bo.Uint16(raw[ifd : ifd+2]))
+	entries := raw[ifd+2:]
+	count = min(count, int64(len(entries))/12)
+
+	values := func(entry []byte) (func(i int64) (int64, bool), int64) {
+		typ, n := bo.Uint16(entry[2:4]), int64(bo.Uint32(entry[4:8]))
+		size := int64(0)
+		switch typ {
+		case 3: // SHORT
+			size = 2
+		case 4: // LONG
+			size = 4
+		default:
+			return nil, 0
+		}
+		n = min(n, tiffMaxBlockEntries)
+		data := entry[8:12]
+		if n*size > 4 {
+			off := int64(bo.Uint32(entry[8:12]))
+			if off < 0 || off+n*size > int64(len(raw)) {
+				return nil, 0
+			}
+			data = raw[off : off+n*size]
+		}
+		return func(i int64) (int64, bool) {
+			if i >= n {
+				return 0, false
+			}
+			if size == 2 {
+				return int64(bo.Uint16(data[i*2:])), true
+			}
+			return int64(bo.Uint32(data[i*4:])), true
+		}, n
+	}
+	first := func(entry []byte) int64 {
+		at, _ := values(entry)
+		if at == nil {
+			return 0
+		}
+		v, _ := at(0)
+		return v
+	}
+
+	layout := tiffLayout{ok: true, compression: 1}
+	var rowsPerStrip, tileW, tileH int64
+	var stripCounts, tileCounts []byte
+	for i := int64(0); i < count; i++ {
+		entry := entries[i*12 : i*12+12]
+		switch bo.Uint16(entry[0:2]) {
+		case 259:
+			layout.compression = first(entry)
+		case 278:
+			rowsPerStrip = first(entry)
+		case 322:
+			tileW = first(entry)
+		case 323:
+			tileH = first(entry)
+		case 279:
+			stripCounts = entry
+		case 325:
+			tileCounts = entry
+		}
+	}
+
+	w, h := int64(cfg.Width), int64(cfg.Height)
+	countsEntry := stripCounts
+	if tileW > 0 && tileH > 0 {
+		layout.blockPixels = tileW * tileH
+		layout.blocks = ((w + tileW - 1) / tileW) * ((h + tileH - 1) / tileH)
+		countsEntry = tileCounts
+	} else {
+		blockH := h
+		if rowsPerStrip > 0 && rowsPerStrip < h {
+			blockH = rowsPerStrip
+		}
+		layout.blockPixels = w * blockH
+		layout.blocks = (h + blockH - 1) / max(blockH, 1)
+	}
+	if countsEntry == nil {
+		return tiffLayout{}
+	}
+	at, n := values(countsEntry)
+	if at == nil {
+		return tiffLayout{}
+	}
+	for i := int64(0); i < n; i++ {
+		v, _ := at(i)
+		layout.maxBlockBytes = max(layout.maxBlockBytes, v)
+	}
+	return layout
 }
 
 // pngInterlaced reports whether the IHDR chunk declares Adam7 interlacing.

@@ -62,6 +62,13 @@ func Normalize(ctx context.Context, raw []byte, originalFilename string) (Pipeli
 // It returns ErrDimensionsTooLarge when the dimensions or the estimate exceed
 // the limits, and ErrDecodeBusy when ctx ends while waiting for the budget.
 func (b *DecodeBudget) Normalize(ctx context.Context, raw []byte, originalFilename string) (PipelineResult, error) {
+	return b.NormalizeFor(ctx, "", raw, originalFilename)
+}
+
+// NormalizeFor is Normalize on behalf of owner (for example a user identity),
+// whose concurrent decodes the budget caps and orders fairly against other
+// owners (see DecodeBudget).
+func (b *DecodeBudget) NormalizeFor(ctx context.Context, owner string, raw []byte, originalFilename string) (PipelineResult, error) {
 	if b == nil {
 		b = defaultDecodeBudget
 	}
@@ -92,7 +99,7 @@ func (b *DecodeBudget) Normalize(ctx context.Context, raw []byte, originalFilena
 	if err != nil {
 		return PipelineResult{}, errors.Wrap(err, "imageproc normalize: estimate decode memory")
 	}
-	release, err := b.acquire(ctx, cost)
+	release, err := b.acquireFor(ctx, owner, cost)
 	if err != nil {
 		return PipelineResult{}, errors.Wrap(err, "imageproc normalize: admit decode")
 	}
