@@ -51,9 +51,9 @@ func accountingRegistryFixture() map[string]any {
 func issuerRequestContext(t *testing.T) context.Context {
 	t.Helper()
 	gctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	request := httptest.NewRequest(http.MethodPost, "/query", nil)
-	request.Host = "sso.laisky.com"
-	request.Header.Set("X-Forwarded-Proto", "https")
+	// An absolute https URL gives the request a TLS state, so the scheme does not
+	// depend on forwarding headers that only a trusted proxy may supply.
+	request := httptest.NewRequest(http.MethodPost, "https://sso.laisky.com/query", nil)
 	gctx.Request = request
 	return context.WithValue(context.Background(), gmw.CtxKeyGin, gctx)
 }

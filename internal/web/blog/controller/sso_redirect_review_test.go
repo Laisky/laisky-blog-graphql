@@ -18,9 +18,9 @@ import (
 func requestContextFor(t *testing.T, scheme, host string) context.Context {
 	t.Helper()
 	gctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	request := httptest.NewRequest(http.MethodPost, "/query", nil)
-	request.Host = host
-	request.Header.Set("X-Forwarded-Proto", scheme)
+	// An absolute URL sets Host and, for https, a TLS state, so the scheme does not
+	// depend on forwarding headers that only a trusted proxy may supply.
+	request := httptest.NewRequest(http.MethodPost, scheme+"://"+host+"/query", nil)
 	gctx.Request = request
 	return context.WithValue(context.Background(), gmw.CtxKeyGin, gctx)
 }
