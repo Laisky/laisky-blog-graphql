@@ -7,6 +7,7 @@ import {
   configureSsoRedirectPolicy,
   parseRedirectTarget,
 } from './sso-redirect';
+import { parseSsoRedirectPolicy } from './sso-redirect-policy';
 
 // configure applies a runtime SSO redirect policy exactly as bootstrap does.
 function configure(config: { ssoRedirect?: unknown } | null): void {
@@ -74,10 +75,8 @@ describe('redirect transport policy for the legacy bearer handoff', () => {
   it.each([
     'http://localhost:5173/cb',
     'http://127.0.0.1:8080/cb',
-    'http://100.75.198.70:5173/gptchat',
-    'http://10.20.30.40/cb',
-    'http://[fd00::1]/cb',
-  ])('keeps the development-only http host %s on the legacy handoff', async (raw) => {
+    'http://[::1]:8080/cb',
+  ])('keeps the loopback http host %s on the legacy handoff', async (raw) => {
     const parsed = parseRedirectTarget(raw, issuer);
     expect(parsed.error).toBeUndefined();
     const result = new URL(await buildSsoRedirectUrl(parsed.url!, bearer));
@@ -168,5 +167,66 @@ describe('legacy bearer cutover switch', () => {
     const bookmark = parseRedirectTarget('https://blog.laisky.com/p/article/', issuer);
     expect(new URL(await buildSsoRedirectUrl(bookmark.url!, bearer)).searchParams.get('sso_return')).toBe('/p/article/');
     expect(await buildSsoRedirectUrl(new URL(issuer + '/profile'), bearer)).toBe(issuer + '/profile');
+  });
+});
+
+// Review follow-ups for PR 93: development targets, shared hostnames, backslashes in the
+// query or fragment, and the bearer builder for issuer pages.
+describe('review follow-ups', () => {
+  function useIssuerOrigin(origin: string) {
+    Object.defineProperty(window, 'location', { configurable: true, value: { origin, pathname: '/', assign: vi.fn() } });
+  }
+
+  it.each([
+    'http://192.168.1.66/x',
+    'https://10.0.0.5/x',
+    'http://100.64.0.10:5173/gptchat',
+    'http://172.16.4.2/cb',
+    'http://[fd00::1]/cb',
+  ])('a production issuer never hands the bearer to the unregistered private target %s', async (raw) => {
+    await expectNoBearer(raw);
+  });
+
+  it.each(['http://localhost:5173/cb', 'http://127.0.0.1:8080/cb', 'http://[::1]:8080/cb'])(
+    'a production issuer keeps the loopback target %s on the legacy handoff', async (raw) => {
+      expect(new URL(await buildSsoRedirectUrl(parseRedirectTarget(raw, issuer).url!, bearer)).searchParams.get('sso_token')).toBe(bearer);
+    });
+
+  it('a development issuer keeps private development targets on the legacy handoff', async () => {
+    useIssuerOrigin('http://192.168.1.10:5173');
+    const parsed = parseRedirectTarget('http://192.168.1.66/x', 'http://192.168.1.10:5173');
+    expect(parsed.error).toBeUndefined();
+    expect(new URL(await buildSsoRedirectUrl(parsed.url!, bearer)).searchParams.get('sso_token')).toBe(bearer);
+  });
+
+  it('a production issuer hands the bearer only to the exact registered development callback', async () => {
+    configure({ ssoRedirect: { legacy_token_redirect: 'allow', clients: [
+      { client_id: 'devapp', redirect_uris: ['http://192.168.1.66:8080/sso/callback'], legacy_token_redirect: 'allow' },
+    ] } });
+    const parsed = parseRedirectTarget('http://192.168.1.66:8080/sso/callback?state=x', issuer);
+    expect(parsed.error).toBeUndefined();
+    expect(new URL(await buildSsoRedirectUrl(parsed.url!, bearer)).searchParams.get('sso_token')).toBe(bearer);
+    await expectNoBearer('http://192.168.1.66:8080/other');
+  });
+
+  it('refuses a registry in which two clients share one hostname', () => {
+    expect(parseSsoRedirectPolicy({ legacy_token_redirect: 'allow', clients: [
+      { client_id: 'first', redirect_uris: ['https://shared.laisky.com/a'] },
+      { client_id: 'second', redirect_uris: ['https://shared.laisky.com/b'] },
+    ] })).toBeNull();
+  });
+
+  it('keeps backslashes that browsers leave in the query and fragment of location.href', async () => {
+    const parsed = parseRedirectTarget('https://chat.laisky.com/p?q=a\\b#f\\g', issuer);
+    expect(parsed.error).toBeUndefined();
+    const result = new URL(await buildSsoRedirectUrl(parsed.url!, bearer));
+    expect(result.searchParams.get('sso_token')).toBe(bearer);
+    expect(result.hash).toBe('#f\\g');
+    await expectNoBearer('https://evil.example\\@sso.laisky.com/');
+    expect(parseRedirectTarget('https://chat.laisky.com/a\\b?x=1', issuer).url).toBeNull();
+  });
+
+  it('never builds a bearer URL for an issuer page', () => {
+    expect(() => buildRedirectUrlWithToken(new URL(issuer + '/profile'), bearer)).toThrow();
   });
 });

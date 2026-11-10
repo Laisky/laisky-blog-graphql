@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -84,7 +85,10 @@ func (r *MutationResolver) UserGithubOAuthStart(ctx context.Context,
 		return nil, errors.Wrap(err, "load github oauth settings")
 	}
 
-	validatedRedirect, err := resolveGitHubOAuthRedirectTarget(ctx, redirectTo)
+	// GitHub returns to the configured callback, which may be the other issuer origin
+	// (sso vs mcp). Judge the target against that completing origin now, before the user
+	// leaves for GitHub, exactly as the completion re-check will.
+	validatedRedirect, err := resolveSSORedirectTargetFor(ctx, redirectTo, completionOrigin(ctx, settings.RedirectURL))
 	if err != nil {
 		return nil, errors.Wrap(err, "validate redirect target")
 	}
@@ -285,10 +289,17 @@ func resolveGitHubOAuthCallbackURL(ctx context.Context) string {
 // profile with the session it just stored, without handing a bearer to another origin.
 const defaultSSORedirectTarget = "/profile"
 
-// resolveGitHubOAuthRedirectTarget validates and normalizes an optional redirect target.
-// It accepts request context and raw redirect value, returning a safe redirect URL string.
+// resolveGitHubOAuthRedirectTarget validates and normalizes an optional redirect target for a
+// ceremony that completes on the requesting origin, such as passkey login.
 // An absent target selects the issuer profile page.
 func resolveGitHubOAuthRedirectTarget(ctx context.Context, raw *string) (string, error) {
+	return resolveSSORedirectTargetFor(ctx, raw, resolveRequestBaseURL(ctx))
+}
+
+// resolveSSORedirectTargetFor validates an optional redirect target for a ceremony that completes
+// on completingOrigin. Issuer-relative targets resolve against the requesting origin, the page
+// the user is on, and are then judged against the origin that will hand over the session.
+func resolveSSORedirectTargetFor(ctx context.Context, raw *string, completingOrigin string) (string, error) {
 	if raw == nil || strings.TrimSpace(*raw) == "" {
 		return defaultSSORedirectTarget, nil
 	}
@@ -297,24 +308,42 @@ func resolveGitHubOAuthRedirectTarget(ctx context.Context, raw *string) (string,
 	if err := validateInputLength(ssoredirect.MaxTargetLength, redirectTo); err != nil {
 		return "", errors.Wrap(err, "validate redirect target length")
 	}
-	decision, err := classifySSORedirectTarget(ctx, redirectTo)
+	if base := resolveRequestBaseURL(ctx); base != "" && strings.HasPrefix(redirectTo, "/") && !strings.HasPrefix(redirectTo, "//") {
+		redirectTo = strings.TrimRight(base, "/") + redirectTo
+	}
+	decision, err := classifySSORedirectTargetFor(ctx, redirectTo, completingOrigin)
 	if err != nil {
 		return "", errors.Wrap(err, "validate redirect target")
 	}
 	return decision.Target, nil
 }
 
-// classifySSORedirectTarget applies the shared SSO redirect policy (internal/library/ssoredirect)
-// to raw, resolving issuer-relative targets against the request origin. Blog targets are
+// completionOrigin returns the origin of the GitHub callback page, which completes the sign-in
+// and hands over the session; it falls back to the requesting origin.
+func completionOrigin(ctx context.Context, callbackURL string) string {
+	if parsed, err := url.Parse(strings.TrimSpace(callbackURL)); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		return strings.ToLower(parsed.Scheme) + "://" + parsed.Host
+	}
+	return resolveRequestBaseURL(ctx)
+}
+
+// classifySSORedirectTarget applies the shared SSO redirect policy to raw for a ceremony that
+// completes on the requesting origin.
+func classifySSORedirectTarget(ctx context.Context, raw string) (ssoredirect.Decision, error) {
+	return classifySSORedirectTargetFor(ctx, raw, resolveRequestBaseURL(ctx))
+}
+
+// classifySSORedirectTargetFor applies the shared SSO redirect policy (internal/library/ssoredirect)
+// to raw as seen from issuerOrigin, the issuer page that hands over the session. Blog targets are
 // delegated to the Blog protocol that the issuer frontend enforces; registered clients only
 // pass as exact code requests; other targets follow settings.web.sso.legacy_token_redirect.
-func classifySSORedirectTarget(ctx context.Context, raw string) (ssoredirect.Decision, error) {
+func classifySSORedirectTargetFor(ctx context.Context, raw, issuerOrigin string) (ssoredirect.Decision, error) {
 	policy, err := ssoredirect.Load()
 	if err != nil {
 		// Load already returned the fail-closed policy; only report the configuration problem.
 		gmw.GetLogger(ctx).Error("sso redirect policy is invalid; refusing legacy and client redirects", zap.Error(err))
 	}
-	decision := ssoredirect.Classify(raw, resolveRequestBaseURL(ctx), policy)
+	decision := ssoredirect.Classify(raw, issuerOrigin, policy)
 	if !decision.Allowed() {
 		return decision, errors.Errorf("unsupported redirect target: %s", decision.Reason)
 	}

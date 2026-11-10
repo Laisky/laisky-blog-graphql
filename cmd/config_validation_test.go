@@ -377,7 +377,7 @@ func TestValidateStartupConfigSSORedirectPolicy(t *testing.T) {
 		{"legacy_token_redirect": "allow"},
 		{"legacy_token_redirect": "deny", "clients": map[string]any{"accounting": valid}},
 		{"clients": map[string]any{"cv": map[string]any{
-			"redirect_uris":         []any{"https://cv.laisky.com/cv/sso/callback", "http://100.75.198.70:5173/cv/sso/callback"},
+			"redirect_uris":         []any{"https://cv.laisky.com/cv/sso/callback", "http://192.168.1.20:5173/cv/sso/callback"},
 			"legacy_token_redirect": "allow",
 		}}},
 	} {
@@ -400,6 +400,10 @@ func TestValidateStartupConfigSSORedirectPolicy(t *testing.T) {
 		"shared callback": {"clients": map[string]any{
 			"accounting": valid,
 			"other":      valid,
+		}},
+		"shared hostname": {"clients": map[string]any{
+			"accounting": valid,
+			"other":      map[string]any{"redirect_uris": []any{"https://accounting.laisky.com/other"}},
 		}},
 	} {
 		err := validateStartupConfigWithGetter(newMapConfigGetter(ssoRedirectConfigFixture(sso)))

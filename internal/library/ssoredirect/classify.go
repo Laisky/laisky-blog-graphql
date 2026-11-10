@@ -5,6 +5,7 @@
 package ssoredirect
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -55,6 +56,19 @@ const (
 	ReasonUnregisteredCode  = "unregistered_client"
 	ReasonCodeFlowRequired  = "code_flow_required"
 	ReasonLegacyDisabled    = "legacy_redirect_disabled"
+	ReasonDevelopmentTarget = "development_target_requires_registration"
+)
+
+// hostClass separates production hosts from loopback and private development hosts.
+type hostClass int
+
+const (
+	// hostProduction is laisky.com or a subdomain; only https is accepted.
+	hostProduction hostClass = iota
+	// hostLoopback is localhost, 127.0.0.0/8 or ::1; the request never leaves the device.
+	hostLoopback
+	// hostPrivate is an RFC 1918, RFC 6598 (CGNAT) or fc00::/7 literal shared by a network.
+	hostPrivate
 )
 
 // Decision is the classification of one redirect target.
@@ -103,51 +117,102 @@ type target struct {
 	fragment bool
 }
 
+// inspection is a target that passed the syntax, host and transport rules.
+type inspection struct {
+	value    string
+	parsed   target
+	class    hostClass
+	blog     bool
+	issuer   target
+	issuerOK bool
+}
+
+// inspect applies the rules shared by every target and every registration: printable
+// ASCII, no backslash before the query or fragment, bounded length, an absolute http(s)
+// URL or an issuer-relative path, no userinfo, a canonical host and port, and https on
+// production hosts. Blog targets stop after the host is known; the Blog protocol owns them.
+func inspect(raw, issuerOrigin string) (inspection, string) {
+	value := trimASCIISpace(raw)
+	if value == "" {
+		return inspection{}, ReasonMissing
+	}
+	// WHATWG URL parsing reads a backslash as "/" in the scheme, authority and path, where
+	// other parsers keep it. Browsers leave it unencoded in the query and fragment, where it is data.
+	boundary := strings.IndexAny(value, "?#")
+	if boundary < 0 {
+		boundary = len(value)
+	}
+	for i := range len(value) {
+		if c := value[i]; c < 0x21 || c > 0x7e || c == '\\' && i < boundary {
+			return inspection{}, ReasonInvalidCharacter
+		}
+	}
+	if len(value) > MaxTargetLength {
+		return inspection{}, ReasonTooLong
+	}
+
+	var result inspection
+	result.issuer, result.issuerOK = splitTarget(trimASCIISpace(issuerOrigin))
+	result.issuerOK = result.issuerOK && !result.issuer.userinfo && result.issuer.query == "" && !result.issuer.fragment &&
+		(result.issuer.path == "" || result.issuer.path == "/")
+	if strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") {
+		if !result.issuerOK {
+			return inspection{}, ReasonUnsupportedTarget
+		}
+		value = result.issuer.origin() + value
+	}
+	parsed, ok := splitTarget(value)
+	if !ok {
+		return inspection{}, ReasonUnsupportedTarget
+	}
+	result.value, result.parsed = value, parsed
+	if strings.TrimSuffix(parsed.host, ".") == BlogHostname {
+		result.blog = true
+		return result, ""
+	}
+	if parsed.userinfo {
+		return inspection{}, ReasonUserinfo
+	}
+	class, reason := classifyHost(parsed.host)
+	if reason != "" {
+		return inspection{}, reason
+	}
+	if parsed.hasPort && !validPort(parsed.port) {
+		return inspection{}, ReasonInvalidPort
+	}
+	if class == hostProduction && parsed.scheme != schemeHTTPS {
+		return inspection{}, ReasonInsecureScheme
+	}
+	result.class = class
+	return result, ""
+}
+
+// developmentIssuer reports whether the issuer page itself runs on a loopback or private host.
+func (i inspection) developmentIssuer() bool {
+	if !i.issuerOK {
+		return false
+	}
+	class, reason := classifyHost(i.issuer.host)
+	return reason == "" && class != hostProduction
+}
+
 // Classify decides how the issuer may hand a session to raw. issuerOrigin is the
 // issuer page origin (for example https://sso.laisky.com); it resolves root-relative
 // paths and identifies issuer pages. The checks run on the raw string, so URL parser
 // repairs (backslashes, tabs, numeric IPv4 spellings, userinfo) cannot change the outcome.
+//
+// Loopback targets keep the legacy handoff from any issuer, because the request never
+// leaves the device. A private, CGNAT or ULA target is shared by a network, so a
+// production issuer hands it the bearer only at an exact registered callback whose
+// client allows the legacy handoff; a development issuer keeps the legacy handoff.
 func Classify(raw, issuerOrigin string, policy Policy) Decision {
-	value := trimASCIISpace(raw)
-	if value == "" {
-		return reject(ReasonMissing)
-	}
-	for i := range len(value) {
-		if c := value[i]; c < 0x21 || c > 0x7e || c == '\\' {
-			return reject(ReasonInvalidCharacter)
-		}
-	}
-	if len(value) > MaxTargetLength {
-		return reject(ReasonTooLong)
-	}
-
-	issuer, issuerOK := splitTarget(trimASCIISpace(issuerOrigin))
-	issuerOK = issuerOK && !issuer.userinfo && issuer.query == "" && !issuer.fragment && (issuer.path == "" || issuer.path == "/")
-	if strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") {
-		if !issuerOK {
-			return reject(ReasonUnsupportedTarget)
-		}
-		value = issuer.origin() + value
-	}
-	parsed, ok := splitTarget(value)
-	if !ok {
-		return reject(ReasonUnsupportedTarget)
-	}
-	if strings.TrimSuffix(parsed.host, ".") == BlogHostname {
-		return Decision{Kind: KindBlog, Target: value}
-	}
-	if parsed.userinfo {
-		return reject(ReasonUserinfo)
-	}
-	production, reason := classifyHost(parsed.host)
+	checked, reason := inspect(raw, issuerOrigin)
 	if reason != "" {
 		return reject(reason)
 	}
-	if parsed.hasPort && !validPort(parsed.port) {
-		return reject(ReasonInvalidPort)
-	}
-	if production && parsed.scheme != schemeHTTPS {
-		return reject(ReasonInsecureScheme)
+	value, parsed := checked.value, checked.parsed
+	if checked.blog {
+		return Decision{Kind: KindBlog, Target: value}
 	}
 
 	names := queryNames(parsed.query)
@@ -157,18 +222,25 @@ func Classify(raw, issuerOrigin string, policy Policy) Decision {
 	if names["sso_flow"] {
 		return reject(ReasonInvalidCode)
 	}
-	if issuerOK && parsed.origin() == issuer.origin() {
+	if checked.issuerOK && parsed.origin() == checked.issuer.origin() {
 		return Decision{Kind: KindSelf, Target: value}
 	}
+	gated := checked.class == hostPrivate && !checked.developmentIssuer()
 	hostname := strings.TrimSuffix(parsed.host, ".")
 	for _, client := range policy.Clients {
 		if !client.ownsHostname(hostname) {
 			continue
 		}
-		if client.LegacyTokenRedirect == ModeAllow && policy.LegacyTokenRedirect == ModeAllow {
-			return Decision{Kind: KindLegacy, Target: value}
+		if client.LegacyTokenRedirect != ModeAllow || policy.LegacyTokenRedirect != ModeAllow {
+			return reject(ReasonCodeFlowRequired)
 		}
-		return reject(ReasonCodeFlowRequired)
+		if gated && !slices.Contains(client.RedirectURIs, parsed.callback()) {
+			return reject(ReasonDevelopmentTarget)
+		}
+		return Decision{Kind: KindLegacy, Target: value}
+	}
+	if gated {
+		return reject(ReasonDevelopmentTarget)
 	}
 	if policy.LegacyTokenRedirect != ModeAllow {
 		return reject(ReasonLegacyDisabled)
@@ -200,7 +272,7 @@ func classifyCodeRequest(parsed target, policy Policy) Decision {
 	if !ok {
 		return reject(ReasonUnregisteredCode)
 	}
-	redirectURI, _, _ := strings.Cut(parsed.raw, "?")
+	redirectURI := parsed.callback()
 	for _, registered := range client.RedirectURIs {
 		if registered == redirectURI {
 			return Decision{Kind: KindClientCode, ClientID: client.ID, RedirectURI: registered, Target: parsed.raw}
@@ -278,6 +350,14 @@ func splitTarget(value string) (target, bool) {
 	return parsed, true
 }
 
+// callback returns the raw target before its query or fragment, for exact registry comparison.
+func (t target) callback() string {
+	if end := strings.IndexAny(t.raw, "?#"); end >= 0 {
+		return t.raw[:end]
+	}
+	return t.raw
+}
+
 // origin renders the comparable origin: lower-case scheme and host, without a default port.
 func (t target) origin() string {
 	origin := t.scheme + "://" + t.host
@@ -314,47 +394,53 @@ func validPort(port string) bool {
 	return err == nil && value >= 1 && value <= 65535
 }
 
-// classifyHost reports whether host is a production host (https only) or an explicit
-// development host (http allowed), or returns the rejection reason.
-func classifyHost(host string) (production bool, reason string) {
+// classifyHost reports whether host is a production host (https only), a loopback host or a
+// private development host, or returns the rejection reason.
+func classifyHost(host string) (hostClass, string) {
 	if strings.HasPrefix(host, "[") {
 		if !strings.HasSuffix(host, "]") {
-			return false, ReasonInvalidHost
+			return hostProduction, ReasonInvalidHost
 		}
 		address, ok := parseIPv6(host[1 : len(host)-1])
-		if !ok {
-			return false, ReasonInvalidHost
+		switch {
+		case !ok:
+			return hostProduction, ReasonInvalidHost
+		case isLoopbackIPv6(address):
+			return hostLoopback, ""
+		case address[0]&0xfe00 == 0xfc00:
+			return hostPrivate, ""
+		default:
+			return hostProduction, ReasonHostNotAllowed
 		}
-		if isLoopbackIPv6(address) || address[0]&0xfe00 == 0xfc00 {
-			return false, ""
-		}
-		return false, ReasonHostNotAllowed
 	}
 	name := strings.TrimSuffix(host, ".")
 	if name == "" {
-		return false, ReasonInvalidHost
+		return hostProduction, ReasonInvalidHost
 	}
 	last := name[strings.LastIndexByte(name, '.')+1:]
 	if isDigits(last) || hasPrefixFold(last, "0x") {
 		address, ok := parseIPv4(host)
-		if !ok {
-			return false, ReasonInvalidHost
+		switch {
+		case !ok:
+			return hostProduction, ReasonInvalidHost
+		case address[0] == 127:
+			return hostLoopback, ""
+		case isPrivateIPv4(address):
+			return hostPrivate, ""
+		default:
+			return hostProduction, ReasonHostNotAllowed
 		}
-		if isDevelopmentIPv4(address) {
-			return false, ""
-		}
-		return false, ReasonHostNotAllowed
 	}
-	if !isDNSName(name) {
-		return false, ReasonInvalidHost
+	switch {
+	case !isDNSName(name):
+		return hostProduction, ReasonInvalidHost
+	case name == "laisky.com" || strings.HasSuffix(name, ".laisky.com"):
+		return hostProduction, ""
+	case name == "localhost":
+		return hostLoopback, ""
+	default:
+		return hostProduction, ReasonHostNotAllowed
 	}
-	if name == "laisky.com" || strings.HasSuffix(name, ".laisky.com") {
-		return true, ""
-	}
-	if name == "localhost" {
-		return false, ""
-	}
-	return false, ReasonHostNotAllowed
 }
 
 // isDNSName accepts dot-separated labels of lower-case letters, digits and hyphens.
@@ -405,9 +491,9 @@ func parseIPv4(host string) ([4]int, bool) {
 	return address, true
 }
 
-// isDevelopmentIPv4 covers loopback, RFC 1918 private and RFC 6598 shared (CGNAT, e.g. Tailscale) ranges.
-func isDevelopmentIPv4(a [4]int) bool {
-	return a[0] == 127 || a[0] == 10 || a[0] == 172 && a[1] >= 16 && a[1] <= 31 ||
+// isPrivateIPv4 covers RFC 1918 private and RFC 6598 shared (CGNAT, e.g. Tailscale) ranges.
+func isPrivateIPv4(a [4]int) bool {
+	return a[0] == 10 || a[0] == 172 && a[1] >= 16 && a[1] <= 31 ||
 		a[0] == 192 && a[1] == 168 || a[0] == 100 && a[1] >= 64 && a[1] <= 127
 }
 

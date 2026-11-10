@@ -18,6 +18,7 @@ type sharedVectors struct {
 	Clients      []Client `json:"clients"`
 	Cases        []struct {
 		Target string `json:"target"`
+		Issuer string `json:"issuer"`
 		Pad    int    `json:"pad"`
 		Allow  string `json:"allow"`
 		Deny   string `json:"deny"`
@@ -26,6 +27,11 @@ type sharedVectors struct {
 		URI   string `json:"uri"`
 		Valid bool   `json:"valid"`
 	} `json:"registrations"`
+	Registries []struct {
+		Note    string   `json:"note"`
+		Valid   bool     `json:"valid"`
+		Clients []Client `json:"clients"`
+	} `json:"registries"`
 }
 
 // loadSharedVectors reads the cross-language fixture from the frontend source tree.
@@ -40,18 +46,27 @@ func loadSharedVectors(t *testing.T) sharedVectors {
 	return vectors
 }
 
-// vectorPolicy parses the fixture registry through the production configuration parser.
-func vectorPolicy(t *testing.T, vectors sharedVectors, mode string) Policy {
-	t.Helper()
-	clients := make(map[string]any, len(vectors.Clients))
-	for _, client := range vectors.Clients {
+// configClients converts fixture clients into the configuration map shape.
+func configClients(list []Client) map[string]any {
+	clients := make(map[string]any, len(list))
+	for _, client := range list {
 		uris := make([]any, 0, len(client.RedirectURIs))
 		for _, uri := range client.RedirectURIs {
 			uris = append(uris, uri)
 		}
-		clients[client.ID] = map[string]any{"redirect_uris": uris, "legacy_token_redirect": client.LegacyTokenRedirect}
+		fields := map[string]any{"redirect_uris": uris}
+		if client.LegacyTokenRedirect != "" {
+			fields["legacy_token_redirect"] = client.LegacyTokenRedirect
+		}
+		clients[client.ID] = fields
 	}
-	policy, err := Parse(mode, clients)
+	return clients
+}
+
+// vectorPolicy parses the fixture registry through the production configuration parser.
+func vectorPolicy(t *testing.T, vectors sharedVectors, mode string) Policy {
+	t.Helper()
+	policy, err := Parse(mode, configClients(vectors.Clients))
 	require.NoError(t, err)
 	require.Equal(t, vectors.Clients, policy.Clients, "the parser must keep the registry canonical")
 	return policy
@@ -68,7 +83,11 @@ func TestSharedRedirectVectors(t *testing.T) {
 			if mode == ModeDeny {
 				want = item.Deny
 			}
-			require.Equal(t, want, Classify(raw, vectors.IssuerOrigin, policy).String(), "mode=%s target=%q", mode, raw)
+			issuer := vectors.IssuerOrigin
+			if item.Issuer != "" {
+				issuer = item.Issuer
+			}
+			require.Equal(t, want, Classify(raw, issuer, policy).String(), "mode=%s issuer=%s target=%q", mode, issuer, raw)
 		}
 	}
 }
@@ -81,6 +100,20 @@ func TestSharedRegistrationVectors(t *testing.T) {
 			require.NoError(t, err, item.URI)
 		} else {
 			require.Error(t, err, item.URI)
+		}
+	}
+}
+
+// TestSharedRegistryVectors pins whole-registry rules, such as one owner per hostname, shared with the frontend.
+func TestSharedRegistryVectors(t *testing.T) {
+	vectors := loadSharedVectors(t)
+	require.NotEmpty(t, vectors.Registries)
+	for _, item := range vectors.Registries {
+		_, err := Parse(ModeAllow, configClients(item.Clients))
+		if item.Valid {
+			require.NoError(t, err, item.Note)
+		} else {
+			require.Error(t, err, item.Note)
 		}
 	}
 }

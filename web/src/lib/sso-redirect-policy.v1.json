@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Shared SSO redirect policy vectors. Consumed unchanged by the Go policy (internal/library/ssoredirect) and the frontend policy (web/src/lib/sso-redirect-policy.ts). Each case lists the expected decision under settings.web.sso.legacy_token_redirect allow and deny. A case with pad appends that many \"a\" characters to target. Bump version on any semantic change.",
+  "description": "Shared SSO redirect policy vectors. Consumed unchanged by the Go policy (internal/library/ssoredirect) and the frontend policy (web/src/lib/sso-redirect-policy.ts). Each case lists the expected decision under settings.web.sso.legacy_token_redirect allow and deny, seen from issuerOrigin unless the case sets issuer. A case with pad appends that many \"a\" characters to target. registrations pin single callback URIs and registries pin whole client sets. Bump version on any semantic change.",
   "issuerOrigin": "https://sso.laisky.com",
   "clients": [
     {
@@ -13,7 +13,7 @@
     {
       "client_id": "cv",
       "redirect_uris": [
-        "http://100.75.198.70:5173/cv/sso/callback",
+        "http://192.168.1.20:5173/cv/sso/callback",
         "https://cv.laisky.com/cv/sso/callback"
       ],
       "legacy_token_redirect": "allow"
@@ -253,16 +253,16 @@
       "deny": "client:cv"
     },
     {
-      "target": "http://100.75.198.70:5173/cv/sso/callback?sso_flow=code&sso_client_id=cv&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "target": "http://192.168.1.20:5173/cv/sso/callback?sso_flow=code&sso_client_id=cv&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
       "allow": "client:cv",
       "deny": "client:cv",
       "note": "explicit development-only registration"
     },
     {
-      "target": "http://100.75.198.70:5173/other",
-      "allow": "legacy",
+      "target": "http://192.168.1.20:5173/other",
+      "allow": "reject:development_target_requires_registration",
       "deny": "reject:code_flow_required",
-      "note": "a registration reserves its whole hostname"
+      "note": "a private registration admits only its exact callback from a production issuer"
     },
     {
       "target": "https://chat.laisky.com/?sso_flow=code&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
@@ -273,7 +273,8 @@
     {
       "target": "http://localhost:5173/cb",
       "allow": "legacy",
-      "deny": "reject:legacy_redirect_disabled"
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "loopback targets never leave the device and keep the legacy handoff from any issuer"
     },
     {
       "target": "http://localhost./cb",
@@ -287,23 +288,27 @@
     },
     {
       "target": "http://10.20.30.40/cb",
-      "allow": "legacy",
-      "deny": "reject:legacy_redirect_disabled"
+      "allow": "reject:development_target_requires_registration",
+      "deny": "reject:development_target_requires_registration",
+      "note": "a production issuer never hands the bearer to an unregistered private, CGNAT or ULA target"
     },
     {
       "target": "http://172.16.0.1/cb",
-      "allow": "legacy",
-      "deny": "reject:legacy_redirect_disabled"
+      "allow": "reject:development_target_requires_registration",
+      "deny": "reject:development_target_requires_registration",
+      "note": "a production issuer never hands the bearer to an unregistered private, CGNAT or ULA target"
     },
     {
       "target": "http://192.168.1.10/cb",
-      "allow": "legacy",
-      "deny": "reject:legacy_redirect_disabled"
+      "allow": "reject:development_target_requires_registration",
+      "deny": "reject:development_target_requires_registration",
+      "note": "a production issuer never hands the bearer to an unregistered private, CGNAT or ULA target"
     },
     {
       "target": "http://100.64.0.1/cb",
-      "allow": "legacy",
-      "deny": "reject:legacy_redirect_disabled"
+      "allow": "reject:development_target_requires_registration",
+      "deny": "reject:development_target_requires_registration",
+      "note": "a production issuer never hands the bearer to an unregistered private, CGNAT or ULA target"
     },
     {
       "target": "http://[::1]:8080/cb",
@@ -312,13 +317,15 @@
     },
     {
       "target": "http://[fd00::1]/cb",
-      "allow": "legacy",
-      "deny": "reject:legacy_redirect_disabled"
+      "allow": "reject:development_target_requires_registration",
+      "deny": "reject:development_target_requires_registration",
+      "note": "a production issuer never hands the bearer to an unregistered private, CGNAT or ULA target"
     },
     {
       "target": "http://[FC00::1]/cb",
-      "allow": "legacy",
-      "deny": "reject:legacy_redirect_disabled"
+      "allow": "reject:development_target_requires_registration",
+      "deny": "reject:development_target_requires_registration",
+      "note": "a production issuer never hands the bearer to an unregistered private, CGNAT or ULA target"
     },
     {
       "target": "https://[::1]/",
@@ -551,6 +558,145 @@
       "target": "https://chat.laisky.com:44a/",
       "allow": "reject:invalid_port",
       "deny": "reject:invalid_port"
+    },
+    {
+      "target": "http://192.168.1.20:5173/cv/sso/callback?state=x",
+      "allow": "legacy",
+      "deny": "reject:code_flow_required",
+      "note": "the exact registered callback of a client in legacy transition"
+    },
+    {
+      "target": "https://10.0.0.5/x",
+      "allow": "reject:development_target_requires_registration",
+      "deny": "reject:development_target_requires_registration",
+      "note": "https does not help: the address is shared by a network"
+    },
+    {
+      "target": "http://100.64.0.10:5173/gptchat",
+      "allow": "reject:development_target_requires_registration",
+      "deny": "reject:development_target_requires_registration"
+    },
+    {
+      "target": "http://192.168.1.66/x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "http://192.168.1.10:5173",
+      "note": "a development issuer keeps private development targets"
+    },
+    {
+      "target": "https://10.0.0.5/x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "http://192.168.1.10:5173"
+    },
+    {
+      "target": "http://[fd00::1]/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "http://192.168.1.10:5173"
+    },
+    {
+      "target": "http://192.168.1.20:5173/other",
+      "allow": "legacy",
+      "deny": "reject:code_flow_required",
+      "issuer": "http://192.168.1.10:5173"
+    },
+    {
+      "target": "http://192.168.1.10:5173/profile",
+      "allow": "self",
+      "deny": "self",
+      "issuer": "http://192.168.1.10:5173"
+    },
+    {
+      "target": "/profile",
+      "allow": "self",
+      "deny": "self",
+      "issuer": "http://192.168.1.10:5173"
+    },
+    {
+      "target": "http://100.64.0.10/x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "http://127.0.0.1:5173",
+      "note": "a loopback issuer is a development issuer"
+    },
+    {
+      "target": "http://10.0.0.5/x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "http://localhost:5173"
+    },
+    {
+      "target": "http://[fd00::2]/x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "http://[fd00::1]:5173"
+    },
+    {
+      "target": "http://localhost:5173/cb",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "http://192.168.1.10:5173"
+    },
+    {
+      "target": "https://chat.laisky.com/x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "http://192.168.1.10:5173"
+    },
+    {
+      "target": "https://mcp.laisky.com/sso/profile",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "another issuer origin needs the URL bearer; deny refuses it"
+    },
+    {
+      "target": "https://sso.laisky.com/profile",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "issuer": "https://mcp.laisky.com"
+    },
+    {
+      "target": "https://chat.laisky.com/p?q=a\\b#f\\g",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled",
+      "note": "browsers leave backslashes unencoded in the query and fragment"
+    },
+    {
+      "target": "https://chat.laisky.com/p#\\x",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "https://chat.laisky.com/?\\",
+      "allow": "legacy",
+      "deny": "reject:legacy_redirect_disabled"
+    },
+    {
+      "target": "https://evil.example\\@sso.laisky.com/",
+      "allow": "reject:invalid_character",
+      "deny": "reject:invalid_character",
+      "note": "WHATWG reads the backslash as a path start"
+    },
+    {
+      "target": "https://chat.laisky.com/a\\b?x=1",
+      "allow": "reject:invalid_character",
+      "deny": "reject:invalid_character"
+    },
+    {
+      "target": "https://chat.laisky.com\\?x=1",
+      "allow": "reject:invalid_character",
+      "deny": "reject:invalid_character"
+    },
+    {
+      "target": "https://evil.example?\\@sso.laisky.com/",
+      "allow": "reject:host_not_allowed",
+      "deny": "reject:host_not_allowed"
+    },
+    {
+      "target": "https://accounting.laisky.com/api/auth/sso/callback?sso_flow=code&sso_client_id=accounting&sso_state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\&sso_challenge=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA&sso_challenge_method=S256",
+      "allow": "reject:invalid_code_request",
+      "deny": "reject:invalid_code_request"
     }
   ],
   "registrations": [
@@ -576,7 +722,7 @@
       "valid": true
     },
     {
-      "uri": "http://100.75.198.70:5173/cv/sso/callback",
+      "uri": "http://192.168.1.20:5173/cv/sso/callback",
       "valid": true
     },
     {
@@ -645,6 +791,102 @@
     {
       "uri": "/relative",
       "valid": false
+    },
+    {
+      "uri": "http://192.168.1.66:8080/sso/callback",
+      "valid": true,
+      "note": "registering a private callback is how a production issuer may reach it"
+    },
+    {
+      "uri": "https://x.laisky.com/a\\b",
+      "valid": false
+    }
+  ],
+  "registries": [
+    {
+      "note": "one client may register several callbacks on one hostname",
+      "valid": true,
+      "clients": [
+        {
+          "client_id": "first",
+          "redirect_uris": [
+            "https://shared.laisky.com/a",
+            "https://shared.laisky.com/b"
+          ]
+        }
+      ]
+    },
+    {
+      "note": "clients on different hostnames",
+      "valid": true,
+      "clients": [
+        {
+          "client_id": "first",
+          "redirect_uris": [
+            "https://first.laisky.com/cb"
+          ]
+        },
+        {
+          "client_id": "second",
+          "redirect_uris": [
+            "https://second.laisky.com/cb"
+          ]
+        }
+      ]
+    },
+    {
+      "note": "a hostname belongs to exactly one client",
+      "valid": false,
+      "clients": [
+        {
+          "client_id": "first",
+          "redirect_uris": [
+            "https://shared.laisky.com/a"
+          ]
+        },
+        {
+          "client_id": "second",
+          "redirect_uris": [
+            "https://shared.laisky.com/b"
+          ]
+        }
+      ]
+    },
+    {
+      "note": "ports do not separate hostnames",
+      "valid": false,
+      "clients": [
+        {
+          "client_id": "first",
+          "redirect_uris": [
+            "http://127.0.0.1:8080/cb"
+          ]
+        },
+        {
+          "client_id": "second",
+          "redirect_uris": [
+            "http://127.0.0.1:9090/cb"
+          ]
+        }
+      ]
+    },
+    {
+      "note": "an exact callback cannot belong to two clients",
+      "valid": false,
+      "clients": [
+        {
+          "client_id": "first",
+          "redirect_uris": [
+            "https://shared.laisky.com/a"
+          ]
+        },
+        {
+          "client_id": "second",
+          "redirect_uris": [
+            "https://shared.laisky.com/a"
+          ]
+        }
+      ]
     }
   ]
 }

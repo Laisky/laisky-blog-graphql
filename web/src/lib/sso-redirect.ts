@@ -53,6 +53,9 @@ const policyMessages: Record<string, string> = {
   unregistered_client: 'Unknown SSO client. The application must be registered with the SSO issuer.',
   code_flow_required: 'This application must use the SSO code flow. Restart sign-in from the application.',
   legacy_redirect_disabled: 'This application is not registered for SSO. Ask the SSO operator to register it.',
+  development_target_requires_registration:
+    'Unsupported development target. A production SSO issuer reaches a private or CGNAT address only at a registered '
+    + 'callback; use localhost or ask the SSO operator to register the exact callback.',
 };
 
 /** SsoRedirectPolicyError reports a target the shared redirect policy refuses, without echoing it. */
@@ -106,7 +109,7 @@ export function parseRedirectTarget(rawValue: string | null, origin: string): Re
 
   // Blog rejections never echo the raw target: a legacy spelling may carry a bearer.
   try {
-    const plan = planSsoRedirect(parsed);
+    const plan = planSsoRedirect(parsed, baseOrigin);
     // URL parsing silently repairs controls, backslashes and relative spellings, so the
     // raw input is checked as well before a Blog target is trusted.
     if (plan.kind === 'blog-bootstrap' && (!/^https?:\/\//i.test(raw) || raw.length > 4096 || raw.includes('\\')
@@ -143,14 +146,16 @@ export function normalizeHostname(hostname: string): string {
 
 /**
  * buildRedirectUrlWithToken is the legacy bearer handoff. It throws for Blog, for every
- * registered client and code request, for targets the shared policy refuses, and for every
- * target once the issuer denies the legacy handoff.
+ * registered client and code request, for issuer pages, for targets the shared policy
+ * refuses, and for every target once the issuer denies the legacy handoff.
  */
 export function buildRedirectUrlWithToken(target: URL, token: string): string {
   if (isBlogSsoClient(target)) throw new Error('Blog requires a single-use SSO code. Restart sign-in from Blog.');
   if (parseBlogCodeTarget(target)) throw new Error('Blog requires a single-use SSO code.');
   const plan = planSsoRedirect(target);
-  if (plan.kind !== 'token' && plan.kind !== 'self') throw new Error('Registered SSO clients require a single-use SSO code.');
+  // Issuer pages already hold the stored session, so the bearer builder never serves them.
+  if (plan.kind === 'self') throw new Error('Issuer pages never receive a URL bearer.');
+  if (plan.kind !== 'token') throw new Error('Registered SSO clients require a single-use SSO code.');
   if (activePolicy.legacy_token_redirect !== 'allow') throw new SsoRedirectPolicyError('legacy_redirect_disabled');
   const next = new URL(target.toString());
   next.searchParams.set('sso_token', token);
@@ -287,9 +292,9 @@ export type SsoRedirectPlan =
  * planSsoRedirect classifies a target before any credential is attached. It throws
  * InvalidBlogBookmarkError for an unsafe Blog bookmark, a generic error for a malformed
  * Blog code request and SsoRedirectPolicyError for a target the shared policy refuses,
- * so no target can fall back to the bearer handoff.
+ * so no target can fall back to the bearer handoff. issuerOrigin defaults to this page's origin.
  */
-export function planSsoRedirect(target: URL): SsoRedirectPlan {
+export function planSsoRedirect(target: URL, issuerOrigin: string = currentIssuerOrigin()): SsoRedirectPlan {
   // The Blog wire format is fixed by blog-sso-protocol.v1.json; sso_client_id marks the
   // generic registered-client format, which the Blog hostname never accepts.
   if (isBlogSsoClient(target) || !target.searchParams.has('sso_client_id')) {
@@ -297,7 +302,7 @@ export function planSsoRedirect(target: URL): SsoRedirectPlan {
     if (binding) return { kind: 'blog-code', binding };
     if (isBlogSsoClient(target)) return { kind: 'blog-bootstrap', returnPath: parseBlogBookmarkReturnPath(target) };
   }
-  const decision = classifySsoRedirect(target.href, currentIssuerOrigin(), activePolicy);
+  const decision = classifySsoRedirect(target.href, issuerOrigin, activePolicy);
   switch (decision.kind) {
     case 'client':
       return {

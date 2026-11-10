@@ -109,21 +109,26 @@ func parseClients(raw any) ([]Client, error) {
 		return nil, errors.Errorf("at most %d clients are allowed", maxClients)
 	}
 	clients := make([]Client, 0, len(entries))
-	owners := make(map[string]string)
 	for id, value := range entries {
 		client, err := parseClient(id, value)
 		if err != nil {
 			return nil, errors.Wrapf(err, "client %q", id)
 		}
-		for _, uri := range client.RedirectURIs {
-			if owner, duplicate := owners[uri]; duplicate {
-				return nil, errors.Errorf("redirect uri %q is registered by both %q and %q", uri, owner, id)
-			}
-			owners[uri] = id
-		}
 		clients = append(clients, client)
 	}
 	slices.SortFunc(clients, func(a, b Client) int { return strings.Compare(a.ID, b.ID) })
+	// A registration reserves its hostname, so one hostname belongs to exactly one client and
+	// classification never depends on the order in which clients are examined.
+	owners := make(map[string]string)
+	for _, client := range clients {
+		for _, uri := range client.RedirectURIs {
+			parsed, _ := splitTarget(uri)
+			if owner, taken := owners[parsed.host]; taken && owner != client.ID {
+				return nil, errors.Errorf("hostname %q is registered by both %q and %q", parsed.host, owner, client.ID)
+			}
+			owners[parsed.host] = client.ID
+		}
+	}
 	return clients, nil
 }
 
@@ -157,15 +162,21 @@ func parseClient(id string, raw any) (Client, error) {
 	return Client{ID: id, RedirectURIs: slices.Compact(slices.Sorted(slices.Values(uris))), LegacyTokenRedirect: mode}, nil
 }
 
-// ValidateRedirectURI requires a canonical callback that passes the shared redirect policy:
-// https (http only on development hosts), lower-case host, no userinfo, default port,
-// query or fragment, an explicit path without dot segments or escapes, and not the Blog host.
+// ValidateRedirectURI requires a canonical callback that passes the shared redirect rules:
+// https (http only on loopback or private development hosts), lower-case host, no userinfo,
+// default port, query or fragment, an explicit path without dot segments or escapes, and not
+// the Blog host. Registering a private callback is how a production issuer may reach it.
 func ValidateRedirectURI(uri string) error {
-	decision := Classify(uri, "", Policy{LegacyTokenRedirect: ModeAllow})
-	if decision.Kind != KindLegacy {
-		return errors.Errorf("is not an allowed redirect target (%s)", decision)
+	checked, reason := inspect(uri, "")
+	switch {
+	case reason != "":
+		return errors.Errorf("is not an allowed redirect target (reject:%s)", reason)
+	case checked.blog:
+		return errors.New("the Blog hostname is reserved for the built-in blog client")
+	case checked.value != uri:
+		return errors.New("must be an absolute URL without surrounding whitespace")
 	}
-	parsed, _ := splitTarget(uri)
+	parsed := checked.parsed
 	switch {
 	case !strings.HasPrefix(uri, parsed.scheme+"://"):
 		return errors.New("scheme must be lower case")

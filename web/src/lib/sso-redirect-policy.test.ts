@@ -20,11 +20,15 @@ function vectorPolicy(mode: (typeof modes)[number]): SsoRedirectPolicy {
   return policy!;
 }
 
-const cases = vectors.cases.map((item) => ({ ...item, raw: item.target + 'a'.repeat(item.pad ?? 0) }));
+const cases = vectors.cases.map((item) => ({
+  ...item, raw: item.target + 'a'.repeat(item.pad ?? 0), issuer: item.issuer ?? vectors.issuerOrigin,
+}));
 
-beforeEach(() => {
-  Object.defineProperty(window, 'location', { configurable: true, value: { origin: vectors.issuerOrigin, pathname: '/' } });
-});
+function useIssuerOrigin(origin: string) {
+  Object.defineProperty(window, 'location', { configurable: true, value: { origin, pathname: '/' } });
+}
+
+beforeEach(() => useIssuerOrigin(vectors.issuerOrigin));
 
 afterEach(() => {
   configureSsoRedirectPolicy({ ssoRedirect: undefined });
@@ -41,14 +45,15 @@ describe('shared SSO redirect policy vectors v1', () => {
 
   for (const mode of modes) {
     it.each(cases)(`classifies %j under ${mode}`, (item) => {
-      expect(formatSsoRedirectDecision(classifySsoRedirect(item.raw, vectors.issuerOrigin, vectorPolicy(mode))))
+      expect(formatSsoRedirectDecision(classifySsoRedirect(item.raw, item.issuer, vectorPolicy(mode))))
         .toBe(mode === 'allow' ? item.allow : item.deny);
     });
 
     it.each(cases)(`enforces %j identically on the issuer entry points under ${mode}`, (item) => {
       configureSsoRedirectPolicy({ ssoRedirect: { legacy_token_redirect: mode, clients: vectors.clients } });
+      useIssuerOrigin(item.issuer);
       const expected = mode === 'allow' ? item.allow : item.deny;
-      const parsed = parseRedirectTarget(item.raw, vectors.issuerOrigin);
+      const parsed = parseRedirectTarget(item.raw, item.issuer);
       if (expected === 'blog') {
         // Blog targets follow blog-sso-protocol.v1.json and never take the bearer path.
         if (parsed.url) expect(planSsoRedirect(parsed.url).kind).toMatch(/^blog-/);
@@ -67,6 +72,10 @@ describe('shared SSO redirect policy vectors v1', () => {
 
   it.each(vectors.registrations)('validates the registration %j', (item) => {
     expect(validateRedirectUri(item.uri) === null).toBe(item.valid);
+  });
+
+  it.each(vectors.registries)('validates the registry $note', (item) => {
+    expect(parseSsoRedirectPolicy({ legacy_token_redirect: 'allow', clients: item.clients }) !== null).toBe(item.valid);
   });
 });
 

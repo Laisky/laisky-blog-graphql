@@ -73,7 +73,7 @@ func TestGitHubRedirectTargetPolicy(t *testing.T) {
 		{target: "https://user@cv.laisky.com/cv", allow: false, deny: false},
 		{target: "https://cv.laisky.com\\@evil.example/", allow: false, deny: false},
 		{target: "https://evil.example/", allow: false, deny: false},
-		{target: "http://100.75.198.70:5173/gptchat", allow: true, deny: false},
+		{target: "http://100.64.0.10:5173/gptchat", allow: false, deny: false},
 		{target: "http://localhost:5173/cb", allow: true, deny: false},
 		{target: "http://[::ffff:a00:1]/cb", allow: false, deny: false},
 		{target: policyTestAccounting + "?state=legacy", allow: false, deny: false},

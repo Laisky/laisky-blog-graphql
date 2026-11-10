@@ -114,7 +114,8 @@
     "package": "./internal/library/ssoredirect",
     "tests": [
       "TestSharedRedirectVectors",
-      "TestSharedRegistrationVectors"
+      "TestSharedRegistrationVectors",
+      "TestSharedRegistryVectors"
     ]
   },
   {
@@ -122,7 +123,10 @@
     "tests": [
       "TestGitHubRedirectTargetPolicy",
       "TestGitHubOAuthLoginRevalidatesRedirect",
-      "TestPasskeyFinishRevalidatesRedirect"
+      "TestPasskeyFinishRevalidatesRedirect",
+      "TestPrivateTargetsRequireDevelopmentIssuer",
+      "TestBackslashOnlyAfterQueryOrFragment",
+      "TestGitHubStartChecksTheCompletingIssuer"
     ]
   }
 ]

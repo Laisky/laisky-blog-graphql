@@ -135,13 +135,15 @@ func TestIsGithubOAuthConfigured(t *testing.T) {
 }
 
 // TestIsAllowedSSORedirectURL verifies redirect target allow-list behavior through the shared policy.
+// Without a development issuer, private and CGNAT targets need an exact registered callback.
 func TestIsAllowedSSORedirectURL(t *testing.T) {
 	ctx := context.Background()
-	for _, allowed := range []string{"https://app.laisky.com/callback", "http://10.20.30.40/callback", "http://100.75.198.70/callback"} {
+	for _, allowed := range []string{"https://app.laisky.com/callback", "http://127.0.0.1:8080/callback"} {
 		_, err := classifySSORedirectTarget(ctx, allowed)
 		require.NoError(t, err, allowed)
 	}
-	for _, refused := range []string{"https://laisky.com.evil.com/callback", "javascript:alert(1)"} {
+	for _, refused := range []string{"https://laisky.com.evil.com/callback", "javascript:alert(1)",
+		"http://10.20.30.40/callback", "http://100.64.0.10/callback"} {
 		_, err := classifySSORedirectTarget(ctx, refused)
 		require.Error(t, err, refused)
 	}
