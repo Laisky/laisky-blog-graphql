@@ -10,6 +10,10 @@ The HTTP service decides each request's client address with one rule, in
   log, and on the MCP request logs. `remote` and `remote_addr` still record the
   connection peer.
 
+The same rule decides when `X-Forwarded-Host` and `X-Forwarded-Proto` count
+(see [Forwarded host and scheme](#forwarded-host-and-scheme)). They select the
+site branding, the Turnstile pair and the redirect and WebAuthn origin.
+
 ## Rule
 
 The client address is the connection peer (`RemoteAddr`). The one exception is
@@ -29,6 +33,28 @@ A client therefore cannot choose its address by sending `X-Forwarded-For` or
 because the walk stops at the address the first trusted proxy recorded. Platform
 headers such as `CF-Connecting-IP` are never trusted directly, because the
 service cannot tell whether the request really passed through Cloudflare.
+
+## Forwarded host and scheme
+
+`X-Forwarded-Host` and `X-Forwarded-Proto` count only when the connection peer
+is inside `settings.web.trusted_proxies`. From any other peer they are ignored,
+and the `Host` header and the connection's own scheme are used.
+
+- All header lines are joined into one list. The rightmost entry counts: it is
+  the one the proxy nearest to this service added.
+- A host must be a plain `host` or `host:port`, an IPv6 literal in brackets
+  allowed. A scheme must be `http` or `https`. Any other value is ignored.
+- nginx forwards a client-supplied `X-Forwarded-Host` unchanged unless the vhost
+  sets it ([proxy module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html):
+  original request headers are passed unless `proxy_set_header` overrides them).
+  Cloudflare passes request headers through as well. A trusted peer is therefore
+  not enough on its own: every vhost must set these headers itself (see the
+  [ingress requirements](#ingress-requirements-operator-action)).
+
+The request host is never authenticated, so it may only choose *which*
+configured variant of a control applies, never *whether* one applies. For
+example, Turnstile always has a secret once any secret is configured (see the
+[SSO manual](sso.md#cloudflare-turnstile)).
 
 ## Settings
 
@@ -85,13 +111,18 @@ The production layout is Cloudflare → nginx → Go service:
    process sees a peer inside the default trusted networks, such as the
    Tailscale address or a docker bridge gateway.
 
-Cloudflare appends the address it saw to any client-supplied `X-Forwarded-For`,
-so the rightmost entry it forwards is the real visitor. The walk then gives the
-real visitor in each of these cases:
+When nginx sets `X-Forwarded-For` itself, the walk gives the real visitor:
 
-- nginx overwrites the header (`X-Forwarded-For $remote_addr`);
-- nginx appends to it (`$proxy_add_x_forwarded_for`);
-- nginx passes Cloudflare's header through unchanged.
+- `X-Forwarded-For $remote_addr` overwrites the chain with the address nginx
+  restored;
+- `$proxy_add_x_forwarded_for` appends that address, so it is the rightmost
+  entry, and anything the client prepended is never reached.
+
+A vhost that passes Cloudflare's `X-Forwarded-For` through unchanged is **not**
+a supported layout. Cloudflare documents that it appends the visitor address to
+an existing header. It does not document what it does when a request carries
+several `X-Forwarded-For` lines. The rightmost entry of a passed-through chain
+is therefore not guaranteed to be the visitor.
 
 Reading `X-Real-IP` first would not be safe. A vhost that does not set
 `X-Real-IP` forwards whatever value the client sent.
@@ -104,19 +135,27 @@ few keys. Either configure the realip module, or add
 
 ## Ingress requirements (operator action)
 
-On every nginx vhost that proxies to this service:
+Every nginx vhost that proxies to this service must set:
 
 ```nginx
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; # or $remote_addr to overwrite
 proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Forwarded-Proto $scheme; # or https behind a TLS-terminating CDN
 ```
+
+nginx inherits `proxy_set_header` from an enclosing level only when the current
+level defines none, so repeat them in every `location` that sets its own headers.
 
 Also restrict origin access to Cloudflare. Use a firewall allowlist of
 Cloudflare's ranges, Authenticated Origin Pulls, or a Cloudflare Tunnel.
 
-**Residual risk.** Suppose a vhost forwards the client's `X-Forwarded-For`
-unchanged, and a caller reaches nginx directly, bypassing Cloudflare. That caller
-can still choose its address, because the service sees the trusted nginx peer.
+**Residual risk.** Suppose a vhost forwards the client's `X-Forwarded-For` or
+`X-Forwarded-Host` unchanged. A caller can then choose its address (when it
+reaches nginx directly, bypassing Cloudflare) or the host the service believes
+(always), because the service sees the trusted nginx peer. A chosen host can
+only select among configured pairs and origins, never switch the Turnstile gate
+off, but it still changes branding and redirect bases.
 Any host inside the trusted networks (tailnet, docker networks, LAN) can do the
 same. Close this by fixing the vhost headers above and restricting origin
 access. To narrow trust further, list only the exact proxy addresses (for

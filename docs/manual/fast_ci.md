@@ -39,7 +39,11 @@ The client-identity selections cover the trusted-proxy policy (defaults, explici
 empty list, invalid entries failing startup), the right-to-left forwarding-chain walk
 through the production engine, direct peers that cannot choose their adaptive-authentication
 risk key, IPv6 /64 grouping, and the bounded account-keyed failure budget that survives
-client-address rotation ([client identity](client_identity.md)).
+client-address rotation ([client identity](client_identity.md)). They also cover a request
+host that can select but never disable the Turnstile pair, `X-Forwarded-Host` honored only
+from trusted proxies, in-flight reservations against concurrent guesses, collation-folded
+and identity-unified account keys, the presentable-challenge rule that keeps owners from
+being locked out, and a flood that cannot evict an attacked account.
 
 The Telegram selections also cover cancellation after refill, overlapping
 reservations, isolation of invalid credentials from delivery capacity, remote

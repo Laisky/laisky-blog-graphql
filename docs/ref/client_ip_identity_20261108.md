@@ -88,3 +88,60 @@ which coarsens identity and never lets the client choose it.
 
 Design consequence: an account under attack only ever escalates to a Turnstile challenge. It is
 never locked out. A full success resets its counter.
+
+## Review follow-up sources (2026-11-10)
+
+### Cloudflare passes request headers through
+
+<https://developers.cloudflare.com/fundamentals/reference/http-headers/>, updated 2026-10-28:
+
+- "Cloudflare passes all HTTP request headers to your origin web server and adds additional headers".
+  The only exception it states is for header names NGINX considers invalid.
+- A client-supplied `X-Forwarded-For` is kept and the proxy address is appended. The page does not
+  say what happens to **several** `X-Forwarded-For` lines; still unverified.
+  - A Cloudflare incident titled "Duplicated values in X-Forwarded-For header" was found only on a
+    third-party status mirror, without details.
+  - The manual therefore does not rely on a passed-through chain: every vhost must set the header.
+- `X-Forwarded-Proto`: "If the client set a different value, it will be overwritten."
+- `X-Real-IP` "is stripped" when no Worker subrequest is triggered. The statement sits in the Worker
+  subrequest section, so verify it before relying on it.
+- No page explicitly covers `X-Forwarded-Host`. The general pass-through rule applies, and the
+  default cache key includes `x-forwarded-host`
+  (<https://developers.cloudflare.com/cache/how-to/cache-keys/>, updated 2026-10-30). Treat it as
+  client-controlled.
+
+### nginx forwards client headers unless overridden
+
+<https://nginx.org/en/docs/http/ngx_http_proxy_module.html>:
+
+- Only `Host` and `Connection` are redefined by default. `proxy_pass_request_headers on` is the
+  default, so a client's `X-Forwarded-Host` reaches the upstream unless `proxy_set_header` replaces it.
+- `proxy_set_header` directives "are inherited from the previous configuration level if and only if
+  there are no `proxy_set_header` directives defined on the current level."
+
+Design consequence: `X-Forwarded-Host` and `X-Forwarded-Proto` count only from trusted proxies, and
+the operator must set them on every vhost. Because they are still unauthenticated, the request host
+may choose among configured Turnstile pairs but never disable the gate.
+
+### Turnstile hostname management
+
+- <https://developers.cloudflare.com/turnstile/additional-configuration/hostname-management/>, updated
+  2026-04-27: "adding a hostname automatically authorizes all of its subdomains". There are no
+  wildcards, and Free plans allow up to 10 hostnames per widget.
+- An unlisted host fails with client error `110200` "Domain not authorized"
+  (<https://developers.cloudflare.com/turnstile/troubleshooting/client-side-errors/error-codes/>, updated
+  2026-09-25).
+
+Design consequence: runtime-config serves the default pair's widget key to hosts without their own
+pair, and the operator lists the apex domain on that widget.
+
+### Collation folding for account keys
+
+`golang.org/x/text/collate` with `language.Und` and `collate.Loose` compares at primary strength
+(IgnoreCase, IgnoreDiacritics, IgnoreWidth). It is CLDR-root collation, which is based on the UCA, as
+MySQL's `utf8mb4_0900_ai_ci` is.
+
+Checked locally: `alice`, `ALICE`, `alicé`, `àlîcë`, `ａｌｉｃｅ`, `al<U+200B>ice` and
+`alice<U+0301>` produce one key. So do `straße`/`strasse` and `ﬁle`/`file`. Punctuation stays
+significant (`a-lice` differs), as in MySQL's NO PAD `_0900_` collations. This approximates the MySQL
+collation without claiming to be identical to it; over-folding only produces challenges sooner.

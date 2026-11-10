@@ -496,7 +496,7 @@ Use explicit values in production when the service is behind a proxy or when the
 
 ### Cloudflare Turnstile
 
-Turnstile is optional. If a matching secret key is configured, SSO registration and login flows may require a valid Turnstile token after frequent requests, repeated failures, or other suspicious activity.
+Turnstile is optional. Once a secret key is configured anywhere, SSO registration and login flows may require a valid Turnstile token after frequent requests, repeated failures, or other suspicious activity.
 
 Per-site configuration:
 
@@ -507,6 +507,7 @@ settings:
       sso:
         host: sso.laisky.com
         router: sso
+        default: true # the pair for hosts that match no site with its own pair
         turnstile_site_key: YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY
         turnstile_secret_key: YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY
 ```
@@ -517,15 +518,38 @@ Global fallback:
 settings:
   web:
     turnstile:
+      site_key: YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY # optional; without it no widget can render for this pair
       secret_key: YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY
 ```
+
+Pair selection. The widget key and the secret always come from the same
+place, so a token from the widget the page renders verifies against the secret
+the server checks. The request host (the `Host` header, or `X-Forwarded-Host`
+from a [trusted proxy](client_identity.md#forwarded-host-and-scheme)) chooses
+the pair in this order:
+
+1. the site whose `host`/`hosts` match, if it has a `turnstile_secret_key`;
+2. the site marked `default: true`, if it has one;
+3. the global `settings.web.turnstile` pair;
+4. the only site with a secret.
+
+The request host can choose which configured pair applies, but never whether
+one does. Once any secret exists, every host is gated. Startup fails when
+several sites have secrets but none is `default` and no global secret is set,
+because the pair for other hosts would then be ambiguous.
+
+`/runtime-config.json` serves the selected pair's widget key for the requesting
+host. A host whose own site has no pair (such as an MCP site) therefore renders
+the default pair's widget. The default widget's hostname list in the Cloudflare
+dashboard must include every host that falls back to it. Adding the apex domain
+authorizes all its subdomains; an unlisted host shows Turnstile error `110200`.
 
 Turnstile is enforced on:
 
 - Email registration code request through `UserRequestEmailCode` with purpose `register` when the client is high risk.
 - Email registration completion through `UserRegister` when the client is high risk.
-- Password login through `UserLogin` when the client is high risk.
-- Email-code request and login through `UserRequestEmailCode` with purpose `login` and `UserLoginWithEmailCode` when the login client is high risk.
+- Password login through `UserLogin` when the client or the account is high risk.
+- Email-code request and login through `UserRequestEmailCode` with purpose `login` and `UserLoginWithEmailCode` when the client or the account is high risk.
 - GitHub OAuth start through `UserGithubOAuthStart`.
 - Passkey login start through `UserStartPasskeyLogin`.
 
@@ -543,41 +567,79 @@ Risk policy:
   from trusted proxies, and IPv6 clients are grouped by /64.
 - An account is high risk after `account_failure_threshold` credential failures
   within `failure_window_seconds`, counted across every client. The threshold
-  defaults to `failure_threshold`. This applies to the flows that name an
+  defaults to `failure_threshold`. Failures count from every flow that names an
   account:
   - `UserLogin` and `BlogLogin`, including the TOTP step;
   - `UserLoginWithEmailCode`;
-  - `UserRequestEmailCode` with purpose `login`.
+  - `UserRequestEmailCode` with purpose `login` names the account but has no
+    credential check.
 
   Rotating client addresses therefore cannot keep an attacked account below the
   threshold. Registration, GitHub OAuth start and passkey start name no account
   and are keyed by client only.
-- A request is challenged when its client or its account is high risk.
+- Requests that are admitted but whose credential check has not finished count
+  toward the account threshold. Concurrent guesses therefore cannot all slip in
+  before the first failure is recorded. A flood of concurrent legitimate logins
+  to one account may also see a challenge.
+- Accounts are keyed two ways.
+  - **By folded spelling.** This is the Unicode collation key at primary
+    strength: case-, accent- and width-insensitive, with default-ignorable
+    characters dropped. It matches what MySQL's `utf8mb4_0900_ai_ci` treats as
+    equal, so `Alice`, `alicé` and `ａｌｉｃｅ` share one budget even for unknown
+    accounts. Folding more than a store does only makes a challenge appear
+    sooner.
+  - **By store identity.** Once a failure reveals which account a spelling
+    resolves to (wrong password, wrong TOTP, inactive account), the failure also
+    counts against that account's identity: the OneAPI user ID or MongoDB
+    document ID. A username and an email of one OneAPI user then share a budget.
+  
+  The identity comes from the credential check that already runs, so there is
+  no extra lookup. Clients always see the same `invalid credentials` error, so
+  existence is not revealed beyond what the challenge behavior itself implies.
+- The account signal demands a challenge only where the client can present one.
+  The entry point must accept a token, and the host's pair must have a widget
+  key. The deprecated `BlogLogin` accepts no token, and a pair without a site
+  key renders no widget. There only the client signal applies, so a third party
+  cannot keep an owner out. Such gaps are logged as a warning at most once a
+  minute, with a count of the suppressed ones.
 - The policy only ever asks for a Turnstile challenge. It never locks an account
   out. Once the challenge is solved, the request proceeds.
-- A fully successful sign-in resets that account's and that client's failure
-  counts.
+- A fully successful sign-in resets the failure counts of that client, that
+  spelling and that account identity.
 - Only rejections caused by the submitted credentials count as failures. A
   database or signing outage returns `login_unavailable` and never counts,
-  against either the client or the account.
+  against either the client or the account. Its in-flight reservation is still
+  released.
 - Solving a challenge earns the client a short allowance: its next
   `clearance_uses` (default 3) auth requests within `clearance_seconds`
-  (default 300) are not challenged again. The TOTP step after a verified
-  password therefore needs no second challenge, even for an attacked account.
-  Any credential failure revokes the allowance immediately, so each further
-  guess against a high-risk account needs a fresh challenge.
+  (default 300) are not challenged again.
+  - The TOTP step after a verified password therefore needs no second challenge,
+    even for an attacked account.
+  - The allowance admits one request at a time. While the request that solved
+    the challenge, or one admitted by the allowance, is still in flight, other
+    requests must solve their own challenge.
+  - Any credential failure revokes the allowance immediately.
+
+  Each further guess against a high-risk account therefore needs a fresh
+  challenge, even in parallel.
 - A supplied token that Cloudflare does not accept returns `turnstile_failed`.
   The client must show a fresh challenge. It is never reported as invalid
   credentials.
 - The tracker is in memory and bounded:
   - at most `max_tracked_clients` (default 10000) clients and
-    `max_tracked_accounts` (default 10000) accounts;
+    `max_tracked_accounts` (default 10000) account records (spellings and
+    identities);
   - records expire with their windows;
-  - when a table is full, the records with the least evidence of attack are
-    evicted first, so a flood of one-off accounts cannot push out an account
+  - when the account table is full, accounts below their threshold are evicted
+    first (fewest recent failures, then fewest failures overall, then the
+    longest idle);
+  - accounts at or above their threshold, and accounts with requests in flight,
+    are never evicted. If only such accounts remain, the table saturates, and
+    until records expire every account it cannot track is treated as high risk
+    (challenged, never locked out). A flood therefore cannot push out an account
     under attack;
-  - accounts are stored only as HMAC-SHA256 keyed hashes of the normalized
-    (trimmed, lower-cased) account, with a random per-process key.
+  - accounts are stored only as HMAC-SHA256 keyed hashes, with a random
+    per-process key.
 
 ```yaml
 settings:
@@ -595,7 +657,7 @@ settings:
         max_tracked_accounts: 10000
 ```
 
-The deprecated `BlogLogin` mutation cannot carry a Turnstile token. When Turnstile is configured, that legacy path fails closed and clients must use `UserLogin`.
+The deprecated `BlogLogin` mutation cannot carry a Turnstile token. When the client itself is high risk, that legacy path fails closed and clients must use `UserLogin`. An account flagged by failures from other clients does not block it (see above); its failures still count toward the account for every other flow.
 
 ## GraphQL API Reference
 

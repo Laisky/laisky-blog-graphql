@@ -214,6 +214,8 @@ settings:
         theme: sso
         router: sso
         public_base_path: /
+        # This is the only Turnstile pair, so every host (mcp included) is gated with it.
+        # With several pairs, mark one site `default: true` or set settings.web.turnstile.
         turnstile_site_key: YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY
         turnstile_secret_key: YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY
   websearch:

@@ -43,10 +43,18 @@
 - The adaptive-authentication client key comes from the single client identity
   policy (`library/clientip`). Forwarding headers are honored only from
   configured trusted proxies, so a caller cannot choose its own risk key.
-- Credential failures also count per account, across all clients. An account
-  over its threshold is challenged from any address. This only escalates to a
-  Turnstile challenge and never locks out. Account keys are keyed hashes in a
-  bounded table.
+- Credential failures also count per account across all clients. Two keys
+  count them: the folded spelling, which is case-, accent- and
+  width-insensitive, and the store identity the credential check revealed. In
+  both cases in-flight attempts count at admission.
+- An account over its threshold is challenged from any address, but only where
+  a challenge can be presented: an entry point that accepts a token, on a host
+  whose Turnstile pair has a widget key. Elsewhere only the client signal
+  applies. The account signal never locks out. Account keys are keyed hashes in
+  a bounded table that never evicts an account at its threshold.
+- The request host may select which configured Turnstile pair applies but never
+  disable Turnstile once any secret is configured. `X-Forwarded-Host` and
+  `X-Forwarded-Proto` count only from trusted proxies.
 - Before redirecting to an external client, the SSO page persists the issued
   session on the SSO origin so return visits reuse it.
 - Provider subjects and passkey credential IDs have one owner; all mutations
