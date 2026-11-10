@@ -452,8 +452,10 @@ func (idx *Indexer) summarizeNodes(ctx context.Context, nodes []*Node, pages []s
 			if err := ctx.Err(); err != nil && !deadlinePassed(ctx) {
 				return errors.WithStack(err)
 			}
-			if deadlinePassed(ctx) || idx.wouldRefuse(budget) {
-				stats.addRefusal()
+			if err := idx.gate.precheck(budget); deadlinePassed(ctx) || err != nil {
+				if err != nil {
+					stats.addRefusal(err)
+				}
 				stats.addLocalSummary()
 				n.Summary = localNodeSummary(pageRangePrefix(pages, n.StartIndex, n.EndIndex, localSummaryScanBytes))
 				return nil

@@ -12,11 +12,8 @@ import (
 
 // newTestGovernor builds a governor with a controllable clock.
 func newTestGovernor(limits LimitsSettings) (*SpendGovernor, *time.Time) {
-	g := NewSpendGovernor(limits)
 	now := time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
-	g.now = func() time.Time { return now }
-	g.global.last = now
-	g.lastSweep = now
+	g := NewSpendGovernorWithClock(limits, func() time.Time { return now }, nil)
 	return g, &now
 }
 
@@ -43,7 +40,7 @@ func TestSpendGovernorTenantAndGlobalCeilings(t *testing.T) {
 
 	stats := g.Stats()
 	require.Equal(t, uint64(5), stats.Admitted)
-	require.Equal(t, uint64(1), stats.TenantRefusals)
+	require.Equal(t, uint64(2), stats.TenantRefusals, "the cheap pre-check is counted like any refusal")
 	require.Equal(t, uint64(2), stats.GlobalRefusals)
 }
 
@@ -96,8 +93,9 @@ func TestSpendGovernorTokenCeilingAndDebt(t *testing.T) {
 func TestSpendGovernorBoundsTrackedTenants(t *testing.T) {
 	g, now := newTestGovernor(LimitsSettings{MaxTrackedTenants: 2, Window: time.Hour})
 	for _, tenant := range []string{"a", "b"} {
-		_, ok := g.admit(tenant, 1)
+		ticket, ok := g.admit(tenant, 1)
 		require.True(t, ok)
+		ticket.settle(1)
 	}
 	_, ok := g.admit("c", 1)
 	require.False(t, ok)

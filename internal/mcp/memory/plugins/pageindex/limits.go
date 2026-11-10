@@ -29,6 +29,11 @@ const (
 	DefaultGlobalTokensPerWindow int64 = 20_000_000
 	// DefaultMaxTrackedTenants caps the tenants whose rolling budget is held in memory.
 	DefaultMaxTrackedTenants = 10_000
+	// DefaultGlobalReservePercent is the share of the global budget reserved for
+	// tenants that have spent less than one document's allowance this window.
+	DefaultGlobalReservePercent = 20
+	// maxGlobalReservePercent caps the reserve so heavy tenants keep some budget.
+	maxGlobalReservePercent = 90
 )
 
 // LimitsSettings holds the absolute structure and spending ceilings of the plugin.
@@ -53,6 +58,9 @@ type LimitsSettings struct {
 	GlobalTokensPerWindow int64
 	// MaxTrackedTenants caps the tenants whose rolling budget is held in memory.
 	MaxTrackedTenants int
+	// GlobalReservePercent is the share of the global budget that only light
+	// tenants (under one document's allowance this window) may spend.
+	GlobalReservePercent int
 }
 
 // WithDefaults returns l with every unset or non-positive field replaced by its default.
@@ -66,6 +74,7 @@ func (l LimitsSettings) WithDefaults() LimitsSettings {
 	l.GlobalLLMCallsPerWindow = positiveOr(l.GlobalLLMCallsPerWindow, DefaultGlobalLLMCallsPerWindow)
 	l.GlobalTokensPerWindow = positiveOr(l.GlobalTokensPerWindow, DefaultGlobalTokensPerWindow)
 	l.MaxTrackedTenants = positiveOr(l.MaxTrackedTenants, DefaultMaxTrackedTenants)
+	l.GlobalReservePercent = min(positiveOr(l.GlobalReservePercent, DefaultGlobalReservePercent), maxGlobalReservePercent)
 	return l
 }
 

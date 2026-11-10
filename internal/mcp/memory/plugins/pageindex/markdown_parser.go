@@ -35,9 +35,11 @@ type markdownHeadings struct {
 	headers []MDHeader
 	// truncated reports that the document has more headings than were returned.
 	truncated bool
-	// fallback reports that the structural limits sent the document to the
-	// linear ATX scanner instead of goldmark.
+	// fallback reports that the predicted goldmark work exceeded a bound, so the
+	// document was scanned by scanMarkdownHeadingsLinear instead of goldmark.
 	fallback bool
+	// fallbackReason names the exceeded bound when fallback is set.
+	fallbackReason string
 }
 
 // extractMarkdownHeadings returns up to maxHeaders headings (all when maxHeaders
@@ -48,19 +50,22 @@ type markdownHeadings struct {
 // newHeadingOnlyParser); that removes the super-linear emphasis and link
 // processing of ordinary paragraphs while keeping every heading and title the
 // full parser would produce. Line numbers come from one newline index searched
-// by binary search instead of recounting the document prefix per heading. A
-// document whose container nesting or link-reference layout would still drive
-// goldmark's block parser super-linear is scanned by scanATXHeadings instead.
+// by binary search instead of recounting the document prefix per heading.
+// goldmark's Parse cannot be interrupted, so a linear pre-scan first predicts its
+// work (assessMarkdownStructure); a document over any bound is scanned by
+// scanMarkdownHeadingsLinear instead, which polls ctx and stops at maxHeaders.
 func extractMarkdownHeadings(ctx context.Context, content []byte, maxHeaders int) (markdownHeadings, error) {
 	if err := ctx.Err(); err != nil {
 		return markdownHeadings{}, errors.WithStack(err)
 	}
-	exceeds, err := markdownExceedsStructuralLimits(ctx, content)
+	assessment, err := assessMarkdownStructure(ctx, content)
 	if err != nil {
 		return markdownHeadings{}, err
 	}
-	if exceeds {
-		return scanATXHeadings(ctx, content, maxHeaders)
+	if assessment.reason != "" {
+		out, err := scanMarkdownHeadingsLinear(ctx, content, maxHeaders)
+		out.fallbackReason = assessment.reason
+		return out, err
 	}
 
 	root := newHeadingOnlyParser().Parse(text.NewReader(content))

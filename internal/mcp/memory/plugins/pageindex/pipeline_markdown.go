@@ -110,8 +110,8 @@ func (idx *Indexer) summarizeLeaf(ctx context.Context, text string, budget *Budg
 		stats.addLocalSummary()
 		return localNodeSummary(text), nil
 	}
-	if idx.wouldRefuse(budget) {
-		stats.addRefusal()
+	if err := idx.gate.precheck(budget); err != nil {
+		stats.addRefusal(err)
 		stats.addLocalSummary()
 		return localNodeSummary(text), nil
 	}

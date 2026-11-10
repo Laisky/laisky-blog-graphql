@@ -1,5 +1,7 @@
 package pageindex
 
+import "sync"
+
 // maxPreciseEstimateBytes is the largest prompt that is tokenized to estimate its
 // cost. A larger prompt is estimated by its byte length, which bounds its token
 // count from above, so estimating never costs more than tokenizing this much.
@@ -14,55 +16,99 @@ type llmGate struct {
 	spend *SpendGovernor
 }
 
-// llmAdmission is one admitted call, settled exactly once after it returns.
+// llmAdmission is one admitted call and every retry of it admitted since. Each
+// upstream request holds its own reservation, settled exactly once.
 type llmAdmission struct {
+	gate     llmGate
 	budget   *Budget
-	ticket   *spendTicket
 	estimate int64
+	mu       sync.Mutex
+	tickets  []*spendTicket
 }
 
 // wouldRefuse reports, cheaply and without spending, that no call can be admitted
 // for budget, so callers can skip rendering and estimating a prompt.
 func (g llmGate) wouldRefuse(budget *Budget) bool {
-	return budget.exhausted() || g.spend.wouldRefuse(budget.Tenant())
+	return g.precheck(budget) != nil
+}
+
+// precheck returns the refusal no call for budget could escape: ErrBudgetExceeded
+// for the operation's own ceiling, errRollingBudgetExceeded for a rolling budget.
+func (g llmGate) precheck(budget *Budget) error {
+	if budget.exhausted() {
+		return ErrBudgetExceeded
+	}
+	if g.spend.wouldRefuse(budget.Tenant()) {
+		return errRollingBudgetExceeded
+	}
+	return nil
 }
 
 // admit reserves req's estimated input tokens and one call from budget and from the
-// rolling budgets. It returns ErrBudgetExceeded, reserving nothing, when any of
-// them would be exceeded.
+// rolling budgets. It returns ErrBudgetExceeded (or errRollingBudgetExceeded,
+// which wraps it), reserving nothing, when any of them would be exceeded.
 func (g llmGate) admit(req Request, budget *Budget) (*llmAdmission, error) {
-	if g.wouldRefuse(budget) {
-		return nil, ErrBudgetExceeded
+	if err := g.precheck(budget); err != nil {
+		return nil, err
 	}
-	estimate := estimateInputTokens(g.tok, req)
-	if !budget.reserve(estimate) {
-		return nil, ErrBudgetExceeded
+	a := &llmAdmission{gate: g, budget: budget, estimate: estimateInputTokens(g.tok, req)}
+	if err := a.admitOne(); err != nil {
+		return nil, err
 	}
-	ticket, ok := g.spend.admit(budget.Tenant(), estimate)
-	if !ok {
-		budget.release(estimate)
-		return nil, ErrBudgetExceeded
-	}
-	return &llmAdmission{budget: budget, ticket: ticket, estimate: estimate}, nil
+	return a, nil
 }
 
-// settle charges the call: the provider-reported total when it reports one,
-// otherwise the input estimate. A failed call is charged its estimate, since the
+// admitOne reserves one more upstream request at the call's estimate.
+func (a *llmAdmission) admitOne() error {
+	if !a.budget.reserve(a.estimate) {
+		return ErrBudgetExceeded
+	}
+	ticket, ok := a.gate.spend.admit(a.budget.Tenant(), a.estimate)
+	if !ok {
+		a.budget.release(a.estimate)
+		return errRollingBudgetExceeded
+	}
+	a.mu.Lock()
+	a.tickets = append(a.tickets, ticket)
+	a.mu.Unlock()
+	return nil
+}
+
+// bind returns req with AdmitRetry set, so every retry the client makes is
+// admitted against the same budgets as a new call before it is sent.
+func (a *llmAdmission) bind(req Request) Request {
+	req.AdmitRetry = func(int) error { return a.admitOne() }
+	return req
+}
+
+// settle charges every upstream request of the call: the last, which produced
+// resp, at the provider-reported total when it reports one, and every earlier
+// (failed) request, or a failed last one, at the input estimate, since the
 // provider may have billed it.
 func (a *llmAdmission) settle(resp *Response) {
-	charged := a.estimate
-	if resp != nil && resp.Usage.TotalTokens > 0 {
-		charged = int64(resp.Usage.TotalTokens)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for i, ticket := range a.tickets {
+		charged := a.estimate
+		if i == len(a.tickets)-1 && resp != nil && resp.Usage.TotalTokens > 0 {
+			charged = int64(resp.Usage.TotalTokens)
+		}
+		a.budget.settle(a.estimate, charged)
+		ticket.settle(charged)
 	}
-	a.budget.settle(a.estimate, charged)
-	a.ticket.settle(charged)
+	a.tickets = nil
 }
 
 // release returns an admission whose call was never sent: the operation budget is
 // restored and the rolling budgets keep only the call.
 func (a *llmAdmission) release() {
-	a.budget.release(a.estimate)
-	a.ticket.settle(0)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, ticket := range a.tickets {
+		a.budget.release(a.estimate)
+		ticket.settle(0)
+	}
+	a.tickets = nil
 }
 
 // estimateInputTokens estimates the input tokens of req with tok, or by byte

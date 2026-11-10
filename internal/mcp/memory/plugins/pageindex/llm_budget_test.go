@@ -86,6 +86,13 @@ func (c *countingLLM) Prompts() []string {
 	return append([]string(nil), c.prompts...)
 }
 
+// frozenSpend returns a rolling budget whose clock never advances, so budget
+// tests never depend on how long a run takes on a loaded machine.
+func frozenSpend(limits LimitsSettings) *SpendGovernor {
+	now := time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+	return NewSpendGovernorWithClock(limits, func() time.Time { return now }, nil)
+}
+
 // flatMarkdown returns a document with n unique same-level sections, the shape
 // issue #85 uses to turn one write into n leaf summaries.
 func flatMarkdown(n int, salt string) string {
@@ -157,7 +164,7 @@ func TestPDFSummaryCallsDoNotScaleWithTOCEntries(t *testing.T) {
 		cfg := summarizingSettings()
 		tok, err := NewTokenizer("gpt-5.4-mini")
 		require.NoError(t, err)
-		idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, PDF: fixedPagesPDF{pages: []string{"one", "two", "three"}}})
+		idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, PDF: fixedPagesPDF{pages: []string{"one", "two", "three"}}, Spend: frozenSpend(cfg.Limits)})
 		require.NoError(t, err)
 		_, _, err = idx.Index(context.Background(), KindPDF, []byte("%PDF"), IndexOptions{DocID: "pdf"}, nil)
 		require.NoError(t, err)
@@ -209,7 +216,7 @@ func TestSearchPromptStaysWithinTreeQueryBudget(t *testing.T) {
 	cfg := defaultTestSettings()
 	tok, err := NewTokenizer("gpt-5.4-mini")
 	require.NoError(t, err)
-	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg})
+	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, Spend: frozenSpend(cfg.Limits)})
 	require.NoError(t, err)
 	searcher := NewSearcher(llm, store, idx, cfg)
 	res, err := searcher.Run(ctx, SearchInput{Project: "p", Query: "where?", Limit: 3})
@@ -236,7 +243,7 @@ func TestTenantBudgetHoldsAcrossRepeatedWrites(t *testing.T) {
 	systemFS, err := service.SystemNamespace(SysOwner)
 	require.NoError(t, err)
 	llm := &countingLLM{}
-	plugin, err := New(PluginDeps{UserFS: service, SystemFS: systemFS, Settings: settings, LLM: llm, Tokenizer: tokenizer})
+	plugin, err := New(PluginDeps{UserFS: service, SystemFS: systemFS, Settings: settings, LLM: llm, Tokenizer: tokenizer, Spend: frozenSpend(settings.Limits)})
 	require.NoError(t, err)
 	require.NoError(t, plugin.Start(context.Background()))
 	defer func() { require.NoError(t, plugin.Stop(context.Background())) }()
@@ -315,7 +322,7 @@ func TestPDFBudgetExhaustionDegradesToDocumentNode(t *testing.T) {
 	llm := &countingLLM{tocEntries: 5}
 	tok, err := NewTokenizer("gpt-5.4-mini")
 	require.NoError(t, err)
-	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, PDF: fixedPagesPDF{pages: []string{"alpha page", "beta page", "gamma page"}}})
+	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, PDF: fixedPagesPDF{pages: []string{"alpha page", "beta page", "gamma page"}}, Spend: frozenSpend(cfg.Limits)})
 	require.NoError(t, err)
 	tree, stats, err := idx.Index(context.Background(), KindPDF, []byte("%PDF"), IndexOptions{DocID: "pdf-degrade"}, nil)
 	require.NoError(t, err)
@@ -376,7 +383,7 @@ func TestWriteBoundsIndexingByTimeoutIndex(t *testing.T) {
 	systemFS, err := service.SystemNamespace(SysOwner)
 	require.NoError(t, err)
 	llm := &blockingLLM{}
-	plugin, err := New(PluginDeps{UserFS: service, SystemFS: systemFS, Settings: settings, LLM: llm, Tokenizer: tokenizer})
+	plugin, err := New(PluginDeps{UserFS: service, SystemFS: systemFS, Settings: settings, LLM: llm, Tokenizer: tokenizer, Spend: frozenSpend(settings.Limits)})
 	require.NoError(t, err)
 	require.NoError(t, plugin.Start(context.Background()))
 	defer func() { require.NoError(t, plugin.Stop(context.Background())) }()
@@ -406,7 +413,7 @@ func TestPDFIndexDeadlineDegradesToDocumentNode(t *testing.T) {
 	tok, err := NewTokenizer("gpt-5.4-mini")
 	require.NoError(t, err)
 	llm := &blockingLLM{}
-	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, PDF: fixedPagesPDF{pages: []string{"alpha page", "beta page"}}})
+	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, PDF: fixedPagesPDF{pages: []string{"alpha page", "beta page"}}, Spend: frozenSpend(cfg.Limits)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

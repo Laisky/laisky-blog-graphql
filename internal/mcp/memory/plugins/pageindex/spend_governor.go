@@ -3,71 +3,117 @@ package pageindex
 import (
 	"sync"
 	"time"
+
+	logSDK "github.com/Laisky/go-utils/v6/log"
+	glog "github.com/Laisky/zap"
 )
 
 // SpendGovernor is the rolling, process-wide budget on upstream LLM spend. It keeps
 // one budget per tenant, so repeated writes or searches by one caller cannot
 // amplify without bound, and one global budget shared by every tenant, which is
-// the operator's ceiling even when callers mint new tenant identities.
+// the operator's ceiling even when callers use many tenant identities.
 //
 // Each budget is a pair of token buckets (calls and tokens) that refill linearly
 // over the configured window and are read lazily, so the governor runs no
-// goroutine. A tenant budget that has refilled completely is equivalent to an
-// absent one and is dropped, which bounds retained state by recent spenders
-// rather than by every tenant ever seen; MaxTrackedTenants is a hard cap on top.
-// A tenant that cannot be tracked is refused (its work degrades to local
-// summaries) rather than given an untracked budget.
+// goroutine. A tenant budget that has refilled completely and has no call in
+// flight is equivalent to an absent one and is dropped, which bounds retained
+// state by recent spenders rather than by every tenant ever seen;
+// MaxTrackedTenants is a hard cap on top. A tenant that cannot be tracked is
+// refused (its work degrades) rather than given an untracked budget.
+//
+// Fairness: the last GlobalReservePercent of the global budget is reserved for
+// light tenants, those that have spent less than one document's allowance
+// (MaxLLMCallsPerDocument calls and MaxTokensPerDocument tokens) of their own
+// budget in the current window. Heavy tenants are refused once the global budget
+// reaches the reserve, so one heavy caller cannot starve another caller's first
+// document; each tenant can draw at most one document's allowance from the reserve.
 type SpendGovernor struct {
-	tenantCalls, tenantTokens float64
-	globalCalls, globalTokens float64
-	window                    time.Duration
-	maxTenants                int
-	now                       func() time.Time
+	tenantCalls, tenantTokens   float64
+	globalCalls, globalTokens   float64
+	reserveCalls, reserveTokens float64
+	lightCalls, lightTokens     float64
+	window                      time.Duration
+	maxTenants                  int
+	now                         func() time.Time
+	log                         logSDK.Logger
 
 	mu        sync.Mutex
 	global    spendBuckets
 	tenants   map[string]*spendBuckets
 	lastSweep time.Time
 	stats     SpendStats
+	logged    SpendStats
+	lastLog   time.Time
 }
 
-// SpendStats is a snapshot of a SpendGovernor's counters.
+// SpendStats is a snapshot of a SpendGovernor's counters. Every refusal is
+// counted, including the cheap pre-checks that skip rendering a prompt.
 type SpendStats struct {
 	// Admitted counts admitted upstream calls.
 	Admitted uint64
 	// TenantRefusals counts calls refused by a tenant budget.
 	TenantRefusals uint64
-	// GlobalRefusals counts calls refused by the global budget.
+	// GlobalRefusals counts calls refused because the global budget was empty.
 	GlobalRefusals uint64
+	// ReserveRefusals counts calls by heavy tenants refused at the global reserve.
+	ReserveRefusals uint64
 	// UntrackedRefusals counts calls refused because MaxTrackedTenants was reached.
 	UntrackedRefusals uint64
 	// TrackedTenants is the number of tenant budgets currently held.
 	TrackedTenants int
 }
 
+// refusals returns the total refusal count.
+func (s SpendStats) refusals() uint64 {
+	return s.TenantRefusals + s.GlobalRefusals + s.ReserveRefusals + s.UntrackedRefusals
+}
+
+// refusalLogInterval is the shortest interval between two refusal summary logs.
+const refusalLogInterval = time.Minute
+
 // spendBuckets is one budget: a call bucket and a token bucket refilled together.
 type spendBuckets struct {
 	calls, tokens float64
 	last          time.Time
+	// inflight counts admitted calls not yet settled; such a bucket is never
+	// dropped, so a settle always charges the bucket that admitted it.
+	inflight int
 }
 
-// NewSpendGovernor builds a governor from limits; unset limits take their defaults.
-// Every budget starts full.
+// NewSpendGovernor builds a governor from limits on the wall clock; unset limits
+// take their defaults. Every budget starts full.
 func NewSpendGovernor(limits LimitsSettings) *SpendGovernor {
+	return NewSpendGovernorWithClock(limits, time.Now, nil)
+}
+
+// NewSpendGovernorWithClock builds a governor that reads time from now and
+// reports refusal summaries to log (which may be nil). Tests inject a fake clock
+// so that budget decisions never depend on how long a run takes.
+func NewSpendGovernorWithClock(limits LimitsSettings, now func() time.Time, log logSDK.Logger) *SpendGovernor {
 	limits = limits.WithDefaults()
-	g := &SpendGovernor{
-		tenantCalls:  float64(limits.TenantLLMCallsPerWindow),
-		tenantTokens: float64(limits.TenantTokensPerWindow),
-		globalCalls:  float64(limits.GlobalLLMCallsPerWindow),
-		globalTokens: float64(limits.GlobalTokensPerWindow),
-		window:       limits.Window,
-		maxTenants:   limits.MaxTrackedTenants,
-		now:          time.Now,
-		tenants:      make(map[string]*spendBuckets),
+	if now == nil {
+		now = time.Now
 	}
-	now := g.now()
-	g.global = spendBuckets{calls: g.globalCalls, tokens: g.globalTokens, last: now}
-	g.lastSweep = now
+	reserve := float64(limits.GlobalReservePercent) / 100
+	g := &SpendGovernor{
+		tenantCalls:   float64(limits.TenantLLMCallsPerWindow),
+		tenantTokens:  float64(limits.TenantTokensPerWindow),
+		globalCalls:   float64(limits.GlobalLLMCallsPerWindow),
+		globalTokens:  float64(limits.GlobalTokensPerWindow),
+		reserveCalls:  reserve * float64(limits.GlobalLLMCallsPerWindow),
+		reserveTokens: reserve * float64(limits.GlobalTokensPerWindow),
+		lightCalls:    min(float64(limits.MaxLLMCallsPerDocument), float64(limits.TenantLLMCallsPerWindow)),
+		lightTokens:   min(float64(limits.MaxTokensPerDocument), float64(limits.TenantTokensPerWindow)),
+		window:        limits.Window,
+		maxTenants:    limits.MaxTrackedTenants,
+		now:           now,
+		log:           log,
+		tenants:       make(map[string]*spendBuckets),
+	}
+	start := g.now()
+	g.global = spendBuckets{calls: g.globalCalls, tokens: g.globalTokens, last: start}
+	g.lastSweep = start
+	g.lastLog = start
 	return g
 }
 
@@ -76,27 +122,45 @@ type spendTicket struct {
 	governor *SpendGovernor
 	tenant   *spendBuckets
 	estimate float64
+	settled  bool
 }
 
+// refusal names the budget that refused a call.
+type refusal int
+
+const (
+	refusalNone refusal = iota
+	refusalTenant
+	refusalGlobal
+	refusalReserve
+	refusalUntracked
+)
+
 // wouldRefuse reports, without spending, that tenant could not be admitted for
-// even the smallest call. Callers use it to skip estimating a prompt.
+// even the smallest call. Callers use it to skip rendering a prompt; the refusal
+// is counted like any other.
 func (g *SpendGovernor) wouldRefuse(tenant string) bool {
 	if g == nil {
 		return false
 	}
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	now := g.now()
-	g.global.refill(now, g.globalCalls, g.globalTokens, g.window)
-	if !g.global.canSpend(0) {
+	reason := g.checkLocked(tenant, 0)
+	g.countLocked(reason)
+	summary, emit := g.summaryLocked()
+	g.mu.Unlock()
+	g.emit(summary, emit)
+	return reason != refusalNone
+}
+
+// hasBudget reports, without spending or counting a refusal, whether tenant could
+// be admitted for one call now. Background work uses it to wait for budget.
+func (g *SpendGovernor) hasBudget(tenant string) bool {
+	if g == nil {
 		return true
 	}
-	budget := g.tenants[tenant]
-	if budget == nil {
-		return len(g.tenants) >= g.maxTenants && !g.sweepLocked(now, g.window/sweepForcedDivisor)
-	}
-	budget.refill(now, g.tenantCalls, g.tenantTokens, g.window)
-	return !budget.canSpend(0)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.checkLocked(tenant, 0) == refusalNone
 }
 
 // admit spends one call and estimate tokens from the tenant's budget and the
@@ -105,44 +169,119 @@ func (g *SpendGovernor) admit(tenant string, estimate int64) (*spendTicket, bool
 	if g == nil {
 		return nil, true
 	}
+	est := float64(max(estimate, 0))
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	reason := g.checkLocked(tenant, est)
+	g.countLocked(reason)
+	var ticket *spendTicket
+	if reason == refusalNone {
+		budget := g.tenants[tenant]
+		if budget == nil {
+			budget = &spendBuckets{calls: g.tenantCalls, tokens: g.tenantTokens, last: g.now()}
+			g.tenants[tenant] = budget
+		}
+		budget.spend(est)
+		budget.inflight++
+		g.global.spend(est)
+		g.stats.Admitted++
+		ticket = &spendTicket{governor: g, tenant: budget, estimate: est}
+	}
+	summary, emit := g.summaryLocked()
+	g.mu.Unlock()
+	g.emit(summary, emit)
+	return ticket, ticket != nil
+}
+
+// checkLocked decides whether tenant may spend one call and est tokens now. It
+// refills the buckets it reads and may sweep, but spends nothing. The caller
+// holds g.mu.
+func (g *SpendGovernor) checkLocked(tenant string, est float64) refusal {
 	now := g.now()
 	g.sweepLocked(now, g.window/sweepIdleDivisor)
 
-	est := float64(max(estimate, 0))
 	budget := g.tenants[tenant]
+	usedCalls, usedTokens := 0.0, 0.0
 	if budget != nil {
 		budget.refill(now, g.tenantCalls, g.tenantTokens, g.window)
 		if !budget.canSpend(est) {
-			g.stats.TenantRefusals++
-			return nil, false
+			return refusalTenant
 		}
+		usedCalls, usedTokens = g.tenantCalls-budget.calls, g.tenantTokens-budget.tokens
 	} else if est > g.tenantTokens {
-		g.stats.TenantRefusals++
-		return nil, false
+		return refusalTenant
 	}
 	g.global.refill(now, g.globalCalls, g.globalTokens, g.window)
 	if !g.global.canSpend(est) {
+		return refusalGlobal
+	}
+	inReserve := g.global.calls-1 < g.reserveCalls || g.global.tokens-est < g.reserveTokens
+	if inReserve && (usedCalls >= g.lightCalls || usedTokens >= g.lightTokens) {
+		return refusalReserve
+	}
+	if budget == nil && len(g.tenants) >= g.maxTenants && !g.sweepLocked(now, g.window/sweepForcedDivisor) {
+		return refusalUntracked
+	}
+	return refusalNone
+}
+
+// countLocked records a refusal. The caller holds g.mu.
+func (g *SpendGovernor) countLocked(reason refusal) {
+	switch reason {
+	case refusalNone:
+	case refusalTenant:
+		g.stats.TenantRefusals++
+	case refusalGlobal:
 		g.stats.GlobalRefusals++
-		return nil, false
+	case refusalReserve:
+		g.stats.ReserveRefusals++
+	case refusalUntracked:
+		g.stats.UntrackedRefusals++
 	}
-	if budget == nil {
-		if len(g.tenants) >= g.maxTenants && !g.sweepLocked(now, g.window/sweepForcedDivisor) {
-			g.stats.UntrackedRefusals++
-			return nil, false
-		}
-		budget = &spendBuckets{calls: g.tenantCalls, tokens: g.tenantTokens, last: now}
-		g.tenants[tenant] = budget
+}
+
+// summaryLocked returns the refusal counters since the last summary log when a
+// new summary is due: at most once per refusalLogInterval and only when calls
+// were refused. The caller holds g.mu.
+func (g *SpendGovernor) summaryLocked() (SpendStats, bool) {
+	if g.log == nil || g.stats.refusals() == g.logged.refusals() {
+		return SpendStats{}, false
 	}
-	budget.spend(est)
-	g.global.spend(est)
-	g.stats.Admitted++
-	return &spendTicket{governor: g, tenant: budget, estimate: est}, true
+	now := g.now()
+	if now.Sub(g.lastLog) < refusalLogInterval {
+		return SpendStats{}, false
+	}
+	delta := SpendStats{
+		Admitted:          g.stats.Admitted - g.logged.Admitted,
+		TenantRefusals:    g.stats.TenantRefusals - g.logged.TenantRefusals,
+		GlobalRefusals:    g.stats.GlobalRefusals - g.logged.GlobalRefusals,
+		ReserveRefusals:   g.stats.ReserveRefusals - g.logged.ReserveRefusals,
+		UntrackedRefusals: g.stats.UntrackedRefusals - g.logged.UntrackedRefusals,
+		TrackedTenants:    len(g.tenants),
+	}
+	g.logged = g.stats
+	g.lastLog = now
+	return delta, true
+}
+
+// emit logs one refusal summary outside the governor lock.
+func (g *SpendGovernor) emit(delta SpendStats, ok bool) {
+	if !ok {
+		return
+	}
+	g.log.Warn("pageindex.spend.refusals",
+		glog.Uint64("admitted", delta.Admitted),
+		glog.Uint64("tenant_refusals", delta.TenantRefusals),
+		glog.Uint64("global_refusals", delta.GlobalRefusals),
+		glog.Uint64("reserve_refusals", delta.ReserveRefusals),
+		glog.Uint64("untracked_refusals", delta.UntrackedRefusals),
+		glog.Int("tracked_tenants", delta.TrackedTenants),
+	)
 }
 
 // settle replaces the ticket's token estimate with the tokens actually charged.
-// A charge above the estimate leaves the budgets in debt until they refill.
+// A charge above the estimate leaves the budgets in debt until they refill. The
+// admitting bucket is still tracked because buckets with calls in flight are
+// never swept. Settling twice is a no-op.
 func (t *spendTicket) settle(charged int64) {
 	if t == nil {
 		return
@@ -150,6 +289,11 @@ func (t *spendTicket) settle(charged int64) {
 	g := t.governor
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if t.settled {
+		return
+	}
+	t.settled = true
+	t.tenant.inflight--
 	delta := float64(max(charged, 0)) - t.estimate
 	t.tenant.tokens = min(g.tenantTokens, t.tenant.tokens-delta)
 	g.global.tokens = min(g.globalTokens, g.global.tokens-delta)
@@ -173,9 +317,10 @@ const (
 	sweepForcedDivisor = 10_000
 )
 
-// sweepLocked drops every tenant budget that has refilled completely, at most once
-// per interval, and reports whether the table has room for another tenant. A
-// dropped budget was full, so dropping it changes no decision. The caller holds g.mu.
+// sweepLocked drops every tenant budget that has refilled completely and has no
+// call in flight, at most once per interval, and reports whether the table has
+// room for another tenant. A dropped budget was full, so dropping it changes no
+// decision. The caller holds g.mu.
 func (g *SpendGovernor) sweepLocked(now time.Time, interval time.Duration) bool {
 	if now.Sub(g.lastSweep) < interval {
 		return len(g.tenants) < g.maxTenants
@@ -183,7 +328,7 @@ func (g *SpendGovernor) sweepLocked(now time.Time, interval time.Duration) bool 
 	g.lastSweep = now
 	for name, budget := range g.tenants {
 		budget.refill(now, g.tenantCalls, g.tenantTokens, g.window)
-		if budget.full(g.tenantCalls, g.tenantTokens) {
+		if budget.inflight == 0 && budget.full(g.tenantCalls, g.tenantTokens) {
 			delete(g.tenants, name)
 		}
 	}

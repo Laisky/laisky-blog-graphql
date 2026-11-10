@@ -3,6 +3,7 @@ package pageindex
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -12,10 +13,12 @@ import (
 )
 
 // minDuration runs fn several times and returns the fastest run, which is the
-// least noisy estimate of its cost on a shared machine.
+// least noisy estimate of its cost on a shared machine. Each run starts after a
+// garbage collection so earlier allocations are not billed to it.
 func minDuration(runs int, fn func()) time.Duration {
 	best := time.Duration(0)
 	for i := 0; i < runs; i++ {
+		runtime.GC()
 		start := time.Now()
 		fn()
 		elapsed := time.Since(start)
@@ -48,11 +51,16 @@ func plainProse(size int) []byte {
 // cost roughly four times as much, not sixteen.
 func TestExtractHeadersDenseHeadingsScaleLinearly(t *testing.T) {
 	for name, shape := range map[string]struct {
-		line  string
-		small int
+		line     string
+		small    int
+		fallback bool
 	}{
-		"plain headings":  {line: "# heading %d\n", small: 40_000},
-		"inline headings": {line: "# *a_ [b](<c %d\n", small: 10_000},
+		// Under the block bound goldmark parses the document; over it the linear
+		// scanner does. Both must scale linearly.
+		"plain headings via goldmark":        {line: "# heading %d\n", small: 9_000},
+		"inline headings via goldmark":       {line: "# *a_ [b](<c %d\n", small: 2_500},
+		"plain headings via linear scanner":  {line: "# heading %d\n", small: 50_000, fallback: true},
+		"inline headings via linear scanner": {line: "# *a_ [b](<c %d\n", small: 50_000, fallback: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			line := shape.line
@@ -64,13 +72,18 @@ func TestExtractHeadersDenseHeadingsScaleLinearly(t *testing.T) {
 				return []byte(b.String())
 			}
 			small, large := build(shape.small), build(4*shape.small)
+			for _, body := range [][]byte{small, large} {
+				extracted, err := extractMarkdownHeadings(t.Context(), body, 1)
+				require.NoError(t, err)
+				require.Equal(t, shape.fallback, extracted.fallback, extracted.fallbackReason)
+			}
 			var smallHeaders, largeHeaders []MDHeader
-			smallCost := minDuration(3, func() {
+			smallCost := minDuration(5, func() {
 				headers, err := ExtractHeaders(small)
 				require.NoError(t, err)
 				smallHeaders = headers
 			})
-			largeCost := minDuration(3, func() {
+			largeCost := minDuration(5, func() {
 				headers, err := ExtractHeaders(large)
 				require.NoError(t, err)
 				largeHeaders = headers
@@ -216,7 +229,7 @@ func newMarkdownTestIndexer(t *testing.T, cfg Settings, llm LLM) *Indexer {
 	t.Helper()
 	tok, err := NewTokenizer("gpt-5.4-mini")
 	require.NoError(t, err)
-	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg})
+	idx, err := NewIndexer(Deps{LLM: llm, Tokenizer: tok, Settings: cfg, Spend: frozenSpend(cfg.Limits)})
 	require.NoError(t, err)
 	return idx
 }

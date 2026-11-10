@@ -28,6 +28,9 @@ type Stats struct {
 	Wallclock    time.Duration
 	// BudgetRefusals counts calls refused by an operation or rolling budget.
 	BudgetRefusals int
+	// RollingRefusals counts the refusals of BudgetRefusals made by a rolling
+	// tenant or global budget, which a later refresh can overcome.
+	RollingRefusals int
 	// LocalSummaries counts leaves summarized locally because a call was refused.
 	LocalSummaries int
 	// StructureTruncated reports that the node ceiling cut the tree short.
@@ -49,15 +52,47 @@ func (s *Stats) addLLMCall(in, out int) {
 	s.mu.Unlock()
 }
 
-// addRefusal counts one call refused by a budget.
-func (s *Stats) addRefusal() {
+// addRefusal counts one call refused by a budget, classified by err.
+func (s *Stats) addRefusal(err error) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	s.BudgetRefusals++
+	if errors.Is(err, errRollingBudgetExceeded) {
+		s.RollingRefusals++
+	}
 	s.mu.Unlock()
 }
+
+// degradedReason returns the summary error code of a run that did not get every
+// LLM result it asked for: "timeout" when indexer.timeout_index ended it,
+// "budget_exhausted" when a rolling budget refused calls (a later refresh can
+// succeed), "document_limit" when only the document's own ceilings did, and ""
+// for a complete run.
+func (s *Stats) degradedReason() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.DeadlineReached:
+		return degradedTimeout
+	case s.RollingRefusals > 0:
+		return degradedBudget
+	case s.BudgetRefusals > 0 || s.LocalSummaries > 0:
+		return degradedDocumentLimit
+	}
+	return ""
+}
+
+// Degraded summary error codes (Stats.degradedReason).
+const (
+	degradedTimeout       = "timeout"
+	degradedBudget        = "budget_exhausted"
+	degradedDocumentLimit = "document_limit"
+)
 
 // addLocalSummary counts one leaf summarized locally.
 func (s *Stats) addLocalSummary() {
@@ -164,7 +199,7 @@ func NewIndexer(deps Deps) (*Indexer, error) {
 	}
 	deps.Settings.Limits = deps.Settings.Limits.WithDefaults()
 	if deps.Spend == nil {
-		deps.Spend = NewSpendGovernor(deps.Settings.Limits)
+		deps.Spend = NewSpendGovernorWithClock(deps.Settings.Limits, time.Now, deps.Logger)
 	}
 	return &Indexer{
 		llm:   deps.LLM,
@@ -219,6 +254,7 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 			glog.String("kind", string(kind)),
 			glog.Int("llm_calls", stats.LLMCalls),
 			glog.Int("budget_refusals", stats.BudgetRefusals),
+			glog.Int("rolling_refusals", stats.RollingRefusals),
 			glog.Int("local_summaries", stats.LocalSummaries),
 			glog.Bool("structure_truncated", stats.StructureTruncated),
 			glog.Bool("deadline_reached", stats.DeadlineReached),
@@ -233,7 +269,7 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 // ErrBudgetExceeded when the operation or rolling budgets would be exceeded.
 func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, stats *Stats) (*Response, error) {
 	if budget.exhausted() {
-		stats.addRefusal()
+		stats.addRefusal(ErrBudgetExceeded)
 		return nil, ErrBudgetExceeded
 	}
 	if req.PromptHash == [32]byte{} {
@@ -252,7 +288,7 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 	}
 	admission, err := idx.gate.admit(req, budget)
 	if err != nil {
-		stats.addRefusal()
+		stats.addRefusal(err)
 		return nil, err
 	}
 	if idx.sem != nil {
@@ -262,9 +298,13 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 		}
 		defer idx.sem.Release(1)
 	}
-	resp, err := idx.llm.Respond(ctx, req)
+	resp, err := idx.llm.Respond(ctx, admission.bind(req))
 	admission.settle(resp)
 	if err != nil {
+		if errors.Is(err, ErrBudgetExceeded) {
+			// A retry was refused before it was sent.
+			stats.addRefusal(err)
+		}
 		return nil, err
 	}
 	stats.addLLMCall(resp.Usage.InputTokens, resp.Usage.OutputTokens)
@@ -272,11 +312,6 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 		idx.log.Warn(fmt.Sprintf("pageindex.cache.put: %v", err))
 	}
 	return resp, nil
-}
-
-// wouldRefuse reports, without spending, that budget cannot admit another call.
-func (idx *Indexer) wouldRefuse(budget *Budget) bool {
-	return idx.gate.wouldRefuse(budget)
 }
 
 // GetPageContent resolves page ranges against the cached tree's pages.

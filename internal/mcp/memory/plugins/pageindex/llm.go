@@ -43,6 +43,34 @@ type Request struct {
 	MaxOutTokens int
 	Temperature  float32
 	PromptHash   [32]byte
+	// AdmitRetry, when set, is called before every retry of the call (attempt 2
+	// onwards). An error stops retrying and is returned, so each upstream request
+	// is admitted by the budgets before it is sent. It is not part of the cache key.
+	AdmitRetry func(attempt int) error
+}
+
+// DefaultLLMRetryAttempts is the default number of upstream requests one call may
+// make, including the first (settings indexer.retry.max_attempts).
+const DefaultLLMRetryAttempts = 3
+
+// isRetryableLLMError reports whether a failed upstream request may be retried:
+// timeouts, connection failures, 408, 409, 429 and 5xx. Any other provider
+// response (an invalid request, authentication, a missing model) fails the same
+// way again, and a canceled or expired caller context ends the call.
+func isRetryableLLMError(ctx context.Context, err error) bool {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	var apiErr *openai.Error
+	if errors.As(err, &apiErr) {
+		switch apiErr.StatusCode {
+		case http.StatusRequestTimeout, http.StatusConflict, http.StatusTooManyRequests:
+			return true
+		default:
+			return apiErr.StatusCode >= http.StatusInternalServerError
+		}
+	}
+	return true
 }
 
 // Response is the raw output and accounting from one Respond call.
@@ -81,8 +109,14 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 	if cfg.Model == "" {
 		cfg.Model = "gpt-5.4-mini"
 	}
-	if cfg.Retry.MaxAttempts == 0 {
-		cfg.Retry = RetrySettings{MaxAttempts: 10, InitialBackoff: 250 * time.Millisecond, MaxBackoff: 8 * time.Second}
+	if cfg.Retry.MaxAttempts <= 0 {
+		cfg.Retry.MaxAttempts = DefaultLLMRetryAttempts
+	}
+	if cfg.Retry.InitialBackoff <= 0 {
+		cfg.Retry.InitialBackoff = 250 * time.Millisecond
+	}
+	if cfg.Retry.MaxBackoff <= 0 {
+		cfg.Retry.MaxBackoff = 8 * time.Second
 	}
 	tk := cfg.Tokenizer
 	if tk == nil {
@@ -112,6 +146,19 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 		tok:        tk,
 		keyHashHex: hex.EncodeToString(keyHash[:8]),
 	}, nil
+}
+
+// NewOpenAILLMFromSettings builds the plugin's Responses-API client from its
+// settings, including the documented indexer.retry.* policy.
+func NewOpenAILLMFromSettings(settings Settings, tok Tokenizer, logger logSDK.Logger) (LLM, error) {
+	return NewOpenAILLM(LLMConfig{
+		APIKey:    settings.LLM.APIKey,
+		BaseURL:   settings.LLM.BaseURL,
+		Model:     settings.LLM.IndexingModel,
+		Retry:     settings.Indexer.Retry,
+		Tokenizer: tok,
+		Logger:    logger,
+	})
 }
 
 type openaiLLM struct {
@@ -165,7 +212,14 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 
 	var resp *responses.Response
 	start := time.Now()
+	attempt := 0
 	err := retry.Do(func() error {
+		attempt++
+		if attempt > 1 && req.AdmitRetry != nil {
+			if admitErr := req.AdmitRetry(attempt); admitErr != nil {
+				return retry.Unrecoverable(admitErr)
+			}
+		}
 		if l.limiter != nil {
 			if waitErr := l.limiter.Wait(ctx); waitErr != nil {
 				return waitErr
@@ -184,6 +238,7 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 		retry.MaxDelay(l.retry.MaxBackoff),
 		retry.DelayType(retry.BackOffDelay),
 		retry.LastErrorOnly(true),
+		retry.RetryIf(func(err error) bool { return isRetryableLLMError(ctx, err) }),
 	)
 	if err != nil {
 		if l.log != nil {

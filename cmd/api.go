@@ -504,13 +504,7 @@ func runAPI(ctx context.Context) error {
 					if tokErr != nil {
 						return errors.Wrap(tokErr, "build pageindex tokenizer")
 					}
-					piLLM, llmErr := pageindexplugin.NewOpenAILLM(pageindexplugin.LLMConfig{
-						APIKey:    piSettings.LLM.APIKey,
-						BaseURL:   piSettings.LLM.BaseURL,
-						Model:     piSettings.LLM.IndexingModel,
-						Tokenizer: piTok,
-						Logger:    logger.Named("pageindex_llm"),
-					})
+					piLLM, llmErr := pageindexplugin.NewOpenAILLMFromSettings(piSettings, piTok, logger.Named("pageindex_llm"))
 					if llmErr != nil {
 						return errors.Wrap(llmErr, "build pageindex llm client")
 					}

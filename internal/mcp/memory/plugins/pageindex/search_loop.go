@@ -20,6 +20,9 @@ type SearchInput struct {
 	ValidateSource func(context.Context, string, string) (bool, error)
 	// Tenant names the caller whose rolling LLM budget the search draws from.
 	Tenant string
+	// OnCandidate, when set, is called with every candidate whose source is
+	// current, before it is searched; the plugin uses it to refresh degraded trees.
+	OnCandidate func(userPath string, entry IndexEntry)
 }
 
 // SearchEngine is the smaller interface the plugin uses against the indexer.
@@ -79,6 +82,9 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 			}
 		}
 		stepBudget--
+		if in.OnCandidate != nil {
+			in.OnCandidate(cand.userPath, cand.entry)
+		}
 		tree, err := s.store.GetTree(ctx, in.Project, cand.entry.DocID)
 		if err != nil {
 			continue
@@ -169,7 +175,7 @@ func (s *Searcher) pickRanges(ctx context.Context, tree *Tree, query string, bud
 	if err != nil {
 		return nil, err
 	}
-	resp, err := s.llm.Respond(ctx, req)
+	resp, err := s.llm.Respond(ctx, admission.bind(req))
 	admission.settle(resp)
 	if err != nil {
 		return nil, err

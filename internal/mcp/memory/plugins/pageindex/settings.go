@@ -89,7 +89,7 @@ func LoadSettings() Settings {
 			TimeoutQuery:   durationOr(settingsPrefix+".indexer.timeout_query", 60*time.Second),
 			MaxConcurrency: intOr(settingsPrefix+".indexer.max_concurrency", 8),
 			Retry: RetrySettings{
-				MaxAttempts:    intOr(settingsPrefix+".indexer.retry.max_attempts", 10),
+				MaxAttempts:    intOr(settingsPrefix+".indexer.retry.max_attempts", DefaultLLMRetryAttempts),
 				InitialBackoff: durationOr(settingsPrefix+".indexer.retry.initial_backoff", 250*time.Millisecond),
 				MaxBackoff:     durationOr(settingsPrefix+".indexer.retry.max_backoff", 8*time.Second),
 			},
@@ -131,6 +131,7 @@ func LoadSettings() Settings {
 			GlobalLLMCallsPerWindow: int64Or(settingsPrefix+".limits.global_llm_calls_per_window", DefaultGlobalLLMCallsPerWindow),
 			GlobalTokensPerWindow:   int64Or(settingsPrefix+".limits.global_tokens_per_window", DefaultGlobalTokensPerWindow),
 			MaxTrackedTenants:       intOr(settingsPrefix+".limits.max_tracked_tenants", DefaultMaxTrackedTenants),
+			GlobalReservePercent:    intOr(settingsPrefix+".limits.global_reserve_percent", DefaultGlobalReservePercent),
 		}.WithDefaults(),
 	}
 }

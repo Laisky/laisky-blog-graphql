@@ -51,6 +51,7 @@ func TestLoadSettingsDefaults(t *testing.T) {
 		settingsPrefix + ".limits.global_llm_calls_per_window",
 		settingsPrefix + ".limits.global_tokens_per_window",
 		settingsPrefix + ".limits.max_tracked_tenants",
+		settingsPrefix + ".limits.global_reserve_percent",
 	}
 	prior := make(map[string]any, len(keys))
 	for _, k := range keys {
@@ -68,7 +69,7 @@ func TestLoadSettingsDefaults(t *testing.T) {
 	require.Equal(t, 5*time.Minute, s.Indexer.TimeoutIndex)
 	require.Equal(t, 60*time.Second, s.Indexer.TimeoutQuery)
 	require.Equal(t, 8, s.Indexer.MaxConcurrency)
-	require.Equal(t, 10, s.Indexer.Retry.MaxAttempts)
+	require.Equal(t, 3, s.Indexer.Retry.MaxAttempts)
 	require.Equal(t, 250*time.Millisecond, s.Indexer.Retry.InitialBackoff)
 	require.Equal(t, 8*time.Second, s.Indexer.Retry.MaxBackoff)
 	require.False(t, s.Indexer.Cache.Enabled)
@@ -103,6 +104,7 @@ func TestLoadSettingsDefaults(t *testing.T) {
 		GlobalLLMCallsPerWindow: 5000,
 		GlobalTokensPerWindow:   20_000_000,
 		MaxTrackedTenants:       10_000,
+		GlobalReservePercent:    20,
 	}, s.Limits)
 }
 
