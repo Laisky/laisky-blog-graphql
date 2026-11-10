@@ -34,9 +34,12 @@ query handoff remains for unregistered clients until `legacy_token_redirect: den
 - RFC 6749 §10.5: a client relying on the code for user authentication "MUST require the use of TLS".
 - RFC 8252 §8.3 and OAuth 2.1 §8.4.2: loopback IP literals are preferred; "localhost" is
   NOT RECOMMENDED for native apps because of name resolution and listening interfaces.
-- No source addresses private-network IP literals over http. This repository keeps them
-  (RFC 1918, RFC 6598/Tailscale, IPv6 ULA) and `localhost` as development-only hosts; a
-  browser-based issuer resolves `localhost` to loopback, and these hosts never cover production.
+- No source addresses private-network IP literals over http. OAuth 2.1 -17 §1.5 admits only
+  loopback, whose traffic never leaves the device. Private literals (RFC 1918, RFC 6598 /
+  Tailscale, IPv6 ULA) are answered by any device on that network, so a production issuer
+  hands them the legacy bearer only at an exact registered callback; an issuer that itself
+  runs on a development host keeps them (review follow-up, 2026-11-10). `localhost` stays a
+  loopback host; browsers resolve it to loopback.
 
 Applied: registered callbacks are compared byte for byte; production hosts require https.
 
@@ -50,6 +53,18 @@ Applied: registered callbacks are compared byte for byte; production hosts requi
 Applied: 60-second codes, S256 only, one-time Redis redemption bound to client ID,
 exact redirect URI, state and verifier; redemption from a browser is bound to the
 callback's origin.
+
+## Backslashes
+
+- WHATWG URL parsing treats `\` as `/` in the scheme, authority and path of special schemes
+  (validation error `invalid-reverse-solidus`); Go `net/url` does not. Checked locally
+  (Node 22, Go 1.27): `https://evil.example\@sso.laisky.com/` is host `evil.example` in
+  WHATWG and an invalid userinfo in Go; `https://chat.laisky.com/a\b` has path `/a/b` in
+  WHATWG and `/a\b` in Go.
+- In the query and fragment, WHATWG neither rewrites nor percent-encodes `\` (it is not in
+  the query or fragment percent-encode sets): `https://chat.laisky.com/p?q=a\b#f\g` keeps
+  both backslashes in `href`, and both parsers agree on the host. The policy accepts `\`
+  only after the first `?` or `#`.
 
 ## Open redirectors and unregistered URIs
 

@@ -35,10 +35,12 @@ or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
 
-The SSO selections run the shared redirect-policy vectors that the frontend tests
-also consume, the registered-client code issuance and redemption bindings, the
-start and completion re-checks of GitHub and passkey sign-in, and startup
-validation of the redirect settings, all in process with miniredis.
+The SSO selections run the shared redirect-policy and registry vectors that the
+frontend tests also consume, the registered-client code issuance and redemption
+bindings, the start and completion re-checks of GitHub and passkey sign-in
+(including the completing-issuer check at GitHub start), private development
+targets, backslashes after the query or fragment, and startup validation of the
+redirect settings, all in process with miniredis.
 
 The Telegram selections also cover cancellation after refill, overlapping
 reservations, isolation of invalid credentials from delivery capacity, remote

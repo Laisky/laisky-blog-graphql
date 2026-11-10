@@ -120,18 +120,25 @@ shared vectors in `web/src/lib/sso-redirect-policy.v1.json`. The checks run on t
 
 - Form: an absolute `https://` URL, an absolute `http://` URL on a development host, or a
   path starting with a single `/` (an issuer page).
-- At most 2048 characters of printable ASCII. Spaces, control characters, backslashes and
-  non-ASCII characters are rejected; browsers already percent-encode them in `location.href`.
+- At most 2048 characters of printable ASCII. Spaces, control characters and non-ASCII
+  characters are rejected; browsers percent-encode them in `location.href`.
+- Backslashes are rejected in the scheme, authority and path, where browsers read `\` as `/`
+  but other parsers do not (`https://evil.example\@sso.laisky.com/`). Browsers leave `\`
+  unencoded in the query and fragment of `location.href`, so it is accepted there.
 - No userinfo (`user@` or `user:pass@`) in the authority.
 - Production hosts, `https` only:
   - `laisky.com`.
   - Any `*.laisky.com` subdomain.
-- Development hosts, `http` or `https`:
-  - `localhost`.
-  - Canonical dotted-decimal IPv4 in `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`,
-    `192.168.0.0/16` or `100.64.0.0/10` (CGNAT, for example Tailscale).
-  - IPv6 `[::1]` and `fc00::/7`, in hexadecimal form.
-  - Development hosts exist for local work only; never expose a production session on them.
+- Loopback hosts, `http` or `https`, from any issuer (the request never leaves the device):
+  - `localhost`, canonical IPv4 in `127.0.0.0/8`, and IPv6 `[::1]`.
+- Private development hosts, `http` or `https`:
+  - Canonical dotted-decimal IPv4 in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or
+    `100.64.0.0/10` (CGNAT, for example Tailscale), and IPv6 `fc00::/7` in hexadecimal form.
+  - These addresses are shared by a LAN or tailnet, so another device can answer them. A
+    production issuer (`https://sso.laisky.com`) therefore never hands them the legacy bearer
+    unless the exact callback is registered; see
+    [Development callbacks](#development-callbacks). An issuer that itself runs on a
+    loopback or private host keeps the legacy handoff for them.
 - Numeric IPv4 spellings that parsers rewrite (`0x7f.1`, `127.1`, `010.0.0.1`, `2130706433`),
   IPv4-mapped or zone-scoped IPv6, ports outside 1–65535, and leading-zero ports are rejected.
 
@@ -141,9 +148,18 @@ The accepted target then takes exactly one path:
 | --- | --- |
 | `blog.laisky.com` | Blog code flow or bootstrap ([Blog SSO code handoff](../ref/blog-sso-code-handoff.md)); never the bearer |
 | A registered client's exact code request | Single-use code to the registered callback |
-| Any other URL on a registered client's hostname | Rejected (`code_flow_required`) |
-| An issuer page (same origin as the login page) | Opened without a URL bearer; the session is already stored there |
-| Any other accepted target | Legacy `sso_token` handoff, only while `legacy_token_redirect` is `allow` |
+| Any other URL on a registered client's hostname | Rejected (`code_flow_required`), unless the client sets `legacy_token_redirect: allow` |
+| A page on the issuer origin that completes sign-in | Opened without a URL bearer; the session is already stored there |
+| An unregistered private development target, from a production issuer | Rejected (`development_target_requires_registration`) |
+| Any other accepted target, including the other issuer origin | Legacy `sso_token` handoff, only while `legacy_token_redirect` is `allow` |
+
+The standalone and MCP-mounted issuers (`https://sso.laisky.com` and
+`https://mcp.laisky.com/sso/login`) keep separate browser sessions. A page on the other
+issuer origin is therefore a legacy target: under `allow` it receives the bearer in its
+URL over https (both origins are this service); under `deny` it is refused. GitHub sign-in
+completes on the configured callback origin (`settings.web.github_oauth.redirect_url`), so
+the GitHub start mutation judges the target against that origin and refuses such a target
+before the user leaves for GitHub.
 
 `sso_flow` without `sso_client_id` is the Blog-only format and is rejected on other hosts.
 Without `redirect_to`, sign-in opens `/profile` on the issuer origin that completes it (for
@@ -171,7 +187,8 @@ The operator adds the client to `settings.web.sso.clients` (see
   or default port, an explicit path (`/` for the root) without `.`/`..` segments or
   percent escapes, and no query or fragment. A URI belongs to only one client.
 - Registering a callback reserves its whole hostname: other URLs on that hostname are
-  refused instead of receiving the bearer.
+  refused instead of receiving the bearer. A hostname, whatever the port, belongs to exactly
+  one client; startup rejects a registry that gives one hostname to two clients.
 
 ### Code request
 
@@ -216,6 +233,31 @@ Redemption rules:
   origin of the client's registered callback; any other origin gets `403`.
 - Redemption rechecks that the session is still active.
 
+### Development callbacks
+
+A developer who signs in through the production issuer from a LAN or tailnet address (for
+example `http://192.168.1.20:5173`) registers the exact callback:
+
+```yaml
+settings:
+  web:
+    sso:
+      clients:
+        devapp:
+          redirect_uris:
+            - http://192.168.1.20:5173/sso/callback
+          # Only while the development consumer still reads sso_token.
+          legacy_token_redirect: allow
+```
+
+- The code flow then works for that exact callback, the same as for production clients.
+- With `legacy_token_redirect: allow` on the client and on the issuer, that exact callback
+  (with any query) also receives the legacy bearer; other URLs on the host are refused.
+- A registration reserves the whole hostname for one client, so two development apps on
+  one address need separate hosts or one shared client entry.
+- Loopback (`localhost`, `127.0.0.1`, `[::1]`) needs no registration, and an issuer that
+  runs on a development host itself keeps the legacy handoff for private targets.
+
 ### Migration from the legacy handoff
 
 Follow the same issuer, consumer, cutover order Blog used:
@@ -258,7 +300,9 @@ Your callback endpoint should:
 - `allow` (default): unregistered targets that pass the redirect policy receive `sso_token`.
 - `deny`: unregistered targets are refused on every path (password, TOTP, email code,
   existing session, passkey and GitHub, in the frontend and in the GraphQL start and
-  completion mutations). Blog, registered clients and issuer pages keep working.
+  completion mutations). Blog, registered clients and pages on the issuer origin that
+  completes sign-in keep working; a page on the other issuer origin is refused (at GitHub
+  start for GitHub sign-in).
 
 The issuer frontend reads the policy from `runtime-config.json` (`ssoRedirect`). If the
 runtime configuration cannot be loaded, or the policy in it is malformed, the frontend
@@ -266,9 +310,12 @@ fails closed as if `deny` were set and asks the user to reload.
 
 Remaining risk while `allow` is set: an unregistered client receives the 90-day SSO JWT in
 its URL query, where browser history, the client's access logs, proxies and analytics can
-retain it. Anyone who obtains that URL can act as the user until the token expires. https
-is now required on production hosts, which removes network observers, but not the other
-exposures. The JWT lifetime is unchanged because clients use it as their session.
+retain it. Anyone who obtains that URL can act as the user until the token expires. Requiring
+https on production hosts keeps the URL from passive observers between the browser and the
+client's TLS endpoint; it does nothing about history, logs, proxies that terminate TLS,
+analytics or an operator of the receiving host. Loopback targets may use plain http because
+the request stays on the device, and private development targets need a development issuer
+or a registered callback. The JWT lifetime is unchanged because clients use it as their session.
 
 Owner cutover step: when every consumer that still reads `sso_token` (go-ramjet CV and
 GPTChat, Accounting) has moved to the code flow, set `legacy_token_redirect: deny` and
@@ -523,7 +570,8 @@ settings:
   web:
     sso:
       # allow (default) keeps the legacy sso_token handoff for unregistered targets;
-      # deny refuses them. Blog, registered clients and issuer pages are unaffected.
+      # deny refuses them. Blog, registered clients and pages on the issuer origin that
+      # completes sign-in are unaffected.
       legacy_token_redirect: allow
       clients:
         accounting: # client ID
@@ -977,15 +1025,16 @@ mutation FinishPasskeyLogin($session: String!, $credentialJSON: String!) {
 6. `This application is not registered for SSO`: `legacy_token_redirect` is `deny` and the client is not registered.
 7. `Invalid SSO code request` or `Unknown SSO client`: the code request does not match a registration exactly.
 8. `SSO configuration could not be loaded`: the login page could not read `runtime-config.json`; reload.
-9. `turnstile token is required`: Turnstile is configured but the client did not provide a token.
-10. GitHub login returns no verified email: the GitHub account has no verified email visible through the granted scopes.
-11. GitHub binding fails because the GitHub identity is already bound to another SSO user.
-12. Passkey registration fails on HTTP: WebAuthn requires a secure context, except for browser-supported local development cases.
-13. `WhoAmI` returns unauthorized: token is missing, malformed, expired, or not sent as `Authorization: Bearer <token>`.
-14. Callback loops after success: local callback did not persist a session before removing `sso_token`.
-15. `turnstile_required` / `turnstile_failed`: show (or re-show) the Turnstile widget and retry with a fresh token.
-16. `login_unavailable`: the credentials could not be evaluated because a backing dependency failed; retry later. It does not mean the password is wrong.
-17. `totp_required`: the password was accepted; prompt for the TOTP code and resubmit.
+9. `Unsupported development target`: a production issuer was asked to hand a session to an unregistered private or CGNAT address; use `localhost` or register the exact callback ([Development callbacks](#development-callbacks)).
+10. `turnstile token is required`: Turnstile is configured but the client did not provide a token.
+11. GitHub login returns no verified email: the GitHub account has no verified email visible through the granted scopes.
+12. GitHub binding fails because the GitHub identity is already bound to another SSO user.
+13. Passkey registration fails on HTTP: WebAuthn requires a secure context, except for browser-supported local development cases.
+14. `WhoAmI` returns unauthorized: token is missing, malformed, expired, or not sent as `Authorization: Bearer <token>`.
+15. Callback loops after success: local callback did not persist a session before removing `sso_token`.
+16. `turnstile_required` / `turnstile_failed`: show (or re-show) the Turnstile widget and retry with a fresh token.
+17. `login_unavailable`: the credentials could not be evaluated because a backing dependency failed; retry later. It does not mean the password is wrong.
+18. `totp_required`: the password was accepted; prompt for the TOTP code and resubmit.
 
 ## Go-Live Checklist
 
