@@ -32,6 +32,23 @@ settings:
     base_url: https://api.openai.com # Base URL without /v1 suffix (the code appends /v1/embeddings automatically)
     embedding_model: text-embedding-3-small
   mcp:
+    auth:
+      validation: # every MCP entrypoint validates bearers with one-api; see docs/manual/mcp.md
+        enabled: true # false is a development-only opt-out (WARN at startup)
+        # base_url: https://oneapi.example.com # defaults to the billing API origin
+        timeout: 5s
+        positive_ttl: 5m # revocation lag for an accepted key
+        negative_ttl: 30s
+        stale_grace: 30m # accepted keys survive a genuine one-api failure this long; 0 disables
+        max_entries: 10000
+        max_concurrent: 8
+        upstream_rate_per_second: 1 # shares one-api's per-IP GLOBAL_API_RATE_LIMIT with billing
+        upstream_burst: 30
+        per_source_rate_per_second: 0.1 # each client source (IPv4 or IPv6 /64) refills one validation per 10s
+        per_source_burst: 5
+        max_sources: 10000
+        revalidation_rate_per_second: 0.2 # reserved for known keys whose trust period ended; 0 disables
+        revalidation_burst: 20
     tools:
       web_search:
         enabled: true # Enable/disable web_search tool
@@ -178,6 +195,15 @@ settings:
       - 100.64.0.0/10 # Tailscale (CGNAT) peers such as the nginx host; prefer its exact address
       - 172.16.0.0/12 # docker bridge gateways
     # client_ip_headers: [X-Forwarded-For] # default; X-Real-IP is not read unless listed
+    idle_timeout: 120s # keep-alive idle connections; no ReadTimeout/WriteTimeout by design
+    request_body: # per-route body budgets, enforced before any body is read
+      min_data_rate: 4096 # bytes/s a body must sustain after read_grace (slow-loris protection)
+      read_grace: 10s
+      max_read_duration: 30m # absolute cap of one body read
+      default_max_bytes: 1048576 # 1 MiB
+      graphql_max_bytes: 67108864 # 64 MiB
+      mcp_max_bytes: 33554432 # 32 MiB, requests with a validated key
+      mcp_anonymous_max_bytes: 1048576 # 1 MiB, discovery without credentials
     sso:
       user_store: oneapi # use mongo only during a controlled rollback window
     github_oauth:

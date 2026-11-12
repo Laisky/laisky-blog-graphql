@@ -14,11 +14,17 @@ toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
-`library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
-`internal/library/ssoredirect`, `internal/web/blog/controller`,
+`library/log`, `library/throttle`, `library/httpbody`, `internal/web`,
+`internal/library/toolpolicy`, `internal/library/fileio`, `internal/mcp`,
+`internal/mcp/auth`, `internal/mcp/askuser`, `internal/mcp/userrequests`,
+`internal/library/ssoredirect`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
 `internal/web/telegram/dao`, `internal/web/telegram/service`, `library/clientip` and
-`internal/web/blog/controller`. These exercise input validation, controlled
+`internal/web/blog/controller`. The MCP ingress
+selections cover API key validation at every entrypoint (transport, console APIs,
+ask_user console, GraphQL shared fields), caching, flood bounds, outage
+fail-closed behavior, production wiring, request-body caps, slow-body cuts and
+streams that outlive the read budget. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover

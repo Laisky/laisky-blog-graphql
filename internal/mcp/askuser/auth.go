@@ -20,31 +20,26 @@ type AuthorizationContext struct {
 	AIIdentity   string
 }
 
-// ParseAuthorizationContext extracts API key material from an Authorization
-// header that may or may not include the Bearer prefix. The token itself is the
-// sole source of truth for the caller's identity.
-func ParseAuthorizationContext(header string) (*AuthorizationContext, error) {
-	parsed, err := mcpauth.ParseAuthorizationContext(header)
-	if err != nil {
-		if errors.Is(err, mcpauth.ErrMissingAuthorization) {
-			return nil, ErrMissingAuthorization
-		}
-		if errors.Is(err, mcpauth.ErrInvalidAuthorization) {
-			return nil, ErrInvalidAuthorization
-		}
-		return nil, err
-	}
-
-	return fromSharedContext(parsed), nil
-}
-
-// ParseAuthorizationFromContext retrieves authorization from context and falls back to the provided header.
+// ParseAuthorizationFromContext returns the verified caller of a request: the
+// auth context installed by an MCP gate, or the header authenticated by the
+// installed credential authority. The token is the sole source of identity.
 func ParseAuthorizationFromContext(ctx context.Context, header string) (*AuthorizationContext, error) {
-	if shared, ok := mcpauth.FromContext(ctx); ok {
-		return fromSharedContext(shared), nil
+	shared, err := mcpauth.FromContextOrHeader(ctx, header)
+	if err != nil {
+		// Callers echo these messages to clients, so they stay stable sentinels.
+		switch {
+		case errors.Is(err, mcpauth.ErrMissingAuthorization):
+			return nil, errors.WithStack(ErrMissingAuthorization)
+		case errors.Is(err, mcpauth.ErrInvalidAuthorization):
+			return nil, errors.WithStack(ErrInvalidAuthorization)
+		case errors.Is(err, mcpauth.ErrValidationUnavailable):
+			return nil, errors.WithStack(mcpauth.ErrValidationUnavailable)
+		default:
+			return nil, errors.WithStack(mcpauth.ErrCredentialRejected)
+		}
 	}
 
-	return ParseAuthorizationContext(header)
+	return FromSharedContext(shared), nil
 }
 
 // MaskedKey returns a short identifier for logging purposes.
@@ -58,8 +53,8 @@ func (a *AuthorizationContext) MaskedKey() string {
 	return fmt.Sprintf("***%s", a.APIKey[len(a.APIKey)-4:])
 }
 
-// fromSharedContext converts the shared MCP auth context into ask_user auth context.
-func fromSharedContext(shared *mcpauth.Context) *AuthorizationContext {
+// FromSharedContext converts the shared MCP auth context into ask_user auth context.
+func FromSharedContext(shared *mcpauth.Context) *AuthorizationContext {
 	if shared == nil {
 		return nil
 	}

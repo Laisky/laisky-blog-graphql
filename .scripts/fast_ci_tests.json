@@ -85,8 +85,8 @@
       "TestStartupAlertCoreRejectsWholeOversizeRecord",
       "TestValidateStartupConfigRejectsInvalidTrustedProxies",
       "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
-      "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
-      "TestValidateStartupConfigSSORedirectPolicy"
+      "TestValidateStartupConfigSSORedirectPolicy",
+      "TestValidateStartupConfigRequiresCompleteTurnstilePairs"
     ]
   },
   {
@@ -115,8 +115,16 @@
       "TestServerEngineDirectDeploymentPolicy",
       "TestServerEngineHostCannotDisableChallenge",
       "TestRuntimeConfigServesTheVerifyingWidgetKey",
-      "TestLegacyBlogLoginIsRemoved",
-      "TestSSOCodeRegisteredClient"
+      "TestProductionWiringInstallsOneAPIValidator",
+      "TestHTTPServerTimeoutsKeepStreamsAlive",
+      "TestRequestBodyPolicyClassifiesRegisteredRoutes",
+      "TestGinBodyBudgetRejectsOversizedBodiesPerRouteFamily",
+      "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain",
+      "TestRV95SingleHostXFFRotationLocksOutNewValidKeys",
+      "TestRV95BalanceProxyFloodExhaustsOneAPIBudgetAndLocksOutValidation",
+      "TestProductionEngineAdmitsSlowSteadyLargeUploads",
+      "TestSSOCodeRegisteredClient",
+      "TestLegacyBlogLoginIsRemoved"
     ]
   },
   {
@@ -150,15 +158,94 @@
       "TestAuthChallengeTrackerIdentityUnifiesSpellings",
       "TestAuthChallengeTrackerFloodCannotEvictAttackedAccount",
       "TestResolveTurnstileSiteNeverDisablesTheGate",
-      "TestAuthSuccessResetsAllKnownAliases",
-      "TestAuthSuccessPreservesAliasReservations",
-      "TestAdmitAuthRequestRejectsIncompletePair",
       "TestGitHubRedirectTargetPolicy",
       "TestGitHubOAuthLoginRevalidatesRedirect",
       "TestPasskeyFinishRevalidatesRedirect",
       "TestPrivateTargetsRequireDevelopmentIssuer",
       "TestBackslashOnlyAfterQueryOrFragment",
-      "TestGitHubStartChecksTheCompletingIssuer"
+      "TestGitHubStartChecksTheCompletingIssuer",
+      "TestAuthSuccessResetsAllKnownAliases",
+      "TestAuthSuccessPreservesAliasReservations",
+      "TestAdmitAuthRequestRejectsIncompletePair"
+    ]
+  },
+  {
+    "package": "./internal/mcp/auth",
+    "tests": [
+      "TestAuthenticatorCachesAcceptedKeyForPositiveTTL",
+      "TestAuthenticatorRejectsAndNegativelyCachesUnknownKey",
+      "TestAuthenticatorHonorsRevocationAfterPositiveTTL",
+      "TestAuthenticatorCoalescesConcurrentValidations",
+      "TestAuthenticatorBoundsUpstreamCallsUnderRandomBearerFlood",
+      "TestAuthenticatorStaleIfErrorOnlyForRecentlyAcceptedKeys",
+      "TestAuthenticatorRejectsMalformedAndOversizedKeysWithoutUpstream",
+      "TestUninstalledAuthenticatorFailsClosed",
+      "TestFromContextIgnoresUnverifiedContexts",
+      "TestOneAPITokenValidatorClassifiesAuthorityStatuses",
+      "TestNewAuthenticatorFromSettingsSelectsOneAPIByDefault",
+      "TestAuthenticatorSourceFloodCannotStarveOtherSources",
+      "TestAuthenticatorSourceBudgetsGroupIPv6By64",
+      "TestAuthenticatorSourceBudgetsStayBounded",
+      "TestAuthenticatorCacheHitsDoNotChargeSourceBudget",
+      "TestEnsureClientIPPrefersRequestIdentity",
+      "TestRV95RevokedKeyOutlivesPositiveTTLBySelfDrainingSourceBudget",
+      "TestRV95ZeroStaleGraceCannotBeConfigured",
+      "TestRV95OneAPIFailureEnvelopeAndHTMLAreAccepted",
+      "TestRV95SustainedFloodEventuallyLocksOutActiveKey",
+      "TestLocalBudgetRefusalNeverGrantsStaleGrace",
+      "TestZeroStaleGraceRefusesDuringOutage",
+      "TestOutageRetriesOfOneKnownKeyAreSpaced",
+      "TestBalanceSharesVerdictCachesAndGate",
+      "TestOneAPIValidatorRequiresJSONContentType"
+    ]
+  },
+  {
+    "package": "./internal/mcp",
+    "tests": [
+      "TestIngressRejectsUnissuedBearerBeforeSessionAndTools",
+      "TestIngressGateIsToolAgnostic",
+      "TestIngressFailsClosedWhenAuthorityUnavailable",
+      "TestIngressKeepsAnonymousDiscovery",
+      "TestIngressSSEStreamOutlivesReadBudget",
+      "TestIngressRejectsOversizedBodyBeforeAuthOrBuffering",
+      "TestIngressTerminatesSlowBodyWithinReadBudget",
+      "TestIngressReadBudgetDoesNotCutHeldRequests",
+      "TestIngressSourceFloodCannotLockOutOtherCallers",
+      "TestIngressOutageLogsOneWarnPerInterval"
+    ]
+  },
+  {
+    "package": "./library/httpbody",
+    "tests": [
+      "TestEnforceRejectsDeclaredOversizeWithoutReading",
+      "TestEnforceCapsStreamedBodies",
+      "TestEnforceLeavesBodylessRequestsAlone",
+      "TestTightenLowersTheCap",
+      "TestReadDeadlineCutsSlowBodyButNotTheResponse",
+      "TestReadDeadlineReachesThroughUnwrappingWriters",
+      "TestMinDataRateAdmitsSlowButLiveBodies",
+      "TestMinDataRateCutsTrickleBelowTheRate",
+      "TestAbsoluteReadCapBoundsFastEnoughClients"
+    ]
+  },
+  {
+    "package": "./internal/mcp/userrequests",
+    "tests": [
+      "TestConsoleAPIRejectsUnissuedBearerWithoutStorage",
+      "TestConsoleAPIFailsClosedWhenAuthorityUnavailable",
+      "TestReorderBodyIsBounded"
+    ]
+  },
+  {
+    "package": "./internal/mcp/askuser",
+    "tests": [
+      "TestAskUserConsoleValidatesBearer"
+    ]
+  },
+  {
+    "package": "./internal/library/fileio",
+    "tests": [
+      "TestGraphQLSharedToolRejectsUnissuedBearer"
     ]
   },
   {

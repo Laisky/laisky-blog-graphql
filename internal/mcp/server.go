@@ -177,17 +177,11 @@ func NewServer(
 		mcpServer,
 		srv.WithSessionIdManagerResolver(requestSessionIDResolver{}),
 		srv.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
-			// Inject authorization header with backward-compatible query fallback.
+			// The bearer gate already installed the verified auth context on
+			// r.Context(), from which ctx derives. The raw header is kept only
+			// for tools that re-read it through the same verified context.
 			authHeader, authSource := resolveRequestAuthorizationHeader(r)
 			ctx = context.WithValue(ctx, keyAuthorization, authHeader)
-			if authCtx, err := mcpauth.ParseAuthorizationContext(authHeader); err == nil {
-				ctx = mcpauth.WithContext(ctx, authCtx)
-			} else if authHeader != "" {
-				serverLogger.Debug("mcp authorization parse failed",
-					zap.String("auth_source", authSource),
-					zap.Error(err),
-				)
-			}
 			if authSource != "header" {
 				serverLogger.Debug("mcp authorization source resolved",
 					zap.String("auth_source", authSource),
@@ -211,9 +205,23 @@ func NewServer(
 		}),
 	)
 
-	normalizedAuthHandler := withAuthorizationHeaderNormalization(streamable, serverLogger.Named("auth"))
+	resolveAuthenticator := func() *mcpauth.Authenticator {
+		if shared.authenticator != nil {
+			return shared.authenticator
+		}
+		return mcpauth.Installed()
+	}
+	bodyBudget := shared.bodyBudget.normalized()
+	// Order matters: the body budget precedes every body reader (the logger
+	// previews it), the credential gate precedes sessions, preference lookups
+	// and tools, and the tools/list filter reads the body only for verified callers.
+	handler := withAuthorizationHeaderNormalization(streamable, serverLogger.Named("auth"))
+	handler = withToolsListFiltering(handler, serverLogger.Named("tools_list_filter"), userRequestService)
+	handler = withBearerAuthentication(handler, resolveAuthenticator, bodyBudget.AnonymousMaxBytes, serverLogger.Named("auth_gate"))
+	handler = withHTTPLogging(handler, serverLogger.Named("http"))
+	handler = withRequestBodyBudget(handler, bodyBudget, serverLogger.Named("body_budget"))
 	s := &Server{
-		handler:         withHTTPLogging(withToolsListFiltering(normalizedAuthHandler, serverLogger.Named("tools_list_filter"), userRequestService), serverLogger.Named("http")),
+		handler:         handler,
 		logger:          serverLogger,
 		billingReporter: billingReporter,
 		callLogger:      callLogger,
@@ -267,7 +275,7 @@ func NewServer(
 			askUserService,
 			serverLogger.Named("ask_user"),
 			headerProvider,
-			askuser.ParseAuthorizationContext,
+			askuser.ParseAuthorizationFromContext,
 			0,
 		)
 		if err != nil {
@@ -292,7 +300,7 @@ func NewServer(
 			holdMgr,
 			serverLogger.Named("get_user_request"),
 			headerProvider,
-			askuser.ParseAuthorizationContext,
+			askuser.ParseAuthorizationFromContext,
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "init get_user_request tool")

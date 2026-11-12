@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -27,8 +28,7 @@ func TestHoldHTTPCreateRequestAutoReleasesWhenAgentWaiting(t *testing.T) {
 	handler := NewCombinedHTTPHandler(svc, holdMgr, log.Logger.Named("test_http"), nil)
 
 	authHeader := "Bearer sk-test-hold-auto-release-123456"
-	authCtx, err := askuser.ParseAuthorizationContext(authHeader)
-	require.NoError(t, err)
+	authCtx := askuser.FromSharedContext(authtest.Verified(authHeader))
 
 	taskID := "task-auto"
 
@@ -93,8 +93,7 @@ func TestHoldHTTPCreateRequestDifferentTaskKeepsOriginalHold(t *testing.T) {
 	handler := NewCombinedHTTPHandler(svc, holdMgr, log.Logger.Named("test_http"), nil)
 
 	authHeader := "Bearer sk-test-hold-task-scope-123456"
-	authCtx, err := askuser.ParseAuthorizationContext(authHeader)
-	require.NoError(t, err)
+	authCtx := askuser.FromSharedContext(authtest.Verified(authHeader))
 
 	holdTaskID := "task-a"
 	otherTaskID := "task-b"

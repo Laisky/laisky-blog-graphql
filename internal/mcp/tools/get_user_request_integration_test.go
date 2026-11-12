@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/storage"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
@@ -68,10 +69,9 @@ func TestIntegration_UploadThenGetUserRequest(t *testing.T) {
 	require.Equal(t, 1, store.ObjectCount())
 
 	// Authenticate as the same caller to pull the request through the tool.
-	auth, err := askuser.ParseAuthorizationContext("Bearer sk-integration-test-9a9a9a9a9a")
-	require.NoError(t, err)
+	auth := authtest.Verified("Bearer sk-integration-test-9a9a9a9a9a")
 
-	tool, err := NewGetUserRequestTool(svc, nil, testLogger(), func(context.Context) string { return auth.RawHeader }, askuser.ParseAuthorizationContext)
+	tool, err := NewGetUserRequestTool(svc, nil, testLogger(), func(context.Context) string { return auth.RawHeader }, askuser.ParseAuthorizationFromContext)
 	require.NoError(t, err)
 	tool.WithImageIssuer(imageManager)
 

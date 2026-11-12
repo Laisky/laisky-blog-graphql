@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	mcpauth "github.com/Laisky/laisky-blog-graphql/internal/mcp/auth"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
@@ -25,9 +25,7 @@ func (p *contractProvider) Search(_ context.Context, query string) (*searchlib.S
 }
 func contractContext(t *testing.T) context.Context {
 	t.Helper()
-	auth, err := mcpauth.ParseAuthorizationContext("Bearer alice:agent@sk-contract-test-only")
-	require.NoError(t, err)
-	return mcpauth.WithContext(context.Background(), auth)
+	return authtest.WithVerified(context.Background(), "Bearer alice:agent@sk-contract-test-only")
 }
 func TestSearchGraphQLCanonicalIdentityAndNormalizedQuery(t *testing.T) {
 	provider := &contractProvider{result: &searchlib.SearchOutput{EngineName: "stub"}}

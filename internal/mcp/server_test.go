@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	glog "github.com/Laisky/go-utils/v6/log"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/auth/authtest"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/calllog"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
@@ -193,7 +195,9 @@ func TestLoadDisabledToolsForListRequestWithAuthorizationHeader(t *testing.T) {
 	_, err := prefSvc.SetDisabledTools(context.Background(), auth, []string{"mcp_pipe"})
 	require.NoError(t, err)
 
+	// The bearer gate runs first and stores the verified caller on the request.
 	request := newToolsListRequest("", "Bearer sk-tools-list-header")
+	request = request.WithContext(authtest.WithVerified(request.Context(), "Bearer sk-tools-list-header"))
 	shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil)
 
 	require.True(t, shouldFilter)
@@ -210,23 +214,39 @@ func TestLoadDisabledToolsForListRequestDoesNotUseSessionIdentity(t *testing.T) 
 
 	request := newToolsListRequest("mcp-session-tools-list", "")
 	shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil)
-	require.True(t, shouldFilter)
+	require.False(t, shouldFilter)
 	require.Empty(t, disabled, "a session must not supply the previous caller's identity")
 }
 
-func TestResolveAuthorizationForListRequestWithoutAuthorization(t *testing.T) {
-	request := newToolsListRequest("", "")
-	auth, source := resolveAuthorizationForListRequest(request)
-	require.Nil(t, auth)
-	require.Equal(t, "none", source)
+// TestLoadDisabledToolsForListRequestIgnoresUnverifiedHeader proves the filter
+// never derives a tenant from a raw header the gate did not verify, and leaves
+// such a body unread.
+func TestLoadDisabledToolsForListRequestIgnoresUnverifiedHeader(t *testing.T) {
+	prefSvc := newUserPreferenceServiceForToolsListTest(t, "file:toolslist_unverified?mode=memory&cache=shared")
+	const payload = `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
+	for _, target := range []string{"/mcp/", "/mcp/?APIKEY=sk-tools-list-query"} {
+		reader := strings.NewReader(payload)
+		request := httptest.NewRequest(http.MethodPost, target, reader)
+		request.Header.Set("Authorization", "Bearer sk-tools-list-unverified")
+		shouldFilter, disabled := loadDisabledToolsForListRequest(request, prefSvc, nil)
+		require.False(t, shouldFilter)
+		require.Empty(t, disabled)
+		require.Equal(t, len(payload), reader.Len(), "an unverified request body must not be read")
+	}
 }
 
-func TestResolveAuthorizationForListRequestWithAPIKeyQuery(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/mcp/?APIKEY=sk-tools-list-query", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`))
-	auth, source := resolveAuthorizationForListRequest(request)
-	require.NotNil(t, auth)
-	require.Equal(t, "query_apikey", source)
-	require.Equal(t, "sk-tools-list-query", auth.APIKey)
+// TestLoadDisabledToolsForListRequestBoundsPeek keeps an oversized body intact
+// for the SDK and skips filtering instead of buffering it.
+func TestLoadDisabledToolsForListRequestBoundsPeek(t *testing.T) {
+	prefSvc := newUserPreferenceServiceForToolsListTest(t, "file:toolslist_peek?mode=memory&cache=shared")
+	payload := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"pad":"` + strings.Repeat("x", toolsListPeekLimit) + `"}}`
+	request := httptest.NewRequest(http.MethodPost, "/mcp/", strings.NewReader(payload))
+	request = request.WithContext(authtest.WithVerified(request.Context(), "Bearer sk-tools-list-peek"))
+	shouldFilter, _ := loadDisabledToolsForListRequest(request, prefSvc, nil)
+	require.False(t, shouldFilter)
+	replayed, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.Equal(t, payload, string(replayed), "the SDK must still receive the complete body")
 }
 
 func TestResolveRequestAuthorizationHeader(t *testing.T) {
@@ -289,9 +309,7 @@ func newUserPreferenceServiceForToolsListTest(t *testing.T, dsn string) *userreq
 func mustAuthorizationContext(t *testing.T, authHeader string) *askuser.AuthorizationContext {
 	t.Helper()
 
-	auth, err := askuser.ParseAuthorizationContext(authHeader)
-	require.NoError(t, err)
-	return auth
+	return askuser.FromSharedContext(authtest.Verified(authHeader))
 }
 
 // newToolsListRequest builds a tools/list MCP request with optional session and authorization headers.
