@@ -1,8 +1,9 @@
 import { buildRedirectUrlWithToken, planSsoRedirect, type RedirectTarget } from '@/lib/sso-redirect';
 
 // SsoSessionRedirect describes where an already-authenticated visitor should be sent.
-// 'handoff' targets (Blog code or bootstrap) must go through the asynchronous
-// buildSsoRedirectUrl; only 'external' targets carry the legacy bearer handoff.
+// 'handoff' targets (Blog code or bootstrap, registered-client code, issuer pages) must go
+// through the asynchronous buildSsoRedirectUrl; only 'external' targets carry the legacy
+// bearer handoff.
 export type SsoSessionRedirect =
   | { kind: 'external'; url: string }
   | { kind: 'handoff'; target: URL }
