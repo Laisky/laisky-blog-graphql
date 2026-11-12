@@ -15,7 +15,11 @@ describe('ordered Blog issuer cutover', () => {
   });
 
   it('retains another client using legacy state parameters', async () => {
-    const target = new URL('http://console.laisky.com:8080/profile?sso_state=legacy#menu');
+    // Plain http on a production host is refused by the shared redirect policy (issue 89);
+    // the legacy handoff and its state parameters are otherwise unchanged.
+    await expect(buildSsoRedirectUrl(new URL('http://console.laisky.com:8080/profile?sso_state=legacy#menu'), 'synthetic-test-bearer'))
+      .rejects.toThrow('Insecure redirect target');
+    const target = new URL('https://console.laisky.com:8080/profile?sso_state=legacy#menu');
     const result = new URL(await buildSsoRedirectUrl(target, 'synthetic-test-bearer'));
     expect(result.searchParams.get('sso_token')).toBe('synthetic-test-bearer');
     expect(result.searchParams.get('sso_state')).toBe('legacy');

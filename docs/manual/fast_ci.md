@@ -17,6 +17,7 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `library/log`, `library/throttle`, `library/httpbody`, `internal/web`,
 `internal/library/toolpolicy`, `internal/library/fileio`, `internal/mcp`,
 `internal/mcp/auth`, `internal/mcp/askuser`, `internal/mcp/userrequests`,
+`internal/library/ssoredirect`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
 `internal/web/telegram/dao`, `internal/web/telegram/service`, `library/clientip` and
 `internal/web/blog/controller`. The MCP ingress
@@ -50,6 +51,13 @@ host that can select but never disable the Turnstile pair, `X-Forwarded-Host` ho
 from trusted proxies, in-flight reservations against concurrent guesses, collation-folded
 and identity-unified account keys, the presentable-challenge rule that keeps owners from
 being locked out, and a flood that cannot evict an attacked account.
+
+The SSO selections run the shared redirect-policy and registry vectors that the
+frontend tests also consume, the registered-client code issuance and redemption
+bindings, the start and completion re-checks of GitHub and passkey sign-in
+(including the completing-issuer check at GitHub start), private development
+targets, backslashes after the query or fragment, and startup validation of the
+redirect settings, all in process with miniredis.
 
 The Telegram selections also cover cancellation after refill, overlapping
 reservations, isolation of invalid credentials from delivery capacity, remote

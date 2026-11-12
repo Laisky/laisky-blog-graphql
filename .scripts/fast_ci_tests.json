@@ -84,7 +84,8 @@
       "TestStartupAlertCorePreservesLargeChosenInput",
       "TestStartupAlertCoreRejectsWholeOversizeRecord",
       "TestValidateStartupConfigRejectsInvalidTrustedProxies",
-      "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs"
+      "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
+      "TestValidateStartupConfigSSORedirectPolicy"
     ]
   },
   {
@@ -120,7 +121,8 @@
       "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain",
       "TestRV95SingleHostXFFRotationLocksOutNewValidKeys",
       "TestRV95BalanceProxyFloodExhaustsOneAPIBudgetAndLocksOutValidation",
-      "TestProductionEngineAdmitsSlowSteadyLargeUploads"
+      "TestProductionEngineAdmitsSlowSteadyLargeUploads",
+      "TestSSOCodeRegisteredClient"
     ]
   },
   {
@@ -155,7 +157,13 @@
       "TestAuthChallengeTrackerFloodCannotEvictAttackedAccount",
       "TestAuthChallengeTrackerAccountGapForUnpresentableChallenge",
       "TestResolveTurnstileSiteNeverDisablesTheGate",
-      "TestAdmitAuthRequestAccountEscalationNeedsPresentableChallenge"
+      "TestAdmitAuthRequestAccountEscalationNeedsPresentableChallenge",
+      "TestGitHubRedirectTargetPolicy",
+      "TestGitHubOAuthLoginRevalidatesRedirect",
+      "TestPasskeyFinishRevalidatesRedirect",
+      "TestPrivateTargetsRequireDevelopmentIssuer",
+      "TestBackslashOnlyAfterQueryOrFragment",
+      "TestGitHubStartChecksTheCompletingIssuer"
     ]
   },
   {
@@ -235,6 +243,14 @@
     "package": "./internal/library/fileio",
     "tests": [
       "TestGraphQLSharedToolRejectsUnissuedBearer"
+    ]
+  },
+  {
+    "package": "./internal/library/ssoredirect",
+    "tests": [
+      "TestSharedRedirectVectors",
+      "TestSharedRegistrationVectors",
+      "TestSharedRegistryVectors"
     ]
   }
 ]

@@ -435,6 +435,8 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 			"pricing":                  oneapi.SharedToolPrices(),
 			"githubOAuthEnabled":       blog.IsGithubOAuthConfigured(),
 			"ssoJwt":                   ssoJWTInfo,
+			// The issuer frontend enforces this policy; an invalid configuration is published fail-closed.
+			"ssoRedirect": loadSSORedirectPolicy(ctx),
 		})
 	}
 

@@ -11,6 +11,7 @@ import (
 	errors "github.com/Laisky/errors/v2"
 	gconfig "github.com/Laisky/go-config/v2"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/ssoredirect"
 	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
@@ -49,6 +50,7 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	validateWebSiteConfig(get, &validationErrs)
 	validateClientIdentityConfig(get, &validationErrs)
 	validateSSOConfig(get, &validationErrs)
+	validateSSORedirectConfig(get, &validationErrs)
 	validateOpenAIConfig(get, &validationErrs)
 
 	if len(validationErrs) == 0 {
@@ -138,6 +140,14 @@ func validateSSOConfig(get configGetter, errs *[]string) {
 	open, openErr := parseStrictInt(get("settings.db.oneapi.max_open_conns"))
 	if idleErr == nil && openErr == nil && idle > open {
 		appendValidationErrorf(errs, "settings.db.oneapi.max_idle_conns must be <= settings.db.oneapi.max_open_conns")
+	}
+}
+
+// validateSSORedirectConfig validates the legacy bearer handoff switch and the registered
+// code-flow clients with the same parser the issuer uses at request time.
+func validateSSORedirectConfig(get configGetter, errs *[]string) {
+	if _, err := ssoredirect.Parse(get(ssoredirect.ConfigKeyLegacyTokenRedirect), get(ssoredirect.ConfigKeyClients)); err != nil {
+		appendValidationErrorf(errs, "%s", err.Error())
 	}
 }
 
