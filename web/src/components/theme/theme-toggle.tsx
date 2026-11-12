@@ -79,14 +79,15 @@ export function ThemeToggle({
   menuLabel = 'Theme',
   options = DEFAULT_THEME_TOGGLE_OPTIONS,
 }: ThemeToggleProps) {
-  const { theme, setTheme } = useTheme();
+  const { theme, systemTheme, setTheme } = useTheme();
   const activeOption = useMemo(() => {
     return getThemeOption(options, theme);
   }, [options, theme]);
   const ActiveIcon = activeOption.Icon;
 
   return (
-    <DropdownMenu>
+    // Non-modal: a theme picker must not lock page scroll or block the rest of the page.
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant={buttonVariant} size={buttonSize} className={cn('h-9 w-9', buttonClassName)}>
           <ActiveIcon className="h-4 w-4" />
@@ -102,17 +103,15 @@ export function ThemeToggle({
             <DropdownMenuItem
               key={value}
               onSelect={() => setTheme(value)}
-              className={cn(
-                'cursor-pointer gap-2',
-                isActive
-                  ? 'bg-muted text-foreground focus:bg-muted focus:text-foreground'
-                  : 'text-muted-foreground focus:bg-muted focus:text-foreground'
-              )}
+              className={cn('cursor-pointer gap-2', isActive ? 'bg-muted text-foreground' : 'text-muted-foreground')}
               role="menuitemradio"
               aria-checked={isActive}
             >
               <Icon className="h-4 w-4" />
-              <span className="flex-1">{label}</span>
+              <span className="flex-1">
+                {label}
+                {value === 'system' ? <span className="text-muted-foreground"> ({systemTheme})</span> : null}
+              </span>
               {isActive ? <Check className="h-4 w-4 text-primary" aria-hidden="true" /> : null}
             </DropdownMenuItem>
           );

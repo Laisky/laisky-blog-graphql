@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ThemeProvider } from '@/components/theme/theme-provider';
+import { ThemeProvider, THEME_COLORS, useTheme } from '@/components/theme/theme-provider';
 
 import { DEFAULT_THEME_TOGGLE_OPTIONS, ThemeToggle } from './theme-toggle';
 
@@ -55,7 +55,8 @@ describe('ThemeToggle', () => {
     await waitFor(() => {
       expect(document.documentElement.dataset.themePreference).toBe('system');
       expect(document.documentElement.dataset.theme).toBe('light');
-      expect(window.localStorage.getItem(STORAGE_KEY)).toBe('system');
+      // "System" is the absence of an override, so nothing is persisted for it.
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
     });
   });
 
@@ -75,5 +76,90 @@ describe('ThemeToggle', () => {
 
     const triggerButton = screen.getByRole('button', { name: /toggle color theme/i });
     expect(triggerButton.querySelector('.lucide-moon')).toBeDefined();
+  });
+
+  describe('document and storage sync', () => {
+    /** installThemeMetas adds the color-scheme and theme-color meta tags shipped in index.html. */
+    function installThemeMetas() {
+      document.head.innerHTML = `
+        <meta name="color-scheme" content="light dark">
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="${THEME_COLORS.light}">
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="${THEME_COLORS.dark}">`;
+    }
+
+    /** PreferenceButtons exposes setTheme for the tests below. */
+    function PreferenceButtons() {
+      const { setTheme } = useTheme();
+      return (
+        <>
+          <button type="button" onClick={() => setTheme('dark')}>dark</button>
+          <button type="button" onClick={() => setTheme('system')}>system</button>
+        </>
+      );
+    }
+
+    afterEach(() => {
+      document.head.innerHTML = '';
+    });
+
+    it('pins the browser color-scheme and theme-color to an explicit override and restores them for system', async () => {
+      installThemeMetas();
+      render(
+        <ThemeProvider>
+          <PreferenceButtons />
+        </ThemeProvider>
+      );
+
+      act(() => screen.getByRole('button', { name: 'dark' }).click());
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBe('dark');
+      expect(document.querySelector('meta[name="color-scheme"]')?.getAttribute('content')).toBe('dark');
+      const themeColors = () => [...document.querySelectorAll('meta[name="theme-color"]')].map((meta) => meta.getAttribute('content'));
+      expect(themeColors()).toEqual([THEME_COLORS.dark, THEME_COLORS.dark]);
+
+      act(() => screen.getByRole('button', { name: 'system' }).click());
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+      expect(document.querySelector('meta[name="color-scheme"]')?.getAttribute('content')).toBe('light dark');
+      expect(themeColors()).toEqual([THEME_COLORS.light, THEME_COLORS.dark]);
+    });
+
+    it('still renders and applies the theme when site data access throws', async () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new DOMException('blocked', 'SecurityError');
+      });
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('blocked', 'SecurityError');
+      });
+
+      render(
+        <ThemeProvider>
+          <PreferenceButtons />
+        </ThemeProvider>
+      );
+      expect(document.documentElement.dataset.theme).toBe('light');
+
+      act(() => screen.getByRole('button', { name: 'dark' }).click());
+      expect(document.documentElement.dataset.theme).toBe('dark');
+    });
+
+    it('follows an override changed in another tab', async () => {
+      render(
+        <ThemeProvider>
+          <ThemeToggle />
+        </ThemeProvider>
+      );
+      expect(document.documentElement.dataset.theme).toBe('light');
+
+      act(() => {
+        window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY, newValue: 'dark' }));
+      });
+      expect(document.documentElement.dataset.theme).toBe('dark');
+      expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+      act(() => {
+        window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY, newValue: null }));
+      });
+      expect(document.documentElement.dataset.themePreference).toBe('system');
+      expect(document.documentElement.dataset.theme).toBe('light');
+    });
   });
 });
