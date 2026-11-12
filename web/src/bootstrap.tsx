@@ -1,33 +1,20 @@
-import { StrictMode } from 'react';
+import { StrictMode, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, type RouteObject } from 'react-router-dom';
 
 import { AppLayout } from '@/components/layout/app-layout';
 import { ThemeProvider } from '@/components/theme/theme-provider';
-import { AskUserPage } from '@/features/mcp/ask-user/page';
-import { CallLogPage } from '@/features/mcp/call-log/page';
-import { FileIOPage } from '@/features/mcp/file-io/page';
-import { InspectorPage } from '@/features/mcp/inspector/page';
-import { MemoryPage } from '@/features/mcp/memory/page';
-import { SettingsPage } from '@/features/mcp/settings/page';
-import { UserRequestsPage } from '@/features/mcp/user-requests/page';
-import { WebFetchPage } from '@/features/mcp/web-fetch/page';
-import { WebSearchPage } from '@/features/mcp/web-search/page';
 import { ApiKeyProvider } from '@/lib/api-key-context';
 import { configurePublicApiBasePath } from '@/lib/api-base';
+import { createRootErrorHandlers } from '@/lib/browser-sentry';
+import { routeModules } from '@/lib/route-modules';
 import { configureSsoRedirectPolicy } from '@/lib/sso-redirect';
-import { ExtractKeyInfoPage } from '@/features/mcp/extract-key-info/page';
 import { defaultToolsConfig, loadRuntimeConfig, type SsoJwtConfig, type ToolsConfig } from '@/lib/runtime-config';
 import { applySiteBranding } from '@/lib/site-branding';
 import { ToolsConfigProvider } from '@/lib/tools-config-context';
 import { HomePage } from '@/pages/home';
 import { NotFoundPage } from '@/pages/not-found';
 import { RouteError } from '@/pages/route-error';
-import { createRootErrorHandlers } from '@/lib/browser-sentry';
-import { SsoGithubCallbackPage } from '@/pages/sso-github-callback';
-import { SsoLoginPage } from '@/pages/sso-login';
-import { SsoProfilePage } from '@/pages/sso-profile';
-import { SsoTokenDetailsPage } from '@/pages/sso-token-details';
 import './index.css';
 
 type RouterKind = 'mcp' | 'sso';
@@ -57,6 +44,9 @@ export async function bootstrap() {
       ? buildSsoRoutes(turnstileSiteKey, githubOAuthEnabled, runtimeConfig?.ssoJwt ?? undefined)
       : buildMcpRoutes(turnstileSiteKey, githubOAuthEnabled, runtimeConfig?.ssoJwt ?? undefined);
   const router = createBrowserRouter(routes, { basename: routeContext.basename });
+  // Keep the static agent-readable HTML on screen until the landing page's chunk has
+  // loaded, instead of replacing it with an empty tree while the lazy route resolves.
+  await waitForInitialRoute(router);
 
   const container = document.getElementById('root');
   if (!container) {
@@ -77,35 +67,99 @@ export async function bootstrap() {
 }
 
 
+type BrowserRouter = ReturnType<typeof createBrowserRouter>;
+
+/**
+ * waitForInitialRoute resolves once the router has matched the current URL and loaded
+ * every lazy page module that match needs, whether or not that load succeeded.
+ */
+function waitForInitialRoute(router: BrowserRouter): Promise<void> {
+  if (router.state.initialized) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const unsubscribe = router.subscribe((state) => {
+      if (state.initialized) {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
+}
+
+/**
+ * lazyPage adapts a page module loader into a React Router lazy route definition.
+ * It accepts the loader and a render function that builds the page element from the
+ * loaded module, and returns the function React Router calls on first match.
+ */
+function lazyPage<M>(load: () => Promise<M>, render: (module: M) => ReactElement): RouteObject['lazy'] {
+  return async () => ({ element: render(await load()) });
+}
+
+/**
+ * buildSsoPageRoutes builds the SSO page routes shared by both routers.
+ * It accepts the path prefix ("/sso" in the MCP router, "" in the SSO router), the optional
+ * Turnstile site key, the GitHub OAuth availability flag, and the SSO JWT config.
+ */
+function buildSsoPageRoutes(
+  prefix: string,
+  turnstileSiteKey: string | undefined,
+  githubOAuthEnabled: boolean,
+  ssoJwt: SsoJwtConfig | null | undefined
+): RouteObject[] {
+  const loginPage = lazyPage(routeModules.ssoLogin, ({ SsoLoginPage }) => (
+    <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} />
+  ));
+  return [
+    ...(prefix === '' ? [{ path: '/', lazy: loginPage }] : []),
+    { path: `${prefix}/login`, lazy: loginPage },
+    { path: `${prefix}/github/callback`, lazy: lazyPage(routeModules.ssoGithubCallback, ({ SsoGithubCallbackPage }) => <SsoGithubCallbackPage />) },
+    {
+      path: `${prefix}/profile`,
+      lazy: lazyPage(routeModules.ssoProfile, ({ SsoProfilePage }) => <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} />),
+    },
+    { path: `${prefix}/token`, lazy: lazyPage(routeModules.ssoTokenDetails, ({ SsoTokenDetailsPage }) => <SsoTokenDetailsPage ssoJwt={ssoJwt} />) },
+  ];
+}
+
 /**
  * buildMcpRoutes builds the router table for the MCP console experience.
  * It accepts the optional Turnstile site key and GitHub OAuth availability flag and returns the route configuration used by React Router.
+ * Every page except the overview is code-split, so the landing page never downloads the tool consoles.
  */
-function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined) {
+function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined): RouteObject[] {
   return [
-    { path: '/sso/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
-    { path: '/sso/github/callback', element: <SsoGithubCallbackPage /> },
-    { path: '/sso/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} /> },
-    { path: '/sso/token', element: <SsoTokenDetailsPage ssoJwt={ssoJwt} /> },
     {
-      path: '/',
-      element: <AppLayout />,
-      errorElement: <RouteError />,
+      errorElement: <RouteError standalone />,
       children: [
-        { index: true, element: <HomePage /> },
-        { path: 'tools/ask_user', element: <AskUserPage /> },
-        { path: 'tools/get_user_requests', element: <UserRequestsPage /> },
-        { path: 'tools/web_search', element: <WebSearchPage /> },
-        { path: 'tools/web_fetch', element: <WebFetchPage /> },
-        { path: 'tools/extract_key_info', element: <ExtractKeyInfoPage /> },
-        { path: 'tools/file_io', element: <FileIOPage /> },
-        { path: 'tools/memory', element: <MemoryPage /> },
-        { path: 'tools/call_log', element: <CallLogPage /> },
-        { path: 'settings', element: <SettingsPage /> },
-        { path: 'debug/*', element: <InspectorPage /> },
+        ...buildSsoPageRoutes('/sso', turnstileSiteKey, githubOAuthEnabled, ssoJwt),
+        {
+          path: '/',
+          element: <AppLayout />,
+          errorElement: <RouteError standalone />,
+          children: [
+            {
+              // Page failures (including a page chunk that failed to load) render inside the layout.
+              errorElement: <RouteError />,
+              children: [
+                { index: true, element: <HomePage /> },
+                { path: 'tools/ask_user', lazy: lazyPage(routeModules.askUser, ({ AskUserPage }) => <AskUserPage />) },
+                { path: 'tools/get_user_requests', lazy: lazyPage(routeModules.userRequests, ({ UserRequestsPage }) => <UserRequestsPage />) },
+                { path: 'tools/web_search', lazy: lazyPage(routeModules.webSearch, ({ WebSearchPage }) => <WebSearchPage />) },
+                { path: 'tools/web_fetch', lazy: lazyPage(routeModules.webFetch, ({ WebFetchPage }) => <WebFetchPage />) },
+                { path: 'tools/extract_key_info', lazy: lazyPage(routeModules.extractKeyInfo, ({ ExtractKeyInfoPage }) => <ExtractKeyInfoPage />) },
+                { path: 'tools/file_io', lazy: lazyPage(routeModules.fileIO, ({ FileIOPage }) => <FileIOPage />) },
+                { path: 'tools/memory', lazy: lazyPage(routeModules.memory, ({ MemoryPage }) => <MemoryPage />) },
+                { path: 'tools/call_log', lazy: lazyPage(routeModules.callLog, ({ CallLogPage }) => <CallLogPage />) },
+                { path: 'settings', lazy: lazyPage(routeModules.settings, ({ SettingsPage }) => <SettingsPage />) },
+                { path: 'debug/*', lazy: lazyPage(routeModules.inspector, ({ InspectorPage }) => <InspectorPage />) },
+                { path: '*', element: <NotFoundPage /> },
+              ],
+            },
+          ],
+        },
       ],
     },
-    { path: '*', element: <NotFoundPage /> },
   ];
 }
 
@@ -113,14 +167,12 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled
  * buildSsoRoutes builds the router table for the standalone SSO experience.
  * It accepts the optional Turnstile site key and GitHub OAuth availability flag and returns the route configuration used by React Router.
  */
-function buildSsoRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined) {
+function buildSsoRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined): RouteObject[] {
   return [
-    { path: '/', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
-    { path: '/login', element: <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} /> },
-    { path: '/github/callback', element: <SsoGithubCallbackPage /> },
-    { path: '/profile', element: <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} /> },
-    { path: '/token', element: <SsoTokenDetailsPage ssoJwt={ssoJwt} /> },
-    { path: '*', element: <NotFoundPage /> },
+    {
+      errorElement: <RouteError standalone />,
+      children: [...buildSsoPageRoutes('', turnstileSiteKey, githubOAuthEnabled, ssoJwt), { path: '*', element: <NotFoundPage standalone /> }],
+    },
   ];
 }
 

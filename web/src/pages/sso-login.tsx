@@ -61,6 +61,14 @@ function describeHandoffFailure(target: URL): string {
   return 'Unable to complete Blog SSO code handoff.';
 }
 
+// isPasskeyCancellation reports whether a WebAuthn ceremony ended because the user
+// dismissed the prompt or it timed out. Browsers report both as a NotAllowedError
+// DOMException, which is an expected outcome rather than a sign-in failure.
+function isPasskeyCancellation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'name' in error && (error as { name: unknown }).name === 'NotAllowedError';
+}
+
+// SsoLoginPageProps configures the optional sign-in providers shown on the SSO login page.
 export interface SsoLoginPageProps {
   turnstileSiteKey?: string;
   // githubOAuthEnabled controls whether the "Continue with GitHub" button is shown.
@@ -69,6 +77,8 @@ export interface SsoLoginPageProps {
   githubOAuthEnabled?: boolean;
 }
 
+// SsoLoginPage renders the SSO sign-in and registration form, including passkey,
+// GitHub, email-code, TOTP and on-demand Turnstile steps.
 export function SsoLoginPage(props: SsoLoginPageProps) {
   const resolvedTurnstileSiteKey = (props.turnstileSiteKey ?? '').trim();
   const turnstileEnabled = isTurnstileEnabled(resolvedTurnstileSiteKey);
@@ -548,11 +558,18 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       setStatus({ tone: 'success', message: 'Passkey accepted. Redirecting...' });
       await leaveWithSession(target, token);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Passkey login failed.';
-      if (handleChallengeError(message)) {
-        return;
+      if (isPasskeyCancellation(error)) {
+        // The user dismissed the passkey prompt (or it timed out); the browser's
+        // raw explanation is not actionable, so show a neutral notice instead.
+        setStatus({ tone: 'info', message: 'Passkey sign-in was cancelled.' });
+      } else {
+        const message = error instanceof Error ? error.message : 'Passkey login failed.';
+        if (handleChallengeError(message)) {
+          return;
+        }
+        setStatus({ tone: 'error', message: describeSsoAuthError(message) });
       }
-      setStatus({ tone: 'error', message: describeSsoAuthError(message) });
+      // The start mutation consumed any challenge token supplied this attempt.
       if (turnstileChallengeRequired) {
         resetTurnstile();
         setTurnstileMessage('Please complete the security verification again.');
@@ -602,12 +619,12 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
       <main className="z-10 flex w-full max-w-lg flex-col gap-6">
         <div className="space-y-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-widest text-primary font-mono">
+          <h1 className="flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-widest text-primary font-mono">
             <Lock className="h-4 w-4" />
             <span>
               <LaiskyLink className="text-primary underline-offset-4 hover:underline">Laisky</LaiskyLink> SSO
             </span>
-          </div>
+          </h1>
           <Button asChild variant="ghost" size="sm" className="gap-2 text-xs font-mono uppercase tracking-widest">
             <Link to={tokenPath}>
               <Info className="h-4 w-4" />
@@ -626,6 +643,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
             <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
               <button
                 type="button"
+                aria-pressed={mode === 'login'}
                 className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'login' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => {
                   setMode('login');
@@ -638,6 +656,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               </button>
               <button
                 type="button"
+                aria-pressed={mode === 'register'}
                 className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${mode === 'register' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => {
                   setMode('register');
@@ -674,7 +693,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
               {isPasskeySubmitting ? 'Waiting for Passkey...' : 'Sign in with Passkey'}
             </Button>
 
-            <form className="space-y-6" onSubmit={handleSubmit}>
+            <form method="post" className="space-y-6" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <label htmlFor="sso-account" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
                   Account ID
@@ -683,6 +702,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   id="sso-account"
                   name="account"
                   autoComplete="username"
+                  spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  required
                   placeholder="USER_IDENTIFIER"
                   value={account}
                   onChange={(event) => {
@@ -701,6 +724,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                 <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
                   <button
                     type="button"
+                    aria-pressed={loginMethod === 'password'}
                     className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'password' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                     onClick={() => {
                       setLoginMethod('password');
@@ -711,6 +735,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   </button>
                   <button
                     type="button"
+                    aria-pressed={loginMethod === 'email_code'}
                     className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${loginMethod === 'email_code' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                     onClick={() => {
                       setLoginMethod('email_code');
@@ -735,6 +760,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                     id="sso-display-name"
                     name="displayName"
                     autoComplete="name"
+                    required
                     placeholder="Alice"
                     value={displayName}
                     onChange={(event) => setDisplayName(event.target.value)}
@@ -756,6 +782,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                     name="password"
                     type="password"
                     autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                    required
                     placeholder="••••••••••••"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
@@ -778,6 +805,7 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                       name="emailCode"
                       inputMode="numeric"
                       autoComplete="one-time-code"
+                      required
                       placeholder="000000"
                       value={emailCode}
                       onChange={(event) => setEmailCode(event.target.value)}
@@ -801,12 +829,17 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
                   <label htmlFor="sso-totp" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
                     TOTP Code
                   </label>
+                  <p id="sso-totp-hint" className="text-xs text-muted-foreground font-mono pl-1">
+                    Enter the 6-digit code from your authenticator app.
+                  </p>
                   <Input
                     id="sso-totp"
                     name="totp"
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     placeholder="000000"
+                    aria-describedby="sso-totp-hint"
+                    required
                     autoFocus
                     value={totpCode}
                     onChange={(event) => setTotpCode(event.target.value)}
@@ -817,9 +850,13 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
 
               {turnstileChallengeRequired && (
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">Security Check</label>
+                  <span id="sso-security-check-label" className="text-xs font-bold text-muted-foreground font-mono uppercase tracking-widest pl-1">
+                    Security Check
+                  </span>
                   <div
                     ref={turnstileContainerRef}
+                    role="group"
+                    aria-labelledby="sso-security-check-label"
                     className="flex min-h-20 items-center justify-center rounded-md border border-input bg-background px-2 py-3 transition-colors"
                   />
                   {turnstileMessage && <p className="text-xs text-muted-foreground font-mono">{turnstileMessage}</p>}

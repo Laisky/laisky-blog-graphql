@@ -1,6 +1,6 @@
 import { ChevronDown, Loader2, Trash2 } from 'lucide-react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,7 @@ export function ApiKeyInput({
   const [isKeyVisible, setIsKeyVisible] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputId = useId();
 
   const isLoading = status === 'validating';
 
@@ -124,7 +125,12 @@ export function ApiKeyInput({
     <div ref={containerRef} className={cn('relative w-full', className)}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 md:flex-row md:items-center">
         <div className="relative w-full md:max-w-md">
+          <label htmlFor={inputId} className="sr-only">
+            API key
+          </label>
           <Input
+            id={inputId}
+            name="apiKey"
             value={formValue}
             onChange={(event: ChangeEvent<HTMLInputElement>) => setFormValue(event.target.value)}
             type={isKeyVisible ? 'text' : 'password'}
@@ -139,11 +145,12 @@ export function ApiKeyInput({
               variant="outline"
               size="sm"
               onClick={() => setIsKeyVisible((prev) => !prev)}
-              className="px-2"
+              className="px-2 aria-pressed:bg-accent aria-pressed:text-accent-foreground"
+              aria-controls={inputId}
               aria-pressed={isKeyVisible}
-              aria-label={isKeyVisible ? 'Hide API key' : 'Show API key'}
+              aria-label="Show API key"
             >
-              {isKeyVisible ? 'Hide' : 'Show'}
+              Show
             </Button>
             {dropdownEntries.length > 0 && (
               <Button
@@ -182,22 +189,22 @@ export function ApiKeyInput({
         <div className="absolute left-0 mt-2 w-full md:max-w-md rounded-md border border-border/60 bg-card shadow-lg z-50">
           <ul className="py-1 text-sm">
             {dropdownEntries.map((entry) => (
-              <li
-                key={entry.key}
-                className="flex items-center justify-between px-3 py-2 hover:bg-muted cursor-pointer"
-                onClick={() => handleSelectHistory(entry.key)}
-              >
-                <div className="flex min-w-0 flex-col">
+              <li key={entry.key} className="flex items-center justify-between hover:bg-muted">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 cursor-pointer flex-col px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  onClick={() => handleSelectHistory(entry.key)}
+                >
                   <span className="truncate text-sm font-medium text-foreground">{entry.alias}</span>
                   <span className="font-mono text-xs text-muted-foreground">{maskedKey(entry.key)}</span>
-                </div>
+                </button>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                  className="mr-3 h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-destructive"
                   onClick={(event) => handleDeleteHistory(event, entry.key)}
-                  aria-label="Remove from history"
+                  aria-label={`Remove ${entry.alias} from history`}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>

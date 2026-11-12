@@ -93,3 +93,30 @@ describe('CallLogPage tool console gating', () => {
     });
   });
 });
+
+describe('CallLogPage accessibility', () => {
+  it('makes the results table a named, keyboard-focusable scroll region', async () => {
+    vi.mocked(fetchCallLogs).mockResolvedValue({
+      data: [],
+      meta: { quotes_per_usd: 1 },
+      pagination: { has_next: false, has_prev: false, page: 1, page_size: 20, total_items: 0, total_pages: 0 },
+    });
+    mockApiKeyState('insufficient');
+
+    render(<CallLogPage />);
+
+    const region = screen.getByRole('region', { name: 'Call log results' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('table', { name: 'Call log results' })).toBeInTheDocument();
+    await waitFor(() => expect(fetchCallLogs).toHaveBeenCalled());
+  });
+
+  it('announces a load failure', async () => {
+    vi.mocked(fetchCallLogs).mockRejectedValue(new Error('call log backend unavailable'));
+    mockApiKeyState('insufficient');
+
+    render(<CallLogPage />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('call log backend unavailable');
+  });
+});

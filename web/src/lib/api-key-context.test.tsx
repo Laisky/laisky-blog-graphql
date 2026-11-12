@@ -216,6 +216,94 @@ describe('ApiKeyContext', () => {
     expect(screen.getByTestId('quota').textContent).toBe('300000');
   });
 
+  describe('background quota re-check while insufficient', () => {
+    const insufficientResponse = {
+      ok: true,
+      json: async () => ({ data: { ValidateOneapiApiKey: { remain_quota: 0, used_quota: 100 } } }),
+    } as Response;
+
+    /** renderInsufficient renders the provider and drives it to the insufficient status. */
+    async function renderInsufficient() {
+      const fetchMock = vi.mocked(globalThis.fetch);
+      fetchMock.mockResolvedValueOnce(insufficientResponse);
+      render(
+        <ApiKeyProvider>
+          <TestComponent />
+        </ApiKeyProvider>
+      );
+      await act(async () => {
+        screen.getByTestId('setKey').click();
+      });
+      expect(screen.getByTestId('status').textContent).toBe('insufficient');
+      fetchMock.mockClear();
+      return fetchMock;
+    }
+
+    /** setVisibility overrides document.visibilityState and notifies listeners. */
+    function setVisibility(state: DocumentVisibilityState) {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }
+
+    afterEach(() => {
+      Reflect.deleteProperty(document, 'visibilityState');
+    });
+
+    it('keeps the console unlocked while the background check is in flight', async () => {
+      const fetchMock = await renderInsufficient();
+      fetchMock.mockReturnValue(new Promise<Response>(() => undefined));
+
+      await act(async () => {
+        vi.advanceTimersByTime(10000);
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('status').textContent).toBe('insufficient');
+    });
+
+    it('sends the background check at low fetch priority', async () => {
+      const fetchMock = await renderInsufficient();
+      fetchMock.mockResolvedValue(insufficientResponse);
+
+      await act(async () => {
+        vi.advanceTimersByTime(10000);
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][1]).toMatchObject({ priority: 'low' });
+    });
+
+    it('keeps the current status when a background check fails in transit', async () => {
+      const fetchMock = await renderInsufficient();
+      fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await act(async () => {
+        vi.advanceTimersByTime(10000);
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('status').textContent).toBe('insufficient');
+    });
+
+    it('skips checks while the tab is hidden and re-checks when it becomes visible', async () => {
+      const fetchMock = await renderInsufficient();
+      fetchMock.mockResolvedValue(insufficientResponse);
+
+      await act(async () => {
+        setVisibility('hidden');
+        vi.advanceTimersByTime(30000);
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      await act(async () => {
+        setVisibility('visible');
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][1]).toMatchObject({ priority: 'low' });
+    });
+  });
+
   it('should reset values on disconnect', async () => {
     localStorage.setItem('mcp_api_key', 'saved-key');
     localStorage.setItem('mcp_api_key_status', 'valid');

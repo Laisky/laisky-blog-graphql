@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { finalizePrivateSourceMaps } from './scripts/finalize-private-sourcemaps.mjs';
 
+const reactVendorModule = /[\\/]node_modules[\\/](?:react|react-dom|scheduler|react-router|react-router-dom|cookie)[\\/]/;
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -32,7 +34,18 @@ export default defineConfig(({ mode }) => {
       telemetry: false,
       release: { inject: false, create: false, finalize: false },
     })] : []), privateSourceMapQuarantine],
-    build: { sourcemap: privateSourceMaps ? 'hidden' : false },
+    build: {
+      sourcemap: privateSourceMaps ? 'hidden' : false,
+      rollupOptions: {
+        output: {
+          // Keep the React runtime and router in their own long-lived chunk so a deploy
+          // that only changes application code does not invalidate them in the cache.
+          manualChunks(id) {
+            return reactVendorModule.test(id) ? 'vendor-react' : undefined;
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),

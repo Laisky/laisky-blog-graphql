@@ -21,7 +21,12 @@ export interface AskUserListResponse {
   key_hint?: string;
 }
 
-export async function listRequests(apiKey: string, signal?: AbortSignal): Promise<AskUserListResponse> {
+/**
+ * listRequests fetches pending questions and answer history for the API key.
+ * Pass priority 'low' only for background polls so they yield bandwidth to
+ * requests the user is actively waiting on.
+ */
+export async function listRequests(apiKey: string, signal?: AbortSignal, priority?: RequestPriority): Promise<AskUserListResponse> {
   const authorization = buildAuthorizationHeader(apiKey);
   if (!authorization) {
     throw new Error('API key is required');
@@ -35,6 +40,7 @@ export async function listRequests(apiKey: string, signal?: AbortSignal): Promis
       Pragma: 'no-cache',
     },
     signal,
+    ...(priority ? { priority } : {}),
   }, 'ask-user');
 
   if (!response.ok) {
@@ -45,6 +51,7 @@ export async function listRequests(apiKey: string, signal?: AbortSignal): Promis
   return readPrivateJsonResponse(response, 'Invalid ask user JSON response');
 }
 
+/** submitAnswer posts the user's answer for one pending question. */
 export async function submitAnswer(apiKey: string, requestId: string, answer: string): Promise<void> {
   const authorization = buildAuthorizationHeader(apiKey);
   if (!authorization) {

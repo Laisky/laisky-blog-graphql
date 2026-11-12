@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	glog "github.com/Laisky/go-utils/v6/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,4 +85,37 @@ func TestStaticContentType(t *testing.T) {
 	require.Equal(t, "application/json; charset=utf-8", staticContentType(".well-known/webmcp"))
 	require.Empty(t, staticContentType("index.md"))
 	require.Empty(t, staticContentType(".well-known/agent-card.json"))
+}
+
+func TestSPAHandlerCachesFingerprintedBuildAssetsImmutably(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "assets"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "index.html"), []byte("<html></html>"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "assets", "page-Dxeb0V0_.js"), []byte("export {};"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "llms.txt"), []byte("# Laisky MCP"), 0o600))
+
+	handler := &spaHandler{root: root, index: []byte("<html></html>"), logger: glog.Shared}
+	serve := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		return w
+	}
+
+	asset := serve("/assets/page-Dxeb0V0_.js")
+	require.Equal(t, http.StatusOK, asset.Code)
+	require.Equal(t, "public, max-age=31536000, immutable", asset.Header().Get("Cache-Control"))
+
+	missing := serve("/assets/page-gone1234.js")
+	require.Equal(t, http.StatusNotFound, missing.Code)
+	require.Empty(t, missing.Header().Get("Cache-Control"), "a missing chunk must not be cached for a year")
+
+	unhashed := serve("/llms.txt")
+	require.Equal(t, http.StatusOK, unhashed.Code)
+	require.Empty(t, unhashed.Header().Get("Cache-Control"), "files copied from public/ keep stable names and must revalidate")
+
+	index := serve("/tools/web_search")
+	require.Equal(t, http.StatusOK, index.Code)
+	require.Equal(t, "no-store", index.Header().Get("Cache-Control"), "the entry document must always point at the current chunks")
 }

@@ -453,7 +453,11 @@ export function MemoryPage() {
               {beforePayload && <Badge variant="secondary">context_token_count: {beforePayload.context_token_count ?? 0}</Badge>}
             </div>
 
-            {beforeError && <p className="text-sm text-destructive">{beforeError}</p>}
+            {beforeError && (
+              <p role="alert" className="text-sm text-destructive">
+                {beforeError}
+              </p>
+            )}
 
             <div className="space-y-1">
               <label htmlFor="memory-before-input-items" className={inputLabelClass}>
@@ -525,7 +529,11 @@ export function MemoryPage() {
               </Button>
               {afterInfo && <Badge variant="secondary">{afterInfo}</Badge>}
             </div>
-            {afterError && <p className="text-sm text-destructive">{afterError}</p>}
+            {afterError && (
+              <p role="alert" className="text-sm text-destructive">
+                {afterError}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -550,8 +558,16 @@ export function MemoryPage() {
                 </span>
               )}
             </Button>
-            {maintenanceInfo && <p className="text-sm text-emerald-600 dark:text-emerald-400">{maintenanceInfo}</p>}
-            {maintenanceError && <p className="text-sm text-destructive">{maintenanceError}</p>}
+            {maintenanceInfo && (
+              <p role="status" className="text-sm text-emerald-600 dark:text-emerald-400">
+                {maintenanceInfo}
+              </p>
+            )}
+            {maintenanceError && (
+              <p role="alert" className="text-sm text-destructive">
+                {maintenanceError}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -606,7 +622,11 @@ export function MemoryPage() {
               <Badge variant="outline">{listPayload?.summaries?.length ?? 0} summaries</Badge>
             </div>
 
-            {queryError && <p className="text-sm text-destructive">{queryError}</p>}
+            {queryError && (
+              <p role="alert" className="text-sm text-destructive">
+                {queryError}
+              </p>
+            )}
 
             <div className="max-h-80 space-y-2 overflow-y-auto rounded-lg border border-border/60 bg-muted/30 p-3">
               {(listPayload?.summaries ?? []).length === 0 ? (

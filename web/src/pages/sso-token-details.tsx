@@ -82,13 +82,13 @@ export function SsoTokenDetailsPage({ ssoJwt = null }: SsoTokenDetailsPageProps)
                   <span className="font-mono">{ssoJwt.ttl_seconds}</span>
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Public Key</div>
+                  <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Public Key</h2>
                   <pre className="max-h-60 max-w-full overflow-auto rounded-md border border-border bg-background p-3 text-xs">
                     <code>{ssoJwt.public_key_pem}</code>
                   </pre>
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Claims Schema</div>
+                  <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Claims Schema</h2>
                   <pre className="max-h-80 max-w-full overflow-auto rounded-md border border-border bg-background p-3 text-xs">
                     <code>{formatSsoJwtSchema(ssoJwt.claims_schema)}</code>
                   </pre>
@@ -99,12 +99,12 @@ export function SsoTokenDetailsPage({ ssoJwt = null }: SsoTokenDetailsPageProps)
             )}
             {trimmedToken && (
               <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Current Token</div>
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Current Token</h2>
                 <StatusBanner status={{ tone: 'info', message: 'This bearer token authenticates your current SSO session.' }} />
                 <pre className="max-h-60 max-w-full overflow-auto rounded-md border border-border bg-background p-3 text-xs">
                   <code className="break-all">{trimmedToken}</code>
                 </pre>
-                <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Decoded Token JSON</div>
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Decoded Token JSON</h2>
                 {decodedToken ? (
                   <pre className="max-h-80 max-w-full overflow-auto rounded-md border border-border bg-background p-3 text-xs">
                     <code>{decodedToken}</code>

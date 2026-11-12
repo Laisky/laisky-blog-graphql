@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
+import { isImeComposingKeyDown } from '../shared/ime';
 import { isProjectQuery, listProjects, type ProjectPage } from './project-options';
 
 type ProjectPickerProps = {
@@ -138,7 +139,9 @@ function ProjectPickerSession({ id, apiKey, value, disabled = false, onChange }:
             if (projects.length) setActive((index) => event.key === 'ArrowDown'
               ? (index + 1) % projects.length : (index < 0 ? projects.length - 1 : (index + projects.length - 1) % projects.length));
           } else if (event.key === 'Enter' && activeID) {
-            event.preventDefault(); choose(projects[active]);
+            event.preventDefault();
+            if (isImeComposingKeyDown(event)) return;
+            choose(projects[active]);
           }
         }} />
       <button type="button" tabIndex={-1} aria-label="Show existing projects" disabled={unavailable}

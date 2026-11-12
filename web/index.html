@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="https://s3.laisky.com/uploads/2025/12/mcp_icon.png" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fefefe" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0f1a" />
+    <link rel="icon" type="image/png" href="https://s3.laisky.com/uploads/2025/12/mcp_icon.png" />
+    <link rel="manifest" href="/manifest.json" />
     <link rel="canonical" href="https://mcp.laisky.com/" />
     <link rel="alternate" type="text/markdown" href="/index.md" />
     <link rel="alternate" type="text/plain" href="/llms.txt" />
@@ -131,24 +135,29 @@
       }
     </script>
     <script>
+      // Apply the stored color-scheme override before first paint. Keep in sync with
+      // applyTheme in src/components/theme/theme-provider.tsx.
       (() => {
+        const root = document.documentElement;
+        let theme = 'system';
         try {
-          const storageKey = 'ui-theme-preference';
-          const stored = localStorage.getItem(storageKey);
-          const theme = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
-          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          const active = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
-          const root = document.documentElement;
-          root.dataset.theme = active;
-          root.dataset.themePreference = theme;
-          root.style.setProperty('color-scheme', active);
-          if (active === 'dark') {
-            root.classList.add('dark');
-          } else {
-            root.classList.remove('dark');
+          const stored = localStorage.getItem('ui-theme-preference');
+          if (stored === 'light' || stored === 'dark') {
+            theme = stored;
           }
         } catch (error) {
-          /* no-op */
+          /* Site data blocked: follow the system preference. */
+        }
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const active = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
+        root.dataset.theme = active;
+        root.dataset.themePreference = theme;
+        root.style.setProperty('color-scheme', active);
+        root.classList.toggle('dark', active === 'dark');
+        if (theme !== 'system') {
+          document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme);
+          const forced = active === 'dark' ? '#0a0f1a' : '#fefefe';
+          document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute('content', forced));
         }
       })();
     </script>
