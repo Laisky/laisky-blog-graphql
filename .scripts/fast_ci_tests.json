@@ -82,7 +82,8 @@
       "TestStartupAlertDiagnosticScope",
       "TestStartupAlertCorePreservesSmallBoundContext",
       "TestStartupAlertCorePreservesLargeChosenInput",
-      "TestStartupAlertCoreRejectsWholeOversizeRecord"
+      "TestStartupAlertCoreRejectsWholeOversizeRecord",
+      "TestValidateStartupConfigSSORedirectPolicy"
     ]
   },
   {
@@ -105,7 +106,27 @@
     "tests": [
       "TestAlertAdoptionActualCallerCompleteContent",
       "TestAlertAdoptionOversizeKeepsBusinessAndLocalInput",
-      "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet"
+      "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet",
+      "TestSSOCodeRegisteredClient"
+    ]
+  },
+  {
+    "package": "./internal/library/ssoredirect",
+    "tests": [
+      "TestSharedRedirectVectors",
+      "TestSharedRegistrationVectors",
+      "TestSharedRegistryVectors"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/controller",
+    "tests": [
+      "TestGitHubRedirectTargetPolicy",
+      "TestGitHubOAuthLoginRevalidatesRedirect",
+      "TestPasskeyFinishRevalidatesRedirect",
+      "TestPrivateTargetsRequireDevelopmentIssuer",
+      "TestBackslashOnlyAfterQueryOrFragment",
+      "TestGitHubStartChecksTheCompletingIssuer"
     ]
   },
   {

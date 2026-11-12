@@ -314,6 +314,9 @@ func (r *MutationResolver) UserFinishPasskeyLogin(ctx context.Context,
 		logger.Debug("passkey login session rejected", zap.Error(err))
 		return nil, maskLoginError(err)
 	}
+	if err = ensureSSORedirectStillAllowed(ctx, envelope.RedirectTo); err != nil {
+		return nil, errors.Wrap(err, "finish passkey login")
+	}
 	wa, err := newWebAuthnForRequest(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "create webauthn")

@@ -21,14 +21,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/library/ssoredirect"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 )
 
 const (
-	blogSSOOrigin              = "https://blog.laisky.com"
+	blogSSOOrigin              = ssoredirect.BlogRedirectURI
 	ssoIssuerOrigin            = "https://sso.laisky.com"
 	mcpIssuerOrigin            = "https://mcp.laisky.com"
-	blogSSOClient              = "blog"
+	blogSSOClient              = ssoredirect.BlogClientID
 	ssoCodeTTL                 = 60 * time.Second
 	ssoRequestTimeout          = 5 * time.Second
 	ssoBodyLimit               = 8192
@@ -68,7 +69,8 @@ type ssoCodeHandler struct {
 	validate func(*gin.Context, string) (time.Time, error)
 }
 
-// registerSSOCodeRoutes mounts only the opt-in Blog handoff alongside the existing API prefix.
+// registerSSOCodeRoutes mounts the single-use code handoff for Blog and the registered
+// clients in settings.web.sso.clients alongside the existing API prefix.
 func registerSSOCodeRoutes(engine *gin.Engine, prefix urlPrefixConfig, resolver *Resolver) {
 	var handler ssoCodeHandler
 	if resolver != nil && resolver.args.Rdb != nil && resolver.args.BlogSvc != nil {
@@ -127,7 +129,9 @@ func ssoCodeTransport(prefix urlPrefixConfig) gin.HandlerFunc {
 		c.Header("Pragma", "no-cache")
 		c.Header("Referrer-Policy", "no-referrer")
 		origin := c.GetHeader("Origin")
-		allowed := origin == "" || origin == blogSSOOrigin
+		// Redemption accepts the origin of any registered callback (always including Blog);
+		// redeem then binds the origin to the requested client. Issuance stays issuer-only.
+		allowed := origin == "" || loadSSORedirectPolicy(c).RedeemOriginAllowed(origin)
 		if !tokenEndpoint {
 			allowed = origin == "" || origin == ssoIssuerOrigin || origin == mcpIssuerOrigin
 		}
@@ -199,10 +203,21 @@ func validSSOVerifier(value string) bool {
 	return true
 }
 
-// validSSOBindings admits only the registered Blog root callback and S256 code flow.
-func validSSOBindings(binding ssoCodeBindings) bool {
-	return binding.ClientID == blogSSOClient && binding.RedirectURI == blogSSOOrigin &&
+// validSSOBindings admits only an exact registered callback (the built-in Blog root or a
+// settings.web.sso.clients entry) with canonical state and an S256 challenge.
+func validSSOBindings(policy ssoredirect.Policy, binding ssoCodeBindings) bool {
+	return policy.ValidCodeBinding(binding.ClientID, binding.RedirectURI) &&
 		validSSOEntropy(binding.State) && validSSOEntropy(binding.Challenge) && binding.ChallengeMethod == "S256"
+}
+
+// loadSSORedirectPolicy reads the registry once per request. An invalid configuration is
+// logged and fails closed to the built-in Blog client.
+func loadSSORedirectPolicy(c *gin.Context) ssoredirect.Policy {
+	policy, err := ssoredirect.Load()
+	if err != nil {
+		ginMw.GetLogger(c).Error("sso redirect policy is invalid; only the built-in blog client is served", zap.Error(err))
+	}
+	return policy
 }
 
 // beginSSORequest bounds socket reads and downstream work before decoding a scoped SSO request.
@@ -282,7 +297,8 @@ func decodeSSOBody(c *gin.Context, target any) (bool, error) {
 	return true, nil
 }
 
-// issue verifies an active SSO session and stores a random one-minute Blog code without returning its bearer.
+// issue verifies an active SSO session and stores a random one-minute code for the registered
+// client without returning its bearer.
 func (h ssoCodeHandler) issue(c *gin.Context) {
 	logger := ginMw.GetLogger(c).Named("sso_code.issue")
 	fail := func(status int, reason string) {
@@ -303,7 +319,7 @@ func (h ssoCodeHandler) issue(c *gin.Context) {
 	}()
 	var bindings ssoCodeBindings
 	bodyComplete, decodeErr := decodeSSOBody(c, &bindings)
-	if decodeErr != nil || !validSSOBindings(bindings) {
+	if decodeErr != nil || !validSSOBindings(loadSSORedirectPolicy(c), bindings) {
 		fail(http.StatusBadRequest, ssoInvalidRequest)
 		return
 	}
@@ -340,7 +356,7 @@ func (h ssoCodeHandler) issue(c *gin.Context) {
 			break
 		}
 		code := base64.RawURLEncoding.EncodeToString(random)
-		inserted, err := h.db.SetNX(ctx, "sso:blog:code:"+ssoDigest(code), record, ttl).Result()
+		inserted, err := h.db.SetNX(ctx, ssoredirect.CodeKeyPrefix(bindings.ClientID)+ssoDigest(code), record, ttl).Result()
 		if err != nil {
 			break
 		}
@@ -379,12 +395,19 @@ func (h ssoCodeHandler) redeem(c *gin.Context) {
 		}
 	}()
 	var request ssoTokenRequest
+	policy := loadSSORedirectPolicy(c)
 	bodyComplete, decodeErr := decodeSSOBody(c, &request)
-	if decodeErr != nil || request.ClientID != blogSSOClient ||
-		request.RedirectURI != blogSSOOrigin || !validSSOEntropy(request.Code) ||
+	if decodeErr != nil || !policy.ValidCodeBinding(request.ClientID, request.RedirectURI) || !validSSOEntropy(request.Code) ||
 		!validSSOEntropy(request.State) || !validSSOVerifier(request.Verifier) {
 		fail(http.StatusBadRequest, ssoInvalidGrant)
 		return
+	}
+	// A browser may redeem only from the origin of the client's own callback.
+	if origin := c.GetHeader("Origin"); origin != "" {
+		if expected, ok := policy.RedeemOrigin(request.ClientID, request.RedirectURI); !ok || origin != expected {
+			fail(http.StatusForbidden, ssoInvalidRequest)
+			return
+		}
 	}
 	if len(c.Request.Header.Values(ssoAuthorizationHeader)) > 1 {
 		fail(http.StatusBadRequest, ssoInvalidGrant)
@@ -395,7 +418,7 @@ func (h ssoCodeHandler) redeem(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	key := "sso:blog:code:" + ssoDigest(request.Code)
+	key := ssoredirect.CodeKeyPrefix(request.ClientID) + ssoDigest(request.Code)
 	raw, err := h.db.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
 		fail(http.StatusBadRequest, ssoInvalidGrant)
@@ -406,7 +429,7 @@ func (h ssoCodeHandler) redeem(c *gin.Context) {
 		return
 	}
 	var record ssoCodeRecord
-	if json.Unmarshal([]byte(raw), &record) != nil || !validSSOBindings(record.ssoCodeBindings) ||
+	if json.Unmarshal([]byte(raw), &record) != nil || !validSSOBindings(policy, record.ssoCodeBindings) ||
 		record.ClientID != request.ClientID || record.RedirectURI != request.RedirectURI ||
 		subtle.ConstantTimeCompare([]byte(record.State), []byte(request.State)) != 1 ||
 		subtle.ConstantTimeCompare([]byte(record.Challenge), []byte(ssoDigest(request.Verifier))) != 1 {

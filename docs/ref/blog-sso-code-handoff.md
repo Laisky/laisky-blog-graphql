@@ -188,3 +188,14 @@ Runtime gate: before cutover, an authorized real sign-in through the deployed Bl
 must confirm the intended account, session and return route. The audit must not
 retain credentials or callback values. Source and synthetic tests cannot close
 this gate.
+
+## Generalized registry (2026-11-08)
+
+Issue 89 generalizes this handoff to the registered clients in `settings.web.sso.clients`
+without changing anything above: Blog stays a built-in client with the same markers,
+callback, Redis namespace, bootstrap and `blog-sso-protocol.v1.json` contract. Other
+clients use `sso_client_id` plus the same S256/state markers; Blog URLs never accept it.
+All non-Blog targets now follow the shared redirect policy (https on production hosts,
+no userinfo, raw-string checks) and the `legacy_token_redirect` cutover switch. See
+[the SSO manual](../manual/sso.md#registered-client-code-flow) and
+[the redirect policy research](sso_redirect_policy_20261108.md).

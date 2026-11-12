@@ -11,7 +11,7 @@ import { LaiskyLink } from '@/components/ui/laisky-link';
 import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
-import { buildSsoRedirectUrl, parseRedirectTarget } from '@/lib/sso-redirect';
+import { buildSsoRedirectUrl, parseRedirectTarget, planSsoRedirect } from '@/lib/sso-redirect';
 import { clearSsoToken, loadSsoToken, resolveSiblingSsoPath, storeSsoToken } from '@/lib/sso-session';
 import {
   SSO_SESSION_CHECK_QUERY,
@@ -42,18 +42,7 @@ import {
 import { resolveAuthenticatedRedirect } from '@/pages/sso-session-redirect';
 import { getTurnstileAPI, loadTurnstileScript } from '@/pages/sso-turnstile';
 
-export {
-  buildRedirectUrlWithToken,
-  isAllowedLaiskyDomain,
-  isAllowedRedirectHost,
-  isAllowedRedirectProtocol,
-  isInternalIPAddress,
-  isInternalIPv4Address,
-  isInternalIPv6Address,
-  normalizeHostname,
-  parseIPv4Address,
-  parseRedirectTarget,
-} from '@/lib/sso-redirect';
+export { buildRedirectUrlWithToken, parseRedirectTarget } from '@/lib/sso-redirect';
 export {
   canStartGithubOAuth,
   canSubmitSsoLogin,
@@ -62,6 +51,16 @@ export {
   isTurnstileRequiredError,
 } from '@/pages/sso-login-state';
 export { resolveAuthenticatedRedirect } from '@/pages/sso-session-redirect';
+// describeHandoffFailure names the failed code handoff without echoing the target.
+function describeHandoffFailure(target: URL): string {
+  try {
+    if (planSsoRedirect(target).kind === 'client-code') return 'Unable to complete SSO code handoff.';
+  } catch {
+    // The planner already validated this target; fall through to the Blog wording.
+  }
+  return 'Unable to complete Blog SSO code handoff.';
+}
+
 export interface SsoLoginPageProps {
   turnstileSiteKey?: string;
   // githubOAuthEnabled controls whether the "Continue with GitHub" button is shown.
@@ -274,13 +273,14 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
       });
 
       if (decision.kind === 'handoff') {
-        // Blog targets never receive the bearer: issue a bound code or bootstrap.
+        // Blog, registered clients and issuer pages never receive a URL bearer:
+        // issue a bound code, bootstrap, or open the issuer page directly.
         try {
           const redirect = await buildSsoRedirectUrl(decision.target, token);
           if (!isCancelled) window.location.assign(redirect);
         } catch {
           if (!isCancelled) {
-            setStatus({ tone: 'error', message: 'Unable to complete Blog SSO code handoff.' });
+            setStatus({ tone: 'error', message: describeHandoffFailure(decision.target) });
             setIsCheckingSession(false);
           }
         }
