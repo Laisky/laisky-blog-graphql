@@ -58,7 +58,12 @@
       "TestCloseCursorIsBoundedAfterTheReadEnds",
       "TestMonitorIndexesCoverAlertLookups",
       "TestMonitorIndexMatching",
-      "TestFindIndexPrefersTheOneThatServesLookups"
+      "TestFindIndexPrefersTheOneThatServesLookups",
+      "TestUploadFileCacheRefusalDoesNotRaceWithCaller",
+      "TestNewUploadKeepsNilArdriveNil",
+      "TestUploadFileCacheSuccess",
+      "TestUploadFileArweaveFailureDoesNotCache",
+      "TestUploadFileWithTelegramUIDBackgroundMetadata"
     ]
   },
   {
