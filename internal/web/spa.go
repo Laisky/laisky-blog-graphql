@@ -18,6 +18,15 @@ import (
 const (
 	frontendDistEnvKey     = "WEB_FRONTEND_DIST_DIR"
 	frontendBasePathEnvKey = "WEB_FRONTEND_BASE_PATH"
+
+	// fingerprintedAssetDir is Vite's build.assetsDir. Every file the build emits there
+	// carries a content hash in its name, so one URL never serves different bytes; files
+	// copied from web/public keep stable names and live outside this directory.
+	fingerprintedAssetDir = "assets/"
+	// immutableAssetCacheControl lets browsers reuse fingerprinted bundles across visits
+	// and deploys without revalidating them. The entry document stays no-store, so a new
+	// deploy is picked up through the new chunk names it references.
+	immutableAssetCacheControl = "public, max-age=31536000, immutable"
 )
 
 type spaHandler struct {
@@ -206,8 +215,17 @@ func (h *spaHandler) serveAsset(w http.ResponseWriter, r *http.Request, name, co
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
+	if isFingerprintedBuildAsset(name) {
+		w.Header().Set("Cache-Control", immutableAssetCacheControl)
+	}
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 	return true
+}
+
+// isFingerprintedBuildAsset reports whether a root-relative path names a content-hashed
+// build output that can be cached as immutable.
+func isFingerprintedBuildAsset(clean string) bool {
+	return strings.HasPrefix(clean, fingerprintedAssetDir) && len(clean) > len(fingerprintedAssetDir)
 }
 
 func staticContentType(clean string) string {

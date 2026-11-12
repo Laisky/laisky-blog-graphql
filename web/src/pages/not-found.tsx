@@ -3,8 +3,18 @@ import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 
-export function NotFoundPage() {
-  return (
+interface NotFoundPageProps {
+  /**
+   * standalone marks a page rendered outside the console layout (the SSO site, or a
+   * failure above the layout); it then provides its own main landmark and does not
+   * point at a navigation bar that is not there.
+   */
+  standalone?: boolean;
+}
+
+/** NotFoundPage tells the visitor the requested page does not exist and links back to the start page. */
+export function NotFoundPage({ standalone = false }: NotFoundPageProps) {
+  const content = (
     <div className="mx-auto flex max-w-lg flex-col items-center gap-6 pt-20 text-center">
       <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted">
         <FileQuestion className="h-10 w-10 text-muted-foreground" />
@@ -12,7 +22,9 @@ export function NotFoundPage() {
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Page not found</h1>
         <p className="text-muted-foreground">
-          We could not locate the page you were looking for. The navigation above lists the available modules.
+          {standalone
+            ? 'We could not locate the page you were looking for.'
+            : 'We could not locate the page you were looking for. The navigation above lists the available modules.'}
         </p>
       </div>
       <Button asChild>
@@ -20,4 +32,6 @@ export function NotFoundPage() {
       </Button>
     </div>
   );
+
+  return standalone ? <main className="px-4">{content}</main> : content;
 }
