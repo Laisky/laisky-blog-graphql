@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -78,53 +77,13 @@ func TestResolveTurnstileSiteNeverDisablesTheGate(t *testing.T) {
 	}
 }
 
-// TestAdmitAuthRequestAccountEscalationNeedsPresentableChallenge verifies the
-// account signal demands a challenge only where one can be presented.
-func TestAdmitAuthRequestAccountEscalationNeedsPresentableChallenge(t *testing.T) {
-	hotAccount := func(t *testing.T) *authChallengeTracker {
-		t.Helper()
-		tracker := newAuthChallengeTracker(time.Minute, 100, 15*time.Minute, 3, 100)
-		for i := range 3 {
-			tracker.recordFailure(tracker.subject(fmt.Sprintf("203.0.113.%d", i), "victim@example.com"))
-		}
-		withAuthChallengeTracker(t, tracker)
-		return tracker
-	}
-	owner := clientip.WithIP(context.Background(), "192.0.2.50")
-
-	t.Run("token-capable flow with a site key is challenged", func(t *testing.T) {
-		setTurnstileEnabledSite(t)
-		hotAccount(t)
-		_, err := admitAuthRequest(owner, nil, loginFlow("victim@example.com"))
-		require.ErrorIs(t, err, model.ErrTurnstileRequired)
-	})
-	t.Run("legacy flow without a token is not denied by the account", func(t *testing.T) {
-		setTurnstileEnabledSite(t)
-		hotAccount(t)
-		attempt, err := admitAuthRequest(owner, nil, authFlow{action: authActionLogin, account: "victim@example.com"})
-		require.NoError(t, err)
-		attempt.finish()
-	})
-	t.Run("pair without a site key is not denied by the account", func(t *testing.T) {
-		setTurnstileConfig(t, map[string]any{}, "global-secret", "")
-		hotAccount(t)
-		attempt, err := admitAuthRequest(owner, nil, loginFlow("victim@example.com"))
-		require.NoError(t, err)
-		attempt.finish()
-	})
-	t.Run("failures from the legacy flow still count for the others", func(t *testing.T) {
-		setTurnstileEnabledSite(t)
-		tracker := newAuthChallengeTracker(time.Minute, 100, 15*time.Minute, 3, 100)
-		withAuthChallengeTracker(t, tracker)
-		for i := range 3 {
-			ctx := clientip.WithIP(context.Background(), fmt.Sprintf("203.0.113.%d", 10+i))
-			attempt, err := admitAuthRequest(ctx, nil, authFlow{action: authActionLogin, account: "victim@example.com"})
-			require.NoError(t, err)
-			attempt.failed("")
-		}
-		_, err := admitAuthRequest(owner, nil, loginFlow("victim@example.com"))
-		require.ErrorIs(t, err, model.ErrTurnstileRequired)
-	})
+// TestAdmitAuthRequestRejectsIncompletePair protects dynamic configuration changes too.
+func TestAdmitAuthRequestRejectsIncompletePair(t *testing.T) {
+	setTurnstileConfig(t, map[string]any{}, "global-secret", "")
+	withAuthChallengeTracker(t, newAuthChallengeTracker(time.Minute, 100, 15*time.Minute, 3, 100))
+	attempt, err := admitAuthRequest(context.Background(), nil, loginFlow("user@example.test"))
+	require.Nil(t, attempt)
+	require.ErrorIs(t, err, model.ErrLoginUnavailable)
 }
 
 // TestAdmitAuthRequestReleasesOnEveryOutcome verifies an attempt settles once

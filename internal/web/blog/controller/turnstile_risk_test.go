@@ -40,7 +40,7 @@ func (t *authChallengeTracker) recordSuccess(subject authRiskSubject) {
 // admitWithoutChallenge admits one request with the account signal applied
 // and immediately releases its reservations, the sequential-request view.
 func (t *authChallengeTracker) admitWithoutChallenge(subject authRiskSubject) bool {
-	decision := t.admit(subject, true)
+	decision := t.admit(subject)
 	t.release(decision.reservation)
 	return decision.admitted
 }

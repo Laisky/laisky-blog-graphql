@@ -33,17 +33,17 @@ func TestUserRegisterInputLength(t *testing.T) {
 	require.Contains(t, err.Error(), "input too long")
 }
 
-func TestBlogLoginInputLength(t *testing.T) {
+func TestUserLoginInputLength(t *testing.T) {
 	r := &MutationResolver{}
 	ctx := context.Background()
 
 	// Test account too long
-	_, err := r.BlogLogin(ctx, strings.Repeat("a", 101), "pass")
+	_, err := r.UserLogin(ctx, strings.Repeat("a", 101), "pass", nil, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input too long")
 
 	// Test password too long
-	_, err = r.BlogLogin(ctx, "account", strings.Repeat("p", 101))
+	_, err = r.UserLogin(ctx, "account", strings.Repeat("p", 101), nil, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input too long")
 }

@@ -40,6 +40,9 @@ type turnstileVerifyResult struct {
 // client must show a challenge, or ErrTurnstileFailed when a supplied token
 // could not be verified. A gate failure never reports the credentials as wrong.
 func turnstileGateError(err error) error {
+	if errors.Is(err, model.ErrLoginUnavailable) {
+		return errors.WithStack(model.ErrLoginUnavailable)
+	}
 	if errors.Is(err, model.ErrTurnstileRequired) {
 		return errors.WithStack(model.ErrTurnstileRequired)
 	}

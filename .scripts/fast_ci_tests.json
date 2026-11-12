@@ -84,7 +84,8 @@
       "TestStartupAlertCorePreservesLargeChosenInput",
       "TestStartupAlertCoreRejectsWholeOversizeRecord",
       "TestValidateStartupConfigRejectsInvalidTrustedProxies",
-      "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs"
+      "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
+      "TestValidateStartupConfigRequiresCompleteTurnstilePairs"
     ]
   },
   {
@@ -112,7 +113,8 @@
       "TestServerEngineTrustedProxyChains",
       "TestServerEngineDirectDeploymentPolicy",
       "TestServerEngineHostCannotDisableChallenge",
-      "TestRuntimeConfigServesTheVerifyingWidgetKey"
+      "TestRuntimeConfigServesTheVerifyingWidgetKey",
+      "TestLegacyBlogLoginIsRemoved"
     ]
   },
   {
@@ -145,9 +147,10 @@
       "TestAccountKeyFoldsCollationVariants",
       "TestAuthChallengeTrackerIdentityUnifiesSpellings",
       "TestAuthChallengeTrackerFloodCannotEvictAttackedAccount",
-      "TestAuthChallengeTrackerAccountGapForUnpresentableChallenge",
       "TestResolveTurnstileSiteNeverDisablesTheGate",
-      "TestAdmitAuthRequestAccountEscalationNeedsPresentableChallenge"
+      "TestAuthSuccessResetsAllKnownAliases",
+      "TestAuthSuccessPreservesAliasReservations",
+      "TestAdmitAuthRequestRejectsIncompletePair"
     ]
   }
 ]

@@ -29,7 +29,7 @@ func newIdentityEngine(t *testing.T, policyConfig map[string]any) *gin.Engine {
 	t.Helper()
 	return newIdentityEngineWithTurnstile(t, policyConfig, map[string]any{
 		"settings.web.turnstile.secret_key": "identity-test-turnstile-secret",
-		"settings.web.turnstile.site_key":   "",
+		"settings.web.turnstile.site_key":   "identity-test-site-key",
 		"settings.web.sites":                map[string]any{},
 	})
 }
