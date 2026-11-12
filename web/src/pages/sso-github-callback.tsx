@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import { Github, Lock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -10,7 +9,6 @@ import { StatusBanner, type StatusState } from '@/components/ui/status-banner';
 import { fetchGraphQL } from '@/lib/graphql';
 import { buildSsoRedirectUrl } from '@/lib/sso-redirect';
 import { storeSsoToken } from '@/lib/sso-session';
-import { buildRedirectUrlWithToken } from '@/pages/sso-login';
 import { describeSsoAuthError } from '@/pages/sso-login-state';
 
 const USER_GITHUB_OAUTH_LOGIN_MUTATION = `
@@ -27,15 +25,6 @@ interface GithubOAuthLoginResponse {
     token: string;
     redirect_to: string;
   };
-}
-
-/**
- * buildGithubCallbackRedirect is the synchronous legacy bearer handoff for non-Blog targets.
- * It throws for Blog targets; the callback page uses the asynchronous buildSsoRedirectUrl.
- */
-export function buildGithubCallbackRedirect(redirectTo: string, token: string, origin: string): string {
-  const target = redirectTo.trim() ? new URL(redirectTo, origin) : new URL('/profile', origin);
-  return buildRedirectUrlWithToken(target, token);
 }
 
 export function SsoGithubCallbackPage() {

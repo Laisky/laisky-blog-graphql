@@ -85,7 +85,8 @@
       "TestStartupAlertCoreRejectsWholeOversizeRecord",
       "TestValidateStartupConfigRejectsInvalidTrustedProxies",
       "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
-      "TestValidateStartupConfigRequiresCompleteTurnstilePairs"
+      "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
+      "TestValidateStartupConfigSSORedirectPolicy"
     ]
   },
   {
@@ -114,7 +115,8 @@
       "TestServerEngineDirectDeploymentPolicy",
       "TestServerEngineHostCannotDisableChallenge",
       "TestRuntimeConfigServesTheVerifyingWidgetKey",
-      "TestLegacyBlogLoginIsRemoved"
+      "TestLegacyBlogLoginIsRemoved",
+      "TestSSOCodeRegisteredClient"
     ]
   },
   {
@@ -150,7 +152,21 @@
       "TestResolveTurnstileSiteNeverDisablesTheGate",
       "TestAuthSuccessResetsAllKnownAliases",
       "TestAuthSuccessPreservesAliasReservations",
-      "TestAdmitAuthRequestRejectsIncompletePair"
+      "TestAdmitAuthRequestRejectsIncompletePair",
+      "TestGitHubRedirectTargetPolicy",
+      "TestGitHubOAuthLoginRevalidatesRedirect",
+      "TestPasskeyFinishRevalidatesRedirect",
+      "TestPrivateTargetsRequireDevelopmentIssuer",
+      "TestBackslashOnlyAfterQueryOrFragment",
+      "TestGitHubStartChecksTheCompletingIssuer"
+    ]
+  },
+  {
+    "package": "./internal/library/ssoredirect",
+    "tests": [
+      "TestSharedRedirectVectors",
+      "TestSharedRegistrationVectors",
+      "TestSharedRegistryVectors"
     ]
   }
 ]

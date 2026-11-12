@@ -88,21 +88,19 @@ describe('parseRedirectTarget', () => {
     expect(result.url?.toString()).toBe('https://console.laisky.com/sso/callback?state=abc');
   });
 
-  it('accepts internal IPv4 addresses', () => {
-    const result = parseRedirectTarget('http://10.20.30.40/sso/callback', origin);
-    expect(result.url?.toString()).toBe('http://10.20.30.40/sso/callback');
-    expect(result.error).toBeUndefined();
-  });
+  // Private, CGNAT and ULA targets are shared by a network: a production issuer refuses
+  // them unless the exact callback is registered, while a development issuer keeps them.
+  it.each(['http://10.20.30.40/sso/callback', 'http://100.64.0.10/sso/callback', 'http://[fd00::1]/sso/callback'])(
+    'accepts the internal address %s only from a development issuer', (raw) => {
+      expect(parseRedirectTarget(raw, origin).error).toMatch(/development target/i);
+      const result = parseRedirectTarget(raw, 'http://192.168.1.10:5173');
+      expect(result.url?.toString()).toBe(raw);
+      expect(result.error).toBeUndefined();
+    });
 
-  it('accepts carrier-grade NAT IPv4 addresses', () => {
-    const result = parseRedirectTarget('http://100.75.198.70/sso/callback', origin);
-    expect(result.url?.toString()).toBe('http://100.75.198.70/sso/callback');
-    expect(result.error).toBeUndefined();
-  });
-
-  it('accepts internal IPv6 addresses', () => {
-    const result = parseRedirectTarget('http://[fd00::1]/sso/callback', origin);
-    expect(result.url?.toString()).toBe('http://[fd00::1]/sso/callback');
+  it('accepts loopback addresses from any issuer', () => {
+    const result = parseRedirectTarget('http://127.0.0.1:8080/sso/callback', origin);
+    expect(result.url?.toString()).toBe('http://127.0.0.1:8080/sso/callback');
     expect(result.error).toBeUndefined();
   });
 

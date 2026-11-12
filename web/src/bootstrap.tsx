@@ -15,6 +15,7 @@ import { WebFetchPage } from '@/features/mcp/web-fetch/page';
 import { WebSearchPage } from '@/features/mcp/web-search/page';
 import { ApiKeyProvider } from '@/lib/api-key-context';
 import { configurePublicApiBasePath } from '@/lib/api-base';
+import { configureSsoRedirectPolicy } from '@/lib/sso-redirect';
 import { ExtractKeyInfoPage } from '@/features/mcp/extract-key-info/page';
 import { defaultToolsConfig, loadRuntimeConfig, type SsoJwtConfig, type ToolsConfig } from '@/lib/runtime-config';
 import { applySiteBranding } from '@/lib/site-branding';
@@ -38,6 +39,8 @@ type RouterKind = 'mcp' | 'sso';
 export async function bootstrap() {
   const runtimeConfig = await loadRuntimeConfig();
   configurePublicApiBasePath(runtimeConfig?.publicApiBasePath);
+  // A missing runtime configuration fails closed for the legacy bearer handoff.
+  configureSsoRedirectPolicy(runtimeConfig);
   const routeContext = resolveRouteContext(
     window.location.pathname,
     runtimeConfig?.publicBasePath ?? import.meta.env.BASE_URL,

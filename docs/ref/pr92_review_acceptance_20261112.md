@@ -29,3 +29,13 @@ Earlier task-history/FileIO access was unavailable/denied in this session. No cl
 - Independent read-only review found no new actionable P2+; obsolete schema deprecation comment removed.
 
 - Full `make test` passed with `MONGO_QUERY_TEST_URI` pointed at the disposable fixture (`-race -cover -timeout 5m ./...`).
+
+## Latest-base integration
+
+Integrated master `9c41454` after the review-fix commit. Conflicts were resolved by keeping both trusted-client/auth-risk and SSO redirect controls: both startup validators and their tests, the union of named fast-CI suites, and both documentation sections. Independent review verified the automatically merged GitHub, passkey and server paths retain trusted-forwarding enforcement and SSO completion revalidation.
+
+The full Mongo suite exposed a stale synthetic passkey issuer: its request used the implicit `http://example.com`, while its WebAuthn config used `https://sso.example.test`. The merged redirect classifier intentionally rejects arbitrary external issuers even for a self target. Changing only the request to HTTPS was insufficient. The harness now consistently uses supported `https://sso.laisky.com` and its matching RP ID, entirely in-process with no network call. Production policy was not relaxed. All existing foreign-origin, wrong-handle, forged-signature, replay and counter controls remain; `TestMongoSSOPasskeyLoginHandles` passes with `-race -count=3`.
+
+Merged `make lint` and the combined named fast gate pass. Frontend verification used Node 22.22.3 and the CI-required pnpm 10 (10.34.6), frozen lockfile: 58 files / 1214 tests passed and production build passed. The initially available pnpm 11 rejected the lockfile configuration; no lockfile changes or bypass flags were used.
+
+Final merged full `make test` passed with the real isolated Mongo fixture after the issuer-fixture correction.
