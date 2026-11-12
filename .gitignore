@@ -62,3 +62,7 @@ patch
 
 # Public, generated Docker VCS metadata; never part of source status.
 /.docker-build-git/
+
+# Python bytecode
+__pycache__/
+*.py[cod]

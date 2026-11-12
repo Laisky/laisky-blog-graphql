@@ -157,20 +157,19 @@ func (d *Upload) UploadFileWithTelegramUID(ctx context.Context,
 		return fileID, errors.Wrap(err, "upload file with apikey")
 	}
 
-	// save file info
+	// Snapshot metadata before launching work that outlives the request.
+	fileInfo := bson.M{
+		fieldCreatedAt:   time.Now(),
+		"file_id":        fileID,
+		"file_size":      len(cnt),
+		fieldTelegramUid: uid,
+	}
 	go func() { //nolint:gosec,contextcheck // G118: goroutine intentionally outlives request to persist file metadata
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 
-		_, err = d.db.GetCol(colUploadFiles).
-			InsertOne(ctx, bson.M{
-				fieldCreatedAt:   time.Now(),
-				"file_id":        fileID,
-				"file_size":      len(cnt),
-				fieldTelegramUid: uid,
-			})
-		if err != nil {
-			logger.Error("save uploaded arweave file info", zap.Error(err))
+		if _, insertErr := d.db.GetCol(colUploadFiles).InsertOne(ctx, fileInfo); insertErr != nil {
+			logger.Error("save uploaded arweave file info", zap.Error(insertErr))
 		}
 	}()
 

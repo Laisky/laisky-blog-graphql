@@ -60,7 +60,10 @@
       "TestMonitorIndexMatching",
       "TestFindIndexPrefersTheOneThatServesLookups",
       "TestUploadFileCacheRefusalDoesNotRaceWithCaller",
-      "TestNewUploadKeepsNilArdriveNil"
+      "TestNewUploadKeepsNilArdriveNil",
+      "TestUploadFileCacheSuccess",
+      "TestUploadFileArweaveFailureDoesNotCache",
+      "TestUploadFileWithTelegramUIDBackgroundMetadata"
     ]
   },
   {
