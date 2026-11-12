@@ -1,7 +1,8 @@
+import '@testing-library/jest-dom/vitest';
 import { useApiKey } from '@/lib/api-key-context';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { getPreferencesFromServer } from '../user-requests/api';
+import { getPreferencesFromServer, setDisabledToolsOnServer } from '../user-requests/api';
 import { SettingsPage } from './page';
 
 // Mock the hook
@@ -111,5 +112,45 @@ describe('SettingsPage', () => {
     const disconnectBtn = screen.getByText(/disconnect & clear key/i);
     disconnectBtn.click();
     expect(disconnect).toHaveBeenCalled();
+  });
+
+  it('exposes each tool toggle as a named switch with its checked state', async () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      apiKey: 'test-key',
+      keyEntries: [],
+      setAliasForKey: vi.fn(),
+      status: 'valid',
+      remainQuota: 1000,
+      history: [],
+      disconnect: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    const fileWrite = await screen.findByRole('switch', { name: 'file_write' });
+    expect(fileWrite).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('switch', { name: 'file_read' })).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(fileWrite);
+    // The accessible name stays the tool name while the saving spinner replaces the ON/OFF text.
+    expect(screen.getByRole('switch', { name: 'file_write' })).toBeInTheDocument();
+
+    await waitFor(() => expect(setDisabledToolsOnServer).toHaveBeenCalledWith('test-key', ['file_write']));
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'file_write' })).toHaveAttribute('aria-checked', 'false'));
+  });
+
+  it('announces the API key status line', () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      apiKey: 'test-key',
+      keyEntries: [],
+      setAliasForKey: vi.fn(),
+      status: 'valid',
+      remainQuota: 1000,
+      history: [],
+      disconnect: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+    expect(screen.getByRole('status')).toHaveTextContent('Authenticated and ready to use.');
   });
 });

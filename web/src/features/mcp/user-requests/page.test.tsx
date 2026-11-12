@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { useApiKey } from '@/lib/api-key-context';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
 import { UserRequestsPage } from './page';
 
@@ -28,12 +28,17 @@ vi.mock('./api', () => ({
   setReturnModeOnServer: vi.fn(),
   setCommandTemplateOnServer: vi.fn(),
   setReturnMode: vi.fn(),
+  searchUserRequests: vi.fn(),
   getQuota: vi.fn().mockResolvedValue({ user_identity: 'u', used_bytes: 0, quota_bytes: 0, object_count: 0, ttl_days: 0 }),
 }));
 
 // Mock child components that might interfere or are complex
 vi.mock('./hold-button', () => ({
-  HoldButton: ({ disabled }: { disabled?: boolean }) => <button disabled={disabled}>Hold</button>,
+  HoldButton: ({ disabled, onActivate }: { disabled?: boolean; onActivate?: () => void }) => (
+    <button disabled={disabled} onClick={onActivate}>
+      Hold
+    </button>
+  ),
 }));
 vi.mock('./request-cards', () => ({
   ConsumedCard: () => <div>Consumed</div>,
@@ -311,5 +316,224 @@ describe('UserRequestsPage Command Template', () => {
     fireEvent.click(resetBtn);
 
     expect(textarea.value).toBe('{{content}}');
+  });
+});
+
+/** deferred returns a promise whose settlement the test controls. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+function makeRequest(id: string): api.UserRequest {
+  return { id, content: `content ${id}`, status: 'consumed', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' } as api.UserRequest;
+}
+
+describe('UserRequestsPage background work', () => {
+  let visibility: DocumentVisibilityState = 'visible';
+
+  const flush = (ms = 0) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  const setVisibility = (next: DocumentVisibilityState) => {
+    visibility = next;
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    visibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+    vi.mocked(useApiKey).mockReturnValue({ apiKey: 'test-api-key', isToolConsoleLocked: false, status: 'valid' });
+    vi.mocked(api.listUserRequests).mockResolvedValue({ pending: [], consumed: [] });
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all' });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(document, 'visibilityState');
+  });
+
+  it('marks only timer-driven list polls as low priority', async () => {
+    render(<UserRequestsPage />);
+    await flush();
+
+    expect(api.listUserRequests).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.listUserRequests).mock.calls[0][1]?.priority).toBeUndefined();
+
+    await flush(5000);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.listUserRequests).mock.calls[1][1]).toEqual(expect.objectContaining({ priority: 'low' }));
+  });
+
+  it('does not poll the list while hidden and refreshes at default priority once visible', async () => {
+    render(<UserRequestsPage />);
+    await flush();
+    expect(api.listUserRequests).toHaveBeenCalledTimes(1);
+
+    setVisibility('hidden');
+    await flush(60_000);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(1);
+
+    setVisibility('visible');
+    await flush();
+    expect(api.listUserRequests).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.listUserRequests).mock.calls[1][1]?.priority).toBeUndefined();
+  });
+
+  it('chains hold-state polls after each response so a slow response never overlaps the next', async () => {
+    vi.mocked(api.setHold).mockResolvedValue({ active: true, waiting: false, remaining_secs: 0 });
+    const slow = deferred<api.HoldState>();
+    vi.mocked(api.getHoldState).mockReturnValueOnce(slow.promise).mockResolvedValue({ active: true, waiting: true, remaining_secs: 19 });
+
+    render(<UserRequestsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /hold/i }));
+    await flush();
+
+    await flush(1000);
+    expect(api.getHoldState).toHaveBeenCalledTimes(1);
+    const [, , signal, priority] = vi.mocked(api.getHoldState).mock.calls[0];
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(priority).toBe('low');
+
+    // While the first response is outstanding no further request may start.
+    await flush(5000);
+    expect(api.getHoldState).toHaveBeenCalledTimes(1);
+
+    slow.resolve({ active: true, waiting: true, remaining_secs: 20 });
+    await flush();
+    await flush(999);
+    expect(api.getHoldState).toHaveBeenCalledTimes(1);
+    await flush(1);
+    expect(api.getHoldState).toHaveBeenCalledTimes(2);
+  });
+
+  it('pauses hold-state polling while hidden and aborts the in-flight poll on unmount', async () => {
+    vi.mocked(api.setHold).mockResolvedValue({ active: true, waiting: false, remaining_secs: 0 });
+    vi.mocked(api.getHoldState).mockReturnValue(new Promise<api.HoldState>(() => undefined));
+
+    const { unmount } = render(<UserRequestsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /hold/i }));
+    await flush();
+
+    setVisibility('hidden');
+    await flush(10_000);
+    expect(api.getHoldState).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    await flush();
+    expect(api.getHoldState).toHaveBeenCalledTimes(1);
+    const signal = vi.mocked(api.getHoldState).mock.calls[0][2];
+
+    unmount();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('debounces history search and ignores a stale response that arrives late', async () => {
+    const stale = deferred<api.UserRequestSearchResponse>();
+    vi.mocked(api.searchUserRequests)
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce({ results: [makeRequest('fresh')] });
+
+    render(<UserRequestsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /search history/i }));
+    await flush();
+
+    const input = screen.getByRole('textbox', { name: /search directive history/i });
+    fireEvent.change(input, { target: { value: 'a' } });
+    fireEvent.change(input, { target: { value: 'ab' } });
+    await flush(249);
+    expect(api.searchUserRequests).not.toHaveBeenCalled();
+
+    await flush(1);
+    expect(api.searchUserRequests).toHaveBeenCalledTimes(1);
+    expect(api.searchUserRequests).toHaveBeenLastCalledWith('test-api-key', 'ab', expect.objectContaining({ limit: 50 }));
+    const firstSignal = vi.mocked(api.searchUserRequests).mock.calls[0][2]?.signal;
+
+    fireEvent.change(input, { target: { value: 'abc' } });
+    expect(firstSignal?.aborted).toBe(true);
+    await flush(250);
+    expect(api.searchUserRequests).toHaveBeenCalledTimes(2);
+    expect(api.searchUserRequests).toHaveBeenLastCalledWith('test-api-key', 'abc', expect.objectContaining({ limit: 50 }));
+
+    // The superseded request resolves after the fresh one; its results must not win.
+    stale.resolve({ results: [makeRequest('s1'), makeRequest('s2'), makeRequest('s3')] });
+    await flush();
+
+    expect(screen.getAllByText('Consumed')).toHaveLength(1);
+    const count = screen.getByRole('status', { name: /search result count/i });
+    expect(within(count).getByText('1')).toBeInTheDocument();
+  });
+
+  it('clearing the search cancels a pending debounced request', async () => {
+    render(<UserRequestsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /search history/i }));
+    await flush();
+
+    const input = screen.getByRole('textbox', { name: /search directive history/i });
+    fireEvent.change(input, { target: { value: 'abc' } });
+    fireEvent.click(screen.getByRole('button', { name: /clear search/i }));
+    await flush(1000);
+
+    expect(api.searchUserRequests).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserRequestsPage accessibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useApiKey).mockReturnValue({ apiKey: 'test-api-key', isToolConsoleLocked: false, status: 'valid' });
+    vi.mocked(api.listUserRequests).mockResolvedValue({ pending: [], consumed: [makeRequest('c1')], total_consumed: 1 });
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all' });
+  });
+
+  it('exposes the return mode as pressed toggle buttons', async () => {
+    render(<UserRequestsPage />);
+
+    const group = screen.getByRole('group', { name: /return mode/i });
+    const all = within(group).getByRole('button', { name: 'All commands' });
+    const first = within(group).getByRole('button', { name: 'First (earliest) only' });
+    expect(all).toHaveAttribute('aria-pressed', 'true');
+    expect(first).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(first);
+    expect(all).toHaveAttribute('aria-pressed', 'false');
+    expect(first).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(api.setReturnModeOnServer).toHaveBeenCalledWith('test-api-key', 'first'));
+  });
+
+  it('names the composer and icon-only controls and reports the description toggle state', async () => {
+    render(<UserRequestsPage />);
+
+    expect(screen.getByRole('textbox', { name: /create user directive/i })).toBeInTheDocument();
+
+    const toggle = screen.getByRole('button', { name: /hide info/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveAttribute('aria-controls', 'user-requests-description');
+    expect(document.getElementById('user-requests-description')).not.toBeNull();
+
+    expect(screen.getByRole('button', { name: /search history/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /choose what to delete/i })).toBeInTheDocument();
+  });
+
+  it('announces image attachment errors', async () => {
+    render(<UserRequestsPage />);
+    const textarea = screen.getByRole('textbox', { name: /create user directive/i });
+    const files = Array.from({ length: 6 }, (_, i) => new File(['x'], `f${i}.txt`, { type: 'text/plain' }));
+    fireEvent.paste(textarea, { clipboardData: { items: files.map((file) => ({ kind: 'file', getAsFile: () => file })) } });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/5 image limit reached/i);
   });
 });

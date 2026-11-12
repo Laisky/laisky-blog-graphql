@@ -8,8 +8,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
 
+import { createVisibilityPoller } from '../shared/visibility-poller';
 import { listRequests, submitAnswer, type AskUserRequest } from './api';
 
+/** POLL_INTERVAL_MS is the background refresh cadence for pending questions. */
+const POLL_INTERVAL_MS = 5000;
+/** POLL_RETRY_MS is the backoff after a failed refresh. */
+const POLL_RETRY_MS = 8000;
+
+/** AskUserPage lists pending ask_user questions, collects answers and shows history. */
 export function AskUserPage() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
   const [pendingRequests, setPendingRequests] = useState<AskUserRequest[]>([]);
@@ -18,9 +25,7 @@ export function AskUserPage() {
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
   const [pendingSubmissions, setPendingSubmissions] = useState<Record<string, boolean>>({});
 
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollControlsRef = useRef<{
-    schedule: (delay: number) => void;
     refresh: () => void;
   } | null>(null);
 
@@ -33,64 +38,38 @@ export function AskUserPage() {
     }
 
     let disposed = false;
-    let inFlight: AbortController | null = null;
 
-    async function fetchData(initial: boolean) {
-      if (disposed) return;
-
+    // The poller chains each refresh after the previous one settles, skips ticks
+    // while the tab is hidden, and refreshes once when the tab becomes visible.
+    const poller = createVisibilityPoller(async ({ signal, reason, priority }) => {
+      const initial = reason === 'initial';
       if (initial) {
         setIsLoading(true);
       }
 
-      if (inFlight) {
-        inFlight.abort();
-      }
-      const controller = new AbortController();
-      inFlight = controller;
-
       try {
-        const data = await listRequests(apiKey, controller.signal);
-        if (disposed) return;
+        const data = await listRequests(apiKey, signal, priority);
+        if (disposed || signal.aborted) return null;
 
         setPendingRequests(data.pending ?? []);
         setHistoryRequests(data.history ?? []);
-        schedule(5000);
+        return POLL_INTERVAL_MS;
       } catch {
-        if (disposed || controller.signal.aborted) return;
-        schedule(8000);
+        if (disposed || signal.aborted) return null;
+        return POLL_RETRY_MS;
       } finally {
         if (initial && !disposed) {
           setIsLoading(false);
         }
       }
-    }
+    });
 
-    function schedule(delay: number) {
-      if (disposed) return;
-      if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
-      }
-      pollTimerRef.current = setTimeout(() => {
-        fetchData(false);
-      }, delay);
-    }
-
-    pollControlsRef.current = {
-      schedule,
-      refresh: () => fetchData(false),
-    };
-
-    fetchData(true);
+    pollControlsRef.current = poller;
+    poller.start();
 
     return () => {
       disposed = true;
-      if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
-      if (inFlight) {
-        inFlight.abort();
-      }
+      poller.dispose();
       pollControlsRef.current = null;
     };
   }, [apiKey, isToolConsoleLocked]);
@@ -118,7 +97,7 @@ export function AskUserPage() {
       try {
         await submitAnswer(key, requestId, draft);
         setDraftAnswers((prev) => ({ ...prev, [requestId]: '' }));
-        pollControlsRef.current?.schedule(0);
+        pollControlsRef.current?.refresh();
       } catch (error) {
         console.error('Failed to submit answer:', error);
       } finally {
@@ -203,6 +182,7 @@ function PendingRequestCard({
   onSubmit: (id: string) => void;
   disabled: boolean;
 }) {
+  const questionId = `ask-user-question-${request.id}`;
   return (
     <Card className="border border-primary/30 bg-card shadow-sm">
       <CardHeader className="gap-2">
@@ -211,10 +191,13 @@ function PendingRequestCard({
           <span>Asked: {formatDate(request.created_at)}</span>
           {request.ai_identity && <span>AI: {request.ai_identity}</span>}
         </div>
-        <CardTitle className="text-base font-semibold text-foreground">{request.question}</CardTitle>
+        <CardTitle id={questionId} className="text-base font-semibold text-foreground">
+          {request.question}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <Textarea
+          aria-labelledby={questionId}
           value={draftValue}
           onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onDraftChange(request.id, event.target.value)}
           placeholder="Provide your answer…"

@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
+import { isImeComposingKeyDown } from '../shared/ime';
+
 const STORAGE_KEY = 'mcp-task-id-history';
 // MAX_HISTORY_ITEMS caps the number of unpinned task IDs kept in history.
 const MAX_HISTORY_ITEMS = 10;
@@ -221,6 +223,7 @@ export function TaskIdSelector({
         case 'Enter':
           if (isOpen && highlightedIndex >= 0) {
             event.preventDefault();
+            if (isImeComposingKeyDown(event)) return;
             const entry = filteredEntries[highlightedIndex];
             if (entry) {
               handleSelectEntry(entry);
@@ -318,6 +321,7 @@ export function TaskIdSelector({
               onClick={handleClear}
               className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
               title="Clear"
+              aria-label="Clear task ID"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -332,6 +336,8 @@ export function TaskIdSelector({
                 disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted hover:text-foreground'
               )}
               title="Show recent task IDs"
+              aria-label="Show recent task IDs"
+              aria-expanded={isOpen}
             >
               <ChevronDown className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-180')} />
             </button>

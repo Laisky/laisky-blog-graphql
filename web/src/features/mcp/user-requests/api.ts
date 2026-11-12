@@ -304,12 +304,18 @@ function appendTaskScope(params: URLSearchParams, scope?: TaskScopeOptions) {
   }
 }
 
+/**
+ * listUserRequests fetches pending and consumed requests across all tasks.
+ * Pass priority 'low' only for background polls so they yield bandwidth to
+ * requests the user is actively waiting on.
+ */
 export async function listUserRequests(
   apiKey: string,
   options?: {
     cursor?: string;
     limit?: number;
     signal?: AbortSignal;
+    priority?: RequestPriority;
   }
 ): Promise<UserRequestListResponse> {
   const authorization = ensureAuthorization(apiKey);
@@ -330,6 +336,7 @@ export async function listUserRequests(
       Pragma: 'no-cache',
     },
     signal: options?.signal,
+    ...(options?.priority ? { priority: options.priority } : {}),
   }, 'user-requests');
 
   if (!response.ok) {
@@ -773,8 +780,9 @@ export interface HoldState {
 
 /**
  * getHoldState retrieves the current hold state for the authenticated user.
+ * Pass priority 'low' only for background countdown polls.
  */
-export async function getHoldState(apiKey: string, taskId?: string, signal?: AbortSignal): Promise<HoldState> {
+export async function getHoldState(apiKey: string, taskId?: string, signal?: AbortSignal, priority?: RequestPriority): Promise<HoldState> {
   const authorization = ensureAuthorization(apiKey);
   const apiBasePath = resolveToolApiBase('get_user_requests');
   const params = new URLSearchParams();
@@ -790,6 +798,7 @@ export async function getHoldState(apiKey: string, taskId?: string, signal?: Abo
       Pragma: 'no-cache',
     },
     signal,
+    ...(priority ? { priority } : {}),
   }, 'user-requests');
 
   if (!response.ok) {

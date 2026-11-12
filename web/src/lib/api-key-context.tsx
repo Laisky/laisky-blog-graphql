@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 const CURRENT_KEY_STORAGE = 'mcp_api_key';
 const HISTORY_STORAGE = 'mcp_api_key_history';
@@ -240,8 +240,13 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     saveKeyEntries(keyEntries);
   }, [keyEntries]);
 
-  const validateApiKey = useCallback(
-    async (keyToValidate?: string) => {
+  const apiKeyRef = useRef(apiKey);
+  useEffect(() => {
+    apiKeyRef.current = apiKey;
+  }, [apiKey]);
+
+  const runValidation = useCallback(
+    async (keyToValidate: string | undefined, background: boolean) => {
       const key = normalizeApiKey(keyToValidate ?? apiKey);
       if (!key) {
         setStatus('none');
@@ -249,7 +254,13 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setStatus('validating');
+      // A background re-check must not flip the status to "validating": that status locks every
+      // tool console, which would disable inputs and drop keyboard focus on each poll tick.
+      if (!background) {
+        setStatus('validating');
+      }
+      // Background results are only applied while the checked key is still the active one.
+      const isCurrent = () => !background || apiKeyRef.current === key;
       try {
         const resp = await fetch('/query/', {
           method: 'POST',
@@ -260,15 +271,23 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
             query: VALIDATE_API_KEY_QUERY,
             variables: { apiKey: key },
           }),
+          ...(background ? { priority: 'low' as const } : {}),
         });
 
         if (!resp.ok) {
+          // A failed background request says nothing new about the key; keep the known status.
+          if (background) {
+            return;
+          }
           setStatus('error');
           setRemainQuota(null);
           return;
         }
 
         const body = await resp.json();
+        if (!isCurrent()) {
+          return;
+        }
         if (body.errors) {
           console.error('graphql errors', body.errors);
           setStatus('error');
@@ -287,6 +306,9 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
         }
       } catch (err) {
         console.error('failed to validate api key', err);
+        if (background) {
+          return;
+        }
         setStatus('error');
         setRemainQuota(null);
       }
@@ -294,18 +316,39 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     [apiKey]
   );
 
-  // Poll for quota if insufficient
+  const validateApiKey = useCallback((keyToValidate?: string) => runValidation(keyToValidate, false), [runValidation]);
+
+  // Re-check the quota in the background while it is insufficient, so the console unlocks
+  // once the balance is topped up. Hidden tabs skip the check and catch up when shown again.
   useEffect(() => {
     if (status !== 'insufficient' || !apiKey) {
       return;
     }
 
-    const timer = setInterval(() => {
-      validateApiKey();
-    }, 10000); // 10s polling
+    let inFlight = false;
+    const recheck = () => {
+      if (inFlight || document.visibilityState === 'hidden') {
+        return;
+      }
+      inFlight = true;
+      void runValidation(undefined, true).finally(() => {
+        inFlight = false;
+      });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        recheck();
+      }
+    };
 
-    return () => clearInterval(timer);
-  }, [status, apiKey, validateApiKey]);
+    const timer = setInterval(recheck, 10000); // 10s polling
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [status, apiKey, runValidation]);
 
   // Validate on mount if status is unknown or needs check
   useEffect(() => {

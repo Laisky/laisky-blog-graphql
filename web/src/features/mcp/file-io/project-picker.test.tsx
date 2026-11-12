@@ -70,6 +70,14 @@ describe('editable project picker', () => {
     expect(input().value).toBe('');
     expect(input().getAttribute('aria-expanded')).toBe('true');
   });
+  it('does not select an option on the IME-confirming Enter that Safari reports as keyCode 229', async () => {
+    render(<Harness />); fireEvent.focus(input()); await tick(); fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    fireEvent.keyDown(input(), { key: 'Enter', keyCode: 229 });
+    expect(input().value).toBe('');
+    expect(input().getAttribute('aria-expanded')).toBe('true');
+    fireEvent.keyDown(input(), { key: 'Enter', keyCode: 13 });
+    expect(input().value).not.toBe('');
+  });
   it('honors a rejected project change without clearing the current list', async () => {
     render(<Harness allow={false} />); fireEvent.focus(input()); await tick();
     fireEvent.click(screen.getByRole('option', { name: 'alpha' }));
