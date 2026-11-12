@@ -27,6 +27,8 @@ interface GithubOAuthLoginResponse {
   };
 }
 
+// SsoGithubCallbackPage completes a GitHub OAuth sign-in from the callback query
+// parameters, stores the issued session, and hands it to the validated target.
 export function SsoGithubCallbackPage() {
   const [searchParams] = useSearchParams();
   const code = useMemo(() => searchParams.get('code') ?? '', [searchParams]);
@@ -91,9 +93,10 @@ export function SsoGithubCallbackPage() {
                 <LaiskyLink className="text-primary underline-offset-4 hover:underline">Laisky</LaiskyLink> SSO
               </span>
             </Link>
-            <div className="flex justify-center">
-              <Github className="h-8 w-8 text-primary" />
-            </div>
+            <h1 className="flex justify-center">
+              <Github className="h-8 w-8 text-primary" aria-hidden="true" />
+              <span className="sr-only">Signing in with GitHub</span>
+            </h1>
           </CardHeader>
           <CardContent className="pt-6">
             <StatusBanner status={status} />

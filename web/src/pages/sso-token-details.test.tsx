@@ -94,4 +94,15 @@ describe('SsoTokenDetailsPage', () => {
 
     expect(screen.getByText('header.payload.signature').closest('pre')).toHaveClass('max-w-full');
   });
+
+  it('marks each metadata section with a level-two heading under the page h1', () => {
+    storeSsoToken('header.payload.signature');
+
+    renderTokenPage();
+
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    for (const name of ['Public Key', 'Claims Schema', 'Current Token', 'Decoded Token JSON']) {
+      expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
+    }
+  });
 });

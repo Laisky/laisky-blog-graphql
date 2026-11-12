@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchGraphQL } from '@/lib/graphql';
+import { getPasskeyCredentialJSON } from '@/lib/passkey';
 import { loadSsoToken, storeSsoToken } from '@/lib/sso-session';
 
 import {
@@ -30,6 +31,19 @@ vi.mock('@/lib/graphql', () => ({
   fetchGraphQL: vi.fn(),
 }));
 
+// The passkey ceremony needs WebAuthn, which jsdom lacks; mock the credential call
+// so tests can drive success, cancellation and failure.
+vi.mock('@/lib/passkey', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/passkey')>();
+  return { ...actual, getPasskeyCredentialJSON: vi.fn() };
+});
+
+// Keep the Cloudflare script out of jsdom; the challenge container still renders.
+vi.mock('@/pages/sso-turnstile', () => ({
+  getTurnstileAPI: () => undefined,
+  loadTurnstileScript: () => new Promise(() => {}),
+}));
+
 // Capture navigations so profile redirects can be asserted without a real router.
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -49,6 +63,7 @@ beforeEach(() => {
   mockNavigate.mockReset();
   assignMock.mockReset();
   vi.mocked(fetchGraphQL).mockReset();
+  vi.mocked(getPasskeyCredentialJSON).mockReset();
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: {
@@ -571,5 +586,145 @@ describe('SsoLoginPage session detection', () => {
     expect(await loginButton()).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(assignMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('SsoLoginPage accessibility', () => {
+  const renderPage = (props: { turnstileSiteKey?: string } = {}) =>
+    render(
+      <MemoryRouter initialEntries={['/sso/login']}>
+        <SsoLoginPage {...props} />
+      </MemoryRouter>
+    );
+
+  const fillPasswordLogin = () => {
+    fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: 'alice' } });
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'correct horse' } });
+  };
+
+  it('names the page with a single level-one heading', () => {
+    renderPage();
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent(/laisky sso/i);
+  });
+
+  it('exposes the selected segment of each toggle through aria-pressed', () => {
+    renderPage();
+    const signIn = screen.getByRole('button', { name: 'Sign in' });
+    const register = screen.getByRole('button', { name: 'Register' });
+    const password = screen.getByRole('button', { name: 'Password' });
+    const emailCode = screen.getByRole('button', { name: 'Email Code' });
+
+    expect(signIn).toHaveAttribute('aria-pressed', 'true');
+    expect(register).toHaveAttribute('aria-pressed', 'false');
+    expect(password).toHaveAttribute('aria-pressed', 'true');
+    expect(emailCode).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(emailCode);
+    expect(emailCode).toHaveAttribute('aria-pressed', 'true');
+    expect(password).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(register);
+    expect(register).toHaveAttribute('aria-pressed', 'true');
+    expect(signIn).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('posts the credential form and treats the account as an uncorrected required identifier', () => {
+    renderPage();
+    const account = screen.getByLabelText('Account ID');
+
+    expect(account).toBeRequired();
+    expect(account).toHaveAttribute('spellcheck', 'false');
+    expect(account).toHaveAttribute('autocapitalize', 'none');
+    expect(account).toHaveAttribute('autocorrect', 'off');
+    // JavaScript handles submission, but credentials must never land in a GET URL.
+    expect(account.closest('form')).toHaveAttribute('method', 'post');
+  });
+
+  it('marks only the fields rendered for the current mode as required', () => {
+    renderPage();
+    expect(screen.getByLabelText('Passphrase')).toBeRequired();
+    expect(screen.queryByLabelText('Email Code')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Email Code' }));
+    expect(screen.getByLabelText('Email Code')).toBeRequired();
+    expect(screen.queryByLabelText('Passphrase')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    expect(screen.getByLabelText('Display Name')).toBeRequired();
+    expect(screen.getByLabelText('Passphrase')).toBeRequired();
+    expect(screen.getByLabelText('Email Code')).toBeRequired();
+  });
+
+  it('lets a complete email-code login submit despite the hidden password field', async () => {
+    vi.mocked(fetchGraphQL).mockRejectedValueOnce(new Error('invalid code'));
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Email Code' }));
+    fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: 'alice' } });
+    fireEvent.change(screen.getByLabelText('Email Code'), { target: { value: '123456' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /^login$/i }));
+
+    await waitFor(() =>
+      expect(fetchGraphQL).toHaveBeenCalledWith('', expect.stringContaining('UserLoginWithEmailCode'), expect.objectContaining({ account: 'alice' }))
+    );
+  });
+
+  it('reveals a required TOTP field described by its instructions', async () => {
+    vi.mocked(fetchGraphQL).mockRejectedValueOnce(new Error('totp_required'));
+    renderPage();
+    fillPasswordLogin();
+
+    fireEvent.click(screen.getByRole('button', { name: /^login$/i }));
+
+    const totp = await screen.findByLabelText('TOTP Code');
+    expect(totp).toBeRequired();
+    expect(totp).toHaveAccessibleDescription('Enter the 6-digit code from your authenticator app.');
+  });
+
+  it('names the security check group instead of leaving an orphan label', async () => {
+    vi.mocked(fetchGraphQL).mockRejectedValueOnce(new Error('turnstile_required'));
+    const { container } = renderPage({ turnstileSiteKey: 'site-key' });
+    fillPasswordLogin();
+
+    fireEvent.click(screen.getByRole('button', { name: /^login$/i }));
+
+    const group = await screen.findByRole('group', { name: 'Security Check' });
+    expect(group).toBeInTheDocument();
+    // Every remaining label must point at a real control.
+    for (const label of Array.from(container.querySelectorAll('label'))) {
+      const target = label.getAttribute('for');
+      expect(target).toBeTruthy();
+      expect(container.querySelector(`#${target}`)).not.toBeNull();
+    }
+  });
+
+  it('treats a cancelled passkey prompt as neutral information, not an error', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValueOnce({ UserStartPasskeyLogin: { options_json: '{}', session: 'passkey-session' } });
+    vi.mocked(getPasskeyCredentialJSON).mockRejectedValueOnce(
+      new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError')
+    );
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /sign in with passkey/i }));
+
+    expect(await screen.findByText('Passkey sign-in was cancelled.')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/timed out or was not allowed/i)).not.toBeInTheDocument();
+    // The finish mutation never runs after a cancelled ceremony.
+    expect(fetchGraphQL).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /sign in with passkey/i })).toBeEnabled();
+  });
+
+  it('still reports other passkey failures as errors', async () => {
+    vi.mocked(fetchGraphQL).mockResolvedValueOnce({ UserStartPasskeyLogin: { options_json: '{}', session: 'passkey-session' } });
+    vi.mocked(getPasskeyCredentialJSON).mockRejectedValueOnce(new Error('Passkeys are not supported by this browser.'));
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /sign in with passkey/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('Passkeys are not supported by this browser.')).toBeInTheDocument();
   });
 });
