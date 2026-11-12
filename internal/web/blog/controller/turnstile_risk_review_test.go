@@ -26,7 +26,7 @@ func TestAuthChallengeTrackerConcurrentGuessesAreBounded(t *testing.T) {
 			defer done.Done()
 			subject := tracker.subject(fmt.Sprintf("203.0.113.%d", i), "victim@example.com")
 			tracker.recordAttempt(subject.client)
-			decision := tracker.admit(subject, true)
+			decision := tracker.admit(subject)
 			if decision.admitted {
 				admitted.Add(1)
 			}
@@ -54,7 +54,7 @@ func TestAuthChallengeTrackerInfraOutcomeReleasesWithoutCounting(t *testing.T) {
 	tracker := newAuthChallengeTracker(time.Minute, 100, 15*time.Minute, 3, 100)
 	for i := range 10 {
 		subject := tracker.subject(fmt.Sprintf("203.0.113.%d", i), "outage@example.com")
-		decision := tracker.admit(subject, true)
+		decision := tracker.admit(subject)
 		require.True(t, decision.admitted, "attempt %d", i)
 		tracker.release(decision.reservation)
 	}
@@ -73,22 +73,22 @@ func TestAuthChallengeTrackerOneChallengeAdmitsOneGuessAtATime(t *testing.T) {
 		tracker.recordFailure(tracker.subject(fmt.Sprintf("198.51.100.%d", i), "victim@example.com"))
 	}
 	attacker := tracker.subject("192.0.2.10", "victim@example.com")
-	require.False(t, tracker.admit(attacker, true).admitted)
+	require.False(t, tracker.admit(attacker).admitted)
 
 	solved := tracker.admitVerified(attacker, "")
 	for range tracker.clearanceUses {
-		require.False(t, tracker.admit(attacker, true).admitted, "the allowance cannot be spent while the solving request is in flight")
+		require.False(t, tracker.admit(attacker).admitted, "the allowance cannot be spent while the solving request is in flight")
 	}
 	tracker.recordFailureFor(attacker, "")
 	tracker.release(solved)
-	require.False(t, tracker.admit(attacker, true).admitted, "a failure revokes the allowance")
+	require.False(t, tracker.admit(attacker).admitted, "a failure revokes the allowance")
 
 	owner := tracker.subject("192.0.2.20", "victim@example.com")
 	step1 := tracker.admitVerified(owner, "")
 	tracker.release(step1) // password accepted, TOTP prompt
-	step2 := tracker.admit(owner, true)
+	step2 := tracker.admit(owner)
 	require.True(t, step2.admitted, "the TOTP step spends the allowance")
-	require.False(t, tracker.admit(owner, true).admitted, "but only one step at a time")
+	require.False(t, tracker.admit(owner).admitted, "but only one step at a time")
 	tracker.release(step2.reservation)
 	require.True(t, tracker.admitWithoutChallenge(owner))
 }
@@ -202,52 +202,4 @@ func TestAuthChallengeTrackerFloodPrefersBelowThresholdEvictions(t *testing.T) {
 	require.Contains(t, tracker.accounts, victim.account)
 	require.Contains(t, tracker.accounts, two.account, "an account with two failures outranks single-failure junk")
 	require.False(t, tracker.accountsSaturated, "single-failure records are always evictable")
-}
-
-// TestAuthChallengeTrackerAccountGapForUnpresentableChallenge reproduces review
-// finding 4: where the client cannot present a challenge (BlogLogin, or a
-// host whose pair has no site key) the account signal must not deny the
-// owner, while the client signal still applies.
-func TestAuthChallengeTrackerAccountGapForUnpresentableChallenge(t *testing.T) {
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	tracker := newAuthChallengeTracker(time.Minute, 5, 15*time.Minute, 3, 10000)
-	tracker.now = func() time.Time { return now }
-
-	ip := 0
-	attack := func() {
-		ip++
-		attacker := tracker.subject(fmt.Sprintf("203.0.113.%d", ip%250), "victim@example.com")
-		tracker.recordAttempt(attacker.client)
-		decision := tracker.admit(attacker, true)
-		tracker.release(decision.reservation)
-		if decision.admitted {
-			tracker.recordFailure(attacker)
-		}
-	}
-
-	refused, gaps := 0, 0
-	for minute := range 24 * 60 {
-		now = time.Date(2026, 1, 1, 0, minute, 0, 0, time.UTC)
-		attack()
-		if minute%30 != 7 {
-			continue
-		}
-		victim := tracker.subject("198.51.100.77", "victim@example.com")
-		decision := tracker.admit(victim, false)
-		tracker.release(decision.reservation)
-		if !decision.admitted {
-			refused++
-		}
-		if decision.accountGap {
-			gaps++
-		}
-	}
-	require.Zero(t, refused, "an entry point that cannot show a challenge is never denied by the account signal")
-	require.Positive(t, gaps, "the gap is reported")
-
-	for range 3 {
-		tracker.recordFailure(tracker.subject("198.51.100.77", "victim@example.com"))
-	}
-	require.False(t, tracker.admit(tracker.subject("198.51.100.77", "victim@example.com"), false).admitted,
-		"the client signal still applies to the requester's own failures")
 }

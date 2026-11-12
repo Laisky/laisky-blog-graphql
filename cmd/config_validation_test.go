@@ -382,7 +382,7 @@ func TestValidateStartupConfigRejectsAmbiguousTurnstilePairs(t *testing.T) {
 	build := func(sites map[string]any, global string) configGetter {
 		web := map[string]any{"sites": sites}
 		if global != "" {
-			web["turnstile"] = map[string]any{"secret_key": global}
+			web["turnstile"] = map[string]any{"site_key": "global-widget", "secret_key": global}
 		}
 		return newMapConfigGetter(map[string]any{"settings": map[string]any{"web": web}})
 	}
@@ -420,6 +420,55 @@ func newMapConfigGetter(root map[string]any) configGetter {
 		}
 
 		return current
+	}
+}
+
+// TestValidateStartupConfigRequiresCompleteTurnstilePairs rejects challenges
+// the frontend cannot render and widget-only configurations that cannot verify.
+func TestValidateStartupConfigRequiresCompleteTurnstilePairs(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		pair      map[string]any
+		wantError bool
+	}{
+		{"absent", map[string]any{}, false},
+		{"complete", map[string]any{"site_key": "public", "secret_key": "private"}, false},
+		{"secret_only", map[string]any{"secret_key": "private"}, true},
+		{"widget_only", map[string]any{"site_key": "public"}, true},
+		{"blank_widget", map[string]any{"site_key": " ", "secret_key": "private"}, true},
+		{"non_string_widget", map[string]any{"site_key": 42, "secret_key": "private"}, true},
+		{"non_string_secret", map[string]any{"site_key": "public", "secret_key": false}, true},
+	} {
+		for _, location := range []string{"global", "site", "site_with_global", "site_with_default"} {
+			t.Run(tc.name+"/"+location, func(t *testing.T) {
+				web := map[string]any{}
+				if location == "global" {
+					web["turnstile"] = tc.pair
+				} else {
+					site := map[string]any{"host": "test.example"}
+					for k, v := range tc.pair {
+						site["turnstile_"+k] = v
+					}
+					sites := map[string]any{"test": site}
+					web["sites"] = sites
+					if location == "site_with_global" {
+						web["turnstile"] = map[string]any{"site_key": "fallback", "secret_key": "fallback-secret"}
+					}
+					if location == "site_with_default" {
+						sites["default"] = map[string]any{"host": "default.example", "default": true,
+							"turnstile_site_key": "fallback", "turnstile_secret_key": "fallback-secret"}
+					}
+				}
+				err := validateStartupConfigWithGetter(newMapConfigGetter(map[string]any{"settings": map[string]any{"web": web}}))
+				if tc.wantError {
+					require.Error(t, err)
+					require.Contains(t, err.Error(), "turnstile")
+					require.NotContains(t, err.Error(), "private")
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
 	}
 }
 

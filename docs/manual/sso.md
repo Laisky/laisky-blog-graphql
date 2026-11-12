@@ -778,7 +778,7 @@ Risk policy:
   within `failure_window_seconds`, counted across every client. The threshold
   defaults to `failure_threshold`. Failures count from every flow that names an
   account:
-  - `UserLogin` and `BlogLogin`, including the TOTP step;
+  - `UserLogin`, including the TOTP step;
   - `UserLoginWithEmailCode`;
   - `UserRequestEmailCode` with purpose `login` names the account but has no
     credential check.
@@ -805,16 +805,15 @@ Risk policy:
   The identity comes from the credential check that already runs, so there is
   no extra lookup. Clients always see the same `invalid credentials` error, so
   existence is not revealed beyond what the challenge behavior itself implies.
-- The account signal demands a challenge only where the client can present one.
-  The entry point must accept a token, and the host's pair must have a widget
-  key. The deprecated `BlogLogin` accepts no token, and a pair without a site
-  key renders no widget. There only the client signal applies, so a third party
-  cannot keep an owner out. Such gaps are logged as a warning at most once a
-  minute, with a count of the suppressed ones.
+- Every enabled credential login applies the account signal. Turnstile site keys
+  and secrets must be configured as complete pairs; startup rejects partial
+  pairs, including nondefault sites. Pairless alias hosts may use a configured
+  default pair. Dynamic incomplete secret-only configuration fails unavailable,
+  not with a challenge the frontend cannot render.
 - The policy only ever asks for a Turnstile challenge. It never locks an account
   out. Once the challenge is solved, the request proceeds.
 - A fully successful sign-in resets the failure counts of that client, that
-  spelling and that account identity.
+  account identity and every known spelling of that identity. Concurrent in-flight reservations remain intact; a later failure counts again.
 - Only rejections caused by the submitted credentials count as failures. A
   database or signing outage returns `login_unavailable` and never counts,
   against either the client or the account. Its in-flight reservation is still
@@ -866,7 +865,7 @@ settings:
         max_tracked_accounts: 10000
 ```
 
-The deprecated `BlogLogin` mutation cannot carry a Turnstile token. When the client itself is high risk, that legacy path fails closed and clients must use `UserLogin`. An account flagged by failures from other clients does not block it (see above); its failures still count toward the account for every other flow.
+The `BlogLogin` mutation has been removed by owner decision (2026-11-12), not retained as a weaker-security exception. Clients must migrate to `UserLogin(account, password, turnstile_token, totp_code)` or `UserLoginWithEmailCode`. The existing `BlogLoginResponse` type name, modern response fields, stored accounts/passwords and token formats remain unchanged. Requests naming the removed mutation fail GraphQL validation before credential lookup. No production migration is performed by this patch.
 
 ## GraphQL API Reference
 

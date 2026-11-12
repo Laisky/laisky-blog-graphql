@@ -123,8 +123,6 @@ type Mutation {
   BlogDeleteComment(commentId: String!): Comment!
 
   # login
-  # Deprecated: use UserLogin instead
-  BlogLogin(account: String!, password: String!): BlogLoginResponse!
   UserLogin(account: String!, password: String!, turnstile_token: String, totp_code: String): BlogLoginResponse!
   UserLoginWithEmailCode(account: String!, email_code: String!, turnstile_token: String): BlogLoginResponse!
   UserRequestEmailCode(account: String!, purpose: String!, turnstile_token: String): UserEmailCodeResponse!

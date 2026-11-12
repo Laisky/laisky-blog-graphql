@@ -75,7 +75,54 @@ func validateClientIdentityConfig(get configGetter, errs *[]string) {
 	} {
 		validateOptionalIntMin(get, key, 0, errs)
 	}
+	validateTurnstilePairs(get, errs)
 	validateTurnstileSecretSelection(get, errs)
+}
+
+// validateTurnstilePairs requires each configured widget and verifier to be
+// present together. Validate every pair before fallback selection: even a
+// non-default site can be selected by its host and must render its challenge.
+func validateTurnstilePairs(get configGetter, errs *[]string) {
+	validateTurnstilePair("settings.web.turnstile", "site_key", "secret_key",
+		get("settings.web.turnstile.site_key"), get("settings.web.turnstile.secret_key"), errs)
+	sites := toStringMap(get("settings.web.sites"))
+	keys := make([]string, 0, len(sites))
+	for key := range sites {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		site := toStringMap(sites[key])
+		if site == nil {
+			continue
+		}
+		validateTurnstilePair("settings.web.sites."+key, "turnstile_site_key", "turnstile_secret_key",
+			site["turnstile_site_key"], site["turnstile_secret_key"], errs)
+	}
+}
+
+// validateTurnstilePair validates types and completeness without exposing keys.
+func validateTurnstilePair(base, siteKeyName, secretKeyName string, rawSiteKey, rawSecretKey any, errs *[]string) {
+	values := [2]string{}
+	valid := true
+	for i, item := range []struct {
+		name string
+		raw  any
+	}{{siteKeyName, rawSiteKey}, {secretKeyName, rawSecretKey}} {
+		if item.raw == nil {
+			continue
+		}
+		value, err := parseStrictString(item.raw)
+		if err != nil {
+			appendValidationErrorf(errs, "%s.%s must be a string", base, item.name)
+			valid = false
+			continue
+		}
+		values[i] = strings.TrimSpace(value)
+	}
+	if valid && (values[0] == "") != (values[1] == "") {
+		appendValidationErrorf(errs, "%s: %s and %s must both be set or both be unset", base, siteKeyName, secretKeyName)
+	}
 }
 
 // validateTurnstileSecretSelection rejects a Turnstile configuration in which

@@ -49,8 +49,7 @@ risk key, IPv6 /64 grouping, and the bounded account-keyed failure budget that s
 client-address rotation ([client identity](client_identity.md)). They also cover a request
 host that can select but never disable the Turnstile pair, `X-Forwarded-Host` honored only
 from trusted proxies, in-flight reservations against concurrent guesses, collation-folded
-and identity-unified account keys, the presentable-challenge rule that keeps owners from
-being locked out, and a flood that cannot evict an attacked account.
+and identity-unified account keys, complete-pair validation, legacy mutation retirement, alias reset and concurrent reservation preservation, and a flood that cannot evict an attacked account.
 
 The SSO selections run the shared redirect-policy and registry vectors that the
 frontend tests also consume, the registered-client code issuance and redemption

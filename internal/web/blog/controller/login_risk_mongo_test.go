@@ -396,25 +396,6 @@ func TestMongoConcurrentGuessesRespectAccountBudget(t *testing.T) {
 	require.EqualValues(t, n, checked.Load()+challenged.Load())
 }
 
-// TestMongoBlogLoginOwnerIsNotLockedOut reproduces review finding 4: a third
-// party failing against an account from fresh addresses must not keep its
-// owner out of the legacy BlogLogin, which cannot present a challenge.
-func TestMongoBlogLoginOwnerIsNotLockedOut(t *testing.T) {
-	h := newLoginRiskHarness(t)
-	stubTurnstile(t, true)
-	password := h.insertUser(t, "legacy-owner@example.test", nil)
-	for i := range 3 {
-		_, err := h.resolver.UserLogin(requestContext(t, fmt.Sprintf("198.51.100.%d", 160+i)), "legacy-owner@example.test", "wrong", nil, nil)
-		require.ErrorIs(t, err, model.ErrInvalidCredentials)
-	}
-	_, err := h.resolver.UserLogin(requestContext(t, "198.51.100.170"), "legacy-owner@example.test", password, nil, nil)
-	require.ErrorIs(t, err, model.ErrTurnstileRequired, "token-capable flows are still challenged")
-
-	resp, err := h.resolver.BlogLogin(requestContext(t, "192.0.2.77"), "legacy-owner@example.test", password)
-	require.NoError(t, err, "the owner's legacy login is not denied by someone else's failures")
-	require.NotEmpty(t, resp.Token)
-}
-
 // TestMongoAccountBudgetFoldsSpellingVariants reproduces review finding 3
 // end to end: guesses spread over case, accent and width variants of one
 // account share its budget.
@@ -444,4 +425,23 @@ func TestMongoWrongPasswordCarriesAccountIdentity(t *testing.T) {
 	_, err = h.resolver.svc.ValidateLogin(context.Background(), "nobody@example.test", "wrong")
 	require.ErrorIs(t, err, model.ErrInvalidCredentials)
 	require.Empty(t, model.RejectedIdentity(err))
+}
+
+// TestMongoSigningFailureDoesNotResetRisk verifies only a delivered login response clears failures.
+func TestMongoSigningFailureDoesNotResetRisk(t *testing.T) {
+	h := newLoginRiskHarness(t)
+	stubTurnstile(t, true)
+	password := h.insertUser(t, "signing@example.test", nil)
+	ctx := requestContext(t, "192.0.2.80")
+	_, err := h.resolver.UserLogin(ctx, "signing@example.test", "wrong", nil, nil)
+	require.ErrorIs(t, err, model.ErrInvalidCredentials)
+	gconfig.Shared.Set("settings.web.sso_jwt.private_key", "invalid-test-key")
+	_, err = h.resolver.UserLogin(ctx, "signing@example.test", password, nil, nil)
+	require.ErrorIs(t, err, model.ErrLoginUnavailable)
+	require.Equal(t, 1, h.failures("192.0.2.80"), "failed token issuance must not reset prior risk")
+	gconfig.Shared.Set("settings.web.sso_jwt.private_key", "")
+	resp, err := h.resolver.UserLogin(ctx, "signing@example.test", password, nil, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.Token)
+	require.Zero(t, h.failures("192.0.2.80"), "successful issuance resets risk")
 }

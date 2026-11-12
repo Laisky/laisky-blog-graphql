@@ -370,8 +370,12 @@ func (r *MutationResolver) UserLoginWithEmailCode(ctx context.Context,
 		return nil, clientErr
 	}
 
+	response, responseErr := r.newLoginResponse(ctx, user)
+	if responseErr != nil {
+		return nil, responseErr
+	}
 	attempt.succeeded(user.RiskIdentity())
-	return r.newLoginResponse(ctx, user)
+	return response, nil
 }
 
 // UserRequestEmailCode sends a one-time SSO email verification code.
@@ -492,24 +496,6 @@ func (r *MutationResolver) BlogCreatePost(ctx context.Context,
 		newpost.Type.String())
 }
 
-// BlogLogin authenticates legacy clients with the provided account and password.
-// It accepts a context, account, and password, returning the login response unless Turnstile requires the newer SSO flow.
-func (r *MutationResolver) BlogLogin(ctx context.Context,
-	account string,
-	password string,
-) (resp *models.BlogLoginResponse, err error) {
-	// The legacy mutation cannot carry a Turnstile token, so the account
-	// signal never applies here (a third party could otherwise keep the owner
-	// out); failures still count toward the account for the other flows.
-	attempt, err := admitAuthRequest(ctx, nil, authFlow{action: authActionLogin, account: account})
-	if err != nil {
-		return nil, maskLoginError(model.ErrInvalidCredentials)
-	}
-	defer attempt.finish()
-
-	return r.loginWithPassword(ctx, attempt, account, password, nil)
-}
-
 // loginWithPassword authenticates a user with password and optional TOTP code.
 // It accepts credentials and returns a signed JWT response when authentication succeeds.
 func (r *MutationResolver) loginWithPassword(ctx context.Context,
@@ -555,8 +541,12 @@ func (r *MutationResolver) loginWithPassword(ctx context.Context,
 		return nil, maskLoginError(model.ErrInvalidCredentials)
 	}
 
+	response, responseErr := r.newLoginResponse(ctx, user)
+	if responseErr != nil {
+		return nil, responseErr
+	}
 	attempt.succeeded(user.RiskIdentity())
-	return r.newLoginResponse(ctx, user)
+	return response, nil
 }
 
 // newLoginResponse signs an SSO JWT for a validated user.

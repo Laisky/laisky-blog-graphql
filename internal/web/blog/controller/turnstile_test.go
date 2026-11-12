@@ -169,18 +169,6 @@ func TestValidateTurnstileTokenRequiredForFrequentRegister(t *testing.T) {
 	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
 }
 
-// TestBlogLoginRejectedForHighRiskClient verifies the legacy login path enforces
-// the challenge for suspicious clients (masked as invalid credentials since the
-// legacy client cannot render a widget).
-func TestBlogLoginRejectedForHighRiskClient(t *testing.T) {
-	setTurnstileEnabledSite(t)
-	withAuthChallengeTracker(t, highRiskTrackerForUnknown())
-
-	_, err := (&MutationResolver{}).BlogLogin(context.Background(), "user@example.com", "password")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid credentials")
-}
-
 // TestValidateTurnstileTokenAccountBudgetAcrossAddresses verifies the login
 // gate challenges a request for an account that accumulated failures from
 // other addresses, while account-less flows from the same address are not.

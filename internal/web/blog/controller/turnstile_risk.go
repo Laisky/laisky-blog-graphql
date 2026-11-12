@@ -176,9 +176,6 @@ type authAdmission struct {
 	admitted bool
 	// identity is the identity key the account spelling resolved to, if known.
 	identity string
-	// accountGap reports that the account is high risk but the entry point
-	// cannot present a challenge, so only the client signal was applied.
-	accountGap bool
 	// reservation must be released once the outcome is known.
 	reservation authReservation
 }
@@ -250,11 +247,8 @@ func (t *authChallengeTracker) recordAttempt(clientKey string) {
 // Turnstile token. A request whose client and account are both low risk
 // always may; otherwise it may only by spending the client's solved-challenge
 // allowance, and only while no other request admitted by that allowance is in
-// flight. The account signal applies only when accountEscalation is true,
-// that is when the entry point can carry a token and the host can render the
-// widget. An admitted request reserves in-flight slots that the caller must
-// release.
-func (t *authChallengeTracker) admit(subject authRiskSubject, accountEscalation bool) authAdmission {
+// flight. An admitted request reserves in-flight slots that the caller must release.
+func (t *authChallengeTracker) admit(subject authRiskSubject) authAdmission {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -263,10 +257,6 @@ func (t *authChallengeTracker) admit(subject authRiskSubject, accountEscalation 
 	client, known := t.clients[subject.client]
 	clientRisky := known && t.highRiskLocked(subject.client, client, now)
 	accountRisky := t.accountRiskyLocked(subject.account, now) || t.accountRiskyLocked(decision.identity, now)
-	if accountRisky && !accountEscalation {
-		decision.accountGap = true
-		accountRisky = false
-	}
 
 	if !clientRisky && !accountRisky {
 		decision.admitted = true
@@ -363,7 +353,7 @@ func (t *authChallengeTracker) recordFailureFor(subject authRiskSubject, identit
 }
 
 // recordSuccessFor clears the failure history of the client, of the account
-// spelling and of its identity after a successful authentication, so a
+// spelling, its identity and every known alias after a successful authentication, so a
 // legitimate user is not challenged for past typos (NIST SP 800-63B-4 §3.2.2
 // resets the retry count of the authenticators used once authentication
 // succeeds). In-flight slots held by concurrent requests are kept.
@@ -374,14 +364,14 @@ func (t *authChallengeTracker) recordSuccessFor(subject authRiskSubject, identit
 	if identity == "" {
 		identity = t.aliasLocked(subject.account)
 	}
-	for _, key := range []string{subject.account, identity} {
-		account, ok := t.accounts[key]
-		if key == "" || !ok {
+	// The table is bounded by maxAccounts. Scan it under the existing mutex
+	// rather than maintaining a second alias index with independent eviction.
+	for key, account := range t.accounts {
+		if key != subject.account && (identity == "" || (key != identity && account.alias != identity)) {
 			continue
 		}
 		account.failures = nil
 		account.total = 0
-		account.alias = ""
 		if account.idle() {
 			delete(t.accounts, key)
 		}
