@@ -15,6 +15,7 @@ toolchain versions actually measured; they are not relabelled as Go 1.27.2 runs.
 The automatic `Linter / check` runs read-only gofmt and goimports checks plus
 the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
+`internal/library/ssoredirect`, `internal/web/blog/controller`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
 `internal/web/telegram/dao` and `internal/web/telegram/service`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
@@ -33,6 +34,13 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The SSO selections run the shared redirect-policy and registry vectors that the
+frontend tests also consume, the registered-client code issuance and redemption
+bindings, the start and completion re-checks of GitHub and passkey sign-in
+(including the completing-issuer check at GitHub start), private development
+targets, backslashes after the query or fragment, and startup validation of the
+redirect settings, all in process with miniredis.
 
 The Telegram selections also cover cancellation after refill, overlapping
 reservations, isolation of invalid credentials from delivery capacity, remote
