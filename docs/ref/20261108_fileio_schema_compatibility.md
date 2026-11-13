@@ -12,6 +12,14 @@ edits require the opaque version and allow create_only only omitted or false.
 Property descriptions/types/patterns and runtime precondition enforcement remain
 unchanged. No new operation, credential, storage format or deployment is involved.
 
+Checked November 13, 2026 with a stdio probe serving both serialized schemas:
+Claude Code flattens root properties and turns the union into a description line
+("exactly one of: (expected_version) or (create_only)"), so it was not affected.
+With complete branches the same line lists each branch's full required set, for
+example (project, path, content, expected_version); the declared parameters are
+identical. The fix therefore targets branch-oriented clients without regressing
+this merging client.
+
 Primary references consulted:
 - [JSON Schema composition](https://json-schema.org/understanding-json-schema/reference/combining):
   factoring sibling constraints is valid; oneOf means exactly one matching branch.

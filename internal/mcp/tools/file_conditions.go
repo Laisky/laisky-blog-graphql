@@ -93,13 +93,19 @@ func expectedFileVersionOption(required ...bool) mcp.ToolOption {
 // render each oneOf alternative independently and do not merge sibling fields.
 func requireFileWriteSchema() mcp.ToolOption {
 	return func(tool *mcp.Tool) {
+		rootCondition, ok := tool.InputSchema.Properties[createOnlyKey].(map[string]any)
+		if !ok {
+			// Every mutation tool declares create_only before this option; a missing
+			// property is a wiring error that must fail startup with a clear cause.
+			panic(errors.Errorf("file mutation tool %q must declare %s before its precondition schema", tool.Name, createOnlyKey))
+		}
 		branch := func(createOnly bool, required string) map[string]any {
 			properties := maps.Clone(tool.InputSchema.Properties)
-			condition := maps.Clone(properties[createOnlyKey].(map[string]any))
+			condition := maps.Clone(rootCondition)
 			condition["const"] = createOnly
 			properties[createOnlyKey] = condition
 			return map[string]any{
-				schemaTypeKey:       "object",
+				schemaTypeKey:       schemaTypeObject,
 				schemaPropertiesKey: properties,
 				schemaRequiredKey:   append(slices.Clone(tool.InputSchema.Required), required),
 			}
@@ -108,7 +114,7 @@ func requireFileWriteSchema() mcp.ToolOption {
 		create := branch(true, createOnlyKey)
 		create["not"] = map[string]any{schemaRequiredKey: []string{expectedVersionKey}}
 		schema := map[string]any{
-			schemaTypeKey: "object", schemaPropertiesKey: tool.InputSchema.Properties, schemaRequiredKey: tool.InputSchema.Required,
+			schemaTypeKey: schemaTypeObject, schemaPropertiesKey: tool.InputSchema.Properties, schemaRequiredKey: tool.InputSchema.Required,
 			"oneOf": []any{edit, create},
 		}
 		encoded, err := json.Marshal(schema)

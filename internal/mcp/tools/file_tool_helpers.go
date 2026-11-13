@@ -27,6 +27,8 @@ const (
 	schemaPropertiesKey = "properties"
 	// schemaTypeKey is the JSON Schema type keyword.
 	schemaTypeKey = "type"
+	// schemaTypeObject is the JSON Schema type value for an argument object.
+	schemaTypeObject = "object"
 	// schemaRequiredKey is the JSON Schema required-properties keyword.
 	schemaRequiredKey = "required"
 	// expectedVersionKey is the live CAS token argument.
