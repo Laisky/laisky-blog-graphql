@@ -9,6 +9,8 @@ import (
 
 	errs "github.com/Laisky/errors/v2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/storage"
 )
 
 // newImageTestService constructs a Service with a fresh sqlite DB and
@@ -36,6 +38,11 @@ func newImageTestService(t *testing.T, userIdentitySuffix string) (*Service, con
 	return svc, context.Background()
 }
 
+// testImageObjects returns an ImageObjectWriter backed by an in-memory store.
+func testImageObjects() ImageObjectWriter {
+	return NewImageManager(storage.NewFakeStore(), nil, ImageSettings{Enabled: true})
+}
+
 func makeUploadedImage(sha string, size int64) UploadedImage {
 	return UploadedImage{
 		SHA256:       sha,
@@ -51,7 +58,7 @@ func makeUploadedImage(sha string, size int64) UploadedImage {
 func TestCreateRequestWithImages_TextOnly(t *testing.T) {
 	svc, ctx := newImageTestService(t, "textonly")
 	auth := testAuth("imgtext-1", "aaaa")
-	req, err := svc.CreateRequestWithImages(ctx, auth, "hello", "", nil)
+	req, err := svc.CreateRequestWithImages(ctx, auth, "hello", "", nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, req.Images)
 	require.Equal(t, "hello", req.Content)
@@ -65,7 +72,7 @@ func TestCreateRequestWithImages_HappyPath(t *testing.T) {
 		makeUploadedImage(strings.Repeat("a", 64), 1000),
 		makeUploadedImage(strings.Repeat("b", 64), 2000),
 	}
-	req, err := svc.CreateRequestWithImages(ctx, auth, "analyze these", "", images)
+	req, err := svc.CreateRequestWithImages(ctx, auth, "analyze these", "", images, testImageObjects())
 	require.NoError(t, err)
 	require.Len(t, req.Images, 2)
 
@@ -82,7 +89,7 @@ func TestCreateRequestWithImages_ImageOnly(t *testing.T) {
 	auth := testAuth("imgonly-1", "aaaa")
 
 	img := makeUploadedImage(strings.Repeat("c", 64), 500)
-	req, err := svc.CreateRequestWithImages(ctx, auth, "", "", []UploadedImage{img})
+	req, err := svc.CreateRequestWithImages(ctx, auth, "", "", []UploadedImage{img}, testImageObjects())
 	require.NoError(t, err)
 	require.Empty(t, req.Content)
 	require.Len(t, req.Images, 1)
@@ -95,7 +102,7 @@ func TestCreateRequestWithImages_TooMany(t *testing.T) {
 	for i := range images {
 		images[i] = makeUploadedImage(fmt.Sprintf("%064d", i), 10)
 	}
-	_, err := svc.CreateRequestWithImages(ctx, auth, "x", "", images)
+	_, err := svc.CreateRequestWithImages(ctx, auth, "x", "", images, testImageObjects())
 	require.Error(t, err)
 	require.True(t, errs.Is(err, ErrTooManyImages))
 }
@@ -107,9 +114,9 @@ func TestCreateRequestWithImages_QuotaExceeded(t *testing.T) {
 	// Fill quota to 1 MiB with two distinct images.
 	first := makeUploadedImage(strings.Repeat("d", 64), 600*1024)
 	second := makeUploadedImage(strings.Repeat("e", 64), 500*1024)
-	_, err := svc.CreateRequestWithImages(ctx, auth, "ok", "", []UploadedImage{first})
+	_, err := svc.CreateRequestWithImages(ctx, auth, "ok", "", []UploadedImage{first}, testImageObjects())
 	require.NoError(t, err)
-	_, err = svc.CreateRequestWithImages(ctx, auth, "ok", "", []UploadedImage{second})
+	_, err = svc.CreateRequestWithImages(ctx, auth, "ok", "", []UploadedImage{second}, testImageObjects())
 	require.Error(t, err)
 	require.True(t, errs.Is(err, ErrQuotaExceeded))
 }
@@ -119,7 +126,7 @@ func TestCreateRequestWithImages_DedupRefreshesTTL(t *testing.T) {
 	auth := testAuth("imgdedup-1", "aaaa")
 
 	img := makeUploadedImage(strings.Repeat("f", 64), 100)
-	_, err := svc.CreateRequestWithImages(ctx, auth, "first", "", []UploadedImage{img})
+	_, err := svc.CreateRequestWithImages(ctx, auth, "first", "", []UploadedImage{img}, testImageObjects())
 	require.NoError(t, err)
 
 	usage, err := svc.QuotaUsage(ctx, auth)
@@ -128,7 +135,7 @@ func TestCreateRequestWithImages_DedupRefreshesTTL(t *testing.T) {
 	require.Equal(t, int64(1), usage.ObjectCount)
 
 	// Re-uploading the same SHA should not charge quota again.
-	_, err = svc.CreateRequestWithImages(ctx, auth, "second", "", []UploadedImage{img})
+	_, err = svc.CreateRequestWithImages(ctx, auth, "second", "", []UploadedImage{img}, testImageObjects())
 	require.NoError(t, err)
 	usage, err = svc.QuotaUsage(ctx, auth)
 	require.NoError(t, err)
@@ -141,7 +148,7 @@ func TestGCExpiredImageRefs(t *testing.T) {
 	auth := testAuth("imggc-1", "aaaa")
 
 	img := makeUploadedImage(strings.Repeat("7", 64), 100)
-	_, err := svc.CreateRequestWithImages(ctx, auth, "x", "", []UploadedImage{img})
+	_, err := svc.CreateRequestWithImages(ctx, auth, "x", "", []UploadedImage{img}, testImageObjects())
 	require.NoError(t, err)
 
 	// Fast-forward the service clock past the 7-day TTL.
@@ -162,7 +169,7 @@ func TestQuotaUsageIgnoresExpired(t *testing.T) {
 	auth := testAuth("imgexp-1", "aaaa")
 
 	img := makeUploadedImage(strings.Repeat("8", 64), 100)
-	_, err := svc.CreateRequestWithImages(ctx, auth, "x", "", []UploadedImage{img})
+	_, err := svc.CreateRequestWithImages(ctx, auth, "x", "", []UploadedImage{img}, testImageObjects())
 	require.NoError(t, err)
 
 	// Forward the clock well past expiry.
@@ -170,4 +177,89 @@ func TestQuotaUsageIgnoresExpired(t *testing.T) {
 	usage, err := svc.QuotaUsage(ctx, auth)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), usage.UsedBytes)
+}
+
+// TestCreateRequestWithImages_RevivingExpiredImageIsCharged pins proposal
+// §3.5: only a live ref is refreshed for free. An expired ref no longer counts
+// toward usage, so reviving it must pass the quota check like a new image;
+// otherwise a user could exceed the quota by re-attaching expired images.
+func TestCreateRequestWithImages_RevivingExpiredImageIsCharged(t *testing.T) {
+	svc, ctx := newImageTestService(t, "revive")
+	auth := testAuth("imgrevive-1", "aaaa")
+	start := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+	svc.clock = func() time.Time { return start }
+
+	old := makeUploadedImage(strings.Repeat("1", 64), 600*1024)
+	_, err := svc.CreateRequestWithImages(ctx, auth, "old", "", []UploadedImage{old}, testImageObjects())
+	require.NoError(t, err)
+
+	// After the TTL the old image no longer counts, so a new one fits.
+	svc.clock = func() time.Time { return start.Add(8 * 24 * time.Hour) }
+	fresh := makeUploadedImage(strings.Repeat("2", 64), 600*1024)
+	_, err = svc.CreateRequestWithImages(ctx, auth, "fresh", "", []UploadedImage{fresh}, testImageObjects())
+	require.NoError(t, err)
+
+	// Reviving the expired image would bring live usage to 1.2 MiB > 1 MiB.
+	_, err = svc.CreateRequestWithImages(ctx, auth, "revive", "", []UploadedImage{old}, testImageObjects())
+	require.Error(t, err)
+	require.True(t, errs.Is(err, ErrQuotaExceeded), "got %v", err)
+
+	usage, err := svc.QuotaUsage(ctx, auth)
+	require.NoError(t, err)
+	require.Equal(t, int64(600*1024), usage.UsedBytes)
+	require.LessOrEqual(t, usage.UsedBytes, usage.QuotaBytes)
+
+	// Within quota, the revived image is charged and its row refreshed.
+	other := testAuth("imgrevive-2", "bbbb")
+	small := makeUploadedImage(strings.Repeat("3", 64), 100)
+	svc.clock = func() time.Time { return start }
+	_, err = svc.CreateRequestWithImages(ctx, other, "small", "", []UploadedImage{small}, testImageObjects())
+	require.NoError(t, err)
+	svc.clock = func() time.Time { return start.Add(8 * 24 * time.Hour) }
+	usage, err = svc.QuotaUsage(ctx, other)
+	require.NoError(t, err)
+	require.Zero(t, usage.UsedBytes, "the expired image no longer counts")
+	_, err = svc.CreateRequestWithImages(ctx, other, "revive small", "", []UploadedImage{small}, testImageObjects())
+	require.NoError(t, err)
+	usage, err = svc.QuotaUsage(ctx, other)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), usage.UsedBytes, "the revived image is live and charged again")
+}
+
+// TestGCExpiredImageRefsKeepsRefRevivedDuringSweep reproduces the race between
+// the GC's candidate scan and a request that re-attaches the expired image
+// before the delete runs: the revived ref and its new link must survive,
+// otherwise the new request silently loses its image (and the reconciler
+// would then delete the object it still needs).
+func TestGCExpiredImageRefsKeepsRefRevivedDuringSweep(t *testing.T) {
+	svc, ctx := newImageTestService(t, "gcrace")
+	auth := testAuth("imggcrace-1", "aaaa")
+	start := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+	svc.clock = func() time.Time { return start }
+
+	img := makeUploadedImage(strings.Repeat("9", 64), 100)
+	_, err := svc.CreateRequestWithImages(ctx, auth, "first", "", []UploadedImage{img}, testImageObjects())
+	require.NoError(t, err)
+	_, err = svc.ConsumeAllPending(ctx, auth, "")
+	require.NoError(t, err)
+
+	later := start.Add(8 * 24 * time.Hour)
+	svc.clock = func() time.Time { return later }
+	expired, err := svc.expiredImageRefs(ctx, later)
+	require.NoError(t, err)
+	require.Len(t, expired, 1)
+	candidates := []string{expired[0].id}
+
+	// The image is re-attached between the scan and the delete.
+	_, err = svc.CreateRequestWithImages(ctx, auth, "second", "", []UploadedImage{img}, testImageObjects())
+	require.NoError(t, err)
+
+	deleted, err := svc.deleteExpiredImageRefs(ctx, candidates, later)
+	require.NoError(t, err)
+	require.Zero(t, deleted, "a revived ref must not be collected")
+
+	pending, err := svc.ConsumeAllPending(ctx, auth, "")
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.Len(t, pending[0].Images, 1, "the new request must keep its image")
 }

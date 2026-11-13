@@ -19,24 +19,45 @@ type URLFetcher interface {
 	Fetch(ctx context.Context, url string) (imageproc.FetchResult, error)
 }
 
-// ImageManager turns raw multipart / URL inputs into persisted RequestImage
-// records. It bundles the object store, URL fetcher, and image settings so
-// HTTP handlers stay thin.
+// ImageManager turns raw multipart / URL inputs into normalized images and
+// owns the object-store side of their lifecycle. It bundles the object store,
+// URL fetcher, decode budget, and image settings so HTTP handlers stay thin.
 type ImageManager struct {
 	store    storage.ObjectStore
 	fetcher  URLFetcher
 	settings ImageSettings
+	budget   *imageproc.DecodeBudget
+	creates  *imageCreateLimiter
 }
 
 // NewImageManager constructs an ImageManager. store is required; fetcher may
 // be nil when image_url inputs are not accepted (e.g. in tests that only feed
-// uploaded files).
+// uploaded files). Every image the manager normalizes is admitted through one
+// decode budget sized by settings.DecodeMemoryBudgetBytes, and create
+// requests are capped by settings.MaxConcurrentCreates (per process) and
+// settings.MaxConcurrentCreatesPerUser.
 func NewImageManager(store storage.ObjectStore, fetcher URLFetcher, settings ImageSettings) *ImageManager {
 	return &ImageManager{
 		store:    store,
 		fetcher:  fetcher,
 		settings: settings,
+		budget:   imageproc.NewDecodeBudget(settings.DecodeMemoryBudgetBytes),
+		creates:  newImageCreateLimiter(settings.MaxConcurrentCreates, settings.MaxConcurrentCreatesPerUser),
 	}
+}
+
+// AdmitCreate takes one of the image-create slots for auth's identity,
+// waiting until one is free or ctx ends (ErrImageBusy). The handler holds it
+// across Prepare and Service.CreateRequestWithImages; release must be called once.
+func (m *ImageManager) AdmitCreate(ctx context.Context, auth *askuser.AuthorizationContext) (func(), error) {
+	if m == nil || m.creates == nil {
+		return func() {}, nil
+	}
+	release, err := m.creates.acquire(ctx, auth.UserIdentity)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return release, nil
 }
 
 // AttachmentInput represents one caller-provided attachment — either raw
@@ -48,10 +69,11 @@ type AttachmentInput struct {
 	URL       string
 }
 
-// Process normalizes, uploads, and returns the in-memory metadata for every
-// attachment. The caller passes the resulting slice to
-// Service.CreateRequestWithImages to persist it.
-func (m *ImageManager) Process(ctx context.Context, auth *askuser.AuthorizationContext, inputs []AttachmentInput) ([]UploadedImage, error) {
+// Prepare fetches and normalizes every attachment and derives its object key.
+// It has no side effects on the object store or the database: the objects are
+// uploaded only by Service.CreateRequestWithImages, after the quota admitted
+// them, so a rejected attachment never leaves an object behind.
+func (m *ImageManager) Prepare(ctx context.Context, auth *askuser.AuthorizationContext, inputs []AttachmentInput) ([]UploadedImage, error) {
 	if m == nil {
 		return nil, errors.WithStack(ErrImageFeatureDisabled)
 	}
@@ -61,10 +83,13 @@ func (m *ImageManager) Process(ctx context.Context, auth *askuser.AuthorizationC
 	if m.settings.MaxPerRequest > 0 && len(inputs) > m.settings.MaxPerRequest {
 		return nil, errors.WithStack(ErrTooManyImages)
 	}
+	if auth == nil {
+		return nil, errors.WithStack(ErrInvalidAuthorization)
+	}
 
 	out := make([]UploadedImage, 0, len(inputs))
 	for idx, in := range inputs {
-		img, err := m.processOne(ctx, auth, in)
+		img, err := m.prepareOne(ctx, auth, in)
 		if err != nil {
 			return nil, errors.Wrapf(err, "attachment index %d", idx)
 		}
@@ -73,7 +98,7 @@ func (m *ImageManager) Process(ctx context.Context, auth *askuser.AuthorizationC
 	return out, nil
 }
 
-func (m *ImageManager) processOne(ctx context.Context, auth *askuser.AuthorizationContext, in AttachmentInput) (UploadedImage, error) {
+func (m *ImageManager) prepareOne(ctx context.Context, auth *askuser.AuthorizationContext, in AttachmentInput) (UploadedImage, error) {
 	raw := in.FileBytes
 	filename := in.Filename
 	sourceURL := ""
@@ -99,24 +124,14 @@ func (m *ImageManager) processOne(ctx context.Context, auth *askuser.Authorizati
 		return UploadedImage{}, errors.Wrap(imageproc.ErrDecodeFailed, "empty attachment")
 	}
 
-	result, err := imageproc.Normalize(raw, filename)
+	result, err := m.budget.NormalizeFor(ctx, auth.UserIdentity, raw, filename)
 	if err != nil {
 		return UploadedImage{}, errors.WithStack(err)
 	}
 
-	storageKey := m.buildKey(auth.UserIdentity, result.SHA256)
-	meta := map[string]string{
-		"x-amz-meta-api-key-hash":  auth.APIKeyHash,
-		"x-amz-meta-original-mime": result.OriginalMIME,
-		"x-amz-meta-uploaded-at":   time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := m.store.Put(ctx, storageKey, bytes.NewReader(result.PNG), int64(len(result.PNG)), "image/png", meta); err != nil {
-		return UploadedImage{}, errors.Wrap(ErrStorageUnavailable, err.Error())
-	}
-
 	return UploadedImage{
 		SHA256:       result.SHA256,
-		StorageKey:   storageKey,
+		StorageKey:   m.buildKey(auth.UserIdentity, result.SHA256),
 		PNG:          result.PNG,
 		SizeBytes:    int64(len(result.PNG)),
 		Width:        result.Width,
@@ -124,6 +139,35 @@ func (m *ImageManager) processOne(ctx context.Context, auth *askuser.Authorizati
 		OriginalMIME: result.OriginalMIME,
 		SourceURL:    sourceURL,
 	}, nil
+}
+
+// PutImage uploads one normalized image under its StorageKey. It implements
+// ImageObjectWriter for Service.CreateRequestWithImages.
+func (m *ImageManager) PutImage(ctx context.Context, auth *askuser.AuthorizationContext, image UploadedImage) error {
+	if m == nil || m.store == nil {
+		return errors.Wrap(ErrStorageUnavailable, "image manager unconfigured")
+	}
+	meta := map[string]string{
+		"x-amz-meta-api-key-hash":  auth.APIKeyHash,
+		"x-amz-meta-original-mime": image.OriginalMIME,
+		"x-amz-meta-uploaded-at":   time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := m.store.Put(ctx, image.StorageKey, bytes.NewReader(image.PNG), int64(len(image.PNG)), defaultStoredImageContentType, meta); err != nil {
+		return errors.Wrap(ErrStorageUnavailable, err.Error())
+	}
+	return nil
+}
+
+// DeleteImage removes one object. It implements ImageObjectWriter; deleting a
+// missing key succeeds.
+func (m *ImageManager) DeleteImage(ctx context.Context, key string) error {
+	if m == nil || m.store == nil {
+		return errors.Wrap(ErrStorageUnavailable, "image manager unconfigured")
+	}
+	if err := m.store.Delete(ctx, key); err != nil {
+		return errors.Wrap(err, "delete image object")
+	}
+	return nil
 }
 
 // buildKey returns the object key for a user / sha pair.

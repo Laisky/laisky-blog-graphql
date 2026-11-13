@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"image"
+	"image/color"
 	"image/draw"
 )
 
@@ -77,11 +78,10 @@ func parseAPP1(body []byte) int {
 	}
 	entryCount := int(bo.Uint16(tiff[ifdOffset : ifdOffset+2]))
 	entries := tiff[ifdOffset+2:]
+	// The count is untrusted: never index past the entries actually present.
+	entryCount = min(entryCount, len(entries)/12)
 	for idx := 0; idx < entryCount; idx++ {
 		entry := entries[idx*12 : idx*12+12]
-		if len(entry) < 12 {
-			return 0
-		}
 		tag := bo.Uint16(entry[0:2])
 		if tag != 0x0112 {
 			continue
@@ -98,76 +98,97 @@ func parseAPP1(body []byte) int {
 
 // applyOrientation rotates/flips src to compensate for the EXIF Orientation tag
 // value. Values 1 (no-op) and anything outside 1..8 return src unchanged.
+//
+// It allocates exactly one RGBA image the size of src and converts each pixel
+// once, without boxing colors, so its working set is predictable (see
+// estimateDecodeBytes). The output is byte-identical to the previous
+// implementation, which composed up to three full-size copies.
 func applyOrientation(src image.Image, orientation int) image.Image {
 	switch orientation {
-	case 0, 1:
-		return src
-	case 2:
-		return flipHorizontal(src)
 	case 3:
-		return rotate180(src)
-	case 4:
-		return flipVertical(src)
-	case 5:
-		return flipHorizontal(rotate90(src))
-	case 6:
-		return rotate90(src)
-	case 7:
-		return flipHorizontal(rotate270(src))
-	case 8:
-		return rotate270(src)
+		// The previous code converted with draw.Draw and then flipped the copy
+		// twice; reversing the converted pixels in place is the same rotation.
+		b := src.Bounds()
+		dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+		draw.Draw(dst, dst.Bounds(), src, b.Min, draw.Src)
+		reversePixels(dst)
+		return dst
+	case 2, 4, 5, 6, 7, 8:
+		return orientInto(src, orientation)
 	default:
 		return src
 	}
 }
 
-func flipHorizontal(src image.Image) image.Image {
+// orientInto writes the oriented src into one new RGBA image. Pixel (x, y)
+// of src, relative to its bounds, moves to the position the orientation
+// defines; transposing orientations (5-8) swap the dimensions.
+func orientInto(src image.Image, orientation int) *image.RGBA {
 	b := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	for y := 0; y < b.Dy(); y++ {
-		for x := 0; x < b.Dx(); x++ {
-			dst.Set(b.Dx()-1-x, y, src.At(b.Min.X+x, b.Min.Y+y))
+	w, h := b.Dx(), b.Dy()
+	dstW, dstH := w, h
+	if orientation >= 5 {
+		dstW, dstH = h, w
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, dstW, dstH))
+	at := rgbaPixelReader(src)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			var dx, dy int
+			switch orientation {
+			case 2: // mirror horizontal
+				dx, dy = w-1-x, y
+			case 4: // mirror vertical
+				dx, dy = x, h-1-y
+			case 5: // transpose
+				dx, dy = y, x
+			case 6: // rotate 90 clockwise
+				dx, dy = h-1-y, x
+			case 7: // transverse
+				dx, dy = h-1-y, w-1-x
+			default: // 8: rotate 270 clockwise
+				dx, dy = y, w-1-x
+			}
+			c := at(b.Min.X+x, b.Min.Y+y)
+			i := dst.PixOffset(dx, dy)
+			dst.Pix[i+0], dst.Pix[i+1], dst.Pix[i+2], dst.Pix[i+3] = c.R, c.G, c.B, c.A
 		}
 	}
 	return dst
 }
 
-func flipVertical(src image.Image) image.Image {
-	b := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	for y := 0; y < b.Dy(); y++ {
-		for x := 0; x < b.Dx(); x++ {
-			dst.Set(x, b.Dy()-1-y, src.At(b.Min.X+x, b.Min.Y+y))
-		}
+// rgbaPixelReader returns a function yielding src pixels converted exactly as
+// color.RGBAModel converts them (16-bit RGBA shifted to 8 bits). The decoder
+// output types get typed accessors, which avoid one heap-boxed color per pixel.
+func rgbaPixelReader(src image.Image) func(x, y int) color.RGBA {
+	switch s := src.(type) {
+	case *image.RGBA:
+		return s.RGBAAt
+	case *image.YCbCr:
+		return func(x, y int) color.RGBA { return toRGBA8(s.YCbCrAt(x, y)) }
+	case *image.Gray:
+		return func(x, y int) color.RGBA { return toRGBA8(s.GrayAt(x, y)) }
+	case *image.CMYK:
+		return func(x, y int) color.RGBA { return toRGBA8(s.CMYKAt(x, y)) }
+	case *image.NRGBA:
+		return func(x, y int) color.RGBA { return toRGBA8(s.NRGBAAt(x, y)) }
+	default:
+		return func(x, y int) color.RGBA { return toRGBA8(src.At(x, y)) }
 	}
-	return dst
 }
 
-func rotate90(src image.Image) image.Image {
-	b := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, b.Dy(), b.Dx()))
-	for y := 0; y < b.Dy(); y++ {
-		for x := 0; x < b.Dx(); x++ {
-			dst.Set(b.Dy()-1-y, x, src.At(b.Min.X+x, b.Min.Y+y))
-		}
-	}
-	return dst
+// toRGBA8 mirrors color.RGBAModel.Convert for a concrete color value.
+func toRGBA8[C interface{ RGBA() (r, g, b, a uint32) }](c C) color.RGBA {
+	r, g, b, a := c.RGBA()
+	return color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)} //nolint:gosec // RGBA() values are at most 0xffff
 }
 
-func rotate180(src image.Image) image.Image {
-	b := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(dst, dst.Bounds(), src, b.Min, draw.Src)
-	return flipHorizontal(flipVertical(dst))
-}
-
-func rotate270(src image.Image) image.Image {
-	b := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, b.Dy(), b.Dx()))
-	for y := 0; y < b.Dy(); y++ {
-		for x := 0; x < b.Dx(); x++ {
-			dst.Set(y, b.Dx()-1-x, src.At(b.Min.X+x, b.Min.Y+y))
-		}
+// reversePixels reverses the pixel order of img, which rotates it by 180
+// degrees because its rows are contiguous (it starts at the origin).
+func reversePixels(img *image.RGBA) {
+	pix := img.Pix
+	for i, j := 0, len(pix)-4; i < j; i, j = i+4, j-4 {
+		pix[i], pix[i+1], pix[i+2], pix[i+3], pix[j], pix[j+1], pix[j+2], pix[j+3] =
+			pix[j], pix[j+1], pix[j+2], pix[j+3], pix[i], pix[i+1], pix[i+2], pix[i+3]
 	}
-	return dst
 }

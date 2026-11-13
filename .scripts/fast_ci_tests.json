@@ -133,5 +133,54 @@
       "TestBackslashOnlyAfterQueryOrFragment",
       "TestGitHubStartChecksTheCompletingIssuer"
     ]
+  },
+  {
+    "package": "./internal/mcp/imageproc",
+    "tests": [
+      "TestNormalizeGIFIgnoresBlocksAfterFirstFrame",
+      "TestNormalizeGIFAllocationIndependentOfFrameCount",
+      "TestNormalizeAnimatedGIFMatchesLegacyFirstFrame",
+      "TestNormalizeGIFMalformedFirstFrame",
+      "TestDecodeBudgetDefaultCoversContract",
+      "TestDecodeBudgetRejectsBeforeDecoding",
+      "TestDecodeBudgetQueuesUntilCapacityIsReleased",
+      "TestNormalizeRejectsHeaderOnlyBombsWithoutAllocating",
+      "TestNormalizeRejectsDimensionsOverContract",
+      "TestDecodeBudgetBackfillsPastLargeWaiter",
+      "TestDecodeBudgetAgedWaiterIsNotStarved",
+      "TestDecodeBudgetCapsDecodesPerOwner",
+      "TestApplyOrientationMatchesLegacy",
+      "TestApplyOrientationAllocatesOneCopy",
+      "TestReadJPEGOrientationHostileIFD",
+      "TestParseTIFFLayout"
+    ]
+  },
+  {
+    "package": "./internal/mcp/userrequests",
+    "tests": [
+      "TestCreateWithImagesLeavesNoOrphanObjects",
+      "TestCreateWithImagesQuotaIsCheckedBeforeUpload",
+      "TestCreateWithImagesCompensationKeepsSharedObjects",
+      "TestCreateWithImagesSuccessKeepsObjects",
+      "TestCreateRequestWithImages_RevivingExpiredImageIsCharged",
+      "TestGCExpiredImageRefsKeepsRefRevivedDuringSweep",
+      "TestCreateWithImagesHoldsNoTransactionDuringUpload",
+      "TestCreateWithImagesLateDeleteCannotRemoveCommittedObject",
+      "TestCreateWithImagesFailsWhenReservationIsLost",
+      "TestReconcileImageObjectsDeletesCrashedUploads",
+      "TestReconcileImageObjectsKeepsProtectedKeys",
+      "TestReconcileImageObjectsNeverTouchesUnclaimedObjects",
+      "TestImageCreateLimiterCaps",
+      "TestHandleCreateImageBusyWhenCreateCapIsFull",
+      "TestHandleCreateDecodeMemoryBudget"
+    ]
+  },
+  {
+    "package": "./internal/mcp/storage",
+    "tests": [
+      "TestEnsureLifecyclePreservesOtherRules",
+      "TestEnsureLifecycleRefusesLossyRewrite",
+      "TestMinIODeleteIsIdempotent"
+    ]
   }
 ]

@@ -111,7 +111,7 @@ func firstFormValue(values map[string][]string, key string) string {
 }
 
 // extractAttachmentIndex pulls the "attachment index N" suffix injected by
-// ImageManager.Process out of a wrapped error, so the client can highlight
+// ImageManager.Prepare or Service.CreateRequestWithImages out of a wrapped error, so the client can highlight
 // the failing thumbnail. Returns -1 when the index is absent.
 func extractAttachmentIndex(err error) int {
 	if err == nil {
@@ -176,6 +176,10 @@ func (h *httpHandler) writeImageError(w http.ResponseWriter, logger logSDK.Logge
 	case errors.Is(err, ErrStorageUnavailable):
 		status = http.StatusServiceUnavailable
 		code = "storage_unavailable"
+	case errors.Is(err, imageproc.ErrDecodeBusy), errors.Is(err, ErrImageBusy):
+		status = http.StatusServiceUnavailable
+		code = "image_busy"
+		w.Header().Set("Retry-After", "5")
 	}
 
 	if status >= 500 {

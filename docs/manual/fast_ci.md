@@ -17,7 +17,8 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
 `internal/library/ssoredirect`, `internal/web/blog/controller`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
-`internal/web/telegram/dao` and `internal/web/telegram/service`. These exercise input validation, controlled
+`internal/web/telegram/dao`, `internal/web/telegram/service`,
+`internal/mcp/imageproc`, `internal/mcp/userrequests` and `internal/mcp/storage`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
@@ -34,6 +35,30 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The user-request image selections (issues #83 and #87) cover first-frame-only
+GIF decoding with frame-count-independent allocation, the decode memory
+budget (contract coverage, rejection before allocation, queuing, backfill
+past a large waiter, no starvation, per-identity caps, header-only bombs),
+byte-identical single-copy EXIF orientation and the hostile-IFD parser fix,
+TIFF layout parsing, no object left without an image ref after every
+post-upload failure, quota reservation before upload, no transaction held
+across uploads, the delete lease against late deletes, lost reservations,
+shared-object safety, expired-ref revival charging, the GC revival race, the
+claims-driven reconciler (crashed uploads, protected and unclaimed keys), the
+image create caps, and lifecycle rules preserved or left untouched on shared
+buckets. The estimator-versus-allocation sweep, the timing-based heavy/light
+admission test, the fuzz targets and the PostgreSQL tests (`TestPostgres*`
+with `MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database; they
+cover the pool-starvation repros and REPEATABLE READ) stay deliberate
+acceptance:
+
+```sh
+go test -count=1 ./internal/mcp/imageproc -run 'TestEstimateDecodeBytesBoundsActualAllocation|TestDecodeBudgetHeavyCallerCannotStallLightCaller'
+go test ./internal/mcp/imageproc -run '^$' -fuzz FuzzReadJPEGOrientation -fuzztime 30s
+go test ./internal/mcp/imageproc -run '^$' -fuzz FuzzEstimateDecodeBytes -fuzztime 30s
+MCP_USER_REQUESTS_TEST_POSTGRES_DSN=postgres://... go test -race -count=3 ./internal/mcp/userrequests -run TestPostgres
+```
 
 The SSO selections run the shared redirect-policy and registry vectors that the
 frontend tests also consume, the registered-client code issuance and redemption

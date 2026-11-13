@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 	"time"
 
@@ -12,19 +13,29 @@ import (
 )
 
 // FakeStore is an in-memory ObjectStore used by unit tests. It records every
-// Put call for assertion and serves reads out of RAM.
+// Put and Delete call for assertion and serves reads out of RAM.
 type FakeStore struct {
 	mu         sync.Mutex
 	objects    map[string]fakeObject
 	lifecycles map[string]int
+	puts       []string
+	deletes    []string
 	// presignTTL records the TTL the most recent PresignedGet observed, so tests
 	// can assert on the requested lifetime.
 	lastPresignTTL time.Duration
-	// PutErr, GetErr, PresignErr, LifecycleErr can be set by tests to force failures.
+	// PutErr, GetErr, PresignErr, LifecycleErr, DeleteErr can be set by tests to force failures.
 	PutErr       error
 	GetErr       error
 	PresignErr   error
 	LifecycleErr error
+	DeleteErr    error
+	// BeforePut, when set, runs before an object is stored; a non-nil error
+	// fails the Put without storing anything.
+	BeforePut func(ctx context.Context, key string) error
+	// AfterPut, when set, runs after an object is stored. A non-nil error is
+	// returned from Put while the object stays stored, which models a client
+	// that gave up (for example on a timeout) after the server committed it.
+	AfterPut func(ctx context.Context, key string) error
 	// HostBase is the synthetic base URL used when building presigned URLs.
 	HostBase string
 }
@@ -52,6 +63,11 @@ func (f *FakeStore) Put(ctx context.Context, key string, body io.Reader, size in
 	if f.PutErr != nil {
 		return f.PutErr
 	}
+	if f.BeforePut != nil {
+		if err := f.BeforePut(ctx, key); err != nil {
+			return err
+		}
+	}
 	buf := new(bytes.Buffer)
 	if _, err := io.Copy(buf, body); err != nil {
 		return errors.Wrap(err, "fake put read body")
@@ -61,14 +77,64 @@ func (f *FakeStore) Put(ctx context.Context, key string, body io.Reader, size in
 		metaCopy[k] = v
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.objects[key] = fakeObject{
 		Body:        buf.Bytes(),
 		ContentType: contentType,
 		UserMeta:    metaCopy,
 	}
+	f.puts = append(f.puts, key)
+	f.mu.Unlock()
 	_ = size
+	if f.AfterPut != nil {
+		return f.AfterPut(ctx, key)
+	}
 	return nil
+}
+
+// Delete removes an object; deleting a missing key succeeds, like S3.
+func (f *FakeStore) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return errors.Wrap(err, "fake delete context canceled")
+	}
+	if f.DeleteErr != nil {
+		return f.DeleteErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.objects, key)
+	f.deletes = append(f.deletes, key)
+	return nil
+}
+
+// sortedKeysLocked returns the stored keys in lexical order; callers must hold f.mu.
+func (f *FakeStore) sortedKeysLocked() []string {
+	keys := make([]string, 0, len(f.objects))
+	for key := range f.objects {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// Keys returns the keys of every stored object in lexical order.
+func (f *FakeStore) Keys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sortedKeysLocked()
+}
+
+// PutKeys returns the keys of every successful Put in call order.
+func (f *FakeStore) PutKeys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.puts...)
+}
+
+// DeletedKeys returns the keys of every successful Delete in call order.
+func (f *FakeStore) DeletedKeys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.deletes...)
 }
 
 // Get returns a reader for an object that was previously stored.

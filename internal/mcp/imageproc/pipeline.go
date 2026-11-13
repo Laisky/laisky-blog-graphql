@@ -2,6 +2,7 @@ package imageproc
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"image"
@@ -48,8 +49,29 @@ var AllowedInputMIMETypes = map[string]struct{}{
 
 // Normalize decodes raw image bytes, fixes orientation, resizes to
 // NormalizedMaxEdge, and re-encodes as PNG. originalFilename is only used to
-// enrich the MIME detection heuristic; it may be empty.
-func Normalize(raw []byte, originalFilename string) (PipelineResult, error) {
+// enrich the MIME detection heuristic; it may be empty. Decoding is admitted
+// through the package default DecodeBudget; long-lived callers should share
+// one explicitly configured budget and use DecodeBudget.Normalize instead.
+func Normalize(ctx context.Context, raw []byte, originalFilename string) (PipelineResult, error) {
+	return defaultDecodeBudget.Normalize(ctx, raw, originalFilename)
+}
+
+// Normalize runs the normalization pipeline after reserving the input's
+// estimated decode working set from b. Only headers are parsed before the
+// reservation, so pixel buffers are never allocated for rejected inputs.
+// It returns ErrDimensionsTooLarge when the dimensions or the estimate exceed
+// the limits, and ErrDecodeBusy when ctx ends while waiting for the budget.
+func (b *DecodeBudget) Normalize(ctx context.Context, raw []byte, originalFilename string) (PipelineResult, error) {
+	return b.NormalizeFor(ctx, "", raw, originalFilename)
+}
+
+// NormalizeFor is Normalize on behalf of owner (for example a user identity),
+// whose concurrent decodes the budget caps and orders fairly against other
+// owners (see DecodeBudget).
+func (b *DecodeBudget) NormalizeFor(ctx context.Context, owner string, raw []byte, originalFilename string) (PipelineResult, error) {
+	if b == nil {
+		b = defaultDecodeBudget
+	}
 	if len(raw) == 0 {
 		return PipelineResult{}, errors.Wrap(ErrDecodeFailed, "imageproc normalize: empty body")
 	}
@@ -63,16 +85,25 @@ func Normalize(raw []byte, originalFilename string) (PipelineResult, error) {
 		return PipelineResult{}, errors.Wrapf(ErrUnsupportedMIME, "imageproc normalize: %s", mime)
 	}
 
-	// Decode config early so we can reject pathological dimensions before
-	// allocating a full pixel buffer.
-	cfg, cfgFormat, err := image.DecodeConfig(bytes.NewReader(raw))
+	// Decode the header with the same decoder that will decode the pixels, so
+	// the size checks below describe exactly what decodeImage will allocate.
+	cfg, err := decodeConfig(raw, mime)
 	if err != nil {
 		return PipelineResult{}, errors.Wrap(ErrDecodeFailed, "imageproc normalize: decode config")
 	}
 	if cfg.Width > MaxDecodeDimension || cfg.Height > MaxDecodeDimension {
 		return PipelineResult{}, errors.Wrapf(ErrDimensionsTooLarge, "imageproc normalize: %dx%d", cfg.Width, cfg.Height)
 	}
-	_ = cfgFormat
+
+	cost, err := estimateDecodeBytes(raw, mime, cfg)
+	if err != nil {
+		return PipelineResult{}, errors.Wrap(err, "imageproc normalize: estimate decode memory")
+	}
+	release, err := b.acquireFor(ctx, owner, cost)
+	if err != nil {
+		return PipelineResult{}, errors.Wrap(err, "imageproc normalize: admit decode")
+	}
+	defer release()
 
 	img, err := decodeImage(raw, mime)
 	if err != nil {
@@ -95,11 +126,11 @@ func Normalize(raw []byte, originalFilename string) (PipelineResult, error) {
 	pngBytes := buf.Bytes()
 	sum := sha256.Sum256(pngBytes)
 
-	b := resized.Bounds()
+	bounds := resized.Bounds()
 	return PipelineResult{
 		PNG:          pngBytes,
-		Width:        b.Dx(),
-		Height:       b.Dy(),
+		Width:        bounds.Dx(),
+		Height:       bounds.Dy(),
 		SHA256:       hex.EncodeToString(sum[:]),
 		OriginalMIME: mime,
 	}, nil
@@ -168,8 +199,32 @@ func isWebP(raw []byte) bool {
 	return bytes.Equal(raw[:4], []byte("RIFF")) && bytes.Equal(raw[8:12], []byte("WEBP"))
 }
 
+// decodeConfig reads only the header of raw with the decoder matching mime.
+// For GIF it reports the logical screen, which bounds every frame.
+func decodeConfig(raw []byte, mime string) (image.Config, error) {
+	r := bytes.NewReader(raw)
+	switch mime {
+	case mimeImageJpeg:
+		return jpeg.DecodeConfig(r)
+	case mimeImagePng:
+		return png.DecodeConfig(r)
+	case mimeImageWebp:
+		return webp.DecodeConfig(r)
+	case mimeImageBmp:
+		return bmp.DecodeConfig(r)
+	case mimeImageTiff:
+		return tiff.DecodeConfig(r)
+	case mimeImageGif:
+		return gif.DecodeConfig(r)
+	default:
+		return image.Config{}, errors.Errorf("unsupported decoder MIME %q", mime)
+	}
+}
+
 // decodeImage decodes raw into an image.Image using the decoder matching mime.
-// GIF inputs return only the first frame, consistent with the proposal.
+// GIF inputs decode only the first frame, consistent with the proposal: the
+// decoder stops reading after it, so later frames are neither parsed nor
+// allocated.
 func decodeImage(raw []byte, mime string) (image.Image, error) {
 	r := bytes.NewReader(raw)
 	switch mime {
@@ -184,14 +239,7 @@ func decodeImage(raw []byte, mime string) (image.Image, error) {
 	case mimeImageTiff:
 		return tiff.Decode(r)
 	case mimeImageGif:
-		g, err := gif.DecodeAll(r)
-		if err != nil {
-			return nil, err
-		}
-		if len(g.Image) == 0 {
-			return nil, errors.New("gif has zero frames")
-		}
-		return g.Image[0], nil
+		return gif.Decode(r)
 	default:
 		return nil, errors.Errorf("unsupported decoder MIME %q", mime)
 	}
@@ -201,22 +249,9 @@ func decodeImage(raw []byte, mime string) (image.Image, error) {
 // maxEdge; otherwise it scales the image using Catmull-Rom resampling.
 func resizeIfNeeded(img image.Image, maxEdge int) image.Image {
 	b := img.Bounds()
-	w := b.Dx()
-	h := b.Dy()
-	longest := w
-	if h > longest {
-		longest = h
-	}
-	if longest <= maxEdge {
+	newW, newH := resizedDimensions(b.Dx(), b.Dy(), maxEdge)
+	if newW == b.Dx() && newH == b.Dy() {
 		return img
-	}
-	newW := w * maxEdge / longest
-	newH := h * maxEdge / longest
-	if newW < 1 {
-		newW = 1
-	}
-	if newH < 1 {
-		newH = 1
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, newW, newH))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), img, b, draw.Over, nil)

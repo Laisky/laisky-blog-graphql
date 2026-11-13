@@ -3,7 +3,7 @@ title: Image + text support for get_user_request
 status: shipped
 owner: mcp team
 created: 2026-04-19
-updated: 2026-04-19
+updated: 2026-11-08
 ---
 
 # Image + Text Support for `get_user_request` — Change Manual
@@ -67,8 +67,9 @@ Users want to attach images (screenshots, diagrams, reference designs) to their 
 
 - Per-image hard cap: **20 MiB** raw bytes, applied identically to uploaded files and URL-fetched bodies (pre-conversion).
 - Server-side normalization: decode → fix EXIF orientation → resize so longest edge ≤ 1536 px → re-encode as PNG. Dimensions are rejected if either side exceeds 8192 px before resize (decode-bomb guard).
+- Decode memory budget (amended 2026-11-08, issue #83 and its review, §3.9): before any pixel buffer is allocated, the input's decode + orientation + resize + encode working set is estimated from its header, and decoding is admitted through a process-wide budget (default **1.25 GiB**, `decode_memory_budget_bytes`) with per-identity fairness. Every 8-bit-per-channel input of every accepted format up to 8192 × 8192 fits the default, except TIFFs stored as one large compressed strip or tile (`golang.org/x/image/tiff` may inflate a block to 8 bytes per pixel whatever the bit depth; such TIFFs are always admitted up to ~28 MP and above that only when the strip is small enough to bound by DEFLATE's 1032:1 limit). 16-bit interlaced PNG and progressive full-chroma or CMYK JPEG above roughly 40–60 MP also exceed it. Such inputs are rejected as `decode_failed`; raise the budget to accept them. Concurrent decodes wait for budget; a request whose deadline passes while waiting gets `image_busy`.
 - Per-request: max **5 images**, counting files and `image_url`s together.
-- Accepted input MIME types: `image/jpeg`, `image/png`, `image/webp`, `image/bmp`, `image/tiff`, `image/gif` (first frame). All other types (notably `image/svg+xml`, `image/heic`) are rejected.
+- Accepted input MIME types: `image/jpeg`, `image/png`, `image/webp`, `image/bmp`, `image/tiff`, `image/gif` (first frame — only the first frame is decoded; later frames are neither parsed nor allocated, and malformed data after the first frame is ignored). All other types (notably `image/svg+xml`, `image/heic`) are rejected.
 - Stored object MIME: always `image/png`.
 - Per-user quota: 100 MiB across live (non-expired) objects, based on **post-normalization PNG size**. Because the normalization always resizes to ≤ 1536 px, a single image's on-disk footprint rarely exceeds ~6 MB regardless of the 20 MiB input cap.
 - Object TTL: 7 days from upload (enforced by MinIO bucket lifecycle). Re-uploading the same image from the same user refreshes the TTL.
@@ -130,7 +131,7 @@ For each `Request`, append to `CallToolResult.Content` in order:
   - `x-amz-meta-api-key-hash`: lets an out-of-band audit job reconcile ownership.
   - `x-amz-meta-original-mime`: the uploaded MIME before conversion (for debugging).
   - `x-amz-meta-uploaded-at`: UTC RFC3339.
-- TTL: a bucket-level lifecycle rule restricted to the `<prefix>/` path expires objects 7 days after creation. The rule is created idempotently at server bootstrap via `client.SetBucketLifecycle`; missing permissions only warn (local dev) but fail startup in production.
+- TTL: a bucket-level lifecycle rule restricted to the `<prefix>/` path expires objects 7 days after creation. The rule is created idempotently at server bootstrap: the current configuration is read verbatim (a signed GET, because minio-go only exposes a parsed model) and only this prefix's rule is replaced, since S3 `PutBucketLifecycleConfiguration` overwrites the whole configuration. If any other rule would not survive minio-go's model unchanged (compared as an order-insensitive XML tree; e.g. a rule with two `Transition`s), nothing is written and the error names the rule to add manually. Amended 2026-11-08 (issue #87): an installation failure does **not** fail startup (that was never shipped and would turn a missing permission into an outage); it is logged at ERROR as an operator signal. Without the rule, objects of expired refs are still removed by the reconciler (§3.9); objects written before this release are not.
 - Download: MinIO `PresignedGetObject(ctx, bucket, key, 30*time.Minute, nil)` — re-issued per MCP tool call. 30 minutes covers an agent's typical round-trip without extending exposure.
 
 ### 3.4 Server-side image pipeline
@@ -141,18 +142,18 @@ The pipeline accepts bytes from either a multipart file part or an `image_url` (
    - Uploaded file: `io.LimitReader(part, 20*MiB+1)` → error 413 if over 20 MiB.
    - `image_url`: §3.7 fetcher returns a `[]byte` already capped at 20 MiB and only after SSRF checks.
 2. **Detect**: `http.DetectContentType(head512)` + filename/URL extension; reject if not in the allowed input set.
-3. **Decode config**: `image.DecodeConfig` — reject if either dimension > 8192 px (decode-bomb guard). Registered decoders: `image/jpeg`, `image/png`, `image/gif`, `golang.org/x/image/webp`, `.../bmp`, `.../tiff`.
-4. **Decode** the full image.
+3. **Decode config**: the `DecodeConfig` of the decoder matching the detected MIME (`image/jpeg`, `image/png`, `image/gif`, `golang.org/x/image/webp`, `.../bmp`, `.../tiff`) — reject if either dimension > 8192 px (decode-bomb guard). Then estimate the working set from the header and admit the decode through the decode memory budget (§3.9); truncated PNG/BMP headers that cannot hold the declared pixels are rejected here, before their decoders allocate the full image.
+4. **Decode** the image (for GIF only the first frame, via `gif.Decode`).
 5. **Orient**: if the input is JPEG, parse EXIF and apply rotation/flip.
 6. **Resize**: if `max(w, h) > 1536`, scale with `golang.org/x/image/draw.CatmullRom` to fit.
 7. **Encode** as PNG (`png.Encoder{CompressionLevel: png.DefaultCompression}`).
 8. **Hash**: `sha256.Sum256(pngBytes)`.
-9. **Quota check** (§3.5) using `len(pngBytes)`. On failure: delete no temp state, return 413.
+9. **Quota check** (§3.5) using `len(pngBytes)`. On failure: nothing was uploaded yet, return 413.
 10. **Idempotent PUT**: `client.PutObject(ctx, bucket, key, bytes.NewReader(pngBytes), size, opts)`. Overwriting is fine — same SHA means same content.
 11. **DB upsert**: record metadata + refresh `expires_at = now() + 7d`; `original_mime` records the pre-normalization MIME; `source_url` is nullable and set when the image came via `image_url`.
 12. **Return** the metadata row to the caller.
 
-All steps run inside the existing `handleCreate` transaction. The URL fetch (§3.8) happens before the DB transaction opens so that network I/O doesn't hold database locks. If any PUT or fetch fails, the request is not persisted (all-or-nothing).
+Steps 1–8 run for every attachment before anything is written (`ImageManager.Prepare`), inside a per-process create slot (at most `max_concurrent_requests` image creates per process and `max_concurrent_requests_per_user` per identity; over the cap a request waits and then gets `image_busy`). The URL fetch (§3.8) therefore happens before any database work. Steps 9–11 are a reservation workflow in which no database transaction or connection is held across object-store I/O (amended 2026-11-08, issue #87 and its review): (a) **reserve** — one short transaction takes the image scope lock, refuses keys whose delete is still in flight (`image_busy`), checks the quota and records upload claims (§3.9); (b) **upload** every object outside any transaction, each PUT bounded by 20 s; (c) **finalize** — one short transaction takes the lock, consumes the claims, and inserts the request, refs and links. If anything fails after the reservation — an upload (including one that timed out after the server stored it), the finalize transaction, a canceled request context, or a panic — the claims are released and every attempted object that nothing else references or claims is deleted under a delete lease (§3.9). The request is all-or-nothing for both the database and the object store.
 
 ### 3.5 Quota accounting
 
@@ -180,11 +181,11 @@ All steps run inside the existing `handleCreate` transaction. The URL fetch (§3
   ```
 - Quota query: `SELECT COALESCE(SUM(size_bytes), 0) FROM mcp_user_image_refs WHERE user_identity = $1 AND expires_at > NOW()` (NOW() uses UTC via `SET TIME ZONE 'UTC'` at connection init).
 - Upload flow:
-  1. Inside a transaction: `SELECT ... FOR UPDATE` on any existing `(user_identity, sha256)` row.
+  1. Inside a short transaction that holds the image scope lock (§3.9) — which serializes every reservation of the same user, so two concurrent requests cannot both pass the usage check — `SELECT ... FOR UPDATE` on any existing `(user_identity, sha256)` row. Usage counts live refs plus the live upload claims of requests still uploading.
   2. If the row exists and is not expired → refresh `expires_at`, no quota charge.
-  3. Else sum current usage; reject if `sum + new_size > quota`.
+  3. Else (no row, or an expired row being revived) sum current usage; reject if `sum + new_size > quota`.
   4. Insert or upsert `mcp_user_image_refs`.
-- Cleanup: a periodic job (e.g. hourly) deletes rows with `expires_at < NOW()`. Missing the job is not a correctness issue because queries always filter by `expires_at`.
+- Cleanup: a periodic job (e.g. hourly) deletes rows with `expires_at < NOW()`. Missing the job is not a correctness issue because queries always filter by `expires_at`. The delete re-checks `expires_at`, so a row a concurrent request revives between the job's scan and its delete is kept together with its links.
 
 ### 3.6 Authorization & URL issuing
 
@@ -238,6 +239,27 @@ for _, img := range images {
 
 The algorithm is extracted into a standalone function for unit testing. Because stored images are PNG ≤ 1536 px, many real uploads (screenshots, UI mockups) compress well enough to stay within `PerImageInlineMax`; photographs typically don't, which is fine because `ResourceLink` covers them.
 
+### 3.9 Resource bounds and object lifecycle (amended 2026-11-08, issues #83 and #87, revised after review)
+
+**Decode memory budget.** Go decoders allocate the full pixel buffer from the header before reading pixel data, and `x/image/draw`'s Catmull-Rom scaler keeps a `[4]float64` per (destination column, source row) — 384 MiB for an 8192 × 8192 source. `imageproc.DecodeBudget` estimates, from the header only and using the decoder that will decode the image, the decoded image (bytes per pixel of the type the decoder returns — a grayscale PNG with `tRNS` decodes to NRGBA/NRGBA64, which `DecodeConfig` does not report, so the chunks before IDAT are scanned), the decoder scratch (Adam7 passes; the de-interlaced GIF frame; progressive JPEG coefficient blocks; the black plane and CMYK conversion of 4-component JPEG; WebP alpha and transform buffers; for TIFF the per-strip/tile inflate buffer, which `x/image/tiff` limits to 8 bytes per pixel of the block whatever the bit depth and grows by doubling — the first IFD is parsed for the block geometry and byte counts), the one oriented RGBA copy of EXIF-rotated JPEGs (orientation now writes exactly one copy), the resize scratch, and the PNG encoder output. The estimate is tested to bound the measured cumulative allocation of every supported format and layout (ratios 1.05–1.6). Two exact plausibility checks reject truncated headers before any allocation: a PNG shorter than its declared pixel rows divided by DEFLATE's maximum ratio (1032:1), and an uncompressed BMP shorter than its declared rows.
+
+**Fair decode admission.** Decoding is admitted through a process-wide weighted budget (`decode_memory_budget_bytes`, default 1.25 GiB): (1) each identity has at most 2 decodes admitted or queued; further ones wait outside the shared queue; (2) the queue is FIFO with bounded backfill — a later waiter that fits in the free budget overtakes the oldest waiter while that has waited less than 2 s; afterwards later waiters may only use budget the oldest one does not need, so it is admitted as soon as enough in-flight decodes finish. A large image therefore cannot keep small images that fit waiting, and cannot be starved; a heavy caller delays others by at most the duration of its own admitted decodes. An estimate larger than the whole budget is rejected (`decode_failed`, 422); a request whose context ends while waiting gets `image_busy` (503).
+
+**Image create cap.** At most `max_concurrent_requests` (default 8) image creates run per process and `max_concurrent_requests_per_user` (default 2) per identity; the rest wait in arrival order (skipping callers at their own cap) until their deadline (`image_busy`).
+
+**Image scope lock.** Every short transaction that reserves, finalizes or releases objects under one key directory (`<prefix>/<sanitized user identity>`) first takes a lock on that directory: a PostgreSQL transaction-scoped advisory lock (`pg_advisory_xact_lock`, sorted, released at commit or rollback); SQLite, used only for tests and local development, takes its database-wide write lock instead. The directory, not the raw identity, is the scope because identities that sanitize to the same segment share object keys. Every image transaction runs at READ COMMITTED explicitly: under a REPEATABLE READ or SERIALIZABLE database default the snapshot would be taken by the lock statement itself, before the wait, and miss what the previous holder committed.
+
+**Object claims (`mcp_user_image_claims`, additive table).** Every object-store write or delete is announced by a claim committed under the scope lock before the store is touched — a transactional-outbox style record:
+- *upload* claims (live 10 min) reserve quota and protect the key from deletion while a create uploads; finalize consumes them in the same transaction that inserts the refs, and fails if they are gone;
+- *delete* leases (live 5 min) are held while a delete is in flight; new uploads of the key are refused with `image_busy`, so a delete that the client gave up on but that reaches the store later cannot remove an object a later request uploaded. A failed delete keeps its lease until it expires. Residual window: a DELETE delivered to the store more than 5 minutes after it was sent (the per-delete timeout is 10 s);
+- *orphan* claims are recorded by the GC for every ref it expires.
+
+**Compensation.** After a failed create, cleanup runs detached from the request context (30 s bound): one short transaction under the lock releases the request's upload claims and leases every attempted key that no ref (expired or not) and no other live claim protects; then the objects are deleted outside any transaction (each delete bounded by 10 s) and the leases dropped. Content-addressed objects shared with committed requests are kept. Failures are logged at ERROR and left to the reconciler.
+
+**Reconciler.** Every `orphan_sweep_seconds` (default 1 h; 0 disables) a pass processes at most `orphan_sweep_batch` (default 1000) due claims — expired upload claims (crashed creates), expired delete leases (failed deletes), and orphan claims — and, for each key, releases them and deletes the object under a lease unless a ref or a live claim protects it. It never lists the bucket, so it cannot touch objects this database did not record writing (other deployments, foreign keys, objects written before this release). The GC purges claims that expired more than one object TTL ago, which bounds the table when the reconciler is disabled.
+
+**Deployment rule.** Keys are content-addressed per user, so two deployments with different databases that share a bucket and prefix can write the same key for the same user and image; one's cleanup or GC can then delete an object the other references. Give every database its own bucket or prefix.
+
 ## 4. Change List
 
 ### 4.1 Data layer
@@ -248,7 +270,7 @@ The algorithm is extracted into a standalone function for unit testing. Because 
 | D2  | `internal/mcp/userrequests/models.go`      | Add `RequestImage` struct (metadata only: `ID`, `Key`, `SHA256`, `SizeBytes`, `Width`, `Height`, `MIMEType`, `ExpiresAt`). Extend `Request` with `Images []RequestImage`.                                                                 |
 | D3  | `internal/mcp/userrequests/service.go`     | `CreateRequest(ctx, auth, content, taskID, normalizedImages []UploadedImage)`; transaction upserts refs, inserts links. `ConsumeAllPending` / `ConsumeFirstPending` preload images with a single `JOIN` filtered by `expires_at > NOW()`. |
 | D4  | `internal/mcp/userrequests/quota.go` (new) | `ReserveQuota(ctx, userIdentity, sha256, newSize, quotaBytes) (existingID *uuid.UUID, err error)`; returns `ErrQuotaExceeded`, `ErrImageAlreadyExists`. Uses `SELECT ... FOR UPDATE` to prevent TOCTOU.                                   |
-| D5  | `internal/mcp/userrequests/gc.go` (new)    | `GCExpiredRefs(ctx)`; scheduled via existing cron infra. Deletes expired ref rows (cascades through links). Never deletes MinIO objects — lifecycle handles that.                                                                         |
+| D5  | `internal/mcp/userrequests/gc.go` (new)    | `GCExpiredRefs(ctx)`; scheduled via existing cron infra. Deletes expired ref rows (cascades through links). Never deletes MinIO objects — lifecycle and the orphan reconciler (§3.9) handle that.                                       |
 
 All DB access uses parameterized queries (AGENTS.md: SQL injection rule). All timestamps are UTC.
 
@@ -406,10 +428,11 @@ Error responses (all JSON `{"error": code, "message": "...", "attachment_index":
 | 413  | `quota_exceeded`      | Would push the user above 100 MiB (post-normalization total).                |
 | 413  | `too_many_images`     | More than 5 attachments in one request (files and URLs counted together).    |
 | 415  | `feature_disabled`    | `images.enabled=false` or flag off.                                          |
-| 422  | `decode_failed`       | Image is corrupt or dimensions exceed 8192 px.                               |
+| 422  | `decode_failed`       | Image is corrupt, dimensions exceed 8192 px, or the estimated decode memory exceeds the whole decode budget (§3.9). |
 | 502  | `url_fetch_failed`    | `image_url` returned non-2xx, TLS failure, or unreadable body.               |
 | 504  | `url_timeout`         | `image_url` exceeded the 15 s total fetch deadline.                          |
-| 503  | `storage_unavailable` | MinIO PUT failed.                                                            |
+| 503  | `storage_unavailable` | MinIO PUT failed (objects already written for the request are deleted).      |
+| 503  | `image_busy`          | Retry later (`Retry-After: 5`): the request was not admitted to the image create cap or the decode memory budget before its deadline, or a previous copy of the same image is still being deleted. |
 
 `attachment_index` is the 0-based position of the failing attachment in the combined (files + URLs) list; the composer UI uses it to light up the offending thumbnail.
 
@@ -489,6 +512,13 @@ All Go tests use `github.com/stretchr/testify/require` (AGENTS.md rule). MinIO-b
 | U19 | quota     | Concurrent uploads of different SHAs reaching the quota limit    | Exactly one fails with `ErrQuotaExceeded` (FOR UPDATE lock)                      |
 | U20 | quota     | Expired refs do not count against usage                          | `used_bytes` excludes expired rows                                               |
 | U21 | gc        | Refs with `expires_at < now` are deleted                         | Rows gone; no MinIO deletion attempted                                           |
+| U21a | gc       | Ref revived by a request between the GC scan and delete          | Ref and its new link survive                                                     |
+| U21b | imageproc | Animated GIF; valid first frame followed by a malformed frame   | Same PNG as the first frame alone; allocation independent of frame count        |
+| U21c | imageproc | Estimated decode working set vs measured allocation, every format/layout (incl. oriented JPEG, gray PNG + tRNS, over-inflating TIFF strips) | Estimate ≥ allocation; over-budget input rejected before its pixel buffer exists |
+| U21f | imageproc | Large waiter at the head of the decode queue; small image arrives | Small image admitted (backfill); aged head admitted before later arrivals; per-identity cap |
+| U21g | imageproc | EXIF orientation 1–8 on every decoder image type; hostile IFD entry counts | Byte-identical to the previous code with one RGBA copy; no panic (fuzzed) |
+| U21d | imageproc | Header-only PNG/BMP bombs declaring 8192 × 8192                 | `decode_failed` without allocating the image                                     |
+| U21e | quota     | Reviving an expired ref                                          | Charged like a new image                                                         |
 
 ### 6.2 Backend — `image_url` fetcher and SSRF
 
@@ -521,7 +551,14 @@ All Go tests use `github.com/stretchr/testify/require` (AGENTS.md rule). MinIO-b
 | U41 | http        | Partial failure: file 1 OK, URL 2 returns 404 | Whole request rejected; nothing persisted; `attachment_index=1`            |
 | U42 | http quota  | `GET /api/quota` for fresh user               | 200 `{used_bytes:0, quota_bytes:104857600, object_count:0, ttl_days:7}`    |
 | U43 | storage     | PUT on MinIO-down                             | `ErrStorageUnavailable`, 503                                               |
-| U44 | storage     | `EnsureLifecycle` called twice                | Idempotent; no duplicate rule                                              |
+| U44 | storage     | `EnsureLifecycle` called twice                | Idempotent; no duplicate rule; other applications' rules preserved         |
+| U44a | http        | Failure after a PUT (later PUT, ambiguous PUT, request/link insert, commit, canceled context, lost reservation) | No object without a ref remains; objects shared with committed requests are kept |
+| U44b | http        | Quota rejection, later attachment decode failure | Nothing is uploaded                                                    |
+| U44c | reconciler  | Crashed upload, failed delete, expired ref     | Deleted once the claim is due; protected keys and unclaimed objects kept |
+| U44d | http        | Delete in flight for a key; same image attached again | `image_busy` until the lease expires; a late delete cannot remove a committed object |
+| U44e | db          | Upload while another connection writes; stalled store with a pool of 8 | No transaction or pooled connection held across object-store I/O |
+| U44f | db          | REPEATABLE READ database default             | Quota, compensation and reconciler invariants hold (explicit READ COMMITTED) |
+| U44g | storage     | Foreign lifecycle rule minio-go cannot model   | Nothing written; error names the rule to add manually                     |
 | U45 | tool budget | 80 KB budget, 1 image of 50 KB                | Image inlined, `remaining=30 KB`                                           |
 | U46 | tool budget | Two 60 KB images                              | First inlined, second link-only                                            |
 | U47 | tool budget | Three 30 KB images                            | First two inlined, third link-only (per-image ceiling)                     |

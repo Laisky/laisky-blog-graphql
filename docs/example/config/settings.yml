@@ -64,7 +64,9 @@ settings:
           # no default because buckets are deployment-specific.
           bucket: REPLACE_WITH_BUCKET_NAME
           # Object-key prefix under the bucket. Leading / trailing slashes are
-          # trimmed. Optional. Default: mcp/user_requests/images.
+          # trimmed. Every deployment with its own database needs its own
+          # bucket or prefix (keys are content-addressed per user).
+          # Optional. Default: mcp/user_requests/images.
           prefix: mcp/user_requests/images
           # MinIO access key. Required when `enabled: true`. Must live in a
           # private overlay — never commit real credentials.
@@ -95,6 +97,28 @@ settings:
         # How often the DB-side image GC sweeps expired refs, in seconds. Set
         # to 0 to disable the worker. Optional. Default: 3600 (= 1h).
         gc_sweep_seconds: 3600
+        # Process-wide cap, in bytes, on the summed estimated memory of
+        # concurrent image decodes (decode + resize + PNG encode). Uploads wait
+        # for budget; an image whose estimate alone exceeds it is rejected as
+        # decode_failed. The default admits every 8-bit image up to 8192x8192.
+        # Optional. Default: 1342177280 (= 1.25 GiB).
+        decode_memory_budget_bytes: 1342177280
+        # How often the reconciler processes due image claims (crashed uploads,
+        # failed deletes, refs the GC expired) and deletes objects nothing uses
+        # any more, in seconds. It never lists the bucket. Set to 0 to disable
+        # it (expired objects are then left to the bucket lifecycle rule).
+        # Optional. Default: 3600 (= 1h).
+        orphan_sweep_seconds: 3600
+        # Maximum due claims one reconciler pass processes.
+        # Optional. Default: 1000.
+        orphan_sweep_batch: 1000
+        # Image create requests running at once in this process; more wait
+        # until their deadline and then get 503 image_busy.
+        # Optional. Default: 8.
+        max_concurrent_requests: 8
+        # Image create requests of one user identity running at once in this
+        # process. Optional. Default: 2.
+        max_concurrent_requests_per_user: 2
         url_fetch:
           # Allow plain http:// image_url inputs. Not recommended for
           # production. Optional. Default: false (HTTPS only).
