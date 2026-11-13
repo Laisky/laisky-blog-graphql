@@ -337,6 +337,65 @@ func TestValidateStartupConfigWithGetterRejectsIncompleteOneAPIStore(t *testing.
 	require.Contains(t, err.Error(), "max_idle_conns must be <=")
 }
 
+// TestValidateStartupConfigRejectsInvalidTrustedProxies verifies a mistyped
+// trusted proxy or header fails startup with the offending entry named.
+func TestValidateStartupConfigRejectsInvalidTrustedProxies(t *testing.T) {
+	cfg := map[string]any{"settings": map[string]any{"web": map[string]any{
+		"trusted_proxies":   []any{"100.64.0.0/10", "nginx.internal"},
+		"turnstile":         map[string]any{"risk": map[string]any{"max_tracked_accounts": "many"}},
+		"client_ip_headers": []any{"X-Forwarded-For"},
+	}}}
+	err := validateStartupConfigWithGetter(newMapConfigGetter(cfg))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `"nginx.internal"`)
+	require.Contains(t, err.Error(), "max_tracked_accounts must be an integer")
+
+	cfg = map[string]any{"settings": map[string]any{"web": map[string]any{
+		"client_ip_headers": []any{"X Forwarded For"},
+	}}}
+	require.ErrorContains(t, validateStartupConfigWithGetter(newMapConfigGetter(cfg)), "not a valid header name")
+}
+
+// TestValidateStartupConfigAcceptsTrustedProxyForms verifies the default, an
+// explicit empty list and explicit networks all pass validation.
+func TestValidateStartupConfigAcceptsTrustedProxyForms(t *testing.T) {
+	for _, proxies := range []any{nil, []any{}, []any{"100.64.0.10", "172.17.0.0/16", "fd00::/8"}} {
+		web := map[string]any{}
+		if proxies != nil {
+			web["trusted_proxies"] = proxies
+		}
+		require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(map[string]any{"settings": map[string]any{"web": web}})))
+	}
+}
+
+// TestValidateStartupConfigRejectsAmbiguousTurnstilePairs verifies that several
+// sites with Turnstile secrets need a default site or a global pair, so the
+// pair for an unmatched host is never ambiguous.
+func TestValidateStartupConfigRejectsAmbiguousTurnstilePairs(t *testing.T) {
+	site := func(secret string, isDefault bool) map[string]any {
+		cfg := map[string]any{"host": "x.example", "turnstile_site_key": "k", "turnstile_secret_key": secret}
+		if isDefault {
+			cfg["default"] = true
+		}
+		return cfg
+	}
+	build := func(sites map[string]any, global string) configGetter {
+		web := map[string]any{"sites": sites}
+		if global != "" {
+			web["turnstile"] = map[string]any{"site_key": "global-widget", "secret_key": global}
+		}
+		return newMapConfigGetter(map[string]any{"settings": map[string]any{"web": web}})
+	}
+
+	err := validateStartupConfigWithGetter(build(map[string]any{"a": site("s1", false), "b": site("s2", false)}, ""))
+	require.ErrorContains(t, err, "a, b all set turnstile_secret_key but none is default")
+
+	require.NoError(t, validateStartupConfigWithGetter(build(map[string]any{"a": site("s1", false), "b": site("s2", true)}, "")))
+	require.NoError(t, validateStartupConfigWithGetter(build(map[string]any{"a": site("s1", false), "b": site("s2", false)}, "global")))
+	require.NoError(t, validateStartupConfigWithGetter(build(map[string]any{"a": site("s1", false), "mcp": map[string]any{"host": "m"}}, "")),
+		"a single secret is unambiguous")
+}
+
 // newMapConfigGetter builds a dotted-path getter for nested map-based test configuration.
 // It accepts a nested map and returns a getter function compatible with validateStartupConfigWithGetter.
 func newMapConfigGetter(root map[string]any) configGetter {
@@ -361,6 +420,55 @@ func newMapConfigGetter(root map[string]any) configGetter {
 		}
 
 		return current
+	}
+}
+
+// TestValidateStartupConfigRequiresCompleteTurnstilePairs rejects challenges
+// the frontend cannot render and widget-only configurations that cannot verify.
+func TestValidateStartupConfigRequiresCompleteTurnstilePairs(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		pair      map[string]any
+		wantError bool
+	}{
+		{"absent", map[string]any{}, false},
+		{"complete", map[string]any{"site_key": "public", "secret_key": "private"}, false},
+		{"secret_only", map[string]any{"secret_key": "private"}, true},
+		{"widget_only", map[string]any{"site_key": "public"}, true},
+		{"blank_widget", map[string]any{"site_key": " ", "secret_key": "private"}, true},
+		{"non_string_widget", map[string]any{"site_key": 42, "secret_key": "private"}, true},
+		{"non_string_secret", map[string]any{"site_key": "public", "secret_key": false}, true},
+	} {
+		for _, location := range []string{"global", "site", "site_with_global", "site_with_default"} {
+			t.Run(tc.name+"/"+location, func(t *testing.T) {
+				web := map[string]any{}
+				if location == "global" {
+					web["turnstile"] = tc.pair
+				} else {
+					site := map[string]any{"host": "test.example"}
+					for k, v := range tc.pair {
+						site["turnstile_"+k] = v
+					}
+					sites := map[string]any{"test": site}
+					web["sites"] = sites
+					if location == "site_with_global" {
+						web["turnstile"] = map[string]any{"site_key": "fallback", "secret_key": "fallback-secret"}
+					}
+					if location == "site_with_default" {
+						sites["default"] = map[string]any{"host": "default.example", "default": true,
+							"turnstile_site_key": "fallback", "turnstile_secret_key": "fallback-secret"}
+					}
+				}
+				err := validateStartupConfigWithGetter(newMapConfigGetter(map[string]any{"settings": map[string]any{"web": web}}))
+				if tc.wantError {
+					require.Error(t, err)
+					require.Contains(t, err.Error(), "turnstile")
+					require.NotContains(t, err.Error(), "private")
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
 	}
 }
 

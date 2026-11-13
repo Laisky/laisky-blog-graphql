@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	gconfig "github.com/Laisky/go-config/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -18,7 +20,7 @@ func TestNormalizeHost(t *testing.T) {
 	require.Equal(t, "127.0.0.1", normalizeHost("127.0.0.1:8080"))
 }
 
-// TestSiteConfigSetResolveHost verifies site resolution respects the Host and X-Forwarded-Host headers.
+// TestSiteConfigSetResolveHost verifies site resolution respects the Host header, and X-Forwarded-Host only from a trusted proxy.
 func TestSiteConfigSetResolveHost(t *testing.T) {
 	oldSites := gconfig.Shared.GetStringMap("settings.web.sites")
 	siteSettings := map[string]any{
@@ -64,10 +66,31 @@ func TestSiteConfigSetResolveHost(t *testing.T) {
 	site = set.resolveForRequest(req)
 	require.Equal(t, "sso", site.ID)
 
+	// X-Forwarded-Host from a peer that is not a trusted proxy is ignored.
 	req = httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
-	req.Header.Set("X-Forwarded-Host", "mcp.laisky.com, proxy.local")
-	site = set.resolveForRequest(req)
+	req.RemoteAddr = "198.51.100.40:5000"
+	req.Header.Set("X-Forwarded-Host", "mcp.laisky.com")
+	site = set.resolveForRequest(throughIdentityPolicy(t, req))
+	require.Equal(t, "sso", site.ID, "a direct caller must not choose the site")
+
+	// From a trusted proxy, the entry it added (the rightmost) counts.
+	req = httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+	req.RemoteAddr = "100.64.0.10:5000"
+	req.Header.Set("X-Forwarded-Host", "sso.laisky.com, mcp.laisky.com")
+	site = set.resolveForRequest(throughIdentityPolicy(t, req))
 	require.Equal(t, "mcp", site.ID)
+}
+
+// throughIdentityPolicy returns req as the default client-identity policy
+// leaves it after the engine's identity middleware.
+func throughIdentityPolicy(t *testing.T, req *http.Request) *http.Request {
+	t.Helper()
+	policy, err := clientip.LoadPolicy(func(string) any { return nil })
+	require.NoError(t, err)
+	gctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	gctx.Request = req
+	policy.Attach(gctx)
+	return gctx.Request
 }
 
 // TestSiteConfigSetResolvePath verifies path-based site resolution for IP access.

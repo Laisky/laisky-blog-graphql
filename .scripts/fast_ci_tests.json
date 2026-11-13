@@ -88,6 +88,9 @@
       "TestStartupAlertCorePreservesSmallBoundContext",
       "TestStartupAlertCorePreservesLargeChosenInput",
       "TestStartupAlertCoreRejectsWholeOversizeRecord",
+      "TestValidateStartupConfigRejectsInvalidTrustedProxies",
+      "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
+      "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
       "TestValidateStartupConfigSSORedirectPolicy"
     ]
   },
@@ -112,7 +115,55 @@
       "TestAlertAdoptionActualCallerCompleteContent",
       "TestAlertAdoptionOversizeKeepsBusinessAndLocalInput",
       "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet",
+      "TestServerEngineDirectPeerCannotChooseRiskKey",
+      "TestServerEngineTrustedProxyChains",
+      "TestServerEngineDirectDeploymentPolicy",
+      "TestServerEngineHostCannotDisableChallenge",
+      "TestRuntimeConfigServesTheVerifyingWidgetKey",
+      "TestLegacyBlogLoginIsRemoved",
       "TestSSOCodeRegisteredClient"
+    ]
+  },
+  {
+    "package": "./library/clientip",
+    "tests": [
+      "TestLoadPolicyDefaultsWhenUnset",
+      "TestLoadPolicyExplicitEmptyTrustsNoProxy",
+      "TestLoadPolicyRejectsInvalidEntries",
+      "TestDefaultPolicyResolution",
+      "TestExplicitEmptyPolicyIgnoresEveryHeader",
+      "TestFromContextWithoutMiddlewareUsesPeerOnly",
+      "TestNetworkKeyGroupsIPv6By64",
+      "TestLoadPolicyNormalizesIPv4MappedPrefixes",
+      "TestPolicyTrustsEveryPeer",
+      "TestGinTrustAgreesWithPolicy",
+      "TestForwardedHostOnlyFromTrustedProxy",
+      "TestPolicyTrustsPeerMatchesGin"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/controller",
+    "tests": [
+      "TestAuthChallengeTrackerAccountBudgetSurvivesClientRotation",
+      "TestAuthChallengeTrackerAccountBudgetClearance",
+      "TestAuthChallengeTrackerAccountTableBounded",
+      "TestAuthChallengeTrackerClientTableBounded",
+      "TestValidateTurnstileTokenAccountBudgetAcrossAddresses",
+      "TestAuthChallengeTrackerConcurrentGuessesAreBounded",
+      "TestAuthChallengeTrackerOneChallengeAdmitsOneGuessAtATime",
+      "TestAccountKeyFoldsCollationVariants",
+      "TestAuthChallengeTrackerIdentityUnifiesSpellings",
+      "TestAuthChallengeTrackerFloodCannotEvictAttackedAccount",
+      "TestResolveTurnstileSiteNeverDisablesTheGate",
+      "TestAuthSuccessResetsAllKnownAliases",
+      "TestAuthSuccessPreservesAliasReservations",
+      "TestAdmitAuthRequestRejectsIncompletePair",
+      "TestGitHubRedirectTargetPolicy",
+      "TestGitHubOAuthLoginRevalidatesRedirect",
+      "TestPasskeyFinishRevalidatesRedirect",
+      "TestPrivateTargetsRequireDevelopmentIssuer",
+      "TestBackslashOnlyAfterQueryOrFragment",
+      "TestGitHubStartChecksTheCompletingIssuer"
     ]
   },
   {
@@ -121,17 +172,6 @@
       "TestSharedRedirectVectors",
       "TestSharedRegistrationVectors",
       "TestSharedRegistryVectors"
-    ]
-  },
-  {
-    "package": "./internal/web/blog/controller",
-    "tests": [
-      "TestGitHubRedirectTargetPolicy",
-      "TestGitHubOAuthLoginRevalidatesRedirect",
-      "TestPasskeyFinishRevalidatesRedirect",
-      "TestPrivateTargetsRequireDevelopmentIssuer",
-      "TestBackslashOnlyAfterQueryOrFragment",
-      "TestGitHubStartChecksTheCompletingIssuer"
     ]
   }
 ]

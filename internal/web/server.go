@@ -26,12 +26,9 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 	"github.com/Laisky/laisky-blog-graphql/library/jwt"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
-)
-
-var (
-	server = gin.New()
 )
 
 const defaultURLPrefix = "/mcp"
@@ -179,18 +176,23 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 		log.Logger.Info("debug mode enabled")
 	}
 
+	identityPolicy, err := clientip.LoadPolicy(gconfig.Shared.Get)
+	if err != nil {
+		return errors.Wrap(err, "load client identity policy")
+	}
+	if identityPolicy.TrustsEveryPeer() {
+		log.Logger.Warn("client identity policy trusts every peer, so any caller can choose its client address",
+			identityPolicy.LogFields()...)
+	} else {
+		log.Logger.Info("configured client identity policy", identityPolicy.LogFields()...)
+	}
+
+	server, err := newServerEngine(identityPolicy, prefix)
+	if err != nil {
+		return errors.Wrap(err, "build http engine")
+	}
+
 	frontendSPA := newFrontendSPAHandler(log.Logger.Named("frontend_spa"), prefix.internal)
-	server.Use(
-		gin.Recovery(),
-		ginMw.NewLoggerMiddleware(
-			ginMw.WithLoggerMwColored(),
-			ginMw.WithLevel(log.Logger.Level().String()),
-			ginMw.WithLogger(log.Logger.Named("gin")),
-		),
-		addSecurityHeaders,
-		ssoCodeTransport(prefix),
-		allowCORS,
-	)
 
 	if err := ginMw.EnableMetric(server); err != nil {
 		log.Logger.Panic("enable metric server", zap.Error(err))
@@ -408,7 +410,7 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 		toolsConfig := mcpToolGroups(catalog)
 		consoleTools := consoleGroups(catalog)
 
-		siteConfig := siteConfigs.resolveForRequest(ctx.Request)
+		siteConfig := withTurnstileSiteKey(siteConfigs.resolveForRequest(ctx.Request), ctx.Request)
 		if siteConfig.PublicBasePath == "" {
 			siteConfig.PublicBasePath = prefix.public
 		}
@@ -487,6 +489,47 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 		return errors.Wrap(err, "listen HTTP")
 	}
 	return serveHTTP(ctx, &http.Server{Addr: addr, Handler: server, ReadHeaderTimeout: 10 * time.Second}, listener)
+}
+
+// newServerEngine builds the gin engine every route is served by. It applies
+// the client-identity policy before any handler can read a client address and
+// installs the shared middleware chain, so tests drive the same initialization
+// path as production.
+func newServerEngine(policy clientip.Policy, prefix urlPrefixConfig) (*gin.Engine, error) {
+	engine := gin.New()
+	if err := policy.Apply(engine); err != nil {
+		return nil, errors.Wrap(err, "apply client identity policy")
+	}
+
+	accessLogger := log.Logger.Named("gin")
+	engine.Use(
+		gin.Recovery(),
+		requestIdentity(policy, accessLogger),
+		ginMw.NewLoggerMiddleware(
+			ginMw.WithLoggerMwColored(),
+			ginMw.WithLevel(log.Logger.Level().String()),
+			ginMw.WithLogger(accessLogger),
+		),
+		addSecurityHeaders,
+		ssoCodeTransport(prefix),
+		allowCORS,
+	)
+
+	return engine, nil
+}
+
+// requestIdentity resolves the client address once with the engine's
+// trusted-proxy policy, records the forwarded host and scheme only when a
+// trusted proxy reported them, and seeds the request logger with the address,
+// so the access log and every handler log carry the identity the risk
+// controls use. It runs before the logger middleware, which adopts a logger
+// already in the context.
+func requestIdentity(policy clientip.Policy, base glog.Logger) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		ip := policy.Attach(ctx)
+		ginMw.SetLogger(ctx, base.With(zap.String("client_ip", ip)))
+		ctx.Next()
+	}
 }
 
 // serveMCPTransportRoot dispatches a request to the MCP streamable transport
