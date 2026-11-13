@@ -659,7 +659,11 @@ golden fixtures in `prompts_golden_test.go`), `cache.go` (bbolt-backed response
 cache keyed by content hash + model), `llm.go` (Responses-API client with retry),
 `search_loop.go` (tree-reasoning search with `tree_query.*` budget), and `tree.go`
 (node serialization and traversal). `settings.go` carries the YAML defaults with
-exact key paths under `settings.mcp.tools.memory.plugins.pageindex.*`.
+exact key paths under `settings.mcp.tools.memory.plugins.pageindex.*`. Every upstream
+call passes `llm_gate.go`, which admits it against the run's absolute budget
+(`budget.go`, `limits.go`) and the rolling per-tenant and global `SpendGovernor`
+(`spend_governor.go`); `markdown_structure.go` keeps Markdown heading extraction
+linear (manual §6.6).
 
 The Phase-2 foundation threads `system_owner` through `internal/mcp/files/`. A
 non-empty `system_owner` opts a row out of the user namespace; the column is

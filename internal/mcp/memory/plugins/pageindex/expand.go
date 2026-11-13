@@ -112,6 +112,12 @@ func (idx *Indexer) expandNode(ctx context.Context, n *Node, pages []string, dep
 	if len(subNodes) == 0 {
 		return nil
 	}
+	// The expansion must fit the document's node ceiling; otherwise the node
+	// stays a leaf and keeps covering its whole page range.
+	if !budget.takeNodes(countNodes(subNodes)) {
+		stats.markTruncated()
+		return nil
+	}
 	// If the first sub-node title matches the parent (upstream optimization),
 	// promote its children rather than nesting redundantly.
 	if first := subNodes[0]; first != nil && strings.TrimSpace(first.Title) == strings.TrimSpace(n.Title) {
@@ -132,6 +138,13 @@ func (idx *Indexer) expandNode(ctx context.Context, n *Node, pages []string, dep
 		)
 	}
 	return nil
+}
+
+// countNodes returns the number of nodes in the forest rooted at nodes.
+func countNodes(nodes []*Node) int {
+	count := 0
+	WalkNodes(nodes, func(*Node) { count++ })
+	return count
 }
 
 // nodePageSlice returns pages[StartIndex-1:EndIndex] alongside the absolute

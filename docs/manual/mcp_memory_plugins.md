@@ -184,41 +184,53 @@ hint described in [Section 9](#9-troubleshooting).
 ```yaml
 settings:
   mcp:
-    memory:
-      default_plugin: 'rag'
-      plugins:
-        rag: {}
-        pageindex:
-          llm:
-            api_key: '' # empty key keeps pageindex unregistered
-            base_url: '' # empty = api.openai.com
-            indexing_model: 'gpt-5.4-mini'
-            retrieve_model: 'gpt-5.4-mini'
-          indexer:
-            timeout_index: '5m'
-            timeout_query: '60s'
-            max_concurrency: 8
-            retry:
-              max_attempts: 10
-              initial_backoff: '250ms'
-              max_backoff: '8s'
-            cache:
-              enabled: true
-              path: '/var/lib/laisky/pageindex-cache.bbolt'
-              max_size_bytes: 1073741824
-          algo:
-            toc_check_page_num: 20
-            max_page_num_each_node: 10
-            max_token_num_each_node: 20000
-            generate_node_summary: true
-            generate_doc_description: true
-          tree_query:
-            max_steps: 8
-            max_tokens: 20000
-            candidate_docs: 5
-          pdf:
-            text_parser: 'pdfcpu'
-            outline_parser: 'pdfcpu'
+    tools:
+      memory:
+        default_plugin: 'rag'
+        plugins:
+          rag: {}
+          pageindex:
+            llm:
+              api_key: '' # empty key keeps pageindex unregistered
+              base_url: '' # empty = api.openai.com
+              indexing_model: 'gpt-5.4-mini'
+              retrieve_model: 'gpt-5.4-mini'
+            indexer:
+              timeout_index: '5m'
+              timeout_query: '60s'
+              max_concurrency: 8
+              retry:
+                max_attempts: 3 # upstream requests per call, including the first
+                initial_backoff: '250ms'
+                max_backoff: '8s'
+              cache:
+                enabled: true
+                path: '/var/lib/laisky/pageindex-cache.bbolt'
+                max_size_bytes: 1073741824
+            algo:
+              toc_check_page_num: 20
+              max_page_num_each_node: 10
+              max_token_num_each_node: 20000
+              generate_node_summary: true
+              generate_doc_description: true
+            tree_query:
+              max_steps: 8
+              max_tokens: 20000
+              candidate_docs: 5
+            pdf:
+              text_parser: 'pdfcpu'
+              outline_parser: 'pdfcpu'
+            limits: # absolute ceilings; 0 or a negative value selects the default
+              max_nodes_per_document: 2000
+              max_llm_calls_per_document: 256
+              max_tokens_per_document: 2000000
+              window: '1h'
+              tenant_llm_calls_per_window: 1000
+              tenant_tokens_per_window: 4000000
+              global_llm_calls_per_window: 5000
+              global_tokens_per_window: 20000000
+              global_reserve_percent: 20
+              max_tracked_tenants: 10000
 ```
 
 The full schema and the resolution semantics of an empty `llm.api_key` (silently
@@ -249,10 +261,20 @@ system rows.
 Tool-result `structuredContent` for `pageindex`-routed `file_search` carries
 `tokens_in`, `tokens_out`, `llm_calls`, and `truncated` per [Section 8.2](#82-per-call-billing-metadata).
 Phase 2 indexing is **synchronous**: a `file_write` of a fresh document blocks the
-caller until the tree is built (subject to `indexer.timeout_index`). Search loops the
-tree-reasoning prompt over the configured `tree_query.candidate_docs` and may issue
-1–3 LLM calls per candidate; budget caps in `tree_query.max_steps` and `max_tokens`
-are enforced before the budget is exceeded (the response carries `truncated=true`).
+caller until the tree is built, for at most `indexer.timeout_index`. When that time
+runs out during LLM work, the remaining LLM phases are skipped like an exhausted
+budget (§6.6): leaves get local summaries, a PDF keeps the structure found so far,
+and the tree is stored. If it runs out before the structure is extracted, the write
+still succeeds with a deterministic file summary and the previous tree (if any)
+stays inactive until the next write. Search
+loops the tree-reasoning prompt over the configured `tree_query.candidate_docs` and
+issues at most one planner call per candidate and `tree_query.max_steps` in total.
+`tree_query.max_tokens` is enforced before each call is sent: the planner prompt
+uses the most detailed outline that fits the remaining budget (full outline, then
+without summaries, then at most three, two or one levels, then fewer top-level
+sections), and a candidate that cannot fit even one section falls back to the pages
+of its first section. Search calls also draw from the caller's rolling budget
+(§6.6).
 
 ### 6.5 Watch items
 
@@ -264,15 +286,119 @@ Per the wave-B implementation:
   on multi-column or heavily-figured PDFs should expect a corpus-comparison row in
   the §7 scorecard once datasets land.
 - **Recursive node expansion.** Proposal §2.6.4.1 phase 8 (recursive subtree expansion
-  for nodes that exceed `algo.max_token_num_each_node`) is **not yet wired**. Large
-  PDFs (> 200 pages) may produce flatter trees than upstream PageIndex. Tracked as a
-  v1.0.1 follow-up.
-- **Verification + fixer prompts.** Phase 7 (LLM-emitted-tree validation + auto-fix)
-  prompts are ported into [../../internal/mcp/memory/plugins/pageindex/prompts.go](../../internal/mcp/memory/plugins/pageindex/prompts.go)
-  but are **not yet wired** into the indexing pipeline; the LLM-emitted tree is
-  accepted as authoritative.
+  for nodes that exceed `algo.max_token_num_each_node`) is wired, bounded to depth 3,
+  and stops when the document's call, token or node ceiling (§6.6) is reached; the
+  node then stays a leaf covering its whole page range.
+- **Verification + fixer prompts.** Phase 7 (title-appearance sampling of at most 10
+  nodes and up to three fixer rounds) is wired. When the document budget is exhausted
+  the remaining samples count as correct and the tree is kept as emitted.
 
-## 6.6 Phase 3: Shadow replay (deferred)
+### 6.6 Structural and spending limits
+
+Indexing and search spend the operator's LLM credential, and the document shape is
+chosen by the caller. Every ceiling below is therefore an absolute service-side
+value under `settings.mcp.tools.memory.plugins.pageindex.limits.*`; none is derived
+from the number of headings, pages, roots or table-of-contents entries. A zero or
+negative value selects the default, so a ceiling can be raised or lowered but not
+switched off. The defaults leave typical documents unchanged.
+
+| Key | Default | Applies to |
+| --- | --- | --- |
+| `max_nodes_per_document` | `2000` | Tree nodes of one document. Markdown headings past the cap stay in the preceding section's text, so search still reaches them; PDF table-of-contents entries past the cap are dropped and an expansion that would exceed it is skipped. |
+| `max_llm_calls_per_document` | `256` | Upstream calls of one indexing run, across every phase (table-of-contents detection and parsing, summaries, verification, expansion, description). |
+| `max_tokens_per_document` | `2000000` | Tokens of one indexing run. The earlier per-node allowance (`algo.max_token_num_each_node` × (roots + 1) for Markdown, × pages + `tree_query.max_tokens` for PDF) still applies when it is smaller. |
+| `window` | `1h` | Refill period of the rolling budgets below. |
+| `tenant_llm_calls_per_window` | `1000` | Upstream calls of one caller (API-key hash) per window, indexing and search combined. |
+| `tenant_tokens_per_window` | `4000000` | Tokens of one caller per window. |
+| `global_llm_calls_per_window` | `5000` | Upstream calls of the whole process per window. This is the operator's ceiling even when callers use many API keys. |
+| `global_tokens_per_window` | `20000000` | Tokens of the whole process per window. |
+| `global_reserve_percent` | `20` | Share of the global budget only light callers may spend (below). Capped at 90. |
+| `max_tracked_tenants` | `10000` | Callers whose rolling budget is held in memory. |
+
+How the ceilings are enforced:
+
+- Every upstream request, for indexing and for search, passes one admission point. It
+  estimates the prompt's input tokens before sending and refuses the request when the
+  operation's remaining calls or tokens, the caller's rolling budget or the global
+  budget cannot cover it. A retry of a failed request is admitted the same way before
+  it is sent, so `max_llm_calls_per_document` and the rolling call budgets count
+  upstream requests, not logical calls. After the call, the provider-reported total
+  (or the estimate, when the provider reports none or the request failed) is charged;
+  a larger charge leaves the rolling budget in debt until it refills. Cached
+  responses are free.
+- Retries follow `indexer.retry.*` (default 3 requests per call, exponential backoff
+  from 250 ms to 8 s). Only timeouts, connection failures, 408, 409, 429 and 5xx are
+  retried; any other provider response (an invalid request, authentication, an
+  unknown model) fails at once.
+- Fairness: the last `global_reserve_percent` of the global budget is reserved for
+  light callers, those that have spent less than one document's allowance
+  (`max_llm_calls_per_document` calls and `max_tokens_per_document` tokens) of their
+  own budget in the current window. Heavy callers are refused at the reserve, so one
+  heavy caller cannot starve another caller's first document. Each caller can draw at
+  most one document's allowance from the reserve, so a holder of k keys can still
+  spend at most k such allowances of it; the absolute global ceiling always holds.
+- A refused summary is replaced by a deterministic local summary: the first words of
+  the section (at most 320 bytes), with Markdown markers removed. A refused
+  table-of-contents call keeps what was found so far, or one `Document` node for the
+  whole PDF. A write therefore never fails because a budget was exhausted; it gets a
+  less detailed tree. A refused planner call in search returns the first section's
+  pages. Reaching `indexer.timeout_index` during LLM work degrades the same way; only
+  an explicit cancellation of the request aborts the run.
+- A degraded tree is marked, never presented as complete: the tree and its catalog
+  entry carry `degraded`, and the file's summary is published with status
+  `degraded` and error code `budget_exhausted` (a rolling budget refused calls),
+  `timeout` (`indexer.timeout_index` ended LLM work) or `document_limit` (only the
+  document's own ceilings applied). The next write re-indexes the file. A
+  `budget_exhausted` or `timeout` tree is also refreshed later: a search that meets
+  it once its refresh time has passed, and while the caller's budget allows, queues a
+  re-index (one worker, at most 32 queued, one job per content generation). Refreshes
+  wait 5 minutes, then double up to 6 hours, and stop after 5 attempts; a
+  `document_limit` tree is final for its content, because a refresh would hit the
+  same ceiling.
+- Rolling budgets are token buckets that refill linearly over `window`. A caller's
+  bucket that has refilled completely and has no request in flight is dropped from
+  memory, so retained state is bounded by recent spenders; when `max_tracked_tenants`
+  callers are active, a new caller is refused (and degrades as above) instead of
+  receiving an untracked budget. Budgets are per process and reset on restart.
+- Every refusal is counted, including the cheap checks that skip rendering a prompt,
+  and at most once per minute the process logs `pageindex.spend.refusals` at warn
+  level with the admitted calls and the tenant, global, reserve and untracked
+  refusals since the previous summary.
+
+Markdown parsing also has fixed bounds that are not configurable. goldmark's
+`Parse` takes no context and cannot be interrupted, so its work is bounded before it
+starts: one linear pre-scan classifies every line (fenced and indented code, HTML
+blocks, thematic breaks, headings, list items, block quotes, paragraphs; indentation
+in columns with tabs to the next multiple of 4) and predicts goldmark's work. A
+document is parsed by goldmark only when no line opening a container has an
+estimated nesting above 32 (markers plus half the indentation columns), the summed
+nesting of all lines stays under 400,000, it has at most 40,000 blocks and 80,000
+content lines (non-blank lines, and blank lines inside an open list), and its
+link-reference definitions need at most 2^24 line copies. Ordinary documents of the
+2 MB write limit stay well below these bounds; a document over any of them is scanned
+by a linear fallback that recognizes ATX and setext headings outside code and HTML
+blocks and renders each title with goldmark (including the document's link-reference
+definitions), and that gives the same headings as goldmark on every document in the
+repository. Inline markup is parsed only inside headings of at most 1 KiB, and for at
+most 256 KiB of heading source and 32 Ki markup characters per document (later and
+longer headings keep their raw text); titles are capped at 1 KiB. Line numbers come
+from one newline index. Token counting splits runs longer than 256 bytes.
+
+What can be interrupted: the pre-scan, the fallback scanner, the walk over goldmark's
+tree, tree building, every LLM call and summarization stop promptly when the request
+is canceled or `indexer.timeout_index` passes. A goldmark parse in progress cannot
+be interrupted; the pre-scan keeps it to at most tens of milliseconds and tens of
+megabytes for a 2 MB document. Measurements and sources are in
+[../ref/pageindex_structural_budgets_20261108.md](../ref/pageindex_structural_budgets_20261108.md).
+
+Operator guidance: raise `max_llm_calls_per_document` only together with
+`indexer.timeout_index`, because summaries run one at a time; lower the global
+values to cap spend per hour. An indexing run that hit a ceiling or the deadline logs
+`pageindex.index.limited` at debug level with its `budget_refusals`,
+`rolling_refusals`, `local_summaries`, `structure_truncated` and `deadline_reached`
+values; degraded files can be found by their summary status `degraded` and error code.
+
+## 6.7 Phase 3: Shadow replay (deferred)
 
 The shadow-replay scaffolding exists for offline evaluation and future promotion work,
 but it is not part of the runtime routing contract. Runtime selection remains simple:

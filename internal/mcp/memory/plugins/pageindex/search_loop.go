@@ -18,6 +18,11 @@ type SearchInput struct {
 	PathPrefix     string
 	Limit          int
 	ValidateSource func(context.Context, string, string) (bool, error)
+	// Tenant names the caller whose rolling LLM budget the search draws from.
+	Tenant string
+	// OnCandidate, when set, is called with every candidate whose source is
+	// current, before it is searched; the plugin uses it to refresh degraded trees.
+	OnCandidate func(userPath string, entry IndexEntry)
 }
 
 // SearchEngine is the smaller interface the plugin uses against the indexer.
@@ -31,11 +36,22 @@ type Searcher struct {
 	store  *SysStore
 	cfg    Settings
 	engine SearchEngine
+	gate   llmGate
 }
 
-// NewSearcher constructs the retrieval helper.
+// NewSearcher constructs the retrieval helper. When engine is the plugin's
+// Indexer, search shares its tokenizer and rolling LLM budget, so indexing and
+// search draw from one tenant and global budget.
 func NewSearcher(llm LLM, store *SysStore, engine SearchEngine, cfg Settings) *Searcher {
-	return &Searcher{llm: llm, store: store, cfg: cfg, engine: engine}
+	cfg.Limits = cfg.Limits.WithDefaults()
+	gate := llmGate{spend: NewSpendGovernor(cfg.Limits)}
+	if idx, ok := engine.(*Indexer); ok && idx != nil {
+		gate.tok = idx.tok
+		if idx.gate.spend != nil {
+			gate.spend = idx.gate.spend
+		}
+	}
+	return &Searcher{llm: llm, store: store, cfg: cfg, engine: engine, gate: gate}
 }
 
 // Run is the §2.6.2 tree-reasoning loop. It returns a files.SearchResult that
@@ -49,11 +65,11 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		return files.SearchResult{}, err
 	}
 	candidates := filterCandidatesLimited(ix, in.PathPrefix, s.cfg.TreeQuery.CandidateDocs)
-	budget := NewBudget(int64(s.cfg.TreeQuery.MaxTokens))
 	stepBudget := s.cfg.TreeQuery.MaxSteps
 	if stepBudget <= 0 {
 		stepBudget = 8
 	}
+	budget := newOperationBudget(int64(s.cfg.TreeQuery.MaxTokens), stepBudget, unlimited, in.Tenant)
 	allChunks := make([]files.ChunkEntry, 0, 8)
 	for _, cand := range candidates {
 		if stepBudget <= 0 || budget.Remaining() <= 0 {
@@ -66,6 +82,9 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 			}
 		}
 		stepBudget--
+		if in.OnCandidate != nil {
+			in.OnCandidate(cand.userPath, cand.entry)
+		}
 		tree, err := s.store.GetTree(ctx, in.Project, cand.entry.DocID)
 		if err != nil {
 			continue
@@ -141,31 +160,109 @@ func firstNodeRange(tree *Tree) PageRange {
 }
 
 // pickRanges runs the PromptPickPageRanges prompt and parses the JSON output.
+// The call is admitted by the shared llmGate, so it counts against the search's
+// tree_query budget and the caller's rolling tenant budget.
 func (s *Searcher) pickRanges(ctx context.Context, tree *Tree, query string, budget *Budget) ([]PageRange, error) {
-	if budget != nil && budget.Remaining() <= 0 {
+	if s.gate.wouldRefuse(budget) {
 		return nil, ErrBudgetExceeded
 	}
-	outline, err := json.Marshal(CloneOutline(tree.Structure))
-	if err != nil {
-		return nil, errors.Wrap(err, "encode index structure")
-	}
-	prompt, err := RenderPrompt(PromptPickPageRanges, PickPageRangesVars{
-		Query:     query,
-		Tree:      string(outline),
-		MaxRanges: 5,
-	})
+	prompt, err := s.plannerPrompt(tree, query, budget.Remaining())
 	if err != nil {
 		return nil, err
 	}
 	req := Request{Input: userInput(prompt)}
-	resp, err := s.llm.Respond(ctx, req)
+	admission, err := s.gate.admit(req, budget)
 	if err != nil {
 		return nil, err
 	}
-	if budget != nil {
-		budget.Take(int64(resp.Usage.TotalTokens))
+	resp, err := s.llm.Respond(ctx, admission.bind(req))
+	admission.settle(resp)
+	if err != nil {
+		return nil, err
 	}
 	return parsePickRangesResponse(resp.Text)
+}
+
+// plannerPrompt renders the planner prompt with the most detailed outline whose
+// estimated size fits the remaining search budget: the full outline, then the
+// outline without summaries, then shallower outlines, then fewer top-level
+// sections. It returns ErrBudgetExceeded when not even one section fits, and the
+// caller falls back to the first section's pages.
+func (s *Searcher) plannerPrompt(tree *Tree, query string, remaining int64) (string, error) {
+	var prompt string
+	var renderErr error
+	forEachOutlineCandidate(tree.Structure, func(outline []*Node) bool {
+		body, err := json.Marshal(outline)
+		if err != nil {
+			renderErr = errors.Wrap(err, "encode index structure")
+			return false
+		}
+		candidate, err := RenderPrompt(PromptPickPageRanges, PickPageRangesVars{
+			Query:     query,
+			Tree:      string(body),
+			MaxRanges: 5,
+		})
+		if err != nil {
+			renderErr = err
+			return false
+		}
+		if int64(len(candidate)) <= remaining || estimateInputTokens(s.gate.tok, Request{Input: userInput(candidate)}) <= remaining {
+			prompt = candidate
+			return false
+		}
+		return true
+	})
+	if renderErr != nil {
+		return "", renderErr
+	}
+	if prompt == "" {
+		return "", ErrBudgetExceeded
+	}
+	return prompt, nil
+}
+
+// forEachOutlineCandidate calls fn with progressively smaller outlines of nodes,
+// the most detailed first, until fn returns false. An ordinary document stops at
+// the first, full outline.
+func forEachOutlineCandidate(nodes []*Node, fn func([]*Node) bool) {
+	if !fn(CloneOutline(nodes)) {
+		return
+	}
+	bare := stripSummaries(CloneOutline(nodes))
+	if !fn(bare) {
+		return
+	}
+	for depth := 3; depth >= 1; depth-- {
+		if !fn(limitDepth(bare, depth)) {
+			return
+		}
+	}
+	top := limitDepth(bare, 1)
+	for n := len(top) / 2; n >= 1; n /= 2 {
+		if !fn(top[:n]) {
+			return
+		}
+	}
+}
+
+// stripSummaries clears every Summary in an outline copy and returns it.
+func stripSummaries(nodes []*Node) []*Node {
+	WalkNodes(nodes, func(n *Node) { n.Summary = "" })
+	return nodes
+}
+
+// limitDepth returns a copy of an outline truncated to depth levels.
+func limitDepth(nodes []*Node, depth int) []*Node {
+	if len(nodes) == 0 || depth <= 0 {
+		return nil
+	}
+	out := make([]*Node, 0, len(nodes))
+	for _, n := range nodes {
+		cp := *n
+		cp.Children = limitDepth(n.Children, depth-1)
+		out = append(out, &cp)
+	}
+	return out
 }
 
 func parsePickRangesResponse(raw string) ([]PageRange, error) {

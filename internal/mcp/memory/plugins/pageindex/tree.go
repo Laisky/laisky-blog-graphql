@@ -14,8 +14,11 @@ type Tree struct {
 	// and DocDescription were produced from. It binds the tree to a content
 	// generation so a stale writer cannot overwrite a newer one
 	// (docs/proposals/file_search_file_summaries.md §4.2, §4.5).
-	SourceContentHash string  `json:"source_content_hash,omitempty"`
-	Structure         []*Node `json:"structure"`
+	SourceContentHash string `json:"source_content_hash,omitempty"`
+	// Degraded names why the tree's LLM work was cut short ("timeout",
+	// "budget_exhausted", "document_limit"); empty for a complete tree.
+	Degraded  string  `json:"degraded,omitempty"`
+	Structure []*Node `json:"structure"`
 	// Pages caches per-page extracted text so retrieval can resolve page ranges
 	// without re-parsing the original bytes.
 	Pages []Page `json:"pages,omitempty"`

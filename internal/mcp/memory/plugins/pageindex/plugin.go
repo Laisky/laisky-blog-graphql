@@ -10,6 +10,7 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
+	glog "github.com/Laisky/zap"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 	mcpplugin "github.com/Laisky/laisky-blog-graphql/internal/mcp/memory/plugin"
@@ -25,6 +26,9 @@ type PluginDeps struct {
 	PDF       PDFParser
 	Cache     Cache
 	Logger    logSDK.Logger
+	// Spend is the rolling LLM budget shared by indexing and search; nil builds
+	// one on the wall clock from Settings.Limits. Tests inject a fake clock.
+	Spend *SpendGovernor
 }
 
 // Plugin satisfies mcpplugin.Plugin for long-document tree-reasoning memory.
@@ -37,6 +41,9 @@ type Plugin struct {
 	cfg      Settings
 	log      logSDK.Logger
 	cache    Cache
+	// now is the clock of the rolling budget, also used for refresh scheduling.
+	now       func() time.Time
+	refresher *degradedRefresher
 }
 
 // New constructs the plugin from deps. It does not open the bbolt cache or
@@ -49,7 +56,7 @@ func New(deps PluginDeps) (*Plugin, error) {
 	if deps.SystemFS == nil {
 		return nil, errors.New("systemFS is nil")
 	}
-	return &Plugin{
+	p := &Plugin{
 		userFS: deps.UserFS,
 		sysFS:  deps.SystemFS,
 		store:  NewSysStore(deps.SystemFS),
@@ -59,7 +66,12 @@ func New(deps PluginDeps) (*Plugin, error) {
 		indexer:  buildIndexerForCtor(deps),
 		searcher: nil,
 		cache:    deps.Cache,
-	}, nil
+		now:      time.Now,
+	}
+	if p.indexer != nil && p.indexer.gate.spend != nil {
+		p.now = p.indexer.gate.spend.now
+	}
+	return p, nil
 }
 
 func buildIndexerForCtor(deps PluginDeps) *Indexer {
@@ -73,6 +85,7 @@ func buildIndexerForCtor(deps PluginDeps) *Indexer {
 		Cache:     deps.Cache,
 		Settings:  deps.Settings,
 		Logger:    deps.Logger,
+		Spend:     deps.Spend,
 	})
 	if err != nil {
 		return nil
@@ -120,11 +133,16 @@ func (p *Plugin) Start(ctx context.Context) error {
 	if p.searcher == nil {
 		p.searcher = NewSearcher(p.indexer.llm, p.store, p.indexer, p.cfg)
 	}
+	if p.refresher == nil {
+		p.startRefresher(ctx)
+	}
 	return nil
 }
 
-// Stop closes the bbolt cache.
+// Stop stops the refresh worker and closes the bbolt cache.
 func (p *Plugin) Stop(ctx context.Context) error {
+	p.refresher.stop()
+	p.refresher = nil
 	if p.cache != nil {
 		return p.cache.Close()
 	}
@@ -163,21 +181,27 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 	if readErr != nil {
 		return res, errors.Wrap(readErr, "read post-write content for pageindex")
 	}
-	fullBytes := []byte(full.Content)
+	return res, p.indexAndPublish(ctx, auth, project, path, full.Content, 0)
+}
+
+// indexAndPublish builds the tree of content (the complete current file) and
+// publishes it with its catalog entry and user-row summary, conditional on the
+// content hash so a stale run cannot overwrite a newer generation. refreshes is
+// the number of earlier refresh attempts of a degraded tree for this content.
+func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, project, path, content string, refreshes int) error {
+	fullBytes := []byte(content)
 	sourceHash := files.HashFileContent(fullBytes)
 	storageProject := PageIndexStorageProject(auth, project)
 
 	if !isLongDocPath(path) {
 		// Unsupported extension (or no indexer): store a local deterministic summary
 		// without routing through RAG or exposing a false search hit.
-		desc := files.DeterministicFileSummaryFallback(full.Content, docSummaryMaxWords, docSummaryMaxBytes)
-		if _, err := p.publishUserRowSummary(ctx, auth, project, path, desc, files.SummarySourceDeterministicFallback, sourceHash); err != nil {
-			return res, err
-		}
-		return res, nil
+		desc := files.DeterministicFileSummaryFallback(content, docSummaryMaxWords, docSummaryMaxBytes)
+		_, err := p.publishUserRowSummary(ctx, auth, project, path, desc, files.SummarySourceDeterministicFallback, sourceHash, "")
+		return err
 	}
 	if p.indexer == nil {
-		return res, errors.New("pageindex indexer is unavailable")
+		return errors.New("pageindex indexer is unavailable")
 	}
 
 	kind := KindPDF
@@ -185,90 +209,91 @@ func (p *Plugin) Write(ctx context.Context, auth files.AuthContext, project, pat
 		kind = KindMarkdown
 	}
 	docID := docIDFromAuth(auth, project, path)
-	tree, _, indexErr := p.indexer.Index(ctx, kind, fullBytes, IndexOptions{DocID: docID}, nil)
+	tree, stats, indexErr := p.indexDocument(ctx, kind, fullBytes, IndexOptions{DocID: docID, Tenant: pageIndexTenant(auth)})
 	if indexErr != nil {
 		// Indexing errors should not silently fail the write; surface as warning and
 		// still publish a deterministic user-row summary for the content generation.
 		if p.log != nil {
-			p.log.Warn("pageindex.write index error: " + indexErr.Error())
+			p.log.Warn("pageindex.write index error", glog.String("path", path), glog.Error(indexErr))
 		}
-		desc := files.DeterministicFileSummaryFallback(full.Content, docSummaryMaxWords, docSummaryMaxBytes)
-		if _, err := p.publishUserRowSummary(ctx, auth, project, path, desc, files.SummarySourceDeterministicFallback, sourceHash); err != nil {
-			return res, err
-		}
-		return res, nil
+		desc := files.DeterministicFileSummaryFallback(content, docSummaryMaxWords, docSummaryMaxBytes)
+		_, err := p.publishUserRowSummary(ctx, auth, project, path, desc, files.SummarySourceDeterministicFallback, sourceHash, "")
+		return err
 	}
 
 	tree.SourceContentHash = sourceHash
+	tree.Degraded = stats.degradedReason()
 	desc, source := finalizeDocDescription(tree, fullBytes)
 	tree.DocDescription = desc
-
-	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
-		entry := IndexEntry{
-			DocID:             docID,
-			Type:              string(kind),
-			PageCount:         tree.PageCount,
-			LineCount:         tree.LineCount,
-			IndexedAt:         time.Now().UTC().Format(time.RFC3339Nano),
-			SourceContentHash: sourceHash,
-		}
-		published, err := atomicFS.PublishPluginSummaryAndState(
-			ctx,
-			auth,
-			project,
-			storageProject,
-			path,
-			pageIndexSummaryInput(desc, source, sourceHash),
-			pageIndexWriteState(docID, path, tree, entry),
-		)
-		if err != nil {
-			return res, err
-		}
-		if !published && p.log != nil {
-			p.log.Debug("pageindex.write skipped stale tree publish: " + path)
-		}
-		return res, nil
-	}
-
-	// Publish the user-row summary first, guarded by the content hash. A false result
-	// means a newer generation is already active, so this stale writer must not
-	// overwrite the tree or index mapping (P06).
-	published, err := p.publishUserRowSummary(ctx, auth, project, path, desc, source, sourceHash)
-	if err != nil {
-		return res, err
-	}
-	if !published {
-		if p.log != nil {
-			p.log.Debug("pageindex.write skipped stale tree publish: " + path)
-		}
-		return res, nil
-	}
-
-	if err := p.store.PutTree(ctx, storageProject, docID, tree); err != nil {
-		return res, errors.Wrap(err, "persist pageindex tree")
-	}
 	entry := IndexEntry{
 		DocID:             docID,
 		Type:              string(kind),
 		PageCount:         tree.PageCount,
 		LineCount:         tree.LineCount,
-		IndexedAt:         time.Now().UTC().Format(time.RFC3339Nano),
+		IndexedAt:         p.now().UTC().Format(time.RFC3339Nano),
 		SourceContentHash: sourceHash,
+	}
+	p.markRefresh(&entry, tree.Degraded, refreshes)
+	summary := pageIndexSummaryInput(desc, source, sourceHash, tree.Degraded)
+
+	if atomicFS, ok := p.sysFS.(files.AtomicSystemFS); ok {
+		published, err := atomicFS.PublishPluginSummaryAndState(ctx, auth, project, storageProject, path, summary, pageIndexWriteState(docID, path, tree, entry))
+		if err != nil {
+			return err
+		}
+		if !published && p.log != nil {
+			p.log.Debug("pageindex.write skipped stale tree publish", glog.String("path", path))
+		}
+		return nil
+	}
+
+	// Publish the user-row summary first, guarded by the content hash. A false result
+	// means a newer generation is already active, so this stale writer must not
+	// overwrite the tree or index mapping (P06).
+	published, err := p.userFS.PublishPluginSummary(ctx, auth, project, path, summary)
+	if err != nil {
+		return errors.Wrap(err, "persist pageindex summary")
+	}
+	if !published {
+		if p.log != nil {
+			p.log.Debug("pageindex.write skipped stale tree publish", glog.String("path", path))
+		}
+		return nil
+	}
+	if err := p.store.PutTree(ctx, storageProject, docID, tree); err != nil {
+		return errors.Wrap(err, "persist pageindex tree")
 	}
 	if err := p.store.UpdateIndexEntry(ctx, storageProject, path, entry); err != nil {
 		// Keep the deterministic tree. Deleting it here can corrupt an existing
 		// catalog entry because updates reuse the same docID. A retry safely
 		// overwrites the tree and converges the catalog and metadata.
-		return res, errors.Wrap(err, "persist pageindex catalog")
+		return errors.Wrap(err, "persist pageindex catalog")
 	}
-	return res, nil
+	return nil
+}
+
+// indexDocument builds the tree within indexer.timeout_index, the documented wall
+// time of one synchronous index. Persistence after it keeps the caller's context.
+func (p *Plugin) indexDocument(ctx context.Context, kind DocKind, content []byte, opts IndexOptions) (*Tree, *Stats, error) {
+	if timeout := p.cfg.Indexer.TimeoutIndex; timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	return p.indexer.Index(ctx, kind, content, opts, nil)
+}
+
+// pageIndexTenant returns the identity whose rolling LLM budget a request draws
+// from: the caller's API-key hash, the same identity that scopes its catalog.
+func pageIndexTenant(auth files.AuthContext) string {
+	return auth.APIKeyHash
 }
 
 // publishUserRowSummary publishes bounded summary catalog metadata onto the user file
 // row through the conditional publisher. It returns whether the summary was published
 // (false when a newer content generation is already active).
-func (p *Plugin) publishUserRowSummary(ctx context.Context, auth files.AuthContext, project, path, summary string, source files.SummarySource, contentHash string) (bool, error) {
-	published, err := p.userFS.PublishPluginSummary(ctx, auth, project, path, pageIndexSummaryInput(summary, source, contentHash))
+func (p *Plugin) publishUserRowSummary(ctx context.Context, auth files.AuthContext, project, path, summary string, source files.SummarySource, contentHash, degradedReason string) (bool, error) {
+	published, err := p.userFS.PublishPluginSummary(ctx, auth, project, path, pageIndexSummaryInput(summary, source, contentHash, degradedReason))
 	if err != nil {
 		return false, errors.Wrap(err, "persist pageindex summary")
 	}
@@ -354,6 +379,10 @@ func (p *Plugin) Search(ctx context.Context, auth files.AuthContext, project, qu
 		Query:      query,
 		PathPrefix: pathPrefix,
 		Limit:      limit,
+		Tenant:     pageIndexTenant(auth),
+		OnCandidate: func(userPath string, entry IndexEntry) {
+			p.maybeRefresh(auth, project, userPath, entry)
+		},
 		ValidateSource: func(validateCtx context.Context, userPath, expectedHash string) (bool, error) {
 			if expectedHash == "" {
 				return false, nil

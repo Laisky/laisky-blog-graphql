@@ -3,6 +3,7 @@ package pageindex
 import (
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
@@ -33,15 +34,58 @@ type tiktokenizer struct {
 	encoding tk.Encoding
 }
 
+// maxTokenizerRunBytes bounds the longest run of whitespace or non-whitespace
+// bytes handed to the codec in one piece. The codec's pre-tokenizer
+// (regexp2 with lookahead) and its byte-pair merge are both quadratic in the
+// length of one such run, so an untrusted page or prompt made of one long run
+// would otherwise cost minutes of CPU. Ordinary text never has runs this long,
+// so its count is exactly the codec's count; a cut inside a longer run can only
+// add a token at the cut, which keeps the count a safe upper estimate.
+const maxTokenizerRunBytes = 256
+
+// Count returns the number of tokens in text. Its cost is linear in len(text):
+// runs longer than maxTokenizerRunBytes are counted in bounded segments.
 func (t *tiktokenizer) Count(text string) int {
 	if text == "" {
 		return 0
 	}
-	n, err := t.codec.Count(text)
-	if err != nil {
-		return len(text) / 4
+	total := 0
+	forEachBoundedSegment(text, maxTokenizerRunBytes, func(segment string) {
+		n, err := t.codec.Count(segment)
+		if err != nil {
+			n = len(segment)/4 + 1
+		}
+		total += n
+	})
+	return total
+}
+
+// forEachBoundedSegment calls fn with consecutive segments of text whose runs of
+// whitespace or non-whitespace bytes are at most maxRun bytes long. Text without
+// such a run is passed whole, and every cut falls on a UTF-8 rune boundary.
+func forEachBoundedSegment(text string, maxRun int, fn func(string)) {
+	start, runStart := 0, 0
+	for i := 1; i < len(text); i++ {
+		if isTokenizerSpace(text[i]) != isTokenizerSpace(text[i-1]) {
+			runStart = i
+			continue
+		}
+		if i-runStart < maxRun || !utf8.RuneStart(text[i]) {
+			continue
+		}
+		fn(text[start:i])
+		start, runStart = i, i
 	}
-	return n
+	fn(text[start:])
+}
+
+// isTokenizerSpace reports whether b is ASCII whitespace for run splitting.
+func isTokenizerSpace(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	}
+	return false
 }
 
 func (t *tiktokenizer) Encode(text string) []int {

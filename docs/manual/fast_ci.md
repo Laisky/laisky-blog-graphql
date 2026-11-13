@@ -17,7 +17,8 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
 `internal/library/ssoredirect`, `internal/web/blog/controller`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
-`internal/web/telegram/dao` and `internal/web/telegram/service`. These exercise input validation, controlled
+`internal/web/telegram/dao`, `internal/web/telegram/service` and
+`internal/mcp/memory/plugins/pageindex`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
@@ -34,6 +35,29 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The PageIndex selections (issues #85 and #91) count upstream calls with a fake
+model: per-document call and token ceilings that do not grow with heading, root or
+table-of-contents count, a planner prompt that fits `tree_query.max_tokens`, a tenant
+budget that holds across repeated writes and searches while another tenant keeps its
+own, the global ceiling across tenant identities, cancellation polled while Markdown
+is parsed, an empty heading that no longer crashes tree building, and heading
+extraction identical to the previous full goldmark parse on the repository's own
+documents. The review follow-ups add, with fake clocks only: the global reserve
+that keeps a light tenant's first document whole while heavy tenants are refused,
+degraded publication and a single deduplicated refresh after the budget refills, a
+final `document_limit` state, debt that survives a slow call, counted and
+rate-limited refusal logs, the goldmark work bounds decided before parsing, ordinary
+documents (spaced breaks, logs in fences, indented code) kept on goldmark, the
+fallback scanner matching goldmark on the corpus and stopping at the heading cap,
+client errors not retried, and every retry admitted by the budgets. The timing-ratio
+and allocation checks of the same issues are deliberate performance acceptance,
+because a shared runner's load can distort them (their timing assertions skip under
+`-race`):
+
+```sh
+go test -count=1 -v ./internal/mcp/memory/plugins/pageindex -run 'TestExtractHeadersDenseHeadingsScaleLinearly|TestExtractHeadersPathologicalMarkdownCostsLikePlainText|TestTokenizerCountBoundsLongRuns|TestListShapedMarkdownStaysBounded|TestTenantBudgetIndependentOfWallClock'
+```
 
 The SSO selections run the shared redirect-policy and registry vectors that the
 frontend tests also consume, the registered-client code issuance and redemption

@@ -14,6 +14,7 @@ import (
 
 	errors "github.com/Laisky/errors/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
+	glog "github.com/Laisky/zap"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -25,6 +26,17 @@ type Stats struct {
 	OutputTokens int
 	Cached       int
 	Wallclock    time.Duration
+	// BudgetRefusals counts calls refused by an operation or rolling budget.
+	BudgetRefusals int
+	// RollingRefusals counts the refusals of BudgetRefusals made by a rolling
+	// tenant or global budget, which a later refresh can overcome.
+	RollingRefusals int
+	// LocalSummaries counts leaves summarized locally because a call was refused.
+	LocalSummaries int
+	// StructureTruncated reports that the node ceiling cut the tree short.
+	StructureTruncated bool
+	// DeadlineReached reports that indexer.timeout_index ended LLM work early.
+	DeadlineReached bool
 }
 
 // addLLMCall accumulates one LLM-call's accounting under the stats lock so
@@ -37,6 +49,78 @@ func (s *Stats) addLLMCall(in, out int) {
 	s.LLMCalls++
 	s.InputTokens += in
 	s.OutputTokens += out
+	s.mu.Unlock()
+}
+
+// addRefusal counts one call refused by a budget, classified by err.
+func (s *Stats) addRefusal(err error) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.BudgetRefusals++
+	if errors.Is(err, errRollingBudgetExceeded) {
+		s.RollingRefusals++
+	}
+	s.mu.Unlock()
+}
+
+// degradedReason returns the summary error code of a run that did not get every
+// LLM result it asked for: "timeout" when indexer.timeout_index ended it,
+// "budget_exhausted" when a rolling budget refused calls (a later refresh can
+// succeed), "document_limit" when only the document's own ceilings did, and ""
+// for a complete run.
+func (s *Stats) degradedReason() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.DeadlineReached:
+		return degradedTimeout
+	case s.RollingRefusals > 0:
+		return degradedBudget
+	case s.BudgetRefusals > 0 || s.LocalSummaries > 0:
+		return degradedDocumentLimit
+	}
+	return ""
+}
+
+// Degraded summary error codes (Stats.degradedReason).
+const (
+	degradedTimeout       = "timeout"
+	degradedBudget        = "budget_exhausted"
+	degradedDocumentLimit = "document_limit"
+)
+
+// addLocalSummary counts one leaf summarized locally.
+func (s *Stats) addLocalSummary() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.LocalSummaries++
+	s.mu.Unlock()
+}
+
+// markTruncated records that the node ceiling cut the tree short.
+func (s *Stats) markTruncated() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.StructureTruncated = true
+	s.mu.Unlock()
+}
+
+// markDeadline records that the indexing deadline ended LLM work early.
+func (s *Stats) markDeadline() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.DeadlineReached = true
 	s.mu.Unlock()
 }
 
@@ -54,6 +138,8 @@ func (s *Stats) addCached() {
 type IndexOptions struct {
 	DocID            string
 	AlgorithmVersion string
+	// Tenant names the caller whose rolling LLM budget the run draws from.
+	Tenant string
 }
 
 // Deps gathers the indexer's runtime collaborators.
@@ -65,6 +151,9 @@ type Deps struct {
 	Sem       *semaphore.Weighted
 	Settings  Settings
 	Logger    logSDK.Logger
+	// Spend is the rolling tenant and global LLM budget; nil builds one from
+	// Settings.Limits. Indexing and search share one governor per plugin.
+	Spend *SpendGovernor
 }
 
 // Indexer orchestrates document → tree extraction.
@@ -76,6 +165,7 @@ type Indexer struct {
 	sem   *semaphore.Weighted
 	cfg   Settings
 	log   logSDK.Logger
+	gate  llmGate
 }
 
 // NewIndexer wires the indexer fields, supplying defaults where allowed.
@@ -107,6 +197,10 @@ func NewIndexer(deps Deps) (*Indexer, error) {
 		}
 		deps.Sem = semaphore.NewWeighted(int64(w))
 	}
+	deps.Settings.Limits = deps.Settings.Limits.WithDefaults()
+	if deps.Spend == nil {
+		deps.Spend = NewSpendGovernorWithClock(deps.Settings.Limits, time.Now, deps.Logger)
+	}
 	return &Indexer{
 		llm:   deps.LLM,
 		pdf:   deps.PDF,
@@ -115,6 +209,7 @@ func NewIndexer(deps Deps) (*Indexer, error) {
 		sem:   deps.Sem,
 		cfg:   deps.Settings,
 		log:   deps.Logger,
+		gate:  llmGate{tok: deps.Tokenizer, spend: deps.Spend},
 	}, nil
 }
 
@@ -135,11 +230,14 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 	rep.Report(Progress{Phase: "init", Percent: 0, Message: "begin"})
 	var tree *Tree
 	var err error
+	if err := ctx.Err(); err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
 	switch kind {
 	case KindPDF:
-		tree, err = idx.runPDF(ctx, bytes, rep, stats)
+		tree, err = idx.runPDF(ctx, bytes, opts.Tenant, rep, stats)
 	case KindMarkdown:
-		tree, err = idx.runMarkdown(ctx, bytes, rep, stats)
+		tree, err = idx.runMarkdown(ctx, bytes, opts.Tenant, rep, stats)
 	default:
 		return nil, nil, errors.Errorf("unsupported kind %q", kind)
 	}
@@ -151,13 +249,27 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 	tree.AlgorithmVer = algoVer
 	tree.IndexedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	stats.Wallclock = time.Since(start)
+	if idx.log != nil && (stats.BudgetRefusals > 0 || stats.StructureTruncated || stats.DeadlineReached) {
+		idx.log.Debug("pageindex.index.limited",
+			glog.String("kind", string(kind)),
+			glog.Int("llm_calls", stats.LLMCalls),
+			glog.Int("budget_refusals", stats.BudgetRefusals),
+			glog.Int("rolling_refusals", stats.RollingRefusals),
+			glog.Int("local_summaries", stats.LocalSummaries),
+			glog.Bool("structure_truncated", stats.StructureTruncated),
+			glog.Bool("deadline_reached", stats.DeadlineReached),
+		)
+	}
 	rep.Report(Progress{Phase: "done", Percent: 100, TokensIn: stats.InputTokens, TokensOut: stats.OutputTokens, LLMCalls: stats.LLMCalls})
 	return tree, stats, nil
 }
 
-// callLLM is the cache-aware, budgeted entry point used by every phase.
+// callLLM is the cache-aware, budgeted entry point used by every phase. A cached
+// response is free; any other call must be admitted by the llmGate, which returns
+// ErrBudgetExceeded when the operation or rolling budgets would be exceeded.
 func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, stats *Stats) (*Response, error) {
-	if budget != nil && budget.Remaining() <= 0 {
+	if budget.exhausted() {
+		stats.addRefusal(ErrBudgetExceeded)
 		return nil, ErrBudgetExceeded
 	}
 	if req.PromptHash == [32]byte{} {
@@ -174,20 +286,28 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 		stats.addCached()
 		return cached, nil
 	}
+	admission, err := idx.gate.admit(req, budget)
+	if err != nil {
+		stats.addRefusal(err)
+		return nil, err
+	}
 	if idx.sem != nil {
 		if err := idx.sem.Acquire(ctx, 1); err != nil {
+			admission.release()
 			return nil, err
 		}
 		defer idx.sem.Release(1)
 	}
-	resp, err := idx.llm.Respond(ctx, req)
+	resp, err := idx.llm.Respond(ctx, admission.bind(req))
+	admission.settle(resp)
 	if err != nil {
+		if errors.Is(err, ErrBudgetExceeded) {
+			// A retry was refused before it was sent.
+			stats.addRefusal(err)
+		}
 		return nil, err
 	}
 	stats.addLLMCall(resp.Usage.InputTokens, resp.Usage.OutputTokens)
-	if budget != nil {
-		budget.Take(int64(resp.Usage.TotalTokens))
-	}
 	if err := idx.cache.Put(req.PromptHash, resp); err != nil && idx.log != nil {
 		idx.log.Warn(fmt.Sprintf("pageindex.cache.put: %v", err))
 	}
