@@ -27,7 +27,7 @@ func TestStaticServerCardKeepsFileIOConditions(t *testing.T) {
 		byName[entry.Name] = entry.InputSchema
 	}
 	svc := &behaviorFileService{}
-	for _, tool := range []Tool{mustFileReadTool(t, svc), mustFileWriteTool(t, svc), mustFileDeleteTool(t, svc), mustFileRenameTool(t, svc)} {
+	for _, tool := range []Tool{mustFileReadTool(t, svc), mustFileWriteTool(t, svc), mustFileDeleteTool(t, svc), mustFileRenameTool(t, svc), &FileHistoryTool{name: FileRestoreVersionToolName}} {
 		definition := tool.Definition()
 		encoded, err := toolInputSchemaJSON(definition)
 		require.NoError(t, err)
@@ -38,9 +38,29 @@ func TestStaticServerCardKeepsFileIOConditions(t *testing.T) {
 		properties := static["properties"].(map[string]any)
 		require.Contains(t, properties, "expected_version", definition.Name)
 		require.Equal(t, "string", properties["expected_version"].(map[string]any)["type"])
-		if definition.Name == "file_write" {
-			require.Equal(t, runtime["oneOf"], static["oneOf"])
-			require.Contains(t, properties, "create_only")
+		if definition.Name == "file_write" || definition.Name == FileRestoreVersionToolName {
+			require.Equal(t, runtime["properties"].(map[string]any)["expected_version"].(map[string]any)["pattern"], properties["expected_version"].(map[string]any)["pattern"])
+			liveBranches := runtime["oneOf"].([]any)
+			cardBranches := static["oneOf"].([]any)
+			require.Len(t, cardBranches, len(liveBranches))
+			for index, alternative := range cardBranches {
+				branch := alternative.(map[string]any)
+				live := liveBranches[index].(map[string]any)
+				require.Equal(t, live["type"], branch["type"])
+				require.Equal(t, live["required"], branch["required"])
+				require.Equal(t, live["not"], branch["not"])
+				fields := branch["properties"].(map[string]any)
+				require.Len(t, fields, len(properties))
+				for name, property := range properties {
+					if name == createOnlyKey {
+						require.Equal(t, live["properties"].(map[string]any)[name].(map[string]any)["const"], fields[name].(map[string]any)["const"])
+						continue
+					}
+					// The static card has tighter mode/offset constraints; retain
+					// those in each alternative instead of replacing them.
+					require.Equal(t, property, fields[name])
+				}
+			}
 		}
 		if definition.Name == "file_delete" || definition.Name == "file_rename" {
 			require.Contains(t, static["required"], "expected_version")

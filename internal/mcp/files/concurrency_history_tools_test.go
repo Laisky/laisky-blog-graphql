@@ -79,6 +79,13 @@ func TestFileIOHistoryToolsRestoreUsesOriginalLiveVersion(t *testing.T) {
 				failure = callRaceToolError(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
 				require.Equal(t, "PRECONDITION_REQUIRED", failure["code"])
 				args["expected_version"] = current.Version
+				args["create_only"] = true
+				failure = callRaceToolError(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
+				require.Equal(t, "INVALID_ARGUMENT", failure["code"])
+				require.Equal(t, current, readRaceVersion(t, f.raceFixture, path))
+				require.Equal(t, jobs, f.count(t, "mcp_file_index_jobs"))
+				require.Equal(t, snapshots, f.count(t, "mcp_file_versions"))
+				delete(args, "create_only")
 				restored := callRaceTool(t, f.toolCtx, history[tools.FileRestoreVersionToolName], tools.FileRestoreVersionToolName, args)
 				require.NotEqual(t, current.Version, restored["version"])
 				f.assertStored(t, path, "original 漢🙂")

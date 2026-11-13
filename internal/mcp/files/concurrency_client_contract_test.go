@@ -54,6 +54,12 @@ func TestFileIOClientPreconditionsMandatory(t *testing.T) {
 				require.Equal(t, created["version"], initial["version"], "first read needs no precondition")
 				before := readRaceVersion(t, f, "/plain.txt")
 				rows, history, jobs := f.count(t, "mcp_files"), f.count(t, "mcp_file_versions"), f.count(t, "mcp_file_index_jobs")
+				// Replaying creation must not overwrite an existing file or enqueue work.
+				args["content"] = "must not replace"
+				require.Equal(t, "VERSION_CONFLICT", callRaceToolError(t, ctx, writer, "file_write", args)["code"])
+				require.Equal(t, before, readRaceVersion(t, f, "/plain.txt"))
+				require.Equal(t, history, f.count(t, "mcp_file_versions"))
+				require.Equal(t, jobs, f.count(t, "mcp_file_index_jobs"))
 				delete(args, "create_only")
 				args["content"] = "unprotected edit"
 				for _, mode := range []string{"", "APPEND", "OVERWRITE", "TRUNCATE"} {
