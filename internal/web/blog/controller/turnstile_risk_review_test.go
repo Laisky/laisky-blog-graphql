@@ -75,7 +75,7 @@ func TestAuthChallengeTrackerOneChallengeAdmitsOneGuessAtATime(t *testing.T) {
 	attacker := tracker.subject("192.0.2.10", "victim@example.com")
 	require.False(t, tracker.admit(attacker).admitted)
 
-	solved := tracker.admitVerified(attacker, "")
+	solved := tracker.admitVerified(attacker, nil)
 	for range tracker.clearanceUses {
 		require.False(t, tracker.admit(attacker).admitted, "the allowance cannot be spent while the solving request is in flight")
 	}
@@ -84,7 +84,7 @@ func TestAuthChallengeTrackerOneChallengeAdmitsOneGuessAtATime(t *testing.T) {
 	require.False(t, tracker.admit(attacker).admitted, "a failure revokes the allowance")
 
 	owner := tracker.subject("192.0.2.20", "victim@example.com")
-	step1 := tracker.admitVerified(owner, "")
+	step1 := tracker.admitVerified(owner, nil)
 	tracker.release(step1) // password accepted, TOTP prompt
 	step2 := tracker.admit(owner)
 	require.True(t, step2.admitted, "the TOTP step spends the allowance")

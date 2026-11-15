@@ -7,6 +7,16 @@ export const TURNSTILE_FAILED_TOKEN = 'turnstile_failed';
 // LOGIN_UNAVAILABLE_TOKEN is returned when the backend could not evaluate the
 // credentials at all, for example during a database outage.
 export const LOGIN_UNAVAILABLE_TOKEN = 'login_unavailable';
+// INVALID_EMAIL_CODE_TOKEN is returned by registration for a wrong, expired or
+// exhausted email code. Each code is compared only a few times, after which even
+// the right code is refused until a new one is requested.
+export const INVALID_EMAIL_CODE_TOKEN = 'invalid email verification code';
+// INVALID_CREDENTIALS_TOKEN is the masked rejection of every login method.
+export const INVALID_CREDENTIALS_TOKEN = 'invalid credentials';
+// EMAIL_CODE_REJECTED_MESSAGE explains a rejected email code without revealing
+// whether the account exists.
+export const EMAIL_CODE_REJECTED_MESSAGE =
+  'The verification code is wrong or has expired. Each code allows only a few attempts, so request a new code if this keeps failing.';
 
 // SsoSubmitState describes the visible auth form state needed to decide whether it can submit.
 export interface SsoSubmitState {
@@ -47,11 +57,21 @@ export function isTurnstileFailedError(message: string): boolean {
   return message.trim().toLowerCase().includes(TURNSTILE_FAILED_TOKEN);
 }
 
+// SsoAuthErrorContext describes which form produced an auth error.
+export interface SsoAuthErrorContext {
+  // emailCode is true when the failed request submitted an email code.
+  emailCode?: boolean;
+}
+
 // describeSsoAuthError turns a backend auth error into a message for the user.
 // Stable machine tokens are replaced by explanations; other messages pass through.
-export function describeSsoAuthError(message: string): string {
-  if (message.trim().toLowerCase().includes(LOGIN_UNAVAILABLE_TOKEN)) {
+export function describeSsoAuthError(message: string, context: SsoAuthErrorContext = {}): string {
+  const normalized = message.trim().toLowerCase();
+  if (normalized.includes(LOGIN_UNAVAILABLE_TOKEN)) {
     return 'Sign-in is temporarily unavailable. Please try again in a moment.';
+  }
+  if (normalized.includes(INVALID_EMAIL_CODE_TOKEN) || (context.emailCode && normalized.includes(INVALID_CREDENTIALS_TOKEN))) {
+    return EMAIL_CODE_REJECTED_MESSAGE;
   }
   return message;
 }

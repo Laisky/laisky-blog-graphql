@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"slices"
 	"sync"
 	"time"
 
@@ -34,6 +35,19 @@ const (
 	// unknownAuthClientKey buckets requests whose client IP cannot be resolved so
 	// they are still rate-tracked collectively rather than escaping the check.
 	unknownAuthClientKey = "unknown"
+
+	// maxSpellingIdentities bounds how many store identities one spelling
+	// record links. More than one only happens when distinct store accounts
+	// fold to one spelling (for example "alice" and "alicé" in a store that
+	// compares exact strings). Displacing a linked identity takes that many
+	// further failures through the spelling, each of which is challenged once
+	// the spelling is high risk.
+	maxSpellingIdentities = 4
+	// maxIdentitySpellings bounds the reverse index from an identity record to
+	// the spellings that link it. One account is reachable through a handful
+	// of folded spellings (its username and its email); an entry pushed out
+	// only means a success no longer clears that spelling early.
+	maxIdentitySpellings = 8
 )
 
 // authRiskSubject names who an authentication request is attributed to: the
@@ -44,8 +58,13 @@ type authRiskSubject struct {
 	// client is the network identity key (see resolveAuthClientKey).
 	client string
 	// account is the keyed hash of the folded account spelling, or empty when
-	// the flow names no account (GitHub OAuth, passkey and registration flows).
+	// the flow names no account (GitHub OAuth start, passkey start).
 	account string
+	// exact is the keyed hash of the account in the form the store looks it
+	// up (see exactAccountKey). Several exact spellings may fold to one
+	// account key; exact tells them apart when a success decides whose
+	// failures it may forgive.
+	exact string
 }
 
 // authChallengeTracker records recent authentication attempts so the SSO flow
@@ -56,12 +75,40 @@ type authRiskSubject struct {
 //
 // Accounts are tracked twice: per folded spelling, and per store identity once
 // a failure revealed which account the spelling resolves to, so username, email
-// and case or accent variants of one account share a budget. Admission reserves
-// an in-flight slot on each, so concurrent guesses count before their outcome
-// is known.
+// and case or accent variants of one account share a budget.
 //
-// Both tables are bounded (see turnstile_risk_table.go) and accounts are held
-// only as keyed hashes.
+// Invariants, all maintained under mu:
+//
+//   - Admission reads the risk of the spelling and of every identity it links,
+//     and reserves an in-flight slot on each, so concurrent guesses count
+//     before their outcome is known. Every reservation is released exactly
+//     once by authAttempt; release never drops a record a later admission
+//     replaced.
+//   - The spelling fold may group more inputs than a store treats as one
+//     account (see foldAccount), never fewer. The store identity is therefore
+//     authoritative: a spelling may link several identities, and a success
+//     clears only evidence that belongs to the identity that authenticated. A
+//     spelling keeps its failures when it still links another identity, holds
+//     identity-less failures from another exact spelling, or overflowed its
+//     bounds, so a sign-in to one account never lowers enforcement on a
+//     colliding one.
+//   - A success clears failure history, never in-flight reservations, so a
+//     concurrent guess admitted before the success still counts when it fails.
+//   - Each identity record indexes the spellings that link it (spellings), so
+//     a success visits only those instead of scanning the table. The index is
+//     advisory: an entry may be stale once its spelling record was dropped or
+//     re-created, so every entry is re-checked against the spelling's own
+//     links before anything is cleared; and an index lost with an evicted
+//     identity record only means the success clears just the spelling it
+//     used. Neither can clear evidence of another identity.
+//   - Solved-challenge clearance is per client and admits one request at a
+//     time (clearanceBusy); any credential failure revokes it.
+//   - Records at or above their threshold, or with requests in flight, are
+//     never evicted (see turnstile_risk_table.go); a table full of them
+//     saturates and treats untracked accounts as high risk.
+//
+// Both tables are bounded and accounts are held only as keyed hashes. The
+// state is per process: replicas do not share budgets (see the SSO manual).
 //
 // It is safe for concurrent use.
 type authChallengeTracker struct {
@@ -148,13 +195,98 @@ type accountAuthRisk struct {
 	total int
 	// inflight counts admitted requests whose outcome is not known yet.
 	inflight int
-	// alias is the identity key this spelling resolved to at its last failure.
-	alias string
+	// identities are the identity keys this spelling resolved to at its
+	// failures, most recent last, at most maxSpellingIdentities. Only
+	// spelling records have them.
+	identities []string
+	// anonymous are the exact-spelling keys of failures that revealed no
+	// identity (a wrong email or registration code is rejected before any
+	// account is loaded), at most maxSpellingIdentities. Only spelling
+	// records have them.
+	anonymous []string
+	// contested is set once identities or anonymous overflowed their bound:
+	// the record may then hold evidence of accounts it no longer names, so no
+	// success clears its failures; they expire with the failure window.
+	contested bool
+	// spellings are the spelling keys that linked this identity, most recent
+	// last, at most maxIdentitySpellings. Only identity records have them.
+	spellings []string
 }
 
 // idle reports whether the record carries no signal and can be dropped.
 func (a *accountAuthRisk) idle() bool {
 	return len(a.failures) == 0 && a.inflight == 0
+}
+
+// clearFailures drops the record's failure history but keeps its in-flight
+// reservations.
+func (a *accountAuthRisk) clearFailures() {
+	a.failures = nil
+	a.total = 0
+	a.anonymous = nil
+}
+
+// link records that the spelling resolved to identity, keeping the most
+// recent maxSpellingIdentities distinct identities.
+func (a *accountAuthRisk) link(identity string) {
+	var overflowed bool
+	a.identities, overflowed = appendBoundedUnique(a.identities, identity, maxSpellingIdentities)
+	a.contested = a.contested || overflowed
+}
+
+// noteAnonymous records that a failure through exact revealed no identity.
+func (a *accountAuthRisk) noteAnonymous(exact string) {
+	var overflowed bool
+	a.anonymous, overflowed = appendBoundedUnique(a.anonymous, exact, maxSpellingIdentities)
+	a.contested = a.contested || overflowed
+}
+
+// forgivableBy reports whether a success by identity through the exact
+// spelling may clear this spelling record: it links no other identity, it was
+// never contested, and every failure that revealed no identity came through
+// that same exact spelling. exact is empty for a spelling reached through the
+// identity index rather than used by the request.
+func (a *accountAuthRisk) forgivableBy(identity string, exact string) bool {
+	if a.contested {
+		return false
+	}
+	for _, linked := range a.identities {
+		if linked != identity {
+			return false
+		}
+	}
+	for _, spelling := range a.anonymous {
+		if spelling != exact {
+			return false
+		}
+	}
+	return true
+}
+
+// indexSpelling records that spelling links this identity, keeping the most
+// recent maxIdentitySpellings distinct spellings.
+func (a *accountAuthRisk) indexSpelling(spelling string) {
+	a.spellings, _ = appendBoundedUnique(a.spellings, spelling, maxIdentitySpellings)
+}
+
+// appendBoundedUnique moves value to the end of values, dropping the oldest
+// entries beyond limit, and reports whether any were dropped. An empty value
+// leaves values unchanged.
+func appendBoundedUnique(values []string, value string, limit int) ([]string, bool) {
+	if value == "" {
+		return values, false
+	}
+	values = slices.DeleteFunc(values, func(existing string) bool { return existing == value })
+	values = append(values, value)
+	if extra := len(values) - limit; extra > 0 {
+		return slices.Delete(values, 0, extra), true
+	}
+	return values, false
+}
+
+// unlink removes identity from the spelling's linked identities.
+func (a *accountAuthRisk) unlink(identity string) {
+	a.identities = slices.DeleteFunc(a.identities, func(linked string) bool { return linked == identity })
 }
 
 // authReservation is what an admission holds until the request's outcome is
@@ -174,8 +306,9 @@ type reservedAccount struct {
 type authAdmission struct {
 	// admitted reports whether the request may proceed without a token.
 	admitted bool
-	// identity is the identity key the account spelling resolved to, if known.
-	identity string
+	// identities are the identity keys the account spelling linked at
+	// admission, if any.
+	identities []string
 	// reservation must be released once the outcome is known.
 	reservation authReservation
 }
@@ -229,7 +362,7 @@ func newAuthChallengeTracker(
 // subject builds the risk subject for a request from its client key and the
 // raw account the request names, which may be empty.
 func (t *authChallengeTracker) subject(clientKey string, account string) authRiskSubject {
-	return authRiskSubject{client: clientKey, account: t.accountKey(account)}
+	return authRiskSubject{client: clientKey, account: t.accountKey(account), exact: t.exactAccountKey(account)}
 }
 
 // recordAttempt notes that a client started an authentication request. Every
@@ -253,14 +386,17 @@ func (t *authChallengeTracker) admit(subject authRiskSubject) authAdmission {
 	defer t.mu.Unlock()
 
 	now := t.now()
-	decision := authAdmission{identity: t.aliasLocked(subject.account)}
+	decision := authAdmission{identities: t.linkedIdentitiesLocked(subject.account)}
 	client, known := t.clients[subject.client]
 	clientRisky := known && t.highRiskLocked(subject.client, client, now)
-	accountRisky := t.accountRiskyLocked(subject.account, now) || t.accountRiskyLocked(decision.identity, now)
+	accountRisky := t.accountRiskyLocked(subject.account, now)
+	for _, identity := range decision.identities {
+		accountRisky = t.accountRiskyLocked(identity, now) || accountRisky
+	}
 
 	if !clientRisky && !accountRisky {
 		decision.admitted = true
-		decision.reservation = t.reserveAccountsLocked(now, subject.account, decision.identity)
+		decision.reservation = t.reserveAccountsLocked(now, subject.account, decision.identities)
 		return decision
 	}
 
@@ -272,7 +408,7 @@ func (t *authChallengeTracker) admit(subject authRiskSubject) authAdmission {
 	client.clearanceLeft--
 	client.clearanceBusy++
 	decision.admitted = true
-	decision.reservation = t.reserveAccountsLocked(now, subject.account, decision.identity)
+	decision.reservation = t.reserveAccountsLocked(now, subject.account, decision.identities)
 	decision.reservation.client = client
 	return decision
 }
@@ -282,7 +418,8 @@ func (t *authChallengeTracker) admit(subject authRiskSubject) authAdmission {
 // auth requests within clearanceTTL are admitted without another challenge,
 // one at a time, unless a credential failure revokes it first. The returned
 // reservation includes the allowance slot this request now occupies.
-func (t *authChallengeTracker) admitVerified(subject authRiskSubject, identity string) authReservation {
+// identities are the identity keys the spelling linked at admission.
+func (t *authChallengeTracker) admitVerified(subject authRiskSubject, identities []string) authReservation {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -292,7 +429,7 @@ func (t *authChallengeTracker) admitVerified(subject authRiskSubject, identity s
 	client.clearanceLeft = t.clearanceUses
 	client.clearanceBusy++
 
-	reservation := t.reserveAccountsLocked(now, subject.account, identity)
+	reservation := t.reserveAccountsLocked(now, subject.account, identities)
 	reservation.client = client
 	return reservation
 }
@@ -316,14 +453,17 @@ func (t *authChallengeTracker) release(reservation authReservation) {
 	}
 }
 
-// recordFailureFor notes that a credential check failed. It drives the
+// recordFailureLinked notes that a credential check failed. It drives the
 // client's and the account's repeated-failure signals and revokes the
 // client's solved-challenge allowance, so every further guess from a high-risk
-// client, or against a high-risk account, needs a fresh challenge. identity is
-// the identity key the store resolved the account to, or empty when the store
-// did not reveal it; the spelling then keeps whatever identity it resolved to
-// before.
-func (t *authChallengeTracker) recordFailureFor(subject authRiskSubject, identity string) {
+// client, or against a high-risk account, needs a fresh challenge.
+//
+// identity is the identity key the store resolved the account to, or empty
+// when the store did not reveal it. The failure then counts against every
+// identity the spelling links now and every identity it linked at admission
+// (admitted), and the spelling is re-linked to those in case a concurrent
+// success dropped the record meanwhile.
+func (t *authChallengeTracker) recordFailureLinked(subject authRiskSubject, identity string, admitted []string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -335,43 +475,96 @@ func (t *authChallengeTracker) recordFailureFor(subject authRiskSubject, identit
 	if subject.account == "" {
 		return
 	}
-	if spelling := t.accountLocked(subject.account, now); spelling != nil {
+	targets := []string{identity}
+	if identity == "" {
+		targets = slices.Clone(admitted)
+	}
+	spelling := t.accountLocked(subject.account, now)
+	if spelling != nil {
 		spelling.failures = appendRecent(spelling.failures, now, now.Add(-t.failureWindow), t.accountFailureThreshold+1)
 		spelling.total++
-		if identity != "" {
-			spelling.alias = identity
+		if identity == "" {
+			spelling.noteAnonymous(subject.exact)
+			for _, linked := range spelling.identities {
+				if !slices.Contains(targets, linked) {
+					targets = append(targets, linked)
+				}
+			}
 		}
-		identity = spelling.alias
 	}
-	if identity == "" {
-		return
-	}
-	if account := t.accountLocked(identity, now); account != nil {
+	for _, target := range targets {
+		if target == "" {
+			continue
+		}
+		// The link is kept even when a saturated table cannot hold the
+		// identity record, so admission still treats it as high risk.
+		if spelling != nil {
+			spelling.link(target)
+		}
+		account := t.accountLocked(target, now)
+		if account == nil {
+			continue
+		}
 		account.failures = appendRecent(account.failures, now, now.Add(-t.failureWindow), t.accountFailureThreshold+1)
 		account.total++
+		if spelling != nil {
+			account.indexSpelling(subject.account)
+		}
 	}
 }
 
-// recordSuccessFor clears the failure history of the client, of the account
-// spelling, its identity and every known alias after a successful authentication, so a
-// legitimate user is not challenged for past typos (NIST SP 800-63B-4 §3.2.2
-// resets the retry count of the authenticators used once authentication
-// succeeds). In-flight slots held by concurrent requests are kept.
+// recordSuccessFor clears failure history after a successful authentication,
+// so a legitimate user is not challenged for past typos (NIST SP 800-63B-4
+// §3.2.2 resets the retry count of the authenticators used once
+// authentication succeeds). It clears the client, the authenticated identity,
+// and every indexed spelling that links only that identity, including the one
+// used. Its cost is bounded by maxIdentitySpellings, not by the table size.
+//
+// A spelling that also links another identity, or holds failures that
+// revealed no identity and came through a different exact spelling, may be
+// shared by distinct store accounts (see forgivableBy); it keeps its failures
+// and its other links, so signing in to one account never lowers enforcement
+// on another. When identity is empty it is taken from the spelling's single
+// linked identity, if it has exactly one. In-flight slots held by concurrent
+// requests are kept.
 func (t *authChallengeTracker) recordSuccessFor(subject authRiskSubject, identity string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if identity == "" {
-		identity = t.aliasLocked(subject.account)
+	if linked := t.linkedIdentitiesLocked(subject.account); identity == "" && len(linked) == 1 {
+		identity = linked[0]
 	}
-	// The table is bounded by maxAccounts. Scan it under the existing mutex
-	// rather than maintaining a second alias index with independent eviction.
-	for key, account := range t.accounts {
-		if key != subject.account && (identity == "" || (key != identity && account.alias != identity)) {
+
+	spellings := []string{subject.account}
+	if identity != "" {
+		if account, ok := t.accounts[identity]; ok {
+			spellings = append(spellings, account.spellings...)
+			account.spellings = nil
+			account.clearFailures()
+			if account.idle() {
+				delete(t.accounts, identity)
+			}
+		}
+	}
+	for i, key := range spellings {
+		account, ok := t.accounts[key]
+		if !ok || key == "" || slices.Contains(spellings[:i], key) {
 			continue
 		}
-		account.failures = nil
-		account.total = 0
+		// Index entries may be stale: only the spelling used, or one that
+		// still links the authenticated identity, is touched.
+		if key != subject.account && (identity == "" || !slices.Contains(account.identities, identity)) {
+			continue
+		}
+		account.unlink(identity)
+		exact := ""
+		if key == subject.account {
+			exact = subject.exact
+		}
+		if !account.forgivableBy(identity, exact) {
+			continue
+		}
+		account.clearFailures()
 		if account.idle() {
 			delete(t.accounts, key)
 		}
@@ -423,24 +616,24 @@ func (t *authChallengeTracker) accountRiskyLocked(key string, now time.Time) boo
 	return len(account.failures)+account.inflight >= t.accountFailureThreshold
 }
 
-// aliasLocked returns the identity key an account spelling last resolved to.
-// The caller must hold the mutex.
-func (t *authChallengeTracker) aliasLocked(spelling string) string {
+// linkedIdentitiesLocked returns a copy of the identity keys an account
+// spelling links. The caller must hold the mutex.
+func (t *authChallengeTracker) linkedIdentitiesLocked(spelling string) []string {
 	if spelling == "" {
-		return ""
+		return nil
 	}
 	if account, ok := t.accounts[spelling]; ok {
-		return account.alias
+		return slices.Clone(account.identities)
 	}
-	return ""
+	return nil
 }
 
-// reserveAccountsLocked takes an in-flight slot on each named account record,
-// creating records as needed. A record the saturated table cannot hold is
-// skipped. The caller must hold the mutex.
-func (t *authChallengeTracker) reserveAccountsLocked(now time.Time, keys ...string) authReservation {
+// reserveAccountsLocked takes an in-flight slot on the spelling record and on
+// each linked identity record, creating records as needed. A record the
+// saturated table cannot hold is skipped. The caller must hold the mutex.
+func (t *authChallengeTracker) reserveAccountsLocked(now time.Time, spelling string, identities []string) authReservation {
 	var reservation authReservation
-	for _, key := range keys {
+	for _, key := range append([]string{spelling}, identities...) {
 		if key == "" {
 			continue
 		}

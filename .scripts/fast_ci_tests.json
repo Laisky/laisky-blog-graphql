@@ -58,7 +58,12 @@
       "TestCloseCursorIsBoundedAfterTheReadEnds",
       "TestMonitorIndexesCoverAlertLookups",
       "TestMonitorIndexMatching",
-      "TestFindIndexPrefersTheOneThatServesLookups"
+      "TestFindIndexPrefersTheOneThatServesLookups",
+      "TestUploadFileCacheRefusalDoesNotRaceWithCaller",
+      "TestNewUploadKeepsNilArdriveNil",
+      "TestUploadFileCacheSuccess",
+      "TestUploadFileArweaveFailureDoesNotCache",
+      "TestUploadFileWithTelegramUIDBackgroundMetadata"
     ]
   },
   {
@@ -85,8 +90,8 @@
       "TestStartupAlertCoreRejectsWholeOversizeRecord",
       "TestValidateStartupConfigRejectsInvalidTrustedProxies",
       "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
-      "TestValidateStartupConfigSSORedirectPolicy",
-      "TestValidateStartupConfigRequiresCompleteTurnstilePairs"
+      "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
+      "TestValidateStartupConfigSSORedirectPolicy"
     ]
   },
   {
@@ -115,6 +120,8 @@
       "TestServerEngineDirectDeploymentPolicy",
       "TestServerEngineHostCannotDisableChallenge",
       "TestRuntimeConfigServesTheVerifyingWidgetKey",
+      "TestLegacyBlogLoginIsRemoved",
+      "TestSSOCodeRegisteredClient",
       "TestProductionWiringInstallsOneAPIValidator",
       "TestHTTPServerTimeoutsKeepStreamsAlive",
       "TestRequestBodyPolicyClassifiesRegisteredRoutes",
@@ -122,9 +129,7 @@
       "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain",
       "TestRV95SingleHostXFFRotationLocksOutNewValidKeys",
       "TestRV95BalanceProxyFloodExhaustsOneAPIBudgetAndLocksOutValidation",
-      "TestProductionEngineAdmitsSlowSteadyLargeUploads",
-      "TestSSOCodeRegisteredClient",
-      "TestLegacyBlogLoginIsRemoved"
+      "TestProductionEngineAdmitsSlowSteadyLargeUploads"
     ]
   },
   {
@@ -141,7 +146,10 @@
       "TestPolicyTrustsEveryPeer",
       "TestGinTrustAgreesWithPolicy",
       "TestForwardedHostOnlyFromTrustedProxy",
-      "TestPolicyTrustsPeerMatchesGin"
+      "TestPolicyTrustsPeerMatchesGin",
+      "TestNormalizeHost",
+      "TestRequestHostnameIgnoresUntrustedForwardedHost",
+      "TestPolicyStartupWarning"
     ]
   },
   {
@@ -158,15 +166,28 @@
       "TestAuthChallengeTrackerIdentityUnifiesSpellings",
       "TestAuthChallengeTrackerFloodCannotEvictAttackedAccount",
       "TestResolveTurnstileSiteNeverDisablesTheGate",
+      "TestAuthSuccessResetsAllKnownAliases",
+      "TestAuthSuccessPreservesAliasReservations",
+      "TestAdmitAuthRequestRejectsIncompletePair",
       "TestGitHubRedirectTargetPolicy",
       "TestGitHubOAuthLoginRevalidatesRedirect",
       "TestPasskeyFinishRevalidatesRedirect",
       "TestPrivateTargetsRequireDevelopmentIssuer",
       "TestBackslashOnlyAfterQueryOrFragment",
       "TestGitHubStartChecksTheCompletingIssuer",
-      "TestAuthSuccessResetsAllKnownAliases",
-      "TestAuthSuccessPreservesAliasReservations",
-      "TestAdmitAuthRequestRejectsIncompletePair"
+      "TestAuthSuccessKeepsCollidingIdentityEnforced",
+      "TestAuthSuccessAfterAliasFlipKeepsCollidingIdentityEnforced",
+      "TestAuthSuccessOfOneCollidingIdentityKeepsTheOtherEnforced",
+      "TestAuthCollisionDoesNotGrantConcurrentFreeGuesses",
+      "TestAuthSuccessStillResetsAnUncontestedSpelling",
+      "TestSpellingIdentityLinksAreBounded",
+      "TestUnrevealedFailureCountsAgainstEveryLinkedIdentity",
+      "TestAuthSuccessIgnoresStaleIdentityIndex",
+      "TestRegistrationGateCountsCodeFailuresPerEmail",
+      "TestAccountFoldNeverSplitsAStoreAccount",
+      "TestAuthSuccessKeepsUnattributedFailuresOfCollidingSpelling",
+      "TestAuthSuccessClearsOwnUnattributedTypos",
+      "TestAuthLinkOverflowKeepsSpellingEvidence"
     ]
   },
   {
@@ -254,6 +275,20 @@
       "TestSharedRedirectVectors",
       "TestSharedRegistrationVectors",
       "TestSharedRegistryVectors"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/service",
+    "tests": [
+      "TestOneAPIEmailCodeAttemptsAreCapped",
+      "TestOneAPIRegistrationCodeErrorsAreClassified"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/oneapi",
+    "tests": [
+      "TestRepoEmailCodeAttemptReservationIsBounded",
+      "TestRepoPrepareKeepsExistingEmailCodesUsable"
     ]
   }
 ]

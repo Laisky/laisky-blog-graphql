@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	gconfig "github.com/Laisky/go-config/v2"
+
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 // turnstileGlobalSecretKey and turnstileGlobalSiteKey name the settings of
@@ -111,7 +113,7 @@ func loadTurnstileSiteEntries() []turnstileSiteEntry {
 // selects for that host, or "" when Turnstile is not configured or the
 // selected pair has no site key.
 func TurnstileSiteKeyForHost(requestHost string) string {
-	site := resolveTurnstileSite(normalizeTurnstileHost(requestHost))
+	site := resolveTurnstileSite(clientip.NormalizeHost(requestHost))
 	if site.secret == "" {
 		return ""
 	}

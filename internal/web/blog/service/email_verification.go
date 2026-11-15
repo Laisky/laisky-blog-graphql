@@ -27,8 +27,16 @@ import (
 
 const (
 	// EmailVerificationCodeTTL is the validity window for SSO email verification codes.
-	EmailVerificationCodeTTL    = 30 * time.Minute
-	emailVerificationCodeDigits = 6
+	EmailVerificationCodeTTL = 30 * time.Minute
+	// EmailVerificationCodeMaxAttempts bounds how many submitted codes are
+	// compared against one issued code, from every client and replica
+	// together. Each comparison spends an attempt before it runs, so
+	// concurrent guesses cannot exceed the bound; once it is spent the code is
+	// refused and the user requests a new one. A new code starts a fresh
+	// per-code count but never resets the per-account failure count of the
+	// adaptive-authentication gate, which keeps escalating to a challenge.
+	EmailVerificationCodeMaxAttempts = 5
+	emailVerificationCodeDigits      = 6
 	// defaultSMTPTLSPort is the implicit-TLS SMTP submission port used when
 	// settings.web.smtp.port is unset. Port 465 enables SSL/TLS on connect.
 	defaultSMTPTLSPort = 465
@@ -37,7 +45,7 @@ const (
 // errInvalidEmailVerificationCode reports a missing, expired, mismatched, or
 // already consumed email code. It is a statement about the submitted code, as
 // opposed to a storage failure while checking it.
-var errInvalidEmailVerificationCode = errors.New("invalid email verification code")
+var errInvalidEmailVerificationCode = model.ErrInvalidEmailVerificationCode
 
 // smtpDialerFactory overrides the SMTP dialer, used only by tests. When nil the
 // default gomail dialer is used, which enables implicit TLS on port 465.
@@ -111,67 +119,118 @@ func (s *Blog) RequestEmailVerificationCode(ctx context.Context, account string,
 // It accepts account, purpose, and code, returning nil when the code is valid.
 //
 // A code authenticates at most once, even when several requests submit it
-// concurrently. Rejections caused by the submitted values wrap
+// concurrently, and is compared at most EmailVerificationCodeMaxAttempts
+// times. Rejections caused by the submitted values wrap
 // errInvalidEmailVerificationCode; any other error is a storage failure.
 func (s *Blog) ConsumeEmailVerificationCode(ctx context.Context, account string, purpose string, code string) error {
 	account, purpose, err := s.sanitizeEmailVerificationIdentity(account, purpose)
 	if err != nil {
 		return errors.Wrapf(errInvalidEmailVerificationCode, "sanitize email verification request: %v", err)
 	}
-	code, err = sanitizeEmailVerificationCode(code)
+	challenge, err := s.matchEmailVerificationCode(ctx, account, purpose, code)
 	if err != nil {
-		return errors.Wrapf(errInvalidEmailVerificationCode, "sanitize email verification code: %v", err)
+		return errors.WithStack(err)
 	}
+
 	if s.oneapi != nil {
-		challenge, findErr := s.oneapi.FindValidEmailCode(ctx, account, purpose, gutils.Clock.GetUTCNow())
-		if findErr != nil {
-			if errors.Is(findErr, blogoneapi.ErrNotFound) {
-				return errors.WithStack(errInvalidEmailVerificationCode)
-			}
-			return errors.Wrap(findErr, "find oneapi email verification code")
-		}
-		expectedHash := hashEmailVerificationCode(account, purpose, code)
-		if !secureCompareString(challenge.CodeHash, expectedHash) {
-			return errors.WithStack(errInvalidEmailVerificationCode)
-		}
 		// ErrNotFound here means a concurrent submission consumed the code first.
-		if consumeErr := s.oneapi.ConsumeEmailCode(ctx, challenge.ID, expectedHash); consumeErr != nil {
+		if consumeErr := s.oneapi.ConsumeEmailCode(ctx, challenge.oneAPIID, challenge.codeHash); consumeErr != nil {
 			if errors.Is(consumeErr, blogoneapi.ErrNotFound) {
 				return errors.WithStack(errInvalidEmailVerificationCode)
 			}
-			return errors.Wrap(consumeErr, "consume oneapi email verification code")
+			return model.NewLoginUnavailable(errors.Wrap(consumeErr, "consume oneapi email verification code"))
 		}
 		return nil
 	}
 
-	col := s.dao.GetEmailVerificationCodesCol()
-	challenge := new(model.EmailVerificationCode)
-	if err = col.FindOne(ctx, bson.M{
-		fieldAccount: account,
-		fieldPurpose: purpose,
-		"expires_at": bson.M{"$gt": gutils.Clock.GetUTCNow()},
-	}).Decode(challenge); err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return errors.WithStack(errInvalidEmailVerificationCode)
-		}
-		return errors.Wrap(err, "find email verification code")
-	}
-
-	expectedHash := hashEmailVerificationCode(account, purpose, code)
-	if !secureCompareString(challenge.CodeHash, expectedHash) {
-		return errors.WithStack(errInvalidEmailVerificationCode)
-	}
 	// Only the request whose delete removes the challenge may use it; a
 	// concurrent submission of the same code loses the race and is rejected.
-	deleted, err := col.DeleteOne(ctx, bson.M{fieldDocumentID: challenge.ID, "code_hash": challenge.CodeHash})
+	deleted, err := s.dao.GetEmailVerificationCodesCol().DeleteOne(ctx,
+		bson.M{fieldDocumentID: challenge.mongoID, "code_hash": challenge.codeHash})
 	if err != nil {
-		return errors.Wrap(err, "delete consumed email verification code")
+		return model.NewLoginUnavailable(errors.Wrap(err, "delete consumed email verification code"))
 	}
 	if deleted.DeletedCount != 1 {
 		return errors.WithStack(errInvalidEmailVerificationCode)
 	}
 
 	return nil
+}
+
+// matchedEmailCode identifies a live challenge whose code matched the
+// submission. It is not consumed yet: the caller consumes it, alone or inside
+// the transaction that uses it.
+type matchedEmailCode struct {
+	// oneAPIID is the challenge ID in the OneAPI store, when that store is used.
+	oneAPIID string
+	// mongoID is the challenge document ID in MongoDB, otherwise.
+	mongoID primitive.ObjectID
+	// codeHash is the stored hash, which every consume re-checks.
+	codeHash string
+}
+
+// matchEmailVerificationCode spends one verification attempt on the newest
+// live challenge for account and purpose, then compares code against it.
+// account and purpose must already be sanitized.
+//
+// The attempt is spent before the comparison, so a wrong code, the right
+// code and concurrent submissions all count, and no challenge is ever compared
+// more than EmailVerificationCodeMaxAttempts times. Only the newest live
+// challenge is considered: older ones that a racing code request left behind
+// are superseded and never compared. Rejections caused by the submitted values
+// (malformed, missing, expired, out of attempts, mismatched) wrap
+// errInvalidEmailVerificationCode; storage failures wrap ErrLoginUnavailable.
+func (s *Blog) matchEmailVerificationCode(ctx context.Context, account string, purpose string, code string) (matchedEmailCode, error) {
+	code, err := sanitizeEmailVerificationCode(code)
+	if err != nil {
+		return matchedEmailCode{}, errors.Wrapf(errInvalidEmailVerificationCode, "sanitize email verification code: %v", err)
+	}
+	expectedHash := hashEmailVerificationCode(account, purpose, code)
+	now := gutils.Clock.GetUTCNow()
+
+	if s.oneapi != nil {
+		challenge, findErr := s.oneapi.FindValidEmailCode(ctx, account, purpose, now)
+		if findErr != nil {
+			if errors.Is(findErr, blogoneapi.ErrNotFound) {
+				return matchedEmailCode{}, errors.WithStack(errInvalidEmailVerificationCode)
+			}
+			return matchedEmailCode{}, model.NewLoginUnavailable(errors.Wrap(findErr, "find oneapi email verification code"))
+		}
+		if reserveErr := s.oneapi.ReserveEmailCodeAttempt(ctx, challenge.ID, EmailVerificationCodeMaxAttempts, now); reserveErr != nil {
+			if errors.Is(reserveErr, blogoneapi.ErrNotFound) {
+				return matchedEmailCode{}, errors.Wrap(errInvalidEmailVerificationCode, "email verification code has no attempts left")
+			}
+			return matchedEmailCode{}, model.NewLoginUnavailable(errors.Wrap(reserveErr, "reserve oneapi email verification attempt"))
+		}
+		if !secureCompareString(challenge.CodeHash, expectedHash) {
+			return matchedEmailCode{}, errors.WithStack(errInvalidEmailVerificationCode)
+		}
+		return matchedEmailCode{oneAPIID: challenge.ID, codeHash: challenge.CodeHash}, nil
+	}
+
+	// One atomic update picks the newest live code and spends an attempt on
+	// it; the count after the update says whether this attempt is within the
+	// bound. $inc creates the field on codes stored before it existed.
+	challenge := new(model.EmailVerificationCode)
+	if err = s.dao.GetEmailVerificationCodesCol().FindOneAndUpdate(ctx,
+		liveEmailCodeFilter{Account: account, Purpose: purpose, ExpiresAt: timeAfterFilter{After: now}},
+		emailCodeAttemptUpdate{Inc: emailCodeAttemptIncrement{Attempts: 1}},
+		options.FindOneAndUpdate().
+			SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: fieldDocumentID, Value: -1}}).
+			SetReturnDocument(options.After),
+	).Decode(challenge); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return matchedEmailCode{}, errors.WithStack(errInvalidEmailVerificationCode)
+		}
+		return matchedEmailCode{}, model.NewLoginUnavailable(errors.Wrap(err, "reserve email verification attempt"))
+	}
+	if challenge.Attempts > EmailVerificationCodeMaxAttempts {
+		return matchedEmailCode{}, errors.Wrap(errInvalidEmailVerificationCode, "email verification code has no attempts left")
+	}
+	if !secureCompareString(challenge.CodeHash, expectedHash) {
+		return matchedEmailCode{}, errors.WithStack(errInvalidEmailVerificationCode)
+	}
+	return matchedEmailCode{mongoID: challenge.ID, codeHash: challenge.CodeHash}, nil
 }
 
 // ValidateEmailCodeLogin validates a passwordless email-code login attempt.

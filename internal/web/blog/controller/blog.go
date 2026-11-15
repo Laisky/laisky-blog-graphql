@@ -386,7 +386,7 @@ func (r *MutationResolver) UserRequestEmailCode(ctx context.Context,
 	var flow authFlow
 	switch purpose {
 	case model.EmailVerificationPurposeRegister:
-		flow = registerFlow()
+		flow = registerFlow(account)
 	case model.EmailVerificationPurposeLogin:
 		flow = loginFlow(account)
 	default:
@@ -440,15 +440,26 @@ func (r *MutationResolver) UserRegister(ctx context.Context,
 		)
 		return nil, err
 	}
-	attempt, err := admitAuthRequest(ctx, turnstileToken, registerFlow())
+	attempt, err := admitAuthRequest(ctx, turnstileToken, registerFlow(account))
 	if err != nil {
 		return nil, turnstileGateError(err)
 	}
 	defer attempt.finish()
-	_, err = r.svc.UserRegister(ctx, account, password, displayName, emailCode)
+	user, err := r.svc.UserRegister(ctx, account, password, displayName, emailCode)
 	if err != nil {
+		// Only a rejected code is a guess; policy and storage errors are not.
+		if errors.Is(err, model.ErrInvalidEmailVerificationCode) {
+			logger.Debug("registration email code rejected", zap.String("class", "invalid_email_code"))
+			attempt.failed("")
+			return nil, errors.WithStack(model.ErrInvalidEmailVerificationCode)
+		}
+		if errors.Is(err, model.ErrLoginUnavailable) {
+			logger.Error("registration email code could not be evaluated", zap.String("class", "unavailable"), zap.Error(err))
+			return nil, errors.WithStack(model.ErrLoginUnavailable)
+		}
 		return nil, errors.Wrap(err, "register user")
 	}
+	attempt.succeeded(user.RiskIdentity())
 
 	return &models.UserRegisterResponse{
 		Msg: fmt.Sprintf("account `%s` verified and created; you can sign in now", html.EscapeString(account)),

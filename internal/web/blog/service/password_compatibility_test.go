@@ -46,8 +46,10 @@ func TestPasswordCompatibilityWriters(t *testing.T) {
 		svc := &Blog{logger: glog.Shared, dao: dao.New(glog.Shared, queryContractDB{db: mt.DB}, nil)}
 		account := "register-compat@example.test"
 		mt.AddMockResponses(
-			mtest.CreateCursorResponse(0, mt.DB.Name()+".email_verification_codes", mtest.FirstBatch,
-				bson.D{{Key: "_id", Value: primitive.NewObjectID()}, {Key: "code_hash", Value: hashEmailVerificationCode(account, model.EmailVerificationPurposeRegister, "123456")}, {Key: "expires_at", Value: time.Now().Add(time.Minute)}}),
+			// findAndModify spends one verification attempt and returns the code.
+			mtest.CreateSuccessResponse(bson.E{Key: "value", Value: bson.D{{Key: "_id", Value: primitive.NewObjectID()},
+				{Key: "code_hash", Value: hashEmailVerificationCode(account, model.EmailVerificationPurposeRegister, "123456")},
+				{Key: "expires_at", Value: time.Now().Add(time.Minute)}, {Key: "attempts", Value: 1}}}),
 			mtest.CreateSuccessResponse(bson.E{Key: "n", Value: 1}),
 			mtest.CreateCursorResponse(0, mt.DB.Name()+".users", mtest.FirstBatch),
 			mtest.CreateSuccessResponse(bson.E{Key: "n", Value: 1}),
@@ -62,6 +64,12 @@ func TestPasswordCompatibilityWriters(t *testing.T) {
 			}
 		}
 		require.Equal(mt, user.Password, persisted)
+
+		reserve := mt.GetAllStartedEvents()[0]
+		require.Equal(mt, "findAndModify", reserve.CommandName, "the code is reserved before it is compared")
+		require.EqualValues(mt, 1, reserve.Command.Lookup("update", "$inc", "attempts").Int32())
+		require.EqualValues(mt, -1, reserve.Command.Lookup("sort", "created_at").Int32(), "only the newest live code is compared")
+		require.True(mt, reserve.Command.Lookup("new").Boolean(), "the count after the update decides the bound")
 	})
 }
 

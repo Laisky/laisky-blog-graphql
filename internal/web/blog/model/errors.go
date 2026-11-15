@@ -36,3 +36,41 @@ var ErrTurnstileFailed = errors.New("turnstile_failed")
 // ErrInvalidCredentials so outages are neither reported to users as a wrong
 // password nor counted toward the anti-abuse failure threshold.
 var ErrLoginUnavailable = errors.New("login_unavailable")
+
+// UnavailableError is an ErrLoginUnavailable caused by a failing backing
+// store. It keeps the cause for the server log, while errors.Is reports
+// ErrLoginUnavailable so callers can show clients the sentinel alone.
+type UnavailableError struct {
+	// Cause is the storage failure.
+	Cause error
+}
+
+// Error returns the sentinel message followed by the cause.
+func (e *UnavailableError) Error() string {
+	return ErrLoginUnavailable.Error() + ": " + e.Cause.Error()
+}
+
+// Is reports that an UnavailableError matches ErrLoginUnavailable.
+func (e *UnavailableError) Is(target error) bool {
+	return target == ErrLoginUnavailable //nolint:errorlint // sentinel identity comparison inside an Is method
+}
+
+// Unwrap returns the storage failure.
+func (e *UnavailableError) Unwrap() error {
+	return e.Cause
+}
+
+// NewLoginUnavailable returns an ErrLoginUnavailable caused by cause, or nil
+// when cause is nil.
+func NewLoginUnavailable(cause error) error {
+	if cause == nil {
+		return nil
+	}
+	return errors.WithStack(&UnavailableError{Cause: cause})
+}
+
+// ErrInvalidEmailVerificationCode indicates a submitted email verification
+// code is missing, expired, mismatched, already consumed or out of attempts.
+// It is a statement about the submitted code, as opposed to a storage failure
+// while checking it, so it counts toward the anti-abuse failure threshold.
+var ErrInvalidEmailVerificationCode = errors.New("invalid email verification code")

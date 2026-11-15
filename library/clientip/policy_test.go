@@ -137,3 +137,34 @@ func TestDefaultsAreCopies(t *testing.T) {
 	headers[0] = "X-Real-Ip"
 	require.Equal(t, []string{"X-Forwarded-For"}, policy.Headers())
 }
+
+// TestPolicyStartupWarning verifies the operator is warned when the policy
+// lets callers outside the reverse proxy choose their address: trusting every
+// peer, or relying on the private-network default instead of exact proxy
+// addresses. Exact proxies, no proxies, or no forwarding headers are quiet.
+func TestPolicyStartupWarning(t *testing.T) {
+	load := func(values map[string]any) Policy {
+		t.Helper()
+		policy, err := LoadPolicy(func(key string) any { return values[key] })
+		require.NoError(t, err)
+		return policy
+	}
+
+	unset := load(nil)
+	require.True(t, unset.UsesDefaultTrustedProxies())
+	require.Contains(t, unset.StartupWarning(), ConfigKeyTrustedProxies)
+
+	everyone := load(map[string]any{ConfigKeyTrustedProxies: []any{"0.0.0.0/0"}})
+	require.Contains(t, everyone.StartupWarning(), "every peer")
+
+	exact := load(map[string]any{ConfigKeyTrustedProxies: []any{"10.0.0.5", "172.17.0.1"}})
+	require.False(t, exact.UsesDefaultTrustedProxies())
+	require.Empty(t, exact.StartupWarning())
+
+	require.Empty(t, load(map[string]any{ConfigKeyTrustedProxies: []any{}}).StartupWarning(), "direct deployments trust no proxy")
+
+	// Disabling the client-address headers does not make broad trust safe:
+	// trusted peers still choose X-Forwarded-Host and X-Forwarded-Proto.
+	require.Contains(t, load(map[string]any{ConfigKeyHeaders: []any{}}).StartupWarning(), ConfigKeyTrustedProxies)
+	require.Contains(t, load(map[string]any{ConfigKeyHeaders: []any{}, ConfigKeyTrustedProxies: []any{"::/0"}}).StartupWarning(), "every peer")
+}

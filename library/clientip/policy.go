@@ -157,6 +157,33 @@ func (p Policy) TrustsEveryPeer() bool {
 	return false
 }
 
+// UsesDefaultTrustedProxies reports whether ConfigKeyTrustedProxies is unset,
+// so DefaultTrustedProxies applies.
+func (p Policy) UsesDefaultTrustedProxies() bool {
+	return p.proxiesSource == sourceDefault
+}
+
+// StartupWarning returns why the policy deserves an operator warning at
+// startup, or "" when it does not. A network covering the whole address space
+// lets any caller choose its client address and forwarded host. The unset
+// default trusts every private-network peer, so another host on that network
+// that can reach the service directly can choose them too; production should
+// list the exact reverse-proxy addresses instead. Disabling the client-address
+// headers does not silence it, because trusted peers still report
+// X-Forwarded-Host and X-Forwarded-Proto.
+func (p Policy) StartupWarning() string {
+	switch {
+	case len(p.trustedProxies) == 0:
+		return ""
+	case p.TrustsEveryPeer():
+		return "client identity policy trusts every peer, so any caller can choose its client address"
+	case p.UsesDefaultTrustedProxies():
+		return "settings.web.trusted_proxies is unset, so every private-network peer may report client addresses; list the exact reverse-proxy addresses"
+	default:
+		return ""
+	}
+}
+
 // Apply configures engine so its ClientIP follows the policy: forwarding
 // headers are honored only from a trusted peer, platform headers are never
 // trusted, and an empty proxy list makes ClientIP the connection peer.

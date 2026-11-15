@@ -15,9 +15,9 @@ import (
 
 // TestNormalizeHost verifies host normalization strips ports and lowercases values.
 func TestNormalizeHost(t *testing.T) {
-	require.Equal(t, "sso.laisky.com", normalizeHost("SSO.LAISKY.COM:443"))
-	require.Equal(t, "mcp.laisky.com", normalizeHost("mcp.laisky.com"))
-	require.Equal(t, "127.0.0.1", normalizeHost("127.0.0.1:8080"))
+	require.Equal(t, "sso.laisky.com", clientip.NormalizeHost("SSO.LAISKY.COM:443"))
+	require.Equal(t, "mcp.laisky.com", clientip.NormalizeHost("mcp.laisky.com"))
+	require.Equal(t, "127.0.0.1", clientip.NormalizeHost("127.0.0.1:8080"))
 }
 
 // TestSiteConfigSetResolveHost verifies site resolution respects the Host header, and X-Forwarded-Host only from a trusted proxy.

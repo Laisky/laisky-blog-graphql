@@ -24,9 +24,9 @@ func validateTurnstileTokenForLogin(ctx context.Context, turnstileToken *string,
 	return err
 }
 
-// validateTurnstileTokenForRegister runs the registration gate once.
-func validateTurnstileTokenForRegister(ctx context.Context, turnstileToken *string) error {
-	attempt, err := admitAuthRequest(ctx, turnstileToken, registerFlow())
+// validateTurnstileTokenForRegister runs the registration gate for account once.
+func validateTurnstileTokenForRegister(ctx context.Context, turnstileToken *string, account string) error {
+	attempt, err := admitAuthRequest(ctx, turnstileToken, registerFlow(account))
 	if err == nil {
 		attempt.finish()
 	}
@@ -40,10 +40,10 @@ func resolveTurnstileSecretForLogin(requestHost string) string {
 
 // TestNormalizeTurnstileHost verifies host normalization removes ports and normalizes case.
 func TestNormalizeTurnstileHost(t *testing.T) {
-	require.Equal(t, "sso.laisky.com", normalizeTurnstileHost(" SSO.LAISKY.COM:443 "))
-	require.Equal(t, "fd00::1", normalizeTurnstileHost("[fd00::1]:8443"))
-	require.Equal(t, "127.0.0.1", normalizeTurnstileHost("127.0.0.1:8080"))
-	require.Equal(t, "", normalizeTurnstileHost("   "))
+	require.Equal(t, "sso.laisky.com", clientip.NormalizeHost(" SSO.LAISKY.COM:443 "))
+	require.Equal(t, "fd00::1", clientip.NormalizeHost("[fd00::1]:8443"))
+	require.Equal(t, "127.0.0.1", clientip.NormalizeHost("127.0.0.1:8080"))
+	require.Equal(t, "", clientip.NormalizeHost("   "))
 }
 
 // TestResolveTurnstileSecretForLogin verifies host-based secret selection from site settings.
@@ -140,7 +140,7 @@ func TestValidateTurnstileTokenRequiredForHighRiskRegister(t *testing.T) {
 	setTurnstileEnabledSite(t)
 	withAuthChallengeTracker(t, highRiskTrackerForUnknown())
 
-	err := validateTurnstileTokenForRegister(context.Background(), nil)
+	err := validateTurnstileTokenForRegister(context.Background(), nil, "newcomer@example.test")
 	require.Error(t, err)
 	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
 }
@@ -163,15 +163,15 @@ func TestValidateTurnstileTokenRequiredForFrequentRegister(t *testing.T) {
 	setTurnstileEnabledSite(t)
 	withAuthChallengeTracker(t, newAuthChallengeTracker(time.Minute, 1, 15*time.Minute, 100, 100))
 
-	require.NoError(t, validateTurnstileTokenForRegister(context.Background(), nil))
-	err := validateTurnstileTokenForRegister(context.Background(), nil)
+	require.NoError(t, validateTurnstileTokenForRegister(context.Background(), nil, "newcomer@example.test"))
+	err := validateTurnstileTokenForRegister(context.Background(), nil, "newcomer@example.test")
 	require.Error(t, err)
 	require.True(t, errors.Is(err, model.ErrTurnstileRequired))
 }
 
 // TestValidateTurnstileTokenAccountBudgetAcrossAddresses verifies the login
 // gate challenges a request for an account that accumulated failures from
-// other addresses, while account-less flows from the same address are not.
+// other addresses, while account-less flows and other accounts are not.
 func TestValidateTurnstileTokenAccountBudgetAcrossAddresses(t *testing.T) {
 	setTurnstileEnabledSite(t)
 	tracker := newAuthChallengeTracker(time.Minute, 100, 15*time.Minute, 3, 100)
@@ -187,7 +187,9 @@ func TestValidateTurnstileTokenAccountBudgetAcrossAddresses(t *testing.T) {
 	err := validateTurnstileTokenForLogin(fresh, nil, " Victim@Example.test")
 	require.ErrorIs(t, err, model.ErrTurnstileRequired)
 	require.NoError(t, validateTurnstileTokenForLogin(fresh, nil, ""), "passkey and GitHub starts name no account")
-	require.NoError(t, validateTurnstileTokenForRegister(fresh, nil), "registration names no attacked account")
+	require.NoError(t, validateTurnstileTokenForRegister(fresh, nil, "newcomer@example.test"), "registering another email is not challenged")
+	require.ErrorIs(t, validateTurnstileTokenForRegister(fresh, nil, "victim@example.test"), model.ErrTurnstileRequired,
+		"registration names its email, so it shares that email's budget")
 }
 
 // TestResolveAuthClientKeyUsesSharedIdentity verifies the risk key comes from

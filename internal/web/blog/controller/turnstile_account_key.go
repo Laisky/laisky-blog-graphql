@@ -9,6 +9,8 @@ import (
 
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/web/blog/service"
 )
 
 const (
@@ -25,6 +27,7 @@ const (
 	// of account record that share one table.
 	accountSpellingDomain = "spelling\x00"
 	accountIdentityDomain = "identity\x00"
+	accountExactDomain    = "exact\x00"
 )
 
 // looseCollators hands out Unicode collators that compare at primary strength
@@ -83,6 +86,22 @@ func (t *authChallengeTracker) accountKey(account string) string {
 		return ""
 	}
 	return t.keyedHash(accountSpellingDomain, folded)
+}
+
+// exactAccountKey returns the keyed hash of the account in the form the login
+// stores look it up (service.NormalizeLoginAccount: trimmed, lower-cased), or
+// "" when the account is blank. Unlike accountKey it separates spellings that
+// differ by accents or width, which a store comparing exact strings keeps as
+// distinct accounts.
+func (t *authChallengeTracker) exactAccountKey(account string) string {
+	if len(account) > maxAccountKeyInput {
+		account = account[:maxAccountKeyInput]
+	}
+	exact := service.NormalizeLoginAccount(account)
+	if exact == "" {
+		return ""
+	}
+	return t.keyedHash(accountExactDomain, []byte(exact))
 }
 
 // identityKey returns the keyed hash of a store-resolved account identity

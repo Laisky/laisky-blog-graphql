@@ -95,9 +95,26 @@ startup warning. A mapped prefix shorter than /96 is rejected.
 At startup the service logs the effective policy once:
 `configured client identity policy` with `trusted_proxies`,
 `trusted_proxies_source` (`default` or `config`), `client_ip_headers` and
-`trusts_every_peer`. If a configured network covers the whole address space
-(`0.0.0.0/0` or `::/0`), the line is a warning, because any caller can then
-choose its address.
+`trusts_every_peer`. The line is a warning instead in two cases:
+
+- a configured network covers the whole address space (`0.0.0.0/0` or
+  `::/0`), because any caller can then choose its address;
+- `trusted_proxies` is unset, because the default trusts every peer on a
+  private network, including hosts that are not the reverse proxy.
+
+Both warnings also apply with `client_ip_headers: []`, because trusted peers
+still report `X-Forwarded-Host` and `X-Forwarded-Proto`.
+
+Production should list the exact proxy addresses, which also silences the
+warning:
+
+```yaml
+settings:
+  web:
+    trusted_proxies:
+      - 100.64.12.34 # the nginx host's Tailscale address (example)
+      - 172.17.0.1   # the docker bridge gateway nginx connects from (example)
+```
 
 For a deployment without a reverse proxy, set `trusted_proxies: []`.
 
@@ -171,6 +188,31 @@ limits what such spoofing can achieve. Guesses against one account escalate to a
 challenge after `account_failure_threshold` failures, whatever address each
 guess claims.
 
+## Acceptance: application versus ingress
+
+Issue #84 is closed in production only when both layers below pass. The
+repository can prove the first; only the operator can prove the second.
+
+**Application layer (repository tests).** Forwarding headers count only from
+trusted peers; the chain is walked from the right; a malformed chain falls back
+to the peer; untrusted `X-Forwarded-Host`/`X-Forwarded-Proto` are ignored; and
+the account budget holds across rotated addresses. Covered by
+`library/clientip` tests, `internal/web/client_identity_test.go`,
+`internal/web/turnstile_host_test.go` and the controller risk tests.
+
+**Ingress layer (operator verification after each deploy or nginx change).**
+
+1. `nginx -T` shows the four `proxy_set_header` lines above in every vhost and
+   every `location` that proxies to the service.
+2. `settings.web.trusted_proxies` lists the exact proxy addresses, and the
+   startup line is `configured client identity policy` without a warning.
+3. A request through Cloudflare with a forged `X-Forwarded-For: 203.0.113.9`
+   logs the real visitor address as `client_ip`, not `203.0.113.9`.
+4. A direct request to the origin from outside Cloudflare is refused by the
+   firewall, Authenticated Origin Pulls or the tunnel.
+5. A request from another host on the private network (not the proxy) with a
+   forged `X-Forwarded-For` logs that host's own address as `client_ip`.
+
 ## Compatibility and migration
 
 - Before this change, gin trusted every peer and read `X-Forwarded-For`, then
@@ -184,6 +226,8 @@ guess claims.
 - The adaptive-authentication tracker keys IPv6 clients by their /64 network
   ([RFC 7934](https://www.rfc-editor.org/rfc/rfc7934.html) lets one host own a
   whole /64). Turnstile `remoteip` and logs keep the full address.
-- No stored data changes. The risk tracker is in memory only.
+- No stored data changes. The risk tracker is in memory only, per process.
+- When `trusted_proxies` is unset, startup now logs a warning that recommends
+  exact proxy addresses. Behavior is unchanged.
 
 Research notes and sources: [docs/ref/client_ip_identity_20261108.md](../ref/client_ip_identity_20261108.md).

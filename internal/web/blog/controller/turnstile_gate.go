@@ -21,7 +21,7 @@ type authFlow struct {
 	// action names the flow in errors and logs.
 	action string
 	// account is the raw account the request names, or empty for flows that
-	// name none (registration, GitHub OAuth start, passkey start).
+	// name none (GitHub OAuth start, passkey start).
 	account string
 }
 
@@ -30,9 +30,12 @@ func loginFlow(account string) authFlow {
 	return authFlow{action: authActionLogin, account: account}
 }
 
-// registerFlow returns the flow of a registration entry point.
-func registerFlow() authFlow {
-	return authFlow{action: authActionRegister}
+// registerFlow returns the flow of a registration entry point for the email
+// being registered. Registration codes are guessable credentials, so their
+// failures count against that email from every client, like login failures,
+// and requesting a fresh code is gated by the same account signal.
+func registerFlow(account string) authFlow {
+	return authFlow{action: authActionRegister, account: account}
 }
 
 // authAttempt is one request admitted by the adaptive-authentication gate. It
@@ -42,9 +45,10 @@ func registerFlow() authFlow {
 // first report wins; later ones are no-ops, so callers can always defer finish.
 // It is used by one request goroutine and is not safe for concurrent use.
 type authAttempt struct {
-	tracker     *authChallengeTracker
-	subject     authRiskSubject
-	identity    string
+	tracker *authChallengeTracker
+	subject authRiskSubject
+	// identities are the identity keys the spelling linked at admission.
+	identities  []string
 	reservation authReservation
 	settled     bool
 }
@@ -57,17 +61,19 @@ func (a *authAttempt) failed(identity string) {
 		return
 	}
 	a.settled = true
-	a.tracker.recordFailureFor(a.subject, a.identityKey(identity))
+	a.tracker.recordFailureLinked(a.subject, a.tracker.identityKey(identity), a.identities)
 	a.tracker.release(a.reservation)
 }
 
-// succeeded records a successful authentication for the attempt and releases it.
+// succeeded records a successful authentication for the attempt and releases
+// it. identity is the store identity of the authenticated account
+// (model.User.RiskIdentity).
 func (a *authAttempt) succeeded(identity string) {
 	if a == nil || a.settled {
 		return
 	}
 	a.settled = true
-	a.tracker.recordSuccessFor(a.subject, a.identityKey(identity))
+	a.tracker.recordSuccessFor(a.subject, a.tracker.identityKey(identity))
 	a.tracker.release(a.reservation)
 }
 
@@ -78,15 +84,6 @@ func (a *authAttempt) finish() {
 	}
 	a.settled = true
 	a.tracker.release(a.reservation)
-}
-
-// identityKey hashes a store identity, falling back to the identity the
-// account spelling resolved to at admission.
-func (a *authAttempt) identityKey(identity string) string {
-	if key := a.tracker.identityKey(identity); key != "" {
-		return key
-	}
-	return a.identity
 }
 
 // admitAuthRequest runs the adaptive-authentication gate for one request.
@@ -124,7 +121,7 @@ func admitAuthRequest(ctx context.Context, turnstileToken *string, flow authFlow
 	}
 
 	decision := tracker.admit(attempt.subject)
-	attempt.identity = decision.identity
+	attempt.identities = decision.identities
 
 	// Requests whose client and account are both low risk proceed without a
 	// challenge; any token they happen to send is ignored so a stale one
@@ -152,7 +149,7 @@ func admitAuthRequest(ctx context.Context, turnstileToken *string, flow authFlow
 		)
 		return nil, errors.Wrap(model.ErrTurnstileFailed, flow.action)
 	}
-	attempt.reservation = tracker.admitVerified(attempt.subject, attempt.identity)
+	attempt.reservation = tracker.admitVerified(attempt.subject, attempt.identities)
 
 	return attempt, nil
 }
