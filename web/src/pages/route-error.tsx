@@ -14,10 +14,10 @@ interface RouteErrorProps {
 
 /**
  * RouteError reports router-caught failures while retaining the existing fallback UI.
- * When a code-split page fails to download it reloads once, which is what an open tab
- * needs after a deploy replaced the hashed assets. When that cannot help (offline, or a
- * reload already happened moments ago) it explains the failure and offers a manual
- * reload instead of claiming the page does not exist.
+ * When a code-split page fails to download it reloads once per build, which is what an
+ * open tab needs after a deploy replaced the hashed assets. When that cannot help (offline,
+ * or this tab already reloaded into the same build) it explains the failure and offers a
+ * manual reload instead of claiming the page does not exist.
  */
 export function RouteError({ standalone = false }: RouteErrorProps) {
   const error = useRouteError();

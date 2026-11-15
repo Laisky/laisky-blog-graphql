@@ -39,14 +39,42 @@ it('reloads once instead of reporting when a code-split page chunk is gone after
   const capture = vi.spyOn(browserReporter, 'capture').mockImplementation(() => {});
   renderFailingLazyRoute(staleChunk());
   await screen.findByText('Loading the latest version of this page…');
-  expect(window.sessionStorage.getItem('route-chunk-reload-at')).not.toBeNull();
+  expect(window.sessionStorage.getItem('route-chunk-recovery')).not.toBeNull();
   expect(reload).toHaveBeenCalledTimes(1);
   expect(capture).not.toHaveBeenCalled();
 });
 
+it('stops reloading after one attempt even when every failure arrives after a slow request', async () => {
+  const capture = vi.spyOn(browserReporter, 'capture').mockImplementation(() => {});
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    vi.setSystemTime(1_000_000);
+    renderFailingLazyRoute(staleChunk());
+    await screen.findByText('Loading the latest version of this page…');
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    // Each reload replaces the document; the same build fails again, 15 s later each time.
+    for (const elapsed of [15_000, 30_000]) {
+      cleanup();
+      vi.setSystemTime(1_000_000 + elapsed);
+      const stale = staleChunk();
+      renderFailingLazyRoute(stale);
+      await screen.findByRole('heading', { name: 'This page could not be loaded' });
+      await waitFor(() => expect(capture).toHaveBeenCalledWith(stale, 'router'));
+    }
+    expect(reload).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('offers an explicit reload and reports when the reload guard already fired', async () => {
   const capture = vi.spyOn(browserReporter, 'capture').mockImplementation(() => {});
-  window.sessionStorage.setItem('route-chunk-reload-at', String(Date.now()));
+  // The first failure in this build used up the automatic reload.
+  renderFailingLazyRoute(staleChunk());
+  await screen.findByText('Loading the latest version of this page…');
+  cleanup();
+  reload.mockClear();
   const stale = staleChunk();
   renderFailingLazyRoute(stale);
   await screen.findByRole('heading', { name: 'This page could not be loaded' });
@@ -78,5 +106,5 @@ it('does not reload or report while offline, and explains how to recover', async
   expect(screen.getByText(/appear to be offline/i)).toBeTruthy();
   expect(reload).not.toHaveBeenCalled();
   expect(capture).not.toHaveBeenCalled();
-  expect(window.sessionStorage.getItem('route-chunk-reload-at')).toBeNull();
+  expect(window.sessionStorage.getItem('route-chunk-recovery')).toBeNull();
 });

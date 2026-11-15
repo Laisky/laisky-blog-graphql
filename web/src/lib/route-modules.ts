@@ -60,10 +60,20 @@ export function preloadConsoleRoute(path: string): void {
     .catch(() => undefined);
 }
 
-const staleChunkReloadKey = 'route-chunk-reload-at';
-const staleChunkReloadWindowMs = 10_000;
+const staleChunkRecoveryKey = 'route-chunk-recovery';
+// rememberedBuildLimit bounds the guard's size. A reload loop would need the server to
+// rotate through more distinct builds than this, which only that many deploys can produce.
+const rememberedBuildLimit = 8;
 const dynamicImportFailure =
   /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|Unable to preload CSS/i;
+
+/**
+ * currentBuild identifies the build this document runs. In a production bundle it is the
+ * URL of the content-hashed chunk holding this module, and that chunk embeds the hashed
+ * names of every page chunk it imports, so any frontend deploy changes it while a reload
+ * that fetched the same index.html keeps it.
+ */
+const currentBuild = import.meta.url;
 
 /**
  * isStaleChunkError reports whether a router error came from a page chunk that
@@ -84,9 +94,9 @@ export function reloadPage(): void {
  * StaleChunkRecovery is the outcome of a recovery attempt:
  * - 'reloading': a reload was started.
  * - 'offline': the browser reports no network, so a reload could only replace the page
- *   with the browser's own offline error; the guard is left unarmed for a later retry.
- * - 'unavailable': a reload already happened moments ago (so the chunk is genuinely
- *   missing or the network is failing) or session storage cannot hold the loop guard.
+ *   with the browser's own offline error; no attempt is recorded, so a later failure may retry.
+ * - 'unavailable': this tab already reloaded automatically while running this build, so
+ *   another reload would fetch the same build again; or session storage cannot hold the guard.
  */
 export type StaleChunkRecovery = 'reloading' | 'offline' | 'unavailable';
 
@@ -94,8 +104,8 @@ export type StaleChunkRecovery = 'reloading' | 'offline' | 'unavailable';
 export interface StaleChunkReloadOptions {
   /** storage holds the loop guard; defaults to session storage, resolved defensively. */
   storage?: Pick<StorageLike, 'getItem' | 'setItem'>;
-  /** now is the current time in milliseconds; defaults to Date.now(). */
-  now?: number;
+  /** build identifies the running build; defaults to this module's chunk URL. */
+  build?: string;
   /** reload starts the reload; defaults to reloadPage. */
   reload?: () => void;
   /** online reports connectivity; defaults to navigator.onLine. */
@@ -103,18 +113,19 @@ export interface StaleChunkReloadOptions {
 }
 
 /**
- * reloadForStaleChunk reloads the document at most once per guard window so the
- * browser fetches the current index.html and its new chunk names, which is what an
- * open tab needs after a deploy. It never reloads while the browser reports being
- * offline, and it never throws: blocked site data only disables the automatic reload.
+ * reloadForStaleChunk reloads the document so the browser fetches the current index.html
+ * and its new chunk names, which is what an open tab needs after a deploy. It reloads at
+ * most once per build in a tab: if the reloaded document runs the same build, reloading
+ * again cannot help, however long each failing request took. It never reloads while the
+ * browser reports being offline, and it never throws: blocked site data only disables
+ * the automatic reload.
  */
 export function reloadForStaleChunk(options: StaleChunkReloadOptions = {}): StaleChunkRecovery {
   const online = options.online ?? (typeof navigator === 'undefined' || navigator.onLine !== false);
   if (!online) {
     return 'offline';
   }
-  const now = options.now ?? Date.now();
-  if (!armReloadGuard(options.storage, now)) {
+  if (!recordReloadAttempt(options.storage, options.build ?? currentBuild)) {
     return 'unavailable';
   }
   (options.reload ?? reloadPage)();
@@ -122,23 +133,41 @@ export function reloadForStaleChunk(options: StaleChunkReloadOptions = {}): Stal
 }
 
 /**
- * armReloadGuard records a reload attempt and reports whether one may start now. It
- * refuses within the guard window, and whenever the guard cannot be both read and
- * stored, because an unrecorded reload could repeat forever on a genuinely missing asset.
+ * recordReloadAttempt records an automatic reload for the build and reports whether one
+ * may start. It refuses when this tab already reloaded for the build, and whenever the
+ * guard cannot be both read and stored, because an unrecorded reload could repeat forever
+ * on a genuinely missing asset. The guard lives in session storage, which survives the
+ * reload and belongs to this tab only.
  */
-function armReloadGuard(storage: StaleChunkReloadOptions['storage'], now: number): boolean {
+function recordReloadAttempt(storage: StaleChunkReloadOptions['storage'], build: string): boolean {
   try {
     const guard = storage ?? resolveStorage('session');
     if (!guard) {
       return false;
     }
-    const last = Number(guard.getItem(staleChunkReloadKey) ?? Number.NaN);
-    if (Number.isFinite(last) && now - last >= 0 && now - last < staleChunkReloadWindowMs) {
+    const attempted = parseAttemptedBuilds(guard.getItem(staleChunkRecoveryKey));
+    if (attempted.includes(build)) {
       return false;
     }
-    guard.setItem(staleChunkReloadKey, String(now));
+    guard.setItem(staleChunkRecoveryKey, JSON.stringify([...attempted, build].slice(-rememberedBuildLimit)));
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * parseAttemptedBuilds decodes the stored guard. A missing or malformed value counts as no
+ * prior attempt; the next recorded attempt overwrites it with a well-formed list.
+ */
+function parseAttemptedBuilds(raw: string | null): string[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+  } catch {
+    return [];
   }
 }
