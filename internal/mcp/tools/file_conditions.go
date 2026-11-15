@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"maps"
+	"slices"
 
 	errors "github.com/Laisky/errors/v2"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -86,23 +88,46 @@ func expectedFileVersionOption(required ...bool) mcp.ToolOption {
 	return mcp.WithString(expectedVersionKey, opts...)
 }
 
-// requireFileWriteSchema publishes the alternative preconditions as an actual
-// JSON Schema constraint, not just prose. Install after all property options.
-func requireFileWriteSchema() mcp.ToolOption {
+// withMandatoryFileMutationSchema publishes the mandatory mutation conditions of
+// file_write and file_restore_version as JSON Schema. Install it after every
+// property option. The root keeps the factored contract for merging clients;
+// each oneOf alternative is also a complete argument object, because
+// branch-oriented clients (Codex CLI code mode) render alternatives without
+// sibling root fields and without `not`. An alternative therefore declares
+// exactly the arguments it accepts: the create alternative omits the version it
+// forbids, while `not` keeps that refusal for validators.
+func withMandatoryFileMutationSchema() mcp.ToolOption {
 	return func(tool *mcp.Tool) {
+		rootCondition, ok := tool.InputSchema.Properties[createOnlyKey].(map[string]any)
+		if !ok {
+			// Every mutation tool declares create_only before this option; a missing
+			// property is a wiring error that must fail startup with a clear cause.
+			panic(errors.Errorf("file mutation tool %q must declare %s before its precondition schema", tool.Name, createOnlyKey))
+		}
+		branch := func(createOnly bool, required string) map[string]any {
+			properties := maps.Clone(tool.InputSchema.Properties)
+			condition := maps.Clone(rootCondition)
+			condition["const"] = createOnly
+			properties[createOnlyKey] = condition
+			return map[string]any{
+				schemaTypeKey:       schemaTypeObject,
+				schemaPropertiesKey: properties,
+				schemaRequiredKey:   append(slices.Clone(tool.InputSchema.Required), required),
+			}
+		}
+		edit := branch(false, expectedVersionKey)
+		create := branch(true, createOnlyKey)
+		delete(create[schemaPropertiesKey].(map[string]any), expectedVersionKey)
+		create["not"] = map[string]any{schemaRequiredKey: []string{expectedVersionKey}}
 		schema := map[string]any{
-			schemaTypeKey: "object", schemaPropertiesKey: tool.InputSchema.Properties, schemaRequiredKey: tool.InputSchema.Required,
-			"oneOf": []any{
-				map[string]any{schemaRequiredKey: []string{expectedVersionKey}, schemaPropertiesKey: map[string]any{createOnlyKey: map[string]any{"const": false}}},
-				map[string]any{schemaRequiredKey: []string{createOnlyKey}, schemaPropertiesKey: map[string]any{createOnlyKey: map[string]any{"const": true}},
-					"not": map[string]any{schemaRequiredKey: []string{expectedVersionKey}}},
-			},
+			schemaTypeKey: schemaTypeObject, schemaPropertiesKey: tool.InputSchema.Properties, schemaRequiredKey: tool.InputSchema.Required,
+			"oneOf": []any{edit, create},
 		}
 		encoded, err := json.Marshal(schema)
 		if err != nil {
 			// This schema contains only static JSON values. A programming error
 			// must fail startup, never advertise an unguarded fallback schema.
-			panic(errors.Wrap(err, "encode mandatory file_write precondition schema"))
+			panic(errors.Wrap(err, "encode mandatory file mutation precondition schema"))
 		}
 		tool.InputSchema = mcp.ToolInputSchema{}
 		tool.RawInputSchema = encoded

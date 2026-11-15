@@ -203,5 +203,13 @@
       "TestRepoEmailCodeAttemptReservationIsBounded",
       "TestRepoPrepareKeepsExistingEmailCodesUsable"
     ]
+  },
+  {
+    "package": "./internal/mcp/tools",
+    "tests": [
+      "TestFileMutationSchemasExposeCompleteUnionArguments",
+      "TestFileMutationSchemasKeepPreconditions",
+      "TestFileMutationAlternativesDeclareOnlyAcceptedArguments"
+    ]
   }
 ]
