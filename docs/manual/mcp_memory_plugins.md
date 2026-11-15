@@ -231,6 +231,8 @@ settings:
               global_tokens_per_window: 20000000
               global_reserve_percent: 20
               max_tracked_tenants: 10000
+              max_output_tokens_per_call: 4096
+              max_toc_output_tokens_per_call: 32768
 ```
 
 The full schema and the resolution semantics of an empty `llm.api_key` (silently
@@ -269,11 +271,13 @@ still succeeds with a deterministic file summary and the previous tree (if any)
 stays inactive until the next write. Search
 loops the tree-reasoning prompt over the configured `tree_query.candidate_docs` and
 issues at most one planner call per candidate and `tree_query.max_steps` in total.
-`tree_query.max_tokens` is enforced before each call is sent: the planner prompt
-uses the most detailed outline that fits the remaining budget (full outline, then
-without summaries, then at most three, two or one levels, then fewer top-level
-sections), and a candidate that cannot fit even one section falls back to the pages
-of its first section. Search calls also draw from the caller's rolling budget
+`tree_query.max_tokens` is enforced before each call is sent, for the planner's
+input and its answer together: the planner first reserves a quarter of the
+remaining budget for its answer (at least 256 tokens, at most
+`limits.max_output_tokens_per_call`), and its prompt uses the most detailed outline
+that fits the rest (full outline, then without summaries, then at most three, two
+or one levels, then fewer top-level sections). A candidate that cannot fit even one
+section falls back to the pages of its first section. Search calls also draw from the caller's rolling budget
 (§6.6).
 
 ### 6.5 Watch items
@@ -314,18 +318,43 @@ switched off. The defaults leave typical documents unchanged.
 | `global_tokens_per_window` | `20000000` | Tokens of the whole process per window. |
 | `global_reserve_percent` | `20` | Share of the global budget only light callers may spend (below). Capped at 90. |
 | `max_tracked_tenants` | `10000` | Callers whose rolling budget is held in memory. |
+| `max_output_tokens_per_call` | `4096` | Tokens one upstream request with a short answer (a summary, a verdict, page ranges) may generate, reasoning tokens included. Raised to 256 when set lower. |
+| `max_toc_output_tokens_per_call` | `32768` | Tokens one request whose answer re-emits a table of contents (transformation, page-number extraction, generation) may generate. Never below `max_output_tokens_per_call`. |
 
 How the ceilings are enforced:
 
-- Every upstream request, for indexing and for search, passes one admission point. It
-  estimates the prompt's input tokens before sending and refuses the request when the
-  operation's remaining calls or tokens, the caller's rolling budget or the global
-  budget cannot cover it. A retry of a failed request is admitted the same way before
-  it is sent, so `max_llm_calls_per_document` and the rolling call budgets count
-  upstream requests, not logical calls. After the call, the provider-reported total
-  (or the estimate, when the provider reports none or the request failed) is charged;
-  a larger charge leaves the rolling budget in debt until it refills. Cached
-  responses are free.
+- Every upstream request, for indexing and for search, passes one admission point.
+  Before sending, it reserves the request's whole possible cost: the estimated input
+  tokens (prompt, message framing and any output schema) plus an output allowance,
+  which is sent as the Responses API `max_output_tokens`. The allowance is the
+  request kind's ceiling (`max_output_tokens_per_call` or
+  `max_toc_output_tokens_per_call`), lowered to what the operation has left after its
+  input. A request is refused when it cannot be granted at least 256 output tokens, or
+  when the caller's rolling budget or the global budget cannot cover the reservation.
+  Calls wait for a concurrency slot before reserving, so queued calls hold no budget.
+  A retry of a failed request is admitted the same way before it is sent, after the
+  failed request has been charged, so `max_llm_calls_per_document` and the rolling
+  call budgets count upstream requests, not logical calls.
+- Each upstream request is then charged, at the time it finishes:
+  - the provider-reported total when the provider reports usage;
+  - for an answer without usage, the input estimate plus the answer's estimated tokens;
+  - for an error response from the provider, the input estimate;
+  - nothing for a request the client-side rate limiter kept in the process (the
+    upstream call itself stays counted);
+  - for a request the provider never answered (a timeout, a cancellation or a
+    connection failure), its whole reservation, because the provider may have
+    processed and billed it in full.
+
+  The rolling buckets are refilled to that time before the charge is applied, so
+  the refill earned while a slow call was in flight cannot cancel its charge.
+- An answer the provider cut at its output ceiling (marked incomplete for
+  `max_output_tokens`, or using the whole ceiling) is charged and counted but never
+  used or cached; the work it was for degrades like a refused call (below). Note that
+  the ceiling counts reasoning tokens: `gpt-5.4-mini` defaults to reasoning effort
+  `none`, but a model whose default effort is higher needs a larger
+  `max_output_tokens_per_call`, or more of its answers will be cut.
+- Cached responses are free. The cache is consulted before any budget, so a cached
+  answer is reused even when every budget is spent.
 - Retries follow `indexer.retry.*` (default 3 requests per call, exponential backoff
   from 250 ms to 8 s). Only timeouts, connection failures, 408, 409, 429 and 5xx are
   retried; any other provider response (an invalid request, authentication, an
@@ -346,15 +375,27 @@ How the ceilings are enforced:
   an explicit cancellation of the request aborts the run.
 - A degraded tree is marked, never presented as complete: the tree and its catalog
   entry carry `degraded`, and the file's summary is published with status
-  `degraded` and error code `budget_exhausted` (a rolling budget refused calls),
-  `timeout` (`indexer.timeout_index` ended LLM work) or `document_limit` (only the
-  document's own ceilings applied). The next write re-indexes the file. A
-  `budget_exhausted` or `timeout` tree is also refreshed later: a search that meets
-  it once its refresh time has passed, and while the caller's budget allows, queues a
-  re-index (one worker, at most 32 queued, one job per content generation). Refreshes
-  wait 5 minutes, then double up to 6 hours, and stop after 5 attempts; a
-  `document_limit` tree is final for its content, because a refresh would hit the
+  `degraded` and one of these error codes:
+  - `timeout`: `indexer.timeout_index` ended LLM work;
+  - `budget_exhausted`: a rolling budget refused calls;
+  - `document_limit`: only the document's own ceilings applied. They refused calls,
+    cut an answer at its output ceiling, or cut the structure short at
+    `max_nodes_per_document`, even when no call was refused.
+
+  The codes are listed in order of precedence. A refreshable cause is reported over
+  `document_limit`, so a refresh can still recover the refused work; a refreshed
+  tree that is still truncated then reports `document_limit`. The next write
+  re-indexes the file.
+- A `budget_exhausted` or `timeout` tree is also refreshed later. A search that meets
+  it once its refresh time has passed, while the caller's budget allows, queues a
+  re-index: one worker, at most 32 queued, one job per content generation.
+  Refreshes wait 5 minutes, then double up to 6 hours, and stop after 5 attempts.
+  A `document_limit` tree is final for its content, because a refresh would hit the
   same ceiling.
+- Refresh is not guaranteed background recovery. A degraded document that is never
+  searched or written again stays degraded. The refresh queue lives in memory and is
+  lost on restart, but the retry state (attempts, next time) is persisted in the
+  catalog, so the next search after a restart queues the refresh again.
 - Rolling budgets are token buckets that refill linearly over `window`. A caller's
   bucket that has refilled completely and has no request in flight is dropped from
   memory, so retained state is bounded by recent spenders; when `max_tracked_tenants`
@@ -364,6 +405,18 @@ How the ceilings are enforced:
   and at most once per minute the process logs `pageindex.spend.refusals` at warn
   level with the admitted calls and the tenant, global, reserve and untracked
   refusals since the previous summary.
+
+What the ceilings guarantee, and what they do not:
+
+- Provider-reported spend stays within each ceiling, as long as two things hold.
+  First, the provider honors `max_output_tokens`. Second, its input count agrees
+  with the local tokenizer estimate, which already includes message framing and the
+  schema. Any difference is settled as debt that the bucket repays as it refills.
+- Budgets are per process. With several replicas, the operator's hourly ceiling is
+  the number of replicas times the `global_*` values.
+- PDF page text is extracted before any LLM budget applies, and its CPU and memory
+  are not bounded by these settings. A small compressed PDF can expand into a large
+  page text. The ceilings still bound the LLM spend that text can cause.
 
 Markdown parsing also has fixed bounds that are not configurable. goldmark's
 `Parse` takes no context and cannot be interrupted, so its work is bounded before it
@@ -377,9 +430,10 @@ content lines (non-blank lines, and blank lines inside an open list), and its
 link-reference definitions need at most 2^24 line copies. Ordinary documents of the
 2 MB write limit stay well below these bounds; a document over any of them is scanned
 by a linear fallback that recognizes ATX and setext headings outside code and HTML
-blocks and renders each title with goldmark (including the document's link-reference
-definitions), and that gives the same headings as goldmark on every document in the
-repository. Inline markup is parsed only inside headings of at most 1 KiB, and for at
+blocks and renders each title with goldmark. It resolves the document's retained
+link-reference definitions (at most 512 and 64 KiB), which are parsed once per
+document, so rendering does not grow with the number of definitions. On every
+document in the repository it gives the same headings as goldmark. Inline markup is parsed only inside headings of at most 1 KiB, and for at
 most 256 KiB of heading source and 32 Ki markup characters per document (later and
 longer headings keep their raw text); titles are capped at 1 KiB. Line numbers come
 from one newline index. Token counting splits runs longer than 256 bytes.

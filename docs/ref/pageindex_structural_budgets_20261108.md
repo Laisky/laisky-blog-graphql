@@ -68,11 +68,62 @@ token, which keeps estimates conservative.
 
 Applied: `SpendGovernor` keeps a call bucket and a token bucket per tenant and one
 global pair, refilled over `limits.window`. Every upstream request, retries included,
-reserves its estimated input tokens before it is sent and settles to the
-provider-reported total afterwards (debt is repaid by refill). A call that was never
-sent returns its operation budget and its tokens but keeps its call spent, which
-cannot mint capacity. A bucket with a request in flight is never swept, so a late
-settle charges the bucket that admitted it. The last `global_reserve_percent` of the
+reserves its estimated input tokens plus an output allowance before it is sent and
+settles at completion (see "Output ceilings and settlement" below). A bucket with a
+request in flight is never swept, so a late settle charges the bucket that admitted it. The last `global_reserve_percent` of the
 global budget is reserved for tenants under one document's allowance in the window
 (S3). Only timeouts, 408, 409, 429 and 5xx are retried (S4). Tests inject the
 governor's clock, so no budget decision depends on how long a test runs.
+
+### Output ceilings and settlement (second review of #96, 2026-11-15)
+
+Sources were checked on 2026-11-15.
+
+| # | Source | Finding |
+| --- | --- | --- |
+| S5 | [OpenAI reasoning guide](https://developers.openai.com/api/docs/guides/reasoning); `max_output_tokens` docstring in [openai-python `response_create_params.py`](https://raw.githubusercontent.com/openai/openai-python/main/src/openai/types/responses/response_create_params.py) | `max_output_tokens` bounds visible output and reasoning tokens together. At the bound the response is `status: "incomplete"` with `incomplete_details.reason: "max_output_tokens"`, and input and reasoning are billed even when no visible text was produced. The guide suggests reserving about 25,000 tokens for reasoning and output when starting out. The API rejects values below 16. |
+| S6 | [gpt-5.4-mini model page](https://developers.openai.com/api/docs/models/gpt-5.4-mini) | gpt-5.4-mini supports reasoning efforts none (the default), low, medium, high and xhigh. Some other GPT-5 models default to medium, so the reasoning share of the output ceiling depends on the configured model. |
+| S7 | [OpenAI rate limits guide](https://developers.openai.com/api/docs/guides/rate-limits); [OpenAI background mode](https://developers.openai.com/api/docs/guides/background) | OpenAI's own rate limiter counts a request as the larger of `max_tokens` and an estimate from its character count, at admission. Unsuccessful requests count toward rate limits. A synchronous request is canceled only by closing the connection, and OpenAI publishes no policy on billing work already done for timed-out or canceled requests. |
+| S8 | [LiteLLM input/output token rate limits](https://docs.litellm.ai/docs/proxy/io_token_rate_limits) | Gateway practice of reserving and then reconciling. LiteLLM reserves the estimated input plus an output cap: the request's own cap, else the deployment's, else a fraction of the limit. It reconciles to reported usage, and a response that reports no usage keeps its reservation. Envoy AI Gateway and Kong charge only after the response, so admitted requests can overshoot. |
+| S9 | [golang.org/x/time/rate `CancelAt`](https://raw.githubusercontent.com/golang/time/master/rate/rate.go) (v0.16.0); GCRA in [throttled](https://raw.githubusercontent.com/throttled/throttled/master/rate.go) | A late correction first advances the bucket to the settlement time, capping the refill at its capacity, and only then applies the restore or debit. GCRA's `max(tat, now)` is the same rule. |
+
+Applied:
+
+- The gate grants each request an output allowance, sent as `max_output_tokens`, and
+  reserves it with the input estimate in the operation, tenant and global budgets
+  (S7, S8). The estimate includes the message framing and the output schema.
+- There are two ceilings, because ceilings that are too large make concurrent calls
+  contend for small per-document budgets:
+  - `max_output_tokens_per_call` (4096) is for short answers.
+  - `max_toc_output_tokens_per_call` (32768) is for answers that re-emit a table of
+    contents. It covers about a thousand entries and S5's 25,000-token suggestion.
+- An allowance is lowered to what the operation has left after its input. A request
+  that cannot be granted 256 tokens is refused. Calls take their concurrency slot
+  before they reserve.
+- Each request is charged at completion:
+  - the reported usage, when there is one;
+  - for an answer without usage, the input estimate plus the answer's estimated tokens;
+  - for an error response, the input estimate;
+  - nothing for a request that never left the process;
+  - for a request the provider never answered, its whole reservation, since S7 makes
+    billing of timed-out work an open question.
+- A failed request is settled before its retry is reserved, so its unused allowance
+  is available to the retry.
+- An answer cut at the ceiling is never used or cached (S5). It is detected by the
+  incomplete status, or by an answer that used the whole ceiling.
+- `spendTicket.settle` refills both buckets to the settlement time before it applies
+  the correction (S9). Before this fix, a call admitted at 1 token of a 100-token
+  bucket and charged 100 tokens a full window later left the bucket full instead of
+  holding 1 token.
+
+Measured on 2026-11-15:
+
+- One document with a 200,000-token ceiling, against a provider that answers with
+  150,000 output tokens, was billed 300,156 tokens in 2 calls. With output reserved
+  it was billed 199,968 tokens in 48 calls, and two documents of one tenant stayed
+  within its 300,000-token window.
+- In the fallback scanner, rendering 2000 reference-link titles with 512 retained
+  definitions took 1.39 s, against 9.7 ms with one definition. Each title re-parsed
+  every definition. The definitions are now parsed once into a goldmark context that
+  every title's context delegates to (goldmark keeps the first definition of a
+  label, as before), and the render takes 5.7 ms.

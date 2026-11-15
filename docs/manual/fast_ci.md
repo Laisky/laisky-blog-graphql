@@ -36,27 +36,32 @@ or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
 
-The PageIndex selections (issues #85 and #91) count upstream calls with a fake
-model: per-document call and token ceilings that do not grow with heading, root or
-table-of-contents count, a planner prompt that fits `tree_query.max_tokens`, a tenant
-budget that holds across repeated writes and searches while another tenant keeps its
-own, the global ceiling across tenant identities, cancellation polled while Markdown
-is parsed, an empty heading that no longer crashes tree building, and heading
-extraction identical to the previous full goldmark parse on the repository's own
-documents. The review follow-ups add, with fake clocks only: the global reserve
-that keeps a light tenant's first document whole while heavy tenants are refused,
-degraded publication and a single deduplicated refresh after the budget refills, a
-final `document_limit` state, debt that survives a slow call, counted and
-rate-limited refusal logs, the goldmark work bounds decided before parsing, ordinary
-documents (spaced breaks, logs in fences, indented code) kept on goldmark, the
-fallback scanner matching goldmark on the corpus and stopping at the heading cap,
-client errors not retried, and every retry admitted by the budgets. The timing-ratio
-and allocation checks of the same issues are deliberate performance acceptance,
-because a shared runner's load can distort them (their timing assertions skip under
-`-race`):
+The PageIndex selection (issues #85 and #91) is twelve unit tests, one per
+guarantee, against fake models and fake clocks, so no network, database or
+wall-clock budget is involved:
+
+- per-document call and token ceilings that do not grow with the heading, root or
+  table-of-contents count;
+- the tenant and global rolling ceilings;
+- output tokens reserved before dispatch, so provider-reported spend stays within
+  the per-document and tenant ceilings;
+- settlement at completion time, so a slow call's charge is not refilled away;
+- every retry admitted by the budgets;
+- the degraded-reason classification, including structural truncation;
+- cancellation polled while Markdown is parsed, and the empty-heading crash;
+- goldmark's work bounds decided before parsing;
+- heading extraction identical to the previous parser on the repository's
+  documents.
+
+They take about 0.3 s together (1.1 s for the whole package's selected and review
+tests, measured on 2026-11-15). Persistence and refresh through SQLite, fairness
+across tenants, cache reuse, truncated answers, fallback-scanner parity, retry
+classification and the timing and allocation ratios are deliberate acceptance.
+The race run also skips the timing assertions:
 
 ```sh
-go test -count=1 -v ./internal/mcp/memory/plugins/pageindex -run 'TestExtractHeadersDenseHeadingsScaleLinearly|TestExtractHeadersPathologicalMarkdownCostsLikePlainText|TestTokenizerCountBoundsLongRuns|TestListShapedMarkdownStaysBounded|TestTenantBudgetIndependentOfWallClock'
+go test -count=1 ./internal/mcp/memory/plugins/pageindex
+go test -race -count=3 ./internal/mcp/memory/plugins/pageindex
 ```
 
 The SSO selections run the shared redirect-policy and registry vectors that the

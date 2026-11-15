@@ -135,24 +135,15 @@
       "TestMarkdownSummaryCallsDoNotScaleWithHeadings",
       "TestMarkdownTokenBudgetDoesNotScaleWithRoots",
       "TestPDFSummaryCallsDoNotScaleWithTOCEntries",
-      "TestSearchPromptStaysWithinTreeQueryBudget",
-      "TestTenantBudgetHoldsAcrossRepeatedWrites",
       "TestSpendGovernorTenantAndGlobalCeilings",
+      "TestOutputTokensAreReservedBeforeDispatch",
+      "TestSlowCallSettlesAtCompletionTime",
+      "TestEveryUpstreamAttemptIsAdmitted",
+      "TestDegradedReasonPrecedence",
       "TestIndexMarkdownStopsWhenCanceledMidParse",
       "TestIndexMarkdownEmptyHeadingKeepsTreeValid",
-      "TestExtractHeadersMatchesFullGoldmarkParse",
-      "TestHeavyTenantsCannotStarveLightTenant",
-      "TestSpendGovernorReservesGlobalHeadroomForLightTenants",
-      "TestBudgetDegradedTreeIsPublishedDegradedAndRefreshed",
-      "TestDocumentLimitTreeIsDegradedButFinal",
-      "TestSlowCallDebtIsNotForgiven",
-      "TestGovernorLogsRateLimitedRefusalSummary",
       "TestGoldmarkWorkBoundsRouteBeforeParsing",
-      "TestOrdinaryDocumentsKeepGoldmark",
-      "TestLinearScannerMatchesGoldmarkOnCorpus",
-      "TestLinearScannerStopsAtHeadingCap",
-      "TestOpenAILLMDoesNotRetryClientErrors",
-      "TestEveryUpstreamAttemptIsAdmitted"
+      "TestExtractHeadersMatchesFullGoldmarkParse"
     ]
   }
 ]

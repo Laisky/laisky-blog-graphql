@@ -420,6 +420,8 @@ settings:
             global_tokens_per_window: 20000000
             global_reserve_percent: 20
             max_tracked_tenants: 10000
+            max_output_tokens_per_call: 4096 # short answers, reasoning included
+            max_toc_output_tokens_per_call: 32768 # answers that re-emit a table of contents
 ```
 
 Existing `settings.mcp.files.*` keys move under `settings.mcp.tools.memory.plugins.rag.*` with a
@@ -954,7 +956,9 @@ Indexing cost is one-shot: an N-page PDF is ~8–30 LLM calls per §2.6.4.1 pipe
 call and token ceiling is an absolute service-side setting (`limits.*`): per indexing
 run (calls, tokens, nodes) and per rolling window for each API-key tenant and for the
 whole process. Every upstream request, for indexing and for search and including retries, is
-admitted against those budgets before it is sent; a refused leaf summary becomes a
+admitted against those budgets before it is sent, reserving its estimated input and
+an output allowance that is sent as `max_output_tokens`, and is charged at completion
+what the provider reports; a refused leaf summary becomes a
 deterministic local summary, so an exhausted budget degrades the tree instead of
 failing the write. The last `limits.global_reserve_percent` of the global budget is
 reserved for tenants that have spent less than one document's allowance in the
@@ -1391,7 +1395,7 @@ becoming fragile to internal renames.
 | P14 | Streaming progress: `Index` writes one `Progress` event per phase to a buffered channel; events are forwarded to a captured logger and to billing metadata; the final tool response still arrives as one unit.                                    |
 | P15 | bbolt cache hit: re-running `Index` on the same bytes with the same `algorithm_version` makes zero `LLM.Respond` calls.                                                                                                                           |
 | P16 | bbolt cache invalidation: bumping `algorithm_version` makes the next `Index` re-run all prompts.                                                                                                                                                  |
-| P17 | Token budget enforcement: a stub `LLM` reporting outsized usage causes the shared budget to fall below zero; subsequent goroutines short-circuit with `ErrBudgetExceeded`.                                                         |
+| P17 | Token budget enforcement: every request reserves its input estimate plus the `max_output_tokens` it is sent with, so provider-reported spend stays within the budget; a stub `LLM` that ignores the ceiling and reports outsized usage drives the budget below zero, and subsequent goroutines short-circuit with `ErrBudgetExceeded`. |
 | P18 | PDF parser swap: setting `pdf.text_parser="dslipak"` routes through the dslipak adapter; the same golden test in P01 still passes (modulo documented text-quality differences).                                                                   |
 
 #### 5.5.3 Manager / settings regression
