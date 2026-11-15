@@ -262,10 +262,26 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     saveKeyEntries(keyEntries);
   }, [keyEntries]);
 
+  // apiKeyRef is the active key. setApiKey and disconnect update it synchronously, so a
+  // validation that settles before the next render already sees the switch.
   const apiKeyRef = useRef(apiKey);
   useEffect(() => {
     apiKeyRef.current = apiKey;
   }, [apiKey]);
+
+  // validationRef identifies the newest explicit validation. Its generation advances
+  // synchronously whenever a newer explicit validation starts, the key changes or the key
+  // is disconnected; a result is applied only while its generation is still the current
+  // one, and the superseded explicit request is aborted.
+  const validationRef = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
+  const supersedeValidations = useCallback((): number => {
+    const current = validationRef.current;
+    current.controller?.abort();
+    current.controller = null;
+    current.generation += 1;
+    return current.generation;
+  }, []);
+  useEffect(() => () => void supersedeValidations(), [supersedeValidations]);
 
   /**
    * runValidation checks a key against the quota endpoint and records the verdict.
@@ -278,23 +294,39 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
    * relays also covers a valid key whose quota is exhausted, which is exactly what an
    * "insufficient" key is expected to reach. Turning any of these into "error" would lock
    * every tool console and stop the re-check that unlocks it after a top-up.
+   *
+   * Either kind of result is dropped once it is superseded: by a newer explicit
+   * validation, a key switch or a disconnect (see validationRef), and for a background
+   * re-check also by its poller's signal or a different active key.
    */
   const runValidation = useCallback(
     async (keyToValidate: string | undefined, { background, signal }: ValidationOptions) => {
-      const key = normalizeApiKey(keyToValidate ?? apiKey);
+      const key = normalizeApiKey(keyToValidate ?? apiKeyRef.current);
       if (!key) {
+        if (!background) {
+          supersedeValidations();
+        }
         setStatus('none');
         setRemainQuota(null);
         return;
       }
 
+      let generation = validationRef.current.generation;
+      let requestSignal = signal;
       // A background re-check must not flip the status to "validating": that status locks every
       // tool console, which would disable inputs and drop keyboard focus on each poll tick.
       if (!background) {
+        generation = supersedeValidations();
+        const controller = new AbortController();
+        validationRef.current.controller = controller;
+        requestSignal = controller.signal;
         setStatus('validating');
       }
-      // Background results are only applied while the checked key is still the active one.
-      const isCurrent = () => !background || (!signal?.aborted && apiKeyRef.current === key);
+      const isCurrent = () =>
+        generation === validationRef.current.generation &&
+        !requestSignal?.aborted &&
+        // Background results are only applied while the checked key is still the active one.
+        (!background || apiKeyRef.current === key);
       const fail = (reason: string, detail?: unknown) => {
         if (background) {
           console.debug('background api key check kept the last status', reason, detail);
@@ -314,7 +346,8 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
             query: VALIDATE_API_KEY_QUERY,
             variables: { apiKey: key },
           }),
-          ...(background ? { priority: 'low' as const, signal } : {}),
+          signal: requestSignal,
+          ...(background ? { priority: 'low' as const } : {}),
         });
         if (!isCurrent()) {
           return;
@@ -342,7 +375,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
         fail('request failed', err);
       }
     },
-    [apiKey]
+    [supersedeValidations]
   );
 
   const validateApiKey = useCallback((keyToValidate?: string) => runValidation(keyToValidate, { background: false }), [runValidation]);
@@ -375,8 +408,10 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
   const setApiKey = useCallback(
     (key: string) => {
       const normalised = normalizeApiKey(key);
-      if (normalised !== apiKey) {
+      if (normalised !== apiKeyRef.current) {
         setSessionId((prev) => prev + 1);
+        apiKeyRef.current = normalised;
+        supersedeValidations();
       }
       setApiKeyRaw(normalised);
 
@@ -398,7 +433,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
         setRemainQuota(null);
       }
     },
-    [apiKey, validateApiKey]
+    [supersedeValidations, validateApiKey]
   );
 
   const switchApiKey = useCallback(
@@ -433,11 +468,13 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const disconnect = useCallback(() => {
+    apiKeyRef.current = '';
+    supersedeValidations();
     setApiKeyRaw('');
     setStatus('none');
     setRemainQuota(null);
     setSessionId((prev) => prev + 1);
-  }, []);
+  }, [supersedeValidations]);
 
   const history = useMemo(() => keyEntries.map((entry) => entry.key), [keyEntries]);
 

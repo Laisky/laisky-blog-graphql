@@ -518,3 +518,212 @@ describe('ApiKeyContext', () => {
     expect(screen.getByTestId('entries').textContent).toContain('"alias":"Primary"');
   });
 });
+
+describe('ApiKeyContext superseded explicit validations', () => {
+  const originalFetch = globalThis.fetch;
+
+  /** pendingChecks records each validation request by key, in the order they were sent. */
+  let pendingChecks: Array<{ key: string; signal?: AbortSignal | null; resolve: (response: Response) => void; reject: (error: unknown) => void }>;
+
+  /** SwitchingComponent drives key switches the way the console's key menu does. */
+  function SwitchingComponent() {
+    const { apiKey, status, remainQuota, isToolConsoleLocked, setApiKey, switchApiKey, disconnect, validateApiKey } = useApiKey();
+    return (
+      <div>
+        <div data-testid="apiKey">{apiKey}</div>
+        <div data-testid="status">{status}</div>
+        <div data-testid="quota">{remainQuota}</div>
+        <div data-testid="locked">{String(isToolConsoleLocked)}</div>
+        <button onClick={() => setApiKey('key-a')} data-testid="useA">
+          Use A
+        </button>
+        <button onClick={() => switchApiKey('key-b')} data-testid="switchB">
+          Switch to B
+        </button>
+        <button onClick={() => disconnect()} data-testid="disconnect">
+          Disconnect
+        </button>
+        <button onClick={() => validateApiKey()} data-testid="validate">
+          Validate
+        </button>
+      </div>
+    );
+  }
+
+  const quotaResponse = (quota: number) =>
+    ({ ok: true, status: 200, json: async () => ({ data: { ValidateOneapiApiKey: { remain_quota: quota, used_quota: 1 } } }) }) as Response;
+  const refusedResponse = () => ({ ok: false, status: 401, json: async () => ({}) }) as Response;
+  const check = (key: string, index = 0) => pendingChecks.filter((entry) => entry.key === key)[index];
+  const text = (id: string) => screen.getByTestId(id).textContent;
+  const click = (id: string) =>
+    act(async () => {
+      screen.getByTestId(id).click();
+    });
+  const settle = (fn: () => void) =>
+    act(async () => {
+      fn();
+      await Promise.resolve();
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear();
+    pendingChecks = [];
+    globalThis.fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const key = (JSON.parse(String(init?.body)) as { variables: { apiKey: string } }).variables.apiKey;
+      return new Promise<Response>((resolve, reject) => {
+        pendingChecks.push({ key, signal: init?.signal, resolve, reject });
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    }) as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  const renderProvider = () =>
+    render(
+      <ApiKeyProvider>
+        <SwitchingComponent />
+      </ApiKeyProvider>
+    );
+
+  it('ignores a success for the previous key that arrives after the new key was validated', async () => {
+    renderProvider();
+    await click('useA');
+    await click('switchB');
+    await settle(() => check('key-b').resolve(quotaResponse(0)));
+    expect(text('status')).toBe('insufficient');
+
+    await settle(() => check('key-a').resolve(quotaResponse(300000)));
+    expect(text('apiKey')).toBe('key-b');
+    expect(text('status')).toBe('insufficient');
+    expect(text('quota')).toBe('0');
+  });
+
+  it('ignores a failure for the previous key that arrives after the new key was validated', async () => {
+    renderProvider();
+    await click('useA');
+    await click('switchB');
+    await settle(() => check('key-b').resolve(quotaResponse(300000)));
+    expect(text('status')).toBe('valid');
+
+    await settle(() => check('key-a').resolve(refusedResponse()));
+    expect(text('status')).toBe('valid');
+    expect(text('quota')).toBe('300000');
+    expect(text('locked')).toBe('false');
+  });
+
+  it('keeps the new key validating when the previous key answers first', async () => {
+    renderProvider();
+    await click('useA');
+    await click('switchB');
+    await settle(() => check('key-a').resolve(quotaResponse(300000)));
+    expect(text('status')).toBe('validating');
+    expect(text('locked')).toBe('true');
+
+    await settle(() => check('key-b').resolve(refusedResponse()));
+    expect(text('status')).toBe('error');
+  });
+
+  it('aborts the previous key check when the key changes', async () => {
+    renderProvider();
+    await click('useA');
+    const signal = check('key-a').signal;
+    expect(signal?.aborted).toBe(false);
+
+    await click('switchB');
+    expect(signal?.aborted).toBe(true);
+    expect(check('key-b').signal?.aborted).toBe(false);
+  });
+
+  it('never unlocks the console for a key that was disconnected while its check was in flight', async () => {
+    renderProvider();
+    await click('useA');
+    const pending = check('key-a');
+    await click('disconnect');
+    await settle(() => pending.resolve(quotaResponse(300000)));
+
+    expect(text('apiKey')).toBe('');
+    expect(text('status')).toBe('none');
+    expect(text('quota')).toBe('');
+    expect(text('locked')).toBe('true');
+  });
+
+  it('never unlocks the console for a key that was cleared while its check was in flight', async () => {
+    let context: ReturnType<typeof useApiKey> | undefined;
+    function Capture() {
+      context = useApiKey();
+      return null;
+    }
+    render(
+      <ApiKeyProvider>
+        <SwitchingComponent />
+        <Capture />
+      </ApiKeyProvider>
+    );
+    await click('useA');
+    const pending = check('key-a');
+    await act(async () => {
+      context!.setApiKey('');
+    });
+    await settle(() => pending.resolve(quotaResponse(300000)));
+
+    expect(text('apiKey')).toBe('');
+    expect(text('status')).toBe('none');
+    expect(text('locked')).toBe('true');
+  });
+
+  it('drops a background re-check that settles after an explicit validation started', async () => {
+    let context: ReturnType<typeof useApiKey> | undefined;
+    function Capture() {
+      context = useApiKey();
+      return null;
+    }
+    localStorage.setItem('mcp_api_key', 'key-a');
+    localStorage.setItem('mcp_api_key_status', 'insufficient');
+    localStorage.setItem('mcp_api_key_quota', '0');
+    render(
+      <ApiKeyProvider>
+        <SwitchingComponent />
+        <Capture />
+      </ApiKeyProvider>
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    const background = check('key-a');
+    expect(background).toBeDefined();
+
+    // Start the explicit check and let the older background reading settle in the same
+    // turn, before React re-renders and its poller is disposed: only the validation
+    // generation can tell that reading is stale.
+    await act(async () => {
+      void context!.validateApiKey();
+      background.resolve(quotaResponse(300000));
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    });
+    expect(text('status')).toBe('validating');
+    expect(text('quota')).toBe('0');
+
+    await settle(() => check('key-a', 1).resolve(quotaResponse(0)));
+    expect(text('status')).toBe('insufficient');
+  });
+
+  it('applies only the newest of two checks for the same key', async () => {
+    localStorage.setItem('mcp_api_key', 'key-a');
+    localStorage.setItem('mcp_api_key_status', 'valid');
+    renderProvider();
+    await click('validate');
+    await click('validate');
+    await settle(() => check('key-a', 1).resolve(quotaResponse(0)));
+    expect(text('status')).toBe('insufficient');
+
+    await settle(() => check('key-a', 0).resolve(quotaResponse(300000)));
+    expect(text('status')).toBe('insufficient');
+    expect(text('quota')).toBe('0');
+  });
+});
