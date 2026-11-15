@@ -193,7 +193,8 @@ func TestLifecycleControllerVerifyModeNeverWrites(t *testing.T) {
 	require.Zero(t, store.LifecycleWrites(), "verify mode must never write the bucket lifecycle")
 	require.Equal(t, 1, countMessages(observed, zapcore.ErrorLevel, "lifecycle_mode is verify"), "reported once per outage")
 
-	require.NoError(t, store.EnsureLifecycle(context.Background(), settings.Prefix+"/", 3)) // IaC adds a stricter rule
+	_, err := store.EnsureLifecycle(context.Background(), settings.Prefix+"/", 3) // IaC adds a stricter rule
+	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return countMessages(observed, zapcore.InfoLevel, "in place again") == 1 && testutil.ToFloat64(imageMetrics.lifecycleRulePresent) == 1
 	}, 2*time.Second, time.Millisecond)
@@ -232,7 +233,7 @@ func TestLifecycleControllerReportsRuleThatKeepsDisappearing(t *testing.T) {
 	observed := startController(t, store, settings)
 
 	require.Eventually(t, func() bool {
-		return countMessages(observed, zapcore.ErrorLevel, "keeps disappearing") == 1
+		return countMessages(observed, zapcore.ErrorLevel, "keeps being erased") == 1
 	}, 2*time.Second, time.Millisecond)
 	require.Equal(t, imageLifecycleMissesBeforeError-1, countMessages(observed, zapcore.WarnLevel, "replaced by another writer"))
 }

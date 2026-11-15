@@ -438,6 +438,11 @@ func (s *Service) deleteLeasedImageObjects(ctx context.Context, objects ImageObj
 		}
 		wg.Go(func() {
 			defer func() { <-slots }()
+			defer func() {
+				if r := recover(); r != nil { // a panic would end the process; the lease keeps the key safe
+					results[i] = errors.Errorf("delete panicked: %v", r)
+				}
+			}()
 			deleteCtx, cancel := context.WithTimeout(ctx, imageObjectDeleteTimeout)
 			defer cancel()
 			results[i] = objects.DeleteImage(deleteCtx, key)

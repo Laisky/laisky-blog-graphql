@@ -130,8 +130,9 @@ type ImageSettings struct {
 	LifecycleMode string
 	// LifecycleCheckInterval is how often the lifecycle rule is checked again
 	// (and, in manage mode, reinstalled when another writer erased it), after
-	// a first re-check one minute after start. Zero or negative checks only at
-	// start. Default: 1h.
+	// a first re-check one minute after start. Zero or negative disables the
+	// periodic checks: the rule is then checked at start and at that first
+	// re-check only. Default: 1h.
 	LifecycleCheckInterval time.Duration
 	// PresignTTL is the validity window of presigned GET URLs handed to AI
 	// agents. Default: 30m.
@@ -147,7 +148,8 @@ type ImageSettings struct {
 	// value is configured explicitly (see SizeImageMemory).
 	DecodeMemoryBudgetBytes int64
 	// DecodeMemoryBudgetConfigured reports whether decode_memory_budget_bytes
-	// was set explicitly; only a defaulted budget is sized to the memory limit.
+	// was set explicitly to a positive value; only a defaulted budget is sized
+	// to the memory limit.
 	DecodeMemoryBudgetConfigured bool
 	// OrphanSweepInterval is how often the reconciler processes due image
 	// claims: it deletes objects this database recorded writing (crashed
@@ -216,7 +218,8 @@ func loadImageSettings() ImageSettings {
 		GCSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.gc_sweep_seconds", int(DefaultImageGCSweepInterval/time.Second))) * time.Second,
 		DecodeMemoryBudgetBytes: int64FromConfig("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes",
 			DefaultImageDecodeMemoryBudgetBytes),
-		DecodeMemoryBudgetConfigured: gconfig.S.Get("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes") != nil,
+		DecodeMemoryBudgetConfigured: gconfig.S.Get("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes") != nil &&
+			int64FromConfig("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes", 0) > 0,
 		OrphanSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_seconds",
 			int(DefaultImageOrphanSweepInterval/time.Second))) * time.Second,
 		OrphanSweepBatch: intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_batch", DefaultImageOrphanSweepBatch),

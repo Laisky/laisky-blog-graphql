@@ -272,6 +272,10 @@ func validateUserRequestsConfig(get configGetter, errs *[]string) {
 	validateOptionalStringOneOf(get, "settings.mcp.tools.user_requests.images.lifecycle_mode",
 		[]string{userrequests.LifecycleModeManage, userrequests.LifecycleModeVerify}, errs)
 	validateOptionalIntMin(get, "settings.mcp.tools.user_requests.images.lifecycle_check_seconds", 0, errs)
+	// Neither has a fallback: a non-positive value disables the multipart
+	// path and leaves the image memory envelope unbounded.
+	validateOptionalIntMin(get, "settings.mcp.tools.user_requests.images.max_per_request", 1, errs)
+	validateOptionalInt64Min(get, "settings.mcp.tools.user_requests.images.per_image_max_bytes", 1, errs)
 }
 
 // validateFileIOConfig validates FileIO-related configuration.

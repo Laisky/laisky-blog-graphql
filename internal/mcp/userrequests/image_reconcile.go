@@ -41,6 +41,9 @@ type ImageReconcileResult struct {
 	Deleted int
 	// Passes is how many passes ran (1 for ReconcileImageObjects).
 	Passes int
+	// Resolved is how many of Keys were settled: deleted, or released
+	// because a ref or a live claim protects them.
+	Resolved int
 }
 
 // add accumulates another pass into r.
@@ -49,6 +52,7 @@ func (r *ImageReconcileResult) add(other ImageReconcileResult) {
 	r.Keys += other.Keys
 	r.Deleted += other.Deleted
 	r.Passes += other.Passes
+	r.Resolved += other.Resolved
 }
 
 // ImageClaimBacklog is the due part of the claims table.
@@ -130,10 +134,14 @@ func (s *Service) ReconcileImageObjects(ctx context.Context, objects ImageObject
 				failed = append(failed, errors.Wrapf(err, "reconcile %q", key))
 				continue
 			}
+			if len(got) == 0 {
+				result.Resolved++ // protected: its claims were released, nothing to delete
+			}
 			leased = append(leased, got...)
 		}
 		deleted, err := s.deleteLeasedImageObjects(ctx, objects, run, leased, deletePathReconciler)
 		result.Deleted += len(deleted)
+		result.Resolved += len(deleted)
 		if err != nil {
 			failed = append(failed, errors.WithStack(err))
 		}
@@ -196,35 +204,49 @@ func (s *Service) leaseDueImageKey(ctx context.Context, run uuid.UUID, key strin
 }
 
 // ReconcileImageObjectsTick is one reconciler tick: passes of
-// ReconcileImageObjects, each bounded by imageReconcileTimeout, until one
-// processes less than a full batch, fails, or imageReconcileMaxPasses ran.
-// A failing pass ends the tick, so failing deletes are not retried in a hot
-// loop (their leases make them due again later). It records the pass
-// metrics and, at the end, the remaining backlog.
+// ReconcileImageObjects until one processes less than a full batch, ctx ends
+// (checked between passes), a pass settles no key at all, or
+// imageReconcileMaxPasses ran. Each pass runs detached from ctx with its own
+// imageReconcileTimeout, so shutdown never interrupts a pass midway. A pass
+// with failures does not end the tick by itself: a key whose delete failed
+// keeps a live lease, so the next pass works on other claims, and one key
+// that keeps failing cannot hold the backlog to one batch per interval. A
+// pass that settles nothing (the store or the database is down) ends it, so
+// failures are not retried in a hot loop. It records the pass metrics and,
+// at the end, the remaining backlog; errors of every pass are joined.
 func (s *Service) ReconcileImageObjectsTick(ctx context.Context, objects ImageObjectWriter) (ImageReconcileResult, ImageClaimBacklog, error) {
 	batch := s.settings.Images.OrphanSweepBatch
 	if batch <= 0 {
 		batch = DefaultImageOrphanSweepBatch
 	}
+	detached := context.WithoutCancel(ctx) //nolint:contextcheck // a started pass finishes; ctx only stops further passes
 	var total ImageReconcileResult
 	var tickErr error
 	for range imageReconcileMaxPasses {
-		passCtx, cancel := context.WithTimeout(ctx, imageReconcileTimeout)
+		if ctx.Err() != nil {
+			break
+		}
+		passCtx, cancel := context.WithTimeout(detached, imageReconcileTimeout)
 		result, err := s.ReconcileImageObjects(passCtx, objects)
 		cancel()
 		total.add(result)
 		if err != nil {
 			imageMetrics.reconcilePasses.WithLabelValues("error").Inc()
-			tickErr = errors.WithStack(err)
-			break
+			tickErr = errors.Join(tickErr, errors.WithStack(err))
+			if result.Resolved == 0 {
+				break
+			}
+		} else {
+			imageMetrics.reconcilePasses.WithLabelValues("ok").Inc()
+			imageMetrics.lastReconcileSuccess.Set(float64(s.clock().Unix()))
 		}
-		imageMetrics.reconcilePasses.WithLabelValues("ok").Inc()
-		imageMetrics.lastReconcileSuccess.Set(float64(s.clock().Unix()))
-		if result.Claims < batch || ctx.Err() != nil {
+		if result.Claims < batch {
 			break
 		}
 	}
-	backlog, err := s.imageClaimBacklog(ctx)
+	backlogCtx, cancel := context.WithTimeout(detached, imageReconcileTimeout)
+	defer cancel()
+	backlog, err := s.imageClaimBacklog(backlogCtx)
 	if err != nil {
 		return total, backlog, errors.Join(tickErr, errors.WithStack(err))
 	}
@@ -266,6 +288,7 @@ func (s *Service) StartImageReconcileWorker(ctx context.Context, objects ImageOb
 	if s == nil || objects == nil || s.settings.Images.OrphanSweepInterval <= 0 {
 		return
 	}
+	registerImageMetrics()
 	imageMetrics.reconcilerEnabled.Set(1)
 	logger := s.log().Named("image_reconciler")
 	go func() {
@@ -277,8 +300,7 @@ func (s *Service) StartImageReconcileWorker(ctx context.Context, objects ImageOb
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				tickCtx := context.WithoutCancel(ctx) //nolint:contextcheck // detached context for background sweep
-				result, backlog, err := s.ReconcileImageObjectsTick(tickCtx, objects)
+				result, backlog, err := s.ReconcileImageObjectsTick(ctx, objects)
 				if err != nil {
 					logger.Error("reconcile image objects", zap.Error(err),
 						zap.Int("passes", result.Passes), zap.Int("claims", result.Claims), zap.Int("deleted", result.Deleted),

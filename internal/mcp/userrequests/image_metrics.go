@@ -1,6 +1,8 @@
 package userrequests
 
 import (
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -13,9 +15,11 @@ const (
 )
 
 // imageObjectMetrics are the Prometheus collectors of the image object
-// lifecycle (maintainer review of PR #94). They are process-wide, registered
-// once on the default registry, which the API server serves at /metrics. An
-// alert on "no cleanup path" is
+// lifecycle (maintainer review of PR #94). They are process-wide and are
+// registered on the default registry, which the API server serves at
+// /metrics, only once the image subsystem starts (registerImageMetrics), so a
+// process with images disabled exports none of them. An alert on "no cleanup
+// path" is (for some minutes, to skip the first check after a start)
 //
 //	max(mcp_user_image_lifecycle_rule_present) + max(mcp_user_image_reconciler_enabled) == 0
 //
@@ -37,13 +41,24 @@ type imageObjectMetrics struct {
 	lifecycleRulePresent prometheus.Gauge
 	// reconcilerEnabled is 1 when the reconciler runs in this process.
 	reconcilerEnabled prometheus.Gauge
+	// lifecycleReinstalls counts lifecycle checks that found the rule gone
+	// and wrote it again (another writer of the bucket erased it).
+	lifecycleReinstalls prometheus.Counter
 }
 
-// imageMetrics is the process-wide instance.
-var imageMetrics = newImageObjectMetrics(prometheus.DefaultRegisterer)
+// imageMetrics is the process-wide instance; registerImageMetrics exposes it.
+var imageMetrics = newImageObjectMetrics()
 
-// newImageObjectMetrics creates the collectors and registers them on reg.
-func newImageObjectMetrics(reg prometheus.Registerer) *imageObjectMetrics {
+// registerImageMetricsOnce guards registerImageMetrics.
+var registerImageMetricsOnce sync.Once
+
+// registerImageMetrics registers imageMetrics on the default registry once.
+func registerImageMetrics() {
+	registerImageMetricsOnce.Do(func() { imageMetrics.register(prometheus.DefaultRegisterer) })
+}
+
+// newImageObjectMetrics creates the collectors without registering them.
+func newImageObjectMetrics() *imageObjectMetrics {
 	m := &imageObjectMetrics{
 		dueClaims: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "mcp_user_image_claims_due",
@@ -73,6 +88,10 @@ func newImageObjectMetrics(reg prometheus.Registerer) *imageObjectMetrics {
 			Name: "mcp_user_image_reconciler_enabled",
 			Help: "1 when the image object reconciler runs in this process, else 0.",
 		}),
+		lifecycleReinstalls: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "mcp_user_image_lifecycle_reinstalls_total",
+			Help: "Lifecycle checks after the first that found the image expiry rule gone and wrote it again.",
+		}),
 	}
 	m.objectDeletes.WithLabelValues(deletePathCompensation, deleteResultDeleted)
 	m.objectDeletes.WithLabelValues(deletePathCompensation, deleteResultFailed)
@@ -80,11 +99,13 @@ func newImageObjectMetrics(reg prometheus.Registerer) *imageObjectMetrics {
 	m.objectDeletes.WithLabelValues(deletePathReconciler, deleteResultFailed)
 	m.reconcilePasses.WithLabelValues("ok")
 	m.reconcilePasses.WithLabelValues("error")
-	if reg != nil {
-		reg.MustRegister(m.dueClaims, m.oldestDueClaimAge, m.objectDeletes, m.reconcilePasses,
-			m.lastReconcileSuccess, m.lifecycleRulePresent, m.reconcilerEnabled)
-	}
 	return m
+}
+
+// register registers every collector of m on reg.
+func (m *imageObjectMetrics) register(reg prometheus.Registerer) {
+	reg.MustRegister(m.dueClaims, m.oldestDueClaimAge, m.objectDeletes, m.reconcilePasses,
+		m.lastReconcileSuccess, m.lifecycleRulePresent, m.reconcilerEnabled, m.lifecycleReinstalls)
 }
 
 // boolGauge returns 1 for true and 0 for false.

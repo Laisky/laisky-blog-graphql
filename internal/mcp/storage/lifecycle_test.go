@@ -117,9 +117,9 @@ func TestEnsureLifecyclePreservesOtherRules(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 7))
+	require.NoError(t, ensureErr(client.EnsureLifecycle(ctx, "mcp/images/", 7)))
 	// Changing the TTL replaces the previous image rule instead of adding one.
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 3))
+	require.NoError(t, ensureErr(client.EnsureLifecycle(ctx, "mcp/images/", 3)))
 
 	rules := backend.rules(t)
 	require.Len(t, rules, 2, "the unrelated rule and exactly one image rule")
@@ -136,7 +136,7 @@ func TestEnsureLifecycleWithoutExistingConfiguration(t *testing.T) {
 	client, backend := newFakeS3Client(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 7))
+	require.NoError(t, ensureErr(client.EnsureLifecycle(ctx, "mcp/images/", 7)))
 	rules := backend.rules(t)
 	require.Len(t, rules, 1)
 	require.Equal(t, lifecycleRuleID("mcp/images/", 7), rules[0].ID)
@@ -191,7 +191,7 @@ func TestEnsureLifecycleRefusesLossyRewrite(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
+	_, err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrLifecycleMergeUnsafe)
 	require.Contains(t, err.Error(), lifecycleRuleID("mcp/images/", 7), "the error names the rule to add manually")
@@ -294,7 +294,7 @@ func TestEnsureLifecycleRefusesLossyRewriteOfCollidingRule(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
+	_, err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
 	require.ErrorIs(t, err, ErrLifecycleMergeUnsafe)
 	backend.mu.Lock()
 	defer backend.mu.Unlock()

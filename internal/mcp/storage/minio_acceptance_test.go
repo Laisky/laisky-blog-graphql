@@ -76,7 +76,7 @@ func TestMinIOLifecycleAcceptance(t *testing.T) {
 		_ = raw.SetBucketLifecycle(context.Background(), client.cfg.Bucket, lifecycle.NewConfiguration())
 	})
 
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 7))
+	require.NoError(t, ensureErr(client.EnsureLifecycle(ctx, "mcp/images/", 7)))
 	echoed, err := client.bucketLifecycle(ctx, raw)
 	require.NoError(t, err)
 	require.True(t, hasOwnLifecycleRule(echoed, "mcp/images/", 7), "the server's echo of our rule must be recognized: %+v", echoed.Rules)
@@ -85,7 +85,7 @@ func TestMinIOLifecycleAcceptance(t *testing.T) {
 
 	before, err := client.rawBucketLifecycle(ctx, raw)
 	require.NoError(t, err)
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 7))
+	require.NoError(t, ensureErr(client.EnsureLifecycle(ctx, "mcp/images/", 7)))
 	after, err := client.rawBucketLifecycle(ctx, raw)
 	require.NoError(t, err)
 	require.Equal(t, string(before), string(after), "an unchanged configuration is not rewritten")
@@ -97,7 +97,7 @@ func TestMinIOLifecycleAcceptance(t *testing.T) {
 		for _, prefix := range prefixes {
 			wg.Go(func() {
 				// ErrLifecycleRuleMissing is acceptable here: the periodic check repairs it.
-				if err := client.EnsureLifecycle(ctx, prefix, 7+round); err != nil {
+				if _, err := client.EnsureLifecycle(ctx, prefix, 7+round); err != nil {
 					require.ErrorIs(t, err, ErrLifecycleRuleMissing)
 				}
 			})
@@ -106,7 +106,7 @@ func TestMinIOLifecycleAcceptance(t *testing.T) {
 		// The periodic check of manage mode: EnsureLifecycle again, which
 		// only reads when the rule is in place.
 		for _, prefix := range prefixes {
-			require.NoError(t, client.EnsureLifecycle(ctx, prefix, 7+round))
+			require.NoError(t, ensureErr(client.EnsureLifecycle(ctx, prefix, 7+round)))
 		}
 		current, err := client.bucketLifecycle(ctx, raw)
 		require.NoError(t, err)

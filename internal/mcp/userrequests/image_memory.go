@@ -44,8 +44,11 @@ func (e ImageMemoryEnvelope) Total() int64 {
 	return e.DecodeBudget + e.InputBuffers + e.PreparedOutputs
 }
 
-// MemoryEnvelope returns the envelope these settings allow, with the same
-// fallbacks the image manager applies to non-positive values.
+// MemoryEnvelope returns the envelope these settings allow. Non-positive
+// MaxConcurrentCreates and DecodeMemoryBudgetBytes fall back to their
+// defaults as in the image manager; MaxPerRequest and PerImageMaxBytes have
+// no such fallback (startup validation requires them to be positive), and
+// are taken as their defaults here only so the envelope stays defined.
 func (s ImageSettings) MemoryEnvelope() ImageMemoryEnvelope {
 	creates := int64(s.MaxConcurrentCreates)
 	if creates <= 0 {

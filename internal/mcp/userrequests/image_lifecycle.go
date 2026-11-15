@@ -41,15 +41,6 @@ const (
 // installation erased. A variable only so tests can shrink it.
 var imageLifecycleFirstRecheck = time.Minute
 
-// lifecycleState is what the last lifecycle check concluded.
-type lifecycleState int
-
-const (
-	lifecycleUnknown lifecycleState = iota
-	lifecyclePresent
-	lifecycleMissing
-)
-
 // imageLifecycleController keeps the bucket lifecycle rule of the image
 // prefix observable and, in manage mode, in place (maintainer review of PR
 // #94). S3 and MinIO offer no conditional write for the lifecycle
@@ -60,26 +51,37 @@ type imageLifecycleController struct {
 	store    storage.ObjectStore
 	settings ImageSettings
 	logger   logSDK.Logger
-	state    lifecycleState
-	misses   int
+	// checks counts completed checks; the first one installs the rule.
+	checks int
+	// present is the outcome of the last check.
+	present bool
+	// reported is the ERROR message logged for the current problem, so each
+	// distinct problem is logged at ERROR once until the rule is back.
+	reported string
+	// misses counts consecutive checks that found the rule gone (manage mode).
+	misses int
 }
 
 // StartLifecycleController checks the bucket lifecycle rule of the image
-// prefix in the background: at once, again after imageLifecycleFirstRecheck
-// and then every LifecycleCheckInterval (non-positive: only at start) until
-// ctx ends. Each check updates mcp_user_image_lifecycle_rule_present. A rule
-// found missing, or a check that fails, is reported at ERROR when it starts
-// (manage mode: when the rule keeps disappearing right after being written);
-// "no automatic cleanup" is reported at ERROR whenever the rule is missing
-// while the reconciler is disabled. It returns immediately.
+// prefix in the background: at once, again after imageLifecycleFirstRecheck,
+// and then every LifecycleCheckInterval until ctx ends (non-positive: no
+// periodic checks after that second one). Each check updates
+// mcp_user_image_lifecycle_rule_present. A failed check or a missing rule is
+// logged at ERROR once per distinct problem; in manage mode a rule found gone
+// and written again is a WARN (counted in
+// mcp_user_image_lifecycle_reinstalls_total) and an ERROR once it happened at
+// imageLifecycleMissesBeforeError checks in a row. "No automatic cleanup" is
+// an ERROR whenever the rule stops being present while the reconciler is
+// disabled. It returns immediately.
 func (m *ImageManager) StartLifecycleController(ctx context.Context, logger logSDK.Logger) {
 	if m == nil || m.store == nil {
 		return
 	}
+	registerImageMetrics()
 	c := &imageLifecycleController{store: m.store, settings: m.settings, logger: logger}
 	imageMetrics.reconcilerEnabled.Set(boolGauge(c.reconcilerEnabled()))
+	imageMetrics.lifecycleRulePresent.Set(0)
 	if m.settings.ObjectTTLDays <= 0 {
-		imageMetrics.lifecycleRulePresent.Set(0)
 		if !c.reconcilerEnabled() {
 			logger.Error("image objects have no automatic cleanup: object_ttl_days disables the bucket lifecycle rule and the reconciler is disabled",
 				zap.String("prefix", m.settings.Prefix))
@@ -118,27 +120,30 @@ func (c *imageLifecycleController) run(ctx context.Context) {
 }
 
 // check runs one lifecycle check and reports its outcome.
-func (c *imageLifecycleController) check(ctx context.Context) bool {
+func (c *imageLifecycleController) check(ctx context.Context) {
 	prefix, days := c.settings.Prefix+"/", c.settings.ObjectTTLDays
 	checkCtx, cancel := context.WithTimeout(ctx, imageLifecycleCheckTimeout)
-	var err error
+	var (
+		wrote bool
+		err   error
+	)
 	if c.settings.LifecycleMode == LifecycleModeVerify {
 		err = c.store.CheckLifecycle(checkCtx, prefix, days)
 	} else {
-		err = c.store.EnsureLifecycle(checkCtx, prefix, days)
+		wrote, err = c.store.EnsureLifecycle(checkCtx, prefix, days)
 	}
 	cancel()
 	if ctx.Err() != nil {
-		return false // shutting down: the outcome says nothing about the bucket
+		return // shutting down: the outcome says nothing about the bucket
 	}
-	present := err == nil
-	imageMetrics.lifecycleRulePresent.Set(boolGauge(present))
-	c.report(err)
-	return present
+	c.checks++
+	c.report(wrote && c.checks > 1, err)
+	imageMetrics.lifecycleRulePresent.Set(boolGauge(c.present))
 }
 
-// report logs the outcome of a check, once per change of state.
-func (c *imageLifecycleController) report(err error) {
+// report logs the outcome of a check. reinstalled means a check after the
+// first found the rule gone and wrote it again.
+func (c *imageLifecycleController) report(reinstalled bool, err error) {
 	fields := make([]zap.Field, 0, 6)
 	fields = append(fields,
 		zap.String("bucket", c.settings.Bucket),
@@ -147,14 +152,30 @@ func (c *imageLifecycleController) report(err error) {
 		zap.String("lifecycle_mode", c.lifecycleMode()),
 		zap.Bool("orphan_reconciler_enabled", c.reconcilerEnabled()),
 	)
-	if err == nil {
-		if c.state == lifecycleMissing {
+	wasPresent := c.present
+	switch {
+	case err == nil && !reinstalled:
+		if c.reported != "" {
 			c.logger.Info("image bucket lifecycle rule is in place again", fields...)
 		}
-		c.state, c.misses = lifecyclePresent, 0
+		c.present, c.reported, c.misses = true, "", 0
+		return
+	case err == nil:
+		// Gone since the last check: another writer replaced the configuration.
+		imageMetrics.lifecycleReinstalls.Inc()
+		c.present = true
+		c.misses++
+		if c.misses < imageLifecycleMissesBeforeError {
+			c.logger.Warn("image bucket lifecycle rule was erased by another writer of the bucket and has been reinstalled", fields...)
+			return
+		}
+		c.raise("image bucket lifecycle rule keeps being erased by another writer of the bucket; let one writer own the bucket lifecycle, "+
+			"or set lifecycle_mode to verify and manage the rule there", fields)
 		return
 	}
+
 	fields = append(fields, zap.Error(err))
+	c.present = false
 	var msg string
 	switch {
 	case errors.Is(err, storage.ErrLifecycleRuleMissing) && c.settings.LifecycleMode == LifecycleModeVerify:
@@ -162,25 +183,40 @@ func (c *imageLifecycleController) report(err error) {
 	case errors.Is(err, storage.ErrLifecycleRuleMissing):
 		c.misses++
 		if c.misses < imageLifecycleMissesBeforeError {
-			c.logger.Warn("image bucket lifecycle rule was replaced by another writer; it is reinstalled at the next check", fields...)
+			c.logger.Warn("image bucket lifecycle rule was replaced by another writer right after it was written; it is written again at the next check", fields...)
+			c.noCleanupIfLost(wasPresent, fields)
 			return
 		}
-		msg = "image bucket lifecycle rule keeps disappearing: another writer replaces the bucket lifecycle; let one writer own it, or set lifecycle_mode to verify and manage the rule there"
+		msg = "image bucket lifecycle rule keeps being erased by another writer of the bucket; let one writer own the bucket lifecycle, " +
+			"or set lifecycle_mode to verify and manage the rule there"
+	case c.settings.LifecycleMode == LifecycleModeVerify:
+		msg = "check image bucket lifecycle rule failed; until it can be read its presence is unknown"
 	default:
 		msg = "install image bucket lifecycle rule failed; add it by hand, until then only the reconciler removes objects of expired refs"
-		if c.settings.LifecycleMode == LifecycleModeVerify {
-			msg = "check image bucket lifecycle rule failed; until it can be read its presence is unknown"
-		}
 	}
-	if c.state == lifecycleMissing {
+	c.raise(msg, fields)
+	c.noCleanupIfLost(wasPresent, fields)
+}
+
+// raise logs msg at ERROR unless it is the problem already reported, which
+// is logged at DEBUG.
+func (c *imageLifecycleController) raise(msg string, fields []zap.Field) {
+	if msg == c.reported {
 		c.logger.Debug(msg, fields...)
 		return
 	}
-	c.state = lifecycleMissing
+	c.reported = msg
 	c.logger.Error(msg, fields...)
-	if !c.reconcilerEnabled() {
-		c.logger.Error("image objects have no automatic cleanup: the bucket lifecycle rule is missing and the reconciler is disabled", fields...)
+}
+
+// noCleanupIfLost reports at ERROR that nothing cleans up image objects when
+// the rule just stopped being present (or never was) while the reconciler is
+// disabled.
+func (c *imageLifecycleController) noCleanupIfLost(wasPresent bool, fields []zap.Field) {
+	if c.reconcilerEnabled() || (!wasPresent && c.checks > 1) {
+		return
 	}
+	c.logger.Error("image objects have no automatic cleanup: the bucket lifecycle rule is missing and the reconciler is disabled", fields...)
 }
 
 // lifecycleMode returns the effective lifecycle mode.

@@ -68,7 +68,7 @@ func TestEnsureLifecycleDetectsRuleLostToConcurrentWriter(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 7))
+	require.NoError(t, ensureErr(client.EnsureLifecycle(ctx, "mcp/images/", 7)))
 
 	require.ElementsMatch(t, []string{lifecycleRuleID("other/images/", 7), lifecycleRuleID("mcp/images/", 7)}, ruleIDs(t, backend),
 		"our rule must be reinstalled next to the other deployment's")
@@ -88,7 +88,7 @@ func TestEnsureLifecycleReportsRuleThatKeepsDisappearing(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
+	_, err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
 	require.ErrorIs(t, err, ErrLifecycleRuleMissing)
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
@@ -103,34 +103,41 @@ func TestEnsureLifecycleDoesNotRewriteAnUnchangedConfiguration(t *testing.T) {
 	client, backend := newFakeS3Client(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 7))
+	wrote, err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
+	require.NoError(t, err)
+	require.True(t, wrote)
 	backend.mu.Lock()
 	puts := backend.puts
 	backend.mu.Unlock()
 
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 7))
+	wrote, err = client.EnsureLifecycle(ctx, "mcp/images/", 7)
+	require.NoError(t, err)
+	require.False(t, wrote, "the rule was in place")
 	backend.mu.Lock()
 	require.Equal(t, puts, backend.puts, "an unchanged configuration must not be written again")
 	backend.mu.Unlock()
 
 	// A changed TTL still replaces the rule.
-	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 3))
+	require.NoError(t, ensureErr(client.EnsureLifecycle(ctx, "mcp/images/", 3)))
 	require.Equal(t, []string{lifecycleRuleID("mcp/images/", 3)}, ruleIDs(t, backend))
 }
 
 // TestEnsureLifecycleConcurrentPrefixesConverge runs two deployments that
 // install rules for different prefixes at the same moment: both read the
-// empty configuration before either writes. Without a read-back one rule is
-// always lost. With it, each deployment that finds its rule missing merges
-// it again; a deployment whose read-back ran before the other's PUT still
-// ends up with its rule gone, and its next periodic check (EnsureLifecycle
-// again) restores it.
+// empty configuration before either writes, so the later PUT erases the
+// earlier rule. The read-back after the settle delay sees that and merges
+// again, so both rules are in place when the calls return, without any
+// periodic check (independent review: an earlier version of this test
+// repaired the rule with a second EnsureLifecycle and passed without the
+// read-back).
 func TestEnsureLifecycleConcurrentPrefixesConverge(t *testing.T) {
+	prevSettle := lifecycleSettleDelay
+	lifecycleSettleDelay = 100 * time.Millisecond // far longer than the in-memory read-merge-write
+	t.Cleanup(func() { lifecycleSettleDelay = prevSettle })
 	client, backend := newFakeS3Client(t)
 	var arrived sync.WaitGroup
 	arrived.Add(2)
 	release := make(chan struct{})
-	var held sync.Once
 	backend.beforeLifecycleGet = func() {
 		select {
 		case <-release:
@@ -142,7 +149,7 @@ func TestEnsureLifecycleConcurrentPrefixesConverge(t *testing.T) {
 	}
 	go func() {
 		arrived.Wait()
-		held.Do(func() { close(release) })
+		close(release)
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -150,23 +157,23 @@ func TestEnsureLifecycleConcurrentPrefixesConverge(t *testing.T) {
 	prefixes := []string{"a/images/", "b/images/"}
 	var wg sync.WaitGroup
 	errs := make([]error, len(prefixes))
+	wrote := make([]bool, len(prefixes))
 	for i, prefix := range prefixes {
-		wg.Go(func() { errs[i] = client.EnsureLifecycle(ctx, prefix, 7) })
+		wg.Go(func() { wrote[i], errs[i] = client.EnsureLifecycle(ctx, prefix, 7) })
 	}
 	wg.Wait()
-	for _, err := range errs {
-		require.NoError(t, err)
+	for i := range prefixes {
+		require.NoError(t, errs[i])
+		require.True(t, wrote[i])
 	}
-
-	// The periodic check of manage mode: EnsureLifecycle again, which only
-	// reads when the rule is in place and reinstalls it otherwise.
-	for _, prefix := range prefixes {
-		require.NoError(t, client.EnsureLifecycle(ctx, prefix, 7), "the periodic check reinstalls %q", prefix)
-	}
+	backend.mu.Lock()
+	puts := backend.puts
+	backend.mu.Unlock()
+	require.Equal(t, 3, puts, "both wrote, and the writer whose rule was erased wrote again")
+	require.ElementsMatch(t, []string{lifecycleRuleID("a/images/", 7), lifecycleRuleID("b/images/", 7)}, ruleIDs(t, backend))
 	for _, prefix := range prefixes {
 		require.NoError(t, client.CheckLifecycle(ctx, prefix, 7), "rule for %q", prefix)
 	}
-	require.ElementsMatch(t, []string{lifecycleRuleID("a/images/", 7), lifecycleRuleID("b/images/", 7)}, ruleIDs(t, backend))
 }
 
 // TestCheckLifecycleIsReadOnly covers the verify mode used when the rule is

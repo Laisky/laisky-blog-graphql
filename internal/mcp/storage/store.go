@@ -31,9 +31,10 @@ type ObjectStore interface {
 
 	// EnsureLifecycle installs a bucket-level expiry rule restricted to a prefix.
 	// The call must be idempotent; repeated invocations MUST NOT create duplicate rules
-	// and SHOULD NOT write when the rule is already in place. It returns an error
-	// wrapping ErrLifecycleRuleMissing when the rule did not stay installed.
-	EnsureLifecycle(ctx context.Context, prefix string, days int) error
+	// and SHOULD NOT write when the rule is already in place. It reports whether it
+	// had to write the rule, and returns an error wrapping ErrLifecycleRuleMissing
+	// when the rule did not stay installed.
+	EnsureLifecycle(ctx context.Context, prefix string, days int) (wrote bool, err error)
 
 	// CheckLifecycle reports, without writing, whether the bucket lifecycle
 	// expires every object under prefix within days. It returns an error

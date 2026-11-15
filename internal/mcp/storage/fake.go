@@ -20,8 +20,10 @@ type FakeStore struct {
 	lifecycles map[string]int
 	puts       []string
 	deletes    []string
-	// lifecycleWrites counts EnsureLifecycle calls that recorded a rule.
+	// lifecycleWrites counts EnsureLifecycle calls that wrote a rule.
 	lifecycleWrites int
+	// lifecycleCalls counts EnsureLifecycle and CheckLifecycle calls.
+	lifecycleCalls int
 	// presignTTL records the TTL the most recent PresignedGet observed, so tests
 	// can assert on the requested lifetime.
 	lastPresignTTL time.Duration
@@ -188,19 +190,26 @@ func (f *FakeStore) PresignedGet(ctx context.Context, key string, ttl time.Durat
 	return fmt.Sprintf("%s/%s?X-Amz-Expires=%d&X-Amz-Signature=fake", f.HostBase, key, int(ttl.Seconds())), nil
 }
 
-// EnsureLifecycle records the requested expiry so tests can assert on it.
-func (f *FakeStore) EnsureLifecycle(ctx context.Context, prefix string, days int) error {
+// EnsureLifecycle records the requested expiry so tests can assert on it. It
+// writes (and reports so) only when no rule with that expiry is recorded.
+func (f *FakeStore) EnsureLifecycle(ctx context.Context, prefix string, days int) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return errors.Wrap(err, "fake lifecycle context canceled")
-	}
-	if f.LifecycleErr != nil {
-		return f.LifecycleErr
+		return false, errors.Wrap(err, "fake lifecycle context canceled")
 	}
 	f.mu.Lock()
+	f.lifecycleCalls++
+	f.mu.Unlock()
+	if f.LifecycleErr != nil {
+		return false, f.LifecycleErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if got, ok := f.lifecycles[prefix]; ok && got == days {
+		return false, nil
+	}
 	f.lifecycles[prefix] = days
 	f.lifecycleWrites++
-	f.mu.Unlock()
-	return nil
+	return true, nil
 }
 
 // CheckLifecycle reports whether a rule for prefix expiring within days was
@@ -209,6 +218,9 @@ func (f *FakeStore) CheckLifecycle(ctx context.Context, prefix string, days int)
 	if err := ctx.Err(); err != nil {
 		return errors.Wrap(err, "fake lifecycle context canceled")
 	}
+	f.mu.Lock()
+	f.lifecycleCalls++
+	f.mu.Unlock()
 	if f.LifecycleCheckErr != nil {
 		return f.LifecycleCheckErr
 	}
@@ -228,7 +240,14 @@ func (f *FakeStore) RemoveLifecycle(prefix string) {
 	delete(f.lifecycles, prefix)
 }
 
-// LifecycleWrites reports how many EnsureLifecycle calls recorded a rule.
+// LifecycleCalls reports how many EnsureLifecycle and CheckLifecycle calls ran.
+func (f *FakeStore) LifecycleCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lifecycleCalls
+}
+
+// LifecycleWrites reports how many EnsureLifecycle calls wrote a rule.
 func (f *FakeStore) LifecycleWrites() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -268,7 +268,10 @@
       "TestLifecycleControllerRestoresErasedRule",
       "TestLifecycleControllerVerifyModeNeverWrites",
       "TestImageMemoryEnvelopeDefaults",
-      "TestSizeImageMemory"
+      "TestSizeImageMemory",
+      "TestReconcileTickKeepsDrainingPastAFailingKey",
+      "TestLifecycleControllerReportsPeriodicErasure",
+      "TestCreateWithImagesUploadPanicIsCompensated"
     ]
   },
   {

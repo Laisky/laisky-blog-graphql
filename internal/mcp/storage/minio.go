@@ -185,34 +185,34 @@ func (m *MinIOClient) PresignedGet(ctx context.Context, key string, ttl time.Dur
 // A write that lands later still is caught by the caller's periodic check
 // (EnsureLifecycle again). A call that writes therefore takes at least the
 // settle delay; callers run it off the request path.
-func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days int) error {
+func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days int) (bool, error) {
 	client, err := m.ensureClient()
 	if err != nil {
-		return errors.Wrap(err, "storage: lifecycle ensure client")
+		return false, errors.Wrap(err, "storage: lifecycle ensure client")
 	}
 	if days <= 0 {
-		return errors.Errorf("storage: lifecycle days must be positive, got %d", days)
+		return false, errors.Errorf("storage: lifecycle days must be positive, got %d", days)
 	}
 	for attempt := 1; ; attempt++ {
 		wrote, err := m.installLifecycleRule(ctx, client, prefix, days)
 		if err != nil {
-			return errors.WithStack(err)
+			return attempt > 1, errors.WithStack(err)
 		}
 		if !wrote {
-			return nil
+			return attempt > 1, nil
 		}
 		if err := sleepContext(ctx, jittered(lifecycleSettleDelay)); err != nil {
-			return errors.Wrap(err, "storage: wait before reading the lifecycle back")
+			return true, errors.Wrap(err, "storage: wait before reading the lifecycle back")
 		}
 		current, err := m.bucketLifecycle(ctx, client)
 		if err != nil {
-			return errors.Wrap(err, "storage: read back bucket lifecycle")
+			return true, errors.Wrap(err, "storage: read back bucket lifecycle")
 		}
 		if hasOwnLifecycleRule(current, prefix, days) {
-			return nil
+			return true, nil
 		}
 		if attempt >= lifecycleInstallAttempts {
-			return errors.Wrapf(ErrLifecycleRuleMissing,
+			return true, errors.Wrapf(ErrLifecycleRuleMissing,
 				"storage: rule %q was replaced by another lifecycle writer %d times in a row", lifecycleRuleID(prefix, days), attempt)
 		}
 	}

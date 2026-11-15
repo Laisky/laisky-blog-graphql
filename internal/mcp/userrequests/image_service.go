@@ -511,7 +511,7 @@ func imageUploadContext(ctx context.Context) (context.Context, context.CancelFun
 // starts, because a Put that reports failure (for example a client timeout)
 // may still have been stored by the server. The first failure cancels the
 // uploads still in flight and starts no more; it is returned with the index
-// of its attachment.
+// of its attachment. A panicking upload counts as a failed one.
 func putImageObjects(ctx context.Context, objects ImageObjectWriter, auth *askuser.AuthorizationContext, images []UploadedImage, attempted *[]string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -550,6 +550,13 @@ launch:
 		*attempted = append(*attempted, img.StorageKey)
 		wg.Go(func() {
 			defer func() { <-slots }()
+			// A panic here would bypass the HTTP server's recovery and the
+			// caller's compensation and end the process; fail the upload.
+			defer func() {
+				if r := recover(); r != nil {
+					fail(errors.Wrapf(ErrStorageUnavailable, "attachment index %d: upload panicked: %v", idx, r))
+				}
+			}()
 			putCtx, cancelPut := context.WithTimeout(ctx, imageObjectPutTimeout)
 			defer cancelPut()
 			if err := objects.PutImage(putCtx, auth, img); err != nil {

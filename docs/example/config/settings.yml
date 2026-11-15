@@ -100,7 +100,8 @@ settings:
         # Optional. Default: manage.
         lifecycle_mode: manage
         # How often the lifecycle rule is checked again, in seconds, after a
-        # first re-check one minute after start. 0 checks only at start.
+        # first re-check one minute after start. 0 keeps only the check at
+        # start and that first re-check.
         # Optional. Default: 3600 (= 1h).
         lifecycle_check_seconds: 3600
         # Validity window (minutes) of presigned GET URLs handed to AI agents.

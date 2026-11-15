@@ -540,4 +540,12 @@ func TestValidateStartupConfigImageLifecycleMode(t *testing.T) {
 	err = validateStartupConfigWithGetter(newMapConfigGetter(images(map[string]any{"lifecycle_check_seconds": -1})))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "settings.mcp.tools.user_requests.images.lifecycle_check_seconds")
+
+	// No fallback exists for these, so zero must fail startup (independent review).
+	for key, value := range map[string]any{"max_per_request": 0, "per_image_max_bytes": 0} {
+		err = validateStartupConfigWithGetter(newMapConfigGetter(images(map[string]any{key: value})))
+		require.Error(t, err, key)
+		require.Contains(t, err.Error(), "settings.mcp.tools.user_requests.images."+key)
+	}
+	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(images(map[string]any{"max_per_request": 5, "per_image_max_bytes": 1 << 20}))))
 }
