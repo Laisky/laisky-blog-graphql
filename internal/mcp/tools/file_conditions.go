@@ -88,10 +88,15 @@ func expectedFileVersionOption(required ...bool) mcp.ToolOption {
 	return mcp.WithString(expectedVersionKey, opts...)
 }
 
-// requireFileWriteSchema publishes mandatory mutation conditions for write and
-// restore. Keep both root fields and complete union objects: some tool clients
-// render each oneOf alternative independently and do not merge sibling fields.
-func requireFileWriteSchema() mcp.ToolOption {
+// withMandatoryFileMutationSchema publishes the mandatory mutation conditions of
+// file_write and file_restore_version as JSON Schema. Install it after every
+// property option. The root keeps the factored contract for merging clients;
+// each oneOf alternative is also a complete argument object, because
+// branch-oriented clients (Codex CLI code mode) render alternatives without
+// sibling root fields and without `not`. An alternative therefore declares
+// exactly the arguments it accepts: the create alternative omits the version it
+// forbids, while `not` keeps that refusal for validators.
+func withMandatoryFileMutationSchema() mcp.ToolOption {
 	return func(tool *mcp.Tool) {
 		rootCondition, ok := tool.InputSchema.Properties[createOnlyKey].(map[string]any)
 		if !ok {
@@ -112,6 +117,7 @@ func requireFileWriteSchema() mcp.ToolOption {
 		}
 		edit := branch(false, expectedVersionKey)
 		create := branch(true, createOnlyKey)
+		delete(create[schemaPropertiesKey].(map[string]any), expectedVersionKey)
 		create["not"] = map[string]any{schemaRequiredKey: []string{expectedVersionKey}}
 		schema := map[string]any{
 			schemaTypeKey: schemaTypeObject, schemaPropertiesKey: tool.InputSchema.Properties, schemaRequiredKey: tool.InputSchema.Required,

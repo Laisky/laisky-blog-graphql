@@ -199,6 +199,8 @@ and module downloads; they are not hosted-runner timings. The prior PR #55
 compatibility job took about 7m37s; its complete body remains manually available.
 
 The FileIO schema selections exercise serialized tools/list and find_tool,
-complete write/restore union alternatives and SDK-validated mandatory conditions.
-They use synthetic arguments and no storage, network or database. Real mutation
-concurrency and database acceptance remain in the deliberate local/manual suites.
+complete write/restore union alternatives, SDK-validated mandatory conditions,
+and that each alternative declares exactly the arguments it accepts. They use
+synthetic arguments and no storage, network or database. Real mutation
+concurrency, database acceptance and native-client probes remain deliberate
+local/manual work.

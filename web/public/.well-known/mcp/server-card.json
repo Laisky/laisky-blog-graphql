@@ -236,11 +236,6 @@
               "content": {
                 "type": "string"
               },
-              "expected_version": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$",
-                "description": "Opaque version returned with the reviewed file_read content. Re-read and recompute on VERSION_CONFLICT."
-              },
               "plugin": {
                 "type": "string",
                 "enum": [
@@ -767,10 +762,6 @@
                 "type": "string",
                 "pattern": "^[1-9][0-9]{0,18}$",
                 "description": "Exact positive decimal history ID (maximum 9223372036854775807), never a live file version."
-              },
-              "expected_version": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{32}:[1-9][0-9]{0,18}$"
               },
               "create_only": {
                 "type": "boolean",

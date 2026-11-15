@@ -33,7 +33,7 @@ func (t *FileWriteTool) Definition() mcp.Tool {
 		mcp.WithString("mode", mcp.Description("Write mode: APPEND, OVERWRITE, or TRUNCATE.")),
 		expectedFileVersionOption(),
 		mcp.WithBoolean(createOnlyKey, mcp.Description("Must be true when creating a file without expected_version. Fails if the path exists; mutually exclusive with a version.")),
-		fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false), requireFileWriteSchema(),
+		fileToolPluginOption(), mcp.WithIdempotentHintAnnotation(false), withMandatoryFileMutationSchema(),
 	)
 }
 

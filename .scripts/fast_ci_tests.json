@@ -138,7 +138,8 @@
     "package": "./internal/mcp/tools",
     "tests": [
       "TestFileMutationSchemasExposeCompleteUnionArguments",
-      "TestFileMutationSchemasKeepPreconditions"
+      "TestFileMutationSchemasKeepPreconditions",
+      "TestFileMutationAlternativesDeclareOnlyAcceptedArguments"
     ]
   }
 ]

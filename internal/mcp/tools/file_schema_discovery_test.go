@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/rag"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -45,9 +47,22 @@ func listedFileSchema(t *testing.T, definition mcp.Tool) map[string]any {
 	return envelope.Result.Tools[0].InputSchema
 }
 
+// unionForbiddenArguments returns the arguments an alternative rejects through
+// `not: {required: [...]}`; renderers that drop `not` must not see them declared.
+func unionForbiddenArguments(branch map[string]any) map[string]bool {
+	forbidden := make(map[string]bool)
+	if not, ok := branch["not"].(map[string]any); ok {
+		for _, name := range not["required"].([]any) {
+			forbidden[name.(string)] = true
+		}
+	}
+	return forbidden
+}
+
 // TestFileMutationSchemasExposeCompleteUnionArguments reproduces a client that
 // renders oneOf alternatives as argument objects without merging parent fields.
-// The native generator is external; this tests that compatibility boundary,
+// Codex CLI 0.169 code mode does exactly that (verified 2026-11-15, see
+// docs/ref/20261108_fileio_schema_compatibility.md); this tests the boundary,
 // not an invented implementation of that generator.
 func TestFileMutationSchemasExposeCompleteUnionArguments(t *testing.T) {
 	for _, definition := range fileMutationDefinitions(t) {
@@ -71,10 +86,17 @@ func TestFileMutationSchemasExposeCompleteUnionArguments(t *testing.T) {
 					require.Equal(t, "object", branch["type"], "union alternative %d must be independently usable", index)
 					fields := branch["properties"].(map[string]any)
 					require.Equal(t, index == 1, fields[createOnlyKey].(map[string]any)["const"])
+					forbidden := unionForbiddenArguments(branch)
+					require.Equal(t, index == 1, forbidden[expectedVersionKey], "only the create alternative forbids a version")
 					// A branch-oriented argument declaration must expose ALL common fields,
-					// including optional mode/plugin/version, with their original constraints.
-					require.Len(t, fields, len(properties))
+					// including optional mode/plugin, with their original constraints, and
+					// must not advertise an argument the alternative itself rejects.
+					require.Len(t, fields, len(properties)-len(forbidden))
 					for name, property := range properties {
+						if forbidden[name] {
+							require.NotContains(t, fields, name, "union alternative %d advertises forbidden argument %s", index, name)
+							continue
+						}
 						require.Contains(t, fields, name, "argument %s disappeared from union alternative %d", name, index)
 						if name == createOnlyKey {
 							require.Equal(t, property.(map[string]any)["type"], fields[name].(map[string]any)["type"])
@@ -188,5 +210,106 @@ func TestFileMutationSchemasKeepPreconditions(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// TestFileMutationAlternativesDeclareOnlyAcceptedArguments binds what each
+// alternative declares to what the SDK validator accepts. Branch-oriented
+// renderers (Codex CLI 0.169 code mode) turn an alternative's own properties
+// and required list into the argument type and drop `not`: a declared but
+// forbidden argument is then advertised as optional, and an accepted argument
+// missing from the alternative disappears from the declaration.
+func TestFileMutationAlternativesDeclareOnlyAcceptedArguments(t *testing.T) {
+	samples := map[string]any{
+		"project": "fixture", "path": "/synthetic.txt", contentKey: "synthetic", "content_encoding": "utf-8",
+		"offset": 0, "mode": "APPEND", "plugin": "auto", "history_id": "17",
+		expectedVersionKey: "0123456789abcdef0123456789abcdef:7",
+	}
+	for _, definition := range fileMutationDefinitions(t) {
+		t.Run(definition.Name, func(t *testing.T) {
+			schema := listedFileSchema(t, definition)
+			for index, alternative := range schema["oneOf"].([]any) {
+				branch := alternative.(map[string]any)
+				declared := branch["properties"].(map[string]any)
+				minimal := map[string]any{createOnlyKey: declared[createOnlyKey].(map[string]any)["const"]}
+				for _, required := range branch["required"].([]any) {
+					if name := required.(string); name != createOnlyKey {
+						require.Contains(t, samples, name, "add a valid sample for required argument %s", name)
+						minimal[name] = samples[name]
+					}
+				}
+				require.True(t, schemaAcceptsFileArguments(t, branch, minimal), "alternative %d must accept its own minimal call", index)
+				for name := range schema["properties"].(map[string]any) {
+					t.Run(fmt.Sprintf("alternative_%d_%s", index, name), func(t *testing.T) {
+						input := maps.Clone(minimal)
+						if name != createOnlyKey {
+							require.Contains(t, samples, name, "add a valid sample for argument %s", name)
+							input[name] = samples[name]
+						}
+						_, advertised := declared[name]
+						require.Equal(t, advertised, schemaAcceptsFileArguments(t, branch, input), "alternative declaration must match its validation")
+						require.Equal(t, advertised, schemaAcceptsFileArguments(t, schema, input), "full schema must agree with the alternative")
+					})
+				}
+			}
+		})
+	}
+}
+
+// factoredFileMutationSchema rebuilds the earlier representation of the same
+// contract: common arguments only at the root and condition-only alternatives.
+func factoredFileMutationSchema(schema map[string]any) map[string]any {
+	common := make(map[string]bool)
+	for _, name := range schema["required"].([]any) {
+		common[name.(string)] = true
+	}
+	alternatives := make([]any, 0, 2)
+	for _, alternative := range schema["oneOf"].([]any) {
+		branch := alternative.(map[string]any)
+		required := make([]any, 0, 1)
+		for _, name := range branch["required"].([]any) {
+			if !common[name.(string)] {
+				required = append(required, name)
+			}
+		}
+		createOnly := branch["properties"].(map[string]any)[createOnlyKey].(map[string]any)["const"]
+		condition := map[string]any{"required": required, "properties": map[string]any{createOnlyKey: map[string]any{"const": createOnly}}}
+		if not, ok := branch["not"]; ok {
+			condition["not"] = not
+		}
+		alternatives = append(alternatives, condition)
+	}
+	factored := maps.Clone(schema)
+	factored["oneOf"] = alternatives
+	return factored
+}
+
+// TestFileMutationUnionsKeepLexicalDiscovery rules out a find_tool ranking
+// regression from complete alternatives. rag.Tokenize returns unique tokens, so
+// BM25 term frequency and document length depend only on the token set, which
+// repeating root arguments inside alternatives must not change.
+func TestFileMutationUnionsKeepLexicalDiscovery(t *testing.T) {
+	reader, err := NewFileReadTool(stubFileService{})
+	require.NoError(t, err)
+	complete := append(fileMutationDefinitions(t), reader.Definition())
+	factored := make([]mcp.Tool, 0, len(complete))
+	for _, definition := range complete {
+		schema := listedFileSchema(t, definition)
+		if _, ok := schema["oneOf"]; !ok {
+			factored = append(factored, definition)
+			continue
+		}
+		encoded, err := json.Marshal(factoredFileMutationSchema(schema))
+		require.NoError(t, err)
+		older := mcp.NewToolWithRawSchema(definition.Name, definition.Description, encoded)
+		require.ElementsMatch(t, rag.Tokenize(buildToolDocument(older)), rag.Tokenize(buildToolDocument(definition)), definition.Name)
+		factored = append(factored, older)
+	}
+	before := &FindToolTool{logger: log.Logger}
+	before.SetTools(factored)
+	after := &FindToolTool{logger: log.Logger}
+	after.SetTools(complete)
+	for _, query := range []string{"write file content", "create a new file", "restore history version", "expected_version create_only", "read file"} {
+		require.Equal(t, before.searchBM25(query), after.searchBM25(query), query)
 	}
 }
