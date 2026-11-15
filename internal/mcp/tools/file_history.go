@@ -67,7 +67,7 @@ func (t *FileHistoryTool) Definition() mcp.Tool {
 				mcp.WithDescription("Restore immutable history as a new live revision. Supply the ORIGINAL current-file expected_version, or create_only=true when absent. "+
 					"A conflict has no write effect; re-read and review, never silently update the token. Uses the selected project plugin."),
 				expectedFileVersionOption(), mcp.WithBoolean(createOnlyKey, mcp.Description("Restore only if the live path does not exist.")),
-				fileToolPluginOption(), mcp.WithReadOnlyHintAnnotation(false), mcp.WithDestructiveHintAnnotation(true), requireFileWriteSchema())
+				fileToolPluginOption(), mcp.WithReadOnlyHintAnnotation(false), mcp.WithDestructiveHintAnnotation(true), withMandatoryFileMutationSchema())
 		}
 	}
 	return mcp.NewTool(t.name, options...)
