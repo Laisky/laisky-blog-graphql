@@ -418,8 +418,11 @@ func webpChunks(chunks ...[]byte) []byte {
 // 8192 x 8192 limit the default budget admits: every 8-bit-per-channel layout
 // of every format fits (as do non-interlaced 16-bit PNG, strip/tile 16-bit
 // TIFF and progressive 4:2:0 JPEG), except TIFFs stored as one large
-// compressed strip or tile (the decoder may inflate it to 8 bytes per pixel);
-// only the combinations documented in the proposal exceed it.
+// compressed strip or tile (the decoder may inflate it to 8 bytes per pixel;
+// such an 8-bit TIFF still fits up to ~28 MP) and progressive full-chroma or
+// CMYK JPEG; 16-bit interlaced PNG exceeds it too. DefaultDecodeMemoryBudgetBytes,
+// docs/manual/mcp.md, the proposal and docs/example/config/settings.yml restate
+// this list.
 func TestDecodeBudgetDefaultCoversContract(t *testing.T) {
 	const edge = MaxDecodeDimension
 	ycc := func(sampling byte) [][2]byte { return [][2]byte{{1, sampling}, {2, 0x11}, {3, 0x11}} }
@@ -457,6 +460,10 @@ func TestDecodeBudgetDefaultCoversContract(t *testing.T) {
 		{"webp lossy lossless alpha", webpChunks(webpChunk("VP8X", 10), webpALPH(1), webpChunk("VP8 ", 20<<20)), mimeImageWebp, with(color.NYCbCrAModel), true},
 		{"png rgba64 interlaced", pngHeader(edge, edge, 16, 6, 1), mimeImagePng, with(color.NRGBA64Model), false},
 		{"tiff rgba single deflate strip", tiffHeader(edge, edge, 8, edge, 2<<20), mimeImageTiff, with(color.RGBAModel), false},
+		// The documented floor for such TIFFs: one 20 MiB deflate strip of
+		// 8-bit RGBA still fits at 28 MP (5291 x 5291).
+		{"tiff rgba single deflate strip at 28 MP", tiffHeader(5291, 5291, 8, 5291, 20<<20), mimeImageTiff,
+			image.Config{Width: 5291, Height: 5291, ColorModel: color.RGBAModel}, true},
 		{"tiff unparsable layout", nil, mimeImageTiff, with(color.GrayModel), false},
 		{"jpeg progressive 4:4:4", jpegHeader(0xC2, edge, edge, false, ycc(0x11)...), mimeImageJpeg, with(color.YCbCrModel), false},
 		{"jpeg progressive cmyk", jpegHeader(0xC2, edge, edge, true, cmyk...), mimeImageJpeg, with(color.CMYKModel), false},

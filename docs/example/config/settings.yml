@@ -113,7 +113,13 @@ settings:
         # Process-wide cap, in bytes, on the summed estimated memory of
         # concurrent image decodes (decode + resize + PNG encode). Uploads wait
         # for budget; an image whose estimate alone exceeds it is rejected as
-        # decode_failed. The default admits every 8-bit image up to 8192x8192.
+        # decode_failed. The default admits every 8-bit-per-channel image up
+        # to 8192x8192 except a TIFF stored as one large compressed strip or
+        # tile (admitted up to ~28 MP) and a progressive full-chroma or CMYK
+        # JPEG (admitted up to roughly 40-60 MP); 16-bit interlaced PNG is
+        # also rejected above roughly 60 MP. A lowered budget admits less (an
+        # 8192x8192 RGBA PNG is estimated at ~686 MiB). See "Decode memory
+        # budget" in docs/manual/mcp.md.
         # When this key is not set, the budget is lowered at start so the
         # whole image memory envelope (this budget plus the input and prepared
         # images of max_concurrent_requests creates, ~2.25 GiB by default)

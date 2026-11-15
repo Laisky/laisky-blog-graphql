@@ -10,13 +10,16 @@ import (
 )
 
 // DefaultDecodeMemoryBudgetBytes is the default process-wide budget for the
-// estimated transient heap of concurrent Normalize calls: 1.25 GiB. It admits
-// every 8-bit-per-channel input of any supported format and layout up to the
-// 8192 x 8192 contract limit (the worst such cases, a lossy WebP with
-// VP8L-compressed alpha and a 20 MiB chunk and a single-strip RGBA TIFF, are
-// estimated at ~1.24 and ~1.17 GiB) while bounding the aggregate decode memory of the
-// shared API process. Only 16-bit interlaced PNG / 16-bit TIFF and progressive
-// full-chroma or CMYK JPEG above roughly 40-60 MP (depending on layout) exceed it.
+// estimated transient heap of concurrent Normalize calls: 1.25 GiB. Up to the
+// 8192 x 8192 contract limit it admits every 8-bit-per-channel input of every
+// supported format except two: a TIFF stored as one large compressed strip or
+// tile (or whose first IFD cannot be parsed), which golang.org/x/image/tiff
+// may inflate to 8 bytes per pixel, is admitted up to ~28 MP; a progressive
+// full-chroma or CMYK JPEG up to roughly 40-60 MP. 16-bit interlaced PNG is
+// also rejected above roughly 60 MP. The tightest admitted case at the limit,
+// a lossy WebP with VP8L-compressed alpha and a 20 MiB chunk, is estimated at
+// ~1267 MiB. TestDecodeBudgetDefaultCoversContract pins this list;
+// docs/manual/mcp.md and the example settings restate it.
 const DefaultDecodeMemoryBudgetBytes int64 = 1280 << 20
 
 const (
