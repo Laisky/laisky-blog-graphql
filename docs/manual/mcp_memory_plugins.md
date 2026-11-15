@@ -192,7 +192,7 @@ settings:
           pageindex:
             llm:
               api_key: '' # empty key keeps pageindex unregistered
-              base_url: '' # empty = api.openai.com
+              base_url: '' # empty = api.openai.com; an origin selects its /v1 API root
               indexing_model: 'gpt-5.4-mini'
               retrieve_model: 'gpt-5.4-mini'
             indexer:
@@ -276,9 +276,30 @@ input and its answer together: the planner first reserves a quarter of the
 remaining budget for its answer (at least 256 tokens, at most
 `limits.max_output_tokens_per_call`), and its prompt uses the most detailed outline
 that fits the rest (full outline, then without summaries, then at most three, two
-or one levels, then fewer top-level sections). A candidate that cannot fit even one
-section falls back to the pages of its first section. Search calls also draw from the caller's rolling budget
-(§6.6).
+or one levels, then fewer top-level sections). Search calls also draw from the
+caller's rolling budget (§6.6).
+
+When the planner cannot run for a candidate (a budget refused it, not even one
+section fits `tree_query.max_tokens`, its answer was cut or incomplete, or the
+provider failed), search falls back without an LLM call. It returns the sections
+whose title or summary shares the most query terms (a title term counts twice), at
+most three that do not overlap, preferring the narrower section and then document
+order; a section's pages include those of the sections nested under it. Terms are
+case-folded words of at least two characters without common English stop words,
+and character pairs of Chinese, Japanese and Korean text; at most 32 distinct query
+terms and 4 KiB of each title and summary are compared. Only when no section
+matches is the first section returned. Fallback results are ranked below the
+sections the planner chose for other candidates (their scores are halved, or
+quartered for the first-section default), so a guess never displaces a planned
+result. The search result itself is unchanged; the plugin counts planned
+candidates and fallbacks by cause (`budget_exhausted`, `search_limit`,
+`planner_failed`), logs each fallback at debug level as `pageindex.search.fallback`,
+and at most once per minute logs `pageindex.search.fallbacks` at warn level with the
+planned, matched and first-section counts since the previous summary.
+
+Page ranges, whether from the planner or the fallback, are resolved against the
+tree's own pages, so a range is never more expensive than the pages it names, however
+wide the planner makes it.
 
 ### 6.5 Watch items
 
@@ -308,10 +329,10 @@ switched off. The defaults leave typical documents unchanged.
 
 | Key | Default | Applies to |
 | --- | --- | --- |
-| `max_nodes_per_document` | `2000` | Tree nodes of one document. Markdown headings past the cap stay in the preceding section's text, so search still reaches them; PDF table-of-contents entries past the cap are dropped and an expansion that would exceed it is skipped. |
+| `max_nodes_per_document` | `2000` | Tree nodes of one document. Markdown headings past the cap stay in the preceding section's text, so search still reaches them; PDF table-of-contents entries past the cap are dropped and an expansion that would exceed it is skipped. Only nodes that are inserted count: table-of-contents entries without a title are dropped first, and an expansion whose first generated section repeats the parent's title promotes the sections nested under it and counts only those. |
 | `max_llm_calls_per_document` | `256` | Upstream calls of one indexing run, across every phase (table-of-contents detection and parsing, summaries, verification, expansion, description). |
 | `max_tokens_per_document` | `2000000` | Tokens of one indexing run. The earlier per-node allowance (`algo.max_token_num_each_node` × (roots + 1) for Markdown, × pages + `tree_query.max_tokens` for PDF) still applies when it is smaller. |
-| `window` | `1h` | Refill period of the rolling budgets below. |
+| `window` | `1h` | Length of the sliding window of the rolling budgets below. |
 | `tenant_llm_calls_per_window` | `1000` | Upstream calls of one caller (API-key hash) per window, indexing and search combined. |
 | `tenant_tokens_per_window` | `4000000` | Tokens of one caller per window. |
 | `global_llm_calls_per_window` | `5000` | Upstream calls of the whole process per window. This is the operator's ceiling even when callers use many API keys. |
@@ -345,11 +366,16 @@ How the ceilings are enforced:
     connection failure), its whole reservation, because the provider may have
     processed and billed it in full.
 
-  The rolling buckets are refilled to that time before the charge is applied, so
-  the refill earned while a slow call was in flight cannot cancel its charge.
+  A charge below the reservation frees the difference at once; a charge above it is
+  debt that counts against the rolling budgets for a whole `window` from the time it
+  is known, so the time a slow call spent in flight cannot shorten it.
 - An answer the provider cut at its output ceiling (marked incomplete for
-  `max_output_tokens`, or using the whole ceiling) is charged and counted but never
-  used or cached; the work it was for degrades like a refused call (below). Note that
+  `max_output_tokens`, or using the whole ceiling, compared with the lower ceiling a
+  server echoes when it clamped the request) is charged and counted but never used
+  or cached; the work it was for degrades like a refused call (below). So is an
+  answer the provider did not complete for another reason: any status other than
+  `completed`, such as `incomplete` for `content_filter` or without a reason, or
+  `failed`. An answer without a status is taken as complete. Note that
   the ceiling counts reasoning tokens: `gpt-5.4-mini` defaults to reasoning effort
   `none`, but a model whose default effort is higher needs a larger
   `max_output_tokens_per_call`, or more of its answers will be cut.
@@ -370,8 +396,8 @@ How the ceilings are enforced:
   the section (at most 320 bytes), with Markdown markers removed. A refused
   table-of-contents call keeps what was found so far, or one `Document` node for the
   whole PDF. A write therefore never fails because a budget was exhausted; it gets a
-  less detailed tree. A refused planner call in search returns the first section's
-  pages. Reaching `indexer.timeout_index` during LLM work degrades the same way; only
+  less detailed tree. A refused planner call in search falls back to the sections
+  matching the query (§6.4). Reaching `indexer.timeout_index` during LLM work degrades the same way; only
   an explicit cancellation of the request aborts the run.
 - A degraded tree is marked, never presented as complete: the tree and its catalog
   entry carry `degraded`, and the file's summary is published with status
@@ -396,11 +422,19 @@ How the ceilings are enforced:
   searched or written again stays degraded. The refresh queue lives in memory and is
   lost on restart, but the retry state (attempts, next time) is persisted in the
   catalog, so the next search after a restart queues the refresh again.
-- Rolling budgets are token buckets that refill linearly over `window`. A caller's
-  bucket that has refilled completely and has no request in flight is dropped from
-  memory, so retained state is bounded by recent spenders; when `max_tracked_tenants`
-  callers are active, a new caller is refused (and degrades as above) instead of
-  receiving an untracked budget. Budgets are per process and reset on restart.
+- Rolling budgets are strict sliding windows: in any interval of `window`'s length
+  they admit at most their call and token ceilings. Each budget records what it
+  admitted in slots of 1/60 of `window` (one minute by default), and a request is
+  admitted only when everything recorded in the last 61 slots plus its reservation
+  fits, so a reservation counts for between one window and one window plus one slot.
+  After a burst spends a whole budget, that budget refuses until the burst leaves the
+  window; it does not refill while it is spent, as a token bucket would (a token
+  bucket of the same size admits up to twice its capacity within one window). A
+  caller's budget that holds nothing and has no request in flight is dropped from
+  memory, so retained state is bounded by recent spenders (and its slots by the calls
+  the global budget admits); when `max_tracked_tenants` callers are active, a new
+  caller is refused (and degrades as above) instead of receiving an untracked budget.
+  Budgets are per process and reset on restart.
 - Every refusal is counted, including the cheap checks that skip rendering a prompt,
   and at most once per minute the process logs `pageindex.spend.refusals` at warn
   level with the admitted calls and the tenant, global, reserve and untracked
@@ -411,7 +445,16 @@ What the ceilings guarantee, and what they do not:
 - Provider-reported spend stays within each ceiling, as long as two things hold.
   First, the provider honors `max_output_tokens`. Second, its input count agrees
   with the local tokenizer estimate, which already includes message framing and the
-  schema. Any difference is settled as debt that the bucket repays as it refills.
+  schema. Any difference is settled as debt that counts for a whole window. An
+  upstream that generated more than `max_output_tokens` is reported, at most once a
+  minute, as `pageindex.llm.output_ceiling_ignored` at warn level.
+- The provider contract is pinned by `TestResponsesProviderContract` against the
+  answer shapes of OpenAI and of OpenAI-compatible gateways (Laisky/one-api, new-api,
+  LiteLLM, vLLM), and checked against a real endpoint by
+  `TestLiveResponsesProviderContract` when `PAGEINDEX_CONTRACT_BASE_URL` and
+  `PAGEINDEX_CONTRACT_API_KEY` are set (§9). `llm.base_url` may name the gateway's
+  origin, as the other OpenAI-compatible settings do: an origin selects its `/v1` API
+  root, and a base URL with a path of its own is used as given.
 - Budgets are per process. With several replicas, the operator's hourly ceiling is
   the number of replicas times the `global_*` values.
 - PDF page text is extracted before any LLM budget applies, and its CPU and memory
@@ -563,6 +606,7 @@ The resolved plugin name is recorded on every request log entry regardless of pl
 | Tool returns `INVALID_ARGUMENT` for `plugin="pageindex"` with hint about `llm.api_key`    | `pageindex_plugin` is not registered because `settings.mcp.tools.memory.plugins.pageindex.llm.api_key` is empty. | Set the api_key (Section 6.1) and restart, or drop the `plugin` field to route via default.       |
 | Single startup WARN about deprecated `settings.mcp.files.*`                               | Legacy-config shim translated old keys.                                                                          | Move keys to `settings.mcp.tools.memory.plugins.rag.*` before the shim is removed (post-Phase 3). |
 | Two routing layers seem active                                                            | There is no second layer. The only inputs are the per-call `plugin` argument and `default_plugin`.               | Confirm by reading the request log entry's resolved-plugin field.                                 |
+| PageIndex trees are all `degraded` or every PageIndex call fails | The provider cannot serve the Responses API as configured: it rejects `max_output_tokens`, has no quota for the key, or (before origins were mapped to `/v1`) `llm.base_url` reached the gateway's web UI. | Check `pageindex.llm.respond failed` in the logs, then run `PAGEINDEX_CONTRACT_BASE_URL=<llm.base_url> PAGEINDEX_CONTRACT_API_KEY=<key> go test -run TestLiveResponsesProviderContract ./internal/mcp/memory/plugins/pageindex`. |
 
 ## 10. References
 

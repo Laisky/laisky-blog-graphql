@@ -663,7 +663,9 @@ exact key paths under `settings.mcp.tools.memory.plugins.pageindex.*`. Every ups
 call passes `llm_gate.go`, which reserves its input estimate and an output allowance
 (sent as `max_output_tokens`) against the run's absolute budget (`budget.go`,
 `limits.go`) and the rolling per-tenant and global `SpendGovernor`
-(`spend_governor.go`), and settles each request at completion; `markdown_structure.go` keeps Markdown heading extraction
+(`spend_governor.go`, strict sliding windows kept as per-slot ledgers), and settles
+each request at completion; `search_fallback.go` answers a candidate the planner
+could not plan from the sections matching the query terms; `markdown_structure.go` keeps Markdown heading extraction
 linear (manual §6.6).
 
 The Phase-2 foundation threads `system_owner` through `internal/mcp/files/`. A

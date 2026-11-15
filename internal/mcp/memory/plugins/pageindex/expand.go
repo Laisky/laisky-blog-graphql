@@ -108,28 +108,19 @@ func (idx *Indexer) expandNode(ctx context.Context, n *Node, pages []string, dep
 	if len(flat) == 0 {
 		return nil
 	}
-	subNodes := assembleSubtree(flat, n.EndIndex)
-	if len(subNodes) == 0 {
+	children := expansionChildren(n, assembleSubtree(flat, n.EndIndex))
+	if len(children) == 0 {
 		return nil
 	}
-	// The expansion must fit the document's node ceiling; otherwise the node
-	// stays a leaf and keeps covering its whole page range.
-	if !budget.takeNodes(countNodes(subNodes)) {
+	// The nodes actually inserted must fit the document's node ceiling;
+	// otherwise the node stays a leaf and keeps covering its whole page range.
+	if !budget.takeNodes(countNodes(children)) {
 		stats.markTruncated()
 		return nil
 	}
-	// If the first sub-node title matches the parent (upstream optimization),
-	// promote its children rather than nesting redundantly.
-	if first := subNodes[0]; first != nil && strings.TrimSpace(first.Title) == strings.TrimSpace(n.Title) {
-		// Adjust the parent's end_index to just before the second item.
-		if len(subNodes) > 1 && subNodes[1] != nil {
-			n.EndIndex = max(subNodes[1].StartIndex-1, n.StartIndex)
-		}
-		n.Children = subNodes[1:]
-	} else {
-		n.EndIndex = max(first.StartIndex-1, n.StartIndex)
-		n.Children = subNodes
-	}
+	// The parent keeps only the pages before its first child.
+	n.EndIndex = max(children[0].StartIndex-1, n.StartIndex)
+	n.Children = children
 	if idx.log != nil {
 		idx.log.Debug("pageindex.expand.node",
 			glog.String("title", n.Title),
@@ -138,6 +129,20 @@ func (idx *Indexer) expandNode(ctx context.Context, n *Node, pages []string, dep
 		)
 	}
 	return nil
+}
+
+// expansionChildren returns the forest an expansion of n inserts under it. When
+// the first generated section repeats n's own title, that section is dropped and
+// the sections nested under it are promoted, as the upstream algorithm
+// (process_large_node_recursively) drops only the repeated entry before it
+// assembles the tree. The node ceiling is charged for exactly this forest.
+func expansionChildren(n *Node, subNodes []*Node) []*Node {
+	if len(subNodes) == 0 || subNodes[0] == nil || subNodes[0].Title != strings.TrimSpace(n.Title) {
+		return subNodes
+	}
+	promoted := make([]*Node, 0, len(subNodes[0].Children)+len(subNodes)-1)
+	promoted = append(promoted, subNodes[0].Children...)
+	return append(promoted, subNodes[1:]...)
 }
 
 // countNodes returns the number of nodes in the forest rooted at nodes.
@@ -261,8 +266,8 @@ func assembleSubtree(flat []map[string]any, parentEnd int) []*Node {
 	}
 	entries := make([]entry, 0, len(flat))
 	for _, item := range flat {
-		title, _ := item["title"].(string)
-		if strings.TrimSpace(title) == "" {
+		title, ok := tocEntryTitle(item)
+		if !ok {
 			continue
 		}
 		structure, _ := item["structure"].(string)
@@ -275,7 +280,7 @@ func assembleSubtree(flat []map[string]any, parentEnd int) []*Node {
 		if startIdx <= 0 {
 			continue
 		}
-		entries = append(entries, entry{structure: structure, node: &Node{Title: strings.TrimSpace(title), StartIndex: startIdx}})
+		entries = append(entries, entry{structure: structure, node: &Node{Title: title, StartIndex: startIdx}})
 	}
 	if len(entries) == 0 {
 		return nil

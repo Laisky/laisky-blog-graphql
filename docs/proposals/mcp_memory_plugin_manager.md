@@ -955,7 +955,8 @@ Indexing cost is one-shot: an N-page PDF is ~8–30 LLM calls per §2.6.4.1 pipe
 (typical 200-page PDF: ~25 calls). The document shape is caller-controlled, so every
 call and token ceiling is an absolute service-side setting (`limits.*`): per indexing
 run (calls, tokens, nodes) and per rolling window for each API-key tenant and for the
-whole process. Every upstream request, for indexing and for search and including retries, is
+whole process; a rolling window is a strict sliding window, so no interval of its
+length admits more than its ceiling. Every upstream request, for indexing and for search and including retries, is
 admitted against those budgets before it is sent, reserving its estimated input and
 an output allowance that is sent as `max_output_tokens`, and is charged at completion
 what the provider reports; a refused leaf summary becomes a
@@ -1383,7 +1384,7 @@ becoming fragile to internal renames.
 | P02 | `Indexer.Index(KindMarkdown, ...)` happy path: header tree extracted by goldmark; no LLM calls when `algo.generate_node_summary=false`.                                                                                                           |
 | P03 | `Search` loop given canned tree + stub `LLM`: asserts merge order, byte-offset synthesis, `limit` truncation.                                                                                                                                     |
 | P04 | `Search` loop budget exhaustion (`max_steps=2`) → returns partial result with `truncated=true`, no error. (User-observable side covered by C-row + Q7.)                                                                                           |
-| P05 | `Search` loop with malformed LLM JSON → Responses-API strict-schema rejection → `LLM.Respond` returns error → degrades to "fetch first node of each candidate" fallback. (User-observable side covered by C-row.)                                 |
+| P05 | `Search` loop with malformed LLM JSON → Responses-API strict-schema rejection → `LLM.Respond` returns error (or a budget refuses the planner) → degrades, without an LLM call, to the sections of each candidate whose titles and summaries match the query terms, the first node only when none match, ranked below planned results and counted by cause. (User-observable side covered by C-row.) |
 | P06 | `Write(.pdf, OVERWRITE@offset=10)` → `INVALID_ARGUMENT`. (User-observable side covered by C09b.)                                                                                                                                                  |
 | P07 | `Write(.pdf, TRUNCATE)` then `Read(.pdf)` returns identical bytes via `userFS`.                                                                                                                                                                   |
 | P08 | `Delete` removes user row from `userFS` and the `pageindex/<doc_id>.json` row from `SystemFS`; index mapping updated atomically.                                                                                                                  |

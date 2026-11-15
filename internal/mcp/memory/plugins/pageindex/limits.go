@@ -17,7 +17,7 @@ const (
 	// DefaultMaxTokensPerDocument caps the tokens one indexing run may spend. The
 	// pipeline's own per-node allowance still applies when it is smaller.
 	DefaultMaxTokensPerDocument int64 = 2_000_000
-	// DefaultBudgetWindow is the refill period of the rolling tenant and global budgets.
+	// DefaultBudgetWindow is the sliding window of the rolling tenant and global budgets.
 	DefaultBudgetWindow = time.Hour
 	// DefaultTenantLLMCallsPerWindow caps one tenant's upstream calls per window.
 	DefaultTenantLLMCallsPerWindow int64 = 1000
@@ -59,7 +59,8 @@ type LimitsSettings struct {
 	MaxLLMCallsPerDocument int
 	// MaxTokensPerDocument caps the tokens of one indexing run.
 	MaxTokensPerDocument int64
-	// Window is the refill period of the rolling budgets.
+	// Window is the sliding window of the rolling budgets: no interval of this
+	// length admits more than their ceilings.
 	Window time.Duration
 	// TenantLLMCallsPerWindow caps one tenant's upstream calls per Window.
 	TenantLLMCallsPerWindow int64

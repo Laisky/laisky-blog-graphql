@@ -329,10 +329,18 @@ func (idx *Indexer) GetPageContent(tree *Tree, ranges []PageRange) ([]Chunk, err
 	if len(tree.Pages) == 0 {
 		return nil, nil
 	}
-	pageMap := make(map[int]Page, len(tree.Pages))
+	// Ranges come from the planner, whose answer the document can steer, so they
+	// are resolved against the tree's own page numbers: the work is bounded by the
+	// pages in the tree, never by the width of a range.
+	byPage := make(map[int]Page, len(tree.Pages))
 	for _, p := range tree.Pages {
-		pageMap[p.Page] = p
+		byPage[p.Page] = p
 	}
+	numbers := make([]int, 0, len(byPage))
+	for n := range byPage {
+		numbers = append(numbers, n)
+	}
+	sort.Ints(numbers)
 	out := make([]Chunk, 0, 8)
 	seen := map[int]bool{}
 	for _, r := range ranges {
@@ -342,15 +350,12 @@ func (idx *Indexer) GetPageContent(tree *Tree, ranges []PageRange) ([]Chunk, err
 		if r.End <= 0 || r.End < r.Start {
 			r.End = r.Start
 		}
-		for p := r.Start; p <= r.End; p++ {
-			if seen[p] {
+		for i := sort.SearchInts(numbers, r.Start); i < len(numbers) && numbers[i] <= r.End; i++ {
+			if seen[numbers[i]] {
 				continue
 			}
-			seen[p] = true
-			page, ok := pageMap[p]
-			if !ok {
-				continue
-			}
+			seen[numbers[i]] = true
+			page := byPage[numbers[i]]
 			out = append(out, Chunk{DocID: tree.DocID, Page: page.Page, LineNum: page.LineNum, Content: page.Content})
 		}
 	}

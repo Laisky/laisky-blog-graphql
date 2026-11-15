@@ -44,32 +44,9 @@ func TestSpendGovernorTenantAndGlobalCeilings(t *testing.T) {
 	require.Equal(t, uint64(2), stats.GlobalRefusals)
 }
 
-// TestSpendGovernorRefillsOverWindow checks the rolling window: spend returns
-// linearly as the window passes.
-func TestSpendGovernorRefillsOverWindow(t *testing.T) {
-	g, now := newTestGovernor(LimitsSettings{TenantLLMCallsPerWindow: 4, Window: time.Hour})
-	for i := 0; i < 4; i++ {
-		_, ok := g.admit("a", 1)
-		require.True(t, ok)
-	}
-	_, ok := g.admit("a", 1)
-	require.False(t, ok)
-
-	*now = now.Add(30 * time.Minute)
-	admitted := 0
-	for i := 0; i < 4; i++ {
-		if _, ok := g.admit("a", 1); ok {
-			admitted++
-		}
-	}
-	require.Equal(t, 2, admitted, "half a window refills half the calls")
-
-	*now = now.Add(2 * time.Hour)
-	require.False(t, g.wouldRefuse("a"))
-}
-
 // TestSpendGovernorTokenCeilingAndDebt checks estimates against the token budget
-// and that a call charged above its estimate leaves the budget in debt.
+// and that a call charged above its estimate leaves the budget in debt until the
+// charge leaves the window.
 func TestSpendGovernorTokenCeilingAndDebt(t *testing.T) {
 	g, now := newTestGovernor(LimitsSettings{TenantTokensPerWindow: 1000, Window: time.Hour})
 	_, ok := g.admit("a", 1001)
@@ -80,11 +57,11 @@ func TestSpendGovernorTokenCeilingAndDebt(t *testing.T) {
 	ticket.settle(1200)
 	require.True(t, g.wouldRefuse("a"), "a budget in debt admits nothing")
 
-	*now = now.Add(10 * time.Minute)
-	require.True(t, g.wouldRefuse("a"), "a debt of 200 tokens takes 12 minutes to repay")
-	*now = now.Add(30 * time.Minute)
-	_, ok = g.admit("a", 100)
-	require.True(t, ok)
+	*now = now.Add(40 * time.Minute)
+	require.True(t, g.wouldRefuse("a"), "the 1200-token charge counts for the whole window")
+	*now = now.Add(21 * time.Minute)
+	_, ok = g.admit("a", 1000)
+	require.True(t, ok, "the whole ceiling is available once the charge left the window")
 }
 
 // TestSpendGovernorBoundsTrackedTenants checks the cardinality cap: an untracked

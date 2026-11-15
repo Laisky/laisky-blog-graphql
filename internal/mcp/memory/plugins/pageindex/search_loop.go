@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	errors "github.com/Laisky/errors/v2"
+	logSDK "github.com/Laisky/go-utils/v6/log"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/files"
 )
@@ -37,6 +40,15 @@ type Searcher struct {
 	cfg    Settings
 	engine SearchEngine
 	gate   llmGate
+	log    logSDK.Logger
+	now    func() time.Time
+
+	mu sync.Mutex
+	// stats counts planned and fallback candidates; logged and lastLog track the
+	// last fallback summary.
+	stats   SearchStats
+	logged  SearchStats
+	lastLog time.Time
 }
 
 // NewSearcher constructs the retrieval helper. When engine is the plugin's
@@ -46,14 +58,15 @@ func NewSearcher(llm LLM, store *SysStore, engine SearchEngine, cfg Settings) *S
 	cfg.Limits = cfg.Limits.WithDefaults()
 	var tok Tokenizer
 	var spend *SpendGovernor
+	var log logSDK.Logger
 	if idx, ok := engine.(*Indexer); ok && idx != nil {
-		tok, spend = idx.tok, idx.gate.spend
+		tok, spend, log = idx.tok, idx.gate.spend, idx.log
 	}
 	if spend == nil {
 		spend = NewSpendGovernor(cfg.Limits)
 	}
 	gate := newLLMGate(tok, spend, cfg.Limits)
-	return &Searcher{llm: llm, store: store, cfg: cfg, engine: engine, gate: gate}
+	return &Searcher{llm: llm, store: store, cfg: cfg, engine: engine, gate: gate, log: log, now: spend.now, lastLog: spend.now()}
 }
 
 // Run is the §2.6.2 tree-reasoning loop. It returns a files.SearchResult that
@@ -73,6 +86,7 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 	}
 	budget := newOperationBudget(int64(s.cfg.TreeQuery.MaxTokens), stepBudget, unlimited, in.Tenant)
 	allChunks := make([]files.ChunkEntry, 0, 8)
+	var terms map[string]struct{}
 	for _, cand := range candidates {
 		if stepBudget <= 0 || budget.Remaining() <= 0 {
 			break
@@ -91,10 +105,20 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		if err != nil {
 			continue
 		}
+		weight := 1.0
 		ranges, err := s.pickRanges(ctx, tree, in.Query, budget)
 		if err != nil {
-			// Fallback per P05: return the first node's pages so callers see something.
-			ranges = []PageRange{firstNodeRange(tree)}
+			// Fallback per P05: without the planner, the sections matching the
+			// query's terms (or the first section) are returned, ranked below
+			// sections the planner chose, so callers still see something.
+			if terms == nil {
+				terms = searchTerms(in.Query, maxSearchQueryTerms)
+			}
+			var matched bool
+			ranges, matched = fallbackRanges(tree, terms)
+			weight = s.recordFallback(cand.entry.DocID, err, matched)
+		} else {
+			s.recordPlanned()
 		}
 		chunks, err := s.engine.GetPageContent(tree, ranges)
 		if err != nil {
@@ -105,7 +129,7 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		// each hit is self-contained (§3.2, §4.5).
 		docSummary := publicDocSummary(tree)
 		for i, ch := range chunks {
-			score := positionDecay(i, len(chunks))
+			score := weight * positionDecay(i, len(chunks))
 			allChunks = append(allChunks, files.ChunkEntry{
 				FilePath:           cand.userPath,
 				FileSeekStartBytes: int64(ch.Page) * 1024,
@@ -146,21 +170,6 @@ func filterCandidates(ix Index, prefix string) []rankedCandidate {
 	return out
 }
 
-func firstNodeRange(tree *Tree) PageRange {
-	if tree == nil || len(tree.Structure) == 0 {
-		return PageRange{Start: 1, End: 1}
-	}
-	n := tree.Structure[0]
-	end := n.EndIndex
-	if end < n.StartIndex {
-		end = n.StartIndex
-	}
-	if end <= 0 {
-		end = 1
-	}
-	return PageRange{Start: max(n.StartIndex, 1), End: end}
-}
-
 // pickRanges runs the PromptPickPageRanges prompt and parses the JSON output.
 // The call goes through the shared llmGate, so its input and output count against
 // the search's tree_query budget and the caller's rolling tenant budget.
@@ -185,7 +194,7 @@ func (s *Searcher) pickRanges(ctx context.Context, tree *Tree, query string, bud
 // is reserved: the full outline, then the outline without summaries, then
 // shallower outlines, then fewer top-level sections. It returns
 // ErrBudgetExceeded when not even one section fits, and the caller falls back to
-// the first section's pages.
+// the sections matching the query (fallbackRanges).
 func (s *Searcher) plannerPrompt(tree *Tree, query string, remaining int64) (string, error) {
 	var prompt string
 	var renderErr error

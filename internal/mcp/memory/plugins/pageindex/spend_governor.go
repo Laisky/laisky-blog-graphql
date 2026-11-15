@@ -13,11 +13,20 @@ import (
 // amplify without bound, and one global budget shared by every tenant, which is
 // the operator's ceiling even when callers use many tenant identities.
 //
-// Each budget is a pair of token buckets (calls and tokens) that refill linearly
-// over the configured window and are read lazily, so the governor runs no
-// goroutine. A tenant budget that has refilled completely and has no call in
-// flight is equivalent to an absent one and is dropped, which bounds retained
-// state by recent spenders rather than by every tenant ever seen;
+// Each budget is a strict sliding window: in any interval of the configured
+// window's length it admits at most its call and token ceilings. A budget is a
+// ledger of what it admitted in each of the last spendSlots+1 slots of
+// window/spendSlots, and a call is admitted only when everything recorded in
+// those slots plus the call's reservation fits; every interval of the window's
+// length lies within spendSlots+1 consecutive slots, so the check covers it. A
+// reservation therefore counts for between one window and one window plus one
+// slot after its admission. This is stricter than a token bucket of the same
+// capacity, which refills while it is spent and so admits up to twice its
+// capacity within one window (docs/ref/pageindex_structural_budgets_20261108.md).
+// Ledgers are read lazily, so the governor runs no goroutine. A tenant ledger
+// that holds nothing and has no call in flight is equivalent to an absent one and
+// is dropped, which bounds retained state by recent spenders rather than by every
+// tenant ever seen; its slots are bounded by the calls the global budget admits.
 // MaxTrackedTenants is a hard cap on top. A tenant that cannot be tracked is
 // refused (its work degrades) rather than given an untracked budget.
 //
@@ -28,18 +37,25 @@ import (
 // reaches the reserve, so one heavy caller cannot starve another caller's first
 // document; each tenant can draw at most one document's allowance from the reserve.
 type SpendGovernor struct {
-	tenantCalls, tenantTokens   float64
-	globalCalls, globalTokens   float64
-	reserveCalls, reserveTokens float64
-	lightCalls, lightTokens     float64
+	tenantCalls, tenantTokens   int64
+	globalCalls, globalTokens   int64
+	reserveCalls, reserveTokens int64
+	lightCalls, lightTokens     int64
 	window                      time.Duration
-	maxTenants                  int
-	now                         func() time.Time
-	log                         logSDK.Logger
+	// slot is the ledger's slot length and span the number of slots per window.
+	slot       time.Duration
+	span       int64
+	epoch      time.Time
+	maxTenants int
+	now        func() time.Time
+	log        logSDK.Logger
 
-	mu        sync.Mutex
-	global    spendBuckets
-	tenants   map[string]*spendBuckets
+	mu sync.Mutex
+	// newest is the latest slot seen, so a clock that steps backwards never
+	// records into, or reopens, an older slot.
+	newest    int64
+	global    spendLedger
+	tenants   map[string]*spendLedger
 	lastSweep time.Time
 	stats     SpendStats
 	logged    SpendStats
@@ -71,12 +87,24 @@ func (s SpendStats) refusals() uint64 {
 // refusalLogInterval is the shortest interval between two refusal summary logs.
 const refusalLogInterval = time.Minute
 
-// spendBuckets is one budget: a call bucket and a token bucket refilled together.
-type spendBuckets struct {
-	calls, tokens float64
-	last          time.Time
-	// inflight counts admitted calls not yet settled; such a bucket is never
-	// dropped, so a settle always charges the bucket that admitted it.
+// spendSlots is the number of slots one window is divided into. A reservation is
+// counted for at most one slot (1/spendSlots of the window) longer than the
+// window, so the ceiling is conservative by at most that much.
+const spendSlots = 60
+
+// spendSlot is what one budget admitted during one slot.
+type spendSlot struct {
+	index         int64
+	calls, tokens int64
+}
+
+// spendLedger is one budget: the calls and tokens it admitted in each slot that
+// is still counted, oldest first, and their totals.
+type spendLedger struct {
+	slots         []spendSlot
+	calls, tokens int64
+	// inflight counts admitted calls not yet settled; such a ledger is never
+	// dropped, so a settle always corrects the ledger that admitted it.
 	inflight int
 }
 
@@ -94,24 +122,26 @@ func NewSpendGovernorWithClock(limits LimitsSettings, now func() time.Time, log 
 	if now == nil {
 		now = time.Now
 	}
-	reserve := float64(limits.GlobalReservePercent) / 100
+	slot := max(limits.Window/spendSlots, time.Nanosecond)
+	start := now()
 	g := &SpendGovernor{
-		tenantCalls:   float64(limits.TenantLLMCallsPerWindow),
-		tenantTokens:  float64(limits.TenantTokensPerWindow),
-		globalCalls:   float64(limits.GlobalLLMCallsPerWindow),
-		globalTokens:  float64(limits.GlobalTokensPerWindow),
-		reserveCalls:  reserve * float64(limits.GlobalLLMCallsPerWindow),
-		reserveTokens: reserve * float64(limits.GlobalTokensPerWindow),
-		lightCalls:    min(float64(limits.MaxLLMCallsPerDocument), float64(limits.TenantLLMCallsPerWindow)),
-		lightTokens:   min(float64(limits.MaxTokensPerDocument), float64(limits.TenantTokensPerWindow)),
+		tenantCalls:   limits.TenantLLMCallsPerWindow,
+		tenantTokens:  limits.TenantTokensPerWindow,
+		globalCalls:   limits.GlobalLLMCallsPerWindow,
+		globalTokens:  limits.GlobalTokensPerWindow,
+		reserveCalls:  percentOf(limits.GlobalLLMCallsPerWindow, limits.GlobalReservePercent),
+		reserveTokens: percentOf(limits.GlobalTokensPerWindow, limits.GlobalReservePercent),
+		lightCalls:    min(int64(limits.MaxLLMCallsPerDocument), limits.TenantLLMCallsPerWindow),
+		lightTokens:   min(limits.MaxTokensPerDocument, limits.TenantTokensPerWindow),
 		window:        limits.Window,
+		slot:          slot,
+		span:          int64((limits.Window + slot - 1) / slot),
+		epoch:         start,
 		maxTenants:    limits.MaxTrackedTenants,
 		now:           now,
 		log:           log,
-		tenants:       make(map[string]*spendBuckets),
+		tenants:       make(map[string]*spendLedger),
 	}
-	start := g.now()
-	g.global = spendBuckets{calls: g.globalCalls, tokens: g.globalTokens, last: start}
 	g.lastSweep = start
 	g.lastLog = start
 	return g
@@ -120,8 +150,10 @@ func NewSpendGovernorWithClock(limits LimitsSettings, now func() time.Time, log 
 // spendTicket is one admitted call whose token estimate is settled afterwards.
 type spendTicket struct {
 	governor *SpendGovernor
-	tenant   *spendBuckets
-	estimate float64
+	tenant   *spendLedger
+	// slot is the slot the call was admitted, and its estimate recorded, in.
+	slot     int64
+	estimate int64
 	settled  bool
 }
 
@@ -144,7 +176,7 @@ func (g *SpendGovernor) wouldRefuse(tenant string) bool {
 		return false
 	}
 	g.mu.Lock()
-	reason := g.checkLocked(tenant, 0)
+	reason := g.checkLocked(tenant, 0, g.slotLocked())
 	g.countLocked(reason)
 	summary, emit := g.summaryLocked()
 	g.mu.Unlock()
@@ -160,7 +192,7 @@ func (g *SpendGovernor) hasBudget(tenant string) bool {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.checkLocked(tenant, 0) == refusalNone
+	return g.checkLocked(tenant, 0, g.slotLocked()) == refusalNone
 }
 
 // admit spends one call and estimate tokens from the tenant's budget and the
@@ -169,22 +201,23 @@ func (g *SpendGovernor) admit(tenant string, estimate int64) (*spendTicket, bool
 	if g == nil {
 		return nil, true
 	}
-	est := float64(max(estimate, 0))
+	est := max(estimate, 0)
 	g.mu.Lock()
-	reason := g.checkLocked(tenant, est)
+	slot := g.slotLocked()
+	reason := g.checkLocked(tenant, est, slot)
 	g.countLocked(reason)
 	var ticket *spendTicket
 	if reason == refusalNone {
 		budget := g.tenants[tenant]
 		if budget == nil {
-			budget = &spendBuckets{calls: g.tenantCalls, tokens: g.tenantTokens, last: g.now()}
+			budget = &spendLedger{}
 			g.tenants[tenant] = budget
 		}
-		budget.spend(est)
+		budget.record(slot, 1, est)
 		budget.inflight++
-		g.global.spend(est)
+		g.global.record(slot, 1, est)
 		g.stats.Admitted++
-		ticket = &spendTicket{governor: g, tenant: budget, estimate: est}
+		ticket = &spendTicket{governor: g, tenant: budget, slot: slot, estimate: est}
 	}
 	summary, emit := g.summaryLocked()
 	g.mu.Unlock()
@@ -192,33 +225,47 @@ func (g *SpendGovernor) admit(tenant string, estimate int64) (*spendTicket, bool
 	return ticket, ticket != nil
 }
 
-// checkLocked decides whether tenant may spend one call and est tokens now. It
-// refills the buckets it reads and may sweep, but spends nothing. The caller
+// slotLocked returns the current slot, never one older than a slot already
+// seen. The caller holds g.mu.
+func (g *SpendGovernor) slotLocked() int64 {
+	if elapsed := g.now().Sub(g.epoch); elapsed > 0 {
+		g.newest = max(g.newest, int64(elapsed/g.slot))
+	}
+	return g.newest
+}
+
+// oldestCounted returns the oldest slot still counted at slot: spendSlots+1
+// slots cover every interval of one window that ends in slot.
+func (g *SpendGovernor) oldestCounted(slot int64) int64 { return slot - g.span }
+
+// checkLocked decides whether tenant may spend one call and est tokens in slot.
+// It expires the slots it reads and may sweep, but spends nothing. The caller
 // holds g.mu.
-func (g *SpendGovernor) checkLocked(tenant string, est float64) refusal {
+func (g *SpendGovernor) checkLocked(tenant string, est, slot int64) refusal {
 	now := g.now()
-	g.sweepLocked(now, g.window/sweepIdleDivisor)
+	oldest := g.oldestCounted(slot)
+	g.sweepLocked(now, oldest, g.window/sweepIdleDivisor)
 
 	budget := g.tenants[tenant]
-	usedCalls, usedTokens := 0.0, 0.0
+	var usedCalls, usedTokens int64
 	if budget != nil {
-		budget.refill(now, g.tenantCalls, g.tenantTokens, g.window)
-		if !budget.canSpend(est) {
+		budget.expire(oldest)
+		if !budget.fits(g.tenantCalls, g.tenantTokens, est) {
 			return refusalTenant
 		}
-		usedCalls, usedTokens = g.tenantCalls-budget.calls, g.tenantTokens-budget.tokens
+		usedCalls, usedTokens = budget.calls, budget.tokens
 	} else if est > g.tenantTokens {
 		return refusalTenant
 	}
-	g.global.refill(now, g.globalCalls, g.globalTokens, g.window)
-	if !g.global.canSpend(est) {
+	g.global.expire(oldest)
+	if !g.global.fits(g.globalCalls, g.globalTokens, est) {
 		return refusalGlobal
 	}
-	inReserve := g.global.calls-1 < g.reserveCalls || g.global.tokens-est < g.reserveTokens
+	inReserve := g.globalCalls-g.global.calls-1 < g.reserveCalls || g.globalTokens-g.global.tokens-est < g.reserveTokens
 	if inReserve && (usedCalls >= g.lightCalls || usedTokens >= g.lightTokens) {
 		return refusalReserve
 	}
-	if budget == nil && len(g.tenants) >= g.maxTenants && !g.sweepLocked(now, g.window/sweepForcedDivisor) {
+	if budget == nil && len(g.tenants) >= g.maxTenants && !g.sweepLocked(now, oldest, g.window/sweepForcedDivisor) {
 		return refusalUntracked
 	}
 	return refusalNone
@@ -278,12 +325,14 @@ func (g *SpendGovernor) emit(delta SpendStats, ok bool) {
 	)
 }
 
-// settle replaces the ticket's token estimate with the tokens actually charged,
-// at settlement time: both buckets are first refilled to now, so the refill
-// earned while the call was in flight is capped before the correction applies
-// rather than credited after it. A charge above the estimate leaves the budgets
-// in debt until they refill. The admitting bucket is still tracked because
-// buckets with calls in flight are never swept. Settling twice is a no-op.
+// settle replaces the ticket's token estimate with the tokens actually charged.
+// A refund is returned to the admission slot, which held the estimate, so it
+// frees exactly what the reservation took and is dropped once that slot is no
+// longer counted. A charge above the estimate is debt, recorded in the current
+// slot: it counts for a whole window from when it became known, so the time a
+// slow call spent in flight cannot shorten it, and a budget in debt admits
+// nothing. The admitting ledger is still tracked because ledgers with calls in
+// flight are never swept. Settling twice is a no-op.
 func (t *spendTicket) settle(charged int64) {
 	if t == nil {
 		return
@@ -296,12 +345,18 @@ func (t *spendTicket) settle(charged int64) {
 	}
 	t.settled = true
 	t.tenant.inflight--
-	now := g.now()
-	t.tenant.refill(now, g.tenantCalls, g.tenantTokens, g.window)
-	g.global.refill(now, g.globalCalls, g.globalTokens, g.window)
-	delta := float64(max(charged, 0)) - t.estimate
-	t.tenant.tokens = min(g.tenantTokens, t.tenant.tokens-delta)
-	g.global.tokens = min(g.globalTokens, g.global.tokens-delta)
+	slot := g.slotLocked()
+	oldest := g.oldestCounted(slot)
+	delta := max(charged, 0) - t.estimate
+	for _, ledger := range []*spendLedger{t.tenant, &g.global} {
+		ledger.expire(oldest)
+		switch {
+		case delta < 0:
+			ledger.refund(t.slot, -delta)
+		case delta > 0:
+			ledger.record(slot, 0, delta)
+		}
+	}
 }
 
 // Stats returns a snapshot of the governor's counters.
@@ -322,52 +377,72 @@ const (
 	sweepForcedDivisor = 10_000
 )
 
-// sweepLocked drops every tenant budget that has refilled completely and has no
-// call in flight, at most once per interval, and reports whether the table has
-// room for another tenant. A dropped budget was full, so dropping it changes no
-// decision. The caller holds g.mu.
-func (g *SpendGovernor) sweepLocked(now time.Time, interval time.Duration) bool {
+// sweepLocked drops every tenant ledger that holds nothing still counted at
+// oldest and has no call in flight, at most once per interval, and reports
+// whether the table has room for another tenant. A dropped ledger was empty, so
+// dropping it changes no decision. The caller holds g.mu.
+func (g *SpendGovernor) sweepLocked(now time.Time, oldest int64, interval time.Duration) bool {
 	if now.Sub(g.lastSweep) < interval {
 		return len(g.tenants) < g.maxTenants
 	}
 	g.lastSweep = now
 	for name, budget := range g.tenants {
-		budget.refill(now, g.tenantCalls, g.tenantTokens, g.window)
-		if budget.inflight == 0 && budget.full(g.tenantCalls, g.tenantTokens) {
+		budget.expire(oldest)
+		if budget.inflight == 0 && len(budget.slots) == 0 {
 			delete(g.tenants, name)
 		}
 	}
 	return len(g.tenants) < g.maxTenants
 }
 
-// refill credits b with the calls and tokens earned since it was last read, up to
-// its capacity. A clock that steps backwards earns nothing.
-func (b *spendBuckets) refill(now time.Time, callCap, tokenCap float64, window time.Duration) {
-	elapsed := now.Sub(b.last)
-	if elapsed <= 0 {
+// expire drops the slots older than oldest from l's totals.
+func (l *spendLedger) expire(oldest int64) {
+	n := 0
+	for n < len(l.slots) && l.slots[n].index < oldest {
+		l.calls -= l.slots[n].calls
+		l.tokens -= l.slots[n].tokens
+		n++
+	}
+	if n == 0 {
 		return
 	}
-	b.last = now
-	share := float64(elapsed) / float64(window)
-	b.calls = min(callCap, b.calls+share*callCap)
-	b.tokens = min(tokenCap, b.tokens+share*tokenCap)
+	l.slots = append(l.slots[:0], l.slots[n:]...)
 }
 
-// canSpend reports whether b holds a whole call and at least estimate tokens
-// (and some tokens at all, so a budget in debt admits nothing).
-func (b *spendBuckets) canSpend(estimate float64) bool {
-	const epsilon = 1e-6
-	return b.calls+epsilon >= 1 && b.tokens > 0 && b.tokens+epsilon >= estimate
+// fits reports whether l, under the given ceilings, has room for one more call
+// and estimate tokens, and has not spent its whole token ceiling (so a ledger in
+// debt admits nothing).
+func (l *spendLedger) fits(callCap, tokenCap, estimate int64) bool {
+	return l.calls+1 <= callCap && l.tokens < tokenCap && l.tokens+estimate <= tokenCap
 }
 
-// spend takes one call and estimate tokens from b.
-func (b *spendBuckets) spend(estimate float64) {
-	b.calls = max(0, b.calls-1)
-	b.tokens -= estimate
+// record adds calls and tokens to slot, which is never older than l's newest slot.
+func (l *spendLedger) record(slot, calls, tokens int64) {
+	if last := len(l.slots) - 1; last >= 0 && l.slots[last].index >= slot {
+		l.slots[last].calls += calls
+		l.slots[last].tokens += tokens
+	} else {
+		l.slots = append(l.slots, spendSlot{index: slot, calls: calls, tokens: tokens})
+	}
+	l.calls += calls
+	l.tokens += tokens
 }
 
-// full reports whether b has refilled to its capacity.
-func (b *spendBuckets) full(callCap, tokenCap float64) bool {
-	const epsilon = 1e-6
-	return b.calls+epsilon >= callCap && b.tokens+epsilon >= tokenCap
+// refund returns up to tokens to slot when that slot is still counted.
+func (l *spendLedger) refund(slot, tokens int64) {
+	for i := len(l.slots) - 1; i >= 0 && l.slots[i].index >= slot; i-- {
+		if l.slots[i].index == slot {
+			give := min(tokens, l.slots[i].tokens)
+			l.slots[i].tokens -= give
+			l.tokens -= give
+			return
+		}
+	}
+}
+
+// percentOf returns pct percent of v, rounded down, without overflowing for any
+// positive v.
+func percentOf(v int64, pct int) int64 {
+	p := int64(pct)
+	return v/100*p + v%100*p/100
 }

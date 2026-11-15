@@ -20,14 +20,15 @@ import (
 )
 
 // TestSlowCallSettlesAtCompletionTime covers finding A of the second review of
-// #96: settle applied the estimate correction without first refilling the
-// buckets to the settlement time, so the refill earned while the call was in
-// flight was credited after its charge. A call admitted at 1 token and settled a
-// whole window later at 100 tokens must leave 1 token, not a refilled bucket.
+// #96: a slow call's charge must not be cancelled by the time it spent in
+// flight. A call admitted at 1 token and settled a whole window later at 100
+// tokens fills the window; once its admission slot leaves the window, the
+// 99-token debt, which counts from its settlement, still holds and exactly 1
+// token remains.
 func TestSlowCallSettlesAtCompletionTime(t *testing.T) {
 	for name, limits := range map[string]LimitsSettings{
-		"tenant bucket": {TenantTokensPerWindow: 100, Window: time.Hour},
-		"global bucket": {GlobalTokensPerWindow: 100, Window: time.Hour},
+		"tenant budget": {TenantTokensPerWindow: 100, Window: time.Hour},
+		"global budget": {GlobalTokensPerWindow: 100, Window: time.Hour},
 	} {
 		t.Run(name, func(t *testing.T) {
 			g, now := newTestGovernor(limits)
@@ -35,10 +36,12 @@ func TestSlowCallSettlesAtCompletionTime(t *testing.T) {
 			require.True(t, ok)
 			*now = now.Add(time.Hour)
 			ticket.settle(100)
+			require.True(t, g.wouldRefuse("t"), "the slow call's whole charge fills the window")
+			*now = now.Add(time.Hour / spendSlots)
 			_, ok = g.admit("t", 2)
-			require.False(t, ok, "only 1 token remains once the slow call is charged at completion time")
+			require.False(t, ok, "the debt is charged at completion time, so only 1 token remains")
 			_, ok = g.admit("t", 1)
-			require.True(t, ok, "the bucket holds exactly the token the window left")
+			require.True(t, ok, "the budget holds exactly the token the debt left")
 		})
 	}
 }
@@ -372,14 +375,14 @@ func TestSearchPlannerReservesItsAnswer(t *testing.T) {
 // whole ceiling) while a complete answer is not.
 func TestOpenAILLMSendsOutputCeilingAndReportsTruncation(t *testing.T) {
 	for name, tc := range map[string]struct {
-		status, details string
-		outputTokens    int
-		truncated       bool
+		status, details       string
+		outputTokens          int
+		truncated, incomplete bool
 	}{
-		"marked incomplete":    {"incomplete", `{"reason":"max_output_tokens"}`, 200, true},
-		"whole ceiling used":   {"completed", "null", 256, true},
-		"complete answer":      {"completed", "null", 20, false},
-		"other incompleteness": {"incomplete", `{"reason":"content_filter"}`, 20, false},
+		"marked incomplete":    {"incomplete", `{"reason":"max_output_tokens"}`, 200, true, false},
+		"whole ceiling used":   {"completed", "null", 256, true, false},
+		"complete answer":      {"completed", "null", 20, false, false},
+		"other incompleteness": {"incomplete", `{"reason":"content_filter"}`, 20, false, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var sent atomic.Int64
@@ -405,6 +408,7 @@ func TestOpenAILLMSendsOutputCeilingAndReportsTruncation(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, int64(256), sent.Load(), "the ceiling is sent as max_output_tokens")
 			require.Equal(t, tc.truncated, resp.Truncated)
+			require.Equal(t, tc.incomplete, resp.Incomplete, "an answer incomplete for another reason is not usable either")
 			require.Equal(t, 10+tc.outputTokens, resp.Usage.TotalTokens)
 		})
 	}

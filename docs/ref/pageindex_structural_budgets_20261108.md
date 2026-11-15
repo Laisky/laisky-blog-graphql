@@ -62,12 +62,12 @@ token, which keeps estimates conservative.
 | --- | --- | --- |
 | S1 | [`library/throttle`](../../library/throttle/throttle.go) (Telegram alert admission) | The repository's established admission pattern: lazily refilled token buckets, one shared and one per key, admitted in one step; a refusal spends nothing; a bucket that has refilled completely is dropped because dropping it changes no decision. |
 | S2 | [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate#Reservation.CancelAt) | Reservation and cancellation semantics for token buckets; a refund must not mint capacity that later reservations already consumed. |
-
 | S3 | [Linux ext4 reserved blocks](https://www.kernel.org/doc/html/latest/admin-guide/ext4.html) (`resuid`/`resgid`, `reserved` space) | A standard way to keep a shared pool usable for a protected class: the last share of capacity is only for that class, while the total stays fixed. |
 | S4 | [OpenAI API error codes](https://developers.openai.com/api/docs/guides/error-codes) (checked 2026-11-10) | Rate-limit 429s and 500/503 are retried after `Retry-After` or with exponential backoff; 400 and 401 are request or credential problems and 403 an unsupported region, which fail again unchanged. Quota or billing 429s are not restored by retrying, so the small default attempt count bounds them too. |
 
-Applied: `SpendGovernor` keeps a call bucket and a token bucket per tenant and one
-global pair, refilled over `limits.window`. Every upstream request, retries included,
+Applied: `SpendGovernor` keeps one call and token budget per tenant and one global
+pair over `limits.window`. They were token buckets (S1) until the third review of
+#96, and are now strict sliding windows (see "Rolling windows" below). Every upstream request, retries included,
 reserves its estimated input tokens plus an output allowance before it is sent and
 settles at completion (see "Output ceilings and settlement" below). A bucket with a
 request in flight is never swept, so a late settle charges the bucket that admitted it. The last `global_reserve_percent` of the
@@ -111,8 +111,9 @@ Applied:
   is available to the retry.
 - An answer cut at the ceiling is never used or cached (S5). It is detected by the
   incomplete status, or by an answer that used the whole ceiling.
-- `spendTicket.settle` refills both buckets to the settlement time before it applies
-  the correction (S9). Before this fix, a call admitted at 1 token of a 100-token
+- `spendTicket.settle` refilled both buckets to the settlement time before it
+  applied the correction (S9); the sliding windows below keep the property by
+  charging debt at settlement time. Before this fix, a call admitted at 1 token of a 100-token
   bucket and charged 100 tokens a full window later left the bucket full instead of
   holding 1 token.
 
@@ -127,3 +128,83 @@ Measured on 2026-11-15:
   every definition. The definitions are now parsed once into a goldmark context that
   every title's context delegates to (goldmark keeps the first definition of a
   label, as before), and the render takes 5.7 ms.
+
+## Third review of #96 (2026-11-15)
+
+Sources were checked on 2026-11-15.
+
+### Rolling windows
+
+| # | Source | Finding |
+| --- | --- | --- |
+| W1 | [Anthropic rate limits](https://platform.claude.com/docs/en/api/rate-limits); [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate); [Stripe rate limiters](https://stripe.com/blog/rate-limiters) | Rate limits are token buckets, which bound the long-run rate and the burst, not the total in a window: a full bucket of capacity C spent at once refills while spent, so about 2C can be admitted within one window. |
+| W2 | [Cloudflare sliding window counter](https://blog.cloudflare.com/counting-things-a-lot-of-different-things/); [Upstash algorithms](https://upstash.com/docs/redis/sdks/ratelimit-ts/algorithms); [limits strategies](https://limits.readthedocs.io/en/latest/strategies.html) | The weighted two-window counter is documented as an approximation; only a sliding log ("moving window") is exact. |
+| W3 | [Figma, an alternative approach to rate limiting](https://www.figma.com/blog/an-alternative-approach-to-rate-limiting) | A ring of 60 one-minute counters for an hourly limit is lenient when it sums only the last 60; Figma sums "the last hour and one minute", preferring to be slightly harsher. |
+| W4 | [LiteLLM budgets](https://docs.litellm.ai/docs/proxy/users) | LLM gateways reserve the estimated maximum cost before the call, reject a reservation that does not fit, and replace it with the actual cost afterwards; budgets themselves use fixed windows. |
+
+Applied:
+
+- Each rolling budget is a ledger of what it admitted per slot of `window/60`, and a
+  request is admitted only when the last 61 slots plus its reservation fit. Every
+  interval of the window's length lies within 61 consecutive slots, so no such
+  interval admits more than the ceiling (W3; the proof: the check at the last
+  admission of an interval counted every earlier admission of that interval). A
+  reservation counts for between one window and one window plus one slot.
+- A refund is returned to the admission slot and dropped once that slot has left the
+  window; a refund booked later would credit windows that never held the charge.
+  Debt is recorded in the settlement slot, so it counts for a whole window from when
+  it is known (this keeps finding A of the second review).
+- Ledgers hold only non-empty slots, so their size is bounded by the calls the global
+  budget admits per window; an empty ledger with no call in flight is dropped.
+- Measured with `TestRollingBudgetIsAStrictCeilingOverEveryWindow` (random
+  admissions, refunds and delayed settlements over eight windows): the token buckets
+  admitted 120 calls within one 60-minute interval against a 90-call ceiling; the
+  ledgers never exceed a ceiling.
+
+### Provider contract
+
+| # | Source | Finding |
+| --- | --- | --- |
+| P1 | [OpenAI Responses create reference](https://developers.openai.com/api/reference/resources/responses/methods/create/index.md) | `max_output_tokens` bounds visible and reasoning tokens, minimum 16. `status` is one of completed, failed, in_progress, cancelled, queued, incomplete; `incomplete_details.reason` is max_output_tokens, max_messages, content_filter or steered. Usage has input, output and total tokens. An unsupported parameter is a 400 `invalid_request_error` naming the `param`. |
+| P2 | Laisky/one-api source at `b10e089d` (2026-11-14): `relay/controller/response_utils.go`, `response_billing_policy.go`, `response_io.go`, `relay/adaptor/openai/responseapi_convert_request.go`, `relay/controller/response_convert.go` | OpenAI channels on api.openai.com pass `max_output_tokens` through (allowlisted; unknown top-level fields are deleted, not rejected). Other channels are bridged to Chat Completions: the ceiling becomes `max_completion_tokens` (Claude `max_tokens`, Gemini `maxOutputTokens`), and a `length` finish becomes `incomplete` with reason `max_output_tokens`. Usage is carried over; some adaptors recompute the total. |
+| P3 | [QuantumNous/new-api](https://github.com/QuantumNous/new-api) `relaykit/relayconvert`; LiteLLM `litellm/responses/litellm_completion_transformation/transformation.py` | Both map the ceiling and map `length` back to `incomplete`/`max_output_tokens`. LiteLLM reports `incomplete` with `incomplete_details: null` when the finish reason is missing. |
+| P4 | vLLM `vllm/entrypoints/openai/responses/protocol.py` | The ceiling is clamped to the context left and the clamped value is echoed in the response's `max_output_tokens`; every incomplete answer reports `max_output_tokens`. |
+| P5 | songquanpeng/one-api `router/relay.go` | The upstream one-api has no `/v1/responses` route, so it cannot serve PageIndex at all. |
+
+Applied:
+
+- `TestResponsesProviderContract` pins the request (model, input,
+  `max_output_tokens` equal to the reserved allowance) and the classification and
+  charge of every answer shape above, through the gate, on a loopback server.
+- An answer is truncated when it is marked incomplete for `max_output_tokens` or used
+  the whole ceiling, compared with the lower of the requested and the echoed ceiling
+  (P4). It is incomplete for any other status than `completed` (P1, P3), such as a
+  content filter or a missing reason; an answer without a status is complete.
+  Neither is used or cached; both degrade their work instead of failing the run.
+  Before, a `content_filter` or reason-less incomplete answer was used and cached.
+- A missing `total_tokens` is the sum of input and output (P2). An output above the
+  ceiling (an upstream that ignored it) is charged as debt and logged at most once a
+  minute as `pageindex.llm.output_ceiling_ignored`.
+- `llm.base_url` names a gateway by its origin in the deployed settings, as
+  `settings.openai.base_url` and the RAG embedder do (the embedder strips and
+  re-appends `/v1`). The SDK appended `responses` to it as given, so every request
+  reached the one-api web UI and failed with an HTML answer; the live contract test
+  found this. An origin now selects its `/v1` root, and a base URL with a path of its
+  own is kept.
+- `TestLiveResponsesProviderContract` checks the same contract against a real
+  endpoint when `PAGEINDEX_CONTRACT_BASE_URL` and `PAGEINDEX_CONTRACT_API_KEY` are
+  set. On 2026-11-15 the deployed gateway answered `/v1/responses` with JSON; the
+  test key had no quota (`insufficient_token_quota`), so the answer-side assertions
+  remain to be run with a funded key.
+
+### Search fallback
+
+- When the planner cannot run, search matches the query's terms against section
+  titles and summaries (no LLM call, at most 32 terms and 4 KiB per field) and
+  returns at most three non-overlapping matching sections, ranked below planned
+  results, instead of always the first section. Markdown sections are keyed by
+  heading line, which the old first-section range (page 1) missed whenever a
+  document did not start with a heading.
+- Planner ranges were resolved by iterating every page number in them, so a range
+  ending near `math.MaxInt`, which the document's content can steer the planner to
+  return, never finished; ranges are now resolved against the tree's sorted pages.

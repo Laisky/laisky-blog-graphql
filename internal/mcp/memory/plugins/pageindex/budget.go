@@ -10,7 +10,8 @@ import (
 var ErrBudgetExceeded = errors.New("token budget exceeded")
 
 // errRollingBudgetExceeded is the ErrBudgetExceeded refusal of a rolling tenant
-// or global budget, which refills, as opposed to an operation's own ceiling.
+// or global budget, whose spend leaves its sliding window, as opposed to an
+// operation's own ceiling.
 var errRollingBudgetExceeded = errors.Wrap(ErrBudgetExceeded, "rolling llm budget exhausted")
 
 // unlimited marks a Budget dimension that has no ceiling.

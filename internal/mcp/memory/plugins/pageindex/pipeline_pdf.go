@@ -42,6 +42,9 @@ func (idx *Indexer) runPDF(ctx context.Context, data []byte, tenant string, rep 
 	if err != nil && !deadlinePassed(ctx) {
 		return nil, err
 	}
+	// Only titled entries become nodes, so only they count against the node
+	// ceiling, and a list without any falls back like an empty one.
+	flat = titledTOCEntries(flat)
 	if len(flat) == 0 {
 		// Fallback: emit a single "Document" node spanning all pages.
 		flat = []map[string]any{{"structure": "1", "title": "Document", "physical_index": 1}}
@@ -356,8 +359,8 @@ func assembleTree(flat []map[string]any, totalPages int) []*Node {
 	}
 	entries := make([]entry, 0, len(flat))
 	for _, item := range flat {
-		title, _ := item["title"].(string)
-		if title == "" {
+		title, ok := tocEntryTitle(item)
+		if !ok {
 			continue
 		}
 		structure, _ := item["structure"].(string)
@@ -370,7 +373,7 @@ func assembleTree(flat []map[string]any, totalPages int) []*Node {
 		if startIdx == 0 {
 			startIdx = 1
 		}
-		entries = append(entries, entry{structure: structure, node: &Node{Title: strings.TrimSpace(title), StartIndex: startIdx}})
+		entries = append(entries, entry{structure: structure, node: &Node{Title: title, StartIndex: startIdx}})
 	}
 	for i, e := range entries {
 		if i+1 < len(entries) {
@@ -400,6 +403,25 @@ func assembleTree(flat []map[string]any, totalPages int) []*Node {
 	}
 	assignNodeIDs(roots, 0)
 	return roots
+}
+
+// tocEntryTitle returns the trimmed title of a table-of-contents entry and
+// whether it has one. An entry without a title never becomes a node.
+func tocEntryTitle(item map[string]any) (string, bool) {
+	title, _ := item["title"].(string)
+	title = strings.TrimSpace(title)
+	return title, title != ""
+}
+
+// titledTOCEntries returns the entries of flat that have a title, in order.
+func titledTOCEntries(flat []map[string]any) []map[string]any {
+	out := make([]map[string]any, 0, len(flat))
+	for _, item := range flat {
+		if _, ok := tocEntryTitle(item); ok {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func parentStructure(s string) string {

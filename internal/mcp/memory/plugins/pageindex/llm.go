@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -93,6 +95,10 @@ type Response struct {
 	// Truncated reports that the provider stopped at the request's output ceiling
 	// (max_output_tokens), so Text is incomplete. It is never cached.
 	Truncated bool
+	// Incomplete reports that the provider did not complete the answer for
+	// another reason (a content filter, a failure, or no reason given), so Text
+	// is not usable either. It is never cached.
+	Incomplete bool
 }
 
 // Usage tracks token billing.
@@ -141,8 +147,8 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 		tk = t
 	}
 	opts := []option.RequestOption{option.WithAPIKey(cfg.APIKey)}
-	if cfg.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
+	if base := responsesBaseURL(cfg.BaseURL); base != "" {
+		opts = append(opts, option.WithBaseURL(base))
 	}
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
@@ -152,14 +158,36 @@ func NewOpenAILLM(cfg LLMConfig) (LLM, error) {
 	client := openai.NewClient(opts...)
 	keyHash := sha256.Sum256([]byte(cfg.APIKey))
 	return &openaiLLM{
-		client:     &client,
-		model:      cfg.Model,
-		limiter:    cfg.Limiter,
-		retry:      cfg.Retry,
-		log:        cfg.Logger,
-		tok:        tk,
-		keyHashHex: hex.EncodeToString(keyHash[:8]),
+		client:      &client,
+		model:       cfg.Model,
+		limiter:     cfg.Limiter,
+		retry:       cfg.Retry,
+		log:         cfg.Logger,
+		tok:         tk,
+		keyHashHex:  hex.EncodeToString(keyHash[:8]),
+		ceilingWarn: rate.Sometimes{First: 1, Interval: time.Minute},
 	}, nil
+}
+
+// responsesBaseURL returns the API root the SDK appends "responses" to. The
+// service's other OpenAI-compatible settings name a gateway by its origin, with
+// "/v1" optional, so an origin selects its /v1 root; a base URL with a path of
+// its own (an Azure or a proxy prefix) is kept, without a trailing "/responses".
+func responsesBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	path := strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/responses")
+	if path = strings.TrimRight(path, "/"); path == "" {
+		path = "/v1"
+	}
+	u.Path, u.RawPath = path+"/", ""
+	return u.String()
 }
 
 // NewOpenAILLMFromSettings builds the plugin's Responses-API client from its
@@ -183,6 +211,9 @@ type openaiLLM struct {
 	log        logSDK.Logger
 	tok        Tokenizer
 	keyHashHex string
+	// ceilingWarn rate-limits the warning that the provider generated more than
+	// max_output_tokens.
+	ceilingWarn rate.Sometimes
 }
 
 // Respond performs a single Responses-API call, retrying transient errors.
@@ -272,8 +303,23 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 		OutputTokens: int(resp.Usage.OutputTokens),
 		TotalTokens:  int(resp.Usage.TotalTokens),
 	}
+	if usage.TotalTokens == 0 {
+		// Some gateways report input and output but no total.
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+	}
 	text := resp.OutputText()
-	out := &Response{Text: text, Usage: usage, Truncated: outputTruncated(resp, req.MaxOutTokens)}
+	truncated, incomplete := answerState(resp, req.MaxOutTokens)
+	out := &Response{Text: text, Usage: usage, Truncated: truncated, Incomplete: incomplete}
+	if req.MaxOutTokens > 0 && usage.OutputTokens > req.MaxOutTokens && l.log != nil {
+		l.ceilingWarn.Do(func() {
+			// The reservation assumed the ceiling holds; the excess is settled as debt.
+			l.log.Warn("pageindex.llm.output_ceiling_ignored",
+				glog.String("model", model),
+				glog.Int("max_output_tokens", req.MaxOutTokens),
+				glog.Int("output_tokens", usage.OutputTokens),
+			)
+		})
+	}
 	if len(req.Schema) > 0 {
 		out.Output = json.RawMessage(text)
 	}
@@ -285,22 +331,38 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 			glog.Int("tokens_in", usage.InputTokens),
 			glog.Int("tokens_out", usage.OutputTokens),
 			glog.Bool("truncated", out.Truncated),
+			glog.Bool("incomplete", out.Incomplete),
+			glog.String("status", string(resp.Status)),
 			glog.Duration("latency", time.Since(start)),
 		)
 	}
 	return out, nil
 }
 
-// outputTruncated reports that resp stopped at the output ceiling maxOut: the API
-// marks it incomplete for max_output_tokens, and a response that used the whole
-// ceiling is treated the same, since some responses cut at the ceiling are not
-// marked. Reasoning tokens count toward the ceiling, so the visible text of a
-// truncated response may be empty.
-func outputTruncated(resp *responses.Response, maxOut int) bool {
-	if resp.Status == responses.ResponseStatusIncomplete && resp.IncompleteDetails.Reason == "max_output_tokens" {
-		return true
+// answerState classifies resp, sent with the output ceiling maxOut. It is
+// truncated when it stopped at the ceiling: the API marks it incomplete for
+// max_output_tokens, or it used the whole ceiling, which also covers responses
+// cut without a mark, a server that lowered the ceiling and echoes the lower
+// value (vLLM clamps it to the context left), and an upstream that ignored it.
+// Reasoning tokens count toward the ceiling, so a truncated answer's text may be
+// empty. It is incomplete when it did not complete for another reason: any
+// status other than completed (gateways that omit the status are taken as
+// complete), such as a content filter, a failure, or incomplete with no reason.
+// Neither kind of answer is usable.
+func answerState(resp *responses.Response, maxOut int) (truncated, incomplete bool) {
+	ceiling := int64(maxOut)
+	if echoed := resp.MaxOutputTokens; echoed > 0 && (ceiling <= 0 || echoed < ceiling) {
+		ceiling = echoed
 	}
-	return maxOut > 0 && resp.Usage.OutputTokens >= int64(maxOut)
+	switch {
+	case resp.Status == responses.ResponseStatusIncomplete && resp.IncompleteDetails.Reason == "max_output_tokens":
+		return true, false
+	case ceiling > 0 && resp.Usage.OutputTokens >= ceiling:
+		return true, false
+	case resp.Status != "" && resp.Status != responses.ResponseStatusCompleted:
+		return false, true
+	}
+	return false, false
 }
 
 // CountTokens estimates the prompt cost using the embedded BPE tokenizer.

@@ -22,6 +22,12 @@ const inputOverheadTokens = 8
 // cached, and the work it was for degrades like any other refused call.
 var errOutputCeiling = errors.Wrap(ErrBudgetExceeded, "llm output reached its token ceiling")
 
+// errIncompleteAnswer is the ErrBudgetExceeded refusal of an answer the provider
+// did not complete for another reason (a content filter, a failure, or no reason
+// given): like a truncated answer it is charged but neither used nor cached, and
+// the work it was for degrades instead of failing the run.
+var errIncompleteAnswer = errors.Wrap(ErrBudgetExceeded, "llm answer incomplete")
+
 // llmGate is the single admission point every upstream LLM call passes through,
 // for indexing and for search. Before a request is sent it reserves the input
 // estimate plus an output allowance, sent as max_output_tokens, from the
@@ -98,8 +104,9 @@ func (g llmGate) answerReserve(remaining int64) int64 {
 // call sends req to llm through the gate: it reserves the call, binds the granted
 // output ceiling and the admission of every retry to the request, and settles
 // every upstream request it made. A response the provider cut at the output
-// ceiling is returned together with errOutputCeiling, so the caller can count the
-// billed call but must neither use nor cache it.
+// ceiling is returned together with errOutputCeiling, and one it did not
+// complete for another reason with errIncompleteAnswer, so the caller can count
+// the billed call but must neither use nor cache it.
 func (g llmGate) call(ctx context.Context, llm LLM, req Request, budget *Budget) (*Response, error) {
 	admission, err := g.admit(req, budget)
 	if err != nil {
@@ -110,8 +117,11 @@ func (g llmGate) call(ctx context.Context, llm LLM, req Request, budget *Budget)
 	if err != nil {
 		return nil, err
 	}
-	if resp.Truncated {
+	switch {
+	case resp.Truncated:
 		return resp, errOutputCeiling
+	case resp.Incomplete:
+		return resp, errIncompleteAnswer
 	}
 	return resp, nil
 }
