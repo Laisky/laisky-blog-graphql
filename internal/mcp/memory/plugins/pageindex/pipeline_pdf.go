@@ -190,7 +190,7 @@ func (idx *Indexer) modeAWithPageNumbers(ctx context.Context, pages []string, to
 	if err != nil {
 		return nil, err
 	}
-	resp, err := idx.callLLM(ctx, Request{Input: userInput(transformerPrompt)}, budget, stats)
+	resp, err := idx.callLLM(ctx, tocRequest(transformerPrompt), budget, stats)
 	if errors.Is(err, ErrBudgetExceeded) {
 		return nil, nil
 	}
@@ -220,7 +220,7 @@ func (idx *Indexer) modeAWithPageNumbers(ctx context.Context, pages []string, to
 	if err != nil {
 		return nil, err
 	}
-	resp2, err := idx.callLLM(ctx, Request{Input: userInput(extractorPrompt)}, budget, stats)
+	resp2, err := idx.callLLM(ctx, tocRequest(extractorPrompt), budget, stats)
 	if errors.Is(err, ErrBudgetExceeded) {
 		return flat, nil
 	}
@@ -260,7 +260,7 @@ func (idx *Indexer) modeBNoPageNumbers(ctx context.Context, pages []string, tocC
 	if err != nil {
 		return nil, err
 	}
-	resp, err := idx.callLLM(ctx, Request{Input: userInput(transformerPrompt)}, budget, stats)
+	resp, err := idx.callLLM(ctx, tocRequest(transformerPrompt), budget, stats)
 	if errors.Is(err, ErrBudgetExceeded) {
 		return nil, nil
 	}
@@ -281,7 +281,7 @@ func (idx *Indexer) modeBNoPageNumbers(ctx context.Context, pages []string, tocC
 		if err != nil {
 			return nil, err
 		}
-		respFill, err := idx.callLLM(ctx, Request{Input: userInput(filler)}, budget, stats)
+		respFill, err := idx.callLLM(ctx, tocRequest(filler), budget, stats)
 		if errors.Is(err, ErrBudgetExceeded) {
 			break
 		}
@@ -306,7 +306,7 @@ func (idx *Indexer) modeCNoTOC(ctx context.Context, pages []string, budget *Budg
 	if err != nil {
 		return nil, err
 	}
-	resp, err := idx.callLLM(ctx, Request{Input: userInput(initPrompt)}, budget, stats)
+	resp, err := idx.callLLM(ctx, tocRequest(initPrompt), budget, stats)
 	if errors.Is(err, ErrBudgetExceeded) {
 		return nil, nil
 	}
@@ -326,7 +326,7 @@ func (idx *Indexer) modeCNoTOC(ctx context.Context, pages []string, budget *Budg
 		if err != nil {
 			return nil, err
 		}
-		respC, err := idx.callLLM(ctx, Request{Input: userInput(contPrompt)}, budget, stats)
+		respC, err := idx.callLLM(ctx, tocRequest(contPrompt), budget, stats)
 		if errors.Is(err, ErrBudgetExceeded) {
 			break
 		}
@@ -342,31 +342,10 @@ func (idx *Indexer) modeCNoTOC(ctx context.Context, pages []string, budget *Budg
 	return flat, nil
 }
 
+// groupPagesByTokens splits the document's pages into prompt groups of at most
+// maxTokens tokens each, tagged with their physical page numbers.
 func groupPagesByTokens(pages []string, tok Tokenizer, maxTokens int) []string {
-	if maxTokens <= 0 {
-		maxTokens = 20000
-	}
-	wrapped := make([]string, 0, len(pages))
-	for i, p := range pages {
-		wrapped = append(wrapped, fmt.Sprintf("<physical_index_%d>\n%s\n<physical_index_%d>\n\n", i+1, p, i+1))
-	}
-	groups := []string{}
-	var cur strings.Builder
-	curTokens := 0
-	for _, p := range wrapped {
-		t := tok.Count(p)
-		if curTokens+t > maxTokens && cur.Len() > 0 {
-			groups = append(groups, cur.String())
-			cur.Reset()
-			curTokens = 0
-		}
-		cur.WriteString(p)
-		curTokens += t
-	}
-	if cur.Len() > 0 {
-		groups = append(groups, cur.String())
-	}
-	return groups
+	return groupPagesWithBase(pages, 1, tok, maxTokens)
 }
 
 // assembleTree converts a flat list with structure indices into a tree.
@@ -449,18 +428,10 @@ func (idx *Indexer) summarizeNodes(ctx context.Context, nodes []*Node, pages []s
 	var visit func(n *Node) error
 	visit = func(n *Node) error {
 		if len(n.Children) == 0 {
-			if err := ctx.Err(); err != nil && !deadlinePassed(ctx) {
-				return errors.WithStack(err)
-			}
-			if err := idx.gate.precheck(budget); deadlinePassed(ctx) || err != nil {
-				if err != nil {
-					stats.addRefusal(err)
-				}
-				stats.addLocalSummary()
-				n.Summary = localNodeSummary(pageRangePrefix(pages, n.StartIndex, n.EndIndex, localSummaryScanBytes))
-				return nil
-			}
-			summary, err := idx.summarizeLeaf(ctx, pageRangeText(pages, n.StartIndex, n.EndIndex), budget, stats)
+			summary, err := idx.summarizeLeaf(ctx, leafSource{
+				full:    func() string { return pageRangeText(pages, n.StartIndex, n.EndIndex) },
+				opening: func() string { return pageRangePrefix(pages, n.StartIndex, n.EndIndex, localSummaryScanBytes) },
+			}, budget, stats)
 			if err != nil {
 				return err
 			}

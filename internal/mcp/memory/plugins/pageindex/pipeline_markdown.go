@@ -76,7 +76,8 @@ func (idx *Indexer) summarizeMarkdownNodes(ctx context.Context, nodes []*Node, b
 	var visit func(n *Node) error
 	visit = func(n *Node) error {
 		if len(n.Children) == 0 {
-			summary, err := idx.summarizeLeaf(ctx, n.Text, budget, stats)
+			text := func() string { return n.Text }
+			summary, err := idx.summarizeLeaf(ctx, leafSource{full: text, opening: text}, budget, stats)
 			if err != nil {
 				return err
 			}
@@ -97,36 +98,50 @@ func (idx *Indexer) summarizeMarkdownNodes(ctx context.Context, nodes []*Node, b
 	return nil
 }
 
-// summarizeLeaf returns the LLM summary of text, or its local summary when the
-// budget refuses the call or the indexing deadline (indexer.timeout_index) has
-// passed. It checks ctx first so a canceled run stops even when every remaining
-// leaf would be summarized locally.
-func (idx *Indexer) summarizeLeaf(ctx context.Context, text string, budget *Budget, stats *Stats) (string, error) {
+// leafSource yields one leaf's text lazily: full for the summary prompt and
+// opening, at least its first localSummaryScanBytes, for a local summary. A leaf
+// that is summarized locally never builds its full text.
+type leafSource struct {
+	full, opening func() string
+}
+
+// summarizeLeaf is the one summarization path of both pipelines. It returns the
+// LLM summary of the leaf, or its deterministic local summary when the indexing
+// deadline (indexer.timeout_index) has passed or a budget refuses the call. A
+// cached summary is used even when every budget is spent; the prompt is skipped
+// entirely only when no cache can answer and the budgets already refuse. It checks
+// ctx first, so a canceled run stops even when every remaining leaf would be
+// summarized locally.
+func (idx *Indexer) summarizeLeaf(ctx context.Context, src leafSource, budget *Budget, stats *Stats) (string, error) {
+	local := func() string {
+		stats.addLocalSummary()
+		return localNodeSummary(src.opening())
+	}
 	if err := ctx.Err(); err != nil {
 		if !deadlinePassed(ctx) {
 			return "", errors.WithStack(err)
 		}
 		stats.markDeadline()
-		stats.addLocalSummary()
-		return localNodeSummary(text), nil
+		return local(), nil
 	}
-	if err := idx.gate.precheck(budget); err != nil {
-		stats.addRefusal(err)
-		stats.addLocalSummary()
-		return localNodeSummary(text), nil
+	if !idx.cacheCanAnswer() {
+		if err := idx.gate.precheck(budget); err != nil {
+			stats.addRefusal(err)
+			return local(), nil
+		}
 	}
-	prompt, err := RenderPrompt(PromptGenerateNodeSummary, GenerateNodeSummaryVars{Text: text})
+	prompt, err := RenderPrompt(PromptGenerateNodeSummary, GenerateNodeSummaryVars{Text: src.full()})
 	if err != nil {
 		return "", err
 	}
 	resp, err := idx.callLLM(ctx, Request{Input: userInput(prompt)}, budget, stats)
 	if err != nil {
-		if errors.Is(err, ErrBudgetExceeded) || deadlinePassed(ctx) {
-			if deadlinePassed(ctx) {
-				stats.markDeadline()
-			}
-			stats.addLocalSummary()
-			return localNodeSummary(text), nil
+		if deadlinePassed(ctx) {
+			stats.markDeadline()
+			return local(), nil
+		}
+		if errors.Is(err, ErrBudgetExceeded) {
+			return local(), nil
 		}
 		return "", err
 	}

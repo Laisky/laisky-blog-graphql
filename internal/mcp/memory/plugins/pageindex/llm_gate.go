@@ -1,29 +1,57 @@
 package pageindex
 
-import "sync"
+import (
+	"context"
+	"sync"
+
+	errors "github.com/Laisky/errors/v2"
+	openai "github.com/openai/openai-go"
+)
 
 // maxPreciseEstimateBytes is the largest prompt that is tokenized to estimate its
 // cost. A larger prompt is estimated by its byte length, which bounds its token
 // count from above, so estimating never costs more than tokenizing this much.
 const maxPreciseEstimateBytes = 256 << 10
 
+// inputOverheadTokens is added to the estimate of every input message for the
+// role and framing tokens the provider counts but the prompt text does not hold.
+const inputOverheadTokens = 8
+
+// errOutputCeiling is the ErrBudgetExceeded refusal of a response the provider
+// cut at its output ceiling: its text is incomplete, so it is neither used nor
+// cached, and the work it was for degrades like any other refused call.
+var errOutputCeiling = errors.Wrap(ErrBudgetExceeded, "llm output reached its token ceiling")
+
 // llmGate is the single admission point every upstream LLM call passes through,
-// for indexing and for search. It enforces the operation's absolute ceilings
-// (calls and tokens, checked against an estimate before the call is sent) and
-// the rolling tenant and global budgets of the SpendGovernor.
+// for indexing and for search. Before a request is sent it reserves the input
+// estimate plus an output allowance, sent as max_output_tokens, from the
+// operation's absolute ceilings and from the rolling tenant and global budgets
+// of the SpendGovernor, so a call's whole cost is paid for before it is incurred.
 type llmGate struct {
 	tok   Tokenizer
 	spend *SpendGovernor
+	// maxOutput and maxLongOutput are the output ceilings of one request with a
+	// short answer and of one that re-emits a table of contents (limits.*).
+	maxOutput, maxLongOutput int64
+}
+
+// newLLMGate builds the gate of one plugin from its limits.
+func newLLMGate(tok Tokenizer, spend *SpendGovernor, limits LimitsSettings) llmGate {
+	limits = limits.WithDefaults()
+	return llmGate{tok: tok, spend: spend, maxOutput: int64(limits.MaxOutputTokensPerCall), maxLongOutput: int64(limits.MaxTOCOutputTokensPerCall)}
 }
 
 // llmAdmission is one admitted call and every retry of it admitted since. Each
-// upstream request holds its own reservation, settled exactly once.
+// upstream request holds its own reservation of input plus output tokens, which
+// is settled exactly once: when a retry follows it, or when the call returns. So
+// at most one request is pending at a time.
 type llmAdmission struct {
-	gate     llmGate
-	budget   *Budget
-	estimate int64
-	mu       sync.Mutex
-	tickets  []*spendTicket
+	gate          llmGate
+	budget        *Budget
+	input, output int64
+	mu            sync.Mutex
+	// pending is the rolling-budget ticket of the request not yet settled, if any.
+	pending *spendTicket
 }
 
 // wouldRefuse reports, cheaply and without spending, that no call can be admitted
@@ -44,86 +72,181 @@ func (g llmGate) precheck(budget *Budget) error {
 	return nil
 }
 
-// admit reserves req's estimated input tokens and one call from budget and from the
-// rolling budgets. It returns ErrBudgetExceeded (or errRollingBudgetExceeded,
-// which wraps it), reserving nothing, when any of them would be exceeded.
+// outputCeiling returns the largest output allowance req may be granted: the
+// ceiling of its answer kind, lowered to req.MaxOutTokens when that is set.
+func (g llmGate) outputCeiling(req Request) int64 {
+	ceiling := g.maxOutput
+	if req.LongOutput {
+		ceiling = g.maxLongOutput
+	}
+	if ceiling <= 0 {
+		ceiling = DefaultMaxOutputTokensPerCall
+	}
+	if req.MaxOutTokens > 0 {
+		ceiling = min(ceiling, int64(req.MaxOutTokens))
+	}
+	return ceiling
+}
+
+// answerReserve returns the output allowance a short-answer prompt built to fit
+// remaining tokens should leave for its answer: a quarter of them, at least
+// minOutputTokens and at most the short-answer ceiling.
+func (g llmGate) answerReserve(remaining int64) int64 {
+	return min(g.outputCeiling(Request{}), max(minOutputTokens, remaining/4))
+}
+
+// call sends req to llm through the gate: it reserves the call, binds the granted
+// output ceiling and the admission of every retry to the request, and settles
+// every upstream request it made. A response the provider cut at the output
+// ceiling is returned together with errOutputCeiling, so the caller can count the
+// billed call but must neither use nor cache it.
+func (g llmGate) call(ctx context.Context, llm LLM, req Request, budget *Budget) (*Response, error) {
+	admission, err := g.admit(req, budget)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := llm.Respond(ctx, admission.bind(req))
+	admission.settle(resp, err)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Truncated {
+		return resp, errOutputCeiling
+	}
+	return resp, nil
+}
+
+// admit reserves one call, req's estimated input tokens and the largest output
+// allowance up to the request's ceiling that fits the operation's remaining
+// tokens, then takes that whole reservation from the rolling budgets. It returns
+// ErrBudgetExceeded, reserving nothing, when the operation cannot grant at least
+// minOutputTokens of output (or the request's smaller ceiling), and
+// errRollingBudgetExceeded, which wraps it, when a rolling budget cannot cover
+// the reservation.
 func (g llmGate) admit(req Request, budget *Budget) (*llmAdmission, error) {
 	if err := g.precheck(budget); err != nil {
 		return nil, err
 	}
-	a := &llmAdmission{gate: g, budget: budget, estimate: estimateInputTokens(g.tok, req)}
-	if err := a.admitOne(); err != nil {
+	input := estimateInputTokens(g.tok, req)
+	ceiling := g.outputCeiling(req)
+	output, ok := budget.reserveUpTo(input, ceiling, min(minOutputTokens, ceiling))
+	if !ok {
+		return nil, ErrBudgetExceeded
+	}
+	a := &llmAdmission{gate: g, budget: budget, input: input, output: output}
+	if err := a.admitRolling(); err != nil {
 		return nil, err
 	}
 	return a, nil
 }
 
-// admitOne reserves one more upstream request at the call's estimate.
+// reservation is what one upstream request of the call may cost at most.
+func (a *llmAdmission) reservation() int64 { return a.input + a.output }
+
+// admitOne reserves one more upstream request (a retry) at the call's reservation.
 func (a *llmAdmission) admitOne() error {
-	if !a.budget.reserve(a.estimate) {
+	if _, ok := a.budget.reserveUpTo(a.input, a.output, a.output); !ok {
 		return ErrBudgetExceeded
 	}
-	ticket, ok := a.gate.spend.admit(a.budget.Tenant(), a.estimate)
+	return a.admitRolling()
+}
+
+// admitRolling takes the request's reservation from the rolling budgets, giving
+// the operation's reservation back when they refuse.
+func (a *llmAdmission) admitRolling() error {
+	ticket, ok := a.gate.spend.admit(a.budget.Tenant(), a.reservation())
 	if !ok {
-		a.budget.release(a.estimate)
+		a.budget.release(a.reservation())
 		return errRollingBudgetExceeded
 	}
 	a.mu.Lock()
-	a.tickets = append(a.tickets, ticket)
+	a.pending = ticket
 	a.mu.Unlock()
 	return nil
 }
 
-// bind returns req with AdmitRetry set, so every retry the client makes is
-// admitted against the same budgets as a new call before it is sent.
+// bind returns req with the granted output ceiling and with AdmitRetry set, so
+// every retry the client makes is admitted against the same budgets as a new
+// call before it is sent. The cache key (PromptHash) is computed before bind, so
+// the granted ceiling, which depends on the remaining budget, never changes it.
 func (a *llmAdmission) bind(req Request) Request {
-	req.AdmitRetry = func(int) error { return a.admitOne() }
+	req.MaxOutTokens = int(a.output)
+	req.AdmitRetry = func(_ int, prev error) error {
+		// The failed request is charged before the retry is reserved, so its
+		// unused reservation is available to the retry.
+		a.settle(nil, prev)
+		return a.admitOne()
+	}
 	return req
 }
 
-// settle charges every upstream request of the call: the last, which produced
-// resp, at the provider-reported total when it reports one, and every earlier
-// (failed) request, or a failed last one, at the input estimate, since the
-// provider may have billed it.
-func (a *llmAdmission) settle(resp *Response) {
+// settle charges the pending request, if any, with its outcome (resp, err); see
+// attemptCharge for what a request costs.
+func (a *llmAdmission) settle(resp *Response, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	for i, ticket := range a.tickets {
-		charged := a.estimate
-		if i == len(a.tickets)-1 && resp != nil && resp.Usage.TotalTokens > 0 {
-			charged = int64(resp.Usage.TotalTokens)
-		}
-		a.budget.settle(a.estimate, charged)
-		ticket.settle(charged)
+	if a.pending == nil {
+		return
 	}
-	a.tickets = nil
+	charged := a.attemptCharge(resp, err)
+	a.budget.settle(a.reservation(), charged)
+	a.pending.settle(charged)
+	a.pending = nil
 }
 
-// release returns an admission whose call was never sent: the operation budget is
-// restored and the rolling budgets keep only the call.
-func (a *llmAdmission) release() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for _, ticket := range a.tickets {
-		a.budget.release(a.estimate)
-		ticket.settle(0)
+// attemptCharge returns what one upstream request with outcome (resp, err) is
+// charged: the provider-reported total when there is one; for a response without
+// usage, the input estimate plus the estimated tokens of its text; for an error
+// response from the provider, the input estimate, as the provider may have
+// counted it; nothing for a request that never left the process; and for a
+// request the provider never answered (a timeout, a cancellation or a transport
+// failure), its whole reservation, the most it can have cost, since the provider
+// may have processed and billed it in full. The call itself stays spent either way.
+func (a *llmAdmission) attemptCharge(resp *Response, err error) int64 {
+	switch {
+	case resp != nil && resp.Usage.TotalTokens > 0:
+		return int64(resp.Usage.TotalTokens)
+	case resp != nil:
+		return a.input + estimateTextTokens(a.gate.tok, resp.Text)
+	case providerAnswered(err):
+		return a.input
+	case errors.Is(err, errRequestNotSent):
+		return 0
+	default:
+		return a.reservation()
 	}
-	a.tickets = nil
+}
+
+// providerAnswered reports that err is an error response from the provider, as
+// opposed to a request that got no answer.
+func providerAnswered(err error) bool {
+	var apiErr *openai.Error
+	return errors.As(err, &apiErr)
 }
 
 // estimateInputTokens estimates the input tokens of req with tok, or by byte
-// length (an upper bound) when tok is nil or the prompt is very large.
+// length (an upper bound) when tok is nil or the prompt is very large, plus the
+// framing of every message and the byte length of a structured-output schema.
 func estimateInputTokens(tok Tokenizer, req Request) int64 {
+	total := int64(len(req.Schema) + inputOverheadTokens*len(req.Input))
 	size := 0
 	for _, item := range req.Input {
 		size += len(item.Content)
 	}
 	if tok == nil || size > maxPreciseEstimateBytes {
-		return int64(size)
+		return total + int64(size)
 	}
-	total := 0
 	for _, item := range req.Input {
-		total += tok.Count(item.Content)
+		total += int64(tok.Count(item.Content))
 	}
-	return int64(total)
+	return total
+}
+
+// estimateTextTokens estimates the tokens of text with tok, or by byte length
+// when tok is nil or the text is very large.
+func estimateTextTokens(tok Tokenizer, text string) int64 {
+	if tok == nil || len(text) > maxPreciseEstimateBytes {
+		return int64(len(text))
+	}
+	return int64(tok.Count(text))
 }

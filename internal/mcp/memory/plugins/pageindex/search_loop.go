@@ -44,13 +44,15 @@ type Searcher struct {
 // search draw from one tenant and global budget.
 func NewSearcher(llm LLM, store *SysStore, engine SearchEngine, cfg Settings) *Searcher {
 	cfg.Limits = cfg.Limits.WithDefaults()
-	gate := llmGate{spend: NewSpendGovernor(cfg.Limits)}
+	var tok Tokenizer
+	var spend *SpendGovernor
 	if idx, ok := engine.(*Indexer); ok && idx != nil {
-		gate.tok = idx.tok
-		if idx.gate.spend != nil {
-			gate.spend = idx.gate.spend
-		}
+		tok, spend = idx.tok, idx.gate.spend
 	}
+	if spend == nil {
+		spend = NewSpendGovernor(cfg.Limits)
+	}
+	gate := newLLMGate(tok, spend, cfg.Limits)
 	return &Searcher{llm: llm, store: store, cfg: cfg, engine: engine, gate: gate}
 }
 
@@ -160,23 +162,18 @@ func firstNodeRange(tree *Tree) PageRange {
 }
 
 // pickRanges runs the PromptPickPageRanges prompt and parses the JSON output.
-// The call is admitted by the shared llmGate, so it counts against the search's
-// tree_query budget and the caller's rolling tenant budget.
+// The call goes through the shared llmGate, so its input and output count against
+// the search's tree_query budget and the caller's rolling tenant budget.
 func (s *Searcher) pickRanges(ctx context.Context, tree *Tree, query string, budget *Budget) ([]PageRange, error) {
 	if s.gate.wouldRefuse(budget) {
 		return nil, ErrBudgetExceeded
 	}
-	prompt, err := s.plannerPrompt(tree, query, budget.Remaining())
+	remaining := budget.Remaining()
+	prompt, err := s.plannerPrompt(tree, query, remaining-s.gate.answerReserve(remaining))
 	if err != nil {
 		return nil, err
 	}
-	req := Request{Input: userInput(prompt)}
-	admission, err := s.gate.admit(req, budget)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := s.llm.Respond(ctx, admission.bind(req))
-	admission.settle(resp)
+	resp, err := s.gate.call(ctx, s.llm, Request{Input: userInput(prompt)}, budget)
 	if err != nil {
 		return nil, err
 	}
@@ -184,10 +181,11 @@ func (s *Searcher) pickRanges(ctx context.Context, tree *Tree, query string, bud
 }
 
 // plannerPrompt renders the planner prompt with the most detailed outline whose
-// estimated size fits the remaining search budget: the full outline, then the
-// outline without summaries, then shallower outlines, then fewer top-level
-// sections. It returns ErrBudgetExceeded when not even one section fits, and the
-// caller falls back to the first section's pages.
+// estimated size fits remaining, the input budget left after the planner's answer
+// is reserved: the full outline, then the outline without summaries, then
+// shallower outlines, then fewer top-level sections. It returns
+// ErrBudgetExceeded when not even one section fits, and the caller falls back to
+// the first section's pages.
 func (s *Searcher) plannerPrompt(tree *Tree, query string, remaining int64) (string, error) {
 	var prompt string
 	var renderErr error

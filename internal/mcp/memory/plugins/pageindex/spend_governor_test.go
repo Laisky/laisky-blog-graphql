@@ -131,20 +131,30 @@ func TestSpendGovernorConcurrentAdmissionsNeverExceedCeiling(t *testing.T) {
 }
 
 // TestOperationBudgetReservation checks the per-operation gate: a reservation
-// claims a call and its estimate, refuses an estimate above the remaining
-// tokens, and a release restores both.
+// claims a call, its input and the largest output allowance that fits, refuses
+// when less than the minimum output would fit, and a release restores both.
 func TestOperationBudgetReservation(t *testing.T) {
 	b := newOperationBudget(100, 2, 3, "tenant")
 	require.Equal(t, "tenant", b.Tenant())
-	require.False(t, b.reserve(101), "the token ceiling holds before the call is sent")
-	require.True(t, b.reserve(60))
-	b.release(60)
+	_, ok := b.reserveUpTo(101, 0, 0)
+	require.False(t, ok, "the token ceiling holds before the call is sent")
+	out, ok := b.reserveUpTo(40, 50, 10)
+	require.True(t, ok)
+	require.Equal(t, int64(50), out)
+	b.release(90)
 	require.Equal(t, int64(100), b.Remaining())
-	require.True(t, b.reserve(60))
-	b.settle(60, 80)
+	out, ok = b.reserveUpTo(40, 100, 10)
+	require.True(t, ok)
+	require.Equal(t, int64(60), out, "the output allowance shrinks to what the input leaves")
+	b.settle(100, 80)
 	require.Equal(t, int64(20), b.Remaining())
-	require.True(t, b.reserve(10))
-	require.False(t, b.reserve(1), "the call ceiling holds")
+	_, ok = b.reserveUpTo(15, 100, 10)
+	require.False(t, ok, "a call that cannot be granted the minimum output is refused")
+	out, ok = b.reserveUpTo(10, 100, 10)
+	require.True(t, ok)
+	require.Equal(t, int64(10), out)
+	_, ok = b.reserveUpTo(0, 0, 0)
+	require.False(t, ok, "the call ceiling holds")
 	require.True(t, b.exhausted())
 
 	require.True(t, b.takeNodes(3))

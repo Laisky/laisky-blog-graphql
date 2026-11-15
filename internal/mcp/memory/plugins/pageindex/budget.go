@@ -77,23 +77,30 @@ func (b *Budget) exhausted() bool {
 	return b.remaining <= 0 || b.calls == 0
 }
 
-// reserve claims one call and estimate tokens. It refuses, claiming nothing, when
-// no call is left or the estimate exceeds the remaining tokens, so the token
-// ceiling holds before a call is sent rather than after it is billed.
-func (b *Budget) reserve(estimate int64) bool {
+// reserveUpTo claims one call, input tokens and an output allowance of at most
+// maxOut tokens, the most that fits the remaining tokens, so the token ceiling
+// holds before a call is sent rather than after it is billed. It refuses,
+// claiming nothing, when no call is left or less than minOut tokens of output
+// would fit, and returns the granted output allowance otherwise. The caller
+// releases or settles input plus that allowance.
+func (b *Budget) reserveUpTo(input, maxOut, minOut int64) (int64, bool) {
 	if b == nil {
-		return true
+		return maxOut, true
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.calls == 0 || b.remaining <= 0 || estimate > b.remaining {
-		return false
+	if b.calls == 0 || b.remaining <= 0 {
+		return 0, false
 	}
-	b.remaining -= estimate
+	out := min(maxOut, b.remaining-input)
+	if out < minOut {
+		return 0, false
+	}
+	b.remaining -= input + out
 	if b.calls > 0 {
 		b.calls--
 	}
-	return true
+	return out, true
 }
 
 // release returns a reservation whose call was never sent.

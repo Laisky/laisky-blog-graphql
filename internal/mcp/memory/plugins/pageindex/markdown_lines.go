@@ -591,16 +591,24 @@ func scanMarkdownHeadingsLinear(ctx context.Context, content []byte, maxHeaders 
 	}
 	titles := newTitleRenderer(defs)
 	for i := range out.headers {
+		if i > 0 && i%titlePollEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return markdownHeadings{}, errors.WithStack(err)
+			}
+		}
 		out.headers[i].Title = titles.render(raws[i].raw, raws[i].setext)
 	}
 	return out, nil
 }
 
 // Bounds of the link-reference definitions the fallback scanner keeps to render
-// titles that use reference links.
+// titles that use reference links, and how many titles it renders between two
+// context polls (each rendering is one goldmark parse of at most
+// maxHeadingInlineBytes).
 const (
 	maxFallbackLinkRefs     = 512
 	maxFallbackLinkRefBytes = 64 << 10
+	titlePollEvery          = 64
 )
 
 // isLinkRefDefinition reports whether text looks like a one-line link-reference
@@ -624,23 +632,26 @@ func atxTitle(rest []byte, level int) string {
 }
 
 // titleRenderer renders raw heading titles as goldmark would. It reuses one
-// parser, since titles are parsed one at a time, and appends the document's
-// link-reference definitions to titles that may use them.
+// parser, since titles are parsed one at a time, and resolves reference links
+// against the document's link-reference definitions, which it parses once.
 type titleRenderer struct {
-	parser interface {
-		Parse(reader text.Reader, opts ...parser.ParseOption) ast.Node
-	}
-	defs string
+	parser parser.Parser
+	// refs holds the document's link-reference definitions, or is nil when it has
+	// none. Every title that may use them resolves against it through
+	// sharedReferences, so rendering costs the same however many definitions exist.
+	refs parser.Context
 	// remaining and triggers are the title source and inline markup bytes this
 	// document may still inline-parse; they mirror the heading-only parser's budgets.
 	remaining, triggers int
 }
 
-// newTitleRenderer builds a renderer around the heading-only goldmark parser.
+// newTitleRenderer builds a renderer around the heading-only goldmark parser and
+// parses defs, the document's retained link-reference definitions, once.
 func newTitleRenderer(defs []string) *titleRenderer {
 	r := &titleRenderer{parser: newHeadingOnlyParser(), remaining: maxHeadingInlineBytesTotal, triggers: maxHeadingInlineTriggersTotal}
 	if len(defs) > 0 {
-		r.defs = "\n\n" + strings.Join(defs, "\n") + "\n"
+		r.refs = parser.NewContext()
+		r.parser.Parse(text.NewReader([]byte(strings.Join(defs, "\n")+"\n")), parser.WithContext(r.refs))
 	}
 	return r
 }
@@ -660,11 +671,12 @@ func (r *titleRenderer) render(raw string, setext bool) string {
 	if setext {
 		src = raw + "\n===\n"
 	}
-	if strings.Contains(raw, "[") {
-		src += r.defs
+	var opts []parser.ParseOption
+	if r.refs != nil && strings.Contains(raw, "[") {
+		opts = append(opts, parser.WithContext(sharedReferences{Context: parser.NewContext(), refs: r.refs}))
 	}
 	source := []byte(src)
-	root := r.parser.Parse(text.NewReader(source))
+	root := r.parser.Parse(text.NewReader(source), opts...)
 	title := raw
 	_ = ast.Walk(root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if h, ok := n.(*ast.Heading); ok && entering {
@@ -674,4 +686,21 @@ func (r *titleRenderer) render(raw string, setext bool) string {
 		return ast.WalkContinue, nil
 	})
 	return clampHeadingTitle(title)
+}
+
+// sharedReferences is the fresh parse context of one title that also resolves
+// the document's link-reference definitions, parsed once into refs. goldmark
+// keeps the first definition of a label, as it would in the full document.
+type sharedReferences struct {
+	parser.Context
+	refs parser.Context
+}
+
+// Reference resolves label in the title's own context, then in the document's
+// definitions.
+func (c sharedReferences) Reference(label string) (parser.Reference, bool) {
+	if ref, ok := c.Context.Reference(label); ok {
+		return ref, true
+	}
+	return c.refs.Reference(label)
 }

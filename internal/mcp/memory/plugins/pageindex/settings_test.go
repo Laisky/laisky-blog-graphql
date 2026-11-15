@@ -95,16 +95,18 @@ func TestLoadSettingsDefaults(t *testing.T) {
 	require.Equal(t, "pdfcpu", s.PDF.OutlineParser)
 
 	require.Equal(t, LimitsSettings{
-		MaxNodesPerDocument:     2000,
-		MaxLLMCallsPerDocument:  256,
-		MaxTokensPerDocument:    2_000_000,
-		Window:                  time.Hour,
-		TenantLLMCallsPerWindow: 1000,
-		TenantTokensPerWindow:   4_000_000,
-		GlobalLLMCallsPerWindow: 5000,
-		GlobalTokensPerWindow:   20_000_000,
-		MaxTrackedTenants:       10_000,
-		GlobalReservePercent:    20,
+		MaxNodesPerDocument:       2000,
+		MaxLLMCallsPerDocument:    256,
+		MaxTokensPerDocument:      2_000_000,
+		Window:                    time.Hour,
+		TenantLLMCallsPerWindow:   1000,
+		TenantTokensPerWindow:     4_000_000,
+		GlobalLLMCallsPerWindow:   5000,
+		GlobalTokensPerWindow:     20_000_000,
+		MaxTrackedTenants:         10_000,
+		GlobalReservePercent:      20,
+		MaxOutputTokensPerCall:    4096,
+		MaxTOCOutputTokensPerCall: 32_768,
 	}, s.Limits)
 }
 
@@ -113,10 +115,12 @@ func TestLoadSettingsDefaults(t *testing.T) {
 // disabling the ceiling.
 func TestLoadSettingsLimitsOverridesAndFloors(t *testing.T) {
 	overrides := map[string]any{
-		settingsPrefix + ".limits.max_llm_calls_per_document":  32,
-		settingsPrefix + ".limits.tenant_llm_calls_per_window": 0,
-		settingsPrefix + ".limits.global_tokens_per_window":    -5,
-		settingsPrefix + ".limits.window":                      "10m",
+		settingsPrefix + ".limits.max_llm_calls_per_document":     32,
+		settingsPrefix + ".limits.tenant_llm_calls_per_window":    0,
+		settingsPrefix + ".limits.global_tokens_per_window":       -5,
+		settingsPrefix + ".limits.window":                         "10m",
+		settingsPrefix + ".limits.max_output_tokens_per_call":     8,
+		settingsPrefix + ".limits.max_toc_output_tokens_per_call": 100,
 	}
 	prior := make(map[string]any, len(overrides))
 	for k, v := range overrides {
@@ -134,6 +138,8 @@ func TestLoadSettingsLimitsOverridesAndFloors(t *testing.T) {
 	require.Equal(t, 10*time.Minute, limits.Window)
 	require.Equal(t, DefaultTenantLLMCallsPerWindow, limits.TenantLLMCallsPerWindow)
 	require.Equal(t, DefaultGlobalTokensPerWindow, limits.GlobalTokensPerWindow)
+	require.Equal(t, minOutputTokens, limits.MaxOutputTokensPerCall, "an output ceiling below the useful minimum is raised to it")
+	require.Equal(t, minOutputTokens, limits.MaxTOCOutputTokensPerCall, "the table-of-contents ceiling is never below the short-answer one")
 }
 
 // TestSettingsEnabledGate documents the proposal §2.7 enablement contract.

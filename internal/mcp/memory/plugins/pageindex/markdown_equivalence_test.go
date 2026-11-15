@@ -49,6 +49,7 @@ func markdownCorpus(t *testing.T) map[string][]byte {
 		"crlf":            []byte("# one\r\n\r\ntext\r\n\r\n## two\r\n"),
 		"closing hashes":  []byte("## title ##\n### also # kept #\n#hashtag\n####### seven\n"),
 		"ref definitions": []byte("[a]: /x\n[b]: /y\nSetext after refs\n===\n# [a] and [b]\n"),
+		"folded labels":   []byte("[Straße]: /a\n[straße]: /b\n\n# See [STRASSE] and [Missing]\n\nSetext [straße][]\n---\n"),
 	}
 	root := filepath.Join("..", "..", "..", "..", "..", "docs")
 	require.NoError(t, filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {

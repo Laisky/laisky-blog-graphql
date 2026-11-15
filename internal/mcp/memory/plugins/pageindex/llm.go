@@ -43,11 +43,22 @@ type Request struct {
 	MaxOutTokens int
 	Temperature  float32
 	PromptHash   [32]byte
+	// LongOutput marks a request whose answer re-emits a table of contents; the
+	// llmGate grants it limits.max_toc_output_tokens_per_call instead of
+	// limits.max_output_tokens_per_call. The gate sets MaxOutTokens after the
+	// cache key is computed, so neither changes the key of an ordinary request:
+	// a ceiling never changes a complete answer, and a truncated one is never cached.
+	LongOutput bool
 	// AdmitRetry, when set, is called before every retry of the call (attempt 2
-	// onwards). An error stops retrying and is returned, so each upstream request
-	// is admitted by the budgets before it is sent. It is not part of the cache key.
-	AdmitRetry func(attempt int) error
+	// onwards) with the error the previous request failed with. An error stops
+	// retrying and is returned, so each upstream request is admitted by the
+	// budgets before it is sent. It is not part of the cache key.
+	AdmitRetry func(attempt int, prev error) error
 }
+
+// errRequestNotSent marks a failure that happened before the request left the
+// process (the client-side rate limiter), so the request costs nothing upstream.
+var errRequestNotSent = errors.New("llm request not sent")
 
 // DefaultLLMRetryAttempts is the default number of upstream requests one call may
 // make, including the first (settings indexer.retry.max_attempts).
@@ -79,6 +90,9 @@ type Response struct {
 	Text     string
 	Usage    Usage
 	CacheHit bool
+	// Truncated reports that the provider stopped at the request's output ceiling
+	// (max_output_tokens), so Text is incomplete. It is never cached.
+	Truncated bool
 }
 
 // Usage tracks token billing.
@@ -213,20 +227,23 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 	var resp *responses.Response
 	start := time.Now()
 	attempt := 0
+	var lastErr error
 	err := retry.Do(func() error {
 		attempt++
 		if attempt > 1 && req.AdmitRetry != nil {
-			if admitErr := req.AdmitRetry(attempt); admitErr != nil {
+			if admitErr := req.AdmitRetry(attempt, lastErr); admitErr != nil {
 				return retry.Unrecoverable(admitErr)
 			}
 		}
 		if l.limiter != nil {
 			if waitErr := l.limiter.Wait(ctx); waitErr != nil {
-				return waitErr
+				lastErr = errors.Wrapf(errRequestNotSent, "rate limiter: %v", waitErr)
+				return lastErr
 			}
 		}
 		out, callErr := l.client.Responses.New(ctx, params)
 		if callErr != nil {
+			lastErr = callErr
 			return callErr
 		}
 		resp = out
@@ -256,7 +273,7 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 		TotalTokens:  int(resp.Usage.TotalTokens),
 	}
 	text := resp.OutputText()
-	out := &Response{Text: text, Usage: usage}
+	out := &Response{Text: text, Usage: usage, Truncated: outputTruncated(resp, req.MaxOutTokens)}
 	if len(req.Schema) > 0 {
 		out.Output = json.RawMessage(text)
 	}
@@ -267,10 +284,23 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 			glog.String("prompt_hash", hex.EncodeToString(req.PromptHash[:4])),
 			glog.Int("tokens_in", usage.InputTokens),
 			glog.Int("tokens_out", usage.OutputTokens),
+			glog.Bool("truncated", out.Truncated),
 			glog.Duration("latency", time.Since(start)),
 		)
 	}
 	return out, nil
+}
+
+// outputTruncated reports that resp stopped at the output ceiling maxOut: the API
+// marks it incomplete for max_output_tokens, and a response that used the whole
+// ceiling is treated the same, since some responses cut at the ceiling are not
+// marked. Reasoning tokens count toward the ceiling, so the visible text of a
+// truncated response may be empty.
+func outputTruncated(resp *responses.Response, maxOut int) bool {
+	if resp.Status == responses.ResponseStatusIncomplete && resp.IncompleteDetails.Reason == "max_output_tokens" {
+		return true
+	}
+	return maxOut > 0 && resp.Usage.OutputTokens >= int64(maxOut)
 }
 
 // CountTokens estimates the prompt cost using the embedded BPE tokenizer.

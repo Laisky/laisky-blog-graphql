@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -65,11 +64,14 @@ func (s *Stats) addRefusal(err error) {
 	s.mu.Unlock()
 }
 
-// degradedReason returns the summary error code of a run that did not get every
-// LLM result it asked for: "timeout" when indexer.timeout_index ended it,
-// "budget_exhausted" when a rolling budget refused calls (a later refresh can
-// succeed), "document_limit" when only the document's own ceilings did, and ""
-// for a complete run.
+// degradedReason returns the summary error code of a run whose tree is less
+// complete than its content allows: "timeout" when indexer.timeout_index ended
+// LLM work, "budget_exhausted" when a rolling budget refused calls, and
+// "document_limit" when only the document's own ceilings applied, whether they
+// refused calls or cut the structure short (StructureTruncated). "" is a complete
+// run. The two refreshable causes take precedence, so a refresh can still recover
+// the refused work; a refreshed tree that is still truncated then reports the
+// permanent "document_limit".
 func (s *Stats) degradedReason() string {
 	if s == nil {
 		return ""
@@ -81,7 +83,7 @@ func (s *Stats) degradedReason() string {
 		return degradedTimeout
 	case s.RollingRefusals > 0:
 		return degradedBudget
-	case s.BudgetRefusals > 0 || s.LocalSummaries > 0:
+	case s.BudgetRefusals > 0 || s.LocalSummaries > 0 || s.StructureTruncated:
 		return degradedDocumentLimit
 	}
 	return ""
@@ -209,7 +211,7 @@ func NewIndexer(deps Deps) (*Indexer, error) {
 		sem:   deps.Sem,
 		cfg:   deps.Settings,
 		log:   deps.Logger,
-		gate:  llmGate{tok: deps.Tokenizer, spend: deps.Spend},
+		gate:  newLLMGate(deps.Tokenizer, deps.Spend, deps.Settings.Limits),
 	}, nil
 }
 
@@ -265,13 +267,12 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 }
 
 // callLLM is the cache-aware, budgeted entry point used by every phase. A cached
-// response is free; any other call must be admitted by the llmGate, which returns
-// ErrBudgetExceeded when the operation or rolling budgets would be exceeded.
+// response is free: it is looked up before any budget is consulted, so it is
+// returned even when every budget is spent. Any other call is sent through the
+// llmGate, which returns ErrBudgetExceeded when the operation or rolling budgets
+// cannot pay for its input and output. The concurrency slot is taken before the
+// reservation, so calls waiting for a slot hold no budget.
 func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, stats *Stats) (*Response, error) {
-	if budget.exhausted() {
-		stats.addRefusal(ErrBudgetExceeded)
-		return nil, ErrBudgetExceeded
-	}
 	if req.PromptHash == [32]byte{} {
 		if req.Model == "" {
 			req.Model = idx.cfg.LLM.IndexingModel
@@ -286,32 +287,38 @@ func (idx *Indexer) callLLM(ctx context.Context, req Request, budget *Budget, st
 		stats.addCached()
 		return cached, nil
 	}
-	admission, err := idx.gate.admit(req, budget)
-	if err != nil {
+	if err := idx.gate.precheck(budget); err != nil {
 		stats.addRefusal(err)
 		return nil, err
 	}
 	if idx.sem != nil {
 		if err := idx.sem.Acquire(ctx, 1); err != nil {
-			admission.release()
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		defer idx.sem.Release(1)
 	}
-	resp, err := idx.llm.Respond(ctx, admission.bind(req))
-	admission.settle(resp)
+	resp, err := idx.gate.call(ctx, idx.llm, req, budget)
+	if resp != nil {
+		stats.addLLMCall(resp.Usage.InputTokens, resp.Usage.OutputTokens)
+	}
 	if err != nil {
 		if errors.Is(err, ErrBudgetExceeded) {
-			// A retry was refused before it was sent.
+			// The call, a retry of it, or its truncated answer was refused.
 			stats.addRefusal(err)
 		}
 		return nil, err
 	}
-	stats.addLLMCall(resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	if err := idx.cache.Put(req.PromptHash, resp); err != nil && idx.log != nil {
-		idx.log.Warn(fmt.Sprintf("pageindex.cache.put: %v", err))
+		idx.log.Warn("pageindex.cache.put", glog.Error(err))
 	}
 	return resp, nil
+}
+
+// cacheCanAnswer reports whether the response cache may hold responses. When it
+// cannot, a call the budgets refuse is not worth rendering a prompt for.
+func (idx *Indexer) cacheCanAnswer() bool {
+	_, noop := idx.cache.(*noopCache)
+	return idx.cache != nil && !noop
 }
 
 // GetPageContent resolves page ranges against the cached tree's pages.
@@ -366,9 +373,15 @@ func (idx *Indexer) GetDocumentStructure(tree *Tree) StructureView {
 	}
 }
 
-// jsonInput formats one InputItem helper used across pipelines.
+// userInput formats one InputItem helper used across pipelines.
 func userInput(content string) []InputItem {
 	return []InputItem{{Role: "user", Content: content}}
+}
+
+// tocRequest builds the request of a phase whose answer re-emits a table of
+// contents, which may be long (Request.LongOutput).
+func tocRequest(prompt string) Request {
+	return Request{Input: userInput(prompt), LongOutput: true}
 }
 
 // parseSimpleAnswer reads a free-text "yes"/"no"-style field from JSON-ish text.

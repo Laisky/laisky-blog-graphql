@@ -183,7 +183,7 @@ func (idx *Indexer) generateNoTOC(ctx context.Context, slice []string, base int,
 	if err != nil {
 		return nil, err
 	}
-	resp, err := idx.callLLM(ctx, Request{Input: userInput(initPrompt)}, budget, stats)
+	resp, err := idx.callLLM(ctx, tocRequest(initPrompt), budget, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (idx *Indexer) generateNoTOC(ctx context.Context, slice []string, base int,
 		if err != nil {
 			return nil, err
 		}
-		respC, err := idx.callLLM(ctx, Request{Input: userInput(contPrompt)}, budget, stats)
+		respC, err := idx.callLLM(ctx, tocRequest(contPrompt), budget, stats)
 		if err != nil {
 			if errors.Is(err, ErrBudgetExceeded) {
 				break
@@ -219,8 +219,9 @@ func (idx *Indexer) generateNoTOC(ctx context.Context, slice []string, base int,
 	return flat, nil
 }
 
-// groupPagesWithBase mirrors groupPagesByTokens but emits physical_index tags
-// in absolute coordinates starting at base.
+// groupPagesWithBase splits pages into prompt groups of at most maxTokens tokens
+// each (a page larger than that is a group of its own), tagging every page with
+// its physical_index in absolute coordinates: pages[0] is page base.
 func groupPagesWithBase(pages []string, base int, tok Tokenizer, maxTokens int) []string {
 	if maxTokens <= 0 {
 		maxTokens = 20000

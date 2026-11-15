@@ -278,10 +278,12 @@ func (g *SpendGovernor) emit(delta SpendStats, ok bool) {
 	)
 }
 
-// settle replaces the ticket's token estimate with the tokens actually charged.
-// A charge above the estimate leaves the budgets in debt until they refill. The
-// admitting bucket is still tracked because buckets with calls in flight are
-// never swept. Settling twice is a no-op.
+// settle replaces the ticket's token estimate with the tokens actually charged,
+// at settlement time: both buckets are first refilled to now, so the refill
+// earned while the call was in flight is capped before the correction applies
+// rather than credited after it. A charge above the estimate leaves the budgets
+// in debt until they refill. The admitting bucket is still tracked because
+// buckets with calls in flight are never swept. Settling twice is a no-op.
 func (t *spendTicket) settle(charged int64) {
 	if t == nil {
 		return
@@ -294,6 +296,9 @@ func (t *spendTicket) settle(charged int64) {
 	}
 	t.settled = true
 	t.tenant.inflight--
+	now := g.now()
+	t.tenant.refill(now, g.tenantCalls, g.tenantTokens, g.window)
+	g.global.refill(now, g.globalCalls, g.globalTokens, g.window)
 	delta := float64(max(charged, 0)) - t.estimate
 	t.tenant.tokens = min(g.tenantTokens, t.tenant.tokens-delta)
 	g.global.tokens = min(g.globalTokens, g.global.tokens-delta)

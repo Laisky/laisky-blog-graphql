@@ -34,6 +34,19 @@ const (
 	DefaultGlobalReservePercent = 20
 	// maxGlobalReservePercent caps the reserve so heavy tenants keep some budget.
 	maxGlobalReservePercent = 90
+	// DefaultMaxOutputTokensPerCall caps the tokens one upstream request with a
+	// short answer (a summary, a yes/no verdict, a page range) may generate,
+	// reasoning tokens included (the Responses API max_output_tokens). It is
+	// reserved, with the input estimate, before the request is sent.
+	DefaultMaxOutputTokensPerCall = 4096
+	// DefaultMaxTOCOutputTokensPerCall caps the tokens one request whose answer
+	// re-emits a table of contents may generate; it covers a transformation of
+	// about a thousand entries (docs/ref/pageindex_structural_budgets_20261108.md).
+	DefaultMaxTOCOutputTokensPerCall = 32_768
+	// minOutputTokens is the smallest output ceiling worth sending: a call that
+	// cannot be granted this much after its input is refused instead. It is above
+	// the API's own minimum of 16.
+	minOutputTokens = 256
 )
 
 // LimitsSettings holds the absolute structure and spending ceilings of the plugin.
@@ -61,6 +74,13 @@ type LimitsSettings struct {
 	// GlobalReservePercent is the share of the global budget that only light
 	// tenants (under one document's allowance this window) may spend.
 	GlobalReservePercent int
+	// MaxOutputTokensPerCall caps the tokens one upstream request with a short
+	// answer may generate, reasoning included; values under minOutputTokens are
+	// raised to it.
+	MaxOutputTokensPerCall int
+	// MaxTOCOutputTokensPerCall caps the tokens one request whose answer re-emits
+	// a table of contents may generate; it is never below MaxOutputTokensPerCall.
+	MaxTOCOutputTokensPerCall int
 }
 
 // WithDefaults returns l with every unset or non-positive field replaced by its default.
@@ -75,6 +95,8 @@ func (l LimitsSettings) WithDefaults() LimitsSettings {
 	l.GlobalTokensPerWindow = positiveOr(l.GlobalTokensPerWindow, DefaultGlobalTokensPerWindow)
 	l.MaxTrackedTenants = positiveOr(l.MaxTrackedTenants, DefaultMaxTrackedTenants)
 	l.GlobalReservePercent = min(positiveOr(l.GlobalReservePercent, DefaultGlobalReservePercent), maxGlobalReservePercent)
+	l.MaxOutputTokensPerCall = max(positiveOr(l.MaxOutputTokensPerCall, DefaultMaxOutputTokensPerCall), minOutputTokens)
+	l.MaxTOCOutputTokensPerCall = max(positiveOr(l.MaxTOCOutputTokensPerCall, DefaultMaxTOCOutputTokensPerCall), l.MaxOutputTokensPerCall)
 	return l
 }
 
