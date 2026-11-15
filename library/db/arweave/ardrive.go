@@ -22,7 +22,13 @@ type Ardrive struct {
 // because we upload raw data transactions directly instead of
 // going through the ArFS folder abstraction.
 func NewArdrive(walletPath string, folder string) *Ardrive {
-	w, err := goar.NewWalletFromPath(walletPath, arweaveGateway)
+	return newArdrive(walletPath, arweaveGateway)
+}
+
+// newArdrive binds the wallet to gatewayURL so tests can exercise the real
+// SDK upload path against a local gateway.
+func newArdrive(walletPath, gatewayURL string) *Ardrive {
+	w, err := goar.NewWalletFromPath(walletPath, gatewayURL)
 	if err != nil {
 		// Defer the error — Upload will fail with a clear message.
 		return &Ardrive{}
