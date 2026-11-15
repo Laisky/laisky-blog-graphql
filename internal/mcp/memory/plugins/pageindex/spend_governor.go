@@ -395,37 +395,40 @@ func (g *SpendGovernor) sweepLocked(now time.Time, oldest int64, interval time.D
 	return len(g.tenants) < g.maxTenants
 }
 
-// expire drops the slots older than oldest from l's totals.
+// expire drops the slots older than oldest and recomputes l's totals from the
+// slots left, so a saturated total never under-counts what remains.
 func (l *spendLedger) expire(oldest int64) {
 	n := 0
 	for n < len(l.slots) && l.slots[n].index < oldest {
-		l.calls -= l.slots[n].calls
-		l.tokens -= l.slots[n].tokens
 		n++
 	}
 	if n == 0 {
 		return
 	}
 	l.slots = append(l.slots[:0], l.slots[n:]...)
+	l.calls, l.tokens = 0, 0
+	for _, s := range l.slots {
+		l.calls, l.tokens = satAdd(l.calls, s.calls), satAdd(l.tokens, s.tokens)
+	}
 }
 
 // fits reports whether l, under the given ceilings, has room for one more call
 // and estimate tokens, and has not spent its whole token ceiling (so a ledger in
 // debt admits nothing).
 func (l *spendLedger) fits(callCap, tokenCap, estimate int64) bool {
-	return l.calls+1 <= callCap && l.tokens < tokenCap && l.tokens+estimate <= tokenCap
+	return l.calls < callCap && l.tokens < tokenCap && estimate <= tokenCap-l.tokens
 }
 
 // record adds calls and tokens to slot, which is never older than l's newest slot.
 func (l *spendLedger) record(slot, calls, tokens int64) {
 	if last := len(l.slots) - 1; last >= 0 && l.slots[last].index >= slot {
-		l.slots[last].calls += calls
-		l.slots[last].tokens += tokens
+		l.slots[last].calls = satAdd(l.slots[last].calls, calls)
+		l.slots[last].tokens = satAdd(l.slots[last].tokens, tokens)
 	} else {
 		l.slots = append(l.slots, spendSlot{index: slot, calls: calls, tokens: tokens})
 	}
-	l.calls += calls
-	l.tokens += tokens
+	l.calls = satAdd(l.calls, calls)
+	l.tokens = satAdd(l.tokens, tokens)
 }
 
 // refund returns up to tokens to slot when that slot is still counted.

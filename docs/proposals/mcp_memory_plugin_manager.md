@@ -966,7 +966,8 @@ reserved for tenants that have spent less than one document's allowance in the
 window, so a heavy tenant cannot starve another tenant's first document. A degraded
 tree is published with summary status `degraded` and a safe error code
 (file_search_file_summaries §4.6), re-indexed on the next write, and, when a rolling
-budget or the deadline caused it, refreshed later with bounded backoff.
+budget, the deadline or incomplete provider answers (`provider_error`) caused it,
+refreshed later with bounded backoff.
 Markdown heading extraction is linear in the document size (issue #91): one newline
 index, inline parsing only inside headings, and, because goldmark's parse cannot be
 interrupted, a linear pre-scan that routes any document whose predicted nesting,

@@ -1,6 +1,7 @@
 package pageindex
 
 import (
+	"math"
 	"sync"
 
 	errors "github.com/Laisky/errors/v2"
@@ -54,6 +55,18 @@ func (b *Budget) recordUpstream(charged int64, reported, retry bool) {
 	if b != nil {
 		b.stats.addUpstream(charged, reported, retry)
 	}
+}
+
+// satAdd returns a+b, saturated at the int64 bounds, so a reported charge, however
+// absurd, can only exhaust a budget and never wrap it into credit.
+func satAdd(a, b int64) int64 {
+	switch {
+	case b > 0 && a > math.MaxInt64-b:
+		return math.MaxInt64
+	case b < 0 && a < math.MinInt64-b:
+		return math.MinInt64
+	}
+	return a + b
 }
 
 // Take deducts n and reports whether budget remained at or above zero AFTER the deduction.
@@ -128,7 +141,7 @@ func (b *Budget) release(estimate int64) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.remaining += estimate
+	b.remaining = satAdd(b.remaining, estimate)
 	if b.calls >= 0 {
 		b.calls++
 	}
@@ -141,7 +154,7 @@ func (b *Budget) settle(estimate, charged int64) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.remaining += estimate - charged
+	b.remaining = satAdd(b.remaining, satAdd(estimate, -charged))
 }
 
 // takeNodes claims n tree nodes and reports whether they fit the node ceiling.

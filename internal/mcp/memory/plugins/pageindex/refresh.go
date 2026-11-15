@@ -26,7 +26,7 @@ const (
 
 // refreshable reports whether reason is a degradation a later run can overcome.
 func refreshable(reason string) bool {
-	return reason == degradedTimeout || reason == degradedBudget
+	return reason == degradedTimeout || reason == degradedBudget || reason == degradedProviderError
 }
 
 // markRefresh records the degraded state and next refresh time of entry. refreshes

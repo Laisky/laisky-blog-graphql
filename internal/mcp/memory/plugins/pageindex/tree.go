@@ -16,7 +16,8 @@ type Tree struct {
 	// (docs/proposals/file_search_file_summaries.md §4.2, §4.5).
 	SourceContentHash string `json:"source_content_hash,omitempty"`
 	// Degraded names why the tree's LLM work was cut short ("timeout",
-	// "budget_exhausted", "document_limit"); empty for a complete tree.
+	// "budget_exhausted", "provider_error", "document_limit"); empty for a
+	// complete tree.
 	Degraded  string  `json:"degraded,omitempty"`
 	Structure []*Node `json:"structure"`
 	// Pages caches per-page extracted text so retrieval can resolve page ranges

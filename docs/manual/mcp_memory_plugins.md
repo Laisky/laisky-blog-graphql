@@ -288,10 +288,11 @@ order; a section's pages include those of the sections nested under it. Terms ar
 case-folded words of at least two characters without common English stop words,
 and character pairs of Chinese, Japanese and Korean text; at most 32 distinct query
 terms and 4 KiB of each title and summary are compared. Only when no section
-matches is the first section returned. Fallback results are ranked below the
-sections the planner chose for other candidates (their scores are halved, or
-quartered for the first-section default), so a guess never displaces a planned
-result. The search result itself is unchanged; the plugin counts planned
+matches is the first section returned. A fallback's pages come in match order,
+the best-matching section's pages first. Fallback results score below every
+section the planner chose for another candidate: half the lowest planned score for
+matched sections, a quarter for the first-section default, decaying by position,
+so a guess never displaces a planned result. The search result itself is unchanged; the plugin counts planned
 candidates and fallbacks by cause (`budget_exhausted`, `search_limit`,
 `planner_failed`), logs each fallback at debug level as `pageindex.search.fallback`,
 and at most once per minute logs `pageindex.search.fallbacks` at warn level with the
@@ -375,7 +376,9 @@ How the ceilings are enforced:
   or cached; the work it was for degrades like a refused call (below). So is an
   answer the provider did not complete for another reason: any status other than
   `completed`, such as `incomplete` for `content_filter` or without a reason, or
-  `failed`. An answer without a status is taken as complete. Note that
+  `failed`. An answer without a status is taken as complete. Such an answer is a
+  provider error, not a refusal: the tree reports `provider_error` and search counts
+  it as `planner_failed`. Note that
   the ceiling counts reasoning tokens: `gpt-5.4-mini` defaults to reasoning effort
   `none`, but a model whose default effort is higher needs a larger
   `max_output_tokens_per_call`, or more of its answers will be cut.
@@ -404,6 +407,8 @@ How the ceilings are enforced:
   `degraded` and one of these error codes:
   - `timeout`: `indexer.timeout_index` ended LLM work;
   - `budget_exhausted`: a rolling budget refused calls;
+  - `provider_error`: the provider did not complete answers (the code the file
+    summaries use for provider failures);
   - `document_limit`: only the document's own ceilings applied. They refused calls,
     cut an answer at its output ceiling, or cut the structure short at
     `max_nodes_per_document`, even when no call was refused.
@@ -412,7 +417,7 @@ How the ceilings are enforced:
   `document_limit`, so a refresh can still recover the refused work; a refreshed
   tree that is still truncated then reports `document_limit`. The next write
   re-indexes the file.
-- A `budget_exhausted` or `timeout` tree is also refreshed later. A search that meets
+- A `budget_exhausted`, `provider_error` or `timeout` tree is also refreshed later. A search that meets
   it once its refresh time has passed, while the caller's budget allows, queues a
   re-index: one worker, at most 32 queued, one job per content generation.
   Refreshes wait 5 minutes, then double up to 6 hours, and stop after 5 attempts.

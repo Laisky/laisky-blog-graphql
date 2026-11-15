@@ -45,6 +45,10 @@ type Stats struct {
 	RollingRefusals int
 	// LocalSummaries counts leaves summarized locally because a call was refused.
 	LocalSummaries int
+	// IncompleteAnswers counts answers the provider did not complete for a reason
+	// other than the output ceiling (a content filter, a failure, no reason); the
+	// work they were for degrades like a refused call.
+	IncompleteAnswers int
 	// StructureTruncated reports that the node ceiling cut the tree short.
 	StructureTruncated bool
 	// DeadlineReached reports that indexer.timeout_index ended LLM work early.
@@ -75,9 +79,9 @@ func (s *Stats) addUpstream(charged int64, reported, retry bool) {
 		s.Retries++
 	}
 	if reported {
-		s.ReportedTokens += charged
+		s.ReportedTokens = satAdd(s.ReportedTokens, charged)
 	} else {
-		s.EstimatedTokens += charged
+		s.EstimatedTokens = satAdd(s.EstimatedTokens, charged)
 	}
 	s.mu.Unlock()
 }
@@ -88,20 +92,28 @@ func (s *Stats) addRefusal(err error) {
 		return
 	}
 	s.mu.Lock()
-	s.BudgetRefusals++
-	if errors.Is(err, errRollingBudgetExceeded) {
+	switch {
+	case errors.Is(err, errIncompleteAnswer):
+		// Not a refusal: the provider answered but did not complete the answer.
+		s.IncompleteAnswers++
+	case errors.Is(err, errRollingBudgetExceeded):
+		s.BudgetRefusals++
 		s.RollingRefusals++
+	default:
+		s.BudgetRefusals++
 	}
 	s.mu.Unlock()
 }
 
 // degradedReason returns the summary error code of a run whose tree is less
 // complete than its content allows: "timeout" when indexer.timeout_index ended
-// LLM work, "budget_exhausted" when a rolling budget refused calls, and
+// LLM work, "budget_exhausted" when a rolling budget refused calls,
+// "provider_error" when the provider did not complete answers (the code the
+// file summaries use for provider failures, file_search_file_summaries §4.6), and
 // "document_limit" when only the document's own ceilings applied, whether they
 // refused calls or cut the structure short (StructureTruncated). "" is a complete
-// run. The two refreshable causes take precedence, so a refresh can still recover
-// the refused work; a refreshed tree that is still truncated then reports the
+// run. The three refreshable causes take precedence, so a refresh can still
+// recover the work; a refreshed tree that is still truncated then reports the
 // permanent "document_limit".
 func (s *Stats) degradedReason() string {
 	if s == nil {
@@ -114,6 +126,8 @@ func (s *Stats) degradedReason() string {
 		return degradedTimeout
 	case s.RollingRefusals > 0:
 		return degradedBudget
+	case s.IncompleteAnswers > 0:
+		return degradedProviderError
 	case s.BudgetRefusals > 0 || s.LocalSummaries > 0 || s.StructureTruncated:
 		return degradedDocumentLimit
 	}
@@ -124,6 +138,7 @@ func (s *Stats) degradedReason() string {
 const (
 	degradedTimeout       = "timeout"
 	degradedBudget        = "budget_exhausted"
+	degradedProviderError = "provider_error"
 	degradedDocumentLimit = "document_limit"
 )
 

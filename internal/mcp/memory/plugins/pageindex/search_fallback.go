@@ -18,7 +18,8 @@ const (
 	// searchFallbackSearchLimit: the search's own tree_query ceilings left no room
 	// for the planner, or its answer was cut at the output ceiling.
 	searchFallbackSearchLimit = "search_limit"
-	// searchFallbackPlannerFailed: the provider failed or the answer was unusable.
+	// searchFallbackPlannerFailed: the provider failed, did not complete the
+	// answer, or the answer was unusable.
 	searchFallbackPlannerFailed = "planner_failed"
 )
 
@@ -63,6 +64,8 @@ func (s SearchStats) clone() SearchStats {
 // fallbackCause classifies the error that made the planner unavailable.
 func fallbackCause(err error) string {
 	switch {
+	case errors.Is(err, errIncompleteAnswer):
+		return searchFallbackPlannerFailed
 	case errors.Is(err, errRollingBudgetExceeded):
 		return searchFallbackBudget
 	case errors.Is(err, ErrBudgetExceeded):

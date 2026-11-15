@@ -27,8 +27,8 @@ type IndexEntry struct {
 	// SourceContentHash mirrors Tree.SourceContentHash so search-time candidate
 	// selection can reject entries that no longer match the active file (§4.5).
 	SourceContentHash string `json:"source_content_hash,omitempty"`
-	// Degraded mirrors Tree.Degraded. A "timeout" or "budget_exhausted" entry is
-	// re-indexed later (RefreshAttempts so far, not before RefreshAfter, UTC
+	// Degraded mirrors Tree.Degraded. A "timeout", "budget_exhausted" or
+	// "provider_error" entry is re-indexed later (RefreshAttempts so far, not before RefreshAfter, UTC
 	// RFC 3339); a "document_limit" entry is final for its content.
 	Degraded        string `json:"degraded,omitempty"`
 	RefreshAttempts int    `json:"refresh_attempts,omitempty"`

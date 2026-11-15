@@ -182,6 +182,13 @@ Applied:
   content filter or a missing reason; an answer without a status is complete.
   Neither is used or cached; both degrade their work instead of failing the run.
   Before, a `content_filter` or reason-less incomplete answer was used and cached.
+  An incomplete answer is a provider error, not a refusal: the tree reports the
+  refreshable `provider_error` (the files summaries' code for provider failures,
+  file_search_file_summaries §4.6) and search counts it as `planner_failed`.
+- One request's reported charge is capped at 2^40 tokens and every budget sum
+  saturates, so a gateway that reports absurd usage exhausts the budgets instead of
+  wrapping them into credit. A request that never left the process (an ended
+  context, an invalid output schema) is neither charged nor counted.
 - A missing `total_tokens` is the sum of input and output (P2). An output above the
   ceiling (an upstream that ignored it) is charged as debt and logged at most once a
   minute as `pageindex.llm.output_ceiling_ignored`.
@@ -201,8 +208,10 @@ Applied:
 
 - When the planner cannot run, search matches the query's terms against section
   titles and summaries (no LLM call, at most 32 terms and 4 KiB per field) and
-  returns at most three non-overlapping matching sections, ranked below planned
-  results, instead of always the first section. Markdown sections are keyed by
+  returns at most three non-overlapping matching sections, best match first,
+  instead of always the first section. Its scores are fractions of the lowest
+  planned score, so a guess never outranks a planned section, and a rolling-budget
+  refusal of the planner is counted as `budget_exhausted`. Markdown sections are keyed by
   heading line, which the old first-section range (page 1) missed whenever a
   document did not start with a heading.
 - Planner ranges were resolved by iterating every page number in them, so a range

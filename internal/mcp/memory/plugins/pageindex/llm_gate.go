@@ -62,12 +62,6 @@ type llmAdmission struct {
 	sent int
 }
 
-// wouldRefuse reports, cheaply and without spending, that no call can be admitted
-// for budget, so callers can skip rendering and estimating a prompt.
-func (g llmGate) wouldRefuse(budget *Budget) bool {
-	return g.precheck(budget) != nil
-}
-
 // precheck returns the refusal no call for budget could escape: ErrBudgetExceeded
 // for the operation's own ceiling, errRollingBudgetExceeded for a rolling budget.
 func (g llmGate) precheck(budget *Budget) error {
@@ -110,6 +104,10 @@ func (g llmGate) answerReserve(remaining int64) int64 {
 // complete for another reason with errIncompleteAnswer, so the caller can count
 // the billed call but must neither use nor cache it.
 func (g llmGate) call(ctx context.Context, llm LLM, req Request, budget *Budget) (*Response, error) {
+	if err := ctx.Err(); err != nil {
+		// Nothing is reserved for a call whose caller has already gone.
+		return nil, errors.WithStack(err)
+	}
 	admission, err := g.admit(req, budget)
 	if err != nil {
 		return nil, err
@@ -227,7 +225,7 @@ func reportedUsage(resp *Response) bool {
 func (a *llmAdmission) attemptCharge(resp *Response, err error) int64 {
 	switch {
 	case reportedUsage(resp):
-		return int64(resp.Usage.TotalTokens)
+		return min(int64(resp.Usage.TotalTokens), maxRequestCharge)
 	case resp != nil:
 		return a.input + estimateTextTokens(a.gate.tok, resp.Text)
 	case providerAnswered(err):
@@ -238,6 +236,11 @@ func (a *llmAdmission) attemptCharge(resp *Response, err error) int64 {
 		return a.reservation()
 	}
 }
+
+// maxRequestCharge caps what one request is charged from reported usage. No real
+// request comes near it; it keeps a gateway that reports absurd usage from
+// overflowing the budgets' arithmetic, and still exhausts any ceiling.
+const maxRequestCharge int64 = 1 << 40
 
 // providerAnswered reports that err is an error response from the provider, as
 // opposed to a request that got no answer.

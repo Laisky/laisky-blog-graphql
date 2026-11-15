@@ -86,6 +86,10 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 	}
 	budget := newOperationBudget(int64(s.cfg.TreeQuery.MaxTokens), stepBudget, unlimited, in.Tenant)
 	allChunks := make([]files.ChunkEntry, 0, 8)
+	// guesses are the fallback chunks with their weight, scored once every planned
+	// chunk is known so that a guess never outranks a planned section.
+	var guesses []weightedChunk
+	minPlanned := 1.0
 	var terms map[string]struct{}
 	for _, cand := range candidates {
 		if stepBudget <= 0 || budget.Remaining() <= 0 {
@@ -105,46 +109,90 @@ func (s *Searcher) Run(ctx context.Context, in SearchInput) (files.SearchResult,
 		if err != nil {
 			continue
 		}
-		weight := 1.0
-		ranges, err := s.pickRanges(ctx, tree, in.Query, budget)
-		if err != nil {
-			// Fallback per P05: without the planner, the sections matching the
-			// query's terms (or the first section) are returned, ranked below
-			// sections the planner chose, so callers still see something.
-			if terms == nil {
-				terms = searchTerms(in.Query, maxSearchQueryTerms)
-			}
-			var matched bool
-			ranges, matched = fallbackRanges(tree, terms)
-			weight = s.recordFallback(cand.entry.DocID, err, matched)
-		} else {
-			s.recordPlanned()
-		}
-		chunks, err := s.engine.GetPageContent(tree, ranges)
-		if err != nil {
-			continue
-		}
 		// Tree.DocDescription is the authoritative public summary for this document.
 		// It is bounded to the shared limits and repeated on every returned chunk so
 		// each hit is self-contained (§3.2, §4.5).
 		docSummary := publicDocSummary(tree)
-		for i, ch := range chunks {
-			score := weight * positionDecay(i, len(chunks))
-			allChunks = append(allChunks, files.ChunkEntry{
-				FilePath:           cand.userPath,
-				FileSeekStartBytes: int64(ch.Page) * 1024,
-				FileSeekEndBytes:   int64(ch.Page)*1024 + int64(len(ch.Content)),
-				ChunkContent:       ch.Content,
-				FileSummary:        docSummary,
-				Score:              score,
-			})
+		ranges, err := s.pickRanges(ctx, tree, in.Query, budget)
+		if err != nil {
+			// Fallback per P05: without the planner, the sections matching the
+			// query's terms (or the first section) are returned, best match first
+			// and ranked below every section the planner chose.
+			if terms == nil {
+				terms = searchTerms(in.Query, maxSearchQueryTerms)
+			}
+			fallback, matched := fallbackRanges(tree, terms)
+			weight := s.recordFallback(cand.entry.DocID, err, matched)
+			chunks, err := s.rankedPageContent(tree, fallback)
+			if err != nil {
+				continue
+			}
+			for i, ch := range chunks {
+				guesses = append(guesses, weightedChunk{entry: chunkEntry(cand.userPath, docSummary, ch, 0), weight: weight * positionDecay(i, len(chunks))})
+			}
+			continue
 		}
+		s.recordPlanned()
+		chunks, err := s.engine.GetPageContent(tree, ranges)
+		if err != nil {
+			continue
+		}
+		for i, ch := range chunks {
+			score := positionDecay(i, len(chunks))
+			minPlanned = min(minPlanned, score)
+			allChunks = append(allChunks, chunkEntry(cand.userPath, docSummary, ch, score))
+		}
+	}
+	for _, g := range guesses {
+		// Every weight is below 1, so every guess scores below the lowest
+		// planned chunk.
+		g.entry.Score = minPlanned * g.weight
+		allChunks = append(allChunks, g.entry)
 	}
 	sort.SliceStable(allChunks, func(i, j int) bool { return allChunks[i].Score > allChunks[j].Score })
 	if in.Limit > 0 && len(allChunks) > in.Limit {
 		allChunks = allChunks[:in.Limit]
 	}
 	return files.SearchResult{Chunks: allChunks}, nil
+}
+
+// weightedChunk is a fallback chunk with the share of the lowest planned score
+// it receives.
+type weightedChunk struct {
+	entry  files.ChunkEntry
+	weight float64
+}
+
+// chunkEntry builds the search hit of chunk ch of the document at userPath.
+func chunkEntry(userPath, docSummary string, ch Chunk, score float64) files.ChunkEntry {
+	return files.ChunkEntry{
+		FilePath:           userPath,
+		FileSeekStartBytes: int64(ch.Page) * 1024,
+		FileSeekEndBytes:   int64(ch.Page)*1024 + int64(len(ch.Content)),
+		ChunkContent:       ch.Content,
+		FileSummary:        docSummary,
+		Score:              score,
+	}
+}
+
+// rankedPageContent resolves ranges in their order, each range's pages in page
+// order and every page once, so the best-ranked range's pages come first.
+func (s *Searcher) rankedPageContent(tree *Tree, ranges []PageRange) ([]Chunk, error) {
+	out := make([]Chunk, 0, 8)
+	seen := map[int]bool{}
+	for _, r := range ranges {
+		chunks, err := s.engine.GetPageContent(tree, []PageRange{r})
+		if err != nil {
+			return nil, err
+		}
+		for _, ch := range chunks {
+			if !seen[ch.Page] {
+				seen[ch.Page] = true
+				out = append(out, ch)
+			}
+		}
+	}
+	return out, nil
 }
 
 func positionDecay(i, n int) float64 {
@@ -174,8 +222,8 @@ func filterCandidates(ix Index, prefix string) []rankedCandidate {
 // The call goes through the shared llmGate, so its input and output count against
 // the search's tree_query budget and the caller's rolling tenant budget.
 func (s *Searcher) pickRanges(ctx context.Context, tree *Tree, query string, budget *Budget) ([]PageRange, error) {
-	if s.gate.wouldRefuse(budget) {
-		return nil, ErrBudgetExceeded
+	if err := s.gate.precheck(budget); err != nil {
+		return nil, err
 	}
 	remaining := budget.Remaining()
 	prompt, err := s.plannerPrompt(tree, query, remaining-s.gate.answerReserve(remaining))

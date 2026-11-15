@@ -234,10 +234,13 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 	if req.MaxOutTokens > 0 {
 		params.MaxOutputTokens = param.NewOpt(int64(req.MaxOutTokens))
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, errors.Wrapf(errRequestNotSent, "context ended: %v", err)
+	}
 	if len(req.Schema) > 0 {
 		var schema map[string]any
 		if err := json.Unmarshal(req.Schema, &schema); err != nil {
-			return nil, errors.Wrap(err, "decode schema")
+			return nil, errors.Wrapf(errRequestNotSent, "decode schema: %v", err)
 		}
 		name := req.SchemaName
 		if name == "" {
@@ -305,7 +308,7 @@ func (l *openaiLLM) Respond(ctx context.Context, req Request) (*Response, error)
 	}
 	if usage.TotalTokens == 0 {
 		// Some gateways report input and output but no total.
-		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+		usage.TotalTokens = int(satAdd(resp.Usage.InputTokens, resp.Usage.OutputTokens))
 	}
 	text := resp.OutputText()
 	truncated, incomplete := answerState(resp, req.MaxOutTokens)
