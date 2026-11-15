@@ -442,7 +442,10 @@ export function SsoLoginPage(props: SsoLoginPageProps) {
         setTurnstileMessage('Please complete the security verification again.');
       }
 
-      setStatus({ tone: 'error', message: describeSsoAuthError(message) });
+      setStatus({
+        tone: 'error',
+        message: describeSsoAuthError(message, { emailCode: mode === 'login' && loginMethod === 'email_code' }),
+      });
     } finally {
       setIsSubmitting(false);
     }

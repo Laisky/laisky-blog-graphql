@@ -119,6 +119,18 @@ must fail schema validation rather than reach raw storage.
 `tools/list`, `find_tool`, and the static MCP server card must publish compatible
 mutation preconditions. The runtime `mcp.Tool` marshaler is authoritative for both
 structured and raw schemas.
+Both `file_write` and `file_restore_version` retain common properties at the
+root and repeat their complete argument objects in each `oneOf` alternative.
+This supports clients that render union alternatives without merging sibling
+root fields, such as the TypeScript declarations of Codex CLI code mode. Each
+alternative declares exactly the arguments it accepts: the edit alternative
+requires `expected_version` and allows `create_only` only as `false`; the create
+alternative requires `create_only: true` and omits `expected_version`, which its
+`not` clause rejects, because such renderers drop `not` and would otherwise
+advertise the forbidden version as optional. Both representations require
+project/path and content or history_id, plus exactly one valid mutation
+condition; no runtime concurrency rule is relaxed. A refreshed client catalog is
+needed after deploying a changed tool schema.
 
 The production Web HTTP save and restore routes resolve the same version-aware
 project plugin as MCP. Historical bytes come from the immutable tenant-scoped

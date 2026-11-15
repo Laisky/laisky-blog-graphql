@@ -17,7 +17,9 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `library/log`, `library/throttle`, `internal/web`, `internal/library/toolpolicy`,
 `internal/library/ssoredirect`, `internal/web/blog/controller`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
-`internal/web/telegram/dao` and `internal/web/telegram/service`. These exercise input validation, controlled
+`internal/web/telegram/dao`, `internal/web/telegram/service`, `library/clientip`,
+`internal/web/blog/service`, `internal/web/blog/oneapi` and
+`internal/web/blog/controller`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
@@ -34,6 +36,28 @@ is `.scripts/fast_ci_tests.json`. The runner rejects missing discovery, skipped
 or failed tests, unsuccessful processes and missing package completion. Its
 JSON receipt records source, toolchain, command exits and elapsed time. Counts
 and selected tests must be deliberately reviewed when changing the manifest.
+
+The client-identity selections cover the trusted-proxy policy (defaults, explicit
+empty list, invalid entries failing startup), the right-to-left forwarding-chain walk
+through the production engine, direct peers that cannot choose their adaptive-authentication
+risk key, IPv6 /64 grouping, and the bounded account-keyed failure budget that survives
+client-address rotation ([client identity](client_identity.md)). They also cover a request
+host that can select but never disable the Turnstile pair, `X-Forwarded-Host` honored only
+from trusted proxies, in-flight reservations against concurrent guesses, collation-folded
+and identity-unified account keys, complete-pair validation, legacy mutation retirement, alias reset and concurrent reservation preservation, and a flood that cannot evict an attacked account.
+They also cover accounts that fold to one spelling but are distinct in the store:
+a sign-in to one never clears or orphans the other's evidence, including after a
+link flip, under a concurrent burst, through a stale identity-index entry, for
+identity-less email-code failures, and after the link bound overflows. A further
+contract test checks that the fold never splits inputs the MongoDB lookup treats
+as one account.
+Registration codes count against the email from rotating addresses, and the shared
+hostname rule and the trusted-proxy startup warning are covered too. The
+`internal/web/blog/service` and `internal/web/blog/oneapi` selections run on in-memory
+SQLite. They prove that one emailed code is compared at most five times, sequentially
+or concurrently, that wrong and storage-failed registration codes are told apart, and
+that codes stored before the attempts column existed remain usable. The MongoDB forms
+of these tests run in the manual MongoDB contract job.
 
 The SSO selections run the shared redirect-policy and registry vectors that the
 frontend tests also consume, the registered-client code issuance and redemption
@@ -197,3 +221,16 @@ with zero skips in 40.679 seconds using a fresh isolated build cache and 4.119
 seconds using that cache again. These exclude formatting, Actions provisioning
 and module downloads; they are not hosted-runner timings. The prior PR #55
 compatibility job took about 7m37s; its complete body remains manually available.
+
+The FileIO schema selections exercise serialized tools/list and find_tool,
+complete write/restore union alternatives, SDK-validated mandatory conditions,
+and that each alternative declares exactly the arguments it accepts. They use
+synthetic arguments and no storage, network or database. Real mutation
+concurrency, database acceptance and native-client probes remain deliberate
+local/manual work.
+
+MCP request diagnostics also run in the automatic fast gate: the actual dependency
+error hook through a synthetic alert receiver, production NewServer logger wiring,
+typed-cause/protocol classification, SDK method-allowlist parity, alert-to-OTLP
+failure_id correlation, FIFO-barrier exactly-one-alert checks, expected quiet
+probes, sealed-envelope spoofing and safe correlation normalization.

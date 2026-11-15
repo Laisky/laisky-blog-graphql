@@ -47,6 +47,7 @@ func TestCredentialFailureClassification(t *testing.T) {
 
 // TestTurnstileGateError verifies gate failures never claim the credentials were wrong.
 func TestTurnstileGateError(t *testing.T) {
+	require.ErrorIs(t, turnstileGateError(errors.Wrap(model.ErrLoginUnavailable, "configuration")), model.ErrLoginUnavailable)
 	require.ErrorIs(t, turnstileGateError(errors.Wrap(model.ErrTurnstileRequired, "login")), model.ErrTurnstileRequired)
 	require.ErrorIs(t, turnstileGateError(errors.Wrap(model.ErrTurnstileFailed, "login")), model.ErrTurnstileFailed)
 	require.ErrorIs(t, turnstileGateError(errors.New("unexpected")), model.ErrTurnstileFailed)

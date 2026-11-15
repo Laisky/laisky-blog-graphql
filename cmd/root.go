@@ -104,7 +104,7 @@ func setupLogger(ctx context.Context) {
 		zap.WrapCore(func(core zapcore.Core) zapcore.Core {
 			return zapcore.NewTee(core, log.WebDiagnosticAlertCore(alertPusher))
 		}),
-	).Named("laisky-graphql")
+	).Named(log.ServiceLoggerScope)
 
 	lvl := gconfig.Shared.GetString("log-level")
 	if err := log.Logger.ChangeLevel(glog.Level(lvl)); err != nil {

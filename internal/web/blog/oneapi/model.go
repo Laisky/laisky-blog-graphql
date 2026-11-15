@@ -136,6 +136,10 @@ type SSOEmailVerificationCode struct {
 	CodeHash  string    `gorm:"column:code_hash;size:64"`
 	CreatedAt time.Time `gorm:"column:created_at"`
 	ExpiresAt time.Time `gorm:"column:expires_at;index"`
+	// Attempts counts verification attempts already compared against this
+	// challenge (see Repo.ReserveEmailCodeAttempt). AutoMigrate adds it to
+	// tables created before it existed, with existing rows at zero.
+	Attempts int `gorm:"column:attempts;not null;default:0"`
 }
 
 // TableName returns the SSO email-code table name.

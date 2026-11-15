@@ -174,7 +174,10 @@ func (r *Repo) ValidateLogin(ctx context.Context, login string, password string)
 		return nil, err
 	}
 	if user.Password == "" || !ValidatePasswordAndHash(password, user.Password) || user.Status != StatusEnabled {
-		return nil, errors.WithStack(blogmodel.ErrInvalidCredentials)
+		// The account exists: carry its identity so the risk tracker counts the
+		// failure against the account whether the username or the email (or a
+		// collation variant of either) was used.
+		return nil, blogmodel.NewCredentialRejection(blogmodel.OneAPIRiskIdentity(user.ID))
 	}
 	return r.toBlogUser(ctx, user)
 }

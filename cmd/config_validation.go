@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/ssoredirect"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 const (
@@ -46,6 +48,7 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	validateMCPMemoryConfig(get, &validationErrs)
 	validateWebsearchConfig(get, &validationErrs)
 	validateWebSiteConfig(get, &validationErrs)
+	validateClientIdentityConfig(get, &validationErrs)
 	validateSSOConfig(get, &validationErrs)
 	validateSSORedirectConfig(get, &validationErrs)
 	validateOpenAIConfig(get, &validationErrs)
@@ -55,6 +58,105 @@ func validateStartupConfigWithGetter(get configGetter) error {
 	}
 
 	return errors.Errorf("invalid configuration:\n - %s", strings.Join(validationErrs, "\n - "))
+}
+
+// validateClientIdentityConfig validates the trusted-proxy policy and the
+// adaptive-authentication bounds, so a mistyped proxy network fails startup
+// instead of silently trusting more or fewer peers than intended.
+func validateClientIdentityConfig(get configGetter, errs *[]string) {
+	if _, err := clientip.LoadPolicy(clientip.ConfigGetter(get)); err != nil {
+		appendValidationErrorf(errs, "%s", err.Error())
+	}
+
+	for _, key := range []string{
+		"settings.web.turnstile.risk.account_failure_threshold",
+		"settings.web.turnstile.risk.max_tracked_accounts",
+		"settings.web.turnstile.risk.max_tracked_clients",
+	} {
+		validateOptionalIntMin(get, key, 0, errs)
+	}
+	validateTurnstilePairs(get, errs)
+	validateTurnstileSecretSelection(get, errs)
+}
+
+// validateTurnstilePairs requires each configured widget and verifier to be
+// present together. Validate every pair before fallback selection: even a
+// non-default site can be selected by its host and must render its challenge.
+func validateTurnstilePairs(get configGetter, errs *[]string) {
+	validateTurnstilePair("settings.web.turnstile", "site_key", "secret_key",
+		get("settings.web.turnstile.site_key"), get("settings.web.turnstile.secret_key"), errs)
+	sites := toStringMap(get("settings.web.sites"))
+	keys := make([]string, 0, len(sites))
+	for key := range sites {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		site := toStringMap(sites[key])
+		if site == nil {
+			continue
+		}
+		validateTurnstilePair("settings.web.sites."+key, "turnstile_site_key", "turnstile_secret_key",
+			site["turnstile_site_key"], site["turnstile_secret_key"], errs)
+	}
+}
+
+// validateTurnstilePair validates types and completeness without exposing keys.
+func validateTurnstilePair(base, siteKeyName, secretKeyName string, rawSiteKey, rawSecretKey any, errs *[]string) {
+	values := [2]string{}
+	valid := true
+	for i, item := range []struct {
+		name string
+		raw  any
+	}{{siteKeyName, rawSiteKey}, {secretKeyName, rawSecretKey}} {
+		if item.raw == nil {
+			continue
+		}
+		value, err := parseStrictString(item.raw)
+		if err != nil {
+			appendValidationErrorf(errs, "%s.%s must be a string", base, item.name)
+			valid = false
+			continue
+		}
+		values[i] = strings.TrimSpace(value)
+	}
+	if valid && (values[0] == "") != (values[1] == "") {
+		appendValidationErrorf(errs, "%s: %s and %s must both be set or both be unset", base, siteKeyName, secretKeyName)
+	}
+}
+
+// validateTurnstileSecretSelection rejects a Turnstile configuration in which
+// a request for a host that matches no site would have no unambiguous pair:
+// several sites carry secrets, none of them is marked default, and there is no
+// global settings.web.turnstile.secret_key. The gate never falls back to "no
+// challenge" for such a host, so the operator must say which pair applies.
+func validateTurnstileSecretSelection(get configGetter, errs *[]string) {
+	if global, _ := parseStrictString(get("settings.web.turnstile.secret_key")); strings.TrimSpace(global) != "" {
+		return
+	}
+	sites := toStringMap(get("settings.web.sites"))
+	withSecret := make([]string, 0, len(sites))
+	for siteKey, siteVal := range sites {
+		siteCfg := toStringMap(siteVal)
+		if siteCfg == nil {
+			continue
+		}
+		secret, _ := parseStrictString(siteCfg["turnstile_secret_key"])
+		if strings.TrimSpace(secret) == "" {
+			continue
+		}
+		if isDefault, ok := parseStrictBool(siteCfg["default"]); ok && isDefault {
+			return
+		}
+		withSecret = append(withSecret, siteKey)
+	}
+	if len(withSecret) > 1 {
+		sort.Strings(withSecret)
+		appendValidationErrorf(errs,
+			"settings.web.sites %s all set turnstile_secret_key but none is default: true and settings.web.turnstile.secret_key is unset, "+
+				"so requests for other hosts have no unambiguous Turnstile pair; mark one site default or set the global pair",
+			strings.Join(withSecret, ", "))
+	}
 }
 
 // validateSSOConfig validates the selected SSO user store and OneAPI database

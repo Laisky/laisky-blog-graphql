@@ -16,6 +16,8 @@ import (
 	srv "github.com/mark3labs/mcp-go/server"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
@@ -51,7 +53,8 @@ func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
 			logger.Debug("mcp request failed (non-critical)", fields...)
 			return
 		}
-		logger.Error("mcp request failed", fields...)
+		fields = append(fields, mcpRequestFailureDiagnostic(id, method, err))
+		logger.Error(appLog.MCPRequestFailedMessage, fields...)
 	})
 
 	hooks.AddOnRegisterSession(func(ctx context.Context, session srv.ClientSession) {
@@ -119,6 +122,7 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 			zap.String("body", redactedBody),
 			zap.Bool("body_truncated", truncated),
 			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("client_ip", clientip.FromRequest(r)),
 			zap.Bool("mcp_session_header_present", sessionID != ""),
 			zap.String("mcp_session_id", sessionID),
 		)
@@ -136,6 +140,7 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 			zap.String("body", redactedResp),
 			zap.Bool("body_truncated", respTruncated),
 			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("client_ip", clientip.FromRequest(r)),
 			zap.Duration("cost", time.Since(startAt)),
 		)
 	})
@@ -226,4 +231,36 @@ func truncateForLog(data []byte, limit int) (string, bool) {
 		return string(data), false
 	}
 	return string(data[:limit]), true
+}
+
+// mcpRequestFailureDiagnostic preserves typed protocol context without exporting client content.
+// The category comes only from the SDK's typed causes (sentinels and error types documented on its
+// OnError hook); the wire code comes only from the SDK protocol error. Error text is never inspected.
+func mcpRequestFailureDiagnostic(id any, method mcp.MCPMethod, err error) zap.Field {
+	summary := appLog.MCPFailureSummary{Method: method, RequestID: id, ErrorKind: appLog.MCPFailureRequestFailed}
+	var protocolError interface{ ToJSONRPCError() mcp.JSONRPCError }
+	if errors.As(err, &protocolError) {
+		summary.ErrorCode = protocolError.ToJSONRPCError().Error.Code
+		summary.ErrorKind = appLog.MCPFailureProtocolError
+	}
+	var unparsable *srv.UnparsableMessageError
+	switch {
+	case errors.Is(err, srv.ErrToolNotFound):
+		summary.ErrorKind = appLog.MCPFailureToolNotFound
+	case errors.Is(err, srv.ErrResourceNotFound):
+		summary.ErrorKind = appLog.MCPFailureResourceNotFound
+	case errors.Is(err, srv.ErrPromptNotFound):
+		summary.ErrorKind = appLog.MCPFailurePromptNotFound
+	case errors.Is(err, srv.ErrUnsupported):
+		summary.ErrorKind = appLog.MCPFailureUnsupported
+	case errors.As(err, &unparsable):
+		summary.ErrorKind = appLog.MCPFailureUnparsableRequest
+	case errors.Is(err, srv.ErrNotificationChannelBlocked):
+		summary.ErrorKind = appLog.MCPFailureNotificationBlocked
+	case errors.Is(err, context.Canceled):
+		summary.ErrorKind = appLog.MCPFailureCanceled
+	case errors.Is(err, context.DeadlineExceeded):
+		summary.ErrorKind = appLog.MCPFailureDeadlineExceeded
+	}
+	return appLog.MCPFailureDiagnosticField(summary)
 }

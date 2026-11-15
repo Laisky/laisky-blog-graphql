@@ -168,6 +168,11 @@ A per-address limit in the process was rejected. The gateway uses gin's default
 proxy trust, so `ClientIP()` returns whatever `X-Forwarded-For` a caller sends, and
 an attacker could rotate it freely.
 
+Update (2026-11-08, issue #84): the engine now honors forwarding headers only from
+`settings.web.trusted_proxies` (`library/clientip`, `docs/manual/client_identity.md`).
+The webhook design was not revisited, and a per-address limit still does not
+bound callers that own many addresses.
+
 [Cloudflare rate-limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)
 count per IP. The Free plan allows one rule, matched on path, over a 10-second
 period. Business and higher can count only responses that match, as in Cloudflare's

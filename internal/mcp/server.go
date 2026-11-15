@@ -24,6 +24,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/tools"
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/userrequests"
 	"github.com/Laisky/laisky-blog-graphql/library/billing/oneapi"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
@@ -155,7 +156,7 @@ func NewServer(
 		logger = log.Logger
 	}
 
-	hooks := newMCPHooks(logger.Named("mcp_hooks"))
+	hooks := newMCPHooks(logger.Named(log.MCPHooksLoggerScope))
 
 	mcpServer := srv.NewMCPServer(
 		"LAISKY MCP SERVER",
@@ -200,6 +201,7 @@ func NewServer(
 			reqLogger := serverLogger.With(
 				zap.String("request_id", requestID),
 				zap.String("remote_addr", r.RemoteAddr),
+				zap.String("client_ip", clientip.FromRequest(r)),
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 			)

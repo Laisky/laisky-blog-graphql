@@ -172,6 +172,12 @@ settings:
   web:
     url_prefix: /mcp # internal mount path on the Go server
     public_url_prefix: / # set to '/' to hide the prefix in generated links
+    # Reverse proxies allowed to report the client address (docs/manual/client_identity.md).
+    # Unset trusts loopback, RFC 1918, 100.64.0.0/10, ::1 and fc00::/7; [] trusts no proxy.
+    trusted_proxies:
+      - 100.64.0.0/10 # Tailscale (CGNAT) peers such as the nginx host; prefer its exact address
+      - 172.16.0.0/12 # docker bridge gateways
+    # client_ip_headers: [X-Forwarded-For] # default; X-Real-IP is not read unless listed
     sso:
       user_store: oneapi # use mongo only during a controlled rollback window
     github_oauth:
@@ -208,6 +214,8 @@ settings:
         theme: sso
         router: sso
         public_base_path: /
+        # This is the only Turnstile pair, so every host (mcp included) is gated with it.
+        # With several pairs, mark one site `default: true` or set settings.web.turnstile.
         turnstile_site_key: YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY
         turnstile_secret_key: YOUR_CLOUDFLARE_TURNSTILE_SECRET_KEY
   websearch:
