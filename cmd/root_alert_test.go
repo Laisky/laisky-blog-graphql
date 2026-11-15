@@ -28,6 +28,7 @@ func TestStartupAlertDiagnosticScope(t *testing.T) {
 		diagnostic bool
 	}{
 		{"search", "mcp.web_search", true},
+		{"MCP failure", "mcp_hooks", false},
 		{"fetch", "mcp.web_fetch", true},
 		{"fetch child", "mcp.web_fetch.fetch_dynamic_url_content", true},
 		{"unreviewed extract", "mcp.extract_key_info", false},
@@ -73,7 +74,11 @@ func TestStartupAlertDiagnosticScope(t *testing.T) {
 			appLog.Logger = base
 			setupLogger(ctx)
 			logger := appLog.Logger.Named(tc.scope)
-			if tc.diagnostic {
+			if tc.scope == "mcp_hooks" {
+				logger.With(zap.String("user_id", "private-user-canary")).Error("mcp request failed",
+					appLog.MCPFailureDiagnosticField(appLog.MCPFailureSummary{Method: "tools/call", RequestID: 3, ErrorKind: "tool_not_found", ErrorCode: -32602}),
+					zap.String("request", "private-request-canary"), zap.Error(fmt.Errorf("private-error-canary")))
+			} else if tc.diagnostic {
 				logger.Error("synthetic diagnostic failed", zap.String("future_revision", "parser-v2"), zap.Int("attempt", 2), zap.Error(fmt.Errorf("navigation failed: unexpected EOF; api_key=private-key-canary; response body: private-body-canary")))
 			} else {
 				logger.With(zap.String("user_id", "private-user-canary")).Error("synthetic unrelated failure", zap.Error(fmt.Errorf("arbitrary unlabelled private-personal-content-canary")))
@@ -85,7 +90,14 @@ func TestStartupAlertDiagnosticScope(t *testing.T) {
 				t.Fatal("actual startup alert missing")
 			}
 			require.Contains(t, message, tc.scope)
-			if tc.diagnostic {
+			if tc.scope == "mcp_hooks" {
+				require.Contains(t, message, "mcp_failure")
+				require.Contains(t, message, "tools/call")
+				require.Contains(t, message, "tool_not_found")
+				require.Contains(t, message, "-32602")
+				require.NotContains(t, message, "canary")
+				require.Contains(t, local.String(), "private-error-canary")
+			} else if tc.diagnostic {
 				require.Contains(t, message, "private-key-canary")
 				require.Contains(t, message, "private-body-canary")
 				require.Contains(t, message, `"future_revision":"parser-v2"`)

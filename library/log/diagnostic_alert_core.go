@@ -13,7 +13,8 @@ type webDiagnosticAlertCore struct {
 }
 
 // WebDiagnosticAlertCore routes reviewed operations to a faithful bound-context core.
-// Other logger names retain metadata-only alerts. The local logger core is separate.
+// MCP request failures export only their sealed content-free envelope. Other logger
+// names retain metadata-only alerts. The local logger core is separate.
 // Attach this core once in a tee, without an additional alert hook around that tee.
 func WebDiagnosticAlertCore(alert *logSDK.Alert) zapcore.Core {
 	return &webDiagnosticAlertCore{reviewed: alert.GetZapCore(), metadata: alert.GetZapCore()}
@@ -54,7 +55,7 @@ func (core *webDiagnosticAlertCore) Write(entry zapcore.Entry, fields []zapcore.
 	if reviewedWebDiagnosticScope(entry.LoggerName) {
 		return core.reviewed.Write(entry, fields)
 	}
-	return core.metadata.Write(entry, nil)
+	return core.metadata.Write(entry, mcpFailureAlertFields(entry, fields))
 }
 
 // Sync delegates lifecycle semantics; neither SDK core promises asynchronous delivery flushing.

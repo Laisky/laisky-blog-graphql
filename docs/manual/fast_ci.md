@@ -197,3 +197,7 @@ with zero skips in 40.679 seconds using a fresh isolated build cache and 4.119
 seconds using that cache again. These exclude formatting, Actions provisioning
 and module downloads; they are not hosted-runner timings. The prior PR #55
 compatibility job took about 7m37s; its complete body remains manually available.
+
+MCP request diagnostics also run in the automatic fast gate: the actual dependency
+error hook through a synthetic alert receiver, typed-cause/protocol classification,
+expected quiet probes, sealed-envelope spoofing and safe correlation normalization.

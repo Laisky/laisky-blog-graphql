@@ -16,6 +16,7 @@ import (
 	srv "github.com/mark3labs/mcp-go/server"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
+	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
 func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
@@ -51,6 +52,7 @@ func newMCPHooks(logger logSDK.Logger) *srv.Hooks {
 			logger.Debug("mcp request failed (non-critical)", fields...)
 			return
 		}
+		fields = append(fields, mcpRequestFailureDiagnostic(id, method, err))
 		logger.Error("mcp request failed", fields...)
 	})
 
@@ -226,4 +228,27 @@ func truncateForLog(data []byte, limit int) (string, bool) {
 		return string(data), false
 	}
 	return string(data[:limit]), true
+}
+
+// mcpRequestFailureDiagnostic preserves typed protocol context without exporting client content.
+func mcpRequestFailureDiagnostic(id any, method mcp.MCPMethod, err error) zap.Field {
+	summary := appLog.MCPFailureSummary{Method: string(method), RequestID: id}
+	var protocolError interface{ ToJSONRPCError() mcp.JSONRPCError }
+	if errors.As(err, &protocolError) {
+		summary.ErrorCode = protocolError.ToJSONRPCError().Error.Code
+		summary.ErrorKind = "protocol_error"
+	}
+	switch {
+	case errors.Is(err, srv.ErrToolNotFound):
+		summary.ErrorKind = "tool_not_found"
+	case errors.Is(err, srv.ErrResourceNotFound):
+		summary.ErrorKind = "resource_not_found"
+	case errors.Is(err, srv.ErrPromptNotFound):
+		summary.ErrorKind = "prompt_not_found"
+	case errors.Is(err, context.Canceled):
+		summary.ErrorKind = "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		summary.ErrorKind = "deadline_exceeded"
+	}
+	return appLog.MCPFailureDiagnosticField(summary)
 }
