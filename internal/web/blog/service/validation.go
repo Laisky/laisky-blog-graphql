@@ -284,6 +284,14 @@ func sanitizeAuthorName(name string) (string, error) {
 	return sanitizeRequiredText(name, maxCommentAuthorNameLen, "author name")
 }
 
+// NormalizeLoginAccount returns the form under which an account is looked up:
+// surrounding whitespace removed and lower-cased. It performs no validation, so
+// callers that key per-account state (such as the adaptive-authentication
+// tracker) group exactly the inputs the login lookup treats as one account.
+func NormalizeLoginAccount(account string) string {
+	return strings.ToLower(strings.TrimSpace(account))
+}
+
 // sanitizeUserAccount validates a user account identifier and returns the sanitized value or an error.
 // It accepts the raw account string and returns the sanitized account.
 func sanitizeUserAccount(account string) (string, error) {
@@ -291,7 +299,7 @@ func sanitizeUserAccount(account string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.ToLower(trimmed), nil
+	return NormalizeLoginAccount(trimmed), nil
 }
 
 // sanitizeUserPassword validates a user password string and returns the sanitized value or an error.
@@ -313,7 +321,7 @@ func (s *Blog) sanitizeExistingAccount(account string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.ToLower(trimmed), nil
+	return NormalizeLoginAccount(trimmed), nil
 }
 
 // sanitizeExistingPassword validates a password that is only verified against
