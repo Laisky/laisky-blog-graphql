@@ -42,6 +42,25 @@ func (r *Repo) FindValidEmailCode(ctx context.Context, account string, purpose s
 	return &code, nil
 }
 
+// ReserveEmailCodeAttempt spends one of a challenge's verification attempts.
+// Callers reserve before comparing a submitted code, so concurrent submissions
+// can never compare more than maxAttempts codes against one challenge, whatever
+// client or replica sends them. It returns ErrNotFound when the challenge
+// expired, was consumed or has no attempts left. A NULL count, which only a
+// column added outside AutoMigrate could hold, counts as zero.
+func (r *Repo) ReserveEmailCodeAttempt(ctx context.Context, id string, maxAttempts int, now time.Time) error {
+	result := r.db.WithContext(ctx).Model(&SSOEmailVerificationCode{}).
+		Where("id = ? AND COALESCE(attempts, 0) < ? AND expires_at > ?", id, maxAttempts, now.UTC()).
+		UpdateColumn("attempts", gorm.Expr("COALESCE(attempts, 0) + 1"))
+	if result.Error != nil {
+		return errors.Wrap(result.Error, "reserve sso email code attempt")
+	}
+	if result.RowsAffected != 1 {
+		return errors.WithStack(ErrNotFound)
+	}
+	return nil
+}
+
 // ConsumeEmailCode deletes a challenge only when both its identifier and hash
 // still match, making concurrent replay attempts single-use.
 func (r *Repo) ConsumeEmailCode(ctx context.Context, id string, codeHash string) error {

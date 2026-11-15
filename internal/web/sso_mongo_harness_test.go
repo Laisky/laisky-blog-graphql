@@ -42,9 +42,9 @@ import (
 
 const (
 	// ssoE2EOrigin is the WebAuthn origin the harness configures for the SSO site.
-	ssoE2EOrigin = "https://sso.example.test"
+	ssoE2EOrigin = "https://sso.laisky.com"
 	// ssoE2ERPID is the WebAuthn relying-party ID matching ssoE2EOrigin.
-	ssoE2ERPID = "sso.example.test"
+	ssoE2ERPID = "sso.laisky.com"
 	// ssoE2ESecret signs passkey sessions and derives the SSO signing key.
 	ssoE2ESecret = "sso-e2e-secret-for-tests-only-0123456789"
 )
@@ -139,7 +139,7 @@ func (e *ssoE2E) graphql(t *testing.T, bearer string, query string, variables ma
 	t.Helper()
 	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
 	require.NoError(t, err)
-	request := httptest.NewRequest(http.MethodPost, "/query", bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, ssoE2EOrigin+"/query", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	request.RemoteAddr = "203.0.113.10:5000"
 	if bearer != "" {

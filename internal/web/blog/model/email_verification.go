@@ -27,4 +27,7 @@ type EmailVerificationCode struct {
 	CreatedAt time.Time `bson:"created_at" json:"created_at"`
 	// ExpiresAt records when this code becomes invalid and TTL-prunable.
 	ExpiresAt time.Time `bson:"expires_at" json:"expires_at"`
+	// Attempts counts verification attempts already compared against this
+	// code. Codes stored before it existed have no field and count as zero.
+	Attempts int `bson:"attempts" json:"-"`
 }
