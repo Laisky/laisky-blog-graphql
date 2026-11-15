@@ -29,6 +29,8 @@ jobs:
         run: go install golang.org/x/tools/cmd/goimports@v0.50.0
       - name: Verify formatting without rewriting source
         run: ./.scripts/check_go_format.sh
+      - name: Go toolchain pins match go.mod
+        run: python3 .scripts/test_go_toolchain.py
       - name: Validate fail-closed gate controls
         run: python3 .scripts/test_fast_ci.py
       - name: Formatting and essential unit tests

@@ -44,6 +44,12 @@ chunk. These facts were checked against the Arweave node source
   never refunded. `telegram/dao.Upload.UploadFileWithApikey` therefore detaches
   the upload from caller cancellation once the charge has been accepted.
   Unbilled uploads keep the caller's cancellation.
+- **A returned ID means accepted, not confirmed.** Upload returns the
+  transaction ID once the gateway has accepted the signed header and every
+  chunk. The transaction may still be pending, and an unmined transaction can
+  be dropped. Callers that persist the ID as proof of permanent storage must
+  poll `GET /tx/{id}/status` for confirmations; nothing in this repository
+  does that today, which predates the goar migration.
 
 ## Gateway responses
 

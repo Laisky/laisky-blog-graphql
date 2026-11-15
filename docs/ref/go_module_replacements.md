@@ -6,10 +6,13 @@ former replacements existed and why they were dropped rather than upstreamed.
 
 ## `github.com/pgvector/pgvector-go`
 
-- **Why it existed.** `third_party/pgvector-go` (added in February 2026 with the
-  gorm removal) kept only `Vector`. Upstream v0.3.0's `go.mod` required ent,
-  bun, go-pg, gorm, sqlx, lib/pq and pgx, which would have pulled the removed
-  ORM stack back into the module graph.
+- **Why it existed.** `third_party/pgvector-go` (added in February 2026, when
+  most packages moved from GORM to `database/sql`) kept only `Vector`. Upstream
+  v0.3.0's `go.mod` required ent, bun, go-pg, gorm, sqlx, lib/pq and pgx. GORM
+  itself stays a direct dependency (the OneAPI user store in
+  `internal/web/blog/oneapi` and its wiring in `cmd/api.go` still use it), so
+  the concern was the other ORM and driver modules that upstream would have
+  added to the module graph.
 - **Why it was dropped.** Upstream v0.4.0 and later have a `go.mod` with no
   requirements (v0.4.1, 2026-07-30), so depending on it adds no modules.
 - **Behavior differences from the stub.** Upstream `Scan` accepts only `string`

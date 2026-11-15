@@ -28,6 +28,7 @@ lint:
 	govulncheck ./...
 	$(MAKE) lint-pure-go
 	$(MAKE) lint-system-owner
+	python3 ./.scripts/test_go_toolchain.py
 
 .PHONY: format-go
 format-go:
