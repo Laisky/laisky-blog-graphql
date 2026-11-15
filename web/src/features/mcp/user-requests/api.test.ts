@@ -1,7 +1,17 @@
 import { getPrivateErrorMessage } from '@/lib/private-error';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createUserRequest, getQuota, type ImageSubmissionError } from './api';
+import {
+  createUserRequest,
+  getDescriptionCollapsed,
+  getQuota,
+  getReturnMode,
+  getSavedCommandsExpanded,
+  setDescriptionCollapsed,
+  setReturnMode,
+  setSavedCommandsExpanded,
+  type ImageSubmissionError,
+} from './api';
 
 vi.mock('../shared/auth', () => ({
   buildAuthorizationHeader: (k: string) => (k ? `Bearer ${k}` : ''),
@@ -93,5 +103,37 @@ describe('private user request errors', () => {
     const error = await createUserRequest('test-key', 'request').catch((failure: unknown) => failure);
     expect(error).toBeInstanceOf(SyntaxError);
     expect(getPrivateErrorMessage(error)).toBe('Invalid user requests JSON response');
+  });
+});
+
+describe('local console preferences', () => {
+  it('round-trips each preference', () => {
+    localStorage.clear();
+    setReturnMode('first');
+    setDescriptionCollapsed(true);
+    setSavedCommandsExpanded(false);
+    expect(getReturnMode()).toBe('first');
+    expect(getDescriptionCollapsed()).toBe(true);
+    expect(getSavedCommandsExpanded()).toBe(false);
+    localStorage.clear();
+  });
+
+  it('falls back to defaults and never throws when site storage is blocked', () => {
+    const refused = () => {
+      throw new DOMException('The operation is insecure.', 'SecurityError');
+    };
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(refused);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(refused);
+    try {
+      expect(getReturnMode()).toBe('all');
+      expect(getDescriptionCollapsed()).toBe(false);
+      expect(getSavedCommandsExpanded()).toBe(true);
+      expect(() => setReturnMode('first')).not.toThrow();
+      expect(() => setDescriptionCollapsed(true)).not.toThrow();
+      expect(() => setSavedCommandsExpanded(false)).not.toThrow();
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
   });
 });

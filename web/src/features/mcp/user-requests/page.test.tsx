@@ -61,6 +61,31 @@ describe('UserRequestsPage Keyboard Behavior', () => {
     vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all' });
   });
 
+  it.each(['99', '-1', 'abc'])('renders when the stored delete option index %j is not a valid option', (stored) => {
+    localStorage.setItem('mcp_delete_consumed_option', stored);
+    try {
+      render(<UserRequestsPage />);
+      expect(screen.getByPlaceholderText(/Describe the feedback/i)).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('mcp_delete_consumed_option');
+    }
+  });
+
+  it('renders and remembers nothing when site storage is blocked', () => {
+    const refused = () => {
+      throw new DOMException('The operation is insecure.', 'SecurityError');
+    };
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(refused);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(refused);
+    try {
+      render(<UserRequestsPage />);
+      expect(screen.getByPlaceholderText(/Describe the feedback/i)).toBeInTheDocument();
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
+  });
+
   it('should show the correct hint in the placeholder', () => {
     render(<UserRequestsPage />);
     const textarea = screen.getByPlaceholderText(/Describe the feedback.*Ctrl \+ Enter to queue/i);

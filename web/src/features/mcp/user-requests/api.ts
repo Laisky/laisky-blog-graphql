@@ -1,4 +1,5 @@
 import { requestWithUnexpectedError, markPrivateError, readPrivateJsonResponse } from '@/lib/private-error';
+import { readStorage, writeStorage } from '@/lib/safe-storage';
 import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
 
 // ============================================================================
@@ -20,8 +21,7 @@ const RETURN_MODE_STORAGE_KEY = 'mcp_return_mode';
  * @deprecated Use getReturnModeFromServer for server-persisted preference.
  */
 export function getReturnMode(): ReturnMode {
-  if (typeof window === 'undefined') return 'all';
-  const stored = localStorage.getItem(RETURN_MODE_STORAGE_KEY);
+  const stored = readStorage(RETURN_MODE_STORAGE_KEY);
   if (stored === 'first' || stored === 'all') {
     return stored;
   }
@@ -33,8 +33,7 @@ export function getReturnMode(): ReturnMode {
  * @deprecated Use setReturnModeOnServer for server-persisted preference.
  */
 export function setReturnMode(mode: ReturnMode): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(RETURN_MODE_STORAGE_KEY, mode);
+  writeStorage(RETURN_MODE_STORAGE_KEY, mode);
 }
 
 // ============================================================================
@@ -166,16 +165,14 @@ const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'mcp_description_collapsed';
  * Defaults to false (expanded) if not set.
  */
 export function getDescriptionCollapsed(): boolean {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem(DESCRIPTION_COLLAPSED_STORAGE_KEY) === 'true';
+  return readStorage(DESCRIPTION_COLLAPSED_STORAGE_KEY) === 'true';
 }
 
 /**
  * setDescriptionCollapsed persists the collapsed state of the description section.
  */
 export function setDescriptionCollapsed(collapsed: boolean): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(DESCRIPTION_COLLAPSED_STORAGE_KEY, String(collapsed));
+  writeStorage(DESCRIPTION_COLLAPSED_STORAGE_KEY, String(collapsed));
 }
 
 /**
@@ -183,8 +180,7 @@ export function setDescriptionCollapsed(collapsed: boolean): void {
  * Defaults to true (expanded) if not set.
  */
 export function getSavedCommandsExpanded(): boolean {
-  if (typeof window === 'undefined') return true;
-  const stored = localStorage.getItem(SAVED_COMMANDS_EXPANDED_STORAGE_KEY);
+  const stored = readStorage(SAVED_COMMANDS_EXPANDED_STORAGE_KEY);
   // Default to true if not set
   return stored !== 'false';
 }
@@ -193,8 +189,7 @@ export function getSavedCommandsExpanded(): boolean {
  * setSavedCommandsExpanded persists the expanded state of the Saved Commands section.
  */
 export function setSavedCommandsExpanded(expanded: boolean): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(SAVED_COMMANDS_EXPANDED_STORAGE_KEY, String(expanded));
+  writeStorage(SAVED_COMMANDS_EXPANDED_STORAGE_KEY, String(expanded));
 }
 
 // ============================================================================

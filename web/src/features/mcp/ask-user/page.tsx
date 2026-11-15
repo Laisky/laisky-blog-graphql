@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
+import { createVisibilityPoller } from '@/lib/visibility-poller';
 
-import { createVisibilityPoller } from '../shared/visibility-poller';
 import { listRequests, submitAnswer, type AskUserRequest } from './api';
 
 /** POLL_INTERVAL_MS is the background refresh cadence for pending questions. */

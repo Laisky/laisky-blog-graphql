@@ -1,5 +1,7 @@
 import { useEffect, useMemo } from 'react';
 
+import { readStorage, writeStorage } from '@/lib/safe-storage';
+
 const memoryInputStorageKey = 'mcp.memory.inputs.v1';
 
 /**
@@ -27,12 +29,8 @@ export type MemoryPersistedInputs = {
  */
 export function useMemoryInputDefaults(): Partial<MemoryPersistedInputs> {
   return useMemo(() => {
-    if (typeof window === 'undefined') {
-      return {};
-    }
-
     try {
-      return JSON.parse(window.localStorage.getItem(memoryInputStorageKey) ?? '{}') as Partial<MemoryPersistedInputs>;
+      return JSON.parse(readStorage(memoryInputStorageKey) ?? '{}') as Partial<MemoryPersistedInputs>;
     } catch {
       return {};
     }
@@ -61,10 +59,6 @@ export function usePersistMemoryInputs(inputs: MemoryPersistedInputs): void {
   } = inputs;
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
     const payload: MemoryPersistedInputs = {
       memoryPlugin,
       project,
@@ -81,7 +75,7 @@ export function usePersistMemoryInputs(inputs: MemoryPersistedInputs): void {
       listLimit,
     };
 
-    window.localStorage.setItem(memoryInputStorageKey, JSON.stringify(payload));
+    writeStorage(memoryInputStorageKey, JSON.stringify(payload));
   }, [
     memoryPlugin,
     project,

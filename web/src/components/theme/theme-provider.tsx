@@ -1,6 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import { readStorage, removeStorage, writeStorage } from '@/lib/safe-storage';
+
 const STORAGE_KEY = 'ui-theme-preference';
 
 /** THEME_COLORS are the browser-UI tints matching the page header in each scheme (see index.html). */
@@ -25,14 +27,7 @@ function parseStoredTheme(stored: string | null): ThemeSetting {
 
 /** getStoredTheme reads the override, treating blocked site data as "follow the system". */
 function getStoredTheme(): ThemeSetting {
-  if (typeof window === 'undefined') {
-    return 'system';
-  }
-  try {
-    return parseStoredTheme(window.localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return 'system';
-  }
+  return parseStoredTheme(readStorage(STORAGE_KEY));
 }
 
 /**
@@ -41,14 +36,10 @@ function getStoredTheme(): ThemeSetting {
  * theme still applies to the current page, it just is not remembered.
  */
 function persistTheme(setting: ThemeSetting) {
-  try {
-    if (setting === 'system') {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } else {
-      window.localStorage.setItem(STORAGE_KEY, setting);
-    }
-  } catch {
-    /* Site data blocked: keep the in-memory preference only. */
+  if (setting === 'system') {
+    removeStorage(STORAGE_KEY);
+  } else {
+    writeStorage(STORAGE_KEY, setting);
   }
 }
 

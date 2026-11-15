@@ -12,9 +12,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
+import { readStorage, writeStorage } from '@/lib/safe-storage';
 import { cn } from '@/lib/utils';
+import { createVisibilityPoller } from '@/lib/visibility-poller';
 
-import { createVisibilityPoller } from '../shared/visibility-poller';
 import {
   createUserRequest,
   deleteAllPendingRequests,
@@ -95,6 +96,18 @@ const DELETE_OPTIONS: DeleteOption[] = [
   { label: 'Keep last 30 days', keepDays: 30 },
 ];
 
+// DELETE_OPTION_STORAGE_KEY remembers the last chosen consumed-history cleanup option.
+const DELETE_OPTION_STORAGE_KEY = 'mcp_delete_consumed_option';
+
+/**
+ * loadDeleteOptionIndex restores the remembered cleanup option. A missing, non-numeric
+ * or out-of-range value (for example after the option list changed) selects the first option.
+ */
+function loadDeleteOptionIndex(): number {
+  const index = Number(readStorage(DELETE_OPTION_STORAGE_KEY) ?? 0);
+  return Number.isInteger(index) && index >= 0 && index < DELETE_OPTIONS.length ? index : 0;
+}
+
 export function UserRequestsPage() {
   const { apiKey, isToolConsoleLocked } = useApiKey();
   const [pending, setPending] = useState<UserRequest[]>([]);
@@ -116,10 +129,7 @@ export function UserRequestsPage() {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [returnMode, setReturnModeState] = useState<ReturnMode>(() => getReturnMode());
   const [isDescriptionCollapsed, setIsDescriptionCollapsed] = useState(() => getDescriptionCollapsed());
-  const [selectedDeleteOptionIdx, setSelectedDeleteOptionIdx] = useState(() => {
-    const saved = localStorage.getItem('mcp_delete_consumed_option');
-    return saved ? parseInt(saved, 10) : 0;
-  });
+  const [selectedDeleteOptionIdx, setSelectedDeleteOptionIdx] = useState(() => loadDeleteOptionIndex());
   const [showDeleteConsumedConfirm, setShowDeleteConsumedConfirm] = useState(false);
   const [isDeletingConsumed, setIsDeletingConsumed] = useState(false);
   const [visibleConsumedCount, setVisibleConsumedCount] = useState(10);
@@ -809,7 +819,7 @@ export function UserRequestsPage() {
 
   const handleSelectDeleteOption = useCallback((idx: number) => {
     setSelectedDeleteOptionIdx(idx);
-    localStorage.setItem('mcp_delete_consumed_option', idx.toString());
+    writeStorage(DELETE_OPTION_STORAGE_KEY, idx.toString());
   }, []);
 
   /**
