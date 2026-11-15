@@ -91,6 +91,18 @@ settings:
         # deletes it. Re-uploading the same SHA refreshes this TTL.
         # Optional. Default: 7.
         object_ttl_days: 7
+        # Who owns the bucket lifecycle rule that expires the prefix:
+        #   manage  the server installs it and keeps it in place (it reinstalls
+        #           the rule when another writer of the bucket erased it);
+        #   verify  the server never writes the bucket lifecycle and only checks
+        #           that some rule (for example one managed by IaC) expires the
+        #           prefix within object_ttl_days.
+        # Optional. Default: manage.
+        lifecycle_mode: manage
+        # How often the lifecycle rule is checked again, in seconds, after a
+        # first re-check one minute after start. 0 checks only at start.
+        # Optional. Default: 3600 (= 1h).
+        lifecycle_check_seconds: 3600
         # Validity window (minutes) of presigned GET URLs handed to AI agents.
         # Optional. Default: 30.
         presign_ttl_minutes: 30
@@ -109,7 +121,8 @@ settings:
         # it (expired objects are then left to the bucket lifecycle rule).
         # Optional. Default: 3600 (= 1h).
         orphan_sweep_seconds: 3600
-        # Maximum due claims one reconciler pass processes.
+        # Maximum due claims one reconciler pass processes. A pass that fills
+        # its batch is followed by another, up to 8 passes per interval.
         # Optional. Default: 1000.
         orphan_sweep_batch: 1000
         # Image create requests running at once in this process. Up to as

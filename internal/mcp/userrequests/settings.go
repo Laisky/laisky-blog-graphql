@@ -122,6 +122,17 @@ type ImageSettings struct {
 	// lifecycle rule deletes it. Re-uploading the same SHA refreshes the TTL.
 	// Default: 7.
 	ObjectTTLDays int
+	// LifecycleMode selects who owns the bucket lifecycle rule of Prefix:
+	// LifecycleModeManage ("manage", the default) installs it and keeps it in
+	// place; LifecycleModeVerify ("verify") never writes the bucket
+	// configuration and only checks that a rule managed elsewhere (IaC)
+	// expires Prefix within ObjectTTLDays. Default: "manage".
+	LifecycleMode string
+	// LifecycleCheckInterval is how often the lifecycle rule is checked again
+	// (and, in manage mode, reinstalled when another writer erased it), after
+	// a first re-check one minute after start. Zero or negative checks only at
+	// start. Default: 1h.
+	LifecycleCheckInterval time.Duration
 	// PresignTTL is the validity window of presigned GET URLs handed to AI
 	// agents. Default: 30m.
 	PresignTTL time.Duration
@@ -192,8 +203,12 @@ func loadImageSettings() ImageSettings {
 		PerImageMaxBytes:  int64FromConfig("settings.mcp.tools.user_requests.images.per_image_max_bytes", DefaultImagePerImageMaxBytes),
 		MaxPerRequest:     intFromConfig("settings.mcp.tools.user_requests.images.max_per_request", DefaultImageMaxPerRequest),
 		ObjectTTLDays:     intFromConfig("settings.mcp.tools.user_requests.images.object_ttl_days", DefaultImageObjectTTLDays),
-		PresignTTL:        time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.presign_ttl_minutes", DefaultImagePresignTTLMinutes)) * time.Minute,
-		GCSweepInterval:   time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.gc_sweep_seconds", int(DefaultImageGCSweepInterval/time.Second))) * time.Second,
+		LifecycleMode: strings.ToLower(strings.TrimSpace(
+			stringFromConfig("settings.mcp.tools.user_requests.images.lifecycle_mode", LifecycleModeManage))),
+		LifecycleCheckInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.lifecycle_check_seconds",
+			int(DefaultImageLifecycleCheckInterval/time.Second))) * time.Second,
+		PresignTTL:      time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.presign_ttl_minutes", DefaultImagePresignTTLMinutes)) * time.Minute,
+		GCSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.gc_sweep_seconds", int(DefaultImageGCSweepInterval/time.Second))) * time.Second,
 		DecodeMemoryBudgetBytes: int64FromConfig("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes",
 			DefaultImageDecodeMemoryBudgetBytes),
 		OrphanSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_seconds",

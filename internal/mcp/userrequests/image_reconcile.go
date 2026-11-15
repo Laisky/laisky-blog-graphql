@@ -15,10 +15,22 @@ import (
 	"github.com/google/uuid"
 )
 
-// imageReconcileTimeout bounds one reconciler pass.
-const imageReconcileTimeout = 5 * time.Minute
+const (
+	// imageReconcileTimeout bounds one reconciler pass.
+	imageReconcileTimeout = 5 * time.Minute
+	// imageReconcileMaxPasses bounds the passes of one reconciler tick. A
+	// pass that processed a full batch is followed by another, so a backlog
+	// drains at up to this many batches per interval instead of one.
+	imageReconcileMaxPasses = 8
+	// imageReconcileBacklogAlertAge is how long the oldest due claim may wait
+	// before the reconciler reports a stuck backlog at ERROR.
+	imageReconcileBacklogAlertAge = 24 * time.Hour
+	// imageReconcileBacklogAlertEvery rate-limits that ERROR.
+	imageReconcileBacklogAlertEvery = 6 * time.Hour
+)
 
-// ImageReconcileResult summarizes one ReconcileImageObjects pass.
+// ImageReconcileResult summarizes one ReconcileImageObjects pass, or the
+// passes of one reconciler tick.
 type ImageReconcileResult struct {
 	// Claims is how many due claims the pass processed.
 	Claims int
@@ -27,6 +39,24 @@ type ImageReconcileResult struct {
 	// Deleted is how many objects were deleted because nothing referenced or
 	// claimed them any more.
 	Deleted int
+	// Passes is how many passes ran (1 for ReconcileImageObjects).
+	Passes int
+}
+
+// add accumulates another pass into r.
+func (r *ImageReconcileResult) add(other ImageReconcileResult) {
+	r.Claims += other.Claims
+	r.Keys += other.Keys
+	r.Deleted += other.Deleted
+	r.Passes += other.Passes
+}
+
+// ImageClaimBacklog is the due part of the claims table.
+type ImageClaimBacklog struct {
+	// Due is how many claims are due.
+	Due int64
+	// OldestDueAge is how long the oldest of them has been due (0 when none).
+	OldestDueAge time.Duration
 }
 
 // dueImageClaim is a claim whose deadline passed (or an orphan claim).
@@ -54,7 +84,7 @@ type dueImageClaim struct {
 // OrphanSweepBatch claims are processed per pass, and a pass whose context
 // ends leaves the rest due for the next one.
 func (s *Service) ReconcileImageObjects(ctx context.Context, objects ImageObjectWriter) (ImageReconcileResult, error) {
-	var result ImageReconcileResult
+	result := ImageReconcileResult{Passes: 1}
 	if objects == nil {
 		return result, errors.Wrap(ErrStorageUnavailable, "image object writer unavailable")
 	}
@@ -102,7 +132,7 @@ func (s *Service) ReconcileImageObjects(ctx context.Context, objects ImageObject
 			}
 			leased = append(leased, got...)
 		}
-		deleted, err := s.deleteLeasedImageObjects(ctx, objects, run, leased)
+		deleted, err := s.deleteLeasedImageObjects(ctx, objects, run, leased, deletePathReconciler)
 		result.Deleted += len(deleted)
 		if err != nil {
 			failed = append(failed, errors.WithStack(err))
@@ -165,32 +195,104 @@ func (s *Service) leaseDueImageKey(ctx context.Context, run uuid.UUID, key strin
 	return leased, nil
 }
 
-// StartImageReconcileWorker runs ReconcileImageObjects every
-// OrphanSweepInterval until ctx is canceled.
+// ReconcileImageObjectsTick is one reconciler tick: passes of
+// ReconcileImageObjects, each bounded by imageReconcileTimeout, until one
+// processes less than a full batch, fails, or imageReconcileMaxPasses ran.
+// A failing pass ends the tick, so failing deletes are not retried in a hot
+// loop (their leases make them due again later). It records the pass
+// metrics and, at the end, the remaining backlog.
+func (s *Service) ReconcileImageObjectsTick(ctx context.Context, objects ImageObjectWriter) (ImageReconcileResult, ImageClaimBacklog, error) {
+	batch := s.settings.Images.OrphanSweepBatch
+	if batch <= 0 {
+		batch = DefaultImageOrphanSweepBatch
+	}
+	var total ImageReconcileResult
+	var tickErr error
+	for range imageReconcileMaxPasses {
+		passCtx, cancel := context.WithTimeout(ctx, imageReconcileTimeout)
+		result, err := s.ReconcileImageObjects(passCtx, objects)
+		cancel()
+		total.add(result)
+		if err != nil {
+			imageMetrics.reconcilePasses.WithLabelValues("error").Inc()
+			tickErr = errors.WithStack(err)
+			break
+		}
+		imageMetrics.reconcilePasses.WithLabelValues("ok").Inc()
+		imageMetrics.lastReconcileSuccess.Set(float64(s.clock().Unix()))
+		if result.Claims < batch || ctx.Err() != nil {
+			break
+		}
+	}
+	backlog, err := s.imageClaimBacklog(ctx)
+	if err != nil {
+		return total, backlog, errors.Join(tickErr, errors.WithStack(err))
+	}
+	imageMetrics.dueClaims.Set(float64(backlog.Due))
+	imageMetrics.oldestDueClaimAge.Set(backlog.OldestDueAge.Seconds())
+	return total, backlog, tickErr
+}
+
+// imageClaimBacklog counts the due claims and the age of the oldest one.
+func (s *Service) imageClaimBacklog(ctx context.Context) (ImageClaimBacklog, error) {
+	now := s.clock()
+	var (
+		backlog ImageClaimBacklog
+		oldest  any
+	)
+	if err := s.queryRowContext(ctx,
+		`SELECT COUNT(1), MIN(expires_at) FROM mcp_user_image_claims WHERE expires_at <= ?`, now,
+	).Scan(&backlog.Due, &oldest); err != nil {
+		return backlog, errors.Wrap(err, "count due image claims")
+	}
+	if oldest == nil {
+		return backlog, nil
+	}
+	at, err := parseSQLTime(oldest)
+	if err != nil {
+		return backlog, errors.Wrap(err, "parse oldest due image claim")
+	}
+	backlog.OldestDueAge = max(now.Sub(at), 0)
+	return backlog, nil
+}
+
+// StartImageReconcileWorker runs ReconcileImageObjectsTick every
+// OrphanSweepInterval until ctx is canceled. A tick that fails is logged at
+// ERROR; a backlog whose oldest claim has been due for longer than
+// imageReconcileBacklogAlertAge is reported at ERROR at most every
+// imageReconcileBacklogAlertEvery, because objects are then not being
+// cleaned up (see the mcp_user_image_* metrics).
 func (s *Service) StartImageReconcileWorker(ctx context.Context, objects ImageObjectWriter) {
 	if s == nil || objects == nil || s.settings.Images.OrphanSweepInterval <= 0 {
 		return
 	}
+	imageMetrics.reconcilerEnabled.Set(1)
 	logger := s.log().Named("image_reconciler")
 	go func() {
 		ticker := time.NewTicker(s.settings.Images.OrphanSweepInterval)
 		defer ticker.Stop()
+		var lastBacklogAlert time.Time
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				passCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), imageReconcileTimeout) //nolint:contextcheck // detached context for background sweep
-				result, err := s.ReconcileImageObjects(passCtx, objects)
-				cancel()
+				tickCtx := context.WithoutCancel(ctx) //nolint:contextcheck // detached context for background sweep
+				result, backlog, err := s.ReconcileImageObjectsTick(tickCtx, objects)
 				if err != nil {
 					logger.Error("reconcile image objects", zap.Error(err),
-						zap.Int("claims", result.Claims), zap.Int("deleted", result.Deleted))
-					continue
-				}
-				if result.Deleted > 0 {
+						zap.Int("passes", result.Passes), zap.Int("claims", result.Claims), zap.Int("deleted", result.Deleted),
+						zap.Int64("due_claims", backlog.Due), zap.Duration("oldest_due_age", backlog.OldestDueAge))
+				} else if result.Deleted > 0 {
 					logger.Info("deleted orphan image objects",
-						zap.Int("claims", result.Claims), zap.Int("deleted", result.Deleted))
+						zap.Int("passes", result.Passes), zap.Int("claims", result.Claims), zap.Int("deleted", result.Deleted),
+						zap.Int64("due_claims", backlog.Due))
+				}
+				if backlog.OldestDueAge > imageReconcileBacklogAlertAge && time.Since(lastBacklogAlert) >= imageReconcileBacklogAlertEvery {
+					lastBacklogAlert = time.Now()
+					logger.Error("image object cleanup is falling behind; check object-store deletes and the reconciler",
+						zap.Int64("due_claims", backlog.Due), zap.Duration("oldest_due_age", backlog.OldestDueAge),
+						zap.Int("batch", s.settings.Images.OrphanSweepBatch), zap.Duration("interval", s.settings.Images.OrphanSweepInterval))
 				}
 			}
 		}

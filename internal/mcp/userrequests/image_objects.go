@@ -423,8 +423,9 @@ func (s *Service) leaseUnprotectedImageKeys(
 // A failed (possibly still in-flight) delete keeps its lease until it
 // expires, so no upload of that key can race it; the reconciler retries it
 // afterwards. The leases are dropped one after another once every delete
-// returned, so the database sees no concurrent writes from here.
-func (s *Service) deleteLeasedImageObjects(ctx context.Context, objects ImageObjectWriter, owner uuid.UUID, keys []string) ([]string, error) {
+// returned, so the database sees no concurrent writes from here. path labels
+// the delete metrics (compensation or reconciler).
+func (s *Service) deleteLeasedImageObjects(ctx context.Context, objects ImageObjectWriter, owner uuid.UUID, keys []string, path string) ([]string, error) {
 	results := make([]error, len(keys))
 	slots := make(chan struct{}, imageDeleteConcurrency)
 	var wg sync.WaitGroup
@@ -450,9 +451,11 @@ func (s *Service) deleteLeasedImageObjects(ctx context.Context, objects ImageObj
 	)
 	for i, key := range keys {
 		if results[i] != nil {
+			imageMetrics.objectDeletes.WithLabelValues(path, deleteResultFailed).Inc()
 			failed = append(failed, errors.Wrapf(results[i], "delete %q", key))
 			continue
 		}
+		imageMetrics.objectDeletes.WithLabelValues(path, deleteResultDeleted).Inc()
 		deleted = append(deleted, key)
 		if _, err := s.execContext(ctx,
 			`DELETE FROM mcp_user_image_claims WHERE owner_id = ? AND storage_key = ? AND kind = ?`,
@@ -512,7 +515,7 @@ func (s *Service) releaseImageUploads(ctx context.Context, objects ImageObjectWr
 			zap.Int("attempted", len(attempted)), zap.Error(err))
 		return
 	}
-	deleted, err := s.deleteLeasedImageObjects(cleanupCtx, objects, owner, leased)
+	deleted, err := s.deleteLeasedImageObjects(cleanupCtx, objects, owner, leased, deletePathCompensation)
 	if err != nil {
 		logger.Error("delete objects of failed image request; the reconciler will retry after the lease expires",
 			zap.Int("attempted", len(attempted)), zap.Int("deleted", len(deleted)), zap.Error(err))

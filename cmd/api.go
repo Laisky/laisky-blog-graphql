@@ -450,6 +450,7 @@ func runAPI(ctx context.Context) error {
 				}
 			} else if imageManager != nil {
 				args.UserRequestImages = imageManager
+				imageManager.StartLifecycleController(ctx, logger.Named("user_requests_images"))
 				userSvc.StartImageGCWorker(ctx)
 				userSvc.StartImageReconcileWorker(ctx, imageManager)
 			}

@@ -519,3 +519,25 @@ func TestValidateStartupConfigSSORedirectPolicy(t *testing.T) {
 		require.Contains(t, err.Error(), "settings.web.sso", name)
 	}
 }
+
+// TestValidateStartupConfigImageLifecycleMode: lifecycle_mode accepts manage
+// and verify (case-insensitive) and fails startup on anything else, so a typo
+// cannot silently fall back to the mode that writes the bucket lifecycle.
+func TestValidateStartupConfigImageLifecycleMode(t *testing.T) {
+	images := func(values map[string]any) map[string]any {
+		return map[string]any{"settings": map[string]any{"mcp": map[string]any{"tools": map[string]any{
+			"user_requests": map[string]any{"images": values},
+		}}}}
+	}
+	for _, mode := range []string{"manage", "verify", "VERIFY"} {
+		require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(images(map[string]any{"lifecycle_mode": mode}))), mode)
+	}
+	err := validateStartupConfigWithGetter(newMapConfigGetter(images(map[string]any{"lifecycle_mode": "iac"})))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "settings.mcp.tools.user_requests.images.lifecycle_mode")
+
+	require.NoError(t, validateStartupConfigWithGetter(newMapConfigGetter(images(map[string]any{"lifecycle_check_seconds": 0}))))
+	err = validateStartupConfigWithGetter(newMapConfigGetter(images(map[string]any{"lifecycle_check_seconds": -1})))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "settings.mcp.tools.user_requests.images.lifecycle_check_seconds")
+}

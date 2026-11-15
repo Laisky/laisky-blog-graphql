@@ -91,7 +91,8 @@
       "TestValidateStartupConfigRejectsInvalidTrustedProxies",
       "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
       "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
-      "TestValidateStartupConfigSSORedirectPolicy"
+      "TestValidateStartupConfigSSORedirectPolicy",
+      "TestValidateStartupConfigImageLifecycleMode"
     ]
   },
   {
@@ -259,7 +260,11 @@
       "TestHandleCreateSlowBodyReleasesSlotAtDeadline",
       "TestCreateWithImagesUploadsFitTheRequestDeadline",
       "TestCreateWithImagesRefusesWithoutTimeToUpload",
-      "TestCreateWithImagesFailedUploadCancelsTheOthers"
+      "TestCreateWithImagesFailedUploadCancelsTheOthers",
+      "TestReconcileTickDrainsBacklogBeyondOneBatch",
+      "TestReconcileTickExportsBacklogAndFailures",
+      "TestLifecycleControllerRestoresErasedRule",
+      "TestLifecycleControllerVerifyModeNeverWrites"
     ]
   },
   {
@@ -270,7 +275,11 @@
       "TestMinIODeleteIsIdempotent",
       "TestMergeLifecycleRuleSeparatesCollidingPrefixes",
       "TestLifecycleRuleIDIsBounded",
-      "TestMergeLifecycleRuleNeverDuplicatesIDs"
+      "TestMergeLifecycleRuleNeverDuplicatesIDs",
+      "TestEnsureLifecycleDetectsRuleLostToConcurrentWriter",
+      "TestEnsureLifecycleReportsRuleThatKeepsDisappearing",
+      "TestEnsureLifecycleDoesNotRewriteAnUnchangedConfiguration",
+      "TestCheckLifecycleIsReadOnly"
     ]
   }
 ]
