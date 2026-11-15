@@ -6,7 +6,7 @@ import { quotaPercent } from './useQuota';
 const base: QuotaResponse = { user_identity: 'u', used_bytes: 0, quota_bytes: 1000, object_count: 0, ttl_days: 7 };
 
 describe('quotaPercent', () => {
-  it('counts bytes reserved by uploads in progress, as admission does', () => {
+  it('counts bytes reserved by unfinished uploads, as admission does', () => {
     expect(quotaPercent({ ...base, used_bytes: 250, reserved_bytes: 250, available_bytes: 500 })).toBe(50);
   });
 

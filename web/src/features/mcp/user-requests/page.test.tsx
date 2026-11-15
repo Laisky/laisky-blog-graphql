@@ -322,7 +322,7 @@ describe('UserRequestsPage quota readout', () => {
     vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all' });
   });
 
-  it('shows the bytes uploads in progress reserve, counted like admission counts them', async () => {
+  it('shows the bytes unfinished uploads reserve, counted like admission counts them', async () => {
     vi.mocked(api.getQuota).mockResolvedValueOnce({
       user_identity: 'u',
       used_bytes: 1024 * 1024,
@@ -334,7 +334,7 @@ describe('UserRequestsPage quota readout', () => {
     });
     render(<UserRequestsPage />);
     expect(
-      await screen.findByText('1.0 MiB / 4.0 MiB used + 1.0 MiB reserved by uploads in progress (50.0%), images expire in 7 days'),
+      await screen.findByText('1.0 MiB / 4.0 MiB used + 1.0 MiB reserved by unfinished uploads (50.0%), images expire in 7 days'),
     ).toBeInTheDocument();
   });
 

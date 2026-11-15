@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"math"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"strconv"
@@ -298,12 +300,32 @@ func parseBoundedMultipart(r *http.Request, limit int64) error {
 	}
 	form, err := reader.ReadForm(maxMultipartMemory)
 	if err != nil {
-		if errors.Is(err, os.ErrDeadlineExceeded) || r.Context().Err() != nil {
-			// The body did not arrive before the request deadline.
-			return errors.Wrap(ErrImageBusy, "request body not received before the deadline: "+err.Error())
-		}
-		return errors.Wrap(imageproc.ErrImageTooLarge, err.Error())
+		return errors.WithStack(classifyMultipartReadError(r.Context(), err))
 	}
 	r.MultipartForm = form
 	return nil
+}
+
+// classifyMultipartReadError maps a ReadForm failure onto the image error it
+// is. Only a body over the cap is image_too_large. A failure to spool the body
+// to a temporary file (a full or unwritable disk) is a server fault, so it
+// stays unclassified (internal_error, whose message does not carry the
+// temporary path). Anything else is a malformed or truncated body sent by the
+// client (decode_failed).
+func classifyMultipartReadError(ctx context.Context, err error) error {
+	var (
+		tooLarge *http.MaxBytesError
+		spool    *fs.PathError
+	)
+	switch {
+	case errors.Is(err, os.ErrDeadlineExceeded) || ctx.Err() != nil:
+		// The body did not arrive before the request deadline.
+		return errors.Wrap(ErrImageBusy, "request body not received before the deadline: "+err.Error())
+	case errors.As(err, &tooLarge), errors.Is(err, multipart.ErrMessageTooLarge):
+		return errors.Wrap(imageproc.ErrImageTooLarge, err.Error())
+	case errors.As(err, &spool):
+		return errors.Wrap(err, "spool multipart body to a temporary file")
+	default:
+		return errors.Wrap(imageproc.ErrDecodeFailed, "malformed multipart body: "+err.Error())
+	}
 }

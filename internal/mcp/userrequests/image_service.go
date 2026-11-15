@@ -354,6 +354,9 @@ func (s *Service) linkRequestImages(
 	now time.Time,
 ) ([]RequestImage, error) {
 	expiresAt := now.Add(time.Duration(s.effectiveImageTTLDays()) * 24 * time.Hour)
+	if err := s.lockUserImageRefs(ctx, tx, auth.UserIdentity, images); err != nil {
+		return nil, errors.WithStack(err)
+	}
 	linked := make([]RequestImage, 0, len(images))
 	charged := false
 	for idx, img := range images {
@@ -392,6 +395,50 @@ func (s *Service) linkRequestImages(
 		}
 	}
 	return linked, nil
+}
+
+// lockUserImageRefs locks, inside tx and in ascending id order, the existing
+// refs of userIdentity that images may refresh or revive. The GC locks the
+// refs it deletes in the same order (lockImageRefsByID), so a finalize and a
+// GC batch never deadlock on ref row locks; without it the finalize locked
+// them in attachment order, one FOR UPDATE per image. SQLite serializes
+// writers and needs no row locks.
+func (s *Service) lockUserImageRefs(ctx context.Context, tx *sql.Tx, userIdentity string, images []UploadedImage) error {
+	if !s.useDollar || len(images) == 0 {
+		return nil
+	}
+	shas := make([]string, 0, len(images))
+	for _, img := range images {
+		shas = append(shas, img.SHA256)
+	}
+	in, args := inPlaceholders(shas)
+	return errors.WithStack(s.lockImageRefRows(ctx, tx,
+		fmt.Sprintf(`SELECT id FROM mcp_user_image_refs WHERE user_identity = ? AND sha256 IN (%s) ORDER BY id FOR UPDATE`, in),
+		append([]any{userIdentity}, args...)...))
+}
+
+// lockImageRefsByID locks the refs ids inside tx in ascending id order (see
+// lockUserImageRefs). It is a no-op on SQLite.
+func (s *Service) lockImageRefsByID(ctx context.Context, tx *sql.Tx, ids []string) error {
+	if !s.useDollar || len(ids) == 0 {
+		return nil
+	}
+	in, args := inPlaceholders(ids)
+	return errors.WithStack(s.lockImageRefRows(ctx, tx,
+		fmt.Sprintf(`SELECT id FROM mcp_user_image_refs WHERE id IN (%s) ORDER BY id FOR UPDATE`, in), args...))
+}
+
+// lockImageRefRows runs a SELECT ... ORDER BY id FOR UPDATE and drains it;
+// PostgreSQL locks the rows in the sorted order.
+func (s *Service) lockImageRefRows(ctx context.Context, tx *sql.Tx, query string, args ...any) error {
+	rows, err := tx.QueryContext(ctx, rebindQuery(query, s.useDollar), args...)
+	if err != nil {
+		return errors.Wrap(err, "lock image refs")
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+	}
+	return errors.Wrap(rows.Err(), "lock image refs")
 }
 
 // sanitizeImageRequestContent validates request text. Content may be empty
@@ -695,11 +742,15 @@ func (s *Service) expiredImageRefIDs(ctx context.Context, q sqlQueryer, now time
 
 // removeExpiredImageRefs deletes, inside tx, the candidate refs that are
 // still expired at now together with their links, and records an orphan
-// claim for each deleted ref. The expiry re-check runs in the DELETE itself:
-// on PostgreSQL it is evaluated again once a row lock a concurrent refresh
-// holds is released, so a ref revived after the candidate scan is neither
-// deleted nor reported.
+// claim for each deleted ref. On PostgreSQL the candidates are first locked
+// in ascending id order (lockImageRefsByID, the order finalize uses), which
+// waits for a concurrent refresh to commit; the DELETE then re-checks the
+// expiry in a new snapshot, so a ref revived after the candidate scan is
+// neither deleted nor reported.
 func (s *Service) removeExpiredImageRefs(ctx context.Context, tx *sql.Tx, ids []string, now time.Time) ([]expiredImageRef, error) {
+	if err := s.lockImageRefsByID(ctx, tx, ids); err != nil {
+		return nil, errors.WithStack(err)
+	}
 	in, args := inPlaceholders(ids)
 	removed, err := s.deleteReturningImageRefs(ctx, tx,
 		fmt.Sprintf(`DELETE FROM mcp_user_image_refs WHERE id IN (%s) AND expires_at <= ? RETURNING id, user_identity, storage_key`, in),

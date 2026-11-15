@@ -49,30 +49,34 @@ type sqlRowQueryer interface {
 // imageUsage computes userIdentity's usage at now through q (the database or
 // an admission transaction holding the user's quota lock).
 //
+// Committed and reserved bytes are read by one statement, so they come from
+// one snapshot: a finalize that moves an image from its claim to its ref
+// cannot fall between two reads and vanish from an unlocked report.
+//
 // Upload claims written by earlier builds of this release carry no sha256;
 // they are charged by key (each once) with the size they recorded.
 func (s *Service) imageUsage(ctx context.Context, q sqlRowQueryer, userIdentity string, now time.Time) (imageUsage, error) {
 	var usage imageUsage
 	if err := q.QueryRowContext(ctx,
-		rebindQuery(`SELECT COALESCE(SUM(size_bytes), 0), COUNT(1) FROM mcp_user_image_refs
-			WHERE user_identity = ? AND expires_at > ?`, s.useDollar),
+		rebindQuery(`SELECT
+			(SELECT COALESCE(SUM(size_bytes), 0) FROM mcp_user_image_refs
+			  WHERE user_identity = ? AND expires_at > ?),
+			(SELECT COUNT(1) FROM mcp_user_image_refs
+			  WHERE user_identity = ? AND expires_at > ?),
+			(SELECT COALESCE(SUM(reserved.size_bytes), 0) FROM (
+				SELECT MAX(c.size_bytes) AS size_bytes
+				  FROM mcp_user_image_claims c
+				 WHERE c.user_identity = ? AND c.kind = ? AND c.expires_at > ?
+				   AND NOT EXISTS (
+				       SELECT 1 FROM mcp_user_image_refs r
+				        WHERE r.user_identity = c.user_identity AND r.sha256 = c.sha256 AND r.expires_at > ?)
+				 GROUP BY COALESCE(c.sha256, c.storage_key)
+			) reserved)`, s.useDollar),
 		userIdentity, now,
-	).Scan(&usage.committedBytes, &usage.objectCount); err != nil {
-		return usage, errors.Wrap(err, "query committed image usage")
-	}
-	if err := q.QueryRowContext(ctx,
-		rebindQuery(`SELECT COALESCE(SUM(reserved.size_bytes), 0) FROM (
-			SELECT MAX(c.size_bytes) AS size_bytes
-			  FROM mcp_user_image_claims c
-			 WHERE c.user_identity = ? AND c.kind = ? AND c.expires_at > ?
-			   AND NOT EXISTS (
-			       SELECT 1 FROM mcp_user_image_refs r
-			        WHERE r.user_identity = c.user_identity AND r.sha256 = c.sha256 AND r.expires_at > ?)
-			 GROUP BY COALESCE(c.sha256, c.storage_key)
-		) reserved`, s.useDollar),
+		userIdentity, now,
 		userIdentity, claimUpload, now, now,
-	).Scan(&usage.reservedBytes); err != nil {
-		return usage, errors.Wrap(err, "query reserved image usage")
+	).Scan(&usage.committedBytes, &usage.objectCount, &usage.reservedBytes); err != nil {
+		return usage, errors.Wrap(err, "query image usage")
 	}
 	return usage, nil
 }
@@ -153,15 +157,31 @@ func (s *Service) QuotaUsage(ctx context.Context, auth *askuser.AuthorizationCon
 	}, nil
 }
 
+// imageClaimMigrationLockTimeout bounds how long the one-time ALTER TABLE of
+// ensureImageClaimSHAColumn waits for its ACCESS EXCLUSIVE lock, so a boot
+// that meets a long-running reader of the claims table fails instead of
+// queuing every image transaction behind the waiting ALTER.
+const imageClaimMigrationLockTimeout = "5s"
+
 // ensureImageClaimSHAColumn adds mcp_user_image_claims.sha256 to a claims
 // table an earlier build of this release created without it. The column is
-// nullable, so existing rows are untouched.
+// nullable, so existing rows are untouched. The column is looked up first:
+// ALTER TABLE takes an ACCESS EXCLUSIVE lock even when IF NOT EXISTS makes it
+// a no-op, so it runs only when the column is really missing, under a lock
+// timeout.
 func (s *Service) ensureImageClaimSHAColumn(ctx context.Context) error {
 	if s.useDollar {
-		if _, err := s.execContext(ctx, `ALTER TABLE mcp_user_image_claims ADD COLUMN IF NOT EXISTS sha256 CHAR(64) NULL`); err != nil {
-			return errors.Wrap(err, "add image claim sha256 column")
+		var exists bool
+		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_attribute
+			 WHERE attrelid = to_regclass('mcp_user_image_claims') AND attname = 'sha256' AND NOT attisdropped)`,
+		).Scan(&exists); err != nil {
+			return errors.Wrap(err, "inspect image claims columns")
 		}
-		return nil
+		if exists {
+			return nil
+		}
+		return errors.WithStack(s.addPostgresImageClaimSHAColumn(ctx))
 	}
 	found, err := s.sqliteImageClaimsHaveSHA(ctx)
 	if err != nil || found {
@@ -169,6 +189,26 @@ func (s *Service) ensureImageClaimSHAColumn(ctx context.Context) error {
 	}
 	if _, err := s.execContext(ctx, `ALTER TABLE mcp_user_image_claims ADD COLUMN sha256 CHAR(64) NULL`); err != nil {
 		return errors.Wrap(err, "add image claim sha256 column")
+	}
+	return nil
+}
+
+// addPostgresImageClaimSHAColumn runs the ALTER TABLE in a transaction
+// bounded by imageClaimMigrationLockTimeout.
+func (s *Service) addPostgresImageClaimSHAColumn(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "begin image claims migration")
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '`+imageClaimMigrationLockTimeout+`'`); err != nil {
+		return errors.Wrap(err, "bound image claims migration lock wait")
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE mcp_user_image_claims ADD COLUMN IF NOT EXISTS sha256 CHAR(64) NULL`); err != nil {
+		return errors.Wrap(err, "add image claim sha256 column")
+	}
+	if err := tx.Commit(); err != nil {
+		return errors.Wrap(err, "commit image claims migration")
 	}
 	return nil
 }

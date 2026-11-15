@@ -4,7 +4,7 @@ import { getQuota, type QuotaResponse } from './api';
 
 /**
  * quotaPercent is the share of the quota that admission counts as taken:
- * committed bytes plus the bytes uploads in progress reserve.
+ * committed bytes plus the bytes unfinished uploads reserve.
  */
 export function quotaPercent(quota: QuotaResponse | null): number {
   if (!quota || quota.quota_bytes <= 0) {

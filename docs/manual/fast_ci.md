@@ -68,7 +68,9 @@ admission test, the fuzz targets and the PostgreSQL tests (`TestPostgres*`
 with `MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database; they
 cover the pool-starvation repros, REPEATABLE READ, the quota across two key
 prefixes, and compensation and the reconciler held at the interleavings that
-matter, asserting that the competing creates succeed), the MinIO lifecycle acceptance (`TestMinIOLifecycleAcceptance` with `MCP_STORAGE_TEST_MINIO_*` pointing at a disposable bucket) and the concurrent-create memory measurement (`TestImageCreateMemoryEnvelope` with `MCP_IMAGE_MEMORY_ACCEPTANCE=1`) stay deliberate
+matter, asserting that the competing creates succeed, plus a quota report read from
+one snapshot, ref row locks in one order for finalize and the GC, and a boot
+that takes no lock on the migrated claims table), the MinIO lifecycle acceptance (`TestMinIOLifecycleAcceptance` with `MCP_STORAGE_TEST_MINIO_*` pointing at a disposable bucket) and the concurrent-create memory measurement (`TestImageCreateMemoryEnvelope` with `MCP_IMAGE_MEMORY_ACCEPTANCE=1`) stay deliberate
 acceptance. The `user-request-images-postgres` workflow (`workflow_dispatch`)
 runs the PostgreSQL tests on any ref against a disposable PostgreSQL 17 and
 fails when one of them skips:

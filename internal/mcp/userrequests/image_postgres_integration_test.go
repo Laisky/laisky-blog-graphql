@@ -385,11 +385,14 @@ func TestPostgresReconcilerKeepsObjectsOfOpenRequests(t *testing.T) {
 				return ctx.Err()
 			}
 		}
-		passDone := make(chan ImageReconcileResult, 1)
+		type passOutcome struct {
+			result ImageReconcileResult
+			err    error
+		}
+		passDone := make(chan passOutcome, 1)
 		go func() {
 			result, err := h.svc.ReconcileImageObjects(context.Background(), h.manager())
-			require.NoError(t, err)
-			passDone <- result
+			passDone <- passOutcome{result, err}
 		}()
 		select {
 		case <-deleting:
@@ -400,7 +403,9 @@ func TestPostgresReconcilerKeepsObjectsOfOpenRequests(t *testing.T) {
 		require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
 		require.Equal(t, "image_busy", errorCode(t, rec), "a key under a delete lease is not reserved")
 		close(releaseDelete)
-		require.Equal(t, 1, (<-passDone).Deleted)
+		pass := <-passDone
+		require.NoError(t, pass.err)
+		require.Equal(t, 1, pass.result.Deleted)
 		h.store.BeforeDelete = nil
 
 		rec = h.post(t, context.Background(), tokens[0], late)
@@ -695,4 +700,133 @@ func TestPostgresImageClaimsTableGainsSHAColumn(t *testing.T) {
 	require.NoError(t, err)
 	require.Positive(t, usage.UsedBytes)
 	require.Equal(t, int64(100), usage.ReservedBytes)
+}
+
+// TestPostgresQuotaReportIsOneSnapshot pins that an unlocked quota report
+// reads committed and reserved bytes from one snapshot. Every create below
+// only adds bytes (a claim that finalize turns into a ref in one
+// transaction), so the reported total must never decrease; with two separate
+// reads a finalize committing between them made a held image vanish from the
+// report (independent review of the PR #94 quota fix).
+func TestPostgresQuotaReportIsOneSnapshot(t *testing.T) {
+	h := newPostgresOrphanHarness(t, defaultImageSettings(), "")
+	const token = "sk-pg-quota-snapshot-1234"
+	auth := mustAuth(t, token)
+	objects := h.manager()
+
+	stop := make(chan struct{})
+	reports := make(chan error, 1)
+	go func() {
+		var last int64
+		for {
+			select {
+			case <-stop:
+				reports <- nil
+				return
+			default:
+			}
+			usage, err := h.svc.QuotaUsage(context.Background(), auth)
+			if err != nil {
+				reports <- err
+				return
+			}
+			total := usage.UsedBytes + usage.ReservedBytes
+			if total < last {
+				reports <- errs.Errorf("reported usage dropped from %d to %d while no image was released", last, total)
+				return
+			}
+			last = total
+		}
+	}()
+	for i := range 60 {
+		img := makeUploadedImage(fmt.Sprintf("%064x", i+1), 1000)
+		img.StorageKey = "mcp/images/snapshot/" + img.SHA256 + ".png"
+		_, err := h.svc.CreateRequestWithImages(context.Background(), auth, "snapshot", "", []UploadedImage{img}, objects)
+		require.NoError(t, err)
+	}
+	close(stop)
+	require.NoError(t, <-reports)
+}
+
+// TestPostgresBootDoesNotLockClaimsTable pins that starting an instance on a
+// migrated database takes no ACCESS EXCLUSIVE lock on the claims table: a
+// no-op ALTER TABLE ... ADD COLUMN IF NOT EXISTS still takes that lock, so a
+// boot queued behind any reader (pg_dump, a long transaction) and every image
+// transaction queued behind the boot (independent review of the PR #94 quota
+// fix).
+func TestPostgresBootDoesNotLockClaimsTable(t *testing.T) {
+	dsn := postgresTestSchemaDSN(t, "")
+	newPostgresHarnessOnDSN(t, defaultImageSettings(), dsn, "") // migrates
+
+	reader, err := sql.Open("pgx", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = reader.Close() })
+	holder, err := reader.BeginTx(context.Background(), nil)
+	require.NoError(t, err)
+	defer func() { _ = holder.Rollback() }()
+	_, err = holder.Exec(`LOCK TABLE mcp_user_image_claims IN ACCESS SHARE MODE`)
+	require.NoError(t, err)
+
+	booted := make(chan struct{})
+	go func() {
+		defer close(booted)
+		newPostgresHarnessOnDSN(t, defaultImageSettings(), dsn, "")
+	}()
+	select {
+	case <-booted:
+	case <-time.After(3 * time.Second):
+		_ = holder.Rollback()
+		<-booted
+		t.Fatal("a boot on a migrated database waited for a lock on the claims table")
+	}
+}
+
+// TestPostgresFinalizeAndGCDoNotDeadlockOnRefs reproduces a deadlock on ref
+// row locks found by the independent review of the PR #94 quota fix: a
+// create that revives two expired refs listed in descending id order locked
+// them in that order (one FOR UPDATE per image), while the GC deleting both
+// locked them in ascending order. A trigger holds the create between its two
+// row locks while the GC runs. Both now lock refs in ascending id order, so
+// the create revives both refs and the GC, re-checking expiry, keeps them.
+func TestPostgresFinalizeAndGCDoNotDeadlockOnRefs(t *testing.T) {
+	h := newPostgresOrphanHarness(t, defaultImageSettings(), "")
+	auth := mustAuth(t, "sk-pg-ref-lock-order-1234")
+	objects := h.manager()
+	first := makeUploadedImage(strings.Repeat("1", 64), 100)
+	second := makeUploadedImage(strings.Repeat("2", 64), 100)
+
+	h.setClock(reconcileNow.Add(-8 * 24 * time.Hour))
+	for _, img := range []UploadedImage{first, second} { // first gets the lower UUIDv7 id
+		_, err := h.svc.CreateRequestWithImages(context.Background(), auth, "old", "", []UploadedImage{img}, objects)
+		require.NoError(t, err)
+	}
+	h.setClock(reconcileNow) // both refs are expired now
+
+	_, err := h.db.Exec(`CREATE FUNCTION slow_ref_refresh() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN PERFORM pg_sleep(0.5); RETURN NEW; END $$`)
+	require.NoError(t, err)
+	_, err = h.db.Exec(`CREATE TRIGGER slow_ref_refresh BEFORE UPDATE ON mcp_user_image_refs
+		FOR EACH ROW EXECUTE FUNCTION slow_ref_refresh()`)
+	require.NoError(t, err)
+
+	created := make(chan error, 1)
+	go func() {
+		// Descending id order: the old code locked second, then first.
+		_, err := h.svc.CreateRequestWithImages(context.Background(), auth, "revive", "", []UploadedImage{second, first}, objects)
+		created <- err
+	}()
+	require.Eventually(t, func() bool {
+		var refreshing int
+		_ = h.db.QueryRow(`SELECT COUNT(1) FROM pg_stat_activity
+			WHERE state = 'active' AND query LIKE 'UPDATE mcp_user_image_refs SET expires_at%'`).Scan(&refreshing)
+		return refreshing > 0
+	}, 10*time.Second, 5*time.Millisecond, "the create must be refreshing a ref")
+	_, gcErr := h.svc.GCExpiredImageRefs(context.Background())
+	createErr := <-created
+	require.NoError(t, gcErr, "the GC must not be a deadlock victim")
+	require.NoError(t, createErr, "the create must not be a deadlock victim")
+
+	usage, err := h.svc.QuotaUsage(context.Background(), auth)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), usage.ObjectCount, "both refs were revived and kept")
 }
