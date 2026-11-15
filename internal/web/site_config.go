@@ -1,7 +1,6 @@
 package web
 
 import (
-	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -10,6 +9,9 @@ import (
 	gconfig "github.com/Laisky/go-config/v2"
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
+
+	blog "github.com/Laisky/laisky-blog-graphql/internal/web/blog/controller"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 )
 
 const (
@@ -127,9 +129,9 @@ func buildPathIndex(sites []SiteConfig) []sitePathMatch {
 // loadSiteConfig loads a single site configuration from settings.
 func loadSiteConfig(logger logSDK.Logger, key string, prefix urlPrefixConfig) SiteConfig {
 	baseKey := "settings.web.sites." + key
-	hosts := normalizeHostList(gconfig.Shared.GetStringSlice(baseKey + ".hosts"))
+	hosts := clientip.NormalizeHosts(gconfig.Shared.GetStringSlice(baseKey + ".hosts"))
 	if len(hosts) == 0 {
-		host := normalizeHost(gconfig.Shared.GetString(baseKey + ".host"))
+		host := clientip.NormalizeHost(gconfig.Shared.GetString(baseKey + ".host"))
 		if host != "" {
 			hosts = []string{host}
 		}
@@ -282,21 +284,21 @@ func isMCPConsolePath(path string) bool {
 	}
 }
 
-// requestHost extracts and normalizes the host for the incoming request.
+// withTurnstileSiteKey replaces the site's Turnstile widget key with the key of
+// the pair the server verifies tokens against for this request's host (see
+// blog.TurnstileSiteKeyForHost). A host whose own site has no Turnstile pair
+// thus renders the fallback pair's widget, so every host where a challenge can
+// be demanded can also present one, and a token always matches its secret.
+func withTurnstileSiteKey(site SiteConfig, r *http.Request) SiteConfig {
+	site.TurnstileSiteKey = blog.TurnstileSiteKeyForHost(requestHost(r))
+	return site
+}
+
+// requestHost extracts and normalizes the host for the incoming request. An
+// X-Forwarded-Host counts only when a trusted proxy reported it (see
+// clientip.RequestHost); otherwise the Host header is used.
 func requestHost(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-
-	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 {
-			return normalizeHost(parts[0])
-		}
-	}
-
-	return normalizeHost(r.Host)
+	return clientip.RequestHostname(r)
 }
 
 // requestPathFromReferer extracts the path from the Referer header when available.
@@ -316,39 +318,4 @@ func requestPathFromReferer(r *http.Request) string {
 	}
 
 	return parsed.Path
-}
-
-// normalizeHostList normalizes hostnames and drops empty values.
-func normalizeHostList(hosts []string) []string {
-	result := make([]string, 0, len(hosts))
-	for _, host := range hosts {
-		normalized := normalizeHost(host)
-		if normalized == "" {
-			continue
-		}
-		result = append(result, normalized)
-	}
-	return result
-}
-
-// normalizeHost lowercases a hostname and removes port or trailing dot suffixes.
-func normalizeHost(value string) string {
-	trimmed := strings.TrimSpace(strings.ToLower(value))
-	trimmed = strings.TrimSuffix(trimmed, ".")
-	if trimmed == "" {
-		return ""
-	}
-
-	host, _, err := net.SplitHostPort(trimmed)
-	if err == nil {
-		return strings.TrimSuffix(strings.ToLower(host), ".")
-	}
-
-	if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
-		withoutBrackets := strings.TrimPrefix(trimmed, "[")
-		withoutBrackets = strings.TrimSuffix(withoutBrackets, "]")
-		return strings.TrimSuffix(withoutBrackets, ".")
-	}
-
-	return trimmed
 }

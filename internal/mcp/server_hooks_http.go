@@ -16,6 +16,7 @@ import (
 	srv "github.com/mark3labs/mcp-go/server"
 
 	"github.com/Laisky/laisky-blog-graphql/internal/library/toolpolicy"
+	"github.com/Laisky/laisky-blog-graphql/library/clientip"
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
 )
 
@@ -121,6 +122,7 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 			zap.String("body", redactedBody),
 			zap.Bool("body_truncated", truncated),
 			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("client_ip", clientip.FromRequest(r)),
 			zap.Bool("mcp_session_header_present", sessionID != ""),
 			zap.String("mcp_session_id", sessionID),
 		)
@@ -138,6 +140,7 @@ func withHTTPLogging(next http.Handler, logger logSDK.Logger) http.Handler {
 			zap.String("body", redactedResp),
 			zap.Bool("body_truncated", respTruncated),
 			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("client_ip", clientip.FromRequest(r)),
 			zap.Duration("cost", time.Since(startAt)),
 		)
 	})

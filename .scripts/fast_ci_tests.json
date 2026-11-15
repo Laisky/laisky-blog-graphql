@@ -88,6 +88,9 @@
       "TestStartupAlertCorePreservesSmallBoundContext",
       "TestStartupAlertCorePreservesLargeChosenInput",
       "TestStartupAlertCoreRejectsWholeOversizeRecord",
+      "TestValidateStartupConfigRejectsInvalidTrustedProxies",
+      "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
+      "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
       "TestValidateStartupConfigSSORedirectPolicy"
     ]
   },
@@ -118,7 +121,71 @@
       "TestAlertAdoptionActualCallerCompleteContent",
       "TestAlertAdoptionOversizeKeepsBusinessAndLocalInput",
       "TestAlertAdoptionSuccessAndUnauthorizedRemainQuiet",
+      "TestServerEngineDirectPeerCannotChooseRiskKey",
+      "TestServerEngineTrustedProxyChains",
+      "TestServerEngineDirectDeploymentPolicy",
+      "TestServerEngineHostCannotDisableChallenge",
+      "TestRuntimeConfigServesTheVerifyingWidgetKey",
+      "TestLegacyBlogLoginIsRemoved",
       "TestSSOCodeRegisteredClient"
+    ]
+  },
+  {
+    "package": "./library/clientip",
+    "tests": [
+      "TestLoadPolicyDefaultsWhenUnset",
+      "TestLoadPolicyExplicitEmptyTrustsNoProxy",
+      "TestLoadPolicyRejectsInvalidEntries",
+      "TestDefaultPolicyResolution",
+      "TestExplicitEmptyPolicyIgnoresEveryHeader",
+      "TestFromContextWithoutMiddlewareUsesPeerOnly",
+      "TestNetworkKeyGroupsIPv6By64",
+      "TestLoadPolicyNormalizesIPv4MappedPrefixes",
+      "TestPolicyTrustsEveryPeer",
+      "TestGinTrustAgreesWithPolicy",
+      "TestForwardedHostOnlyFromTrustedProxy",
+      "TestPolicyTrustsPeerMatchesGin",
+      "TestNormalizeHost",
+      "TestRequestHostnameIgnoresUntrustedForwardedHost",
+      "TestPolicyStartupWarning"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/controller",
+    "tests": [
+      "TestAuthChallengeTrackerAccountBudgetSurvivesClientRotation",
+      "TestAuthChallengeTrackerAccountBudgetClearance",
+      "TestAuthChallengeTrackerAccountTableBounded",
+      "TestAuthChallengeTrackerClientTableBounded",
+      "TestValidateTurnstileTokenAccountBudgetAcrossAddresses",
+      "TestAuthChallengeTrackerConcurrentGuessesAreBounded",
+      "TestAuthChallengeTrackerOneChallengeAdmitsOneGuessAtATime",
+      "TestAccountKeyFoldsCollationVariants",
+      "TestAuthChallengeTrackerIdentityUnifiesSpellings",
+      "TestAuthChallengeTrackerFloodCannotEvictAttackedAccount",
+      "TestResolveTurnstileSiteNeverDisablesTheGate",
+      "TestAuthSuccessResetsAllKnownAliases",
+      "TestAuthSuccessPreservesAliasReservations",
+      "TestAdmitAuthRequestRejectsIncompletePair",
+      "TestGitHubRedirectTargetPolicy",
+      "TestGitHubOAuthLoginRevalidatesRedirect",
+      "TestPasskeyFinishRevalidatesRedirect",
+      "TestPrivateTargetsRequireDevelopmentIssuer",
+      "TestBackslashOnlyAfterQueryOrFragment",
+      "TestGitHubStartChecksTheCompletingIssuer",
+      "TestAuthSuccessKeepsCollidingIdentityEnforced",
+      "TestAuthSuccessAfterAliasFlipKeepsCollidingIdentityEnforced",
+      "TestAuthSuccessOfOneCollidingIdentityKeepsTheOtherEnforced",
+      "TestAuthCollisionDoesNotGrantConcurrentFreeGuesses",
+      "TestAuthSuccessStillResetsAnUncontestedSpelling",
+      "TestSpellingIdentityLinksAreBounded",
+      "TestUnrevealedFailureCountsAgainstEveryLinkedIdentity",
+      "TestAuthSuccessIgnoresStaleIdentityIndex",
+      "TestRegistrationGateCountsCodeFailuresPerEmail",
+      "TestAccountFoldNeverSplitsAStoreAccount",
+      "TestAuthSuccessKeepsUnattributedFailuresOfCollidingSpelling",
+      "TestAuthSuccessClearsOwnUnattributedTypos",
+      "TestAuthLinkOverflowKeepsSpellingEvidence"
     ]
   },
   {
@@ -130,14 +197,25 @@
     ]
   },
   {
-    "package": "./internal/web/blog/controller",
+    "package": "./internal/web/blog/service",
     "tests": [
-      "TestGitHubRedirectTargetPolicy",
-      "TestGitHubOAuthLoginRevalidatesRedirect",
-      "TestPasskeyFinishRevalidatesRedirect",
-      "TestPrivateTargetsRequireDevelopmentIssuer",
-      "TestBackslashOnlyAfterQueryOrFragment",
-      "TestGitHubStartChecksTheCompletingIssuer"
+      "TestOneAPIEmailCodeAttemptsAreCapped",
+      "TestOneAPIRegistrationCodeErrorsAreClassified"
+    ]
+  },
+  {
+    "package": "./internal/web/blog/oneapi",
+    "tests": [
+      "TestRepoEmailCodeAttemptReservationIsBounded",
+      "TestRepoPrepareKeepsExistingEmailCodesUsable"
+    ]
+  },
+  {
+    "package": "./internal/mcp/tools",
+    "tests": [
+      "TestFileMutationSchemasExposeCompleteUnionArguments",
+      "TestFileMutationSchemasKeepPreconditions",
+      "TestFileMutationAlternativesDeclareOnlyAcceptedArguments"
     ]
   },
   {

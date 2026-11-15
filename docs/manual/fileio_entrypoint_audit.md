@@ -89,7 +89,7 @@ installs a late warning into another selected file.
 | Test group | Behavior checked |
 | --- | --- |
 | `TestFindToolFileIOSchemaMatchesToolsList` and related tests | Raw/structured discovery equality, parameter indexing, malformed schemas, concurrent definition replacement |
-| `TestStaticServerCardKeepsFileIOConditions` | Static mutation requirements and `file_write.oneOf` stay aligned with runtime definitions |
+| `TestStaticServerCardKeepsFileIOConditions` | Static mutation requirements, argument names and the `oneOf` alternatives of `file_write` and `file_restore_version` (required sets, conditions, per-alternative arguments) stay aligned with runtime definitions; the card may only be stricter on canonical values |
 | `TestGraphQLFileIOBoundary` | Generated schema and actual GraphQL HTTP validation reject unsupported FileIO fields, aliases and fragments before resolver execution |
 | `TestFileIOCrossEntrypointConditions` | MCP -> HTTP and HTTP -> MCP stale bases; original-token restore; missing conditions; content/hash/history/outbox invariants; real RAG/PageIndex project routing |
 | `TestFileIOPostgresMCPAndHTTPContendOnOneVersion` | Independent connection pools, exactly one concurrent writer wins, other transport returns a conflict |
