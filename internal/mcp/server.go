@@ -155,7 +155,7 @@ func NewServer(
 		logger = log.Logger
 	}
 
-	hooks := newMCPHooks(logger.Named("mcp_hooks"))
+	hooks := newMCPHooks(logger.Named(log.MCPHooksLoggerScope))
 
 	mcpServer := srv.NewMCPServer(
 		"LAISKY MCP SERVER",

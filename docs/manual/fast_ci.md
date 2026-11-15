@@ -199,5 +199,7 @@ and module downloads; they are not hosted-runner timings. The prior PR #55
 compatibility job took about 7m37s; its complete body remains manually available.
 
 MCP request diagnostics also run in the automatic fast gate: the actual dependency
-error hook through a synthetic alert receiver, typed-cause/protocol classification,
-expected quiet probes, sealed-envelope spoofing and safe correlation normalization.
+error hook through a synthetic alert receiver, production NewServer logger wiring,
+typed-cause/protocol classification, SDK method-allowlist parity, alert-to-OTLP
+failure_id correlation, FIFO-barrier exactly-one-alert checks, expected quiet
+probes, sealed-envelope spoofing and safe correlation normalization.

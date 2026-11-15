@@ -23,9 +23,9 @@ func WebDiagnosticAlertCore(alert *logSDK.Alert) zapcore.Core {
 // reviewedWebDiagnosticScope retains the exact logger names admitted by the existing hook.
 func reviewedWebDiagnosticScope(name string) bool {
 	switch name {
-	case "graphql.laisky-graphql.mcp.web_search",
-		"graphql.laisky-graphql.mcp.web_fetch",
-		"graphql.laisky-graphql.mcp.web_fetch.fetch_dynamic_url_content":
+	case serviceLoggerName + ".mcp.web_search",
+		serviceLoggerName + ".mcp.web_fetch",
+		serviceLoggerName + ".mcp.web_fetch.fetch_dynamic_url_content":
 		return true
 	default:
 		return false

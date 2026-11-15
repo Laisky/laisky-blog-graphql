@@ -105,7 +105,11 @@
       "TestOTLPWithSnapshotsNamespacesAndFieldOrder",
       "TestOTLPCorePreservesExistingCheckedEntryDecision",
       "TestMCPFailureAlertBoundary",
-      "TestMCPFailureDiagnosticNormalization"
+      "TestMCPFailureBoundaryContractNames",
+      "TestMCPFailureDiagnosticNormalization",
+      "TestMCPFailureMethodsMatchSDK",
+      "TestMCPFailureOTLPCorrelation",
+      "TestAlertBarrierDetectsQueuedDuplicate"
     ]
   },
   {
@@ -140,6 +144,9 @@
     "package": "./internal/mcp",
     "tests": [
       "TestMCPRequestFailureAlert",
+      "TestMCPFailureAlertReportsSDKMethods",
+      "TestMCPFailureAlertReportsNotificationDelivery",
+      "TestMCPFailureAlertProductionWiring",
       "TestMCPFailureTypedCauses",
       "TestShouldDowngradeMCPErrorLog",
       "TestShouldDowngradeMCPErrorLogFalse"

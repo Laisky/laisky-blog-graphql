@@ -15,6 +15,7 @@ import (
 	logSDK "github.com/Laisky/go-utils/v6/log"
 	"github.com/Laisky/zap"
 	"github.com/Laisky/zap/zapcore"
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
 	appLog "github.com/Laisky/laisky-blog-graphql/library/log"
@@ -28,7 +29,7 @@ func TestStartupAlertDiagnosticScope(t *testing.T) {
 		diagnostic bool
 	}{
 		{"search", "mcp.web_search", true},
-		{"MCP failure", "mcp_hooks", false},
+		{"MCP failure", appLog.MCPHooksLoggerScope, false},
 		{"fetch", "mcp.web_fetch", true},
 		{"fetch child", "mcp.web_fetch.fetch_dynamic_url_content", true},
 		{"unreviewed extract", "mcp.extract_key_info", false},
@@ -74,9 +75,9 @@ func TestStartupAlertDiagnosticScope(t *testing.T) {
 			appLog.Logger = base
 			setupLogger(ctx)
 			logger := appLog.Logger.Named(tc.scope)
-			if tc.scope == "mcp_hooks" {
-				logger.With(zap.String("user_id", "private-user-canary")).Error("mcp request failed",
-					appLog.MCPFailureDiagnosticField(appLog.MCPFailureSummary{Method: "tools/call", RequestID: 3, ErrorKind: "tool_not_found", ErrorCode: -32602}),
+			if tc.scope == appLog.MCPHooksLoggerScope {
+				logger.With(zap.String("user_id", "private-user-canary")).Error(appLog.MCPRequestFailedMessage,
+					appLog.MCPFailureDiagnosticField(appLog.MCPFailureSummary{Method: mcpgo.MethodToolsCall, RequestID: 3, ErrorKind: appLog.MCPFailureToolNotFound, ErrorCode: -32602}),
 					zap.String("request", "private-request-canary"), zap.Error(fmt.Errorf("private-error-canary")))
 			} else if tc.diagnostic {
 				logger.Error("synthetic diagnostic failed", zap.String("future_revision", "parser-v2"), zap.Int("attempt", 2), zap.Error(fmt.Errorf("navigation failed: unexpected EOF; api_key=private-key-canary; response body: private-body-canary")))
@@ -90,7 +91,8 @@ func TestStartupAlertDiagnosticScope(t *testing.T) {
 				t.Fatal("actual startup alert missing")
 			}
 			require.Contains(t, message, tc.scope)
-			if tc.scope == "mcp_hooks" {
+			if tc.scope == appLog.MCPHooksLoggerScope {
+				require.Contains(t, message, "graphql.laisky-graphql.mcp_hooks")
 				require.Contains(t, message, "mcp_failure")
 				require.Contains(t, message, "tools/call")
 				require.Contains(t, message, "tool_not_found")
