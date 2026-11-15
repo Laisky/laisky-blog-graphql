@@ -64,7 +64,7 @@ func TestSPAIndexRootBoundary(t *testing.T) {
 			require.NoError(t, os.Symlink(linkTarget, filepath.Join(root, "index.html")))
 			t.Setenv(frontendDistEnvKey, root)
 			t.Setenv("VITE_DEV_URL", "")
-			handler := newFrontendSPAHandler(glog.Shared, "")
+			handler := newFrontendSPAHandler(glog.Shared, "", "")
 			if escaped {
 				require.Nil(t, handler)
 				return

@@ -21,12 +21,15 @@ import (
 //
 // Body reads follow a minimum data rate (like Kestrel's MinRequestBodyDataRate):
 // after a grace period the client must keep delivering at least the minimum
-// rate, and the whole read is capped absolutely.
+// rate. Bytes delivered faster bank at most DefaultBodyMaxIdle of read time,
+// so a burst cannot fund a later stall, and the whole read is capped
+// absolutely.
 const (
 	DefaultMCPMaxBodyBytes          int64 = 32 << 20
 	DefaultMCPAnonymousMaxBodyBytes int64 = 1 << 20
 	DefaultBodyMinBytesPerSecond          = 4096
 	DefaultBodyReadGrace                  = 10 * time.Second
+	DefaultBodyMaxIdle                    = 30 * time.Second
 	DefaultBodyMaxReadDuration            = 30 * time.Minute
 )
 
@@ -40,6 +43,9 @@ type RequestBodyBudget struct {
 	MinBytesPerSecond float64
 	// ReadGrace is the time allowed before the first bytes must arrive.
 	ReadGrace time.Duration
+	// MaxIdle is the longest pause a body that kept up with the minimum rate
+	// may take; it bounds the read time a burst can bank (never below ReadGrace).
+	MaxIdle time.Duration
 	// MaxReadDuration caps one whole body read.
 	MaxReadDuration time.Duration
 }
@@ -51,13 +57,14 @@ func DefaultRequestBodyBudget() RequestBodyBudget {
 		AnonymousMaxBytes: DefaultMCPAnonymousMaxBodyBytes,
 		MinBytesPerSecond: DefaultBodyMinBytesPerSecond,
 		ReadGrace:         DefaultBodyReadGrace,
+		MaxIdle:           DefaultBodyMaxIdle,
 		MaxReadDuration:   DefaultBodyMaxReadDuration,
 	}
 }
 
 // httpbody returns the transport budget in the shared mechanism's terms.
 func (b RequestBodyBudget) httpbody() httpbody.Budget {
-	return httpbody.Budget{MaxBytes: b.MaxBytes, MinBytesPerSecond: b.MinBytesPerSecond, Grace: b.ReadGrace, MaxDuration: b.MaxReadDuration}
+	return httpbody.Budget{MaxBytes: b.MaxBytes, MinBytesPerSecond: b.MinBytesPerSecond, Grace: b.ReadGrace, MaxIdle: b.MaxIdle, MaxDuration: b.MaxReadDuration}
 }
 
 // normalized fills unset fields with defaults and keeps the anonymous cap within the authenticated one.
@@ -76,6 +83,9 @@ func (b RequestBodyBudget) normalized() RequestBodyBudget {
 	if b.ReadGrace <= 0 {
 		b.ReadGrace = defaults.ReadGrace
 	}
+	if b.MaxIdle <= 0 {
+		b.MaxIdle = defaults.MaxIdle
+	}
 	if b.MaxReadDuration <= 0 {
 		b.MaxReadDuration = defaults.MaxReadDuration
 	}
@@ -86,6 +96,14 @@ func (b RequestBodyBudget) normalized() RequestBodyBudget {
 // instead of the process-wide installed one.
 func WithAuthenticator(authenticator *mcpauth.Authenticator) ServerOption {
 	return func(services *sharedServerServices) { services.authenticator = authenticator }
+}
+
+// WithResourceMetadataURL sets the RFC 9728 protected-resource metadata URL
+// the transport advertises in Bearer challenges. Production derives it from
+// the configured public origin (mcpauth.LoadPublicOrigin); empty keeps
+// mcpauth.DefaultResourceMetadataURL.
+func WithResourceMetadataURL(metadataURL string) ServerOption {
+	return func(services *sharedServerServices) { services.resourceMetadataURL = metadataURL }
 }
 
 // WithRequestBodyBudget overrides the MCP transport body budget.
@@ -121,9 +139,13 @@ func withRequestBodyBudget(next http.Handler, budget RequestBodyBudget, logger l
 // verified context then serves the whole request, including nested mcp_pipe
 // calls. A request without credentials keeps anonymous discovery but only
 // within the anonymous body budget; tools still require authorization.
-func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authenticator, anonymousMaxBytes int64, logger logSDK.Logger) http.Handler {
+// Rejections point to metadataURL (RFC 9728); empty uses the default.
+func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authenticator, anonymousMaxBytes int64, metadataURL string, logger logSDK.Logger) http.Handler {
 	if next == nil {
 		return nil
+	}
+	if metadataURL == "" {
+		metadataURL = mcpauth.DefaultResourceMetadataURL
 	}
 	unavailableLog := mcpauth.NewLogSampler(time.Minute)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +183,7 @@ func withBearerAuthentication(next http.Handler, resolve func() *mcpauth.Authent
 			if logger != nil {
 				logger.Debug("mcp bearer rejected", zap.String("auth_source", source), zap.Error(err))
 			}
-			writeInvalidToken(w)
+			writeInvalidToken(w, metadataURL)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(mcpauth.WithContext(ctx, authCtx)))
@@ -181,14 +203,14 @@ type ingressError struct {
 
 // writeInvalidToken answers an RFC 6750 invalid_token challenge with the
 // RFC 9728 protected-resource metadata pointer the MCP authorization spec uses.
-func writeInvalidToken(w http.ResponseWriter) {
+func writeInvalidToken(w http.ResponseWriter, metadataURL string) {
 	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="`+invalidTokenDescription+
-		`", resource_metadata="`+mcpauth.ResourceMetadataURL+`"`)
+		`", resource_metadata="`+metadataURL+`"`)
 	w.Header().Set("Cache-Control", "no-store")
 	writeIngressJSON(w, http.StatusUnauthorized, ingressError{
 		Error:            "invalid_token",
 		Description:      invalidTokenDescription,
-		ResourceMetadata: mcpauth.ResourceMetadataURL,
+		ResourceMetadata: metadataURL,
 	})
 }
 

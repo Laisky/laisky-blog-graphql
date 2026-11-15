@@ -61,20 +61,39 @@ func newUpstreamGate(opts AuthenticatorOptions) *UpstreamGate {
 	return gate
 }
 
-// admit charges one upstream call on behalf of the client source recorded on
-// ctx and waits, bounded by ctx, for a concurrency slot. The returned release
-// frees the slot. Every refusal matches ErrUpstreamThrottled.
+// admit waits, bounded by ctx, for a concurrency slot and then charges one
+// upstream call on behalf of the client source recorded on ctx. Budgets are
+// charged only once the call holds a slot and is about to start, so a caller
+// that times out waiting never spends a token (golang.org/x/time/rate cannot
+// refund a token after other callers reserved). A budget already spent is
+// refused at once, without waiting. The returned release frees the slot.
+// Every refusal matches ErrUpstreamThrottled.
 func (g *UpstreamGate) admit(ctx context.Context, class callClass) (func(), error) {
-	now := g.now()
-	if !g.charge(sourceKey(clientip.FromContext(ctx)), class, now) {
+	source := sourceKey(clientip.FromContext(ctx))
+	if !g.available(source, class, g.now()) {
 		return nil, throttled(nil, "one-api call budget spent")
 	}
 	select {
 	case g.slots <- struct{}{}:
-		return func() { <-g.slots }, nil
 	case <-ctx.Done():
 		return nil, throttled(ctx.Err(), "wait for a one-api call slot")
 	}
+	release := func() { <-g.slots }
+	if !g.charge(source, class, g.now()) {
+		// Another caller took the last token while this one waited.
+		release()
+		return nil, throttled(nil, "one-api call budget spent")
+	}
+	return release, nil
+}
+
+// available reports, without charging, whether the budgets of class could
+// admit one call from source at now.
+func (g *UpstreamGate) available(source string, class callClass, now time.Time) bool {
+	if class == callRevalidation && g.revalidation != nil && g.revalidation.TokensAt(now) >= 1 {
+		return true
+	}
+	return g.sources.available(source, now) && g.global.TokensAt(now) >= 1
 }
 
 // charge takes one token from the budgets of class at now.
@@ -129,6 +148,16 @@ func newSourceBudgets(ratePerSecond float64, burst, maxSources int) *sourceBudge
 		idleTTL: max(idle, time.Second),
 		buckets: newTTLCache[*rate.Limiter](maxSources),
 	}
+}
+
+// available reports whether the source's bucket holds a token at now,
+// without charging it or tracking a new source.
+func (b *sourceBudgets) available(source string, now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	limiter, ok := b.buckets.get(source, now)
+	return !ok || limiter.TokensAt(now) >= 1
 }
 
 // reserve takes one token from the source's bucket at now. It returns false,

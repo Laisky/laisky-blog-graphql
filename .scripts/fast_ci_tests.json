@@ -91,7 +91,8 @@
       "TestValidateStartupConfigRejectsInvalidTrustedProxies",
       "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
       "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
-      "TestValidateStartupConfigSSORedirectPolicy"
+      "TestValidateStartupConfigSSORedirectPolicy",
+      "TestValidateStartupConfigRefusesDisabledValidationInProdMode"
     ]
   },
   {
@@ -129,7 +130,7 @@
       "TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain",
       "TestRV95SingleHostXFFRotationLocksOutNewValidKeys",
       "TestRV95BalanceProxyFloodExhaustsOneAPIBudgetAndLocksOutValidation",
-      "TestProductionEngineAdmitsSlowSteadyLargeUploads"
+      "TestProductionWiringRefusesDisabledValidationOutsideDebug"
     ]
   },
   {
@@ -217,7 +218,10 @@
       "TestZeroStaleGraceRefusesDuringOutage",
       "TestOutageRetriesOfOneKnownKeyAreSpaced",
       "TestBalanceSharesVerdictCachesAndGate",
-      "TestOneAPIValidatorRequiresJSONContentType"
+      "TestOneAPIValidatorRequiresJSONContentType",
+      "TestSlotWaitersThatNeverStartKeepTheirBudget",
+      "TestRevalidationSlotWaitersKeepTheReserve",
+      "TestParsePublicOriginAcceptsOnlyBareOrigins"
     ]
   },
   {
@@ -227,12 +231,12 @@
       "TestIngressGateIsToolAgnostic",
       "TestIngressFailsClosedWhenAuthorityUnavailable",
       "TestIngressKeepsAnonymousDiscovery",
-      "TestIngressSSEStreamOutlivesReadBudget",
       "TestIngressRejectsOversizedBodyBeforeAuthOrBuffering",
       "TestIngressTerminatesSlowBodyWithinReadBudget",
       "TestIngressReadBudgetDoesNotCutHeldRequests",
       "TestIngressSourceFloodCannotLockOutOtherCallers",
-      "TestIngressOutageLogsOneWarnPerInterval"
+      "TestIngressOutageLogsOneWarnPerInterval",
+      "TestIngressChallengeAdvertisesTheConfiguredMetadataURL"
     ]
   },
   {
@@ -242,11 +246,9 @@
       "TestEnforceCapsStreamedBodies",
       "TestEnforceLeavesBodylessRequestsAlone",
       "TestTightenLowersTheCap",
-      "TestReadDeadlineCutsSlowBodyButNotTheResponse",
       "TestReadDeadlineReachesThroughUnwrappingWriters",
-      "TestMinDataRateAdmitsSlowButLiveBodies",
-      "TestMinDataRateCutsTrickleBelowTheRate",
-      "TestAbsoluteReadCapBoundsFastEnoughClients"
+      "TestReadCreditIsBoundedAndDrains",
+      "TestBurstThenStallIsCutAfterTheIdleBound"
     ]
   },
   {

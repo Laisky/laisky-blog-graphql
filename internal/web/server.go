@@ -194,13 +194,22 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 		return errors.Wrap(err, "configure mcp api key validation")
 	}
 	bodySettings := loadRequestBodySettingsFromConfig()
+	// Bearer challenges advertise the metadata document of the configured
+	// public origin, never one derived from a request's Host header.
+	publicOrigin, err := mcpauth.LoadPublicOrigin(gconfig.Shared.Get)
+	if err != nil {
+		return errors.Wrap(err, "load mcp public origin")
+	}
+	resourceMetadataURL := mcpauth.ResourceMetadataURL(publicOrigin)
+	log.Logger.Info("mcp protected-resource metadata", zap.String("public_origin", publicOrigin),
+		zap.String("resource_metadata", resourceMetadataURL))
 
 	server, err := newServerEngine(identityPolicy, prefix)
 	if err != nil {
 		return errors.Wrap(err, "build http engine")
 	}
 
-	frontendSPA := newFrontendSPAHandler(log.Logger.Named("frontend_spa"), prefix.internal)
+	frontendSPA := newFrontendSPAHandler(log.Logger.Named("frontend_spa"), prefix.internal, publicOrigin)
 
 	if err := ginMw.EnableMetric(server); err != nil {
 		log.Logger.Panic("enable metric server", zap.Error(err))
@@ -230,6 +239,7 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 			mcp.WithUserRequestHoldManager(sharedHolds),
 			mcp.WithAuthenticator(authenticator),
 			mcp.WithRequestBodyBudget(bodySettings.MCP),
+			mcp.WithResourceMetadataURL(resourceMetadataURL),
 		}
 		if resolver.args.FilesService != nil {
 			options = append(options, mcp.WithFileHistoryReader(resolver.args.FilesService))
@@ -445,7 +455,7 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 		server.Any("/runtime-config.json", runtimeConfigHandler)
 	}
 
-	registerAgentAPIProbeRoutes(server)
+	registerAgentAPIProbeRoutes(server, resourceMetadataURL)
 
 	if frontendSPA != nil {
 		server.NoRoute(func(ctx *gin.Context) {
@@ -494,8 +504,13 @@ func RunServerContext(ctx context.Context, addr string, resolver *Resolver) erro
 // configureMCPAuthentication builds the API key authenticator from
 // settings.mcp.auth.validation.* (one-api validation enabled by default) and
 // installs it process-wide for the console APIs and GraphQL shared fields.
+// Disabled validation is refused unless the server runs with --debug.
 func configureMCPAuthentication(logger glog.Logger) (*mcpauth.Authenticator, error) {
-	authenticator, err := mcpauth.NewAuthenticatorFromSettings(mcpauth.LoadValidationSettingsFromConfig(), logger)
+	settings := mcpauth.LoadValidationSettingsFromConfig()
+	if err := mcpauth.CheckValidationMode(settings, gconfig.Shared.GetBool("debug")); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	authenticator, err := mcpauth.NewAuthenticatorFromSettings(settings, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "build mcp api key authenticator")
 	}
@@ -596,31 +611,31 @@ func shouldServeFrontend(r *http.Request) bool {
 	return false
 }
 
-// registerAgentAPIProbeRoutes publishes the agent discovery probe endpoints.
-func registerAgentAPIProbeRoutes(router gin.IRouter) {
-	handler := newAgentAPIProbeHandler()
+// registerAgentAPIProbeRoutes publishes the agent discovery probe endpoints,
+// which point to the RFC 9728 metadata document at metadataURL.
+func registerAgentAPIProbeRoutes(router gin.IRouter, metadataURL string) {
+	handler := newAgentAPIProbeHandler(metadataURL)
 	for _, route := range []string{"/api", "/api/v1", "/v1", "/v2", "/agent/auth"} {
 		router.Any(route, handler)
 	}
 }
 
 // newAgentAPIProbeHandler answers agent capability probes with the configured
-// endpoint metadata.
-func newAgentAPIProbeHandler() gin.HandlerFunc {
+// endpoint metadata; an empty metadataURL uses mcpauth.DefaultResourceMetadataURL.
+func newAgentAPIProbeHandler(metadataURL string) gin.HandlerFunc {
+	if metadataURL == "" {
+		metadataURL = mcpauth.DefaultResourceMetadataURL
+	}
 	return func(ctx *gin.Context) {
 		ctx.Header("Allow", "GET, HEAD, OPTIONS, POST")
-		ctx.Header("WWW-Authenticate", `Bearer resource_metadata="`+mcpauth.ResourceMetadataURL+`"`)
+		ctx.Header("WWW-Authenticate", `Bearer resource_metadata="`+metadataURL+`"`)
 
 		switch ctx.Request.Method {
 		case http.MethodOptions:
 			ctx.Status(http.StatusNoContent)
 			return
 		case http.MethodGet, http.MethodHead, http.MethodPost:
-			ctx.JSON(http.StatusUnauthorized, gin.H{
-				"error":             "authentication_required",
-				"error_description": "Use a Laisky MCP API key in the Authorization header.",
-				"resource_metadata": mcpauth.ResourceMetadataURL,
-			})
+			ctx.JSON(http.StatusUnauthorized, newAgentAPIProbeChallenge(metadataURL))
 		default:
 			ctx.AbortWithStatus(http.StatusMethodNotAllowed)
 		}

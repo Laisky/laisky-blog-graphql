@@ -11,13 +11,8 @@ import (
 	"github.com/Laisky/zap"
 )
 
-const (
-	// RetryAfterSeconds is the Retry-After hint sent when validation is unavailable.
-	RetryAfterSeconds = 5
-	// ResourceMetadataURL is the RFC 9728 protected-resource metadata document
-	// advertised in Bearer challenges.
-	ResourceMetadataURL = "https://mcp.laisky.com/.well-known/oauth-protected-resource"
-)
+// RetryAfterSeconds is the Retry-After hint sent when validation is unavailable.
+const RetryAfterSeconds = 5
 
 // HTTPMiddleware enforces authorization with the installed Authenticator and
 // injects the verified auth context into request contexts.

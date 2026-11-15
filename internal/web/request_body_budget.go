@@ -42,10 +42,11 @@ const (
 
 // requestBodySettings is the single table of request-body budgets.
 type requestBodySettings struct {
-	// MinBytesPerSecond, ReadGrace and MaxReadDuration form the minimum
-	// data-rate read rule shared by every route family.
+	// MinBytesPerSecond, ReadGrace, MaxIdle and MaxReadDuration form the
+	// minimum data-rate read rule shared by every route family.
 	MinBytesPerSecond float64
 	ReadGrace         time.Duration
+	MaxIdle           time.Duration
 	MaxReadDuration   time.Duration
 	DefaultMaxBytes   int64
 	GraphQLMaxBytes   int64
@@ -63,6 +64,7 @@ func loadRequestBodySettings(get func(string) any) requestBodySettings {
 	settings := requestBodySettings{
 		MinBytesPerSecond: configFloat(value("min_data_rate"), mcp.DefaultBodyMinBytesPerSecond),
 		ReadGrace:         configDuration(value("read_grace"), mcp.DefaultBodyReadGrace),
+		MaxIdle:           configDuration(value("max_idle"), mcp.DefaultBodyMaxIdle),
 		MaxReadDuration:   configDuration(value("max_read_duration"), mcp.DefaultBodyMaxReadDuration),
 		DefaultMaxBytes:   configInt64(value("default_max_bytes"), defaultBodyMaxBytes),
 		GraphQLMaxBytes:   configInt64(value("graphql_max_bytes"), defaultGraphQLBodyMaxByte),
@@ -77,6 +79,9 @@ func loadRequestBodySettings(get func(string) any) requestBodySettings {
 	if settings.ReadGrace <= 0 {
 		settings.ReadGrace = mcp.DefaultBodyReadGrace
 	}
+	if settings.MaxIdle <= 0 {
+		settings.MaxIdle = mcp.DefaultBodyMaxIdle
+	}
 	if settings.MaxReadDuration <= 0 {
 		settings.MaxReadDuration = mcp.DefaultBodyMaxReadDuration
 	}
@@ -88,6 +93,7 @@ func loadRequestBodySettings(get func(string) any) requestBodySettings {
 	}
 	settings.MCP.MinBytesPerSecond = settings.MinBytesPerSecond
 	settings.MCP.ReadGrace = settings.ReadGrace
+	settings.MCP.MaxIdle = settings.MaxIdle
 	settings.MCP.MaxReadDuration = settings.MaxReadDuration
 	return settings
 }
@@ -142,6 +148,7 @@ func (p *requestBodyPolicy) budget(class requestBodyClass) httpbody.Budget {
 	budget := httpbody.Budget{
 		MinBytesPerSecond: p.settings.MinBytesPerSecond,
 		Grace:             p.settings.ReadGrace,
+		MaxIdle:           p.settings.MaxIdle,
 		MaxDuration:       p.settings.MaxReadDuration,
 	}
 	switch class {

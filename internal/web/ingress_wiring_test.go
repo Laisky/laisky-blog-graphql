@@ -11,6 +11,7 @@ import (
 	"time"
 
 	ginMw "github.com/Laisky/gin-middlewares/v7"
+	gconfig "github.com/Laisky/go-config/v2"
 	glog "github.com/Laisky/go-utils/v6/log"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -33,6 +34,31 @@ func TestProductionWiringInstallsOneAPIValidator(t *testing.T) {
 	validator, ok := authenticator.Validator().(*mcpauth.OneAPITokenValidator)
 	require.True(t, ok, "production must not fall back to an accept-all validator")
 	require.Equal(t, strings.TrimSuffix(oneapi.BillingAPI, "/")+mcpauth.OneAPITokenBalancePath, validator.Endpoint())
+}
+
+// TestProductionWiringRefusesDisabledValidationOutsideDebug keeps the
+// accept-all opt-out out of prod mode at the enforcement point itself, so a
+// copied development config cannot reopen issue #86 on a production server.
+func TestProductionWiringRefusesDisabledValidationOutsideDebug(t *testing.T) {
+	previous := mcpauth.Installed()
+	previousEnabled := gconfig.Shared.Get("settings.mcp.auth.validation.enabled")
+	previousDebug := gconfig.Shared.Get("debug")
+	t.Cleanup(func() {
+		mcpauth.Install(previous)
+		gconfig.Shared.Set("settings.mcp.auth.validation.enabled", previousEnabled)
+		gconfig.Shared.Set("debug", previousDebug)
+	})
+
+	gconfig.Shared.Set("settings.mcp.auth.validation.enabled", false)
+	gconfig.Shared.Set("debug", false)
+	_, err := configureMCPAuthentication(glog.Shared)
+	require.ErrorContains(t, err, "development-only opt-out")
+	require.Same(t, previous, mcpauth.Installed(), "a refused configuration installs nothing")
+
+	gconfig.Shared.Set("debug", true)
+	authenticator, err := configureMCPAuthentication(glog.Shared)
+	require.NoError(t, err)
+	require.Equal(t, "disabled", authenticator.ValidatorName(), "--debug keeps the development opt-out")
 }
 
 // TestHTTPServerTimeoutsKeepStreamsAlive pins the connection timeouts: no
@@ -66,6 +92,13 @@ func TestRequestBodyPolicyClassifiesRegisteredRoutes(t *testing.T) {
 	require.Equal(t, 2*time.Second, settings.MCP.ReadGrace, "one read rule covers every route family")
 	require.InDelta(t, 512, settings.MCP.MinBytesPerSecond, 0)
 	require.Equal(t, mcp.DefaultBodyMaxReadDuration, settings.MaxReadDuration)
+	require.Equal(t, mcp.DefaultBodyMaxIdle, settings.MaxIdle)
+	require.Equal(t, mcp.DefaultBodyMaxIdle, newRequestBodyPolicy(prefix, settings).budget(bodyClassGraphQL).MaxIdle)
+	idle := loadRequestBodySettings(func(key string) any {
+		return map[string]any{"settings.web.request_body.max_idle": "45s"}[key]
+	})
+	require.Equal(t, 45*time.Second, idle.MaxIdle)
+	require.Equal(t, 45*time.Second, idle.MCP.MaxIdle, "the MCP transport shares the credit bound")
 	require.Zero(t, newRequestBodyPolicy(prefix, settings).budget(bodyClassToolConsole).MaxBytes, "tool consoles own their byte caps")
 }
 
@@ -113,6 +146,32 @@ func TestGinBodyBudgetRejectsOversizedBodiesPerRouteFamily(t *testing.T) {
 	require.Equal(t, http.StatusRequestEntityTooLarge, post("/mcp/api/oneapi/balance", 17))
 	require.Equal(t, http.StatusOK, post("/mcp/tools/file_io/api/files", 1<<20), "tool consoles keep their own, larger caps")
 	require.Len(t, outcomes, 2, "rejected bodies never reach a handler")
+}
+
+// TestGinBodyBudgetCutsBurstThenStallThroughTheProductionChain covers the
+// review's burst-then-stall case on the production middleware order: 64 KiB
+// at once would have earned 16 s at the 4 KiB/s default rate, but delivered
+// bytes bank at most max_idle, so the stalled GraphQL body is cut promptly.
+func TestGinBodyBudgetCutsBurstThenStallThroughTheProductionChain(t *testing.T) {
+	outcomes := make(chan string, 1)
+	settings := loadRequestBodySettings(func(key string) any {
+		return map[string]any{"settings.web.request_body.read_grace": "200ms", "settings.web.request_body.max_idle": "400ms"}[key]
+	})
+	server := newBudgetedEngine(t, settings, outcomes)
+	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	started := time.Now()
+	_, err = fmt.Fprintf(conn, "POST /mcp/query/ HTTP/1.1\r\nHost: test\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s",
+		1<<20, strings.Repeat(" ", 64<<10))
+	require.NoError(t, err)
+	select {
+	case outcome := <-outcomes:
+		require.Equal(t, "read error", outcome)
+		require.Less(t, time.Since(started), 2*time.Second)
+	case <-time.After(5 * time.Second):
+		t.Fatal("a GraphQL body that stalled after a burst kept its connection")
+	}
 }
 
 // TestGinBodyBudgetCutsSlowBodiesThroughTheProductionWriterChain proves the

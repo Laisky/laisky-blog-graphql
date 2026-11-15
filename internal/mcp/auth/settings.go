@@ -132,6 +132,18 @@ func LoadValidationSettings(get func(string) any) ValidationSettings {
 	return settings
 }
 
+// CheckValidationMode refuses the accept-all opt-out outside debug mode: in
+// the server's prod mode (no --debug) a disabled validation would let any
+// non-empty bearer become a tenant, which reopens issue #86. Development
+// hosts without one-api run with --debug.
+func CheckValidationMode(settings ValidationSettings, debug bool) error {
+	if settings.Enabled || debug {
+		return nil
+	}
+	return errors.Errorf("%senabled=false is a development-only opt-out and is refused in prod mode; "+
+		"run with --debug or enable one-api validation", validationConfigPrefix)
+}
+
 // NewAuthenticatorFromSettings builds the production Authenticator: the one-api
 // validator when enabled, otherwise an explicit accept-all opt-out logged at WARN.
 func NewAuthenticatorFromSettings(settings ValidationSettings, logger logSDK.Logger) (*Authenticator, error) {

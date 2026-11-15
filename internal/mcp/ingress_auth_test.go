@@ -184,6 +184,35 @@ func requireInvalidTokenChallenge(t *testing.T, response *httptest.ResponseRecor
 	require.NotContains(t, response.Body.String(), "tenant effect")
 }
 
+// TestIngressChallengeAdvertisesTheConfiguredMetadataURL covers review
+// finding C: a self-hosted deployment's rejections point clients to its own
+// RFC 9728 document, derived from configuration and never from the request's
+// Host header; without configuration the primary deployment's URL stays.
+func TestIngressChallengeAdvertisesTheConfiguredMetadataURL(t *testing.T) {
+	fixture := newOneAPITokenFixture(t, issuedIngressKey)
+	const configured = "https://mcp.example.test/.well-known/oauth-protected-resource"
+	for metadataURL, want := range map[string]string{configured: configured, "": mcpauth.DefaultResourceMetadataURL} {
+		s, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, nil, nil, ToolsSettings{MCPPipeEnabled: true}, glog.Shared,
+			WithAuthenticator(fixture.authenticator(t)), WithResourceMetadataURL(metadataURL))
+		require.NoError(t, err)
+		request := httptest.NewRequest(http.MethodPost, "/mcp/", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+		request.Host = "attacker.example"
+		request.Header.Set("X-Forwarded-Host", "attacker.example")
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json, text/event-stream")
+		request.Header.Set("Authorization", "Bearer sk-not-issued")
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, request)
+
+		requireInvalidTokenChallenge(t, response)
+		require.Contains(t, response.Header().Get("WWW-Authenticate"), `resource_metadata="`+want+`"`)
+		require.NotContains(t, response.Header().Get("WWW-Authenticate"), "attacker.example")
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+		require.Equal(t, want, body["resource_metadata"])
+	}
+}
+
 // TestIngressGateIsToolAgnostic sends a random bearer to every tool name, real
 // or not: the gate runs before the SDK dispatches, so no handler is reachable.
 func TestIngressGateIsToolAgnostic(t *testing.T) {
@@ -353,7 +382,7 @@ func TestIngressOutageLogsOneWarnPerInterval(t *testing.T) {
 		return errors.New("one-api connection refused")
 	}), mcpauth.AuthenticatorOptions{})
 	require.NoError(t, err)
-	gate := withBearerAuthentication(http.NotFoundHandler(), func() *mcpauth.Authenticator { return outage }, DefaultMCPAnonymousMaxBodyBytes, logger)
+	gate := withBearerAuthentication(http.NotFoundHandler(), func() *mcpauth.Authenticator { return outage }, DefaultMCPAnonymousMaxBodyBytes, "", logger)
 
 	for i := range 50 {
 		request := httptest.NewRequest(http.MethodPost, "/mcp/", strings.NewReader(`{}`))

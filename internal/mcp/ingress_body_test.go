@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -101,6 +102,42 @@ func TestIngressTerminatesSlowBodyWithinReadBudget(t *testing.T) {
 	}
 	require.Less(t, elapsed, budget+2*time.Second, "the stalled body must be cut by the read budget")
 	require.GreaterOrEqual(t, elapsed, budget-50*time.Millisecond, "the budget, not an unrelated error, must end the request")
+}
+
+// TestIngressCutsBurstThenStallWithinTheIdleBound covers the review's
+// burst-then-stall case on the transport: a burst may bank at most MaxIdle of
+// read time, so a body that stops after it is cut instead of holding the
+// handler for the burst's whole minimum-rate credit (64 s here).
+func TestIngressCutsBurstThenStallWithinTheIdleBound(t *testing.T) {
+	const idle = 400 * time.Millisecond
+	s, err := NewServer(nil, nil, nil, nil, rag.Settings{}, nil, nil, nil, nil, ToolsSettings{MCPPipeEnabled: true}, glog.Shared,
+		WithRequestBodyBudget(RequestBodyBudget{ReadGrace: 200 * time.Millisecond, MaxIdle: idle, MinBytesPerSecond: 1024}))
+	require.NoError(t, err)
+	server := httptest.NewServer(s.Handler())
+	t.Cleanup(server.Close)
+
+	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	started := time.Now()
+	_, err = fmt.Fprintf(conn, "POST /mcp/ HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\n"+
+		"Accept: application/json, text/event-stream\r\nContent-Length: %d\r\n\r\n{\"jsonrpc\":%s", server.Listener.Addr(), 512<<10, strings.Repeat(" ", 64<<10))
+	require.NoError(t, err)
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(4*time.Second)))
+	_, readErr := bufio.NewReader(conn).ReadString('\n')
+	elapsed := time.Since(started)
+	var netErr net.Error
+	if readErr != nil && errorsAsNet(readErr, &netErr) && netErr.Timeout() {
+		t.Fatalf("server still waiting for a body that stalled after a burst, after %s", elapsed)
+	}
+	require.Less(t, elapsed, idle+2*time.Second, "the stalled body must be cut by the credit bound")
+}
+
+// TestIngressBodyBudgetDefaultsBoundBurstCredit pins the transport default.
+func TestIngressBodyBudgetDefaultsBoundBurstCredit(t *testing.T) {
+	require.Equal(t, DefaultBodyMaxIdle, RequestBodyBudget{}.normalized().httpbody().MaxIdle)
+	require.Equal(t, 5*time.Second, RequestBodyBudget{MaxIdle: 5 * time.Second}.normalized().httpbody().MaxIdle)
 }
 
 // errorsAsNet reports whether err is a net.Error.

@@ -217,7 +217,7 @@ func NewServer(
 	// and tools, and the tools/list filter reads the body only for verified callers.
 	handler := withAuthorizationHeaderNormalization(streamable, serverLogger.Named("auth"))
 	handler = withToolsListFiltering(handler, serverLogger.Named("tools_list_filter"), userRequestService)
-	handler = withBearerAuthentication(handler, resolveAuthenticator, bodyBudget.AnonymousMaxBytes, serverLogger.Named("auth_gate"))
+	handler = withBearerAuthentication(handler, resolveAuthenticator, bodyBudget.AnonymousMaxBytes, shared.resourceMetadataURL, serverLogger.Named("auth_gate"))
 	handler = withHTTPLogging(handler, serverLogger.Named("http"))
 	handler = withRequestBodyBudget(handler, bodyBudget, serverLogger.Named("body_budget"))
 	s := &Server{

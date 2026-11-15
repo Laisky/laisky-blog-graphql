@@ -1,10 +1,12 @@
 // Package httpbody enforces per-route request-body budgets: a byte cap and a
 // minimum-data-rate read deadline that only covers the time spent reading the
-// body. Like Kestrel's MinRequestBodyDataRate, a client gets a grace period
-// and must then keep delivering at least a minimum number of bytes per second;
-// the deadline moves forward as bytes arrive, up to an absolute cap. Large
-// uploads over slow but live links succeed, while stalled (slow-loris) bodies
-// are cut.
+// body. A client gets a grace period for its first bytes and must then keep
+// delivering at least a minimum number of bytes per second: every byte earns
+// read time, up to an absolute cap. Unlike a cumulative rate (Kestrel's
+// MinRequestBodyDataRate, Apache's MinRate), earned time is a bounded token
+// bucket: bytes delivered faster than the minimum bank at most MaxIdle, so a
+// burst cannot fund a later stall or trickle. Large uploads over slow but live
+// links succeed, while stalled (slow-loris) bodies are cut.
 //
 // A server-wide http.Server.ReadTimeout is deliberately not used: it applies
 // one budget to every route and also covers header reading. Verified against
@@ -36,10 +38,21 @@ type Budget struct {
 	MinBytesPerSecond float64
 	// Grace is the time allowed before the first bytes must arrive.
 	Grace time.Duration
+	// MaxIdle bounds the read time delivered bytes can earn in advance: a
+	// client faster than MinBytesPerSecond banks at most MaxIdle, so it may
+	// pause at most that long, and a burst cannot fund a later stall or a
+	// trickle below the minimum rate. Values below Grace, including zero,
+	// use Grace.
+	MaxIdle time.Duration
 	// MaxDuration caps the whole body read. The effective cap is the smaller
 	// of MaxDuration and Grace + MaxBytes/MinBytesPerSecond, the time a client
 	// at exactly the minimum rate needs; zero leaves only the derived cap.
 	MaxDuration time.Duration
+}
+
+// maxIdle returns the effective credit bound, never below Grace.
+func (b Budget) maxIdle() time.Duration {
+	return max(b.MaxIdle, b.Grace)
 }
 
 // absoluteLimit returns the longest time the whole body read may take.
@@ -94,7 +107,7 @@ func Enforce(w http.ResponseWriter, r *http.Request, budget Budget) (Result, err
 	var result Result
 	if budget.MinBytesPerSecond > 0 {
 		controller := http.NewResponseController(w)
-		tracked := newDeadlineBody(body, controller, budget, time.Now())
+		tracked := newDeadlineBody(body, controller, budget, time.Now)
 		if err := controller.SetReadDeadline(tracked.armed); err != nil {
 			result.DeadlineErr = errors.Wrap(err, "arm request body read deadline")
 		} else {
@@ -145,37 +158,56 @@ func Limit(err error) int64 {
 	return 0
 }
 
-// deadlineExtendStep avoids a deadline update on every small read.
+// deadlineExtendStep avoids a deadline update on every small read. The step
+// is also kept at or below an eighth of the credit bound, so the armed
+// deadline never trails the earned one by a noticeable part of it.
 const deadlineExtendStep = 250 * time.Millisecond
+
+// deadlineSetter is the part of http.ResponseController the body needs.
+type deadlineSetter interface {
+	SetReadDeadline(deadline time.Time) error
+}
 
 // deadlineBody enforces the minimum data rate and clears the connection read
 // deadline once the body is consumed, before the server's background read
 // could be cut by it.
+//
+// It keeps the time by which the next bytes must arrive (deadline), a token
+// bucket of read time: every delivered byte adds 1/minRate seconds, never
+// more than maxIdle ahead of the delivery and never past the absolute cap.
+// Over any interval a live body therefore delivers at least minRate times
+// the interval minus maxIdle.
 type deadlineBody struct {
 	io.ReadCloser
-	controller *http.ResponseController
-	started    time.Time
-	grace      time.Duration
-	minRate    float64
-	absolute   time.Time
-	armed      time.Time
-	received   int64
-	once       sync.Once
+	setter   deadlineSetter
+	now      func() time.Time
+	minRate  float64
+	maxIdle  time.Duration
+	absolute time.Time
+	// deadline is the earned deadline; armed is the one last set on the
+	// connection, less than step behind it.
+	deadline time.Time
+	armed    time.Time
+	step     time.Duration
+	once     sync.Once
 }
 
 // newDeadlineBody computes the initial deadline: the grace period, bounded by
 // the absolute cap.
-func newDeadlineBody(body io.ReadCloser, controller *http.ResponseController, budget Budget, now time.Time) *deadlineBody {
+func newDeadlineBody(body io.ReadCloser, setter deadlineSetter, budget Budget, now func() time.Time) *deadlineBody {
+	started := now()
 	tracked := &deadlineBody{
-		ReadCloser: body, controller: controller, started: now,
-		grace: budget.Grace, minRate: budget.MinBytesPerSecond, armed: now.Add(budget.Grace),
+		ReadCloser: body, setter: setter, now: now,
+		minRate: budget.MinBytesPerSecond, maxIdle: budget.maxIdle(), deadline: started.Add(budget.Grace),
 	}
+	tracked.step = min(deadlineExtendStep, tracked.maxIdle/8)
 	if limit := budget.absoluteLimit(); limit > 0 {
-		tracked.absolute = now.Add(limit)
-		if tracked.absolute.Before(tracked.armed) {
-			tracked.armed = tracked.absolute
+		tracked.absolute = started.Add(limit)
+		if tracked.absolute.Before(tracked.deadline) {
+			tracked.deadline = tracked.absolute
 		}
 	}
+	tracked.armed = tracked.deadline
 	return tracked
 }
 
@@ -185,8 +217,7 @@ func newDeadlineBody(body io.ReadCloser, controller *http.ResponseController, bu
 func (b *deadlineBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
 	if n > 0 {
-		b.received += int64(n)
-		b.extend()
+		b.extend(n)
 	}
 	if errors.Is(err, io.EOF) {
 		b.release()
@@ -194,17 +225,24 @@ func (b *deadlineBody) Read(p []byte) (int, error) {
 	return n, err //nolint:wrapcheck // io.Reader contract: io.EOF must be returned unwrapped
 }
 
-// extend moves the deadline to grace + received/minRate after the start,
-// never past the absolute cap.
-func (b *deadlineBody) extend() {
-	earned := b.started.Add(b.grace + time.Duration(float64(b.received)/b.minRate*float64(time.Second)))
+// extend credits n delivered bytes: the deadline moves n/minRate later, but
+// never beyond maxIdle after now nor past the absolute cap.
+func (b *deadlineBody) extend(n int) {
+	earned := b.deadline.Add(time.Duration(float64(n) / b.minRate * float64(time.Second)))
+	if ceiling := b.now().Add(b.maxIdle); earned.After(ceiling) {
+		earned = ceiling
+	}
 	if !b.absolute.IsZero() && earned.After(b.absolute) {
 		earned = b.absolute
 	}
-	if earned.Sub(b.armed) < deadlineExtendStep {
+	if !earned.After(b.deadline) {
 		return
 	}
-	if err := b.controller.SetReadDeadline(earned); err == nil {
+	b.deadline = earned
+	if earned.Sub(b.armed) < b.step {
+		return
+	}
+	if err := b.setter.SetReadDeadline(earned); err == nil {
 		b.armed = earned
 	}
 }
@@ -212,6 +250,6 @@ func (b *deadlineBody) extend() {
 // release clears the read deadline exactly once.
 func (b *deadlineBody) release() {
 	b.once.Do(func() {
-		_ = b.controller.SetReadDeadline(time.Time{})
+		_ = b.setter.SetReadDeadline(time.Time{})
 	})
 }

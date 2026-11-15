@@ -22,6 +22,9 @@ type sharedServerServices struct {
 	holds         *userrequests.HoldManager
 	authenticator *mcpauth.Authenticator
 	bodyBudget    RequestBodyBudget
+	// resourceMetadataURL is the RFC 9728 document advertised in Bearer
+	// challenges; empty uses mcpauth.DefaultResourceMetadataURL.
+	resourceMetadataURL string
 }
 
 // WithFileHistoryReader enables the history tool adapters when FileIO exposure is enabled.

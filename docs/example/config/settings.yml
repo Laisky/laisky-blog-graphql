@@ -32,9 +32,10 @@ settings:
     base_url: https://api.openai.com # Base URL without /v1 suffix (the code appends /v1/embeddings automatically)
     embedding_model: text-embedding-3-small
   mcp:
+    public_origin: https://mcp.laisky.com # RFC 9728 resource; Bearer challenges point to its /.well-known/oauth-protected-resource
     auth:
       validation: # every MCP entrypoint validates bearers with one-api; see docs/manual/mcp.md
-        enabled: true # false is a development-only opt-out (WARN at startup)
+        enabled: true # false is a development-only opt-out, refused at startup unless the server runs with --debug
         # base_url: https://oneapi.example.com # defaults to the billing API origin
         timeout: 5s
         positive_ttl: 5m # revocation lag for an accepted key
@@ -199,6 +200,7 @@ settings:
     request_body: # per-route body budgets, enforced before any body is read
       min_data_rate: 4096 # bytes/s a body must sustain after read_grace (slow-loris protection)
       read_grace: 10s
+      max_idle: 30s # longest pause once bytes arrived; bursts bank at most this much read time
       max_read_duration: 30m # absolute cap of one body read
       default_max_bytes: 1048576 # 1 MiB
       graphql_max_bytes: 67108864 # 64 MiB

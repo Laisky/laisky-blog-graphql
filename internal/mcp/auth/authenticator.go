@@ -209,15 +209,9 @@ func (a *Authenticator) Validator() Validator {
 // ErrUpstreamThrottled when this server's own budget refused the call). A nil
 // receiver fails closed with ErrValidationUnavailable.
 func (a *Authenticator) Authenticate(ctx context.Context, header string) (*Context, error) {
-	candidate, err := parseAuthorizationHeader(header)
+	candidate, err := a.parseCandidate(header)
 	if err != nil {
 		return nil, errors.WithStack(err)
-	}
-	if len(candidate.APIKey) > MaxAPIKeyLength {
-		return nil, errors.Wrap(ErrInvalidAuthorization, "api key exceeds the maximum length")
-	}
-	if a == nil {
-		return nil, errors.Wrap(ErrValidationUnavailable, "no api key authenticator is installed")
 	}
 
 	now := a.opts.Now()
@@ -264,16 +258,63 @@ func (a *Authenticator) staleOr(ctx context.Context, candidate *Context, entry p
 	return markVerified(candidate), nil
 }
 
+// parseCandidate parses a bearer header and bounds the key before any cache
+// lookup or upstream call. A nil receiver fails closed.
+func (a *Authenticator) parseCandidate(header string) (*Context, error) {
+	candidate, err := parseAuthorizationHeader(header)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	if len(candidate.APIKey) > MaxAPIKeyLength {
+		return nil, errors.Wrap(ErrInvalidAuthorization, "api key exceeds the maximum length")
+	}
+	if a == nil {
+		return nil, errors.Wrap(ErrValidationUnavailable, "no api key authenticator is installed")
+	}
+	return candidate, nil
+}
+
 // lookup coalesces concurrent validations of the same key into one upstream call.
 func (a *Authenticator) lookup(ctx context.Context, candidate *Context, class callClass) error {
-	results := a.flights.DoChan("validate:"+candidate.APIKeyHash, func() (any, error) {
+	_, err := a.coalesce(ctx, "validate:"+candidate.APIKeyHash, "wait for api key validation", func() (any, error) {
 		return nil, a.validateUpstream(ctx, candidate, class)
 	})
+	return err
+}
+
+// coalesce runs fn once per flight key for all concurrent callers; a caller
+// whose ctx ends first stops waiting with ErrValidationUnavailable while the
+// shared call completes for the others.
+func (a *Authenticator) coalesce(ctx context.Context, flight, waiting string, fn func() (any, error)) (any, error) {
+	results := a.flights.DoChan(flight, fn)
 	select {
 	case result := <-results:
-		return result.Err
+		return result.Val, errors.WithStack(result.Err)
 	case <-ctx.Done():
-		return errors.Wrap(errors.Join(ErrValidationUnavailable, ctx.Err()), "wait for api key validation")
+		return nil, errors.Wrap(errors.Join(ErrValidationUnavailable, ctx.Err()), waiting)
+	}
+}
+
+// upstream runs one authority call for key through the gate's budgets,
+// detached from the first caller's cancellation and bounded by Timeout, and
+// records its verdict. Every result maps to nil, ErrCredentialRejected or
+// ErrValidationUnavailable.
+func (a *Authenticator) upstream(parent context.Context, key string, class callClass, call func(context.Context) error) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), a.opts.Timeout)
+	defer cancel()
+	release, err := a.gate.admit(ctx, class)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer release()
+
+	err = call(ctx)
+	a.recordVerdict(key, err)
+	switch {
+	case err == nil, errors.Is(err, ErrCredentialRejected), errors.Is(err, ErrValidationUnavailable):
+		return errors.WithStack(err)
+	default:
+		return errors.Wrap(errors.Join(ErrValidationUnavailable, err), "call the api key authority")
 	}
 }
 
@@ -290,23 +331,9 @@ func (a *Authenticator) validateUpstream(parent context.Context, candidate *Cont
 	if _, rejected := a.negative.get(key, now); rejected {
 		return errors.WithStack(ErrCredentialRejected)
 	}
-
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), a.opts.Timeout)
-	defer cancel()
-	release, err := a.gate.admit(ctx, class)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer release()
-
-	err = a.validator.ValidateAPIKey(ctx, candidate.APIKey)
-	a.recordVerdict(key, err)
-	switch {
-	case err == nil, errors.Is(err, ErrCredentialRejected), errors.Is(err, ErrValidationUnavailable):
-		return errors.WithStack(err)
-	default:
-		return errors.Wrap(errors.Join(ErrValidationUnavailable, err), "validate api key")
-	}
+	return a.upstream(parent, key, class, func(ctx context.Context) error {
+		return errors.WithStack(a.validator.ValidateAPIKey(ctx, candidate.APIKey))
+	})
 }
 
 // recordVerdict stores the outcome of one upstream call for key.
@@ -338,15 +365,9 @@ func (a *Authenticator) positiveExpiry(validatedAt time.Time) time.Time {
 // upstream call is charged to the caller's per-source and the global budget.
 // It fails like Authenticate: ErrCredentialRejected or ErrValidationUnavailable.
 func (a *Authenticator) Balance(ctx context.Context, apiKey string) (Balance, error) {
-	candidate, err := parseAuthorizationHeader("Bearer " + apiKey)
+	candidate, err := a.parseCandidate("Bearer " + apiKey)
 	if err != nil {
 		return Balance{}, errors.WithStack(err)
-	}
-	if len(candidate.APIKey) > MaxAPIKeyLength {
-		return Balance{}, errors.Wrap(ErrInvalidAuthorization, "api key exceeds the maximum length")
-	}
-	if a == nil {
-		return Balance{}, errors.Wrap(ErrValidationUnavailable, "no api key authenticator is installed")
 	}
 	fetcher, ok := a.validator.(BalanceValidator)
 	if !ok {
@@ -362,33 +383,24 @@ func (a *Authenticator) Balance(ctx context.Context, apiKey string) (Balance, er
 		return balance, nil
 	}
 
-	results := a.flights.DoChan("balance:"+key, func() (any, error) {
-		callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.opts.Timeout)
-		defer cancel()
-		release, err := a.gate.admit(callCtx, callNewKey)
-		if err != nil {
-			return Balance{}, errors.WithStack(err)
-		}
-		defer release()
-
-		balance, err := fetcher.FetchBalance(callCtx, candidate.APIKey)
-		a.recordVerdict(key, err)
+	value, err := a.coalesce(ctx, "balance:"+key, "wait for one-api balance", func() (any, error) {
+		var balance Balance
+		err := a.upstream(ctx, key, callNewKey, func(callCtx context.Context) error {
+			var fetchErr error
+			balance, fetchErr = fetcher.FetchBalance(callCtx, candidate.APIKey)
+			return errors.WithStack(fetchErr)
+		})
 		if err != nil {
 			return Balance{}, errors.WithStack(err)
 		}
 		a.balances.put(key, balance, a.opts.Now().Add(balanceTTL))
 		return balance, nil
 	})
-	select {
-	case result := <-results:
-		if result.Err != nil {
-			return Balance{}, errors.WithStack(result.Err)
-		}
-		balance, _ := result.Val.(Balance)
-		return balance, nil
-	case <-ctx.Done():
-		return Balance{}, errors.Wrap(errors.Join(ErrValidationUnavailable, ctx.Err()), "wait for one-api balance")
+	if err != nil {
+		return Balance{}, errors.WithStack(err)
 	}
+	balance, _ := value.(Balance)
+	return balance, nil
 }
 
 // markVerified flags a freshly parsed context as accepted by the authority.

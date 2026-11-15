@@ -202,8 +202,11 @@ func TestMinDataRateCutsTrickleBelowTheRate(t *testing.T) {
 }
 
 func TestAbsoluteReadCapBoundsFastEnoughClients(t *testing.T) {
-	// The client stays above the minimum rate, but the whole read is capped at 600ms.
-	server, outcomes := readOutcome(t, Budget{MaxBytes: 1 << 20, MinBytesPerSecond: 1, Grace: 100 * time.Millisecond, MaxDuration: 600 * time.Millisecond})
+	// The client stays above the minimum rate and pauses less than MaxIdle,
+	// but the whole read is capped at 600ms.
+	server, outcomes := readOutcome(t, Budget{
+		MaxBytes: 1 << 20, MinBytesPerSecond: 1, Grace: 100 * time.Millisecond, MaxIdle: 300 * time.Millisecond, MaxDuration: 600 * time.Millisecond,
+	})
 	started := time.Now()
 	sendPaced(t, server, 64<<10, 1024, 100*time.Millisecond)
 	select {

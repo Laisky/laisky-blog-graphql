@@ -24,8 +24,22 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `internal/web/blog/controller`. The MCP ingress
 selections cover API key validation at every entrypoint (transport, console APIs,
 ask_user console, GraphQL shared fields), caching, flood bounds, outage
-fail-closed behavior, production wiring, request-body caps, slow-body cuts and
-streams that outlive the read budget. These exercise input validation, controlled
+fail-closed behavior, production wiring, the prod-mode refusal of disabled
+validation, the configured protected-resource metadata URL, upstream budgets
+spent only by calls that hold a slot, request-body caps, slow-body and
+burst-then-stall cuts, and held requests that outlive the read budget. The
+request-body read-credit arithmetic runs on a fake clock. Real-socket timing
+variants stay in `make test` and are not selected:
+`TestReadDeadlineCutsSlowBodyButNotTheResponse`, `TestMinDataRate*`,
+`TestAbsoluteReadCapBoundsFastEnoughClients`, `TestBurstThenTrickle*`,
+`TestPauseWithinTheIdleBoundIsAdmitted`, `TestIngressSSEStreamOutlivesReadBudget`,
+`TestIngressCutsBurstThenStallWithinTheIdleBound`,
+`TestGinBodyBudgetCutsBurstThenStallThroughTheProductionChain` and
+`TestProductionEngineAdmitsSlowSteadyLargeUploads`. The capacity simulation
+`TestDefaultBudgetsCapacityForActiveKeys` is not selected either. On a Linux
+16-thread host with a warm build cache, this trimming took the selected
+PR #95 tests from about 10.8 s to about 3.3 s of test time. The full gate went
+from 78.3 s to 70.6 s. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover

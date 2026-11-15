@@ -10,6 +10,10 @@ import (
 )
 
 // AuthorizationContext captures caller identity derived from the Authorization header.
+// It is a compatibility view of mcpauth.Context for the ask_user and
+// user-request packages and is only built from a verified context (see
+// FromSharedContext); new code should use mcpauth.Context instead of adding
+// fields here.
 type AuthorizationContext struct {
 	RawHeader    string
 	APIKey       string
