@@ -325,7 +325,6 @@ type ComplexityRoot struct {
 		BlogCreateComment             func(childComplexity int, postName string, content string, authorName string, authorEmail string, authorWebsite *string, parentID *string) int
 		BlogCreatePost                func(childComplexity int, post models.NewBlogPost, language models.Language) int
 		BlogDeleteComment             func(childComplexity int, commentID string) int
-		BlogLogin                     func(childComplexity int, account string, password string) int
 		BlogToggleCommentLike         func(childComplexity int, commentID string) int
 		CreateGeneralToken            func(childComplexity int, username string, durationSec int) int
 		ExtractKeyInfo                func(childComplexity int, query string, materials string, topK *int) int
@@ -565,7 +564,6 @@ type MutationResolver interface {
 	BlogToggleCommentLike(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogApproveComment(ctx context.Context, commentID string) (*models.Comment, error)
 	BlogDeleteComment(ctx context.Context, commentID string) (*models.Comment, error)
-	BlogLogin(ctx context.Context, account string, password string) (*models.BlogLoginResponse, error)
 	UserLogin(ctx context.Context, account string, password string, turnstileToken *string, totpCode *string) (*models.BlogLoginResponse, error)
 	UserLoginWithEmailCode(ctx context.Context, account string, emailCode string, turnstileToken *string) (*models.BlogLoginResponse, error)
 	UserRequestEmailCode(ctx context.Context, account string, purpose string, turnstileToken *string) (*models.UserEmailCodeResponse, error)
@@ -1710,17 +1708,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.BlogDeleteComment(childComplexity, args["commentId"].(string)), true
-	case "Mutation.BlogLogin":
-		if e.ComplexityRoot.Mutation.BlogLogin == nil {
-			break
-		}
-
-		args, err := ec.field_Mutation_BlogLogin_args(ctx, rawArgs)
-		if err != nil {
-			return 0, false
-		}
-
-		return e.ComplexityRoot.Mutation.BlogLogin(childComplexity, args["account"].(string), args["password"].(string)), true
 	case "Mutation.BlogToggleCommentLike":
 		if e.ComplexityRoot.Mutation.BlogToggleCommentLike == nil {
 			break
@@ -3971,28 +3958,6 @@ func (ec *executionContext) field_Mutation_BlogDeleteComment_args(ctx context.Co
 		return nil, err
 	}
 	args["commentId"] = arg0
-	return args, nil
-}
-
-func (ec *executionContext) field_Mutation_BlogLogin_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "account",
-		func(ctx context.Context, v any) (string, error) {
-			return ec.unmarshalNString2string(ctx, v)
-		})
-	if err != nil {
-		return nil, err
-	}
-	args["account"] = arg0
-	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "password",
-		func(ctx context.Context, v any) (string, error) {
-			return ec.unmarshalNString2string(ctx, v)
-		})
-	if err != nil {
-		return nil, err
-	}
-	args["password"] = arg1
 	return args, nil
 }
 
@@ -9496,50 +9461,6 @@ func (ec *executionContext) fieldContext_Mutation_BlogDeleteComment(ctx context.
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_BlogDeleteComment_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
-		ec.Error(ctx, err)
-		return fc, err
-	}
-	return fc, nil
-}
-
-func (ec *executionContext) _Mutation_BlogLogin(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_Mutation_BlogLogin(ctx, field)
-		},
-		func(ctx context.Context) (any, error) {
-			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().BlogLogin(ctx, fc.Args["account"].(string), fc.Args["password"].(string))
-		},
-		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *models.BlogLoginResponse) graphql.Marshaler {
-			return ec.marshalNBlogLoginResponse2ᚖgithubᚗcomᚋLaiskyᚋlaiskyᚑblogᚑgraphqlᚋinternalᚋlibraryᚋmodelsᚐBlogLoginResponse(ctx, selections, v)
-		},
-		true,
-		true,
-	)
-}
-func (ec *executionContext) fieldContext_Mutation_BlogLogin(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "Mutation",
-		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.childFields_BlogLoginResponse(ctx, field)
-		},
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			err = ec.Recover(ctx, r)
-			ec.Error(ctx, err)
-		}
-	}()
-	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Mutation_BlogLogin_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -18289,13 +18210,6 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "BlogDeleteComment":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_BlogDeleteComment(ctx, field)
-			})
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
-		case "BlogLogin":
-			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
-				return ec._Mutation_BlogLogin(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

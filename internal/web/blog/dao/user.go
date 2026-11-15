@@ -49,7 +49,9 @@ func (d *Blog) ValidateLogin(ctx context.Context, account, rawPassword string) (
 	}
 
 	if err = gcrypto.VerifyHashedPassword([]byte(rawPassword), u.Password); err != nil {
-		return nil, errors.WithStack(model.ErrInvalidCredentials)
+		// The account exists: carry its identity so the risk tracker counts
+		// the failure against the account, not only against this spelling.
+		return nil, model.NewCredentialRejection(u.RiskIdentity())
 	}
 
 	return u, nil
