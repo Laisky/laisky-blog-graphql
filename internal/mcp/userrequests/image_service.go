@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -234,7 +235,10 @@ func nullableString(s string) any {
 //  1. Reserve (short transaction, image scope lock): refuse keys whose delete
 //     is in flight, check the quota and record upload claims, which count
 //     toward the quota and protect the keys from deletion.
-//  2. Upload every object outside any transaction, each with its own timeout.
+//  2. Upload every object outside any transaction, imageUploadConcurrency at
+//     a time, each with its own timeout and all ending imageFinalizeReserve
+//     before ctx's deadline. A create with less than imageMinUploadWindow
+//     left for this step is refused (ErrImageBusy) before step 1.
 //  3. Finalize (short transaction, scope lock): consume the claims, insert
 //     the request, the image refs and links, and commit.
 //
@@ -278,6 +282,11 @@ func (s *Service) CreateRequestWithImages(
 		return s.finalizeImageRequest(ctx, auth, requestID, body, taskID, nil)
 	}
 
+	uploadCtx, cancelUploads, err := imageUploadContext(ctx)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defer cancelUploads()
 	if err := s.reserveImageUploads(ctx, auth, requestID, images); err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -289,7 +298,7 @@ func (s *Service) CreateRequestWithImages(
 		}
 	}()
 
-	if err := putImageObjects(ctx, objects, auth, images, &attempted); err != nil {
+	if err := putImageObjects(uploadCtx, objects, auth, images, &attempted); err != nil {
 		return nil, errors.WithStack(err)
 	}
 	req, err := s.finalizeImageRequest(ctx, auth, requestID, body, taskID, images)
@@ -478,19 +487,83 @@ func sanitizeImageRequestContent(content string, hasImages bool) (string, error)
 	return body, nil
 }
 
-// putImageObjects uploads every image in order, each bounded by
-// imageObjectPutTimeout, outside any transaction. Each key is appended to
-// attempted before its Put starts, because a Put that reports failure (for
-// example a client timeout) may still have been stored by the server.
+// imageUploadContext returns the context the uploads of a create run under:
+// it ends imageFinalizeReserve before ctx's deadline, so the finalize
+// transaction keeps time to commit. It returns ErrImageBusy when less than
+// imageMinUploadWindow would be left for the uploads. A ctx without a
+// deadline is returned unchanged.
+func imageUploadContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return ctx, func() {}, nil
+	}
+	end := deadline.Add(-imageFinalizeReserve)
+	if left := time.Until(end); left < imageMinUploadWindow {
+		return nil, nil, errors.Wrapf(ErrImageBusy, "only %s of the request deadline is left for uploading", max(left, 0).Round(time.Millisecond))
+	}
+	uploadCtx, cancel := context.WithDeadline(ctx, end)
+	return uploadCtx, cancel, nil
+}
+
+// putImageObjects uploads each distinct object of images outside any
+// transaction, at most imageUploadConcurrency at once and each bounded by
+// imageObjectPutTimeout. Each key is appended to attempted before its Put
+// starts, because a Put that reports failure (for example a client timeout)
+// may still have been stored by the server. The first failure cancels the
+// uploads still in flight and starts no more; it is returned with the index
+// of its attachment.
 func putImageObjects(ctx context.Context, objects ImageObjectWriter, auth *askuser.AuthorizationContext, images []UploadedImage, attempted *[]string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		wg       sync.WaitGroup
+		failOnce sync.Once
+		failure  error
+	)
+	fail := func(err error) {
+		failOnce.Do(func() {
+			failure = err
+			cancel()
+		})
+	}
+	slots := make(chan struct{}, imageUploadConcurrency)
+	seen := make(map[string]bool, len(images))
+	var notStarted error
+launch:
 	for idx, img := range images {
-		*attempted = append(*attempted, img.StorageKey)
-		putCtx, cancel := context.WithTimeout(ctx, imageObjectPutTimeout)
-		err := objects.PutImage(putCtx, auth, img)
-		cancel()
-		if err != nil {
-			return errors.Wrapf(err, "attachment index %d", idx)
+		if seen[img.StorageKey] {
+			continue // the same content was attached twice; one PUT stores it
 		}
+		seen[img.StorageKey] = true
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			notStarted = ctx.Err()
+			break launch
+		}
+		if err := ctx.Err(); err != nil {
+			<-slots
+			notStarted = err
+			break
+		}
+		*attempted = append(*attempted, img.StorageKey)
+		wg.Go(func() {
+			defer func() { <-slots }()
+			putCtx, cancelPut := context.WithTimeout(ctx, imageObjectPutTimeout)
+			defer cancelPut()
+			if err := objects.PutImage(putCtx, auth, img); err != nil {
+				fail(errors.Wrapf(err, "attachment index %d", idx))
+			}
+		})
+	}
+	wg.Wait()
+	if failure != nil {
+		return failure
+	}
+	if notStarted != nil {
+		// The parent ended before every upload could start.
+		return errors.Wrap(ErrStorageUnavailable, "uploads not started before the deadline: "+notStarted.Error())
 	}
 	return nil
 }

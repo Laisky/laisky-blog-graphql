@@ -256,7 +256,10 @@
       "TestFinalizeRepointedRefRecordsOldKey",
       "TestHandleCreateAdmitsBeforeReadingMultipartBody",
       "TestImageCreateLimiterBoundsWaiters",
-      "TestHandleCreateSlowBodyReleasesSlotAtDeadline"
+      "TestHandleCreateSlowBodyReleasesSlotAtDeadline",
+      "TestCreateWithImagesUploadsFitTheRequestDeadline",
+      "TestCreateWithImagesRefusesWithoutTimeToUpload",
+      "TestCreateWithImagesFailedUploadCancelsTheOthers"
     ]
   },
   {

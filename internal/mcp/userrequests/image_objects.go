@@ -71,8 +71,6 @@ const (
 	// imageDeleteConcurrency bounds how many object deletes one compensation
 	// or reconciler pass keeps in flight.
 	imageDeleteConcurrency = 4
-	// imageObjectPutTimeout bounds one object upload.
-	imageObjectPutTimeout = 20 * time.Second
 	// imageObjectDeleteTimeout bounds one object delete.
 	imageObjectDeleteTimeout = 10 * time.Second
 	// imageCompensationTimeout bounds the detached cleanup of a failed create.
@@ -84,11 +82,31 @@ const (
 	imageScopeLockNamespace = "laisky-blog-graphql/mcp_user_request_images:"
 )
 
+// The time budget of one image create. The request deadline
+// (createRequestTimeout) covers reading the body, normalizing, uploading and
+// finalizing. Uploads run in parallel and must end imageFinalizeReserve
+// before the deadline, so the finalize transaction keeps time to commit; a
+// create with less than imageMinUploadWindow left for its uploads once its
+// images are prepared is refused (image_busy) before anything is reserved.
+// They are variables only so tests can scale them.
+var (
+	// imageObjectPutTimeout bounds one object upload.
+	imageObjectPutTimeout = 20 * time.Second
+	// imageFinalizeReserve is the part of a create's deadline kept for the
+	// finalize transaction.
+	imageFinalizeReserve = 2 * time.Second
+	// imageMinUploadWindow is the least time a create's uploads may get.
+	imageMinUploadWindow = 3 * time.Second
+	// imageUploadConcurrency bounds how many objects one create uploads at
+	// once. The default MaxPerRequest (5) then needs two rounds.
+	imageUploadConcurrency = 4
+)
+
 // ImageObjectWriter uploads and removes the objects behind image refs.
 // Service.CreateRequestWithImages calls PutImage only after the quota admitted
 // every image, and DeleteImage only for objects that nothing references or
-// claims. DeleteImage may run concurrently for different keys. ImageManager is
-// the production implementation.
+// claims. PutImage and DeleteImage may run concurrently for different keys.
+// ImageManager is the production implementation.
 type ImageObjectWriter interface {
 	// PutImage stores image.PNG under image.StorageKey.
 	PutImage(ctx context.Context, auth *askuser.AuthorizationContext, image UploadedImage) error

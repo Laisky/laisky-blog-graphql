@@ -12,6 +12,7 @@ import (
 	"net/textproto"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -314,10 +315,15 @@ func TestCreateWithImagesSuccessKeepsObjects(t *testing.T) {
 func TestCreateWithImagesHoldsNoTransactionDuringUpload(t *testing.T) {
 	dsn := "file:" + filepath.Join(t.TempDir(), "upload.db") + "?_busy_timeout=200"
 	h := newOrphanHarnessWithDSN(t, defaultImageSettings(), dsn)
-	var probeErrs []error
+	var (
+		probeMu   sync.Mutex
+		probeErrs []error
+	)
 	h.store.BeforePut = func(context.Context, string) error {
 		_, err := h.db.Exec(`UPDATE mcp_user_image_refs SET size_bytes = size_bytes WHERE 1 = 1`)
+		probeMu.Lock()
 		probeErrs = append(probeErrs, err)
+		probeMu.Unlock()
 		return nil
 	}
 	rec := h.post(t, context.Background(), "sk-no-tx-upload-123456", testPNG(t, 40, 30), testPNG(t, 22, 22))

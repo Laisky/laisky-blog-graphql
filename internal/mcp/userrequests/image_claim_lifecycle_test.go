@@ -199,6 +199,13 @@ func (w scriptedWriter) DeleteImage(ctx context.Context, key string) error {
 // key is responsible for it, whether or not it uploaded the key; A's
 // late-write re-check of Y is a second, later line of defense.
 func TestOverlappingFailedCreatesReleaseSharedKey(t *testing.T) {
+	// One upload at a time, so B fails on X before its upload of Y starts,
+	// as it does whenever a request holds more images than the upload
+	// concurrency. With Y attempted, cleanup that only considered attempted
+	// keys would pass by accident.
+	prevConcurrency := imageUploadConcurrency
+	imageUploadConcurrency = 1
+	t.Cleanup(func() { imageUploadConcurrency = prevConcurrency })
 	h := newOrphanHarness(t, defaultImageSettings(), "")
 	auth := mustAuth(t, "sk-overlap-release-1234")
 	x, y, z := testPNG(t, 41, 30), testPNG(t, 42, 30), testPNG(t, 43, 30)
