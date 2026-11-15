@@ -101,6 +101,32 @@ func (b *DecodeBudget) Capacity() int64 {
 	return b.capacity
 }
 
+// DecodeUsage is a point-in-time view of a DecodeBudget's utilization.
+type DecodeUsage struct {
+	// CapacityBytes is the budget size.
+	CapacityBytes int64
+	// InUseBytes is the estimated working set of the decodes admitted now.
+	InUseBytes int64
+	// Waiting counts admissions still waiting, for budget bytes or for one of
+	// their owner's decode slots.
+	Waiting int
+}
+
+// Usage reports the budget's current utilization. A nil budget reports an
+// idle budget of the default capacity, matching Capacity.
+func (b *DecodeBudget) Usage() DecodeUsage {
+	if b == nil {
+		return DecodeUsage{CapacityBytes: DefaultDecodeMemoryBudgetBytes}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	waiting := len(b.queue)
+	for _, owner := range b.owners {
+		waiting += len(owner.waiting)
+	}
+	return DecodeUsage{CapacityBytes: b.capacity, InUseBytes: b.used, Waiting: waiting}
+}
+
 // acquireFor reserves cost bytes for owner, blocking until the admission rule
 // admits it or ctx ends. The returned release function must be called once.
 func (b *DecodeBudget) acquireFor(ctx context.Context, owner string, cost int64) (func(), error) {

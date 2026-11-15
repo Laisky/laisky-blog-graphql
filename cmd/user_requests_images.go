@@ -55,7 +55,9 @@ func buildUserRequestImageManager(ctx context.Context, svc *userrequests.Service
 		MaxBodyBytes: settings.PerImageMaxBytes,
 	})
 
-	return userrequests.NewImageManager(store, fetcher, settings), nil
+	manager := userrequests.NewImageManager(store, fetcher, settings)
+	manager.ExportMetrics()
+	return manager, nil
 }
 
 // sizeImageMemory fits the image create path into the process memory limit

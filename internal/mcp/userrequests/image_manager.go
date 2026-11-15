@@ -47,6 +47,16 @@ func NewImageManager(store storage.ObjectStore, fetcher URLFetcher, settings Ima
 	}
 }
 
+// ExportMetrics registers the image metrics on the default registry (once per
+// process) and points the decode-budget gauges at m's decode budget. The API
+// server calls it for the manager it serves; a later call rebinds the gauges.
+func (m *ImageManager) ExportMetrics() {
+	registerImageMetrics()
+	if m != nil {
+		decodeBudgetSource.Store(m.budget)
+	}
+}
+
 // AdmitCreate takes one of the image-create slots for auth's identity,
 // waiting until one is free or ctx ends (ErrImageBusy). The handler holds it
 // across Prepare and Service.CreateRequestWithImages; release must be called once.

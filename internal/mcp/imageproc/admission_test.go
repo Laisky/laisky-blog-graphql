@@ -239,3 +239,44 @@ func TestDecodeBudgetCanceledWaiterUnblocksOthers(t *testing.T) {
 	require.NoError(t, behind.err)
 	behind.release()
 }
+
+// TestDecodeBudgetUsageReportsAdmittedAndWaiting pins the utilization view the
+// image metrics export (maintainer review of PR #94, P3: monitor RSS
+// alongside the estimated decode-budget utilization). It counts the bytes of
+// admitted decodes and every admission still waiting, whether for bytes or
+// for one of its owner's slots, and returns to zero once all are released.
+func TestDecodeBudgetUsageReportsAdmittedAndWaiting(t *testing.T) {
+	require.Equal(t, DecodeUsage{CapacityBytes: DefaultDecodeMemoryBudgetBytes}, (*DecodeBudget)(nil).Usage())
+
+	budget, _ := newTestBudget()
+	require.Equal(t, DecodeUsage{CapacityBytes: 1280 * mib}, budget.Usage())
+
+	big, err := budget.acquireFor(context.Background(), "a", 1000*mib)
+	require.NoError(t, err)
+	second, err := budget.acquireFor(context.Background(), "b", 200*mib)
+	require.NoError(t, err)
+	require.Equal(t, DecodeUsage{CapacityBytes: 1280 * mib, InUseBytes: 1200 * mib}, budget.Usage())
+
+	// Waiting for bytes: 100 MiB does not fit in the 80 MiB left.
+	forBytes := asyncAcquire(t.Context(), budget, "c", 100*mib)
+	waitQueued(t, budget, 1)
+	// Waiting for an owner slot: "b" already runs one; a second "b" decode
+	// queues for bytes, and a third waits for one of b's two slots.
+	forBytesB := asyncAcquire(t.Context(), budget, "b", 100*mib)
+	waitQueued(t, budget, 2)
+	forSlot := asyncAcquire(t.Context(), budget, "b", mib)
+	require.Eventually(t, func() bool { return budget.Usage().Waiting == 3 }, 5*time.Second, time.Millisecond)
+	require.Equal(t, 1200*mib, budget.Usage().InUseBytes, "waiters hold no bytes")
+
+	big()
+	for _, p := range []*pendingAcquire{forBytes, forBytesB} {
+		waitDone(t, p)
+		require.NoError(t, p.err)
+		p.release()
+	}
+	second()
+	waitDone(t, forSlot)
+	require.NoError(t, forSlot.err)
+	forSlot.release()
+	require.Equal(t, DecodeUsage{CapacityBytes: 1280 * mib}, budget.Usage())
+}

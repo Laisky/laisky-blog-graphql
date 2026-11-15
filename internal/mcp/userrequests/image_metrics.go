@@ -2,8 +2,11 @@ package userrequests
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/Laisky/laisky-blog-graphql/internal/mcp/imageproc"
 )
 
 // Object delete paths and results of mcp_user_image_object_deletes_total.
@@ -44,6 +47,26 @@ type imageObjectMetrics struct {
 	// lifecycleReinstalls counts lifecycle checks that found the rule gone
 	// and wrote it again (another writer of the bucket erased it).
 	lifecycleReinstalls prometheus.Counter
+	// decodeBudgetBytes, decodeInUseBytes and decodeWaiting read the decode
+	// budget of the manager that last called ExportMetrics. The budget bounds
+	// image decoding only, not the process (see the image memory envelope),
+	// so operators compare it with process_resident_memory_bytes.
+	decodeBudgetBytes prometheus.GaugeFunc
+	decodeInUseBytes  prometheus.GaugeFunc
+	decodeWaiting     prometheus.GaugeFunc
+}
+
+// decodeBudgetSource is the decode budget the decode gauges read; nil until a
+// manager exports its metrics.
+var decodeBudgetSource atomic.Pointer[imageproc.DecodeBudget]
+
+// decodeUsage reads decodeBudgetSource; an unbound source reports nothing.
+func decodeUsage() imageproc.DecodeUsage {
+	budget := decodeBudgetSource.Load()
+	if budget == nil {
+		return imageproc.DecodeUsage{}
+	}
+	return budget.Usage()
 }
 
 // imageMetrics is the process-wide instance; registerImageMetrics exposes it.
@@ -92,6 +115,18 @@ func newImageObjectMetrics() *imageObjectMetrics {
 			Name: "mcp_user_image_lifecycle_reinstalls_total",
 			Help: "Lifecycle checks after the first that found the image expiry rule gone and wrote it again.",
 		}),
+		decodeBudgetBytes: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mcp_user_image_decode_budget_bytes",
+			Help: "Size of the image decode memory budget (decode_memory_budget_bytes after start-up sizing).",
+		}, func() float64 { return float64(decodeUsage().CapacityBytes) }),
+		decodeInUseBytes: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mcp_user_image_decode_in_use_bytes",
+			Help: "Estimated working set of the image decodes admitted now.",
+		}, func() float64 { return float64(decodeUsage().InUseBytes) }),
+		decodeWaiting: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "mcp_user_image_decode_waiting",
+			Help: "Image decodes waiting for decode budget or for one of their identity's decode slots.",
+		}, func() float64 { return float64(decodeUsage().Waiting) }),
 	}
 	m.objectDeletes.WithLabelValues(deletePathCompensation, deleteResultDeleted)
 	m.objectDeletes.WithLabelValues(deletePathCompensation, deleteResultFailed)
@@ -105,7 +140,8 @@ func newImageObjectMetrics() *imageObjectMetrics {
 // register registers every collector of m on reg.
 func (m *imageObjectMetrics) register(reg prometheus.Registerer) {
 	reg.MustRegister(m.dueClaims, m.oldestDueClaimAge, m.objectDeletes, m.reconcilePasses,
-		m.lastReconcileSuccess, m.lifecycleRulePresent, m.reconcilerEnabled, m.lifecycleReinstalls)
+		m.lastReconcileSuccess, m.lifecycleRulePresent, m.reconcilerEnabled, m.lifecycleReinstalls,
+		m.decodeBudgetBytes, m.decodeInUseBytes, m.decodeWaiting)
 }
 
 // boolGauge returns 1 for true and 0 for false.
