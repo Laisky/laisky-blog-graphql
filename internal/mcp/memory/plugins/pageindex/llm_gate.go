@@ -58,6 +58,8 @@ type llmAdmission struct {
 	mu            sync.Mutex
 	// pending is the rolling-budget ticket of the request not yet settled, if any.
 	pending *spendTicket
+	// sent counts the call's requests that left the process.
+	sent int
 }
 
 // wouldRefuse reports, cheaply and without spending, that no call can be admitted
@@ -202,6 +204,16 @@ func (a *llmAdmission) settle(resp *Response, err error) {
 	a.budget.settle(a.reservation(), charged)
 	a.pending.settle(charged)
 	a.pending = nil
+	if !errors.Is(err, errRequestNotSent) {
+		a.sent++
+		a.budget.recordUpstream(charged, reportedUsage(resp), a.sent > 1)
+	}
+}
+
+// reportedUsage reports that resp carries provider-reported usage, which
+// attemptCharge charges as reported rather than estimated.
+func reportedUsage(resp *Response) bool {
+	return resp != nil && resp.Usage.TotalTokens > 0
 }
 
 // attemptCharge returns what one upstream request with outcome (resp, err) is
@@ -214,7 +226,7 @@ func (a *llmAdmission) settle(resp *Response, err error) {
 // may have processed and billed it in full. The call itself stays spent either way.
 func (a *llmAdmission) attemptCharge(resp *Response, err error) int64 {
 	switch {
-	case resp != nil && resp.Usage.TotalTokens > 0:
+	case reportedUsage(resp):
 		return int64(resp.Usage.TotalTokens)
 	case resp != nil:
 		return a.input + estimateTextTokens(a.gate.tok, resp.Text)

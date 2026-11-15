@@ -29,7 +29,7 @@ func (idx *Indexer) runPDF(ctx context.Context, data []byte, tenant string, rep 
 	pageCount := len(pages)
 	limits := idx.cfg.Limits.WithDefaults()
 	allowance := int64(idx.cfg.Algo.MaxTokenNumEachNode)*int64(pageCount) + int64(idx.cfg.TreeQuery.MaxTokens)
-	budget := newOperationBudget(limits.documentTokenCeiling(allowance), limits.MaxLLMCallsPerDocument, limits.MaxNodesPerDocument, tenant)
+	budget := newOperationBudget(limits.documentTokenCeiling(allowance), limits.MaxLLMCallsPerDocument, limits.MaxNodesPerDocument, tenant).metered(stats)
 
 	rep.Report(Progress{Phase: "pdf:toc-detect", Percent: 15})
 	tocPages, tocContent, hasPageIndex, err := idx.detectTOC(ctx, pages, budget, stats)

@@ -27,6 +27,8 @@ type Budget struct {
 	calls     int64
 	nodes     int64
 	tenant    string
+	// stats, when set, records every upstream request settled against the budget.
+	stats *Stats
 }
 
 // NewBudget seeds a token-only gate with the supplied initial token count.
@@ -37,6 +39,21 @@ func NewBudget(initial int64) *Budget {
 // newOperationBudget seeds the gate of one operation with absolute ceilings.
 func newOperationBudget(tokens int64, calls, nodes int, tenant string) *Budget {
 	return &Budget{remaining: tokens, calls: int64(calls), nodes: int64(nodes), tenant: tenant}
+}
+
+// metered makes b record every upstream request it settles in stats and returns b.
+func (b *Budget) metered(stats *Stats) *Budget {
+	if b != nil {
+		b.stats = stats
+	}
+	return b
+}
+
+// recordUpstream records one upstream request settled against b at charged tokens.
+func (b *Budget) recordUpstream(charged int64, reported, retry bool) {
+	if b != nil {
+		b.stats.addUpstream(charged, reported, retry)
+	}
 }
 
 // Take deducts n and reports whether budget remained at or above zero AFTER the deduction.

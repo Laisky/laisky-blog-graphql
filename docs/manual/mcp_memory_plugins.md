@@ -494,6 +494,14 @@ values to cap spend per hour. An indexing run that hit a ceiling or the deadline
 `pageindex.index.limited` at debug level with its `budget_refusals`,
 `rolling_refusals`, `local_summaries`, `structure_truncated` and `deadline_reached`
 values; degraded files can be found by their summary status `degraded` and error code.
+For cost investigations, `llm_calls` counts the calls that returned a response, while
+`upstream_requests` counts every request sent (retries and requests that got no
+answer included), `retries` the requests after each call's first, and
+`reported_tokens` plus `estimated_tokens` the tokens charged for them, as the
+provider reported them or as estimated when it reported nothing. The same values
+are on the final `pageindex.progress` event (`charged_tokens` is their sum) and on
+the `pageindex.write index error` warning of a run that failed, which was still
+charged for the requests it sent.
 
 ## 6.7 Phase 3: Shadow replay (deferred)
 

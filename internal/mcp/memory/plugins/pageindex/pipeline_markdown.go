@@ -54,7 +54,7 @@ func (idx *Indexer) runMarkdown(ctx context.Context, data []byte, tenant string,
 	if idx.cfg.Algo.GenerateNodeSummary {
 		rep.Report(Progress{Phase: "md:summarize", Percent: 70})
 		allowance := int64(idx.cfg.Algo.MaxTokenNumEachNode) * int64(len(roots)+1)
-		budget := newOperationBudget(limits.documentTokenCeiling(allowance), limits.MaxLLMCallsPerDocument, unlimited, tenant)
+		budget := newOperationBudget(limits.documentTokenCeiling(allowance), limits.MaxLLMCallsPerDocument, unlimited, tenant).metered(stats)
 		if err := idx.summarizeMarkdownNodes(ctx, roots, budget, stats); err != nil {
 			return nil, err
 		}

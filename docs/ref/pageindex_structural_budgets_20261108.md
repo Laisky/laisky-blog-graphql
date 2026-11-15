@@ -208,3 +208,12 @@ Applied:
 - Planner ranges were resolved by iterating every page number in them, so a range
   ending near `math.MaxInt`, which the document's content can steer the planner to
   return, never finished; ranges are now resolved against the tree's sorted pages.
+
+### Per-run usage (P3)
+
+- `Stats.LLMCalls` counted only calls that returned a response, so a retried call or
+  a request that got no answer spent budget its run did not show. The gate's single
+  settlement point now records, through the operation budget, every request sent
+  (`UpstreamRequests`), the retries among them, and the tokens charged for each,
+  split into provider-reported and estimated charges; their sum equals what the
+  rolling budgets were charged. `Index` returns these statistics with a run error.

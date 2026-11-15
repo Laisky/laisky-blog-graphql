@@ -19,12 +19,25 @@ import (
 
 // Stats summarizes one Index call.
 type Stats struct {
-	mu           sync.Mutex
+	mu sync.Mutex
+	// LLMCalls counts calls that returned a response, and InputTokens and
+	// OutputTokens the usage those responses reported.
 	LLMCalls     int
 	InputTokens  int
 	OutputTokens int
 	Cached       int
 	Wallclock    time.Duration
+	// UpstreamRequests counts every request sent upstream, retries and requests
+	// that got no answer included, and Retries the requests after the first of
+	// each call.
+	UpstreamRequests int
+	Retries          int
+	// ReportedTokens and EstimatedTokens are the tokens charged to the budgets for
+	// those requests: as the provider reported them, or estimated when it reported
+	// nothing (an error response, a request without an answer, an answer without
+	// usage). Their sum is the run's whole charge.
+	ReportedTokens  int64
+	EstimatedTokens int64
 	// BudgetRefusals counts calls refused by an operation or rolling budget.
 	BudgetRefusals int
 	// RollingRefusals counts the refusals of BudgetRefusals made by a rolling
@@ -48,6 +61,24 @@ func (s *Stats) addLLMCall(in, out int) {
 	s.LLMCalls++
 	s.InputTokens += in
 	s.OutputTokens += out
+	s.mu.Unlock()
+}
+
+// addUpstream records one request sent upstream and what it was charged.
+func (s *Stats) addUpstream(charged int64, reported, retry bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.UpstreamRequests++
+	if retry {
+		s.Retries++
+	}
+	if reported {
+		s.ReportedTokens += charged
+	} else {
+		s.EstimatedTokens += charged
+	}
 	s.mu.Unlock()
 }
 
@@ -244,7 +275,10 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 		return nil, nil, errors.Errorf("unsupported kind %q", kind)
 	}
 	if err != nil {
-		return nil, nil, err
+		// The run's statistics are returned with its error: the requests it sent
+		// were charged even though no tree was built.
+		stats.Wallclock = time.Since(start)
+		return nil, stats, err
 	}
 	tree.DocID = docID
 	tree.Type = kind
@@ -255,6 +289,10 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 		idx.log.Debug("pageindex.index.limited",
 			glog.String("kind", string(kind)),
 			glog.Int("llm_calls", stats.LLMCalls),
+			glog.Int("upstream_requests", stats.UpstreamRequests),
+			glog.Int("retries", stats.Retries),
+			glog.Int64("reported_tokens", stats.ReportedTokens),
+			glog.Int64("estimated_tokens", stats.EstimatedTokens),
 			glog.Int("budget_refusals", stats.BudgetRefusals),
 			glog.Int("rolling_refusals", stats.RollingRefusals),
 			glog.Int("local_summaries", stats.LocalSummaries),
@@ -262,7 +300,10 @@ func (idx *Indexer) Index(ctx context.Context, kind DocKind, bytes []byte, opts 
 			glog.Bool("deadline_reached", stats.DeadlineReached),
 		)
 	}
-	rep.Report(Progress{Phase: "done", Percent: 100, TokensIn: stats.InputTokens, TokensOut: stats.OutputTokens, LLMCalls: stats.LLMCalls})
+	rep.Report(Progress{
+		Phase: "done", Percent: 100, TokensIn: stats.InputTokens, TokensOut: stats.OutputTokens, LLMCalls: stats.LLMCalls,
+		UpstreamRequests: stats.UpstreamRequests, Retries: stats.Retries, ChargedTokens: stats.ReportedTokens + stats.EstimatedTokens,
+	})
 	return tree, stats, nil
 }
 

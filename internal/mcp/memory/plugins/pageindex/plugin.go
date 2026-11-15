@@ -214,7 +214,17 @@ func (p *Plugin) indexAndPublish(ctx context.Context, auth files.AuthContext, pr
 		// Indexing errors should not silently fail the write; surface as warning and
 		// still publish a deterministic user-row summary for the content generation.
 		if p.log != nil {
-			p.log.Warn("pageindex.write index error", glog.String("path", path), glog.Error(indexErr))
+			fields := []glog.Field{glog.String("path", path), glog.Error(indexErr)}
+			if stats != nil {
+				// A failed run was still charged for the requests it sent.
+				fields = append(fields,
+					glog.Int("upstream_requests", stats.UpstreamRequests),
+					glog.Int("retries", stats.Retries),
+					glog.Int64("reported_tokens", stats.ReportedTokens),
+					glog.Int64("estimated_tokens", stats.EstimatedTokens),
+				)
+			}
+			p.log.Warn("pageindex.write index error", fields...)
 		}
 		desc := files.DeterministicFileSummaryFallback(content, docSummaryMaxWords, docSummaryMaxBytes)
 		_, err := p.publishUserRowSummary(ctx, auth, project, path, desc, files.SummarySourceDeterministicFallback, sourceHash, "")
