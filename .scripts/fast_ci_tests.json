@@ -106,7 +106,13 @@
       "TestOTLPContentIsNotTruncated",
       "TestOTLPDisabledBranchDoesNotEvaluateCallbacks",
       "TestOTLPWithSnapshotsNamespacesAndFieldOrder",
-      "TestOTLPCorePreservesExistingCheckedEntryDecision"
+      "TestOTLPCorePreservesExistingCheckedEntryDecision",
+      "TestMCPFailureAlertBoundary",
+      "TestMCPFailureBoundaryContractNames",
+      "TestMCPFailureDiagnosticNormalization",
+      "TestMCPFailureMethodsMatchSDK",
+      "TestMCPFailureOTLPCorrelation",
+      "TestAlertBarrierDetectsQueuedDuplicate"
     ]
   },
   {
@@ -210,6 +216,18 @@
       "TestFileMutationSchemasExposeCompleteUnionArguments",
       "TestFileMutationSchemasKeepPreconditions",
       "TestFileMutationAlternativesDeclareOnlyAcceptedArguments"
+    ]
+  },
+  {
+    "package": "./internal/mcp",
+    "tests": [
+      "TestMCPRequestFailureAlert",
+      "TestMCPFailureAlertReportsSDKMethods",
+      "TestMCPFailureAlertReportsNotificationDelivery",
+      "TestMCPFailureAlertProductionWiring",
+      "TestMCPFailureTypedCauses",
+      "TestShouldDowngradeMCPErrorLog",
+      "TestShouldDowngradeMCPErrorLogFalse"
     ]
   }
 ]

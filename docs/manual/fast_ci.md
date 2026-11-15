@@ -228,3 +228,9 @@ and that each alternative declares exactly the arguments it accepts. They use
 synthetic arguments and no storage, network or database. Real mutation
 concurrency, database acceptance and native-client probes remain deliberate
 local/manual work.
+
+MCP request diagnostics also run in the automatic fast gate: the actual dependency
+error hook through a synthetic alert receiver, production NewServer logger wiring,
+typed-cause/protocol classification, SDK method-allowlist parity, alert-to-OTLP
+failure_id correlation, FIFO-barrier exactly-one-alert checks, expected quiet
+probes, sealed-envelope spoofing and safe correlation normalization.
