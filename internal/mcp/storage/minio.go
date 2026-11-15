@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -162,12 +163,14 @@ func (m *MinIOClient) PresignedGet(ctx context.Context, key string, ttl time.Dur
 }
 
 // EnsureLifecycle installs an expiry rule restricted to the provided prefix.
-// The rule is keyed by a deterministic ID so repeated calls replace, not
-// duplicate, the previous rule. S3 PutBucketLifecycleConfiguration replaces
-// the bucket's whole configuration, so the current configuration is read and
-// only this prefix's rules are swapped; rules other applications installed on
-// a shared bucket are preserved. If the current configuration cannot be read
-// the call fails instead of risking those rules.
+// The rule ID is derived from the full prefix (lifecycleRuleID), and a rule
+// counts as this prefix's own only when its filter prefix is exactly prefix,
+// so repeated calls replace, not duplicate, the previous rule and never touch
+// another prefix's rule whose ID looks alike. S3 PutBucketLifecycleConfiguration
+// replaces the bucket's whole configuration, so the current configuration is
+// read and only this prefix's rules are swapped; rules other applications
+// installed on a shared bucket are preserved. If the current configuration
+// cannot be read the call fails instead of risking those rules.
 func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days int) error {
 	client, err := m.ensureClient()
 	if err != nil {
@@ -185,9 +188,9 @@ func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days i
 		if err := xml.Unmarshal(raw, existing); err != nil {
 			return errors.Wrap(err, "storage: parse bucket lifecycle")
 		}
-		if err := checkLifecycleRoundTrip(raw, existing, lifecycleRuleIDPrefix(prefix)); err != nil {
+		if err := checkLifecycleRoundTrip(raw, existing, prefix); err != nil {
 			return errors.Wrapf(err, "storage: refusing to rewrite the bucket lifecycle; add rule %q (prefix %q, expire after %d days) manually",
-				fmt.Sprintf("%s%dd", lifecycleRuleIDPrefix(prefix), days), prefix, days)
+				lifecycleRuleID(prefix, days), prefix, days)
 		}
 	}
 	cfg := mergeLifecycleRule(existing, prefix, days)
@@ -252,9 +255,10 @@ func (m *MinIOClient) rawBucketLifecycle(ctx context.Context, client *minio.Clie
 var lifecycleHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 // checkLifecycleRoundTrip returns ErrLifecycleMergeUnsafe when any rule of raw
-// that this package does not own (its ID lacks ownIDPrefix) differs, compared
-// as an order-insensitive XML tree, from what minio-go would write back for it.
-func checkLifecycleRoundTrip(raw []byte, parsed *lifecycle.Configuration, ownIDPrefix string) error {
+// that this package does not own for prefix (see ownsLifecycleRule) differs,
+// compared as an order-insensitive XML tree, from what minio-go would write
+// back for it.
+func checkLifecycleRoundTrip(raw []byte, parsed *lifecycle.Configuration, prefix string) error {
 	root, err := parseXMLTree(raw)
 	if err != nil {
 		return errors.Wrap(err, "parse lifecycle XML")
@@ -268,12 +272,12 @@ func checkLifecycleRoundTrip(raw []byte, parsed *lifecycle.Configuration, ownIDP
 			continue
 		}
 		id := rawRule.childText("ID")
-		if strings.HasPrefix(id, ownIDPrefix) {
-			continue
-		}
 		rule, ok := written[id]
 		if !ok {
 			return errors.Wrapf(ErrLifecycleMergeUnsafe, "rule %q", id)
+		}
+		if ownsLifecycleRule(*rule, prefix) {
+			continue
 		}
 		out, err := xml.Marshal(rule)
 		if err != nil {
@@ -364,28 +368,70 @@ func (n *xmlNode) canonical() string {
 	return "<" + n.name + ">" + n.text + strings.Join(parts, "") + "</" + n.name + ">"
 }
 
-// lifecycleRuleIDPrefix returns the ID prefix shared by every expiry rule this
-// package installs for prefix, whatever its TTL.
-func lifecycleRuleIDPrefix(prefix string) string {
-	return fmt.Sprintf("mcp-images-%s-", sanitizeForID(prefix))
+const (
+	// lifecycleRuleIDNamespace starts the ID of every rule this package installs.
+	lifecycleRuleIDNamespace = "mcp-images-"
+	// lifecycleRuleIDMaxPrefix bounds the readable part of a rule ID; S3 and
+	// MinIO reject IDs longer than 255 bytes.
+	lifecycleRuleIDMaxPrefix = 160
+)
+
+// legacyLifecycleRuleIDPrefix is the ID prefix earlier releases used for
+// prefix. Different prefixes can share it (sanitizeForID maps every unsafe
+// character to '-'), so it identifies a rule only together with its filter.
+func legacyLifecycleRuleIDPrefix(prefix string) string {
+	return lifecycleRuleIDNamespace + sanitizeForID(prefix) + "-"
+}
+
+// lifecycleRuleIDStem returns the part of the rule ID for prefix that does not
+// depend on the TTL: a readable, bounded form of the prefix plus a digest of
+// the full prefix, so distinct prefixes never share an ID (rule IDs must be
+// unique within a bucket configuration).
+func lifecycleRuleIDStem(prefix string) string {
+	readable := sanitizeForID(prefix)
+	if len(readable) > lifecycleRuleIDMaxPrefix {
+		readable = readable[:lifecycleRuleIDMaxPrefix]
+	}
+	digest := sha256.Sum256([]byte(prefix))
+	return fmt.Sprintf("%s%s-%x-", lifecycleRuleIDNamespace, readable, digest[:6])
+}
+
+// lifecycleRuleID returns the ID of the expiry rule for prefix and days. It
+// stays within S3's 255-byte limit for any prefix.
+func lifecycleRuleID(prefix string, days int) string {
+	return fmt.Sprintf("%s%dd", lifecycleRuleIDStem(prefix), days)
+}
+
+// ownsLifecycleRule reports whether rule is an expiry rule this package
+// installed for prefix, by an earlier release (legacy ID) or this one: its
+// filter must be exactly prefix and nothing else, and its ID must carry one of
+// this package's ID forms for prefix. A rule of another prefix whose ID
+// merely looks alike is never owned.
+func ownsLifecycleRule(rule lifecycle.Rule, prefix string) bool {
+	filter := rule.RuleFilter
+	if filter.Prefix != prefix || !filter.And.IsEmpty() || !filter.Tag.IsEmpty() ||
+		filter.ObjectSizeLessThan != 0 || filter.ObjectSizeGreaterThan != 0 || rule.Prefix != "" {
+		return false
+	}
+	return strings.HasPrefix(rule.ID, lifecycleRuleIDStem(prefix)) || strings.HasPrefix(rule.ID, legacyLifecycleRuleIDPrefix(prefix))
 }
 
 // mergeLifecycleRule returns a copy of existing in which every rule this
-// package installed for prefix (any TTL) is replaced by one rule expiring
-// objects under prefix after days. Other rules are kept unchanged and in order.
+// package installed for prefix (any TTL, any ID form) is replaced by one rule
+// expiring objects under prefix after days. Other rules are kept unchanged
+// and in order.
 func mergeLifecycleRule(existing *lifecycle.Configuration, prefix string, days int) *lifecycle.Configuration {
-	idPrefix := lifecycleRuleIDPrefix(prefix)
 	cfg := lifecycle.NewConfiguration()
 	if existing != nil {
 		for _, rule := range existing.Rules {
-			if strings.HasPrefix(rule.ID, idPrefix) {
+			if ownsLifecycleRule(rule, prefix) {
 				continue
 			}
 			cfg.Rules = append(cfg.Rules, rule)
 		}
 	}
 	cfg.Rules = append(cfg.Rules, lifecycle.Rule{
-		ID:     fmt.Sprintf("%s%dd", idPrefix, days),
+		ID:     lifecycleRuleID(prefix, days),
 		Status: "Enabled",
 		RuleFilter: lifecycle.Filter{
 			Prefix: prefix,

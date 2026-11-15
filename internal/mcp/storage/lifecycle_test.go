@@ -104,7 +104,7 @@ func TestEnsureLifecyclePreservesOtherRules(t *testing.T) {
 	require.Len(t, rules, 2, "the unrelated rule and exactly one image rule")
 	require.Equal(t, "other-app-logs", rules[0].ID)
 	require.Equal(t, "logs/", rules[0].RuleFilter.Prefix)
-	require.Equal(t, "mcp-images-mcp-images--3d", rules[1].ID)
+	require.Equal(t, lifecycleRuleID("mcp/images/", 3), rules[1].ID)
 	require.Equal(t, "mcp/images/", rules[1].RuleFilter.Prefix)
 	require.EqualValues(t, 3, rules[1].Expiration.Days)
 }
@@ -118,7 +118,7 @@ func TestEnsureLifecycleWithoutExistingConfiguration(t *testing.T) {
 	require.NoError(t, client.EnsureLifecycle(ctx, "mcp/images/", 7))
 	rules := backend.rules(t)
 	require.Len(t, rules, 1)
-	require.Equal(t, "mcp-images-mcp-images--7d", rules[0].ID)
+	require.Equal(t, lifecycleRuleID("mcp/images/", 7), rules[0].ID)
 	require.EqualValues(t, 7, rules[0].Expiration.Days)
 }
 
@@ -148,7 +148,7 @@ func TestMergeLifecycleRuleKeepsForeignRules(t *testing.T) {
 	for _, rule := range merged.Rules {
 		ids = append(ids, rule.ID)
 	}
-	require.Equal(t, []string{"a", "mcp-images-mcp-images2--7d", "mcp-images-mcp-images--5d"}, ids)
+	require.Equal(t, []string{"a", "mcp-images-mcp-images2--7d", lifecycleRuleID("mcp/images/", 5)}, ids)
 	require.Len(t, existing.Rules, 3, "the input must not be mutated")
 
 	fresh := mergeLifecycleRule(nil, "p/", 1)
@@ -173,7 +173,7 @@ func TestEnsureLifecycleRefusesLossyRewrite(t *testing.T) {
 	err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrLifecycleMergeUnsafe)
-	require.Contains(t, err.Error(), "mcp-images-mcp-images--7d", "the error names the rule to add manually")
+	require.Contains(t, err.Error(), lifecycleRuleID("mcp/images/", 7), "the error names the rule to add manually")
 
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
@@ -194,13 +194,16 @@ func TestCheckLifecycleRoundTrip(t *testing.T) {
 		"two transitions": {multiTransitionLifecycle, false},
 		"element minio-go does not know": {`<LifecycleConfiguration><Rule><ID>x</ID><Filter><Prefix>a/</Prefix></Filter>` +
 			`<Status>Enabled</Status><Expiration><Days>3</Days></Expiration><FutureElement>1</FutureElement></Rule></LifecycleConfiguration>`, false},
-		"own rule is ignored": {`<LifecycleConfiguration><Rule><ID>mcp-images-p--7d</ID><Bogus>1</Bogus><Bogus>2</Bogus></Rule></LifecycleConfiguration>`, true},
+		"own rule is ignored": {`<LifecycleConfiguration><Rule><ID>mcp-images-p--7d</ID><Filter><Prefix>p/</Prefix></Filter>` +
+			`<Bogus>1</Bogus><Bogus>2</Bogus></Rule></LifecycleConfiguration>`, true},
+		"rule with our ID form but another prefix is compared": {`<LifecycleConfiguration><Rule><ID>mcp-images-p--7d</ID><Filter><Prefix>p:</Prefix></Filter>` +
+			`<Bogus>1</Bogus></Rule></LifecycleConfiguration>`, false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			cfg := lifecycle.NewConfiguration()
 			require.NoError(t, xml.Unmarshal([]byte(tc.raw), cfg))
-			err := checkLifecycleRoundTrip([]byte(tc.raw), cfg, "mcp-images-p--")
+			err := checkLifecycleRoundTrip([]byte(tc.raw), cfg, "p/")
 			if tc.safe {
 				require.NoError(t, err)
 			} else {
@@ -208,4 +211,80 @@ func TestCheckLifecycleRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMergeLifecycleRuleSeparatesCollidingPrefixes is the review's P2 on
+// rule ownership: sanitizeForID maps different characters to the same dash,
+// so "mcp/images/" and "mcp:images/" produced the same rule ID prefix and the
+// merge replaced the other application's rule on a shared bucket. A rule is
+// owned only when its filter prefix is exactly ours, and new rule IDs embed
+// a digest of the full prefix so they cannot collide.
+func TestMergeLifecycleRuleSeparatesCollidingPrefixes(t *testing.T) {
+	require.Equal(t, sanitizeForID("mcp/images/"), sanitizeForID("mcp:images/"), "the fixture must collide")
+	foreign := lifecycle.Rule{
+		ID:         "mcp-images-mcp-images--7d",
+		Status:     "Enabled",
+		RuleFilter: lifecycle.Filter{Prefix: "mcp:images/"},
+		Expiration: lifecycle.Expiration{Days: 7},
+	}
+	existing := lifecycle.NewConfiguration()
+	existing.Rules = []lifecycle.Rule{foreign}
+
+	merged := mergeLifecycleRule(existing, "mcp/images/", 7)
+	require.Len(t, merged.Rules, 2, "the colliding foreign rule must be kept")
+	require.Equal(t, foreign, merged.Rules[0])
+	require.Equal(t, "mcp/images/", merged.Rules[1].RuleFilter.Prefix)
+	require.NotEqual(t, foreign.ID, merged.Rules[1].ID, "rule IDs must stay unique within the configuration")
+	require.Equal(t, lifecycleRuleID("mcp/images/", 7), merged.Rules[1].ID)
+	require.NotEqual(t, lifecycleRuleID("mcp/images/", 7), lifecycleRuleID("mcp:images/", 7))
+
+	// The other deployment's merge keeps ours in turn.
+	back := mergeLifecycleRule(merged, "mcp:images/", 7)
+	require.Len(t, back.Rules, 2)
+	require.Equal(t, merged.Rules[1], back.Rules[0])
+	require.Equal(t, "mcp:images/", back.Rules[1].RuleFilter.Prefix)
+}
+
+// TestMergeLifecycleRuleReplacesLegacyOwnRule keeps upgrades compatible: a
+// rule an earlier release installed under the undigested ID for our exact
+// prefix is still ours and is replaced, not duplicated.
+func TestMergeLifecycleRuleReplacesLegacyOwnRule(t *testing.T) {
+	existing := lifecycle.NewConfiguration()
+	existing.Rules = []lifecycle.Rule{{
+		ID:         "mcp-images-mcp-images--7d",
+		Status:     "Enabled",
+		RuleFilter: lifecycle.Filter{Prefix: "mcp/images/"},
+		Expiration: lifecycle.Expiration{Days: 7},
+	}}
+	merged := mergeLifecycleRule(existing, "mcp/images/", 7)
+	require.Len(t, merged.Rules, 1)
+	require.Equal(t, lifecycleRuleID("mcp/images/", 7), merged.Rules[0].ID)
+	require.EqualValues(t, 7, merged.Rules[0].Expiration.Days)
+}
+
+// TestEnsureLifecycleRefusesLossyRewriteOfCollidingRule: the round-trip
+// guard must treat a rule whose ID merely looks like ours, but whose filter
+// prefix differs, as foreign, and refuse a rewrite that would alter it.
+func TestEnsureLifecycleRefusesLossyRewriteOfCollidingRule(t *testing.T) {
+	client, backend := newFakeS3Client(t)
+	raw := `<LifecycleConfiguration><Rule><ID>mcp-images-mcp-images--7d</ID><Filter><Prefix>mcp:images/</Prefix></Filter>` +
+		`<Status>Enabled</Status><Expiration><Days>7</Days></Expiration><FutureElement>1</FutureElement></Rule></LifecycleConfiguration>`
+	backend.lifecycle = []byte(raw)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := client.EnsureLifecycle(ctx, "mcp/images/", 7)
+	require.ErrorIs(t, err, ErrLifecycleMergeUnsafe)
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	require.Zero(t, backend.puts, "the other deployment's rule must not be rewritten")
+	require.Equal(t, raw, string(backend.lifecycle))
+}
+
+// TestLifecycleRuleIDIsBounded: S3 rule IDs are limited to 255 characters.
+func TestLifecycleRuleIDIsBounded(t *testing.T) {
+	long := strings.Repeat("deep/", 200)
+	id := lifecycleRuleID(long, 36500)
+	require.LessOrEqual(t, len(id), 255)
+	require.NotEqual(t, id, lifecycleRuleID(long+"x/", 36500))
 }
