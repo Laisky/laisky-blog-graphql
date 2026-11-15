@@ -12,6 +12,7 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -307,6 +308,10 @@ func FuzzEstimateDecodeBytes(f *testing.F) {
 	f.Add(tiffHeader(64, 64, 8, 4, 100), "a.tiff")
 	f.Add(pngHeader(64, 64, 8, 0, 0), "a.png")
 	f.Add(jpegHeader(0xC2, 64, 64, true, [2]byte{1, 0x22}, [2]byte{2, 0x11}, [2]byte{3, 0x11}), "a.jpg")
+	// Near-maximum 32-bit tile edges (maintainer review of PR #94).
+	f.Add(tiledTIFFHeader(64, 64, 8, math.MaxUint32, math.MaxUint32, 1<<20), "tiled.tiff")
+	f.Add(tiledTIFFHeader(64, 64, 32773, 1<<31, 1<<31, 1<<20), "tiled.tiff")
+	f.Add(tiledTIFFHeader(8192, 8192, 5, 1<<31, 3, 1<<20), "tiled.tiff")
 	f.Fuzz(func(t *testing.T, raw []byte, name string) {
 		mime, err := detectMIME(raw, name)
 		if err != nil {
@@ -315,6 +320,12 @@ func FuzzEstimateDecodeBytes(f *testing.F) {
 		cfg, err := decodeConfig(raw, mime)
 		if err != nil || cfg.Width > MaxDecodeDimension || cfg.Height > MaxDecodeDimension {
 			return
+		}
+		if mime == mimeImageTiff {
+			layout := parseTIFFLayout(raw, cfg)
+			require.GreaterOrEqual(t, layout.blockPixels, int64(0))
+			require.GreaterOrEqual(t, layout.blocks, int64(0))
+			require.GreaterOrEqual(t, tiffBlockBufferBytes(layout, int64(len(raw)), int64(cfg.Width)*int64(cfg.Height)), int64(0))
 		}
 		estimate, err := estimateDecodeBytes(raw, mime, cfg)
 		if err == nil {

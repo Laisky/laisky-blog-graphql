@@ -104,6 +104,11 @@ func (b *DecodeBudget) Capacity() int64 {
 // acquireFor reserves cost bytes for owner, blocking until the admission rule
 // admits it or ctx ends. The returned release function must be called once.
 func (b *DecodeBudget) acquireFor(ctx context.Context, owner string, cost int64) (func(), error) {
+	if cost < 0 {
+		// Every estimate includes a fixed overhead, so a negative one is an
+		// estimator defect; admitting it would bypass the budget.
+		return nil, errors.Wrapf(ErrDecodeFailed, "invalid decode working-set estimate %d", cost)
+	}
 	if cost > b.capacity {
 		return nil, errors.Wrapf(ErrDimensionsTooLarge,
 			"estimated decode working set %d bytes exceeds the %d byte decode memory budget", cost, b.capacity)

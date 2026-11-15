@@ -38,27 +38,34 @@ const (
 // expand by more than deflateMaxRatio, PackBits by packBitsMaxRatio. LZW and
 // CCITT get the decoder's own limit. Without a parsable layout the whole
 // image is assumed to be one compressed block.
+//
+// Tile edges and byte counts are untrusted 32-bit values, so every product
+// saturates (satMul) instead of wrapping: a geometry the decoder cannot
+// represent (it refuses tiles whose byte size overflows) is charged more than
+// any budget rather than a wrapped, possibly tiny, cost.
 func tiffBlockBufferBytes(layout tiffLayout, rawLen, pixels int64) int64 {
 	if !layout.ok {
-		return growingBufferFactor * pixels * tiffDecoderBytesPerPixel
+		return satMul(growingBufferFactor, satMul(pixels, tiffDecoderBytesPerPixel))
 	}
-	blockMax := layout.blockPixels * tiffDecoderBytesPerPixel
+	blockMax := satMul(layout.blockPixels, tiffDecoderBytesPerPixel)
 	switch layout.compression {
 	case 0, 1: // none
-		return 2*rawLen + tiffSafeReadChunk
+		return satAdd(satMul(2, rawLen), tiffSafeReadChunk)
 	case 8, 32946: // deflate; one buffer is reused across blocks
-		return growingBufferFactor * min(blockMax, deflateMaxRatio*layout.maxBlockBytes+64<<10)
+		return satMul(growingBufferFactor, min(blockMax, satAdd(satMul(deflateMaxRatio, layout.maxBlockBytes), 64<<10)))
 	case 32773: // PackBits; each block gets a fresh buffer
-		return growingBufferFactor * min(layout.blocks*blockMax, packBitsMaxRatio*rawLen+layout.blocks*128)
+		return satMul(growingBufferFactor, min(satMul(layout.blocks, blockMax),
+			satAdd(satMul(packBitsMaxRatio, rawLen), satMul(layout.blocks, 128))))
 	default: // LZW, CCITT; one buffer is reused across blocks
-		return growingBufferFactor * blockMax
+		return satMul(growingBufferFactor, blockMax)
 	}
 }
 
 // parseTIFFLayout reads compression, strip/tile geometry and block byte
 // counts from the first IFD of a classic TIFF, mirroring how
 // golang.org/x/image/tiff derives its block size. Every read is bounds
-// checked; ok is false when the IFD cannot be parsed.
+// checked and every product of header values saturates; ok is false when the
+// IFD cannot be parsed.
 func parseTIFFLayout(raw []byte, cfg image.Config) tiffLayout {
 	var bo binary.ByteOrder
 	switch {
@@ -142,15 +149,15 @@ func parseTIFFLayout(raw []byte, cfg image.Config) tiffLayout {
 	w, h := int64(cfg.Width), int64(cfg.Height)
 	countsEntry := stripCounts
 	if tileW > 0 && tileH > 0 {
-		layout.blockPixels = tileW * tileH
-		layout.blocks = ((w + tileW - 1) / tileW) * ((h + tileH - 1) / tileH)
+		layout.blockPixels = satMul(tileW, tileH)
+		layout.blocks = satMul((w+tileW-1)/tileW, (h+tileH-1)/tileH)
 		countsEntry = tileCounts
 	} else {
 		blockH := h
 		if rowsPerStrip > 0 && rowsPerStrip < h {
 			blockH = rowsPerStrip
 		}
-		layout.blockPixels = w * blockH
+		layout.blockPixels = satMul(w, blockH)
 		layout.blocks = (h + blockH - 1) / max(blockH, 1)
 	}
 	if countsEntry == nil {

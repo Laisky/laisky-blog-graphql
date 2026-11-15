@@ -227,7 +227,9 @@
       "TestJPEGAdobeMarkerAfterFirstScan",
       "TestWebPExtendedLosslessIsChargedAsLossless",
       "TestWebPRejectsTruncatedVP8Chunk",
-      "TestJPEGMarkerWalkFollowsDecoderOnStuffedBytes"
+      "TestJPEGMarkerWalkFollowsDecoderOnStuffedBytes",
+      "TestTIFFTileGeometryOverflowIsNotUndercharged",
+      "TestDecodeBudgetRefusesNegativeCost"
     ]
   },
   {

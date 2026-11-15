@@ -3,6 +3,8 @@ package imageproc
 import (
 	"image"
 	"image/color"
+	"math"
+	"math/bits"
 
 	errors "github.com/Laisky/errors/v2"
 )
@@ -69,7 +71,7 @@ func estimateDecodeBytes(raw []byte, mime string, cfg image.Config) (int64, erro
 		}
 		decoded = pixels * bytesPerPixel(cfg.ColorModel)
 	case mimeImageTiff:
-		decoded = pixels*bytesPerPixel(cfg.ColorModel) + tiffBlockBufferBytes(parseTIFFLayout(raw, cfg), int64(len(raw)), pixels)
+		decoded = satAdd(pixels*bytesPerPixel(cfg.ColorModel), tiffBlockBufferBytes(parseTIFFLayout(raw, cfg), int64(len(raw)), pixels))
 	case mimeImageWebp:
 		layout, err := scanWebP(raw)
 		if err != nil {
@@ -79,7 +81,31 @@ func estimateDecodeBytes(raw []byte, mime string, cfg image.Config) (int64, erro
 	default:
 		decoded = pixels * worstCaseBytesPerPixel
 	}
-	return decoded + resizeAndEncodeBytes(cfg.Width, cfg.Height) + fixedDecodeOverheadBytes, nil
+	return satAdd(satAdd(decoded, resizeAndEncodeBytes(cfg.Width, cfg.Height)), fixedDecodeOverheadBytes), nil
+}
+
+// satMul returns a*b, or math.MaxInt64 when the product does not fit or an
+// operand is negative. Estimates combine untrusted header fields (a TIFF tile
+// edge is a 32-bit value), so they saturate instead of wrapping: a saturated
+// estimate exceeds every budget and the input is refused before decoding.
+func satMul(a, b int64) int64 {
+	if a < 0 || b < 0 {
+		return math.MaxInt64
+	}
+	hi, lo := bits.Mul64(uint64(a), uint64(b))
+	if hi != 0 || lo > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(lo)
+}
+
+// satAdd returns a+b, or math.MaxInt64 when the sum does not fit or an
+// operand is negative (see satMul).
+func satAdd(a, b int64) int64 {
+	if a < 0 || b < 0 || a > math.MaxInt64-b {
+		return math.MaxInt64
+	}
+	return a + b
 }
 
 // bytesPerPixel returns the in-memory size of one pixel for the image type a
