@@ -9,10 +9,6 @@ ENV GO111MODULE=on
 WORKDIR /app
 COPY go.mod .
 COPY go.sum .
-COPY third_party/pgvector-go/go.mod ./third_party/pgvector-go/go.mod
-COPY third_party/pgvector-go/go.sum ./third_party/pgvector-go/go.sum
-# Every go.mod `replace` target must be present before the module download.
-COPY third_party/avro-compat/go.mod ./third_party/avro-compat/go.mod
 RUN go mod download
 
 # static build

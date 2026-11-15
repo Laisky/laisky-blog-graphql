@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/Laisky/errors/v2"
-	"github.com/everFinance/goar"
-	"github.com/everFinance/goar/types"
+	"github.com/permadao/goar"
+	"github.com/permadao/goar/schema"
 )
 
 const arweaveGateway = "https://arweave.net"
@@ -55,7 +55,7 @@ func (a *Ardrive) Upload(ctx context.Context,
 		}
 	}
 
-	tags := []types.Tag{
+	tags := []schema.Tag{
 		{Name: "Content-Type", Value: opt.contentType},
 	}
 

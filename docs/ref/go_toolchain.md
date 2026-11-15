@@ -3,7 +3,6 @@
 The repository targets Go 1.27.0 on Debian Bookworm.
 
 - The root module declares `go 1.27.0`, which is also the exact toolchain selected by CI.
-- The local `pgvector-go` module uses the same minimum Go version.
 - The production build stage uses the official `golang:1.27.0-bookworm` image.
 - CI uses Go 1.27.0 directly or derives it from the root `go.mod`.
 

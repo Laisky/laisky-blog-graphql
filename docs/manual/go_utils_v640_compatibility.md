@@ -2,8 +2,10 @@
 
 This update stays on go-utils/v6. The release tag points to
 6a02887d3dbf60ecadf21a67b5d3b9449fd942e6. The Go 1.27.0 module floor,
-OneAPI bcrypt contract, indirect v3/v5 modules, local pgvector and avro
-replacements, and retirement test dependencies remain in place.
+OneAPI bcrypt contract, indirect v3/v5 modules and retirement test
+dependencies remain in place. (The local pgvector and avro module replacements
+present at that time were later removed; see
+[go_module_replacements.md](../ref/go_module_replacements.md).)
 
 ## Mongo password records
 
