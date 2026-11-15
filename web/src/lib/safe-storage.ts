@@ -67,3 +67,31 @@ export function removeStorage(key: string, area: StorageArea = 'local'): boolean
     return false;
   }
 }
+
+/**
+ * subscribeStorageKey calls onChange with the key's current value whenever another
+ * document changes that key or clears a storage area, and returns a function that
+ * removes the listener.
+ *
+ * The `storage` event is only a signal that something changed, so the value is always
+ * re-read instead of taken from `event.newValue`. The browser captures newValue when the
+ * write happens and dispatches the event later as a queued task, so a newer write can land
+ * in between, and an event for an earlier write would otherwise overwrite it. Re-reading
+ * also makes a `key === null` event from the other area harmless: a sessionStorage.clear()
+ * in a same-tab frame must not reset a localStorage preference. onChange may therefore
+ * receive the value it already holds; callers should treat it as idempotent.
+ */
+export function subscribeStorageKey(key: string, onChange: (value: string | null) => void, area: StorageArea = 'local'): () => void {
+  if (typeof window === 'undefined') {
+    return () => undefined;
+  }
+  const handleStorage = (event: StorageEvent) => {
+    // A null key means some document cleared a storage area.
+    if (event.key !== null && event.key !== key) {
+      return;
+    }
+    onChange(readStorage(key, area));
+  };
+  window.addEventListener('storage', handleStorage);
+  return () => window.removeEventListener('storage', handleStorage);
+}

@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { readStorage, removeStorage, writeStorage } from '@/lib/safe-storage';
+import { readStorage, removeStorage, subscribeStorageKey, writeStorage } from '@/lib/safe-storage';
 
 const STORAGE_KEY = 'ui-theme-preference';
 
@@ -95,17 +95,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const listener = (event: MediaQueryListEvent) => update(event.matches);
     media.addEventListener('change', listener);
 
-    // Another tab changed the override: follow it so every open tab shows the same scheme.
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === STORAGE_KEY || event.key === null) {
-        setThemeState(parseStoredTheme(event.key === null ? null : event.newValue));
-      }
-    };
-    window.addEventListener('storage', handleStorage);
+    // Another tab changed the override: follow what storage now holds, so every open tab
+    // converges on the last write even when change events arrive late or out of order.
+    const unsubscribeStorage = subscribeStorageKey(STORAGE_KEY, (stored) => setThemeState(parseStoredTheme(stored)));
 
     return () => {
       media.removeEventListener('change', listener);
-      window.removeEventListener('storage', handleStorage);
+      unsubscribeStorage();
     };
   }, []);
 
