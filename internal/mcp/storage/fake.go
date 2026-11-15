@@ -20,6 +20,8 @@ type FakeStore struct {
 	lifecycles map[string]int
 	puts       []string
 	deletes    []string
+	// lifecycleWrites counts EnsureLifecycle calls that recorded a rule.
+	lifecycleWrites int
 	// presignTTL records the TTL the most recent PresignedGet observed, so tests
 	// can assert on the requested lifetime.
 	lastPresignTTL time.Duration
@@ -29,6 +31,8 @@ type FakeStore struct {
 	PresignErr   error
 	LifecycleErr error
 	DeleteErr    error
+	// LifecycleCheckErr, when set, is returned by CheckLifecycle.
+	LifecycleCheckErr error
 	// BeforePut, when set, runs before an object is stored; a non-nil error
 	// fails the Put without storing anything.
 	BeforePut func(ctx context.Context, key string) error
@@ -186,8 +190,41 @@ func (f *FakeStore) EnsureLifecycle(ctx context.Context, prefix string, days int
 	}
 	f.mu.Lock()
 	f.lifecycles[prefix] = days
+	f.lifecycleWrites++
 	f.mu.Unlock()
 	return nil
+}
+
+// CheckLifecycle reports whether a rule for prefix expiring within days was
+// recorded. LifecycleCheckErr, when set, is returned instead.
+func (f *FakeStore) CheckLifecycle(ctx context.Context, prefix string, days int) error {
+	if err := ctx.Err(); err != nil {
+		return errors.Wrap(err, "fake lifecycle context canceled")
+	}
+	if f.LifecycleCheckErr != nil {
+		return f.LifecycleCheckErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if got, ok := f.lifecycles[prefix]; !ok || got > days {
+		return errors.Wrapf(ErrLifecycleRuleMissing, "fake: no rule for %q", prefix)
+	}
+	return nil
+}
+
+// RemoveLifecycle drops the rule recorded for prefix, as another writer
+// replacing the bucket configuration would.
+func (f *FakeStore) RemoveLifecycle(prefix string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.lifecycles, prefix)
+}
+
+// LifecycleWrites reports how many EnsureLifecycle calls recorded a rule.
+func (f *FakeStore) LifecycleWrites() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lifecycleWrites
 }
 
 // LastPresignTTL reports the TTL used by the most recent PresignedGet call.

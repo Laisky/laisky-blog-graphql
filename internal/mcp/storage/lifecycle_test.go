@@ -22,17 +22,28 @@ type fakeS3 struct {
 	mu        sync.Mutex
 	lifecycle []byte // nil means no configuration
 	puts      int
+	gets      int
 	deletes   []string
+	// afterLifecyclePut, when set, runs (under mu) after a lifecycle PUT is
+	// stored; it models another writer whose PUT lands right after ours.
+	afterLifecyclePut func(f *fakeS3)
+	// beforeLifecycleGet, when set, runs (without mu) before a lifecycle GET
+	// is answered; it lets a test hold readers to force an interleaving.
+	beforeLifecycleGet func()
 }
 
 func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	if hook := f.getHook(); hook != nil && r.Method == http.MethodGet && query.Has("lifecycle") {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	query := r.URL.Query()
 	switch {
 	case r.Method == http.MethodGet && query.Has("location"):
 		_, _ = io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?><LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/">us-east-1</LocationConstraint>`)
 	case r.Method == http.MethodGet && query.Has("lifecycle"):
+		f.gets++
 		if f.lifecycle == nil {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchLifecycleConfiguration</Code><Message>The lifecycle configuration does not exist</Message></Error>`)
@@ -43,6 +54,9 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		f.lifecycle = body
 		f.puts++
+		if f.afterLifecyclePut != nil {
+			f.afterLifecyclePut(f)
+		}
 	case r.Method == http.MethodDelete:
 		key, _ := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/bucket/"))
 		f.deletes = append(f.deletes, key)
@@ -50,6 +64,13 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusNotImplemented)
 	}
+}
+
+// getHook returns beforeLifecycleGet.
+func (f *fakeS3) getHook() func() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.beforeLifecycleGet
 }
 
 // rules decodes the stored lifecycle configuration.

@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"sort"
@@ -171,6 +172,19 @@ func (m *MinIOClient) PresignedGet(ctx context.Context, key string, ttl time.Dur
 // read and only this prefix's rules are swapped; rules other applications
 // installed on a shared bucket are preserved. If the current configuration
 // cannot be read the call fails instead of risking those rules.
+//
+// Neither S3 nor MinIO offers a conditional write for the lifecycle
+// subresource, so another writer that read the configuration before this
+// write can replace it right after (a lost update; on MinIO, four deployments
+// installing at once kept one rule out of four). EnsureLifecycle therefore
+// writes only when its rule is not already in place and, after writing,
+// waits lifecycleSettleDelay (jittered) — long enough for a concurrent
+// writer's own read-modify-write to land — before reading the configuration
+// back. When its rule is gone it merges again, at most
+// lifecycleInstallAttempts times, and then returns ErrLifecycleRuleMissing.
+// A write that lands later still is caught by the caller's periodic check
+// (EnsureLifecycle again). A call that writes therefore takes at least the
+// settle delay; callers run it off the request path.
 func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days int) error {
 	client, err := m.ensureClient()
 	if err != nil {
@@ -179,25 +193,208 @@ func (m *MinIOClient) EnsureLifecycle(ctx context.Context, prefix string, days i
 	if days <= 0 {
 		return errors.Errorf("storage: lifecycle days must be positive, got %d", days)
 	}
-	raw, err := m.rawBucketLifecycle(ctx, client)
+	for attempt := 1; ; attempt++ {
+		wrote, err := m.installLifecycleRule(ctx, client, prefix, days)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		if !wrote {
+			return nil
+		}
+		if err := sleepContext(ctx, jittered(lifecycleSettleDelay)); err != nil {
+			return errors.Wrap(err, "storage: wait before reading the lifecycle back")
+		}
+		current, err := m.bucketLifecycle(ctx, client)
+		if err != nil {
+			return errors.Wrap(err, "storage: read back bucket lifecycle")
+		}
+		if hasOwnLifecycleRule(current, prefix, days) {
+			return nil
+		}
+		if attempt >= lifecycleInstallAttempts {
+			return errors.Wrapf(ErrLifecycleRuleMissing,
+				"storage: rule %q was replaced by another lifecycle writer %d times in a row", lifecycleRuleID(prefix, days), attempt)
+		}
+	}
+}
+
+// CheckLifecycle reports, without writing, whether the bucket's lifecycle
+// configuration expires every object under prefix within days: some enabled
+// rule (this package's or one managed elsewhere, for example by IaC) whose
+// filter is a prefix of prefix, with no tag or size condition, expiring
+// objects after at most days days. It returns ErrLifecycleRuleMissing when
+// none does.
+func (m *MinIOClient) CheckLifecycle(ctx context.Context, prefix string, days int) error {
+	client, err := m.ensureClient()
+	if err != nil {
+		return errors.Wrap(err, "storage: lifecycle ensure client")
+	}
+	current, err := m.bucketLifecycle(ctx, client)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	existing := lifecycle.NewConfiguration()
+	if !lifecycleCovers(current, prefix, days) {
+		return errors.Wrapf(ErrLifecycleRuleMissing, "storage: no enabled rule expires %q within %d days", prefix, days)
+	}
+	return nil
+}
+
+// installLifecycleRule performs one read-merge-write of the rule for prefix.
+// It writes nothing, and reports false, when exactly that rule is already
+// the only rule this package owns for prefix.
+func (m *MinIOClient) installLifecycleRule(ctx context.Context, client *minio.Client, prefix string, days int) (bool, error) {
+	raw, err := m.rawBucketLifecycle(ctx, client)
+	if err != nil {
+		return false, errors.WithStack(err)
+	}
+	existing, err := parseLifecycle(raw)
+	if err != nil {
+		return false, errors.WithStack(err)
+	}
+	if hasOwnLifecycleRule(existing, prefix, days) {
+		return false, nil
+	}
 	if raw != nil {
-		if err := xml.Unmarshal(raw, existing); err != nil {
-			return errors.Wrap(err, "storage: parse bucket lifecycle")
-		}
 		if err := checkLifecycleRoundTrip(raw, existing, prefix); err != nil {
-			return errors.Wrapf(err, "storage: refusing to rewrite the bucket lifecycle; add rule %q (prefix %q, expire after %d days) manually",
+			return false, errors.Wrapf(err, "storage: refusing to rewrite the bucket lifecycle; add rule %q (prefix %q, expire after %d days) manually",
 				lifecycleRuleID(prefix, days), prefix, days)
 		}
 	}
 	cfg := mergeLifecycleRule(existing, prefix, days)
 	if err := client.SetBucketLifecycle(ctx, m.cfg.Bucket, cfg); err != nil {
-		return errors.Wrap(err, "storage: set bucket lifecycle")
+		return false, errors.Wrap(err, "storage: set bucket lifecycle")
 	}
-	return nil
+	return true, nil
+}
+
+// bucketLifecycle reads and parses the bucket's lifecycle configuration; a
+// bucket without one yields an empty configuration.
+func (m *MinIOClient) bucketLifecycle(ctx context.Context, client *minio.Client) (*lifecycle.Configuration, error) {
+	raw, err := m.rawBucketLifecycle(ctx, client)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	cfg, err := parseLifecycle(raw)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return cfg, nil
+}
+
+// parseLifecycle parses a raw lifecycle document; nil yields an empty configuration.
+func parseLifecycle(raw []byte) (*lifecycle.Configuration, error) {
+	cfg := lifecycle.NewConfiguration()
+	if raw == nil {
+		return cfg, nil
+	}
+	if err := xml.Unmarshal(raw, cfg); err != nil {
+		return nil, errors.Wrap(err, "storage: parse bucket lifecycle")
+	}
+	return cfg, nil
+}
+
+// lifecycleStatusEnabled is the Status of an active lifecycle rule.
+const lifecycleStatusEnabled = "Enabled"
+
+// lifecycleInstallAttempts bounds the read-merge-write rounds of one
+// EnsureLifecycle call whose rule another writer keeps replacing.
+const lifecycleInstallAttempts = 4
+
+// lifecycleSettleDelay is how long EnsureLifecycle waits after a write before
+// reading the configuration back; it is jittered by ±50% so writers that
+// collided retry at different moments. A variable only so tests can shrink it.
+var lifecycleSettleDelay = 3 * time.Second
+
+// ErrLifecycleRuleMissing reports that the bucket's lifecycle configuration
+// does not expire the prefix's objects within the TTL: the rule is absent,
+// disabled, filtered, or kept being replaced by another writer.
+var ErrLifecycleRuleMissing = errors.New("bucket lifecycle rule for the prefix is missing")
+
+// jittered returns a random duration in [d/2, 3d/2).
+func jittered(d time.Duration) time.Duration {
+	if d <= 0 {
+		return 0
+	}
+	return d/2 + time.Duration(rand.Int64N(int64(d))) //nolint:gosec // jitter, not a secret
+}
+
+// sleepContext waits for d or until ctx ends.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return errors.WithStack(ctx.Err())
+	}
+}
+
+// hasOwnLifecycleRule reports whether cfg holds the rule mergeLifecycleRule
+// writes for prefix and days — this package's ID, enabled, filtered by
+// exactly prefix, expiring after the given number of days — and no other rule this package
+// owns for prefix, so a merge would change nothing that matters. Fields are
+// compared, not the serialized rule, because a store may echo the rule back
+// with elements in another form.
+func hasOwnLifecycleRule(cfg *lifecycle.Configuration, prefix string, days int) bool {
+	if cfg == nil {
+		return false
+	}
+	id := lifecycleRuleID(prefix, days)
+	found := false
+	for _, rule := range cfg.Rules {
+		if !ownsLifecycleRule(rule, prefix) {
+			continue
+		}
+		if found || rule.ID != id || !isPlainExpiryRule(rule, prefix) || int(rule.Expiration.Days) != days {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+// isPlainExpiryRule reports whether rule is enabled, filtered by exactly
+// prefix with no other condition, and only expires current objects after a
+// number of days.
+func isPlainExpiryRule(rule lifecycle.Rule, prefix string) bool {
+	filter := rule.RuleFilter
+	return rule.Status == lifecycleStatusEnabled &&
+		(filter.Prefix == prefix || (filter.Prefix == "" && rule.Prefix == prefix)) &&
+		filter.And.IsEmpty() && filter.Tag.IsEmpty() && filter.ObjectSizeLessThan == 0 && filter.ObjectSizeGreaterThan == 0 &&
+		rule.Expiration.Days > 0 && rule.Expiration.IsDateNull() && rule.Transition.IsNull() &&
+		rule.NoncurrentVersionExpiration.IsDaysNull() && rule.NoncurrentVersionTransition.IsStorageClassEmpty() &&
+		rule.AbortIncompleteMultipartUpload.IsDaysNull()
+}
+
+// lifecycleCovers reports whether some enabled rule of cfg expires every
+// object under prefix within days: its filter is a plain prefix of prefix
+// (no tag, size or And condition) and it expires objects after 1..days days.
+func lifecycleCovers(cfg *lifecycle.Configuration, prefix string, days int) bool {
+	if cfg == nil {
+		return false
+	}
+	for _, rule := range cfg.Rules {
+		if rule.Status != lifecycleStatusEnabled {
+			continue
+		}
+		expire := int(rule.Expiration.Days)
+		if expire <= 0 || expire > days {
+			continue
+		}
+		filter := rule.RuleFilter
+		if !filter.And.IsEmpty() || !filter.Tag.IsEmpty() || filter.ObjectSizeLessThan != 0 || filter.ObjectSizeGreaterThan != 0 {
+			continue
+		}
+		rulePrefix := filter.Prefix
+		if rulePrefix == "" {
+			rulePrefix = rule.Prefix // the pre-Filter form
+		}
+		if strings.HasPrefix(prefix, rulePrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // ErrLifecycleMergeUnsafe reports that an existing lifecycle rule of another
@@ -437,7 +634,7 @@ func mergeLifecycleRule(existing *lifecycle.Configuration, prefix string, days i
 	}
 	cfg.Rules = append(cfg.Rules, lifecycle.Rule{
 		ID:     lifecycleRuleID(prefix, days),
-		Status: "Enabled",
+		Status: lifecycleStatusEnabled,
 		RuleFilter: lifecycle.Filter{
 			Prefix: prefix,
 		},
