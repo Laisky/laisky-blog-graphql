@@ -24,7 +24,6 @@ import {
   deleteUserRequest,
   getDescriptionCollapsed,
   getHoldState,
-  getPreferencesFromServer,
   getReturnMode,
   type HoldState,
   type ImageSubmissionError,
@@ -38,6 +37,7 @@ import {
   setDescriptionCollapsed,
   setHold,
   setReturnModeOnServer,
+  type UserPreferencesResponse,
   type UserRequest,
 } from './api';
 import { AttachmentStrip, type ComposeAttachment } from './AttachmentStrip';
@@ -47,6 +47,7 @@ import { ConsumedCard, EmptyState, PendingRequestCard } from './request-cards';
 import { SavedCommands } from './saved-commands';
 import { TaskIdSelector, useTaskIdHistory } from './task-id-selector';
 import { UrlAttachmentDialog } from './UrlAttachmentDialog';
+import { resolveRestoredReturnMode, usePreferenceRestore } from './usePreferenceRestore';
 import { useQuota } from './useQuota';
 
 const MAX_ATTACHMENTS = 5;
@@ -154,7 +155,6 @@ export function UserRequestsPage() {
   // Command template state
   const [commandTemplate, setCommandTemplate] = useState<string>(DEFAULT_COMMAND_TEMPLATE);
   const [savedCommandTemplate, setSavedCommandTemplate] = useState<string>('');
-  const [isTemplateLoading, setIsTemplateLoading] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [isTemplateExpanded, setIsTemplateExpanded] = useState(false);
@@ -196,11 +196,6 @@ export function UserRequestsPage() {
         remaining_secs: 0,
       });
       setIsLoading(false);
-      setCommandTemplate(DEFAULT_COMMAND_TEMPLATE);
-      setSavedCommandTemplate('');
-      setTemplateError(null);
-      setIsTemplateLoading(false);
-      setIsTemplateExpanded(false);
       return;
     }
 
@@ -209,53 +204,25 @@ export function UserRequestsPage() {
     // The poller chains each refresh after the previous one settles, skips ticks
     // while the tab is hidden, and refreshes once when the tab becomes visible.
     const poller = createVisibilityPoller(async ({ signal, reason, priority }) => {
+      // Preferences load separately (usePreferenceRestore), so a failed list refresh
+      // never discards them and a failed preference load never blocks the list.
       const initial = reason === 'initial';
       if (initial) {
         setIsLoading(true);
-        setIsTemplateLoading(true);
       }
 
       try {
-        // Fetch both requests and preferences in parallel
-        const [data, prefs] = await Promise.all([
-          listUserRequests(apiKey, {
-            limit: visibleCountRef.current,
-            signal,
-            priority,
-          }),
-          initial ? getPreferencesFromServer(apiKey, signal).catch(() => null) : Promise.resolve(null),
-        ]);
+        const data = await listUserRequests(apiKey, {
+          limit: visibleCountRef.current,
+          signal,
+          priority,
+        });
         if (disposed || signal.aborted) return null;
 
         setPending(data.pending ?? []);
         setConsumed(data.consumed ?? []);
         setTotalConsumed(data.total_consumed ?? 0);
         setHasMoreConsumed((data.consumed?.length ?? 0) >= visibleCountRef.current);
-
-        // Update return mode from server preference only if localStorage has no value
-        // This prevents overwriting user's local choice with server default
-        if (prefs && prefs.return_mode) {
-          const localMode = getReturnMode();
-          // Only update if localStorage is empty or has default value AND server has non-default
-          if (localMode === 'all' && prefs.return_mode !== 'all') {
-            setReturnModeState(prefs.return_mode);
-            persistReturnModeLocal(prefs.return_mode);
-          } else {
-            // Keep localStorage value as source of truth for UI
-            setReturnModeState(localMode);
-          }
-        }
-
-        if (initial && prefs) {
-          const template = prefs.command_template ?? '';
-          setCommandTemplate(normalizeTemplate(template));
-          setSavedCommandTemplate(template);
-          setTemplateError(null);
-          // Auto-expand the template editor when a non-default template is saved,
-          // so active customizations are immediately visible.
-          const hasCustomTemplate = template !== '' && template !== DEFAULT_COMMAND_TEMPLATE;
-          setIsTemplateExpanded(hasCustomTemplate);
-        }
 
         return LIST_POLL_INTERVAL_MS;
       } catch {
@@ -264,7 +231,6 @@ export function UserRequestsPage() {
       } finally {
         if (initial && !disposed) {
           setIsLoading(false);
-          setIsTemplateLoading(false);
         }
       }
     });
@@ -278,6 +244,45 @@ export function UserRequestsPage() {
       pollControlsRef.current = null;
     };
   }, [apiKey, isToolConsoleLocked]);
+
+  // returnModeEditedRef records that the user picked a return mode during the current
+  // preference session. That pick is newer than any preference read already in flight.
+  const returnModeEditedRef = useRef(false);
+
+  // Each API key (and each unlock) starts a new preference session: forget the previous
+  // session's template and edits so they can never be shown or saved under another key.
+  useEffect(() => {
+    returnModeEditedRef.current = false;
+    setCommandTemplate(DEFAULT_COMMAND_TEMPLATE);
+    setSavedCommandTemplate('');
+    setTemplateError(null);
+    setIsTemplateExpanded(false);
+  }, [apiKey, isToolConsoleLocked]);
+
+  const applyRestoredPreferences = useCallback((prefs: UserPreferencesResponse) => {
+    if (prefs.return_mode && !returnModeEditedRef.current) {
+      const localMode = getReturnMode();
+      const mode = resolveRestoredReturnMode(localMode, prefs.return_mode);
+      setReturnModeState(mode);
+      if (mode !== localMode) {
+        persistReturnModeLocal(mode);
+      }
+    }
+
+    const template = prefs.command_template ?? '';
+    setCommandTemplate(normalizeTemplate(template));
+    setSavedCommandTemplate(template);
+    setTemplateError(null);
+    // Auto-expand the template editor when a non-default template is saved, so active
+    // customizations are immediately visible; never collapse an editor the user opened.
+    const hasCustomTemplate = template !== '' && template !== DEFAULT_COMMAND_TEMPLATE;
+    setIsTemplateExpanded((expanded) => expanded || hasCustomTemplate);
+  }, []);
+
+  const preferenceStatus = usePreferenceRestore(apiKey, !isToolConsoleLocked, applyRestoredPreferences);
+  // The template editor stays read-only until the saved template is known, so a save can
+  // never replace a server template the user has not seen.
+  const isTemplateLoading = Boolean(apiKey) && preferenceStatus !== 'restored';
 
   // Poll hold state when hold is active. Each poll is scheduled only after the
   // previous response settles, so a slow response can never overlap the next one.
@@ -617,6 +622,7 @@ export function UserRequestsPage() {
         return;
       }
 
+      returnModeEditedRef.current = true;
       setReturnModeState(mode);
       // Persist to localStorage as fallback
       persistReturnModeLocal(mode);
@@ -645,7 +651,7 @@ export function UserRequestsPage() {
       ? `Template is too long (${templateRuneCount} / ${COMMAND_TEMPLATE_MAX_RUNES} characters).`
       : null;
   const templateDirty = normalizeTemplate(commandTemplate) !== normalizeTemplate(savedCommandTemplate);
-  const canSaveTemplate = Boolean(apiKey) && templateDirty && !templateValidationMessage && !isSavingTemplate;
+  const canSaveTemplate = Boolean(apiKey) && !isTemplateLoading && templateDirty && !templateValidationMessage && !isSavingTemplate;
 
   const handleSaveCommandTemplate = useCallback(async () => {
     const key = normalizeApiKey(apiKey);
@@ -1207,6 +1213,12 @@ export function UserRequestsPage() {
           {isTemplateExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </Button>
 
+        {preferenceStatus === 'retrying' && (
+          <p role="status" className="px-2 text-xs text-muted-foreground">
+            Could not load your saved preferences. Retrying… The command template can be edited once they load.
+          </p>
+        )}
+
         {isTemplateExpanded && (
           <Card id="command-template-editor" className="border border-border/60 bg-card shadow-sm">
             <CardHeader className="pb-4">
@@ -1274,7 +1286,7 @@ export function UserRequestsPage() {
                       size="sm"
                       variant="ghost"
                       onClick={handleResetCommandTemplateDraft}
-                      disabled={isSavingTemplate || commandTemplate === DEFAULT_COMMAND_TEMPLATE}
+                      disabled={isTemplateLoading || isSavingTemplate || commandTemplate === DEFAULT_COMMAND_TEMPLATE}
                     >
                       Reset to default
                     </Button>

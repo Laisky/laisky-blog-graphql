@@ -528,6 +528,123 @@ describe('UserRequestsPage background work', () => {
   });
 });
 
+describe('UserRequestsPage preference restore', () => {
+  const customTemplate = '<cmd>{{content}}</cmd>';
+
+  const flush = (ms = 0) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  const templateEditor = () => screen.queryByRole('textbox', { name: 'Command template' }) as HTMLTextAreaElement | null;
+  const returnModeButton = (name: string) => within(screen.getByRole('group', { name: /return mode/i })).getByRole('button', { name });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    vi.mocked(useApiKey).mockReturnValue({ apiKey: 'test-api-key', isToolConsoleLocked: false, status: 'valid' });
+    vi.mocked(api.listUserRequests).mockResolvedValue({ pending: [], consumed: [] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('restores saved preferences even when the first list refresh fails', async () => {
+    vi.mocked(api.listUserRequests).mockRejectedValueOnce(new Error('list unavailable'));
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'first', command_template: customTemplate });
+    render(<UserRequestsPage />);
+    await flush();
+
+    // The list failure must not discard the preferences that did load.
+    expect(templateEditor()?.value).toBe(customTemplate);
+    expect(returnModeButton('First (earliest) only')).toHaveAttribute('aria-pressed', 'true');
+
+    // The list recovers on its own retry without asking for preferences again.
+    await flush(8000);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(2);
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries preferences that failed to load and restores them once the server answers', async () => {
+    vi.mocked(api.getPreferencesFromServer)
+      .mockRejectedValueOnce(new Error('preferences unavailable'))
+      .mockResolvedValue({ return_mode: 'first', command_template: customTemplate });
+    render(<UserRequestsPage />);
+    await flush();
+
+    // Until the saved template is known the editor stays read-only, so a save cannot
+    // silently replace a template the user has not seen.
+    fireEvent.click(screen.getByRole('button', { name: /customize command template/i }));
+    expect(templateEditor()).toBeDisabled();
+    expect(screen.getByText(/could not load your saved preferences/i)).toBeInTheDocument();
+
+    await flush(2000);
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(2);
+    expect(templateEditor()?.value).toBe(customTemplate);
+    expect(templateEditor()).toBeEnabled();
+    expect(returnModeButton('First (earliest) only')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText(/could not load your saved preferences/i)).toBeNull();
+
+    // Once restored, preferences are not requested again.
+    await flush(60_000);
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(2);
+  });
+
+  it('backs off between preference retries instead of retrying at a fixed rate', async () => {
+    vi.mocked(api.getPreferencesFromServer).mockRejectedValue(new Error('preferences unavailable'));
+    render(<UserRequestsPage />);
+    await flush();
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(1);
+
+    await flush(2000);
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(2);
+    await flush(3999);
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(2);
+    await flush(1);
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps a return mode the user picked while preferences were still loading', async () => {
+    const prefs = deferred<api.UserPreferencesResponse>();
+    vi.mocked(api.getPreferencesFromServer).mockReturnValue(prefs.promise);
+    vi.mocked(api.setReturnModeOnServer).mockResolvedValue({ return_mode: 'all' });
+    render(<UserRequestsPage />);
+    await flush();
+
+    fireEvent.click(returnModeButton('All commands'));
+    await flush();
+    expect(api.setReturnModeOnServer).toHaveBeenCalledWith('test-api-key', 'all');
+
+    // The read was issued before the user's write, so its value is stale.
+    prefs.resolve({ return_mode: 'first', command_template: customTemplate });
+    await flush();
+    expect(returnModeButton('All commands')).toHaveAttribute('aria-pressed', 'true');
+    expect(api.setReturnMode).not.toHaveBeenCalledWith('first');
+    // The template was not touched, so it is still restored.
+    expect(templateEditor()?.value).toBe(customTemplate);
+  });
+
+  it('ignores preferences that arrive for an API key the page has switched away from', async () => {
+    const stale = deferred<api.UserPreferencesResponse>();
+    vi.mocked(api.getPreferencesFromServer).mockImplementation((key) =>
+      key === 'old-key' ? stale.promise : Promise.resolve({ return_mode: 'all', command_template: '' })
+    );
+    vi.mocked(useApiKey).mockReturnValue({ apiKey: 'old-key', isToolConsoleLocked: false, status: 'valid' });
+    const view = render(<UserRequestsPage />);
+    await flush();
+
+    vi.mocked(useApiKey).mockReturnValue({ apiKey: 'new-key', isToolConsoleLocked: false, status: 'valid' });
+    view.rerender(<UserRequestsPage />);
+    await flush();
+
+    stale.resolve({ return_mode: 'first', command_template: customTemplate });
+    await flush();
+    expect(screen.getByRole('button', { name: /customize command template/i })).toHaveAttribute('aria-expanded', 'false');
+    expect(returnModeButton('All commands')).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
 describe('UserRequestsPage accessibility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
