@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 import { ProjectPicker } from './project-picker';
 import { listProjects, type ProjectPage } from './project-options';
 
@@ -34,6 +35,7 @@ describe('editable project picker', () => {
     fireEvent.click(screen.getByRole('option', { name: 'my-chat-project' }));
     expect(input().value).toBe('my-chat-project');
     expect(input().getAttribute('aria-expanded')).toBe('false');
+    expect(findDanglingIdRefs()).toEqual([]);
   });
   it('debounces typing and sends the whole search to the server rather than filtering one page', async () => {
     render(<Harness />); type('M'); await tick(100); type('MC'); await tick(100); type('MCP');
@@ -56,6 +58,7 @@ describe('editable project picker', () => {
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
     const optionID = input().getAttribute('aria-activedescendant');
     expect(document.getElementById(optionID!)?.textContent).toBe('alpha');
+    expect(findDanglingIdRefs()).toEqual([]);
     fireEvent.keyDown(input(), { key: 'ArrowUp' });
     fireEvent.keyDown(input(), { key: 'Enter' });
     expect(input().value).toBe('my-chat-project');
@@ -63,6 +66,7 @@ describe('editable project picker', () => {
     fireEvent.keyDown(input(), { key: 'Escape' });
     expect(input().value).toBe('my-chat-project');
     expect(input().getAttribute('aria-expanded')).toBe('false');
+    expect(findDanglingIdRefs()).toEqual([]);
   });
   it('does not select an option while composing text', async () => {
     render(<Harness />); fireEvent.focus(input()); await tick(); fireEvent.keyDown(input(), { key: 'ArrowDown' });

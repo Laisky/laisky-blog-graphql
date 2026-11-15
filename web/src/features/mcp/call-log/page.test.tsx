@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useApiKey } from '@/lib/api-key-context';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 import { fetchCallLogs } from './api';
 import { CallLogPage } from './page';
@@ -109,6 +110,7 @@ describe('CallLogPage accessibility', () => {
     expect(region).toHaveAttribute('tabindex', '0');
     expect(screen.getByRole('table', { name: 'Call log results' })).toBeInTheDocument();
     await waitFor(() => expect(fetchCallLogs).toHaveBeenCalled());
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('announces a load failure', async () => {
@@ -118,5 +120,6 @@ describe('CallLogPage accessibility', () => {
     render(<CallLogPage />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('call log backend unavailable');
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 });

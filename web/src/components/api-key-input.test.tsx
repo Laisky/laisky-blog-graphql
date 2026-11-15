@@ -1,4 +1,5 @@
 import { useApiKey } from '@/lib/api-key-context';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiKeyInput } from './api-key-input';
@@ -88,6 +89,7 @@ describe('ApiKeyInput', () => {
 
     expect(screen.getAllByText(/key1/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/key2/i).length).toBeGreaterThan(0);
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('labels the API key field programmatically and keeps password managers out', () => {
@@ -130,6 +132,7 @@ describe('ApiKeyInput', () => {
     expect(pressed.getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByRole('button', { name: /hide api key/i })).toBeNull();
     expect(screen.getByLabelText('API key').getAttribute('type')).toBe('text');
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('selects a history entry through a real button that keyboard users can reach', () => {

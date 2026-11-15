@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useApiKey } from '@/lib/api-key-context';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 import { fetchCallLogs } from '../call-log/api';
 import { WebSearchPage } from './page';
@@ -111,5 +112,6 @@ describe('WebSearchPage accessibility', () => {
     expect(screen.getByRole('region', { name: 'Web search usage history' })).toHaveAttribute('tabindex', '0');
     expect(screen.getByRole('table', { name: 'Web search usage history' })).toBeInTheDocument();
     await waitFor(() => expect(fetchCallLogs).toHaveBeenCalled());
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 });

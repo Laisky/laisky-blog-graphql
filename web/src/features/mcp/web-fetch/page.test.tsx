@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useApiKey } from '@/lib/api-key-context';
 import { fetchGraphQL } from '@/lib/graphql';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 import { fetchCallLogs } from '../call-log/api';
 import { WebFetchPage } from './page';
@@ -174,6 +175,7 @@ describe('WebFetchPage output format selection', () => {
     const body = await screen.findByRole('region', { name: 'Fetched content' });
     expect(body).toHaveAttribute('tabindex', '0');
     expect(within(body).getByText('# Title')).toBeInTheDocument();
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('announces a failed fetch', async () => {
@@ -184,6 +186,7 @@ describe('WebFetchPage output format selection', () => {
     fireEvent.click(screen.getByRole('button', { name: /run fetch/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/fetch backend unavailable|failed/i);
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('keeps the format selector usable while the console is locked but reports nothing', async () => {

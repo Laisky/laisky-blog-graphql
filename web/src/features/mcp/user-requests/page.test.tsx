@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { useApiKey } from '@/lib/api-key-context';
 import { HttpStatusError } from '@/lib/http-error';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
@@ -232,7 +233,8 @@ describe('UserRequestsPage Command Template', () => {
     // Wait for preferences to finish loading so the trigger reflects the saved template.
     const trigger = await screen.findByRole('button', { name: /customize command template/i });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    expect(trigger).toHaveAttribute('aria-controls', 'command-template-editor');
+    // The collapsed editor is not rendered, so the trigger must not reference it.
+    expect(trigger).not.toHaveAttribute('aria-controls');
 
     // The editor must NOT be rendered yet.
     expect(screen.queryByPlaceholderText(/Example:/i)).toBeNull();
@@ -753,6 +755,27 @@ describe('UserRequestsPage accessibility', () => {
 
     expect(screen.getByRole('button', { name: /search history/i })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /choose what to delete/i })).toBeInTheDocument();
+  });
+
+  it('never references a collapsed panel that is not rendered', async () => {
+    render(<UserRequestsPage />);
+    await screen.findByRole('button', { name: /choose what to delete/i });
+    const description = screen.getByRole('button', { name: /hide info/i });
+    const template = screen.getByRole('button', { name: /customize command template/i });
+    // The template editor starts collapsed and is not rendered.
+    expect(template).toHaveAttribute('aria-expanded', 'false');
+    expect(findDanglingIdRefs()).toEqual([]);
+
+    fireEvent.click(description);
+    expect(description).toHaveAttribute('aria-expanded', 'false');
+    expect(findDanglingIdRefs()).toEqual([]);
+
+    // Expanded panels are referenced again.
+    fireEvent.click(description);
+    fireEvent.click(template);
+    expect(description).toHaveAttribute('aria-controls', 'user-requests-description');
+    expect(template).toHaveAttribute('aria-controls', 'command-template-editor');
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('announces image attachment errors', async () => {

@@ -7,6 +7,7 @@ import { AppLayout } from './app-layout';
 import { useApiKey } from '@/lib/api-key-context';
 import { consolePages } from '@/lib/route-modules';
 import { useToolsConfig } from '@/lib/tools-config-context';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 vi.mock('@/lib/api-key-context', () => ({
   useApiKey: vi.fn(),
@@ -162,6 +163,7 @@ describe('AppLayout navigation semantics', () => {
     const main = screen.getByRole('main');
     expect(main).toHaveAttribute('id', 'main-content');
     expect(main).toHaveAttribute('tabindex', '-1');
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('names the icon-only settings link and marks it current on the settings page', () => {
@@ -193,6 +195,7 @@ describe('AppLayout navigation semantics', () => {
     });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(trigger).toHaveFocus();
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('links only to console pages that the code-split registry routes and preloads', () => {

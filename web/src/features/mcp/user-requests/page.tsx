@@ -1002,7 +1002,8 @@ export function UserRequestsPage() {
             className="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             title={isDescriptionCollapsed ? 'Show description' : 'Hide description'}
             aria-expanded={!isDescriptionCollapsed}
-            aria-controls="user-requests-description"
+            // The description is not rendered while collapsed, so only reference it when shown.
+            aria-controls={isDescriptionCollapsed ? undefined : 'user-requests-description'}
           >
             {isDescriptionCollapsed ? (
               <>
@@ -1207,7 +1208,7 @@ export function UserRequestsPage() {
           size="sm"
           onClick={() => setIsTemplateExpanded((prev) => !prev)}
           aria-expanded={isTemplateExpanded}
-          aria-controls="command-template-editor"
+          aria-controls={isTemplateExpanded ? 'command-template-editor' : undefined}
           className="h-auto gap-1.5 px-2 py-1 text-sm font-normal text-muted-foreground hover:text-foreground"
         >
           <Settings2 className="h-4 w-4" />

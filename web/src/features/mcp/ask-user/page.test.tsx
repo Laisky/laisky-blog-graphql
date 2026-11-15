@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useApiKey } from '@/lib/api-key-context';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 import * as api from './api';
 import { AskUserPage } from './page';
@@ -107,5 +108,6 @@ describe('AskUserPage background polling', () => {
     expect(api.submitAnswer).toHaveBeenCalledWith('test-key', 'q1', 'main');
     expect(api.listRequests).toHaveBeenCalledTimes(2);
     expect(vi.mocked(api.listRequests).mock.calls[1][2]).toBeUndefined();
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 });

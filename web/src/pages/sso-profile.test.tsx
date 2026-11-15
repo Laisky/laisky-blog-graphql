@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchGraphQL } from '@/lib/graphql';
 import { storeSsoToken } from '@/lib/sso-session';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 import { canSubmitPasskeyRename, canSubmitPasswordChange, canSubmitTotpCode, formatPasskeyCreatedAt, SsoProfilePage } from './sso-profile';
 
 vi.mock('@/components/theme/theme-toggle', () => ({
@@ -110,6 +111,7 @@ describe('SsoProfilePage token details', () => {
 
     const tokenLink = await screen.findByRole('link', { name: /token details/i });
     expect(tokenLink).toHaveAttribute('href', '/sso/token');
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 });
 
@@ -151,6 +153,7 @@ describe('SsoProfilePage TOTP setup', () => {
     expect(await screen.findByRole('img', { name: /totp setup qr code/i })).toBeInTheDocument();
     expect(screen.getByText('JBSWY3DPEHPK3PXP')).toBeInTheDocument();
     expect(screen.getByText(/otpauth:\/\/totp\/Laisky/)).toBeInTheDocument();
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 });
 

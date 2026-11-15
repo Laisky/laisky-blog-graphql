@@ -347,7 +347,8 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
             }}
             className="flex items-center gap-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
             aria-expanded={isExpanded}
-            aria-controls={contentId}
+            // The list is not rendered while collapsed, so only an expanded toggle references it.
+            aria-controls={isExpanded ? contentId : undefined}
           >
             <Star className="h-5 w-5 text-amber-500" />
             <CardTitle className="text-lg text-foreground">Saved Commands</CardTitle>

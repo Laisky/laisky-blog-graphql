@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useApiKey } from '@/lib/api-key-context';
 
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
+
 import * as api from './api';
 import { SavedCommands } from './saved-commands';
 
@@ -90,6 +92,20 @@ describe('SavedCommands keyboard and accessibility', () => {
 
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // The collapsed list is not rendered, so the toggle must not reference it.
+    expect(findDanglingIdRefs()).toEqual([]);
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-controls', controlled!);
+    expect(document.getElementById(controlled!)).not.toBeNull();
+  });
+
+  it('references no missing element when it starts collapsed', async () => {
+    vi.mocked(api.getSavedCommandsExpanded).mockReturnValueOnce(false);
+    renderSavedCommands();
+    const toggle = await screen.findByRole('button', { name: /saved commands/i, expanded: false });
+    expect(toggle).not.toHaveAttribute('aria-controls');
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 
   it('announces load errors', async () => {

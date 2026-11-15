@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchGraphQL } from '@/lib/graphql';
 import { getPasskeyCredentialJSON } from '@/lib/passkey';
 import { loadSsoToken, storeSsoToken } from '@/lib/sso-session';
+import { findDanglingIdRefs } from '@/test-utils/aria-idrefs';
 
 import {
   buildRedirectUrlWithToken,
@@ -470,6 +471,7 @@ describe('SsoLoginPage GitHub option visibility', () => {
   it('shows the GitHub button when GitHub OAuth is configured', () => {
     renderLoginPage(true);
     expect(githubButton()).toBeInTheDocument();
+    expect(findDanglingIdRefs()).toEqual([]);
   });
 });
 
