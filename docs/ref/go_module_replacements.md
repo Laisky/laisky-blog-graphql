@@ -26,25 +26,37 @@ former replacements existed and why they were dropped rather than upstreamed.
   `iskorotkov/avro/v2` to keep the imported-package vulnerability scan clean.
 - **It was never on a runtime path.** The hamba-backed helpers
   (`SerializeTags1`/`DeserializeTags1`) are not called anywhere in goar, whose
-  bundle code uses `linkedin/goavro`. This repository only calls
-  `Wallet.SendData`, which sends base64url JSON tags, not Avro.
+  bundle code uses `linkedin/goavro`. This repository's upload path (then
+  `Wallet.SendData`, now `utils.TagsEncode` plus signing) sends base64url JSON
+  tags, not Avro.
 - **Why it was dropped.** `hamba/avro` and `everFinance/goar` are archived; the
   everFinance README points to `github.com/permadao/goar`, the maintained
   successor (v1.2.0, 2026-11-11), whose tag codec uses only goavro.
 - **API delta.** Import path changes and the `types` package is now `schema`.
   The wallet, client and uploader upload path is unchanged apart from these
   renames; signature data omits the owner only for ECDSA signers.
+- **Transport now owned locally.** Neither goar version can cancel or time out
+  a request (`http.DefaultClient`, no context). `Ardrive` therefore keeps goar
+  for signing and chunking only and sends the requests itself; see
+  `docs/ref/arweave_upload_protocol_20261115.md`.
 - **Known upstream behavior.** permadao `utils.DeserializeTags` ignores bytes
   after the encoded tag array. This repository never decodes Avro tags.
 
 ## Acceptance
 
-`library/db/arweave/ardrive_test.go` runs the real goar wallet against a local
-Arweave gateway. It verifies the posted transaction fields, Content-Type tag,
-chunked payload reassembly, gzip handling and gateway rejection, and checks the
-signature with an independent RSA-PSS and deep-hash implementation. The suite
-passed unchanged on `everFinance/goar v1.6.3` before the switch and on
+`library/db/arweave/ardrive_test.go` uploads against a local Arweave gateway.
+It verifies the posted transaction fields, Content-Type tag, gzip handling and
+gateway rejection, and checks the signature with an independent RSA-PSS and
+deep-hash implementation. The wire-contract tests passed unchanged with goar's
+`Wallet.SendData` on `everFinance/goar v1.6.3` before the switch and on
 `permadao/goar v1.2.0` after it.
+
+The gateway (`fakegateway_test.go`) validates each chunk independently of goar,
+as a node does: the Merkle proof against the signed data root, the offset, the
+size limits and the canonical split. `TestFakeGatewayRejectsInvalidChunks` is
+its negative control. The chunk tests also passed with `Wallet.SendData`
+before the transport moved into this repository; the cancellation, timeout and
+retry tests in `ardrive_lifecycle_test.go` failed or hung on it.
 
 ## If a replacement is ever reintroduced
 
