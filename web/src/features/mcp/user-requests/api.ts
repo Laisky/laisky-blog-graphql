@@ -228,7 +228,18 @@ export interface UserRequest {
 
 export interface QuotaResponse {
   user_identity: string;
+  /** Bytes of committed (live) images. */
   used_bytes: number;
+  /**
+   * Bytes reserved by this user's uploads still in progress (each image once).
+   * Absent from servers that predate it.
+   */
+  reserved_bytes?: number;
+  /**
+   * New bytes the next submission may add: quota - used - reserved. A larger
+   * image is refused with `quota_exceeded`. Absent from servers that predate it.
+   */
+  available_bytes?: number;
   quota_bytes: number;
   object_count: number;
   ttl_days: number;

@@ -136,65 +136,107 @@ func extractAttachmentIndex(err error) int {
 	return index
 }
 
-// writeImageError maps an image pipeline error onto an HTTP status + payload.
-func (h *httpHandler) writeImageError(w http.ResponseWriter, logger logSDK.Logger, err error, attachmentIndex int) {
-	status := http.StatusInternalServerError
-	code := "internal_error"
+// Image error codes of the HTTP contract (proposal §5.1). The web client
+// mirrors them as ImageErrorCode.
+const (
+	imageErrInternal           = "internal_error"
+	imageErrFeatureDisabled    = "feature_disabled"
+	imageErrTooManyImages      = "too_many_images"
+	imageErrQuotaExceeded      = "quota_exceeded"
+	imageErrImageTooLarge      = "image_too_large"
+	imageErrUnsupportedMIME    = "unsupported_mime"
+	imageErrDecodeFailed       = "decode_failed"
+	imageErrURLBlocked         = "url_blocked"
+	imageErrURLTimeout         = "url_timeout"
+	imageErrURLFetchFailed     = "url_fetch_failed"
+	imageErrStorageUnavailable = "storage_unavailable"
+	imageErrBusy               = "image_busy"
+)
+
+// imageErrorClass is the public side of an image error: its status, code
+// and, for server-side failures, the stable message the client gets.
+type imageErrorClass struct {
+	status int
+	code   string
+}
+
+// publicImageErrorMessages are the client messages of the server-side (5xx)
+// image errors. A 5xx error chain carries internal details — object keys,
+// storage operations, backend addresses, transport errors — that stay in the
+// server log; the client gets the code, this message and the attachment
+// index. Validated client-input errors (4xx) keep their descriptive message.
+var publicImageErrorMessages = map[string]string{
+	imageErrInternal:           "The image request failed because of a server error. Try again later.",
+	imageErrStorageUnavailable: "Image storage is temporarily unavailable. Try again later.",
+	imageErrBusy:               "The image service is busy. Retry after the Retry-After delay.",
+	imageErrURLFetchFailed:     "The image URL could not be fetched.",
+	imageErrURLTimeout:         "The image URL did not respond in time.",
+}
+
+// publicImageErrorMessage returns the client message of a server-side image
+// error code (the internal_error message for an unknown code).
+func publicImageErrorMessage(code string) string {
+	if message, ok := publicImageErrorMessages[code]; ok {
+		return message
+	}
+	return publicImageErrorMessages[imageErrInternal]
+}
+
+// classifyImageError maps an image pipeline error onto its status and code.
+func classifyImageError(err error) imageErrorClass {
 	switch {
 	case errors.Is(err, ErrImageFeatureDisabled):
-		status = http.StatusUnsupportedMediaType
-		code = "feature_disabled"
+		return imageErrorClass{http.StatusUnsupportedMediaType, imageErrFeatureDisabled}
 	case errors.Is(err, ErrTooManyImages):
-		status = http.StatusRequestEntityTooLarge
-		code = "too_many_images"
+		return imageErrorClass{http.StatusRequestEntityTooLarge, imageErrTooManyImages}
 	case errors.Is(err, ErrQuotaExceeded):
-		status = http.StatusRequestEntityTooLarge
-		code = "quota_exceeded"
+		return imageErrorClass{http.StatusRequestEntityTooLarge, imageErrQuotaExceeded}
 	case errors.Is(err, imageproc.ErrImageTooLarge):
-		status = http.StatusRequestEntityTooLarge
-		code = "image_too_large"
+		return imageErrorClass{http.StatusRequestEntityTooLarge, imageErrImageTooLarge}
 	case errors.Is(err, imageproc.ErrUnsupportedMIME):
-		status = http.StatusBadRequest
-		code = "unsupported_mime"
-	case errors.Is(err, imageproc.ErrDimensionsTooLarge):
-		status = http.StatusUnprocessableEntity
-		code = "decode_failed"
-	case errors.Is(err, imageproc.ErrDecodeFailed):
-		status = http.StatusUnprocessableEntity
-		code = "decode_failed"
+		return imageErrorClass{http.StatusBadRequest, imageErrUnsupportedMIME}
+	case errors.Is(err, imageproc.ErrDimensionsTooLarge), errors.Is(err, imageproc.ErrDecodeFailed):
+		return imageErrorClass{http.StatusUnprocessableEntity, imageErrDecodeFailed}
 	case errors.Is(err, imageproc.ErrURLBlocked):
-		status = http.StatusBadRequest
-		code = "url_blocked"
+		return imageErrorClass{http.StatusBadRequest, imageErrURLBlocked}
 	case errors.Is(err, imageproc.ErrURLTimeout):
-		status = http.StatusGatewayTimeout
-		code = "url_timeout"
+		return imageErrorClass{http.StatusGatewayTimeout, imageErrURLTimeout}
 	case errors.Is(err, imageproc.ErrURLFetchFailed):
-		status = http.StatusBadGateway
-		code = "url_fetch_failed"
+		return imageErrorClass{http.StatusBadGateway, imageErrURLFetchFailed}
 	case errors.Is(err, ErrStorageUnavailable):
-		status = http.StatusServiceUnavailable
-		code = "storage_unavailable"
+		return imageErrorClass{http.StatusServiceUnavailable, imageErrStorageUnavailable}
 	case errors.Is(err, imageproc.ErrDecodeBusy), errors.Is(err, ErrImageBusy):
-		status = http.StatusServiceUnavailable
-		code = "image_busy"
+		return imageErrorClass{http.StatusServiceUnavailable, imageErrBusy}
+	default:
+		return imageErrorClass{http.StatusInternalServerError, imageErrInternal}
+	}
+}
+
+// writeImageError maps an image pipeline error onto an HTTP status + payload.
+// The full error is logged; a 5xx response carries only the stable message
+// of its code (publicImageErrorMessage).
+func (h *httpHandler) writeImageError(w http.ResponseWriter, logger logSDK.Logger, err error, attachmentIndex int) {
+	class := classifyImageError(err)
+	message := err.Error()
+	if class.status >= http.StatusInternalServerError {
+		logger.Error("image create error", zap.Error(err), zap.String("code", class.code), zap.Int("attachment_index", attachmentIndex))
+		message = publicImageErrorMessage(class.code)
+	} else {
+		logger.Warn("image create rejected", zap.String("code", class.code), zap.Error(err))
+	}
+	if class.code == imageErrBusy {
 		w.Header().Set("Retry-After", "5")
 	}
 
-	if status >= 500 {
-		logger.Error("image create error", zap.Error(err), zap.String("code", code))
-	} else {
-		logger.Warn("image create rejected", zap.String("code", code), zap.Error(err))
-	}
-
 	payload := map[string]any{
-		fieldError: code,
-		"message":  err.Error(),
+		fieldError: class.code,
+		"message":  message,
 	}
 	if attachmentIndex >= 0 {
 		payload["attachment_index"] = attachmentIndex
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(class.status)
 	_ = json.NewEncoder(w).Encode(payload) //nolint:errchkjson // best-effort error response
 }
 

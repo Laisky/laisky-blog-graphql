@@ -52,76 +52,36 @@ func (s *Service) ensureImageSchema(ctx context.Context) error {
 			return errors.Wrap(err, "apply image schema statement")
 		}
 	}
-	return nil
+	return errors.WithStack(s.ensureImageClaimSHAColumn(ctx))
 }
 
-// QuotaUsage reports a user's live image storage footprint.
-type QuotaUsage struct {
-	UserIdentity string
-	UsedBytes    int64
-	QuotaBytes   int64
-	ObjectCount  int64
-	TTLDays      int
-}
-
-// QuotaUsage returns the live (non-expired) image byte usage for a user.
-func (s *Service) QuotaUsage(ctx context.Context, auth *askuser.AuthorizationContext) (QuotaUsage, error) {
-	if auth == nil {
-		return QuotaUsage{}, ErrInvalidAuthorization
-	}
-	now := s.clock()
-	row := s.queryRowContext(ctx,
-		`SELECT COALESCE(SUM(size_bytes), 0) AS used, COALESCE(COUNT(1), 0) AS n
-		   FROM mcp_user_image_refs
-		  WHERE user_identity = ? AND expires_at > ?`,
-		auth.UserIdentity, now,
-	)
-	var used, count int64
-	if err := row.Scan(&used, &count); err != nil {
-		return QuotaUsage{}, errors.Wrap(err, "query quota usage")
-	}
-	return QuotaUsage{
-		UserIdentity: auth.UserIdentity,
-		UsedBytes:    used,
-		QuotaBytes:   s.settings.Images.PerUserQuotaBytes,
-		ObjectCount:  count,
-		TTLDays:      s.settings.Images.ObjectTTLDays,
-	}, nil
-}
-
-// reserveImage performs the upsert-with-quota dance inside the create
-// transaction, which already holds the image scope lock (so the usage sum
-// cannot race another reservation of the same user). A live row for the same
-// SHA is refreshed without charging quota and returned with existed=true. An
-// expired row no longer counts toward usage, so reviving it is charged like a
-// new image (proposal §3.5) before it is refreshed. Otherwise a new row is
-// inserted after verifying the user stays within quota. A refreshed row that
-// pointed at another key (the key prefix changed) is re-pointed, and an
-// orphan claim records the old key, which may have lost its last ref.
-func (s *Service) reserveImage(ctx context.Context, tx *sql.Tx, auth *askuser.AuthorizationContext, image UploadedImage) (uuid.UUID, bool, error) {
-	now := s.clock()
-	ttl := s.settings.Images.ObjectTTLDays
-	if ttl <= 0 {
-		ttl = DefaultImageObjectTTLDays
-	}
-	expiresAt := now.Add(time.Duration(ttl) * 24 * time.Hour)
+// upsertImageRef upserts the ref of image inside the finalize transaction,
+// which holds the user's quota lock and the image's scope lock. A live row
+// for the same SHA is refreshed without charging quota and returned with
+// charged=false. An expired row no longer counts toward usage, so reviving it
+// is charged like a new image (proposal §3.5); a new row is inserted. Both
+// return charged=true and the caller verifies the quota once every ref of the
+// request is written. A refreshed row that pointed at another key (the key
+// prefix changed) is re-pointed, and an orphan claim records the old key,
+// which may have lost its last ref.
+func (s *Service) upsertImageRef(ctx context.Context, tx *sql.Tx, auth *askuser.AuthorizationContext, image UploadedImage, now time.Time) (id uuid.UUID, charged bool, err error) {
+	expiresAt := now.Add(time.Duration(s.effectiveImageTTLDays()) * 24 * time.Hour)
 
 	lockQuery := rebindQuery(
-		`SELECT id, size_bytes, storage_key, expires_at FROM mcp_user_image_refs
+		`SELECT id, storage_key, expires_at FROM mcp_user_image_refs
 		  WHERE user_identity = ? AND sha256 = ? FOR UPDATE`,
 		s.useDollar,
 	)
 	// SQLite does not understand FOR UPDATE; use a portable variant there.
 	if !s.useDollar {
-		lockQuery = `SELECT id, size_bytes, storage_key, expires_at FROM mcp_user_image_refs
+		lockQuery = `SELECT id, storage_key, expires_at FROM mcp_user_image_refs
 		              WHERE user_identity = ? AND sha256 = ?`
 	}
 
 	row := tx.QueryRowContext(ctx, lockQuery, auth.UserIdentity, image.SHA256)
 	var existingID, existingKey string
-	var existingSize int64
 	var existingExpiresRaw any
-	err := row.Scan(&existingID, &existingSize, &existingKey, &existingExpiresRaw)
+	err = row.Scan(&existingID, &existingKey, &existingExpiresRaw)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return uuid.Nil, false, errors.Wrap(err, "reserve image lookup")
 	}
@@ -134,11 +94,6 @@ func (s *Service) reserveImage(ctx context.Context, tx *sql.Tx, auth *askuser.Au
 		if timeErr != nil {
 			return uuid.Nil, false, errors.Wrap(timeErr, "parse existing image expires_at")
 		}
-		if !existingExpires.After(now) {
-			if quotaErr := s.checkImageQuota(ctx, tx, auth, now, image.SizeBytes); quotaErr != nil {
-				return uuid.Nil, false, errors.WithStack(quotaErr)
-			}
-		}
 		// Refresh the TTL and point the row at the key this request uploads.
 		if _, execErr := tx.ExecContext(ctx,
 			rebindQuery(`UPDATE mcp_user_image_refs SET expires_at = ?, storage_key = ? WHERE id = ?`, s.useDollar),
@@ -147,15 +102,11 @@ func (s *Service) reserveImage(ctx context.Context, tx *sql.Tx, auth *askuser.Au
 			return uuid.Nil, false, errors.Wrap(execErr, "refresh image ttl")
 		}
 		if existingKey != image.StorageKey {
-			if claimErr := s.insertImageClaim(ctx, tx, gutils.UUID7Bytes(), auth.UserIdentity, existingKey, claimOrphan, 0, now, now); claimErr != nil {
+			if claimErr := s.insertImageClaim(ctx, tx, gutils.UUID7Bytes(), auth.UserIdentity, existingKey, claimOrphan, now, now); claimErr != nil {
 				return uuid.Nil, false, errors.Wrap(claimErr, "record re-pointed image key")
 			}
 		}
-		return id, true, nil
-	}
-
-	if quotaErr := s.checkImageQuota(ctx, tx, auth, now, image.SizeBytes); quotaErr != nil {
-		return uuid.Nil, false, errors.WithStack(quotaErr)
+		return id, !existingExpires.After(now), nil
 	}
 
 	imageID := gutils.UUID7Bytes()
@@ -180,44 +131,7 @@ func (s *Service) reserveImage(ctx context.Context, tx *sql.Tx, auth *askuser.Au
 	if err != nil {
 		return uuid.Nil, false, errors.Wrap(err, "insert image ref")
 	}
-	return imageID, false, nil
-}
-
-// checkImageQuota returns ErrQuotaExceeded when adding size bytes would push
-// the user's live usage — live refs plus the live upload claims of requests
-// still uploading — above the configured quota. The caller holds the scope lock.
-func (s *Service) checkImageQuota(ctx context.Context, tx *sql.Tx, auth *askuser.AuthorizationContext, now time.Time, size int64) error {
-	var refBytes, claimedBytes int64
-	if err := tx.QueryRowContext(ctx,
-		rebindQuery(
-			`SELECT COALESCE(SUM(size_bytes), 0) FROM mcp_user_image_refs
-			  WHERE user_identity = ? AND expires_at > ?`,
-			s.useDollar,
-		),
-		auth.UserIdentity, now,
-	).Scan(&refBytes); err != nil {
-		return errors.Wrap(err, "reserve image usage")
-	}
-	if err := tx.QueryRowContext(ctx,
-		rebindQuery(
-			`SELECT COALESCE(SUM(size_bytes), 0) FROM mcp_user_image_claims
-			  WHERE user_identity = ? AND kind = ? AND expires_at > ?`,
-			s.useDollar,
-		),
-		auth.UserIdentity, claimUpload, now,
-	).Scan(&claimedBytes); err != nil {
-		return errors.Wrap(err, "reserve image claimed usage")
-	}
-	usedBytes := refBytes + claimedBytes
-
-	quota := s.settings.Images.PerUserQuotaBytes
-	if quota <= 0 {
-		quota = DefaultImagePerUserQuotaBytes
-	}
-	if usedBytes+size > quota {
-		return errors.WithStack(ErrQuotaExceeded)
-	}
-	return nil
+	return imageID, true, nil
 }
 
 // nullableString returns sql-friendly nil for the empty string.
@@ -310,9 +224,10 @@ func (s *Service) CreateRequestWithImages(
 }
 
 // finalizeImageRequest inserts the request with its image refs and links in
-// one short transaction. With images it holds the scope lock and consumes the
-// request's upload claims first, so the quota accounting moves from the
-// claims to the refs atomically.
+// one short transaction. With images it holds the user's quota lock and the
+// scope locks and consumes the request's upload claims first, so the quota
+// accounting moves from the claims to the refs atomically; when a ref was
+// inserted or revived, the resulting usage is verified before the commit.
 func (s *Service) finalizeImageRequest(
 	ctx context.Context,
 	auth *askuser.AuthorizationContext,
@@ -330,7 +245,7 @@ func (s *Service) finalizeImageRequest(
 	now := s.clock()
 	if len(images) > 0 {
 		keys := distinctImageKeys(images)
-		if err := s.lockImageScopes(ctx, tx, keys); err != nil {
+		if err := s.lockImageQuotaAndScopes(ctx, tx, auth.UserIdentity, keys); err != nil {
 			return nil, errors.WithStack(err)
 		}
 		if err := s.consumeUploadClaims(ctx, tx, requestID, len(keys), now); err != nil {
@@ -427,8 +342,9 @@ func (s *Service) insertPendingRequest(
 	return req, nil
 }
 
-// linkRequestImages upserts the ref of every image (charging quota for new or
-// revived refs) and links it to req inside tx.
+// linkRequestImages upserts the ref of every image and links it to req
+// inside tx. When any ref was inserted or revived it verifies the user's
+// quota once all of them are written.
 func (s *Service) linkRequestImages(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -437,16 +353,15 @@ func (s *Service) linkRequestImages(
 	images []UploadedImage,
 	now time.Time,
 ) ([]RequestImage, error) {
-	ttl := s.settings.Images.ObjectTTLDays
-	if ttl <= 0 {
-		ttl = DefaultImageObjectTTLDays
-	}
+	expiresAt := now.Add(time.Duration(s.effectiveImageTTLDays()) * 24 * time.Hour)
 	linked := make([]RequestImage, 0, len(images))
+	charged := false
 	for idx, img := range images {
-		imageID, _, reserveErr := s.reserveImage(ctx, tx, auth, img)
+		imageID, imageCharged, reserveErr := s.upsertImageRef(ctx, tx, auth, img, now)
 		if reserveErr != nil {
 			return nil, errors.WithStack(reserveErr)
 		}
+		charged = charged || imageCharged
 		if _, err := tx.ExecContext(ctx,
 			rebindQuery(`INSERT INTO mcp_user_request_image_links (request_id, image_id, sort_order) VALUES (?, ?, ?)`, s.useDollar),
 			req.ID.String(), imageID.String(), idx,
@@ -468,8 +383,13 @@ func (s *Service) linkRequestImages(
 			SourceURL:    img.SourceURL,
 			SortOrder:    idx,
 			CreatedAt:    now,
-			ExpiresAt:    now.Add(time.Duration(ttl) * 24 * time.Hour),
+			ExpiresAt:    expiresAt,
 		})
+	}
+	if charged {
+		if err := s.verifyImageQuota(ctx, tx, auth.UserIdentity, now); err != nil {
+			return nil, errors.WithStack(err)
+		}
 	}
 	return linked, nil
 }
@@ -802,7 +722,7 @@ func (s *Service) removeExpiredImageRefs(ctx context.Context, tx *sql.Tx, ids []
 		return nil, errors.Wrap(err, "delete expired image links")
 	}
 	for _, ref := range removed {
-		if err := s.insertImageClaim(ctx, tx, gutils.UUID7Bytes(), ref.userIdentity, ref.storageKey, claimOrphan, 0, now, now); err != nil {
+		if err := s.insertImageClaim(ctx, tx, gutils.UUID7Bytes(), ref.userIdentity, ref.storageKey, claimOrphan, now, now); err != nil {
 			return nil, errors.Wrap(err, "record orphan image claim")
 		}
 	}

@@ -397,7 +397,8 @@ func (h *httpHandler) writeCreateError(w http.ResponseWriter, logger logSDK.Logg
 	}
 }
 
-// handleQuota reports the caller's live image usage.
+// handleQuota reports the caller's live image usage, the bytes its uploads in
+// progress reserve, and what the quota still admits.
 func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -418,6 +419,8 @@ func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, map[string]any{
 			fieldUserIdentity: auth.UserIdentity,
 			"used_bytes":      0,
+			"reserved_bytes":  0,
+			"available_bytes": 0,
 			"quota_bytes":     0,
 			"object_count":    0,
 			"ttl_days":        0,
@@ -431,9 +434,13 @@ func (h *httpHandler) handleQuota(w http.ResponseWriter, r *http.Request) {
 		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to load quota")
 		return
 	}
+	// reserved_bytes and available_bytes use the accounting admission uses:
+	// an image larger than available_bytes is refused with quota_exceeded.
 	h.writeJSON(w, map[string]any{
 		fieldUserIdentity: usage.UserIdentity,
 		"used_bytes":      usage.UsedBytes,
+		"reserved_bytes":  usage.ReservedBytes,
+		"available_bytes": usage.AvailableBytes,
 		"quota_bytes":     usage.QuotaBytes,
 		"object_count":    usage.ObjectCount,
 		"ttl_days":        usage.TTLDays,

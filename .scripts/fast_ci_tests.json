@@ -277,7 +277,14 @@
       "TestSizeImageMemory",
       "TestReconcileTickKeepsDrainingPastAFailingKey",
       "TestLifecycleControllerReportsPeriodicErasure",
-      "TestCreateWithImagesUploadPanicIsCompensated"
+      "TestCreateWithImagesUploadPanicIsCompensated",
+      "TestConcurrentReservationsOfOneImageChargeItOnce",
+      "TestDeduplicatedReservationKeepsBackingItsImage",
+      "TestQuotaReportMatchesAdmission",
+      "TestQuotaReportUsesEnforcedDefaults",
+      "TestImageServerErrorsHideInternalDetails",
+      "TestImageLockIDsSerializeQuotaPerUserAcrossPrefixes",
+      "TestImageClaimsTableGainsSHAColumn"
     ]
   },
   {

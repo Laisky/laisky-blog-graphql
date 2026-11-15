@@ -55,14 +55,23 @@ refs, admission before the body is read and the bounded wait queue), the
 decoder layouts the estimator undercounted (late PNG tRNS, Adobe APP14 after
 the first scan, a stray `\xff\x00` before a fake frame header, lossless
 VP8L in VP8X, truncated VP8 chunks), a slow body that must give its slot back
-at the deadline, and collision-free, bounded, unique lifecycle rule IDs. After the maintainer review of PR #94 they also cover TIFF tile geometry that used to wrap the estimate and a negative estimate failing closed, bounded parallel uploads that meet the request deadline, refusal without time to upload and siblings canceled after a failed PUT, a lifecycle rule lost to a concurrent writer and merged again, a writer that keeps replacing it, no rewrite of an unchanged rule, the read-only verify check, the lifecycle controller restoring an erased rule and never writing in verify mode, the reconciler draining a backlog larger than one batch (also past a key whose delete keeps failing) and exporting backlog and failures, a rule erased between checks being reported, a panicking upload being compensated, the `lifecycle_mode` validation, and the image memory envelope (its terms, sizing a defaulted decode budget to half the memory limit, normalized PNGs kept without encoder slack, cgroup v1/v2 limit detection and the Go soft limit derived from the container limit, `library/memlimit`). The other new tests of those
+at the deadline, and collision-free, bounded, unique lifecycle rule IDs. After the maintainer review of PR #94 they also cover TIFF tile geometry that used to wrap the estimate and a negative estimate failing closed, bounded parallel uploads that meet the request deadline, refusal without time to upload and siblings canceled after a failed PUT, a lifecycle rule lost to a concurrent writer and merged again, a writer that keeps replacing it, no rewrite of an unchanged rule, the read-only verify check, the lifecycle controller restoring an erased rule and never writing in verify mode, the reconciler draining a backlog larger than one batch (also past a key whose delete keeps failing) and exporting backlog and failures, a rule erased between checks being reported, a panicking upload being compensated, the `lifecycle_mode` validation, and the image memory envelope (its terms, sizing a defaulted decode budget to half the memory limit, normalized PNGs kept without encoder slack, cgroup v1/v2 limit detection and the Go soft limit derived from the container limit, `library/memlimit`). After the third review of PR #94 (second maintainer review of a7c7580) they also cover quota accounting that charges an image once
+while several requests reserve it (and keeps it charged when one of them fails),
+a quota report whose `reserved_bytes`/`available_bytes` match admission and the
+enforced defaults, 5xx image errors that carry a fixed message instead of the
+internal error chain, the per-identity quota lock that does not depend on the
+key prefix, and the additive `sha256` column of the claims table. The other new tests of those
 packages (GC batching, re-check of a later committed upload, concurrent
 reconciler deletes, streamed attachments, legacy rule IDs, the first ALPH
 chunk, stale claims kept while the reconciler runs) run in `make test`. The estimator-versus-allocation sweep, the timing-based heavy/light
 admission test, the fuzz targets and the PostgreSQL tests (`TestPostgres*`
 with `MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database; they
-cover the pool-starvation repros and REPEATABLE READ), the MinIO lifecycle acceptance (`TestMinIOLifecycleAcceptance` with `MCP_STORAGE_TEST_MINIO_*` pointing at a disposable bucket) and the concurrent-create memory measurement (`TestImageCreateMemoryEnvelope` with `MCP_IMAGE_MEMORY_ACCEPTANCE=1`) stay deliberate
-acceptance:
+cover the pool-starvation repros, REPEATABLE READ, the quota across two key
+prefixes, and compensation and the reconciler held at the interleavings that
+matter, asserting that the competing creates succeed), the MinIO lifecycle acceptance (`TestMinIOLifecycleAcceptance` with `MCP_STORAGE_TEST_MINIO_*` pointing at a disposable bucket) and the concurrent-create memory measurement (`TestImageCreateMemoryEnvelope` with `MCP_IMAGE_MEMORY_ACCEPTANCE=1`) stay deliberate
+acceptance. The `user-request-images-postgres` workflow (`workflow_dispatch`)
+runs the PostgreSQL tests on any ref against a disposable PostgreSQL 17 and
+fails when one of them skips:
 
 ```sh
 go test -count=1 ./internal/mcp/imageproc -run 'TestEstimateDecodeBytesBoundsActualAllocation|TestDecodeBudgetHeavyCallerCannotStallLightCaller'

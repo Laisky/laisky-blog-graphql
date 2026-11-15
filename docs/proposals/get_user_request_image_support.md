@@ -179,11 +179,11 @@ Steps 1–8 run for every attachment before anything is written (`ImageManager.P
   sort_order INT NOT NULL
   PRIMARY KEY (request_id, sort_order)
   ```
-- Quota query: `SELECT COALESCE(SUM(size_bytes), 0) FROM mcp_user_image_refs WHERE user_identity = $1 AND expires_at > NOW()` (NOW() uses UTC via `SET TIME ZONE 'UTC'` at connection init).
+- Usage (amended 2026-11-15, maintainer review of PR #94): the size of the distinct images (by `sha256`) the user holds. An image counts once when a live ref of the user names it, or else once while any live upload claim of the user reserves it, however many requests reserve it at the same time: `committed = SUM(size_bytes) of live refs` plus `reserved = SUM over distinct sha256 of the live upload claims with no live ref of the same sha256`. Upload claims record the image's `sha256` and full size; a claim of an earlier build without `sha256` is charged by key with the size it recorded. Admission and `GET /api/quota` (§5.2) use this one computation, so the reported `available_bytes = quota - committed - reserved` is exactly what the next reservation may add.
 - Upload flow:
-  1. Inside a short transaction that holds the image scope lock (§3.9) — which serializes every reservation of the same user, so two concurrent requests cannot both pass the usage check — `SELECT ... FOR UPDATE` on any existing `(user_identity, sha256)` row. Usage counts live refs plus the live upload claims of requests still uploading.
-  2. If the row exists and is not expired → refresh `expires_at`, no quota charge.
-  3. Else (no row, or an expired row being revived) sum current usage; reject if `sum + new_size > quota`.
+  1. Inside a short transaction that holds the user's quota lock and the image scope locks (§3.9) — the quota lock serializes every admission of the same user, whatever key prefix an instance uses, so two concurrent requests cannot both pass the usage check — record the upload claims, then verify `committed + reserved <= quota` as the transaction sees it (write first, then verify, so the check covers the de-duplication against the user's other requests).
+  2. At finalize (same locks), consume the claims and upsert the refs: an existing live `(user_identity, sha256)` row (`SELECT ... FOR UPDATE`) is refreshed with no quota charge.
+  3. A new row, or an expired row being revived, is charged: once every ref of the request is written, verify `committed + reserved <= quota` again.
   4. Insert or upsert `mcp_user_image_refs`.
 - Cleanup: a periodic job (e.g. hourly) deletes rows with `expires_at < NOW()`. Missing the job is not a correctness issue because queries always filter by `expires_at`. The delete re-checks `expires_at`, so a row a concurrent request revives between the job's scan and its delete is kept together with its links.
 
@@ -249,7 +249,7 @@ The algorithm is extracted into a standalone function for unit testing. Because 
 
 **Time budget.** One request deadline (30 s) covers reading the body, normalizing, uploading and finalizing. A request's objects are uploaded in parallel, at most 4 at once (each PUT bounded by 20 s; the default 5 images need two rounds), and every upload must end 2 s before the deadline, so the finalize transaction keeps that time; the first failed PUT cancels the ones still in flight and starts no more, and every started PUT keeps its late-write re-check. A request with less than 3 s left for uploading once its images are prepared is refused with `image_busy` before anything is reserved, instead of reserving quota for uploads that cannot finish and then compensating them (maintainer review of PR #94).
 
-**Image scope lock.** Every short transaction that reserves, finalizes or releases objects under one key directory (`<prefix>/<sanitized user identity>`) first takes a lock on that directory: a PostgreSQL transaction-scoped advisory lock (`pg_advisory_xact_lock`, sorted, released at commit or rollback); SQLite, used only for tests and local development, takes its database-wide write lock instead. The directory, not the raw identity, is the scope because identities that sanitize to the same segment share object keys. Every image transaction runs at READ COMMITTED explicitly: under a REPEATABLE READ or SERIALIZABLE database default the snapshot would be taken by the lock statement itself, before the wait, and miss what the previous holder committed.
+**Image scope and quota locks.** Every short transaction that reserves, finalizes or releases objects under one key directory (`<prefix>/<sanitized user identity>`) first takes a lock on that directory: a PostgreSQL transaction-scoped advisory lock (`pg_advisory_xact_lock`, released at commit or rollback); SQLite, used only for tests and local development, takes its database-wide write lock instead. The directory, not the raw identity, is the scope of object ownership because identities that sanitize to the same segment share object keys. Quota is serialized separately, on a lock of the raw user identity that does not depend on the key prefix (maintainer review of PR #94: while instances with different prefixes share a database during a rolling configuration change, directory locks alone let two reservations of one user pass the quota check together). Reserve and finalize take the quota lock and the scope locks; compensation and the reconciler, which only release protection and quota, take the scope locks. Every transaction takes its locks in one global order (ascending advisory-lock key, de-duplicated), so no two can deadlock and a hash collision only adds serialization. Every image transaction runs at READ COMMITTED explicitly: under a REPEATABLE READ or SERIALIZABLE database default the snapshot would be taken by the lock statement itself, before the wait, and miss what the previous holder committed.
 
 **Invariants.** The object workflow is accepted against these measurable invariants (amended 2026-11-15 after the PR #94 review):
 - *I1 bounded memory* — concurrent image requests stay within the *image memory envelope*: the decode budget, plus `max_concurrent_requests` × (18 MiB multipart memory + `per_image_max_bytes`) of input, plus `max_concurrent_requests` × `max_per_request` × the largest normalized PNG (`imageproc.MaxNormalizedPNGBytes`, ~18 MiB: 1536² 16-bit noise; the result is copied to its exact size so no encoder slack is retained) of prepared output held until the uploads end — about 2.25 GiB with the defaults. An input whose estimate exceeds the budget is rejected before its pixel buffer exists. At start the envelope is compared with the process memory limit (the tighter of the Go soft limit and the cgroup limit, `library/memlimit`); a defaulted decode budget is lowered so the envelope fits half of it (floor 256 MiB), an explicit one is kept, and an envelope that still does not fit is an ERROR. The `api` command sets the Go soft limit to 90% of the container limit unless `GOMEMLIMIT` is in the environment, because without it the collector let the heap reach about twice the live set: under eight worst-case creates the peak RSS above idle measured 2.0–2.1 × the envelope without a soft limit and 1.01 × with one (`TestImageCreateMemoryEnvelope`, docs/ref/image_memory_envelope_20261115.md; maintainer review of PR #94).
@@ -262,7 +262,7 @@ The algorithm is extracted into a standalone function for unit testing. Because 
 
 | Kind | Created by | Protects the key | Ends by | When due (`expires_at` passed) |
 |---|---|---|---|---|
-| *upload* (live 10 min) | reserve, with quota charged | yes; counts toward quota | finalize consumes it in the transaction that inserts the refs (finalize fails if it is gone); compensation releases it | crashed create: the reconciler deletes the key unless protected |
+| *upload* (live 10 min) | reserve, recording the image's `sha256` and size | yes; counts toward quota once per image (§3.5) | finalize consumes it in the transaction that inserts the refs (finalize fails if it is gone); compensation releases it | crashed create: the reconciler deletes the key unless protected |
 | *delete* lease (live 5 min) | compensation or reconciler, for a key nothing protects | blocks new reservations of the key (`image_busy`) | dropped after a successful DELETE | failed or timed-out DELETE: the reconciler retries |
 | *orphan* (due at once, or after 5 min) | the GC for each ref it deletes (same transaction); finalize when it re-points a live ref at a new key (the old key); compensation for every key whose PUT started (due after the 5-minute late-write window) | no | the reconciler releases it | the reconciler deletes the key unless protected |
 
@@ -436,7 +436,7 @@ Success response (the server converted the screenshot to PNG):
 }
 ```
 
-Error responses (all JSON `{"error": code, "message": "...", "attachment_index": N /* optional */}`):
+Error responses (all JSON `{"error": code, "message": "...", "attachment_index": N /* optional */}`). For a 4xx code `message` describes the rejected input; for a 5xx code it is a fixed text per code, and the error chain — which can name object keys, storage operations, backend addresses and transport errors — is logged on the server only (maintainer review of PR #94):
 
 | HTTP | `error`               | Trigger                                                                      |
 | ---- | --------------------- | ---------------------------------------------------------------------------- |
@@ -462,11 +462,15 @@ GET /api/quota
 {
   "user_identity": "efjkq@pieverse.io",
   "used_bytes": 12345678,
+  "reserved_bytes": 2048000,
+  "available_bytes": 90463922,
   "quota_bytes": 104857600,
   "object_count": 37,
   "ttl_days": 7
 }
 ```
+
+`used_bytes` counts live refs, `reserved_bytes` the images the caller's requests are still uploading (each once, and only while no live ref holds it), and `available_bytes = max(quota_bytes - used_bytes - reserved_bytes, 0)` uses the accounting of admission (§3.5): an image larger than it gets `quota_exceeded`. `quota_bytes` and `ttl_days` are the values in force (the defaults when the settings are unset). The two new fields are additive; clients that predate them keep working.
 
 ### 5.3 Image retrieval
 
@@ -542,6 +546,8 @@ All Go tests use `github.com/stretchr/testify/require` (AGENTS.md rule). MinIO-b
 | U21j | storage   | Another writer replaces the lifecycle right after our PUT; a writer that keeps replacing it; an unchanged rule; concurrent installs for different prefixes (fake and real MinIO); verify mode | Rule merged again after read-back; `ErrLifecycleRuleMissing` after bounded attempts; no write; both rules after one periodic check; never writes |
 | U21k | reconcile | Backlog of 5 due claims with batch 2; one key whose delete keeps failing; store down; shutdown mid-tick; lifecycle rule erased once and at every check, missing in verify mode after a failed check, install failing, no periodic checks, TTL disabled without reconciler; panicking upload | One tick drains all (3 passes) and past the failing key; one pass when nothing settles; stops between passes; rule reinstalled with WARN, ERROR after 3; each distinct problem an ERROR once; exactly two checks; `no automatic cleanup`; create fails and is compensated |
 | U21l | memory    | Envelope of the shipped limits; sizing to a 0/2/4/8 GiB limit, explicit budget; retained PNG capacity; worst-case PNG size; cgroup v1/v2 layouts; soft limit from the container; eight concurrent worst-case creates (deliberate) | Envelope terms pinned; default budget lowered to half the limit (floor), explicit kept, misfit reported; no encoder slack; ≤ `MaxNormalizedPNGBytes`; tightest ancestor; set only without `GOMEMLIMIT`; peak RSS ≤ 1.25 × envelope with the soft limit |
+| U21m | quota     | Two requests of one user attach the same image while the first still uploads (both finalize orders); the first then fails | Charged once, both succeed; after the first fails the second still holds the bytes (a third image is refused) |
+| U21n | quota     | Instances with different key prefixes reserve for one user at once (PostgreSQL, widened check-to-commit window) | Exactly one of two images that do not fit together is admitted; usage ≤ quota |
 
 ### 6.2 Backend — `image_url` fetcher and SSRF
 
@@ -572,7 +578,9 @@ All Go tests use `github.com/stretchr/testify/require` (AGENTS.md rule). MinIO-b
 | U39 | http        | Body > 110 MiB                                | 413                                                                        |
 | U40 | http        | Error payload shape                           | Response JSON includes `error`, `message`, and optional `attachment_index` |
 | U41 | http        | Partial failure: file 1 OK, URL 2 returns 404 | Whole request rejected; nothing persisted; `attachment_index=1`            |
-| U42 | http quota  | `GET /api/quota` for fresh user               | 200 `{used_bytes:0, quota_bytes:104857600, object_count:0, ttl_days:7}`    |
+| U42 | http quota  | `GET /api/quota` for fresh user               | 200 `{used_bytes:0, reserved_bytes:0, available_bytes:104857600, quota_bytes:104857600, object_count:0, ttl_days:7}` |
+| U42a | http quota | Upload in progress; settings unset (0)       | `reserved_bytes` and `available_bytes` match admission (a larger image is refused); defaults are reported |
+| U40a | http       | 5xx error whose chain names a key, an operation and a backend address | Fixed message per code; code, `attachment_index` and `Retry-After` kept; 4xx messages unchanged |
 | U43 | storage     | PUT on MinIO-down                             | `ErrStorageUnavailable`, 503                                               |
 | U44 | storage     | `EnsureLifecycle` called twice                | Idempotent; no duplicate rule; other applications' rules preserved         |
 | U44a | http        | Failure after a PUT (later PUT, ambiguous PUT, request/link insert, commit, canceled context, lost reservation) | No object without a ref remains; objects shared with committed requests are kept |
@@ -581,6 +589,7 @@ All Go tests use `github.com/stretchr/testify/require` (AGENTS.md rule). MinIO-b
 | U44d | http        | Delete in flight for a key; same image attached again | `image_busy` until the lease expires; a late delete cannot remove a committed object |
 | U44e | db          | Upload while another connection writes; stalled store with a pool of 8 | No transaction or pooled connection held across object-store I/O |
 | U44f | db          | REPEATABLE READ database default             | Quota, compensation and reconciler invariants hold (explicit READ COMMITTED) |
+| U44o | db          | Four requests held after their PUT of one key; failures compensate before, after or with the commits; a reconciler pass while requests hold live claims, and one held in its DELETE | Both committing requests succeed with their object; the pass processes the due claims and deletes nothing protected; a request for a leased key gets `image_busy` and succeeds after the delete |
 | U44g | storage     | Foreign lifecycle rule minio-go cannot model   | Nothing written; error names the rule to add manually                     |
 | U44h | db          | GC fails between deleting refs and recording orphans | The batch rolls back; every object stays named by a ref or claim (I2)  |
 | U44i | http        | A PUT the request gave up on lands after cleanup | The late-write re-check deletes it after 5 min; a later committed upload of the key is kept |

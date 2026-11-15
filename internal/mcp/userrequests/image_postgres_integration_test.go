@@ -3,8 +3,10 @@ package userrequests
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"slices"
@@ -37,6 +39,15 @@ var pgIsolationDefaults = []string{"read committed", "repeatable read"}
 // isolation sets default_transaction_isolation for every pooled connection.
 func newPostgresOrphanHarness(t *testing.T, settings ImageSettings, isolation string) *orphanHarness {
 	t.Helper()
+	return newPostgresHarnessOnDSN(t, settings, postgresTestSchemaDSN(t, isolation), isolation)
+}
+
+// postgresTestSchemaDSN creates a fresh schema in the PostgreSQL database
+// named by MCP_USER_REQUESTS_TEST_POSTGRES_DSN (skipping the test when it is
+// unset) and returns a DSN whose connections use it. Harnesses built on the
+// same DSN share one database, like instances of one deployment.
+func postgresTestSchemaDSN(t *testing.T, isolation string) string {
+	t.Helper()
 	dsn := os.Getenv(userRequestsPostgresDSNEnv)
 	if dsn == "" {
 		t.Skipf("%s is not set", userRequestsPostgresDSNEnv)
@@ -58,8 +69,14 @@ func newPostgresOrphanHarness(t *testing.T, settings ImageSettings, isolation st
 	}
 	// pgx does not decode '+' as a space in DSN parameters.
 	parsed.RawQuery = strings.ReplaceAll(query.Encode(), "+", "%20")
+	return parsed.String()
+}
 
-	db, err := sql.Open("pgx", parsed.String())
+// newPostgresHarnessOnDSN builds an orphan harness with its own connection
+// pool, service and image manager on a schema from postgresTestSchemaDSN.
+func newPostgresHarnessOnDSN(t *testing.T, settings ImageSettings, dsn, isolation string) *orphanHarness {
+	t.Helper()
+	db, err := sql.Open("pgx", dsn)
 	require.NoError(t, err)
 	db.SetMaxOpenConns(32)
 	t.Cleanup(func() { _ = db.Close() })
@@ -78,6 +95,7 @@ func newPostgresOrphanHarness(t *testing.T, settings ImageSettings, isolation st
 		svc:     svc,
 		store:   store,
 		db:      db,
+		images:  manager,
 	}
 }
 
@@ -140,9 +158,72 @@ func TestPostgresImageQuotaHoldsUnderConcurrency(t *testing.T) {
 	})
 }
 
-// TestPostgresCompensationRacesCommittingRequest runs failing and succeeding
-// requests that upload the same image concurrently: whatever the interleaving,
-// the committed requests' objects must survive the failed ones' cleanup.
+// awaitUpload waits until a request posted in the background reached its
+// upload (its reservation committed); a request that ended first fails the
+// test with its response.
+func awaitUpload(t *testing.T, pause *putPause, finished <-chan *httptest.ResponseRecorder) {
+	t.Helper()
+	select {
+	case <-pause.reached:
+	case rec := <-finished:
+		t.Fatalf("request ended before its upload started: %d %s", rec.Code, rec.Body.String())
+	case <-time.After(10 * time.Second):
+		t.Fatal("request did not reach its upload")
+	}
+}
+
+// postAsync posts files in the background under tag.
+func (h *orphanHarness) postAsync(t *testing.T, tag, token string, files ...[]byte) <-chan *httptest.ResponseRecorder {
+	t.Helper()
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- h.post(t, withRequestTag(context.Background(), tag), token, files...) }()
+	return done
+}
+
+// requestIDOf decodes the request id of a successful create.
+func requestIDOf(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body struct {
+		Request struct {
+			ID string `json:"id"`
+		} `json:"request"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body), "body=%s", rec.Body.String())
+	require.NotEmpty(t, body.Request.ID)
+	return body.Request.ID
+}
+
+// requireCommittedWithObjects consumes token's pending requests and requires
+// exactly the ids in want, each with one image whose object is stored under
+// its key.
+func (h *orphanHarness) requireCommittedWithObjects(t *testing.T, token string, want map[string]string) {
+	t.Helper()
+	pending, err := h.svc.ConsumeAllPending(context.Background(), mustAuth(t, token), "")
+	if len(want) == 0 {
+		require.True(t, errs.Is(err, ErrNoPendingRequests), "got %v", err)
+		return
+	}
+	require.NoError(t, err)
+	got := make(map[string]string, len(pending))
+	for _, req := range pending {
+		require.Len(t, req.Images, 1, "request %s", req.ID)
+		key := req.Images[0].StorageKey
+		_, ok := h.store.ObjectBytes(key)
+		require.True(t, ok, "committed request %s lost its object %s", req.ID, key)
+		got[req.ID.String()] = key
+	}
+	require.Equal(t, want, got, "exactly the successful creates are committed, each with its image")
+}
+
+// TestPostgresCompensationRacesCommittingRequest overlaps failing and
+// succeeding requests that upload the same image: every round holds all four
+// right after their PUT stored the shared object, so their reservations of the
+// shared key provably overlap, then lets the failing ones (an ambiguous PUT:
+// stored, then reported failed) compensate before, after or together with the
+// committing ones' finalize. The committing requests must succeed with their
+// image, and no cleanup may remove the object they reference. (Review of PR
+// #94: the earlier version discarded the responses, so it passed even when
+// every create failed.)
 func TestPostgresCompensationRacesCommittingRequest(t *testing.T) {
 	forEachIsolation(t, func(t *testing.T, isolation string) {
 		settings := defaultImageSettings()
@@ -150,97 +231,254 @@ func TestPostgresCompensationRacesCommittingRequest(t *testing.T) {
 		h := newPostgresOrphanHarness(t, settings, isolation)
 		const token = "sk-pg-compensate-12345"
 		shared := testPNG(t, 40, 30)
+		prepared, err := h.manager().Prepare(context.Background(), mustAuth(t, token), attachmentsOf([][]byte{shared}))
+		require.NoError(t, err)
+		sharedKey := prepared[0].StorageKey
 
-		var mu sync.Mutex
-		failing := map[string]bool{}
-		h.store.AfterPut = func(ctx context.Context, _ string) error {
-			mu.Lock()
-			defer mu.Unlock()
-			if failing[requestTag(ctx)] {
-				return errs.New("injected ambiguous put failure")
-			}
-			return nil
-		}
+		pauses := newPutPauses()
+		h.store.AfterPut = pauses.hook // the object is stored; the request waits before it learns the outcome
+		failing := func(i int) bool { return i%2 == 0 }
 
-		for round := range 10 {
-			var wg sync.WaitGroup
+		orders := []string{"failures first", "commits first", "together"}
+		for round := range 2 * len(orders) {
+			order := orders[round%len(orders)]
+			paused := make([]*putPause, 4)
+			results := make([]<-chan *httptest.ResponseRecorder, 4)
 			for i := range 4 {
 				tag := fmt.Sprintf("%d-%d", round, i)
-				mu.Lock()
-				failing[tag] = i%2 == 0
-				mu.Unlock()
-				wg.Go(func() {
-					_ = h.post(t, withRequestTag(context.Background(), tag), token, shared)
-				})
+				paused[i] = pauses.add(tag)
+				results[i] = h.postAsync(t, tag, token, shared)
 			}
-			wg.Wait()
+			for i := range 4 {
+				awaitUpload(t, paused[i], results[i])
+			}
+			require.Equal(t, 4, h.claimCount(t, claimUpload), "round %d: all four reservations are live at once", round)
 
-			pending, err := h.svc.ConsumeAllPending(context.Background(), mustAuth(t, token), "")
-			require.NoError(t, err)
-			for _, req := range pending {
-				for _, img := range req.Images {
-					_, ok := h.store.ObjectBytes(img.StorageKey)
-					require.True(t, ok, "round %d: committed request %s lost its object", round, req.ID)
+			committed := map[string]string{}
+			release := func(i int) {
+				if failing(i) {
+					paused[i].fail(errs.New("injected ambiguous put failure"))
+					return
+				}
+				paused[i].proceed()
+			}
+			collect := func(i int) {
+				rec := <-results[i]
+				if failing(i) {
+					require.Equal(t, http.StatusServiceUnavailable, rec.Code, "round %d (%s): %s", round, order, rec.Body.String())
+					require.Equal(t, "storage_unavailable", errorCode(t, rec))
+					return
+				}
+				require.Equal(t, http.StatusOK, rec.Code, "round %d (%s): %s", round, order, rec.Body.String())
+				committed[requestIDOf(t, rec)] = sharedKey
+			}
+			group := func(wantFailing bool) []int {
+				var out []int
+				for i := range 4 {
+					if failing(i) == wantFailing {
+						out = append(out, i)
+					}
+				}
+				return out
+			}
+			var phases [][]int
+			switch order {
+			case "failures first":
+				phases = [][]int{group(true), group(false)}
+			case "commits first":
+				phases = [][]int{group(false), group(true)}
+			default:
+				phases = [][]int{{0, 1, 2, 3}}
+			}
+			for _, phase := range phases {
+				for _, i := range phase {
+					release(i)
+				}
+				for _, i := range phase {
+					collect(i)
 				}
 			}
+			require.Len(t, committed, 2, "round %d: both committing requests succeeded", round)
+			h.requireCommittedWithObjects(t, token, committed)
 			h.requireNoUnreferencedObjects(t)
+			require.Zero(t, h.claimCount(t, claimUpload), "round %d: every reservation was consumed or released", round)
 		}
 	})
 }
 
-// TestPostgresReconcilerKeepsObjectsOfOpenRequests runs reconciler passes
-// over due claims of keys that concurrent requests are uploading and
-// committing: no committed request may lose its object.
+// TestPostgresReconcilerKeepsObjectsOfOpenRequests runs the reconciler over
+// due claims of the very keys concurrent requests are uploading, in the two
+// orders that matter, each forced rather than left to timing:
+//
+//   - reservations first: every request holds a live upload claim while a
+//     reconciler pass processes the due claims of its key; the pass must
+//     process them, delete nothing, and every request must then commit with
+//     its object;
+//   - lease first: a pass leases a key and is held in its DELETE; a request
+//     for that key is refused with image_busy (and uploads nothing), and the
+//     same request succeeds once the delete finished.
+//
+// (Review of PR #94: the earlier version discarded the responses and
+// accepted an empty committed set, so it could pass vacuously.)
 func TestPostgresReconcilerKeepsObjectsOfOpenRequests(t *testing.T) {
 	forEachIsolation(t, func(t *testing.T, isolation string) {
 		settings := defaultImageSettings()
+		settings.MaxConcurrentCreatesPerUser = 3 // every request of a caller is admitted at once
 		h := newPostgresOrphanHarness(t, settings, isolation)
 		files := [][]byte{testPNG(t, 40, 30), testPNG(t, 33, 21), testPNG(t, 25, 25)}
 		tokens := []string{"sk-pg-reconcile-000000", "sk-pg-reconcile-000001"}
-		// Old crashed uploads of the same images by the same callers leave due
-		// claims for exactly the keys the requests below upload.
+
+		// Reservations first. Old crashed uploads of the same images by the
+		// same callers leave due claims for exactly the keys requested below.
 		for _, token := range tokens {
 			for _, file := range files {
 				crashAfterUpload(t, h, token, file)
 			}
 		}
 		h.setClock(reconcileNow.Add(imageUploadClaimTTL))
-
-		var wg sync.WaitGroup
-		stop := make(chan struct{})
-		wg.Go(func() {
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
-				_, _ = h.svc.ReconcileImageObjects(context.Background(), h.manager())
-			}
-		})
+		pauses := newPutPauses()
+		h.store.BeforePut = pauses.hook
+		paused := make([]*putPause, 6)
+		results := make([]<-chan *httptest.ResponseRecorder, 6)
 		for i := range 6 {
-			wg.Go(func() {
-				_ = h.post(t, context.Background(), tokens[i%2], files[i%len(files)])
-			})
+			tag := fmt.Sprintf("open-%d", i)
+			paused[i] = pauses.add(tag)
+			results[i] = h.postAsync(t, tag, tokens[i%2], files[i%len(files)])
 		}
-		time.Sleep(200 * time.Millisecond)
-		close(stop)
-		wg.Wait()
-
-		for _, token := range tokens {
-			// A request may have been refused (image_busy) while a reconciler
-			// lease covered its key; only committed requests are checked.
-			pending, err := h.svc.ConsumeAllPending(context.Background(), mustAuth(t, token), "")
-			if errs.Is(err, ErrNoPendingRequests) {
-				continue
-			}
+		for i := range 6 {
+			awaitUpload(t, paused[i], results[i])
+		}
+		result, err := h.svc.ReconcileImageObjects(context.Background(), h.manager())
+		require.NoError(t, err)
+		require.Equal(t, 6, result.Claims, "the pass processed the due claims of the keys being uploaded")
+		require.Zero(t, result.Deleted, "a live reservation protects its key")
+		require.Len(t, h.store.Keys(), 6)
+		want := map[string]map[string]string{tokens[0]: {}, tokens[1]: {}}
+		for i := range 6 {
+			paused[i].proceed()
+		}
+		for i := range 6 {
+			rec := <-results[i]
+			require.Equal(t, http.StatusOK, rec.Code, "request %d: %s", i, rec.Body.String())
+			images, err := h.manager().Prepare(context.Background(), mustAuth(t, tokens[i%2]), attachmentsOf([][]byte{files[i%len(files)]}))
 			require.NoError(t, err)
-			for _, req := range pending {
-				for _, img := range req.Images {
-					_, ok := h.store.ObjectBytes(img.StorageKey)
-					require.True(t, ok, "committed request %s lost its object to the reconciler", req.ID)
-				}
+			want[tokens[i%2]][requestIDOf(t, rec)] = images[0].StorageKey
+		}
+		for _, token := range tokens {
+			h.requireCommittedWithObjects(t, token, want[token])
+		}
+
+		// Lease first. A crashed upload of a new image leaves a due claim; a
+		// pass leases its key and is held in the DELETE.
+		h.store.BeforePut = nil
+		late := testPNG(t, 27, 19)
+		crashAfterUpload(t, h, tokens[0], late)
+		h.setClock(reconcileNow.Add(2 * imageUploadClaimTTL))
+		deleting, releaseDelete := make(chan struct{}), make(chan struct{})
+		var deletingOnce sync.Once
+		h.store.BeforeDelete = func(ctx context.Context, _ string) error {
+			deletingOnce.Do(func() { close(deleting) })
+			select {
+			case <-releaseDelete:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
 			}
+		}
+		passDone := make(chan ImageReconcileResult, 1)
+		go func() {
+			result, err := h.svc.ReconcileImageObjects(context.Background(), h.manager())
+			require.NoError(t, err)
+			passDone <- result
+		}()
+		select {
+		case <-deleting:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the reconciler did not reach the delete")
+		}
+		rec := h.post(t, context.Background(), tokens[0], late)
+		require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
+		require.Equal(t, "image_busy", errorCode(t, rec), "a key under a delete lease is not reserved")
+		close(releaseDelete)
+		require.Equal(t, 1, (<-passDone).Deleted)
+		h.store.BeforeDelete = nil
+
+		rec = h.post(t, context.Background(), tokens[0], late)
+		require.Equal(t, http.StatusOK, rec.Code, "the retry after the delete succeeds: %s", rec.Body.String())
+		images, err := h.manager().Prepare(context.Background(), mustAuth(t, tokens[0]), attachmentsOf([][]byte{late}))
+		require.NoError(t, err)
+		h.requireCommittedWithObjects(t, tokens[0], map[string]string{requestIDOf(t, rec): images[0].StorageKey})
+		h.requireNoUnreferencedObjects(t)
+	})
+}
+
+// slowUploadClaimInserts makes every upload-claim insert of the harness
+// schema sleep for delay, which widens the window between a reservation's
+// quota check and its commit so concurrent reservations reliably overlap.
+func slowUploadClaimInserts(t *testing.T, db *sql.DB, delay time.Duration) {
+	t.Helper()
+	_, err := db.Exec(fmt.Sprintf(`CREATE FUNCTION slow_upload_claim() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF NEW.kind = 'upload' THEN PERFORM pg_sleep(%f); END IF;
+			RETURN NEW;
+		END $$`, delay.Seconds()))
+	require.NoError(t, err)
+	_, err = db.Exec(`CREATE TRIGGER slow_upload_claim BEFORE INSERT ON mcp_user_image_claims
+		FOR EACH ROW EXECUTE FUNCTION slow_upload_claim()`)
+	require.NoError(t, err)
+}
+
+// TestPostgresQuotaHoldsAcrossStoragePrefixes is the PR #94 review repro
+// "per-user quota locks are tied to the object prefix": two instances of one
+// deployment share the database but, during a rolling configuration change,
+// use different key prefixes. Their reservations for one user took different
+// advisory locks (the lock scope was the key directory), so both saw the
+// quota free and together overran it. The quota is now serialized per user
+// identity, independently of the key prefix.
+func TestPostgresQuotaHoldsAcrossStoragePrefixes(t *testing.T) {
+	forEachIsolation(t, func(t *testing.T, isolation string) {
+		dsn := postgresTestSchemaDSN(t, isolation)
+		oldSettings, newSettings := defaultImageSettings(), defaultImageSettings()
+		oldSettings.Prefix, newSettings.Prefix = "deploy-a/images", "deploy-b/images"
+		oldInstance := newPostgresHarnessOnDSN(t, oldSettings, dsn, isolation)
+		newInstance := newPostgresHarnessOnDSN(t, newSettings, dsn, isolation)
+		slowUploadClaimInserts(t, oldInstance.db, 300*time.Millisecond)
+		const token = "sk-pg-prefix-quota-12345"
+		auth := mustAuth(t, token)
+
+		for round := range 2 {
+			files := [][]byte{testPNG(t, 40+round, 30), testPNG(t, 30, 40+round)}
+			sizes := make([]int64, len(files))
+			for i, file := range files {
+				prepared, err := oldInstance.images.Prepare(context.Background(), auth, attachmentsOf([][]byte{file}))
+				require.NoError(t, err)
+				sizes[i] = prepared[0].SizeBytes
+			}
+			usage, err := oldInstance.svc.QuotaUsage(context.Background(), auth)
+			require.NoError(t, err)
+			// One more image fits, two do not.
+			quota := usage.UsedBytes + max(sizes[0], sizes[1]) + min(sizes[0], sizes[1])/2
+			oldInstance.svc.settings.Images.PerUserQuotaBytes = quota
+			newInstance.svc.settings.Images.PerUserQuotaBytes = quota
+
+			start := make(chan struct{})
+			codes := make([]int, 2)
+			var wg sync.WaitGroup
+			for i, instance := range []*orphanHarness{oldInstance, newInstance} {
+				wg.Go(func() {
+					<-start
+					codes[i] = instance.post(t, context.Background(), token, files[i]).Code
+				})
+			}
+			close(start)
+			wg.Wait()
+
+			usage, err = newInstance.svc.QuotaUsage(context.Background(), auth)
+			require.NoError(t, err)
+			t.Logf("round %d: codes=%v used=%d quota=%d", round, codes, usage.UsedBytes, quota)
+			require.LessOrEqual(t, usage.UsedBytes, quota, "reservations under two prefixes overran the quota")
+			slices.Sort(codes)
+			require.Equal(t, []int{http.StatusOK, http.StatusRequestEntityTooLarge}, codes, "exactly one of the two images fits")
 		}
 	})
 }
@@ -397,7 +635,7 @@ func TestPostgresReservationSeesPriorLockHolder(t *testing.T) {
 		holder, err := h.db.BeginTx(context.Background(), nil)
 		require.NoError(t, err)
 		defer func() { _ = holder.Rollback() }()
-		require.NoError(t, h.svc.lockImageScopes(context.Background(), holder, []string{images[0].StorageKey}))
+		require.NoError(t, h.svc.lockImageQuotaAndScopes(context.Background(), holder, auth.UserIdentity, []string{images[0].StorageKey}))
 
 		result := make(chan error, 1)
 		go func() {
@@ -410,12 +648,51 @@ func TestPostgresReservationSeesPriorLockHolder(t *testing.T) {
 		}, 5*time.Second, 10*time.Millisecond, "the reservation must be waiting for the lock")
 
 		// The holder reserves the same quota and commits while the other waits.
-		require.NoError(t, h.svc.insertImageClaim(context.Background(), holder, gutils.UUID7Bytes(), auth.UserIdentity,
-			images[0].StorageKey+".other", claimUpload, images[0].SizeBytes, reconcileNow, reconcileNow.Add(time.Hour)))
+		require.NoError(t, h.svc.insertImageClaimFor(context.Background(), holder, gutils.UUID7Bytes(), auth.UserIdentity,
+			images[0].StorageKey+".other", claimUpload, strings.Repeat("0", 64), images[0].SizeBytes, reconcileNow, reconcileNow.Add(time.Hour)))
 		require.NoError(t, holder.Commit())
 
 		err = <-result
 		require.Error(t, err, "the waiter must see the holder's committed claim")
 		require.True(t, errs.Is(err, ErrQuotaExceeded), "got %v", err)
 	})
+}
+
+// TestPostgresImageClaimsTableGainsSHAColumn is the PostgreSQL side of
+// TestImageClaimsTableGainsSHAColumn: a claims table an earlier build created
+// without sha256 is migrated in place and its legacy claims stay charged.
+func TestPostgresImageClaimsTableGainsSHAColumn(t *testing.T) {
+	dsn := postgresTestSchemaDSN(t, "")
+	db, err := sql.Open("pgx", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	_, err = db.Exec(`CREATE TABLE mcp_user_image_claims (
+		id UUID PRIMARY KEY,
+		owner_id UUID NOT NULL,
+		user_identity VARCHAR(255) NOT NULL,
+		storage_key TEXT NOT NULL,
+		kind VARCHAR(16) NOT NULL,
+		size_bytes BIGINT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL,
+		expires_at TIMESTAMPTZ NOT NULL
+	)`)
+	require.NoError(t, err)
+	auth := mustAuth(t, "sk-pg-claims-migrate-1234")
+	_, err = db.Exec(`INSERT INTO mcp_user_image_claims (id, owner_id, user_identity, storage_key, kind, size_bytes, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, gutils.UUID7Bytes().String(), gutils.UUID7Bytes().String(), auth.UserIdentity,
+		"mcp/images/u/legacy.png", claimUpload, 100, reconcileNow, reconcileNow.Add(time.Hour))
+	require.NoError(t, err)
+
+	h := newPostgresHarnessOnDSN(t, defaultImageSettings(), dsn, "")
+	h2 := newPostgresHarnessOnDSN(t, defaultImageSettings(), dsn, "")
+	usage, err := h2.svc.QuotaUsage(context.Background(), auth)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), usage.ReservedBytes, "the legacy claim is still charged")
+
+	rec := h.post(t, context.Background(), "sk-pg-claims-migrate-1234", testPNG(t, 40, 30))
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	usage, err = h.svc.QuotaUsage(context.Background(), auth)
+	require.NoError(t, err)
+	require.Positive(t, usage.UsedBytes)
+	require.Equal(t, int64(100), usage.ReservedBytes)
 }
