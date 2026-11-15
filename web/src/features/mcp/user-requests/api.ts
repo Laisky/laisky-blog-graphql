@@ -1,3 +1,4 @@
+import { responseStatusError } from '@/lib/http-error';
 import { requestWithUnexpectedError, markPrivateError, readPrivateJsonResponse } from '@/lib/private-error';
 import { readStorage, writeStorage } from '@/lib/safe-storage';
 import { buildAuthorizationHeader, resolveToolApiBase } from '../shared/auth';
@@ -67,8 +68,7 @@ export async function getPreferencesFromServer(apiKey: string, signal?: AbortSig
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -93,8 +93,7 @@ export async function setReturnModeOnServer(apiKey: string, mode: ReturnMode): P
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -118,8 +117,7 @@ export async function setDisabledToolsOnServer(apiKey: string, disabledTools: st
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -146,8 +144,7 @@ export async function setCommandTemplateOnServer(apiKey: string, template: strin
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -335,8 +332,7 @@ export async function listUserRequests(
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -371,8 +367,7 @@ export async function searchUserRequests(
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -495,8 +490,7 @@ export async function getQuota(apiKey: string, signal?: AbortSignal): Promise<Qu
     signal,
   }, 'user-requests');
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
 }
@@ -517,8 +511,7 @@ export async function deleteUserRequest(apiKey: string, requestId: string, scope
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 }
 
@@ -538,8 +531,7 @@ export async function deleteAllUserRequests(apiKey: string, scope?: TaskScopeOpt
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -573,8 +565,7 @@ export async function deleteConsumedRequests(apiKey: string, options?: DeleteCon
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -601,8 +592,7 @@ export async function deleteAllPendingRequests(apiKey: string, scope?: TaskScope
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -627,8 +617,7 @@ export async function reorderUserRequests(apiKey: string, orderedIds: string[]):
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 }
 
@@ -653,8 +642,7 @@ export async function listSavedCommands(apiKey: string, signal?: AbortSignal): P
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -678,8 +666,7 @@ export async function createSavedCommand(apiKey: string, label: string, content:
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -708,8 +695,7 @@ export async function updateSavedCommand(
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   const payload = await readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -732,8 +718,7 @@ export async function deleteSavedCommand(apiKey: string, commandId: string): Pro
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 }
 
@@ -755,8 +740,7 @@ export async function reorderSavedCommands(apiKey: string, orderedIds: string[])
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 }
 
@@ -797,8 +781,7 @@ export async function getHoldState(apiKey: string, taskId?: string, signal?: Abo
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -827,8 +810,7 @@ export async function setHold(apiKey: string, taskId?: string): Promise<HoldStat
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');
@@ -855,8 +837,7 @@ export async function releaseHold(apiKey: string, taskId?: string): Promise<Hold
   }, 'user-requests');
 
   if (!response.ok) {
-    const message = (await response.text()) || response.statusText;
-    throw markPrivateError(new Error(message), 'User requests operation failed');
+    throw await responseStatusError(response, 'User requests operation failed');
   }
 
   return readPrivateJsonResponse(response, 'Invalid user requests JSON response');

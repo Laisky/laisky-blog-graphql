@@ -47,7 +47,7 @@ import { ConsumedCard, EmptyState, PendingRequestCard } from './request-cards';
 import { SavedCommands } from './saved-commands';
 import { TaskIdSelector, useTaskIdHistory } from './task-id-selector';
 import { UrlAttachmentDialog } from './UrlAttachmentDialog';
-import { resolveRestoredReturnMode, usePreferenceRestore } from './usePreferenceRestore';
+import { describePreferenceRefusal, resolveRestoredReturnMode, usePreferenceRestore } from './usePreferenceRestore';
 import { useQuota } from './useQuota';
 
 const MAX_ATTACHMENTS = 5;
@@ -279,9 +279,11 @@ export function UserRequestsPage() {
     setIsTemplateExpanded((expanded) => expanded || hasCustomTemplate);
   }, []);
 
-  const preferenceStatus = usePreferenceRestore(apiKey, !isToolConsoleLocked, applyRestoredPreferences);
+  const preferenceRestore = usePreferenceRestore(apiKey, !isToolConsoleLocked, applyRestoredPreferences);
+  const preferenceStatus = preferenceRestore.status;
   // The template editor stays read-only until the saved template is known, so a save can
-  // never replace a server template the user has not seen.
+  // never replace a server template the user has not seen. That includes a final refusal:
+  // the template is still unknown, so only a successful (manual) retry unlocks it.
   const isTemplateLoading = Boolean(apiKey) && preferenceStatus !== 'restored';
 
   // Poll hold state when hold is active. Each poll is scheduled only after the
@@ -1214,9 +1216,27 @@ export function UserRequestsPage() {
         </Button>
 
         {preferenceStatus === 'retrying' && (
-          <p role="status" className="px-2 text-xs text-muted-foreground">
-            Could not load your saved preferences. Retrying… The command template can be edited once they load.
-          </p>
+          <div role="status" className="flex flex-wrap items-center gap-2 px-2 text-xs text-muted-foreground">
+            <span>Could not load your saved preferences. Retrying… The command template can be edited once they load.</span>
+            <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={preferenceRestore.retry}>
+              Retry now
+            </Button>
+          </div>
+        )}
+
+        {preferenceStatus === 'failed' && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            <span>
+              Could not load your saved preferences: {describePreferenceRefusal(preferenceRestore.httpStatus)} The command template stays
+              read-only until they load, so a save cannot replace a template you have not seen.
+            </span>
+            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={preferenceRestore.retry}>
+              Retry
+            </Button>
+          </div>
         )}
 
         {isTemplateExpanded && (

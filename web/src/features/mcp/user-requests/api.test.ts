@@ -1,9 +1,11 @@
+import { HttpStatusError } from '@/lib/http-error';
 import { getPrivateErrorMessage } from '@/lib/private-error';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createUserRequest,
   getDescriptionCollapsed,
+  getPreferencesFromServer,
   getQuota,
   getReturnMode,
   getSavedCommandsExpanded,
@@ -97,6 +99,13 @@ describe('private user request errors', () => {
     expect(error).toMatchObject({ message: 'synthetic private user history' });
     expect(getPrivateErrorMessage(error)).toBe('User requests operation failed');
     expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+  it.each([401, 403, 503])('keeps the HTTP %i status on a refused preference load', async (status) => {
+    mockFetch.mockResolvedValueOnce(new Response('synthetic private preference reply', { status }));
+    const error = await getPreferencesFromServer('test-key').catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(HttpStatusError);
+    expect(error).toMatchObject({ message: 'synthetic private preference reply', status });
+    expect(getPrivateErrorMessage(error)).toBe('User requests operation failed');
   });
   it('annotates native parser errors from private request payloads', async () => {
     mockFetch.mockResolvedValueOnce(new Response('synthetic private request'));

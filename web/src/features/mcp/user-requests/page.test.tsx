@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { useApiKey } from '@/lib/api-key-context';
+import { HttpStatusError } from '@/lib/http-error';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
@@ -642,6 +643,78 @@ describe('UserRequestsPage preference restore', () => {
     await flush();
     expect(screen.getByRole('button', { name: /customize command template/i })).toHaveAttribute('aria-expanded', 'false');
     expect(returnModeButton('All commands')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it.each([
+    [401, /api key was not accepted/i],
+    [403, /not allowed to read/i],
+    [404, /HTTP 404/],
+  ])('stops retrying a final HTTP %i refusal and offers a manual retry', async (status, message) => {
+    vi.mocked(api.getPreferencesFromServer).mockRejectedValue(new HttpStatusError('refused', status));
+    render(<UserRequestsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /customize command template/i }));
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(/could not load your saved preferences/i);
+    expect(alert).toHaveTextContent(message);
+    expect(within(alert).getByRole('button', { name: /^retry$/i })).toBeEnabled();
+    // A final refusal is not retried on a timer, and saving stays blocked: the saved
+    // template is still unknown, so a save could replace one the user has not seen.
+    await flush(10 * 60_000);
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(1);
+    expect(templateEditor()).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
+  });
+
+  it('restores preferences after a manual retry of a final refusal', async () => {
+    vi.mocked(api.getPreferencesFromServer)
+      .mockRejectedValueOnce(new HttpStatusError('refused', 401))
+      .mockResolvedValue({ return_mode: 'first', command_template: customTemplate });
+    render(<UserRequestsPage />);
+    await flush();
+
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: /^retry$/i }));
+    await flush();
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/could not load your saved preferences/i)).toBeNull();
+    expect(templateEditor()?.value).toBe(customTemplate);
+    expect(templateEditor()).toBeEnabled();
+    expect(returnModeButton('First (earliest) only')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps retrying a prolonged 503 with capped backoff, blocks saving, and recovers when the server answers', async () => {
+    vi.mocked(api.getPreferencesFromServer).mockRejectedValue(new HttpStatusError('unavailable', 503));
+    render(<UserRequestsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /customize command template/i }));
+
+    // 2 + 4 + 8 + 16 s, then one retry every 30 s: 4 retries in the first 30 s and 9 more by 5 min.
+    await flush(5 * 60_000);
+    expect(vi.mocked(api.getPreferencesFromServer).mock.calls.length).toBeGreaterThanOrEqual(12);
+    expect(vi.mocked(api.getPreferencesFromServer).mock.calls.length).toBeLessThanOrEqual(15);
+    expect(screen.getByRole('status')).toHaveTextContent(/retrying/i);
+    expect(templateEditor()).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
+
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'first', command_template: customTemplate });
+    await flush(30_000);
+    expect(templateEditor()?.value).toBe(customTemplate);
+    expect(templateEditor()).toBeEnabled();
+    expect(screen.queryByText(/could not load your saved preferences/i)).toBeNull();
+  });
+
+  it('lets the user retry at once instead of waiting out the backoff', async () => {
+    vi.mocked(api.getPreferencesFromServer).mockRejectedValue(new HttpStatusError('unavailable', 503));
+    render(<UserRequestsPage />);
+    await flush(2000 + 4000 + 8000);
+    const calls = vi.mocked(api.getPreferencesFromServer).mock.calls.length;
+
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all', command_template: customTemplate });
+    fireEvent.click(within(screen.getByRole('status')).getByRole('button', { name: /retry now/i }));
+    await flush();
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(calls + 1);
+    expect(screen.queryByText(/could not load your saved preferences/i)).toBeNull();
   });
 });
 

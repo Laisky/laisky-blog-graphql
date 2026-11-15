@@ -2,7 +2,9 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as api from './api';
-import { preferenceRetryDelay, resolveRestoredReturnMode, usePreferenceRestore } from './usePreferenceRestore';
+import { HttpStatusError } from '@/lib/http-error';
+
+import { describePreferenceRefusal, preferenceRetryDelay, resolveRestoredReturnMode, usePreferenceRestore } from './usePreferenceRestore';
 
 vi.mock('./api', () => ({
   getPreferencesFromServer: vi.fn(),
@@ -44,7 +46,8 @@ describe('usePreferenceRestore', () => {
     });
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Reset, not just clear: a queued mockResolvedValueOnce must not leak into the next test.
+    vi.resetAllMocks();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   });
 
@@ -54,7 +57,7 @@ describe('usePreferenceRestore', () => {
 
   it('stays idle without a usable key and never requests preferences', () => {
     const onRestore = vi.fn();
-    const { result, rerender } = renderHook(({ key, enabled }) => usePreferenceRestore(key, enabled, onRestore), {
+    const { result, rerender } = renderHook(({ key, enabled }) => usePreferenceRestore(key, enabled, onRestore).status, {
       initialProps: { key: null as string | null, enabled: true },
     });
     expect(result.current).toBe('idle');
@@ -71,7 +74,7 @@ describe('usePreferenceRestore', () => {
     const rendered: string[] = [];
     const { result, rerender } = renderHook(
       ({ key }) => {
-        const status = usePreferenceRestore(key, true, onRestore);
+        const { status } = usePreferenceRestore(key, true, onRestore);
         rendered.push(`${key}:${status}`);
         return status;
       },
@@ -100,7 +103,7 @@ describe('usePreferenceRestore', () => {
     const rendered: string[] = [];
     const { result, rerender } = renderHook(
       ({ enabled }) => {
-        const status = usePreferenceRestore('key-a', enabled, onRestore);
+        const { status } = usePreferenceRestore('key-a', enabled, onRestore);
         rendered.push(status);
         return status;
       },
@@ -136,4 +139,73 @@ describe('usePreferenceRestore', () => {
     await flush();
     expect(onRestore).not.toHaveBeenCalled();
   });
+
+  it('stops on a final refusal, reports its status, and starts over on retry', async () => {
+    vi.mocked(api.getPreferencesFromServer)
+      .mockRejectedValueOnce(new HttpStatusError('forbidden', 403))
+      .mockResolvedValueOnce({ return_mode: 'first' });
+    const onRestore = vi.fn();
+    const rendered: string[] = [];
+    const { result } = renderHook(() => {
+      const restore = usePreferenceRestore('key-a', true, onRestore);
+      rendered.push(restore.status);
+      return restore;
+    });
+    await flush();
+    expect(result.current.status).toBe('failed');
+    expect(result.current.httpStatus).toBe(403);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+    });
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(1);
+
+    rendered.length = 0;
+    act(() => result.current.retry());
+    // The retry is a new attempt: no render may still report the refusal it replaces.
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(rendered.every((status) => status === 'loading')).toBe(true);
+    await flush();
+    expect(result.current.status).toBe('restored');
+    expect(result.current.httpStatus).toBeUndefined();
+    expect(onRestore).toHaveBeenCalledExactlyOnceWith({ return_mode: 'first' });
+  });
+
+  it.each([
+    ['a transport failure', new TypeError('Failed to fetch'), undefined],
+    ['HTTP 429', new HttpStatusError('slow down', 429), 429],
+    ['HTTP 503', new HttpStatusError('unavailable', 503), 503],
+  ])('keeps retrying after %s and resets the backoff on a manual retry', async (_label, failure, httpStatus) => {
+    vi.mocked(api.getPreferencesFromServer).mockRejectedValue(failure);
+    const { result } = renderHook(() => usePreferenceRestore('key-a', true, vi.fn()));
+    await flush();
+    expect(result.current.status).toBe('retrying');
+    expect(result.current.httpStatus).toBe(httpStatus);
+
+    // Back off to the 8 s step (loads at 0, 2 and 6 s), then retry by hand.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(3);
+    act(() => result.current.retry());
+    await flush();
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(4);
+    // The manual retry restarted the backoff at its base delay.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(api.getPreferencesFromServer).toHaveBeenCalledTimes(5);
+  });
 });
+
+describe('describePreferenceRefusal', () => {
+  it.each([
+    [401, /api key was not accepted \(HTTP 401\)/i],
+    [403, /not allowed to read them \(HTTP 403\)/],
+    [404, /refused the request \(HTTP 404\)/],
+    [undefined, /^the server refused the request\.$/],
+  ])('describes HTTP %s', (status, expected) => {
+    expect(describePreferenceRefusal(status)).toMatch(expected);
+  });
+});
+
