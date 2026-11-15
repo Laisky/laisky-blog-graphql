@@ -16,6 +16,7 @@ import { readStorage, writeStorage } from '@/lib/safe-storage';
 import { cn } from '@/lib/utils';
 import { createVisibilityPoller } from '@/lib/visibility-poller';
 
+import { isImeComposingKeyDown } from '../shared/ime';
 import {
   createUserRequest,
   deleteAllPendingRequests,
@@ -1098,6 +1099,7 @@ export function UserRequestsPage() {
                   return;
                 }
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  if (isImeComposingKeyDown(e)) return;
                   e.preventDefault();
                   if (!isEditorDisabled && (newContent.trim() || readyAttachments.length > 0)) {
                     handleCreateRequest();

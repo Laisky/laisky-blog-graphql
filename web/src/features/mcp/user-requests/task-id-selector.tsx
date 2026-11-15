@@ -222,8 +222,8 @@ export function TaskIdSelector({
           break;
         case 'Enter':
           if (isOpen && highlightedIndex >= 0) {
-            event.preventDefault();
             if (isImeComposingKeyDown(event)) return;
+            event.preventDefault();
             const entry = filteredEntries[highlightedIndex];
             if (entry) {
               handleSelectEntry(entry);

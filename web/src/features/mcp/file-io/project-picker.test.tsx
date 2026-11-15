@@ -72,7 +72,8 @@ describe('editable project picker', () => {
   });
   it('does not select an option on the IME-confirming Enter that Safari reports as keyCode 229', async () => {
     render(<Harness />); fireEvent.focus(input()); await tick(); fireEvent.keyDown(input(), { key: 'ArrowDown' });
-    fireEvent.keyDown(input(), { key: 'Enter', keyCode: 229 });
+    // fireEvent returns false when a handler called preventDefault(); the IME needs the default to commit its text.
+    expect(fireEvent.keyDown(input(), { key: 'Enter', keyCode: 229 })).toBe(true);
     expect(input().value).toBe('');
     expect(input().getAttribute('aria-expanded')).toBe('true');
     fireEvent.keyDown(input(), { key: 'Enter', keyCode: 13 });

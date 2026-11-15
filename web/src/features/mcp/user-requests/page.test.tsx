@@ -152,6 +152,18 @@ describe('UserRequestsPage Keyboard Behavior', () => {
     expect(api.createUserRequest).not.toHaveBeenCalled();
   });
 
+  it('keeps the default and does not send on the IME-confirming Ctrl+Enter that Safari reports as keyCode 229', async () => {
+    render(<UserRequestsPage />);
+
+    const textarea = screen.getByPlaceholderText(/Describe the feedback/i);
+    fireEvent.change(textarea, { target: { value: '日本語' } });
+
+    // fireEvent returns false when a handler called preventDefault(); the IME needs the default to commit its text.
+    expect(fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter', ctrlKey: true, keyCode: 229 })).toBe(true);
+    await act(async () => {});
+    expect(api.createUserRequest).not.toHaveBeenCalled();
+  });
+
   it.each(['none', 'error', 'validating'] as const)('should disable editor actions when status is %s', (status) => {
     vi.mocked(useApiKey).mockReturnValue({
       apiKey: status === 'none' ? '' : 'test-api-key',

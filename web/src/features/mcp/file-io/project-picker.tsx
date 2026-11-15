@@ -139,8 +139,8 @@ function ProjectPickerSession({ id, apiKey, value, disabled = false, onChange }:
             if (projects.length) setActive((index) => event.key === 'ArrowDown'
               ? (index + 1) % projects.length : (index < 0 ? projects.length - 1 : (index + projects.length - 1) % projects.length));
           } else if (event.key === 'Enter' && activeID) {
-            event.preventDefault();
             if (isImeComposingKeyDown(event)) return;
+            event.preventDefault();
             choose(projects[active]);
           }
         }} />

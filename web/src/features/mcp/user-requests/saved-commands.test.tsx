@@ -50,7 +50,8 @@ describe('SavedCommands keyboard and accessibility', () => {
     const search = await screen.findByRole('textbox', { name: /search saved commands/i });
     fireEvent.change(search, { target: { value: 'dep' } });
 
-    fireEvent.keyDown(search, { key: 'Enter', keyCode: 229 });
+    // fireEvent returns false when a handler called preventDefault(); the IME needs the default to commit its text.
+    expect(fireEvent.keyDown(search, { key: 'Enter', keyCode: 229 })).toBe(true);
     expect(onSelectCommand).not.toHaveBeenCalled();
 
     fireEvent.keyDown(search, { key: 'Enter', keyCode: 13 });
@@ -65,7 +66,7 @@ describe('SavedCommands keyboard and accessibility', () => {
     const label = screen.getByRole('textbox', { name: /label for the saved command/i });
     fireEvent.change(label, { target: { value: '日本語' } });
 
-    fireEvent.keyDown(label, { key: 'Enter', keyCode: 229 });
+    expect(fireEvent.keyDown(label, { key: 'Enter', keyCode: 229 })).toBe(true);
     expect(api.createSavedCommand).not.toHaveBeenCalled();
 
     fireEvent.keyDown(label, { key: 'Enter', isComposing: true });

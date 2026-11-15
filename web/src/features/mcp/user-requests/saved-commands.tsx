@@ -197,8 +197,8 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
           setSelectedIndex((prev) => Math.max(prev - 1, 0));
           break;
         case 'Enter':
-          e.preventDefault();
           if (isImeComposingKeyDown(e)) return;
+          e.preventDefault();
           if (filteredCommands[selectedIndex] && !disabled && !editingId) {
             onSelectCommand(filteredCommands[selectedIndex].content);
             setSearchQuery('');
@@ -406,8 +406,8 @@ export function SavedCommands({ currentContent, onSelectCommand, onSaveCurrentCo
                   onKeyDown={(e) => {
                     if (e.nativeEvent.isComposing) return;
                     if (e.key === 'Enter') {
-                      e.preventDefault();
                       if (isImeComposingKeyDown(e)) return;
+                      e.preventDefault();
                       handleSaveNewCommand();
                     } else if (e.key === 'Escape') {
                       handleToggleSaveInput();

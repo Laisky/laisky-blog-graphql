@@ -8,7 +8,9 @@ const IME_PROCESS_KEY_CODE = 229;
  * such as the Enter that confirms a Japanese, Chinese or Korean conversion.
  * The keyCode 229 check catches Safari, which can clear isComposing before the
  * confirming Enter keydown reaches script. Call it only after matching Enter,
- * because some virtual keyboards report 229 for ordinary character keys.
+ * because some virtual keyboards report 229 for ordinary character keys, and
+ * before any preventDefault(): that keydown belongs to the IME, and cancelling
+ * it can interfere with how the browser commits the composed text.
  */
 export function isImeComposingKeyDown(event: ReactKeyboardEvent): boolean {
   return event.nativeEvent.isComposing || event.nativeEvent.keyCode === IME_PROCESS_KEY_CODE;
