@@ -156,7 +156,8 @@
       "TestPNGTransparencyBeyondChunkScanLimit",
       "TestJPEGAdobeMarkerAfterFirstScan",
       "TestWebPExtendedLosslessIsChargedAsLossless",
-      "TestWebPRejectsTruncatedVP8Chunk"
+      "TestWebPRejectsTruncatedVP8Chunk",
+      "TestJPEGMarkerWalkFollowsDecoderOnStuffedBytes"
     ]
   },
   {
@@ -182,7 +183,8 @@
       "TestOverlappingFailedCreatesReleaseSharedKey",
       "TestFinalizeRepointedRefRecordsOldKey",
       "TestHandleCreateAdmitsBeforeReadingMultipartBody",
-      "TestImageCreateLimiterBoundsWaiters"
+      "TestImageCreateLimiterBoundsWaiters",
+      "TestHandleCreateSlowBodyReleasesSlotAtDeadline"
     ]
   },
   {
@@ -192,7 +194,8 @@
       "TestEnsureLifecycleRefusesLossyRewrite",
       "TestMinIODeleteIsIdempotent",
       "TestMergeLifecycleRuleSeparatesCollidingPrefixes",
-      "TestLifecycleRuleIDIsBounded"
+      "TestLifecycleRuleIDIsBounded",
+      "TestMergeLifecycleRuleNeverDuplicatesIDs"
     ]
   }
 ]

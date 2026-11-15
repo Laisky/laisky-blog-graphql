@@ -316,3 +316,37 @@ func TestReconcileImageObjectsDeletesConcurrently(t *testing.T) {
 	require.Empty(t, h.store.Keys())
 	require.Zero(t, h.claimCount(t, ""))
 }
+
+// TestGCKeepsStaleClaimsWhileReconcilerIsEnabled (second review, I2): the
+// GC purge of claims that expired more than one object TTL ago only exists to
+// bound the table when nothing processes it. With the reconciler enabled a
+// stale claim is the only record of its object (for example when the
+// lifecycle rule could not be installed), so it must be kept for the next pass.
+func TestGCKeepsStaleClaimsWhileReconcilerIsEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		interval time.Duration
+		kept     bool
+	}{
+		{"reconciler enabled", time.Hour, true},
+		{"reconciler disabled", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settings := defaultImageSettings()
+			settings.OrphanSweepInterval = tc.interval
+			h := newOrphanHarness(t, settings, "")
+			crashAfterUpload(t, h, "sk-gc-stale-claims-1234", testPNG(t, 40, 30))
+			require.Equal(t, 1, h.claimCount(t, claimUpload))
+
+			h.setClock(reconcileNow.Add(imageUploadClaimTTL + 8*24*time.Hour))
+			_, err := h.svc.GCExpiredImageRefs(context.Background())
+			require.NoError(t, err)
+			if tc.kept {
+				require.Equal(t, 1, h.claimCount(t, claimUpload), "the reconciler still needs the record")
+				h.requireEveryObjectDiscoverable(t)
+				return
+			}
+			require.Zero(t, h.claimCount(t, ""))
+		})
+	}
+}

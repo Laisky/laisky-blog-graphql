@@ -403,17 +403,22 @@ func lifecycleRuleID(prefix string, days int) string {
 }
 
 // ownsLifecycleRule reports whether rule is an expiry rule this package
-// installed for prefix, by an earlier release (legacy ID) or this one: its
-// filter must be exactly prefix and nothing else, and its ID must carry one of
-// this package's ID forms for prefix. A rule of another prefix whose ID
-// merely looks alike is never owned.
+// installed for prefix. A rule whose ID carries this release's digested stem
+// for prefix is ours whatever its filter (the digest names the full prefix,
+// and keeping it would duplicate the ID we write, which S3 and MinIO reject).
+// A rule with an earlier release's undigested ID is ours only when its
+// filter is exactly prefix and nothing else, because prefixes that sanitize
+// alike share that ID form.
 func ownsLifecycleRule(rule lifecycle.Rule, prefix string) bool {
+	if strings.HasPrefix(rule.ID, lifecycleRuleIDStem(prefix)) {
+		return true
+	}
 	filter := rule.RuleFilter
 	if filter.Prefix != prefix || !filter.And.IsEmpty() || !filter.Tag.IsEmpty() ||
 		filter.ObjectSizeLessThan != 0 || filter.ObjectSizeGreaterThan != 0 || rule.Prefix != "" {
 		return false
 	}
-	return strings.HasPrefix(rule.ID, lifecycleRuleIDStem(prefix)) || strings.HasPrefix(rule.ID, legacyLifecycleRuleIDPrefix(prefix))
+	return strings.HasPrefix(rule.ID, legacyLifecycleRuleIDPrefix(prefix))
 }
 
 // mergeLifecycleRule returns a copy of existing in which every rule this

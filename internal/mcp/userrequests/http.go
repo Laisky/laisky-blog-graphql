@@ -194,7 +194,7 @@ func (h *httpHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), createRequestTimeout)
 	defer cancel()
 	logger := h.logFromCtx(ctx)
 
@@ -256,6 +256,9 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// createRequestTimeout bounds one create request, including reading its body.
+var createRequestTimeout = 30 * time.Second
+
 // createIntake reads and normalizes the input of one create request. It
 // takes the request's image-create slot at most once and, for multipart
 // bodies, before the body is read, so a request that waits for a slot or is
@@ -300,6 +303,23 @@ func (in *createIntake) close() {
 	}
 }
 
+// bindBodyDeadline ends reads of the request body at ctx's deadline. Body
+// reads do not watch the context and the server sets no body read timeout,
+// so without it a client trickling a multipart body would keep the
+// image-create slot this request already holds past its deadline. The
+// connection's read deadline is set through http.ResponseController; a
+// writer that cannot set one (a test recorder) leaves the read unbounded,
+// which is logged at DEBUG.
+func (in *createIntake) bindBodyDeadline(ctx context.Context) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return
+	}
+	if err := http.NewResponseController(in.w).SetReadDeadline(deadline); err != nil {
+		in.logger.Debug("cannot bound the image request body read", zap.Error(err))
+	}
+}
+
 // read parses the multipart or JSON body into content, task ID and the
 // ordered attachments.
 func (in *createIntake) read(ctx context.Context, r *http.Request) (string, string, []AttachmentInput, bool) {
@@ -307,6 +327,7 @@ func (in *createIntake) read(ctx context.Context, r *http.Request) (string, stri
 		if in.imagesEnabled() && !in.admit(ctx) {
 			return "", "", nil, false
 		}
+		in.bindBodyDeadline(ctx)
 		content, taskID, attachments, cleanup, err := in.h.parseMultipart(r)
 		if err != nil {
 			in.h.writeImageError(in.w, in.logger, err, -1)

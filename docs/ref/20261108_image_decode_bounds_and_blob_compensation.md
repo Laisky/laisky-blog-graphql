@@ -210,3 +210,20 @@ and `docs/proposals/get_user_request_image_support.md` §3.9.
   planes to RGBA when the transform is "unknown" (`isRGB`) — Go source
   `src/image/jpeg/reader.go`. A marker scan that stops at the first SOS misses
   that 4 B/px copy.
+
+### Bounding the request body read (Go net/http)
+
+- `http.ResponseController.SetReadDeadline` (Go 1.20+, `src/net/http/responsecontroller.go`)
+  "sets the deadline for reading the entire request, including the body";
+  reads after it return an error. It reaches the connection through any
+  writer that implements `Unwrap() http.ResponseWriter` (gin's
+  `responseWriter` does) and returns `ErrNotSupported` otherwise (for
+  example `httptest.ResponseRecorder`).
+- Request body reads do not observe the request context, and the API server
+  sets only `ReadHeaderTimeout`, so a handler that holds a scarce slot while
+  reading a body must set this deadline itself.
+- `multipart.Reader.ReadForm(maxMemory)` keeps up to `maxMemory` bytes of
+  file parts in memory plus a reserved 10 MiB for non-file values
+  (`src/mime/multipart/formdata.go`), so the per-request in-memory bound for
+  `maxMultipartMemory = 8 MiB` is 18 MiB; file parts beyond it spill to
+  temporary files.

@@ -93,6 +93,11 @@ func scanWebP(raw []byte) (webpLayout, error) {
 			layout.known, layout.lossless = true, true
 			return layout, nil
 		case "ALPH":
+			// The decoder decodes the first ALPH chunk and fails on any
+			// later one, so only the first is charged.
+			if layout.alpha != webpAlphaNone {
+				break
+			}
 			layout.alpha = webpAlphaLossless
 			if length >= 1 && data < size && raw[data]&0x03 == 0 {
 				layout.alpha = webpAlphaRaw

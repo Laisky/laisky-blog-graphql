@@ -95,14 +95,17 @@ func jpegLooksRGB(comps []jpegComponent) bool {
 	return len(comps) == 3 && comps[0].id == 'R' && comps[1].id == 'G' && comps[2].id == 'B'
 }
 
-// scanJPEGFrame walks the JPEG marker segments up to the first scan and
-// returns the frame header plus whether an Adobe APP14 segment is present
-// anywhere in the file: image/jpeg also processes APP14 segments after the
-// first scan (and after extraneous bytes it skips), and one there still
-// triggers the RGBA conversion. Wherever the walk stops, the rest of the
-// file is searched for such a segment; the entropy-coded data never contains
-// a bare 0xFF 0xEE, so a false hit is rare and only overcharges. It reports
-// false when no frame header precedes the first scan.
+// scanJPEGFrame walks the JPEG marker segments up to the first scan the way
+// image/jpeg's decode loop does, and returns the frame header plus whether
+// an Adobe APP14 segment is present anywhere in the file. Like the decoder it
+// skips bytes up to the next 0xFF and a stray "\xff\x00" pair without reading
+// a length, so crafted padding cannot make the walk read a fake frame header
+// that the decoder skips (review of PR #94). image/jpeg also processes APP14
+// segments after the first scan, and one there still triggers the RGBA
+// conversion, so wherever the walk stops the rest of the file is searched for
+// such a segment; entropy-coded data never contains a bare 0xFF 0xEE, so a
+// false hit is rare and only overcharges. It reports false when no frame
+// header precedes the first scan, or when the decoder would fail before it.
 func scanJPEGFrame(raw []byte) (jpegFrame, bool) {
 	var (
 		frame jpegFrame
@@ -115,22 +118,17 @@ func scanJPEGFrame(raw []byte) (jpegFrame, bool) {
 		frame.adobe = frame.adobe || jpegHasAdobeSegment(raw[min(at, len(raw)):])
 		return frame, found
 	}
-	i := 2
-	for i+4 <= len(raw) {
-		if raw[i] != 0xFF {
-			return stop(i) // extraneous data
+	for i := 2; ; {
+		marker, next, ok := nextJPEGMarker(raw, i)
+		i = next
+		if !ok {
+			return stop(i)
 		}
-		marker := raw[i+1]
-		if marker == 0xFF {
-			i++ // fill byte
+		switch {
+		case marker == 0xD9: // end of image
+			return stop(i)
+		case marker >= 0xD0 && marker <= 0xD7: // restart markers carry no length
 			continue
-		}
-		i += 2
-		if marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8) {
-			continue // standalone markers carry no length
-		}
-		if marker == 0xDA || marker == 0xD9 {
-			return stop(i) // start of scan or end of image
 		}
 		if i+2 > len(raw) {
 			return stop(i)
@@ -141,21 +139,54 @@ func scanJPEGFrame(raw []byte) (jpegFrame, bool) {
 		}
 		seg := raw[i+2 : i+segLen]
 		switch {
+		case marker == 0xDA: // start of scan
+			return stop(i)
 		case marker == 0xEE:
-			if len(seg) >= 5 && string(seg[:5]) == "Adobe" {
+			if len(seg) >= 12 && string(seg[:5]) == "Adobe" {
 				frame.adobe = true
 			}
-		case isJPEGFrameMarker(marker) && !found:
+		case isJPEGFrameMarker(marker):
+			if found {
+				return stop(i) // the decoder rejects a second frame header
+			}
 			parsed, ok := parseJPEGFrameHeader(marker, seg)
 			if !ok {
 				return frame, false
 			}
 			parsed.adobe = frame.adobe
 			frame, found = parsed, true
+		case marker < 0xC0 || (marker > 0xEF && marker != 0xFE) || marker == 0xC8:
+			// The decoder fails on markers it does not know; report an
+			// unknown layout, which the estimate charges conservatively.
+			return frame, false
 		}
 		i += segLen
 	}
-	return stop(i)
+}
+
+// nextJPEGMarker finds the next marker at or after i as image/jpeg's decode
+// loop does: bytes up to the next 0xFF and stray "\xff\x00" pairs are
+// extraneous data, and 0xFF fill bytes may precede a marker. It returns the
+// marker, the position after it, and false when the data ends first.
+func nextJPEGMarker(raw []byte, i int) (byte, int, bool) {
+	for i+2 <= len(raw) {
+		switch {
+		case raw[i] != 0xFF:
+			i++
+		case raw[i+1] == 0x00:
+			i += 2
+		default:
+			i++
+			for i < len(raw) && raw[i] == 0xFF {
+				i++
+			}
+			if i >= len(raw) {
+				return 0, i, false
+			}
+			return raw[i], i + 1, true
+		}
+	}
+	return 0, len(raw), false
 }
 
 // jpegHasAdobeSegment reports whether data contains an APP14 segment that

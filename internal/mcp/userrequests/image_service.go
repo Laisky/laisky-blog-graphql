@@ -601,8 +601,11 @@ var imageGCBatchSize = 500
 // (refreshes) after the candidate scan is kept, as are its links. Objects are
 // not deleted here: the reconciler deletes each orphan's object unless
 // something references or claims it again (the bucket lifecycle rule is the
-// backstop). Claims that expired more than one object TTL ago are purged,
-// which bounds the claims table when the reconciler is disabled.
+// backstop). When the reconciler is disabled, claims that expired more than
+// one object TTL ago are purged, which bounds the claims table; with the
+// reconciler enabled every claim is kept until it processes it, because a
+// claim may be the only record of its object (for example when the
+// lifecycle rule could not be installed).
 func (s *Service) GCExpiredImageRefs(ctx context.Context) (int64, error) {
 	now := s.clock()
 	var deleted int64
@@ -615,6 +618,9 @@ func (s *Service) GCExpiredImageRefs(ctx context.Context) (int64, error) {
 		if candidates < imageGCBatchSize {
 			break
 		}
+	}
+	if s.settings.Images.OrphanSweepInterval > 0 {
+		return deleted, nil
 	}
 	ttl := s.settings.Images.ObjectTTLDays
 	if ttl <= 0 {

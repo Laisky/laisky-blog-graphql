@@ -116,7 +116,7 @@ settings:
         # many more wait (then 503 image_busy at their deadline); requests
         # beyond that queue get 503 image_busy at once. A request is admitted
         # before its multipart body is read, so input memory is bounded by
-        # this value x (8 MiB + per_image_max_bytes).
+        # this value x (18 MiB + per_image_max_bytes).
         # Optional. Default: 8.
         max_concurrent_requests: 8
         # Image create requests of one user identity running at once in this

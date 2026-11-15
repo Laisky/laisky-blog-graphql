@@ -181,3 +181,44 @@ func TestWebPRejectsTruncatedVP8Chunk(t *testing.T) {
 	_, err = Normalize(context.Background(), valid, "lossy.webp")
 	require.NoError(t, err)
 }
+
+// TestJPEGMarkerWalkFollowsDecoderOnStuffedBytes (second review, I1):
+// image/jpeg skips a stray "\xff\x00" pair and any bytes up to the next 0xFF,
+// but the estimator's walk read the pair as a marker with a length and jumped
+// into a comment segment, where a fake one-component frame header made a
+// progressive CMYK image look like a gray one.
+func TestJPEGMarkerWalkFollowsDecoderOnStuffedBytes(t *testing.T) {
+	original, err := os.ReadFile(filepath.Join("testdata", "progressive_cmyk.jpg"))
+	require.NoError(t, err)
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(original))
+	require.NoError(t, err)
+	fakeSOF := []byte{0xFF, 0xC0, 0x00, 0x0B, 8, byte(cfg.Height >> 8), byte(cfg.Height), byte(cfg.Width >> 8), byte(cfg.Width), 1, 1, 0x11, 0}
+	payload := append(make([]byte, 6), fakeSOF...)
+	payload = append(payload, 0xFF, 0xDA, 0x00, 0x02)
+	com := append([]byte{0xFF, 0xFE, byte((len(payload) + 2) >> 8), byte(len(payload) + 2)}, payload...)
+	crafted := append([]byte{0xFF, 0xD8, 0xFF, 0x00, 0x00, 0x0C}, com...)
+	crafted = append(crafted, original[2:]...)
+
+	decoded, err := jpeg.Decode(bytes.NewReader(crafted))
+	require.NoError(t, err)
+	require.IsType(t, &image.CMYK{}, decoded, "the decoder ignores the stray bytes and the comment (rules out a false positive)")
+	require.GreaterOrEqual(t, estimateFor(t, crafted, "crafted.jpg"), estimateFor(t, original, "original.jpg"),
+		"the crafted file must cost at least what the real image costs")
+}
+
+// TestWebPChargesFirstAlphaChunk (second review): the decoder decodes the
+// first ALPH chunk and fails on a second one, so a later raw ALPH chunk must
+// not replace the costlier classification of the first.
+func TestWebPChargesFirstAlphaChunk(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "lossy_alpha.webp"))
+	require.NoError(t, err)
+	// testdata/lossy_alpha.webp: VP8X (10 bytes), ALPH (6409, odd: padded), VP8.
+	const alphEnd = 12 + 18 + 8 + 6409 + 1
+	require.Equal(t, "ALPH", string(raw[30:34]))
+	extra := webpALPH(0)
+	crafted := append(append(append([]byte(nil), raw[:alphEnd]...), extra...), raw[alphEnd:]...)
+	binary.LittleEndian.PutUint32(crafted[4:8], uint32(len(crafted)-8))
+	_, err = webp.Decode(bytes.NewReader(crafted))
+	require.Error(t, err, "fixture: the decoder rejects the second ALPH chunk after decoding the first")
+	require.Equal(t, estimateFor(t, raw, "lossy_alpha.webp"), estimateFor(t, crafted, "two_alph.webp"))
+}

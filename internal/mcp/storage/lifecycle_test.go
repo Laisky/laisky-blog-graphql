@@ -288,3 +288,25 @@ func TestLifecycleRuleIDIsBounded(t *testing.T) {
 	require.LessOrEqual(t, len(id), 255)
 	require.NotEqual(t, id, lifecycleRuleID(long+"x/", 36500))
 }
+
+// TestMergeLifecycleRuleNeverDuplicatesIDs (second review): a rule carrying
+// our digested ID whose filter was rewritten (for example into an And form)
+// was kept as foreign and a second rule with the same ID appended, which S3
+// and MinIO reject. A digested ID identifies our rule whatever its filter.
+func TestMergeLifecycleRuleNeverDuplicatesIDs(t *testing.T) {
+	existing := lifecycle.NewConfiguration()
+	existing.Rules = []lifecycle.Rule{{
+		ID:         lifecycleRuleID("mcp/images/", 7),
+		Status:     "Enabled",
+		RuleFilter: lifecycle.Filter{And: lifecycle.And{Prefix: "mcp/images/"}},
+		Expiration: lifecycle.Expiration{Days: 7},
+	}}
+	merged := mergeLifecycleRule(existing, "mcp/images/", 7)
+	seen := map[string]bool{}
+	for _, rule := range merged.Rules {
+		require.False(t, seen[rule.ID], "duplicate rule ID %q", rule.ID)
+		seen[rule.ID] = true
+	}
+	require.Len(t, merged.Rules, 1)
+	require.Equal(t, "mcp/images/", merged.Rules[0].RuleFilter.Prefix)
+}

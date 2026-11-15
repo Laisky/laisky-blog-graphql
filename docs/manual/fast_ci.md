@@ -52,11 +52,12 @@ claim-lifecycle invariant (GC batches that roll back together, the late-write
 re-check of an abandoned PUT, the last releaser of a shared key, re-pointed
 refs, admission before the body is read and the bounded wait queue), the
 decoder layouts the estimator undercounted (late PNG tRNS, Adobe APP14 after
-the first scan, lossless VP8L in VP8X, truncated VP8 chunks), and
-collision-free, bounded lifecycle rule IDs. The other new tests of those
+the first scan, a stray `\xff\x00` before a fake frame header, lossless
+VP8L in VP8X, truncated VP8 chunks), a slow body that must give its slot back
+at the deadline, and collision-free, bounded, unique lifecycle rule IDs. The other new tests of those
 packages (GC batching, re-check of a later committed upload, concurrent
-reconciler deletes, streamed attachments, legacy rule IDs) run in
-`make test`. The estimator-versus-allocation sweep, the timing-based heavy/light
+reconciler deletes, streamed attachments, legacy rule IDs, the first ALPH
+chunk, stale claims kept while the reconciler runs) run in `make test`. The estimator-versus-allocation sweep, the timing-based heavy/light
 admission test, the fuzz targets and the PostgreSQL tests (`TestPostgres*`
 with `MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database; they
 cover the pool-starvation repros and REPEATABLE READ) stay deliberate

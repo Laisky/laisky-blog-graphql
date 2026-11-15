@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -255,6 +256,10 @@ func parseBoundedMultipart(r *http.Request, limit int64) error {
 	}
 	form, err := reader.ReadForm(maxMultipartMemory)
 	if err != nil {
+		if errors.Is(err, os.ErrDeadlineExceeded) || r.Context().Err() != nil {
+			// The body did not arrive before the request deadline.
+			return errors.Wrap(ErrImageBusy, "request body not received before the deadline: "+err.Error())
+		}
 		return errors.Wrap(imageproc.ErrImageTooLarge, err.Error())
 	}
 	r.MultipartForm = form
