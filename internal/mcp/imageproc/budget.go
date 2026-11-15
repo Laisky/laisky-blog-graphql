@@ -133,14 +133,16 @@ func bytesPerPixel(model color.Model) int64 {
 // PNG encoder output for a w x h source, mirroring resizeIfNeeded.
 func resizeAndEncodeBytes(w, h int) int64 {
 	outW, outH := resizedDimensions(w, h, NormalizedMaxEdge)
-	var resize int64
+	out := int64(outW) * int64(outH)
+	// The encoder's growing output buffer allocates up to ~2x the encoded
+	// size, and Normalize then copies the encoded bytes once (so it retains
+	// no slack). A resized image is 8-bit RGBA, so 2 x 8 bytes per pixel
+	// covers those 3 x 4; an unresized one may keep 16 bits per channel.
 	if outW != w || outH != h {
-		resize = int64(outW)*int64(h)*resizeSampleBytes + int64(outW)*int64(outH)*4
+		resize := int64(outW)*int64(h)*resizeSampleBytes + out*4
+		return resize + 2*out*worstCaseBytesPerPixel
 	}
-	// The encoder's growing output buffer can hold up to ~2x the encoded size,
-	// which itself is bounded by the raw size of the widest pixel format.
-	encode := 2 * int64(outW) * int64(outH) * worstCaseBytesPerPixel
-	return resize + encode
+	return 3 * out * worstCaseBytesPerPixel
 }
 
 // resizedDimensions returns the dimensions resizeIfNeeded produces.

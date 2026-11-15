@@ -92,7 +92,8 @@
       "TestValidateStartupConfigRejectsAmbiguousTurnstilePairs",
       "TestValidateStartupConfigRequiresCompleteTurnstilePairs",
       "TestValidateStartupConfigSSORedirectPolicy",
-      "TestValidateStartupConfigImageLifecycleMode"
+      "TestValidateStartupConfigImageLifecycleMode",
+      "TestSizeImageMemoryAtStartup"
     ]
   },
   {
@@ -230,7 +231,8 @@
       "TestWebPRejectsTruncatedVP8Chunk",
       "TestJPEGMarkerWalkFollowsDecoderOnStuffedBytes",
       "TestTIFFTileGeometryOverflowIsNotUndercharged",
-      "TestDecodeBudgetRefusesNegativeCost"
+      "TestDecodeBudgetRefusesNegativeCost",
+      "TestNormalizeReturnsExactSizePNG"
     ]
   },
   {
@@ -264,7 +266,9 @@
       "TestReconcileTickDrainsBacklogBeyondOneBatch",
       "TestReconcileTickExportsBacklogAndFailures",
       "TestLifecycleControllerRestoresErasedRule",
-      "TestLifecycleControllerVerifyModeNeverWrites"
+      "TestLifecycleControllerVerifyModeNeverWrites",
+      "TestImageMemoryEnvelopeDefaults",
+      "TestSizeImageMemory"
     ]
   },
   {
@@ -280,6 +284,14 @@
       "TestEnsureLifecycleReportsRuleThatKeepsDisappearing",
       "TestEnsureLifecycleDoesNotRewriteAnUnchangedConfiguration",
       "TestCheckLifecycleIsReadOnly"
+    ]
+  },
+  {
+    "package": "./library/memlimit",
+    "tests": [
+      "TestDetectCgroupLimits",
+      "TestLimitsEffective",
+      "TestSetGoSoftLimitFromContainer"
     ]
   }
 ]

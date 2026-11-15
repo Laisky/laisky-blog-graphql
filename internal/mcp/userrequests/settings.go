@@ -142,8 +142,13 @@ type ImageSettings struct {
 	// DecodeMemoryBudgetBytes caps the summed estimated transient memory of
 	// concurrent image normalizations in this process. Decoding waits for
 	// budget; an image whose estimate alone exceeds it is rejected as
-	// decode_failed. Non-positive values use the default. Default: 1.25 GiB.
+	// decode_failed. Non-positive values use the default. Default: 1.25 GiB,
+	// lowered at startup to fit a detected process memory limit unless the
+	// value is configured explicitly (see SizeImageMemory).
 	DecodeMemoryBudgetBytes int64
+	// DecodeMemoryBudgetConfigured reports whether decode_memory_budget_bytes
+	// was set explicitly; only a defaulted budget is sized to the memory limit.
+	DecodeMemoryBudgetConfigured bool
 	// OrphanSweepInterval is how often the reconciler processes due image
 	// claims: it deletes objects this database recorded writing (crashed
 	// uploads, failed deletes, refs the GC expired, late-write re-checks of
@@ -211,6 +216,7 @@ func loadImageSettings() ImageSettings {
 		GCSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.gc_sweep_seconds", int(DefaultImageGCSweepInterval/time.Second))) * time.Second,
 		DecodeMemoryBudgetBytes: int64FromConfig("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes",
 			DefaultImageDecodeMemoryBudgetBytes),
+		DecodeMemoryBudgetConfigured: gconfig.S.Get("settings.mcp.tools.user_requests.images.decode_memory_budget_bytes") != nil,
 		OrphanSweepInterval: time.Duration(intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_seconds",
 			int(DefaultImageOrphanSweepInterval/time.Second))) * time.Second,
 		OrphanSweepBatch: intFromConfig("settings.mcp.tools.user_requests.images.orphan_sweep_batch", DefaultImageOrphanSweepBatch),

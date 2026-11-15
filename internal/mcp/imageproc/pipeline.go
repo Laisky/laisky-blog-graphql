@@ -26,6 +26,15 @@ const (
 	MaxDecodeDimension = 8192
 	// NormalizedMaxEdge is the canonical longest-edge cap after resizing.
 	NormalizedMaxEdge = 1536
+	// normalizedMaxRowBytes is the widest PNG scanline Normalize can write:
+	// a filter byte plus NormalizedMaxEdge 16-bit RGBA pixels (an unresized
+	// 16-bit input keeps its depth; resized output is 8-bit RGBA).
+	normalizedMaxRowBytes = 1 + NormalizedMaxEdge*8
+	// MaxNormalizedPNGBytes bounds the size of one PNG Normalize returns:
+	// the raw scanlines of a NormalizedMaxEdge square 16-bit RGBA image
+	// (incompressible noise leaves DEFLATE storing them) plus stored-block,
+	// zlib and chunk overhead. About 18 MiB.
+	MaxNormalizedPNGBytes int64 = NormalizedMaxEdge*normalizedMaxRowBytes + NormalizedMaxEdge*normalizedMaxRowBytes/1024 + 64<<10
 )
 
 // PipelineResult is the output of Normalize: PNG bytes and companion metadata.
@@ -123,7 +132,11 @@ func (b *DecodeBudget) NormalizeFor(ctx context.Context, owner string, raw []byt
 		return PipelineResult{}, errors.Wrap(err, "imageproc normalize: encode png")
 	}
 
-	pngBytes := buf.Bytes()
+	// The result is held until the create's uploads end; the encoder's
+	// buffer may have up to twice its length in capacity, so keep a copy of
+	// exactly the encoded bytes and let the buffer go.
+	pngBytes := make([]byte, buf.Len())
+	copy(pngBytes, buf.Bytes())
 	sum := sha256.Sum256(pngBytes)
 
 	bounds := resized.Bounds()

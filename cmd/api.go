@@ -51,6 +51,7 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/library/db/postgres"
 	rlibs "github.com/Laisky/laisky-blog-graphql/library/db/redis"
 	"github.com/Laisky/laisky-blog-graphql/library/log"
+	"github.com/Laisky/laisky-blog-graphql/library/memlimit"
 	searchlib "github.com/Laisky/laisky-blog-graphql/library/search"
 	"github.com/Laisky/laisky-blog-graphql/library/search/firecrawl"
 	"github.com/Laisky/laisky-blog-graphql/library/search/google"
@@ -85,6 +86,10 @@ func runAPI(ctx context.Context) error {
 	startTime := time.Now()
 	if err := validateStartupConfig(); err != nil {
 		return errors.Wrap(err, "validate startup configuration")
+	}
+	if limit := memlimit.SetGoSoftLimitFromContainer(memlimit.DefaultSoftLimitRatio); limit > 0 {
+		logger.Info("set the Go soft memory limit from the container memory limit; set GOMEMLIMIT to choose another value or GOMEMLIMIT=off to disable it",
+			zap.Int64("gomemlimit_bytes", limit))
 	}
 
 	arweaveClient := arweave.NewArdrive(

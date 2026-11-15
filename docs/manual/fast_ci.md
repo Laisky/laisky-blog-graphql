@@ -19,7 +19,7 @@ the named unit tests listed in `.scripts/fast_ci_tests.json`, covering `cmd`,
 `internal/web/telegram/formatting`, `internal/web/telegram/controller`,
 `internal/web/telegram/dao`, `internal/web/telegram/service`, `library/clientip`,
 `internal/web/blog/service`, `internal/web/blog/oneapi`, `internal/web/blog/controller`,
-`internal/mcp/imageproc`, `internal/mcp/userrequests` and `internal/mcp/storage`. These exercise input validation, controlled
+`internal/mcp/imageproc`, `internal/mcp/userrequests`, `internal/mcp/storage` and `library/memlimit`. These exercise input validation, controlled
 DNS admission, pinned addresses, redirect limits, cancellation, credential-safe
 logging, Telegram escaping, complete alert content, document bounds and visible
 API rejection without external services. Startup and actual-caller controls also cover
@@ -55,13 +55,13 @@ refs, admission before the body is read and the bounded wait queue), the
 decoder layouts the estimator undercounted (late PNG tRNS, Adobe APP14 after
 the first scan, a stray `\xff\x00` before a fake frame header, lossless
 VP8L in VP8X, truncated VP8 chunks), a slow body that must give its slot back
-at the deadline, and collision-free, bounded, unique lifecycle rule IDs. The other new tests of those
+at the deadline, and collision-free, bounded, unique lifecycle rule IDs. After the maintainer review of PR #94 they also cover TIFF tile geometry that used to wrap the estimate and a negative estimate failing closed, bounded parallel uploads that meet the request deadline, refusal without time to upload and siblings canceled after a failed PUT, a lifecycle rule lost to a concurrent writer and merged again, a writer that keeps replacing it, no rewrite of an unchanged rule, the read-only verify check, the lifecycle controller restoring an erased rule and never writing in verify mode, the reconciler draining a backlog larger than one batch and exporting backlog and failures, the `lifecycle_mode` validation, and the image memory envelope (its terms, sizing a defaulted decode budget to half the memory limit, normalized PNGs kept without encoder slack, cgroup v1/v2 limit detection and the Go soft limit derived from the container limit, `library/memlimit`). The other new tests of those
 packages (GC batching, re-check of a later committed upload, concurrent
 reconciler deletes, streamed attachments, legacy rule IDs, the first ALPH
 chunk, stale claims kept while the reconciler runs) run in `make test`. The estimator-versus-allocation sweep, the timing-based heavy/light
 admission test, the fuzz targets and the PostgreSQL tests (`TestPostgres*`
 with `MCP_USER_REQUESTS_TEST_POSTGRES_DSN` set to a disposable database; they
-cover the pool-starvation repros and REPEATABLE READ) stay deliberate
+cover the pool-starvation repros and REPEATABLE READ), the MinIO lifecycle acceptance (`TestMinIOLifecycleAcceptance` with `MCP_STORAGE_TEST_MINIO_*` pointing at a disposable bucket) and the concurrent-create memory measurement (`TestImageCreateMemoryEnvelope` with `MCP_IMAGE_MEMORY_ACCEPTANCE=1`) stay deliberate
 acceptance:
 
 ```sh
@@ -69,6 +69,9 @@ go test -count=1 ./internal/mcp/imageproc -run 'TestEstimateDecodeBytesBoundsAct
 go test ./internal/mcp/imageproc -run '^$' -fuzz FuzzReadJPEGOrientation -fuzztime 30s
 go test ./internal/mcp/imageproc -run '^$' -fuzz FuzzEstimateDecodeBytes -fuzztime 30s
 MCP_USER_REQUESTS_TEST_POSTGRES_DSN=postgres://... go test -race -count=3 ./internal/mcp/userrequests -run TestPostgres
+MCP_STORAGE_TEST_MINIO_ENDPOINT=127.0.0.1:9000 MCP_STORAGE_TEST_MINIO_BUCKET=... MCP_STORAGE_TEST_MINIO_ACCESS_KEY=... MCP_STORAGE_TEST_MINIO_SECRET_KEY=... \
+  go test -count=1 ./internal/mcp/storage -run TestMinIOLifecycleAcceptance
+MCP_IMAGE_MEMORY_ACCEPTANCE=1 go test -count=1 ./internal/mcp/userrequests -run TestImageCreateMemoryEnvelope -v
 ```
 
 The client-identity selections cover the trusted-proxy policy (defaults, explicit

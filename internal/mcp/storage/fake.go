@@ -45,6 +45,10 @@ type FakeStore struct {
 	BeforeDelete func(ctx context.Context, key string) error
 	// HostBase is the synthetic base URL used when building presigned URLs.
 	HostBase string
+	// DiscardBodies, when set, stores every object with an empty body (the
+	// key, content type and metadata are kept), so memory measurements see
+	// only what the caller holds.
+	DiscardBodies bool
 }
 
 type fakeObject struct {
@@ -76,7 +80,11 @@ func (f *FakeStore) Put(ctx context.Context, key string, body io.Reader, size in
 		}
 	}
 	buf := new(bytes.Buffer)
-	if _, err := io.Copy(buf, body); err != nil {
+	var sink io.Writer = buf
+	if f.DiscardBodies {
+		sink = io.Discard
+	}
+	if _, err := io.Copy(sink, body); err != nil {
 		return errors.Wrap(err, "fake put read body")
 	}
 	metaCopy := make(map[string]string, len(userMeta))

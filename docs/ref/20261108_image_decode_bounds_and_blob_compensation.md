@@ -56,6 +56,27 @@ and `docs/proposals/get_user_request_image_support.md` §3.9.
   https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycleConfiguration.html.
   minio-go `SetBucketLifecycle` sends the full body (and an empty config
   deletes all rules), so rules must be read, merged and written back.
+- Lifecycle concurrency (verified 2026-11-15, maintainer review of PR #94):
+  `PutBucketLifecycleConfiguration` accepts no `If-Match`/ETag/version and
+  returns none — https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycleConfiguration.html;
+  S3 conditional writes cover only PutObject, CompleteMultipartUpload and
+  CopyObject (and conditional deletes), no bucket subresource —
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-requests.html;
+  bucket configurations are eventually consistent, last writer wins, and a new
+  lifecycle configuration may take "a few minutes" to propagate —
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/how-to-set-lifecycle-configuration-intro.html.
+  MinIO's `PutBucketLifecycleHandler` reads no precondition header and
+  replaces the whole configuration —
+  https://github.com/minio/minio/blob/master/cmd/bucket-lifecycle-handlers.go.
+  Terraform's AWS provider allows one lifecycle resource per bucket and polls
+  after each PUT until 10 consecutive reads match —
+  https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/s3/bucket_lifecycle_configuration.go.
+  Measured against MinIO 2025-07 (`bitnamilegacy/minio:2025.7.23`): four
+  writers merging rules for different prefixes at once lost 36 of 48 installs
+  with a single read-merge-write (and with an immediate read-back, which runs
+  before the other writers' PUTs); with a jittered ~3 s settle delay before the
+  read-back, 0 of 48. Hence `EnsureLifecycle`'s settle delay and the periodic
+  lifecycle check, and the `verify` mode for one owner (IaC) per bucket.
 - Deletes of missing keys succeed: `DeleteObjects` "confirms the deletion"
   of keys that are not found
   (https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html);

@@ -230,8 +230,10 @@ func sanitizeKeySegment(in string) string {
 	return string(out)
 }
 
-// PresignURL returns a freshly-signed URL for an image owned by the caller.
-// Keys from other users will be refused.
+// PresignURL returns a freshly signed URL for image's object. It does not
+// check ownership: callers must pass an image loaded for the authenticated
+// caller (its request and ref rows are scoped to the caller's API key), which
+// is what limits the URL to that caller's images.
 func (m *ImageManager) PresignURL(ctx context.Context, image RequestImage) (string, error) {
 	if m == nil || m.store == nil {
 		return "", errors.Wrap(ErrStorageUnavailable, "image manager unconfigured")

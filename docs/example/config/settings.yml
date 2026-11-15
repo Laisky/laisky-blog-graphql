@@ -113,8 +113,13 @@ settings:
         # concurrent image decodes (decode + resize + PNG encode). Uploads wait
         # for budget; an image whose estimate alone exceeds it is rejected as
         # decode_failed. The default admits every 8-bit image up to 8192x8192.
+        # When this key is not set, the budget is lowered at start so the
+        # whole image memory envelope (this budget plus the input and prepared
+        # images of max_concurrent_requests creates, ~2.25 GiB by default)
+        # fits half the process memory limit; a value set here is kept, so
+        # leave it unset unless you sized it yourself.
         # Optional. Default: 1342177280 (= 1.25 GiB).
-        decode_memory_budget_bytes: 1342177280
+        # decode_memory_budget_bytes: 1342177280
         # How often the reconciler processes due image claims (crashed uploads,
         # failed deletes, refs the GC expired) and deletes objects nothing uses
         # any more, in seconds. It never lists the bucket. Set to 0 to disable
@@ -129,7 +134,8 @@ settings:
         # many more wait (then 503 image_busy at their deadline); requests
         # beyond that queue get 503 image_busy at once. A request is admitted
         # before its multipart body is read, so input memory is bounded by
-        # this value x (18 MiB + per_image_max_bytes).
+        # this value x (18 MiB + per_image_max_bytes), and the images it
+        # prepared by this value x max_per_request x 18 MiB.
         # Optional. Default: 8.
         max_concurrent_requests: 8
         # Image create requests of one user identity running at once in this
