@@ -135,20 +135,22 @@ type ImageSettings struct {
 	DecodeMemoryBudgetBytes int64
 	// OrphanSweepInterval is how often the reconciler processes due image
 	// claims: it deletes objects this database recorded writing (crashed
-	// uploads, failed deletes, refs the GC expired) once nothing references
-	// or claims them. It never lists the bucket. Zero or negative disables
-	// it. Default: 1h.
+	// uploads, failed deletes, refs the GC expired, late-write re-checks of
+	// failed requests) once nothing references or claims them. It never
+	// lists the bucket. Zero or negative disables it. Default: 1h.
 	OrphanSweepInterval time.Duration
 	// OrphanSweepBatch caps how many due claims one reconciler pass
 	// processes. Non-positive values use the default. Default: 1000.
 	OrphanSweepBatch int
 	// MaxConcurrentCreates caps image create requests running at once in this
-	// process; further requests wait (until their deadline, then 503
-	// image_busy). Non-positive values use the default. Default: 8.
+	// process; up to as many more wait (until their deadline, then 503
+	// image_busy) and any beyond that are refused at once with image_busy.
+	// A request takes its slot before its multipart body is read.
+	// Non-positive values use the default. Default: 8.
 	MaxConcurrentCreates int
 	// MaxConcurrentCreatesPerUser caps image create requests of one user
-	// identity running at once in this process. Non-positive values use the
-	// default. Default: 2.
+	// identity running at once in this process; up to as many more of that
+	// identity wait. Non-positive values use the default. Default: 2.
 	MaxConcurrentCreatesPerUser int
 	// URLAllowHTTP allows unencrypted http:// image_url inputs. Default: false
 	// (HTTPS only). Not recommended for production.

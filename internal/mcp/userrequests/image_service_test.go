@@ -245,18 +245,20 @@ func TestGCExpiredImageRefsKeepsRefRevivedDuringSweep(t *testing.T) {
 
 	later := start.Add(8 * 24 * time.Hour)
 	svc.clock = func() time.Time { return later }
-	expired, err := svc.expiredImageRefs(ctx, later)
+	candidates, err := svc.expiredImageRefIDs(ctx, svc.db, later, imageGCBatchSize)
 	require.NoError(t, err)
-	require.Len(t, expired, 1)
-	candidates := []string{expired[0].id}
+	require.Len(t, candidates, 1)
 
 	// The image is re-attached between the scan and the delete.
 	_, err = svc.CreateRequestWithImages(ctx, auth, "second", "", []UploadedImage{img}, testImageObjects())
 	require.NoError(t, err)
 
-	deleted, err := svc.deleteExpiredImageRefs(ctx, candidates, later)
+	tx, err := svc.beginImageTx(ctx)
 	require.NoError(t, err)
-	require.Zero(t, deleted, "a revived ref must not be collected")
+	removed, err := svc.removeExpiredImageRefs(ctx, tx, candidates, later)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	require.Empty(t, removed, "a revived ref must not be collected")
 
 	pending, err := svc.ConsumeAllPending(ctx, auth, "")
 	require.NoError(t, err)

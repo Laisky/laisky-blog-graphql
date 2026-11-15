@@ -210,68 +210,15 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		content     string
-		taskID      string
-		attachments []AttachmentInput
-	)
-	ct := r.Header.Get("Content-Type")
-	if strings.HasPrefix(ct, "multipart/form-data") {
-		parsedContent, parsedTaskID, parsedAttachments, parseErr := h.parseMultipart(r)
-		if parseErr != nil {
-			h.writeImageError(w, logger, parseErr, -1)
-			return
-		}
-		content = parsedContent
-		taskID = parsedTaskID
-		attachments = parsedAttachments
-	} else {
-		payload := struct {
-			Content   string   `json:"content"`
-			TaskID    string   `json:"task_id"`
-			ImageURLs []string `json:"image_urls"`
-		}{}
-		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
-			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, "invalid JSON payload")
-			return
-		}
-		content = payload.Content
-		taskID = payload.TaskID
-		for _, u := range payload.ImageURLs {
-			u = strings.TrimSpace(u)
-			if u == "" {
-				continue
-			}
-			attachments = append(attachments, AttachmentInput{URL: u})
-		}
+	intake := &createIntake{h: h, w: w, logger: logger, auth: auth}
+	defer intake.close()
+	content, taskID, attachments, ok := intake.read(ctx, r)
+	if !ok {
+		return
 	}
-
-	// Normalize every attachment first; nothing is uploaded yet, so a bad
-	// attachment cannot leave an object behind.
-	var prepared []UploadedImage
-	if len(attachments) > 0 {
-		if h.imageManager == nil || !h.imageManager.Settings().Enabled {
-			h.writeImageError(w, logger, errors.WithStack(ErrImageFeatureDisabled), -1)
-			return
-		}
-		settings := h.imageManager.Settings()
-		if settings.MaxPerRequest > 0 && len(attachments) > settings.MaxPerRequest {
-			h.writeImageError(w, logger, errors.WithStack(ErrTooManyImages), -1)
-			return
-		}
-		release, admitErr := h.imageManager.AdmitCreate(ctx, auth)
-		if admitErr != nil {
-			h.writeImageError(w, logger, admitErr, -1)
-			return
-		}
-		defer release()
-		images, prepareErr := h.imageManager.Prepare(ctx, auth, attachments)
-		if prepareErr != nil {
-			idx := extractAttachmentIndex(prepareErr)
-			h.writeImageError(w, logger, prepareErr, idx)
-			return
-		}
-		prepared = images
+	prepared, ok := intake.prepare(ctx, attachments)
+	if !ok {
+		return
 	}
 
 	// Quota is reserved, objects are uploaded, and the request is committed
@@ -282,21 +229,7 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	req, err := service.CreateRequestWithImages(ctx, auth, content, taskID, prepared, objects)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrEmptyContent):
-			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
-		case errors.Is(err, ErrInvalidRequestContent):
-			h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
-		case errors.Is(err, ErrInvalidAuthorization):
-			h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
-		case errors.Is(err, ErrQuotaExceeded), errors.Is(err, ErrTooManyImages), errors.Is(err, ErrImageBusy):
-			h.writeImageError(w, logger, err, -1)
-		case errors.Is(err, ErrStorageUnavailable):
-			h.writeImageError(w, logger, err, extractAttachmentIndex(err))
-		default:
-			logger.Error("create user request", zap.Error(err))
-			h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to create user request")
-		}
+		h.writeCreateError(w, logger, err)
 		return
 	}
 
@@ -321,6 +254,126 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, map[string]any{
 		"request": serialized,
 	})
+}
+
+// createIntake reads and normalizes the input of one create request. It
+// takes the request's image-create slot at most once and, for multipart
+// bodies, before the body is read, so a request that waits for a slot or is
+// refused one holds none of its input bytes. Its methods write the error
+// response themselves and report false on failure; close releases the slot
+// and the multipart temporary files.
+type createIntake struct {
+	h       *httpHandler
+	w       http.ResponseWriter
+	logger  logSDK.Logger
+	auth    *askuser.AuthorizationContext
+	release func()
+	cleanup func()
+}
+
+// imagesEnabled reports whether image attachments are accepted.
+func (in *createIntake) imagesEnabled() bool {
+	return in.h.imageManager != nil && in.h.imageManager.Settings().Enabled
+}
+
+// admit takes the image-create slot unless it is already held.
+func (in *createIntake) admit(ctx context.Context) bool {
+	if in.release != nil {
+		return true
+	}
+	release, err := in.h.imageManager.AdmitCreate(ctx, in.auth)
+	if err != nil {
+		in.h.writeImageError(in.w, in.logger, err, -1)
+		return false
+	}
+	in.release = release
+	return true
+}
+
+// close releases the slot and removes multipart temporary files.
+func (in *createIntake) close() {
+	if in.cleanup != nil {
+		in.cleanup()
+	}
+	if in.release != nil {
+		in.release()
+	}
+}
+
+// read parses the multipart or JSON body into content, task ID and the
+// ordered attachments.
+func (in *createIntake) read(ctx context.Context, r *http.Request) (string, string, []AttachmentInput, bool) {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if in.imagesEnabled() && !in.admit(ctx) {
+			return "", "", nil, false
+		}
+		content, taskID, attachments, cleanup, err := in.h.parseMultipart(r)
+		if err != nil {
+			in.h.writeImageError(in.w, in.logger, err, -1)
+			return "", "", nil, false
+		}
+		in.cleanup = cleanup
+		return content, taskID, attachments, true
+	}
+
+	payload := struct {
+		Content   string   `json:"content"`
+		TaskID    string   `json:"task_id"`
+		ImageURLs []string `json:"image_urls"`
+	}{}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
+		in.h.writeErrorWithLogger(in.w, in.logger, http.StatusBadRequest, "invalid JSON payload")
+		return "", "", nil, false
+	}
+	var attachments []AttachmentInput
+	for _, u := range payload.ImageURLs {
+		if u = strings.TrimSpace(u); u != "" {
+			attachments = append(attachments, AttachmentInput{URL: u})
+		}
+	}
+	return payload.Content, payload.TaskID, attachments, true
+}
+
+// prepare normalizes every attachment before anything is uploaded, so a bad
+// attachment cannot leave an object behind.
+func (in *createIntake) prepare(ctx context.Context, attachments []AttachmentInput) ([]UploadedImage, bool) {
+	if len(attachments) == 0 {
+		return nil, true
+	}
+	if !in.imagesEnabled() {
+		in.h.writeImageError(in.w, in.logger, errors.WithStack(ErrImageFeatureDisabled), -1)
+		return nil, false
+	}
+	if limit := in.h.imageManager.Settings().MaxPerRequest; limit > 0 && len(attachments) > limit {
+		in.h.writeImageError(in.w, in.logger, errors.WithStack(ErrTooManyImages), -1)
+		return nil, false
+	}
+	if !in.admit(ctx) {
+		return nil, false
+	}
+	images, err := in.h.imageManager.Prepare(ctx, in.auth, attachments)
+	if err != nil {
+		in.h.writeImageError(in.w, in.logger, err, extractAttachmentIndex(err))
+		return nil, false
+	}
+	return images, true
+}
+
+// writeCreateError maps a CreateRequestWithImages error onto the response.
+func (h *httpHandler) writeCreateError(w http.ResponseWriter, logger logSDK.Logger, err error) {
+	switch {
+	case errors.Is(err, ErrEmptyContent), errors.Is(err, ErrInvalidRequestContent):
+		h.writeErrorWithLogger(w, logger, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrInvalidAuthorization):
+		h.writeErrorWithLogger(w, logger, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, ErrQuotaExceeded), errors.Is(err, ErrTooManyImages), errors.Is(err, ErrImageBusy):
+		h.writeImageError(w, logger, err, -1)
+	case errors.Is(err, ErrStorageUnavailable):
+		h.writeImageError(w, logger, err, extractAttachmentIndex(err))
+	default:
+		logger.Error("create user request", zap.Error(err))
+		h.writeErrorWithLogger(w, logger, http.StatusInternalServerError, "failed to create user request")
+	}
 }
 
 // handleQuota reports the caller's live image usage.

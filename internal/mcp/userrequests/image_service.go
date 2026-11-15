@@ -94,7 +94,9 @@ func (s *Service) QuotaUsage(ctx context.Context, auth *askuser.AuthorizationCon
 // SHA is refreshed without charging quota and returned with existed=true. An
 // expired row no longer counts toward usage, so reviving it is charged like a
 // new image (proposal §3.5) before it is refreshed. Otherwise a new row is
-// inserted after verifying the user stays within quota.
+// inserted after verifying the user stays within quota. A refreshed row that
+// pointed at another key (the key prefix changed) is re-pointed, and an
+// orphan claim records the old key, which may have lost its last ref.
 func (s *Service) reserveImage(ctx context.Context, tx *sql.Tx, auth *askuser.AuthorizationContext, image UploadedImage) (uuid.UUID, bool, error) {
 	now := s.clock()
 	ttl := s.settings.Images.ObjectTTLDays
@@ -104,21 +106,21 @@ func (s *Service) reserveImage(ctx context.Context, tx *sql.Tx, auth *askuser.Au
 	expiresAt := now.Add(time.Duration(ttl) * 24 * time.Hour)
 
 	lockQuery := rebindQuery(
-		`SELECT id, size_bytes, expires_at FROM mcp_user_image_refs
+		`SELECT id, size_bytes, storage_key, expires_at FROM mcp_user_image_refs
 		  WHERE user_identity = ? AND sha256 = ? FOR UPDATE`,
 		s.useDollar,
 	)
 	// SQLite does not understand FOR UPDATE; use a portable variant there.
 	if !s.useDollar {
-		lockQuery = `SELECT id, size_bytes, expires_at FROM mcp_user_image_refs
+		lockQuery = `SELECT id, size_bytes, storage_key, expires_at FROM mcp_user_image_refs
 		              WHERE user_identity = ? AND sha256 = ?`
 	}
 
 	row := tx.QueryRowContext(ctx, lockQuery, auth.UserIdentity, image.SHA256)
-	var existingID string
+	var existingID, existingKey string
 	var existingSize int64
 	var existingExpiresRaw any
-	err := row.Scan(&existingID, &existingSize, &existingExpiresRaw)
+	err := row.Scan(&existingID, &existingSize, &existingKey, &existingExpiresRaw)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return uuid.Nil, false, errors.Wrap(err, "reserve image lookup")
 	}
@@ -142,6 +144,11 @@ func (s *Service) reserveImage(ctx context.Context, tx *sql.Tx, auth *askuser.Au
 			expiresAt, image.StorageKey, existingID,
 		); execErr != nil {
 			return uuid.Nil, false, errors.Wrap(execErr, "refresh image ttl")
+		}
+		if existingKey != image.StorageKey {
+			if claimErr := s.insertImageClaim(ctx, tx, gutils.UUID7Bytes(), auth.UserIdentity, existingKey, claimOrphan, 0, now, now); claimErr != nil {
+				return uuid.Nil, false, errors.Wrap(claimErr, "record re-pointed image key")
+			}
 		}
 		return id, true, nil
 	}
@@ -233,9 +240,12 @@ func nullableString(s string) any {
 //
 // If anything fails after the reservation — an upload (including one that
 // failed after the server stored it), the finalize transaction, a canceled
-// context, or a panic — the claims are released and every attempted object
-// that nothing else references or claims is deleted under a delete lease
+// context, or a panic — the claims are released, every reserved object that
+// nothing else references or claims is deleted under a delete lease, and
+// every key whose upload started is re-checked after the late-write window
 // (see releaseImageUploads). Objects shared with committed requests are kept.
+// The database side is atomic; the object store converges to it through
+// these records, not atomically.
 //
 // The images slice may be empty; in that case objects may be nil and behavior
 // is identical to CreateRequest (the pure-text byte-for-byte compatibility
@@ -319,8 +329,51 @@ func (s *Service) finalizeImageRequest(
 		}
 	}
 
+	req, err := s.insertPendingRequest(ctx, tx, auth, requestID, body, taskID, now)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	linked, err := s.linkRequestImages(ctx, tx, auth, req, images, now)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, errors.Wrap(err, "commit create-with-images")
+	}
+	req.Images = linked
+
+	s.log().Info("user request created",
+		zap.String("request_id", req.ID.String()),
+		zap.String("user", auth.UserIdentity),
+		zap.String("task_id", req.TaskID),
+		zap.Int("image_count", len(linked)),
+	)
+	return req, nil
+}
+
+// sqlRowExecer is satisfied by both *sql.DB and *sql.Tx.
+type sqlRowExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// insertPendingRequest appends a pending request of auth to the end of its
+// queue through q (the database or a transaction) and returns it. It is the
+// one place request rows are built, shared by CreateRequest and the image
+// finalize step.
+func (s *Service) insertPendingRequest(
+	ctx context.Context,
+	q sqlRowExecer,
+	auth *askuser.AuthorizationContext,
+	requestID uuid.UUID,
+	body string,
+	taskID string,
+	now time.Time,
+) (*Request, error) {
 	var maxOrder int
-	if err := tx.QueryRowContext(ctx,
+	if err := q.QueryRowContext(ctx,
 		rebindQuery(
 			`SELECT COALESCE(MAX(sort_order), -1)
 			   FROM mcp_user_requests
@@ -344,8 +397,7 @@ func (s *Service) finalizeImageRequest(
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-
-	if _, err := tx.ExecContext(ctx,
+	if _, err := q.ExecContext(ctx,
 		rebindQuery(`INSERT INTO mcp_user_requests
 			(id, content, status, task_id, sort_order, api_key_hash, key_suffix, user_identity, consumed_at, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, s.useDollar),
@@ -363,23 +415,6 @@ func (s *Service) finalizeImageRequest(
 	); err != nil {
 		return nil, errors.Wrap(err, "insert user request")
 	}
-
-	linked, err := s.linkRequestImages(ctx, tx, auth, req, images, now)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, errors.Wrap(err, "commit create-with-images")
-	}
-	req.Images = linked
-
-	s.log().Info("user request created",
-		zap.String("request_id", req.ID.String()),
-		zap.String("user", auth.UserIdentity),
-		zap.String("task_id", req.TaskID),
-		zap.Int("image_count", len(linked)),
-	)
 	return req, nil
 }
 
@@ -555,35 +590,30 @@ func (s *Service) loadImagesForRequests(ctx context.Context, requests []Request)
 	return nil
 }
 
-// GCExpiredImageRefs deletes expired image reference rows and then the link
-// rows that pointed at them. The ref delete re-checks expires_at, so a row a
-// concurrent request revives (refreshes) after the candidate scan is kept, as
-// are its links. Objects are not deleted here: an orphan claim is recorded for
-// each candidate key so the reconciler deletes the object unless something
-// references or claims it again (the bucket lifecycle rule is the backstop).
-// Claims that expired more than one object TTL ago are purged, which bounds
-// the claims table when the reconciler is disabled.
+// imageGCBatchSize bounds how many expired refs one GC transaction removes.
+var imageGCBatchSize = 500
+
+// GCExpiredImageRefs deletes expired image refs in bounded batches. Each
+// batch is one short transaction that deletes the refs still expired, their
+// links, and records an orphan claim for every ref it actually deleted, so a
+// failure at any point leaves either the ref or the claim — never neither.
+// The ref delete re-checks expires_at, so a ref a concurrent request revives
+// (refreshes) after the candidate scan is kept, as are its links. Objects are
+// not deleted here: the reconciler deletes each orphan's object unless
+// something references or claims it again (the bucket lifecycle rule is the
+// backstop). Claims that expired more than one object TTL ago are purged,
+// which bounds the claims table when the reconciler is disabled.
 func (s *Service) GCExpiredImageRefs(ctx context.Context) (int64, error) {
 	now := s.clock()
-	expired, err := s.expiredImageRefs(ctx, now)
-	if err != nil {
-		return 0, errors.WithStack(err)
-	}
-	expiredIDs := make([]string, 0, len(expired))
-	for _, ref := range expired {
-		expiredIDs = append(expiredIDs, ref.id)
-	}
-	deleted, err := s.deleteExpiredImageRefs(ctx, expiredIDs, now)
-	if err != nil {
-		return 0, errors.WithStack(err)
-	}
-	for _, ref := range expired {
-		if _, err := s.execContext(ctx,
-			`INSERT INTO mcp_user_image_claims (id, owner_id, user_identity, storage_key, kind, size_bytes, created_at, expires_at)
-				VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-			gutils.UUID7Bytes().String(), gutils.UUID7Bytes().String(), ref.userIdentity, ref.storageKey, claimOrphan, now, now,
-		); err != nil {
-			return deleted, errors.Wrap(err, "record orphan image claim")
+	var deleted int64
+	for {
+		candidates, n, err := s.gcExpiredImageRefBatch(ctx, now, imageGCBatchSize)
+		deleted += n
+		if err != nil {
+			return deleted, errors.WithStack(err)
+		}
+		if candidates < imageGCBatchSize {
+			break
 		}
 	}
 	ttl := s.settings.Images.ObjectTTLDays
@@ -599,68 +629,120 @@ func (s *Service) GCExpiredImageRefs(ctx context.Context) (int64, error) {
 	return deleted, nil
 }
 
-// expiredImageRef is a candidate of GCExpiredImageRefs.
+// expiredImageRef is a ref GCExpiredImageRefs deleted.
 type expiredImageRef struct {
 	id           string
 	userIdentity string
 	storageKey   string
 }
 
-// expiredImageRefs lists the refs that expired at or before now.
-func (s *Service) expiredImageRefs(ctx context.Context, now time.Time) ([]expiredImageRef, error) {
-	rows, err := s.queryContext(ctx,
-		`SELECT id, user_identity, storage_key FROM mcp_user_image_refs WHERE expires_at <= ?`,
-		now,
-	)
+// gcExpiredImageRefBatch runs one GC transaction over at most limit refs that
+// expired at or before now. It reports how many candidates it examined and
+// how many refs it deleted.
+func (s *Service) gcExpiredImageRefBatch(ctx context.Context, now time.Time, limit int) (int, int64, error) {
+	tx, err := s.beginImageTx(ctx)
+	if err != nil {
+		return 0, 0, errors.WithStack(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	ids, err := s.expiredImageRefIDs(ctx, tx, now, limit)
+	if err != nil {
+		return 0, 0, errors.WithStack(err)
+	}
+	if len(ids) == 0 {
+		return 0, 0, nil
+	}
+	removed, err := s.removeExpiredImageRefs(ctx, tx, ids, now)
+	if err != nil {
+		return 0, 0, errors.WithStack(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, 0, errors.Wrap(err, "commit image gc batch")
+	}
+	return len(ids), int64(len(removed)), nil
+}
+
+// expiredImageRefIDs returns up to limit ids of refs that expired at or
+// before now, oldest first.
+func (s *Service) expiredImageRefIDs(ctx context.Context, q sqlQueryer, now time.Time, limit int) ([]string, error) {
+	rows, err := q.QueryContext(ctx,
+		rebindQuery(fmt.Sprintf(`SELECT id FROM mcp_user_image_refs WHERE expires_at <= ? ORDER BY expires_at, id LIMIT %d`, limit), s.useDollar),
+		now)
 	if err != nil {
 		return nil, errors.Wrap(err, "select expired images")
 	}
 	defer func() { _ = rows.Close() }()
-	expired := make([]expiredImageRef, 0)
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, errors.Wrap(err, "scan expired image id")
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "iterate expired image ids")
+	}
+	return ids, nil
+}
+
+// removeExpiredImageRefs deletes, inside tx, the candidate refs that are
+// still expired at now together with their links, and records an orphan
+// claim for each deleted ref. The expiry re-check runs in the DELETE itself:
+// on PostgreSQL it is evaluated again once a row lock a concurrent refresh
+// holds is released, so a ref revived after the candidate scan is neither
+// deleted nor reported.
+func (s *Service) removeExpiredImageRefs(ctx context.Context, tx *sql.Tx, ids []string, now time.Time) ([]expiredImageRef, error) {
+	in, args := inPlaceholders(ids)
+	removed, err := s.deleteReturningImageRefs(ctx, tx,
+		fmt.Sprintf(`DELETE FROM mcp_user_image_refs WHERE id IN (%s) AND expires_at <= ? RETURNING id, user_identity, storage_key`, in),
+		append(args, now)...)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	if len(removed) == 0 {
+		return nil, nil
+	}
+	removedIDs := make([]string, 0, len(removed))
+	for _, ref := range removed {
+		removedIDs = append(removedIDs, ref.id)
+	}
+	linkIn, linkArgs := inPlaceholders(removedIDs)
+	if _, err := tx.ExecContext(ctx,
+		rebindQuery(fmt.Sprintf(`DELETE FROM mcp_user_request_image_links WHERE image_id IN (%s)`, linkIn), s.useDollar),
+		linkArgs...,
+	); err != nil {
+		return nil, errors.Wrap(err, "delete expired image links")
+	}
+	for _, ref := range removed {
+		if err := s.insertImageClaim(ctx, tx, gutils.UUID7Bytes(), ref.userIdentity, ref.storageKey, claimOrphan, 0, now, now); err != nil {
+			return nil, errors.Wrap(err, "record orphan image claim")
+		}
+	}
+	return removed, nil
+}
+
+// deleteReturningImageRefs runs a DELETE ... RETURNING id, user_identity,
+// storage_key inside tx and returns the deleted refs.
+func (s *Service) deleteReturningImageRefs(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]expiredImageRef, error) {
+	rows, err := tx.QueryContext(ctx, rebindQuery(query, s.useDollar), args...)
+	if err != nil {
+		return nil, errors.Wrap(err, "delete expired images")
+	}
+	defer func() { _ = rows.Close() }()
+	var out []expiredImageRef
 	for rows.Next() {
 		var ref expiredImageRef
 		if err := rows.Scan(&ref.id, &ref.userIdentity, &ref.storageKey); err != nil {
-			return nil, errors.Wrap(err, "scan expired image id")
+			return nil, errors.Wrap(err, "scan deleted image ref")
 		}
-		expired = append(expired, ref)
+		out = append(out, ref)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iterate expired image rows")
+		return nil, errors.Wrap(err, "iterate deleted image refs")
 	}
-	return expired, nil
-}
-
-// deleteExpiredImageRefs deletes the candidate refs that are still expired at
-// now, then the links of the refs that are gone. The expiry re-check runs in
-// the DELETE itself, so on PostgreSQL a row a concurrent request is refreshing
-// is re-evaluated after its row lock is released and kept.
-func (s *Service) deleteExpiredImageRefs(ctx context.Context, expiredIDs []string, now time.Time) (int64, error) {
-	if len(expiredIDs) == 0 {
-		return 0, nil
-	}
-	placeholders := make([]string, 0, len(expiredIDs))
-	args := make([]any, 0, len(expiredIDs)+1)
-	for _, id := range expiredIDs {
-		placeholders = append(placeholders, "?")
-		args = append(args, id)
-	}
-	in := strings.Join(placeholders, ",")
-	refSQL := fmt.Sprintf(`DELETE FROM mcp_user_image_refs WHERE id IN (%s) AND expires_at <= ?`, in)
-	res, err := s.execContext(ctx, refSQL, append(args, now)...)
-	if err != nil {
-		return 0, errors.Wrap(err, "delete expired images")
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return 0, errors.Wrap(err, "read expired images rows affected")
-	}
-	linkSQL := fmt.Sprintf(`DELETE FROM mcp_user_request_image_links
-		WHERE image_id IN (%s)
-		  AND NOT EXISTS (SELECT 1 FROM mcp_user_image_refs r WHERE r.id = mcp_user_request_image_links.image_id)`, in)
-	if _, err := s.execContext(ctx, linkSQL, args...); err != nil {
-		return 0, errors.Wrap(err, "delete expired image links")
-	}
-	return affected, nil
+	return out, nil
 }
 
 // StartImageGCWorker runs GCExpiredImageRefs on a fixed interval until ctx is canceled.

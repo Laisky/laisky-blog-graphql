@@ -228,7 +228,12 @@ func TestPostgresReconcilerKeepsObjectsOfOpenRequests(t *testing.T) {
 		wg.Wait()
 
 		for _, token := range tokens {
+			// A request may have been refused (image_busy) while a reconciler
+			// lease covered its key; only committed requests are checked.
 			pending, err := h.svc.ConsumeAllPending(context.Background(), mustAuth(t, token), "")
+			if errs.Is(err, ErrNoPendingRequests) {
+				continue
+			}
 			require.NoError(t, err)
 			for _, req := range pending {
 				for _, img := range req.Images {
@@ -304,7 +309,9 @@ func TestPostgresStalledStoreDoesNotPinPool(t *testing.T) {
 // TestPostgresSameUserConcurrencyDoesNotPinPool is the second review repro:
 // 24 concurrent requests of one identity used to queue on the advisory lock,
 // each holding a pooled connection, and starve an unrelated query even with
-// a healthy 300 ms store. The per-user create cap now queues them in process.
+// a healthy 300 ms store. The per-user create cap now admits two at a time,
+// queues two more in process, and refuses the rest at once with image_busy
+// (the bounded queue of the PR #94 review).
 func TestPostgresSameUserConcurrencyDoesNotPinPool(t *testing.T) {
 	settings := defaultImageSettings()
 	h := newPostgresOrphanHarness(t, settings, "")
@@ -319,13 +326,19 @@ func TestPostgresSameUserConcurrencyDoesNotPinPool(t *testing.T) {
 		}
 	}
 	var wg sync.WaitGroup
-	var ok200 atomic.Int64
+	var ok200, busy, other atomic.Int64
 	for i := range 3 * pool {
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if h.post(t, ctx, "sk-pg-single-caller-xyz", testPNG(t, 30+i, 20)).Code == http.StatusOK {
+			rec := h.post(t, ctx, "sk-pg-single-caller-xyz", testPNG(t, 30+i, 20))
+			switch {
+			case rec.Code == http.StatusOK:
 				ok200.Add(1)
+			case rec.Code == http.StatusServiceUnavailable && strings.Contains(rec.Body.String(), `"image_busy"`):
+				busy.Add(1)
+			default:
+				other.Add(1)
 			}
 		})
 	}
@@ -338,9 +351,11 @@ func TestPostgresSameUserConcurrencyDoesNotPinPool(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	wg.Wait()
-	t.Logf("caller requests ok=%d; worst unrelated wait %v", ok200.Load(), worst)
+	t.Logf("caller requests ok=%d busy=%d; worst unrelated wait %v", ok200.Load(), busy.Load(), worst)
 	require.Less(t, worst, 100*time.Millisecond, "a single identity's concurrency starved an unrelated query")
-	require.EqualValues(t, 3*pool, ok200.Load(), "queued requests still complete within their deadline")
+	require.Zero(t, other.Load(), "every request either succeeded or was refused as image_busy")
+	require.GreaterOrEqual(t, ok200.Load(), int64(2*DefaultImageMaxConcurrentCreatesPerUser), "admitted and queued requests complete")
+	require.Positive(t, busy.Load(), "requests beyond the bounded queue are refused at once")
 }
 
 type requestTagKey struct{}

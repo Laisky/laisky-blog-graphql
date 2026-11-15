@@ -36,6 +36,9 @@ type FakeStore struct {
 	// returned from Put while the object stays stored, which models a client
 	// that gave up (for example on a timeout) after the server committed it.
 	AfterPut func(ctx context.Context, key string) error
+	// BeforeDelete, when set, runs before an object is deleted; a non-nil
+	// error fails the Delete without removing anything.
+	BeforeDelete func(ctx context.Context, key string) error
 	// HostBase is the synthetic base URL used when building presigned URLs.
 	HostBase string
 }
@@ -98,6 +101,11 @@ func (f *FakeStore) Delete(ctx context.Context, key string) error {
 	}
 	if f.DeleteErr != nil {
 		return f.DeleteErr
+	}
+	if f.BeforeDelete != nil {
+		if err := f.BeforeDelete(ctx, key); err != nil {
+			return err
+		}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

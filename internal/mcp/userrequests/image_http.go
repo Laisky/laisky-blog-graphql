@@ -22,7 +22,13 @@ const maxMultipartMemory = 8 << 20 // 8 MiB
 
 // parseMultipart walks a multipart/form-data request and returns the caller's
 // text content, task_id, and the ordered list of attachments (files then URLs).
-func (h *httpHandler) parseMultipart(r *http.Request) (string, string, []AttachmentInput, error) {
+// File attachments are not read into memory here: each is opened from the
+// parsed form (memory up to maxMultipartMemory, temporary files beyond) when
+// ImageManager.Prepare reaches it, so at most one raw attachment is held at a
+// time. The caller must call cleanup, which removes the temporary files, once
+// the attachments are no longer needed; cleanup is a no-op on error.
+func (h *httpHandler) parseMultipart(r *http.Request) (content, taskID string, attachments []AttachmentInput, cleanup func(), err error) {
+	noop := func() {}
 	const overhead int64 = 2 << 20
 	perImage, count := DefaultImagePerImageMaxBytes, DefaultImageMaxPerRequest
 	if h.imageManager != nil {
@@ -30,25 +36,24 @@ func (h *httpHandler) parseMultipart(r *http.Request) (string, string, []Attachm
 		perImage, count = settings.PerImageMaxBytes, settings.MaxPerRequest
 	}
 	if perImage <= 0 || count <= 0 || int64(count) > (math.MaxInt64-overhead)/perImage {
-		return "", "", nil, errors.New("invalid image request size limits")
+		return "", "", nil, noop, errors.New("invalid image request size limits")
 	}
 	bodyCap := perImage*int64(count) + overhead
 
 	if err := parseBoundedMultipart(r, bodyCap); err != nil {
-		return "", "", nil, err
+		return "", "", nil, noop, err
 	}
 	form := r.MultipartForm
 	if form == nil {
-		return "", "", nil, errors.New("multipart form missing")
+		return "", "", nil, noop, errors.New("multipart form missing")
 	}
-
-	defer func() {
+	cleanup = func() {
 		if err := form.RemoveAll(); err != nil {
 			h.logger.Warn("remove multipart temporary files", zap.Error(err))
 		}
-	}()
-	content := strings.TrimSpace(firstFormValue(form.Value, "content"))
-	taskID := strings.TrimSpace(firstFormValue(form.Value, "task_id"))
+	}
+	content = strings.TrimSpace(firstFormValue(form.Value, "content"))
+	taskID = strings.TrimSpace(firstFormValue(form.Value, "task_id"))
 
 	attachmentCount := len(form.File["images"])
 	for _, raw := range form.Value["image_urls"] {
@@ -57,35 +62,27 @@ func (h *httpHandler) parseMultipart(r *http.Request) (string, string, []Attachm
 		}
 	}
 	if attachmentCount > count {
-		return "", "", nil, errors.WithStack(ErrTooManyImages)
+		cleanup()
+		return "", "", nil, noop, errors.WithStack(ErrTooManyImages)
 	}
 
-	var attachments []AttachmentInput
 	for _, hdr := range form.File["images"] {
 		if hdr == nil {
 			continue
 		}
 		if hdr.Size > perImage {
-			return "", "", nil, errors.WithStack(imageproc.ErrImageTooLarge)
-		}
-		file, err := hdr.Open()
-		if err != nil {
-			return "", "", nil, errors.Wrap(err, "open multipart part")
-		}
-		body, readErr := io.ReadAll(io.LimitReader(file, perImage+1))
-		closeErr := file.Close()
-		if readErr != nil {
-			return "", "", nil, errors.Wrap(readErr, "read multipart part")
-		}
-		if closeErr != nil {
-			return "", "", nil, errors.Wrap(closeErr, "close multipart part")
-		}
-		if int64(len(body)) > perImage {
-			return "", "", nil, errors.WithStack(imageproc.ErrImageTooLarge)
+			cleanup()
+			return "", "", nil, noop, errors.WithStack(imageproc.ErrImageTooLarge)
 		}
 		attachments = append(attachments, AttachmentInput{
-			FileBytes: body,
-			Filename:  hdr.Filename,
+			Filename: hdr.Filename,
+			Open: func() (io.ReadCloser, error) {
+				file, err := hdr.Open()
+				if err != nil {
+					return nil, errors.Wrap(err, "open multipart part")
+				}
+				return file, nil
+			},
 		})
 	}
 	for _, raw := range form.Value["image_urls"] {
@@ -95,7 +92,7 @@ func (h *httpHandler) parseMultipart(r *http.Request) (string, string, []Attachm
 		}
 		attachments = append(attachments, AttachmentInput{URL: raw})
 	}
-	return content, taskID, attachments, nil
+	return content, taskID, attachments, cleanup, nil
 }
 
 // firstFormValue returns the first non-empty value in values[key], or "".

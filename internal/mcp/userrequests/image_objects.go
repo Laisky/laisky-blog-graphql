@@ -8,6 +8,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -19,21 +20,31 @@ import (
 	"github.com/Laisky/laisky-blog-graphql/internal/mcp/askuser"
 )
 
-// Image object claims are rows of mcp_user_image_claims. Every object-store
-// write or delete is announced by a claim committed under the image scope
-// lock before the store is touched, and no transaction is held open across
-// object-store I/O:
+// Image object claims are rows of mcp_user_image_claims. Together with the
+// image refs they keep every object this deployment may have written
+// discoverable from the database until it has been deleted after the last
+// write that could still land (proposal §3.9, "claim lifecycle"). Each claim
+// is committed under the image scope lock before the store is touched, and no
+// transaction is held open across object-store I/O:
 //
-//   - claimUpload reserves quota for an upload in progress and protects its
-//     key from deletion until the request finalizes (or the claim expires);
-//   - claimDelete is a lease held while a delete of the key is in flight; new
-//     uploads of the key are refused until it ends or expires, so a delayed
-//     delete can never remove an object a later request uploaded;
-//   - claimOrphan marks a key whose ref the GC removed; the reconciler deletes
-//     the object unless something references or claims it again.
+//   - claimUpload (live imageUploadClaimTTL) reserves quota for an upload in
+//     progress and protects its key from deletion. Finalize consumes it in the
+//     transaction that inserts the refs; compensation releases it.
+//   - claimDelete (live imageDeleteLeaseTTL) is a lease held while a delete of
+//     the key is in flight. Reservations of the key are refused while it
+//     lives, so a delete delayed by less than the lease TTL cannot remove a
+//     later upload. A successful delete drops it; a failed one expires.
+//   - claimOrphan names a key that may have lost its last owner: a ref the GC
+//     expired, a ref finalize re-pointed at another key, or a key a failed
+//     create started uploading (due only after imageLateWriteWindow, when a
+//     late PUT has had time to land). When it is due the reconciler deletes
+//     the object unless a ref or a live claim protects it.
 //
-// Expired upload and delete claims (a crashed request, a failed delete) are
-// picked up by the reconciler like orphan claims.
+// Every transition that removes the last protection of a key — releasing an
+// upload claim, deleting or re-pointing a ref — commits, in the same
+// transaction, a delete lease or an orphan claim for that key. Expired upload
+// claims and delete leases (a crashed request, a failed delete) are due for
+// the reconciler like orphan claims.
 const (
 	claimUpload = "upload"
 	claimDelete = "delete"
@@ -44,10 +55,22 @@ const (
 	// imageUploadClaimTTL bounds how long an upload reservation lives; it is
 	// far longer than a create request may run (30 s).
 	imageUploadClaimTTL = 10 * time.Minute
-	// imageDeleteLeaseTTL bounds how long a delete lease lives. It must exceed
-	// the time a delete request can stay in flight after the client gave up;
-	// the per-delete timeout is imageObjectDeleteTimeout.
+	// imageDeleteLeaseTTL bounds how long a delete lease lives. It is meant to
+	// exceed the time a delete request can stay in flight after the client
+	// gave up (the per-delete timeout is imageObjectDeleteTimeout); S3 does not
+	// bound that time, so a DELETE applied later than this is the documented
+	// residual window.
 	imageDeleteLeaseTTL = 5 * time.Minute
+	// imageLateWriteWindow is how long after a failed create the store is
+	// assumed able to still apply one of its PUTs: S3 documents no bound for a
+	// request the client abandoned, and minio-go retries a PUT up to 10 times.
+	// Compensation leaves an orphan claim due after this window for every key
+	// the request started uploading, so the reconciler deletes such a late
+	// write. A PUT applied later still is the documented residual window.
+	imageLateWriteWindow = 5 * time.Minute
+	// imageDeleteConcurrency bounds how many object deletes one compensation
+	// or reconciler pass keeps in flight.
+	imageDeleteConcurrency = 4
 	// imageObjectPutTimeout bounds one object upload.
 	imageObjectPutTimeout = 20 * time.Second
 	// imageObjectDeleteTimeout bounds one object delete.
@@ -64,7 +87,8 @@ const (
 // ImageObjectWriter uploads and removes the objects behind image refs.
 // Service.CreateRequestWithImages calls PutImage only after the quota admitted
 // every image, and DeleteImage only for objects that nothing references or
-// claims. ImageManager is the production implementation.
+// claims. DeleteImage may run concurrently for different keys. ImageManager is
+// the production implementation.
 type ImageObjectWriter interface {
 	// PutImage stores image.PNG under image.StorageKey.
 	PutImage(ctx context.Context, auth *askuser.AuthorizationContext, image UploadedImage) error
@@ -375,21 +399,40 @@ func (s *Service) leaseUnprotectedImageKeys(
 	return leased, nil
 }
 
-// deleteLeasedImageObjects deletes each leased key with a bounded timeout and
-// drops its lease on success. A failed (possibly still in-flight) delete
-// keeps its lease until it expires, so no upload of that key can race it; the
-// reconciler retries it afterwards.
+// deleteLeasedImageObjects deletes the leased keys outside any transaction,
+// at most imageDeleteConcurrency at a time and each bounded by
+// imageObjectDeleteTimeout, then drops the lease of every successful delete.
+// A failed (possibly still in-flight) delete keeps its lease until it
+// expires, so no upload of that key can race it; the reconciler retries it
+// afterwards. The leases are dropped one after another once every delete
+// returned, so the database sees no concurrent writes from here.
 func (s *Service) deleteLeasedImageObjects(ctx context.Context, objects ImageObjectWriter, owner uuid.UUID, keys []string) ([]string, error) {
+	results := make([]error, len(keys))
+	slots := make(chan struct{}, imageDeleteConcurrency)
+	var wg sync.WaitGroup
+	for i, key := range keys {
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			results[i] = errors.Wrap(ctx.Err(), "delete not started")
+			continue
+		}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			deleteCtx, cancel := context.WithTimeout(ctx, imageObjectDeleteTimeout)
+			defer cancel()
+			results[i] = objects.DeleteImage(deleteCtx, key)
+		})
+	}
+	wg.Wait()
+
 	var (
 		deleted []string
 		failed  []error
 	)
-	for _, key := range keys {
-		deleteCtx, cancel := context.WithTimeout(ctx, imageObjectDeleteTimeout)
-		err := objects.DeleteImage(deleteCtx, key)
-		cancel()
-		if err != nil {
-			failed = append(failed, errors.Wrapf(err, "delete %q", key))
+	for i, key := range keys {
+		if results[i] != nil {
+			failed = append(failed, errors.Wrapf(results[i], "delete %q", key))
 			continue
 		}
 		deleted = append(deleted, key)
@@ -407,36 +450,42 @@ func (s *Service) deleteLeasedImageObjects(ctx context.Context, objects ImageObj
 }
 
 // releaseImageUploads is the compensation of a failed create. It runs
-// detached from ctx with a bounded timeout: it releases the request's upload
-// claims and leases every attempted key that nothing else references or
-// claims (one short transaction), then deletes those objects. Failures are
+// detached from ctx with a bounded timeout. In one short transaction under
+// the scope locks of every key the request reserved, it releases the
+// request's upload claims, records for every key whose upload started an
+// orphan claim due after imageLateWriteWindow (the store may still apply that
+// PUT later), and leases every reserved key that nothing else references or
+// claims — whether or not this request uploaded it, because releasing its
+// claim may have removed the last protection of an object another failed
+// request left for it. It then deletes the leased objects. Failures are
 // logged, not returned: the caller already returns the original error, and
-// leftover claims are retried by the reconciler once they expire.
+// leftover claims are retried by the reconciler once they are due.
 func (s *Service) releaseImageUploads(ctx context.Context, objects ImageObjectWriter, auth *askuser.AuthorizationContext, owner uuid.UUID, images []UploadedImage, attempted []string) {
 	logger := gmw.GetLogger(ctx).Named("user_requests_images")
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), imageCompensationTimeout) //nolint:contextcheck // cleanup must outlive the failed request
 	defer cancel()
 
-	// Lock every key the request claimed, so its claims are released and the
-	// attempted keys checked atomically.
 	keys := distinctImageKeys(images)
-	attemptedSet := make(map[string]bool, len(attempted))
+	recheck := make([]string, 0, len(attempted))
+	seen := make(map[string]bool, len(attempted))
 	for _, key := range attempted {
-		attemptedSet[key] = true
-	}
-	candidates := make([]string, 0, len(attempted))
-	for _, key := range keys {
-		if attemptedSet[key] {
-			candidates = append(candidates, key)
+		if !seen[key] {
+			seen[key] = true
+			recheck = append(recheck, key)
 		}
 	}
-	leased, err := s.leaseUnprotectedImageKeys(cleanupCtx, owner, auth.UserIdentity, keys, candidates,
-		func(ctx context.Context, tx *sql.Tx, _ time.Time) error {
+	leased, err := s.leaseUnprotectedImageKeys(cleanupCtx, owner, auth.UserIdentity, keys, keys,
+		func(ctx context.Context, tx *sql.Tx, now time.Time) error {
 			if _, err := tx.ExecContext(ctx,
 				rebindQuery(`DELETE FROM mcp_user_image_claims WHERE owner_id = ? AND kind = ?`, s.useDollar),
 				owner.String(), claimUpload,
 			); err != nil {
 				return errors.Wrap(err, "release image upload claims")
+			}
+			for _, key := range recheck {
+				if err := s.insertImageClaim(ctx, tx, owner, auth.UserIdentity, key, claimOrphan, 0, now, now.Add(imageLateWriteWindow)); err != nil {
+					return errors.Wrap(err, "record late-write re-check")
+				}
 			}
 			return nil
 		})
@@ -452,5 +501,5 @@ func (s *Service) releaseImageUploads(ctx context.Context, objects ImageObjectWr
 		return
 	}
 	logger.Debug("released objects of failed image request",
-		zap.Int("attempted", len(attempted)), zap.Int("deleted", len(deleted)))
+		zap.Int("reserved", len(keys)), zap.Int("attempted", len(attempted)), zap.Int("deleted", len(deleted)))
 }

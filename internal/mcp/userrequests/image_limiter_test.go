@@ -65,6 +65,7 @@ func TestImageCreateLimiterCaps(t *testing.T) {
 	defer l.mu.Unlock()
 	require.Zero(t, l.active)
 	require.Empty(t, l.users)
+	require.Empty(t, l.queued)
 	require.Empty(t, l.waiters)
 }
 

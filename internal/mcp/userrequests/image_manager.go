@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
@@ -60,13 +61,18 @@ func (m *ImageManager) AdmitCreate(ctx context.Context, auth *askuser.Authorizat
 	return release, nil
 }
 
-// AttachmentInput represents one caller-provided attachment — either raw
-// bytes from a multipart part or a URL to fetch server-side. Exactly one of
-// FileBytes and URL must be non-empty.
+// AttachmentInput represents one caller-provided attachment — raw bytes,
+// a multipart part to open, or a URL to fetch server-side. Exactly one of
+// FileBytes, Open and URL must be set.
 type AttachmentInput struct {
 	FileBytes []byte
-	Filename  string
-	URL       string
+	// Open, when set, streams the attachment. Prepare reads at most
+	// PerImageMaxBytes+1 bytes from it when it reaches the attachment and
+	// drops them after normalization, so one request holds at most one raw
+	// attachment at a time.
+	Open     func() (io.ReadCloser, error)
+	Filename string
+	URL      string
 }
 
 // Prepare fetches and normalizes every attachment and derives its object key.
@@ -102,6 +108,13 @@ func (m *ImageManager) prepareOne(ctx context.Context, auth *askuser.Authorizati
 	raw := in.FileBytes
 	filename := in.Filename
 	sourceURL := ""
+	if len(raw) == 0 && in.Open != nil {
+		read, err := readAttachment(in.Open, m.settings.PerImageMaxBytes)
+		if err != nil {
+			return UploadedImage{}, errors.WithStack(err)
+		}
+		raw = read
+	}
 	if len(raw) == 0 && in.URL != "" {
 		if m.fetcher == nil {
 			return UploadedImage{}, errors.Wrap(imageproc.ErrURLFetchFailed, "url fetcher unavailable")
@@ -139,6 +152,26 @@ func (m *ImageManager) prepareOne(ctx context.Context, auth *askuser.Authorizati
 		OriginalMIME: result.OriginalMIME,
 		SourceURL:    sourceURL,
 	}, nil
+}
+
+// readAttachment reads one streamed attachment, refusing more than limit bytes.
+func readAttachment(open func() (io.ReadCloser, error), limit int64) ([]byte, error) {
+	file, err := open()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	body, readErr := io.ReadAll(io.LimitReader(file, limit+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, errors.Wrap(readErr, "read attachment")
+	}
+	if closeErr != nil {
+		return nil, errors.Wrap(closeErr, "close attachment")
+	}
+	if int64(len(body)) > limit {
+		return nil, errors.WithStack(imageproc.ErrImageTooLarge)
+	}
+	return body, nil
 }
 
 // PutImage uploads one normalized image under its StorageKey. It implements

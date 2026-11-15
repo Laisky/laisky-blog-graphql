@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"time"
 
 	errors "github.com/Laisky/errors/v2"
 	gutils "github.com/Laisky/go-utils/v6"
 	"github.com/Laisky/zap"
+	"github.com/google/uuid"
 )
 
 // imageReconcileTimeout bounds one reconciler pass.
@@ -41,13 +43,16 @@ type dueImageClaim struct {
 //   - expired upload claims (a create that crashed between reserving and
 //     finalizing, or whose release failed),
 //   - expired delete leases (a delete that failed or timed out),
-//   - orphan claims (refs the GC expired).
+//   - due orphan claims (refs the GC expired or finalize re-pointed, and keys
+//     a failed create started uploading, once the late-write window passed).
 //
-// For each named key it releases the due claims and, under the image scope
-// lock, leases the key unless an image ref or a live claim protects it, then
-// deletes the object outside any transaction. A key whose delete fails keeps
-// its lease and is retried once that expires. At most OrphanSweepBatch claims
-// are processed per pass.
+// For each named key it releases the due claims and, in one short transaction
+// under the image scope lock, leases the key unless an image ref or a live
+// claim protects it. The leased objects are then deleted outside any
+// transaction, imageDeleteConcurrency keys at a time. A key whose delete
+// fails keeps its lease and is retried once that expires. At most
+// OrphanSweepBatch claims are processed per pass, and a pass whose context
+// ends leaves the rest due for the next one.
 func (s *Service) ReconcileImageObjects(ctx context.Context, objects ImageObjectWriter) (ImageReconcileResult, error) {
 	var result ImageReconcileResult
 	if objects == nil {
@@ -78,14 +83,29 @@ func (s *Service) ReconcileImageObjects(ctx context.Context, objects ImageObject
 	})
 	result.Keys = len(keys)
 
+	// Keys are leased and deleted in chunks of imageDeleteConcurrency, so a
+	// key stays leased (and its re-upload refused) only while its own chunk
+	// is deleted, not for the whole pass.
+	run := gutils.UUID7Bytes()
 	var failed []error
-	for _, key := range keys {
-		deleted, err := s.reconcileImageKey(ctx, objects, key, byKey[key])
-		if deleted {
-			result.Deleted++
+	for chunk := range slices.Chunk(keys, imageDeleteConcurrency) {
+		if err := ctx.Err(); err != nil {
+			failed = append(failed, errors.Wrap(err, "reconcile pass ended"))
+			break
 		}
+		leased := make([]string, 0, len(chunk))
+		for _, key := range chunk {
+			got, err := s.leaseDueImageKey(ctx, run, key, byKey[key])
+			if err != nil {
+				failed = append(failed, errors.Wrapf(err, "reconcile %q", key))
+				continue
+			}
+			leased = append(leased, got...)
+		}
+		deleted, err := s.deleteLeasedImageObjects(ctx, objects, run, leased)
+		result.Deleted += len(deleted)
 		if err != nil {
-			failed = append(failed, errors.Wrapf(err, "reconcile %q", key))
+			failed = append(failed, errors.WithStack(err))
 		}
 	}
 	if len(failed) > 0 {
@@ -120,10 +140,9 @@ func (s *Service) dueImageClaims(ctx context.Context, limit int) ([]dueImageClai
 	return out, nil
 }
 
-// reconcileImageKey releases the due claims of key and deletes its object if
-// nothing protects it. It reports whether the object was deleted.
-func (s *Service) reconcileImageKey(ctx context.Context, objects ImageObjectWriter, key string, claims []dueImageClaim) (bool, error) {
-	run := gutils.UUID7Bytes()
+// leaseDueImageKey releases the due claims of key and leases it for deletion
+// under run if nothing protects it. It returns the leased key, if any.
+func (s *Service) leaseDueImageKey(ctx context.Context, run uuid.UUID, key string, claims []dueImageClaim) ([]string, error) {
 	ids := make([]string, len(claims))
 	for i, c := range claims {
 		ids[i] = c.id
@@ -141,10 +160,9 @@ func (s *Service) reconcileImageKey(ctx context.Context, objects ImageObjectWrit
 			return nil
 		})
 	if err != nil {
-		return false, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
-	deleted, err := s.deleteLeasedImageObjects(ctx, objects, run, leased)
-	return len(deleted) > 0, errors.WithStack(err)
+	return leased, nil
 }
 
 // StartImageReconcileWorker runs ReconcileImageObjects every

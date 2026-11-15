@@ -32,6 +32,9 @@ type orphanHarness struct {
 	svc     *Service
 	store   *storage.FakeStore
 	db      *sql.DB
+	// images is the ImageManager the handler uses (its create limiter is
+	// shared with the handler).
+	images *ImageManager
 }
 
 var orphanDBSeq atomic.Int64
@@ -63,6 +66,7 @@ func newOrphanHarnessWithDSN(t *testing.T, settings ImageSettings, dsn string) *
 		svc:     svc,
 		store:   store,
 		db:      db,
+		images:  manager,
 	}
 }
 
