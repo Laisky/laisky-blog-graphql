@@ -720,6 +720,97 @@ describe('UserRequestsPage preference restore', () => {
   });
 });
 
+describe('UserRequestsPage polling backoff', () => {
+  const flush = (ms = 0) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    vi.mocked(useApiKey).mockReturnValue({ apiKey: 'test-api-key', isToolConsoleLocked: false, status: 'valid' });
+    vi.mocked(api.listUserRequests).mockResolvedValue({ pending: [], consumed: [] });
+    vi.mocked(api.getPreferencesFromServer).mockResolvedValue({ return_mode: 'all' });
+    // Take the top of each jitter range so the schedules below are exact.
+    vi.spyOn(Math, 'random').mockReturnValue(0.999999);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('backs off list refreshes while they keep failing and returns to the 5 s cadence once one loads', async () => {
+    vi.mocked(api.listUserRequests).mockRejectedValue(new TypeError('Failed to fetch'));
+    render(<UserRequestsPage />);
+    await flush();
+    expect(api.listUserRequests).toHaveBeenCalledTimes(1);
+    await flush(8000);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(2);
+    await flush(15_999);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(2);
+    await flush(1);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(3);
+    // Loads at 0, 8, 24 and 56 s, then once a minute: 13 loads in 10 minutes instead of 76.
+    await flush(600_000 - 24_000);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(13);
+
+    vi.mocked(api.listUserRequests).mockResolvedValue({ pending: [], consumed: [] });
+    await flush(60_000);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(14);
+    await flush(5000);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(15);
+
+    // A success starts the backoff over: the next failure is retried after 8 s again.
+    vi.mocked(api.listUserRequests).mockRejectedValue(new TypeError('Failed to fetch'));
+    await flush(1000);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(16);
+    await flush(7999);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(16);
+    await flush(1);
+    expect(api.listUserRequests).toHaveBeenCalledTimes(17);
+  });
+
+  it('backs off hold-state polls while they keep failing and returns to once a second when one answers', async () => {
+    vi.mocked(api.setHold).mockResolvedValue({ active: true, waiting: false, remaining_secs: 300 });
+    vi.mocked(api.getHoldState).mockRejectedValue(new TypeError('Failed to fetch'));
+    render(<UserRequestsPage />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Hold' }));
+    await flush();
+    expect(api.setHold).toHaveBeenCalledTimes(1);
+
+    // Polls at 1 s, then 2, 4, 8 and 16 s apart, then every 30 s (capped): 7 polls in 2 minutes instead of 120.
+    await flush(1000);
+    expect(api.getHoldState).toHaveBeenCalledTimes(1);
+    await flush(1999);
+    expect(api.getHoldState).toHaveBeenCalledTimes(1);
+    await flush(1);
+    expect(api.getHoldState).toHaveBeenCalledTimes(2);
+    await flush(120_000 - 3000);
+    expect(api.getHoldState).toHaveBeenCalledTimes(7);
+
+    // The 8th poll (at 121 s) answers, so the next one follows a second later.
+    vi.mocked(api.getHoldState).mockResolvedValue({ active: true, waiting: false, remaining_secs: 200 });
+    await flush(1000);
+    expect(api.getHoldState).toHaveBeenCalledTimes(8);
+    await flush(1000);
+    expect(api.getHoldState).toHaveBeenCalledTimes(9);
+    await flush(1000);
+    expect(api.getHoldState).toHaveBeenCalledTimes(10);
+
+    // A success starts the backoff over: the next failure is retried after 2 s again.
+    vi.mocked(api.getHoldState).mockRejectedValue(new TypeError('Failed to fetch'));
+    await flush(1000);
+    expect(api.getHoldState).toHaveBeenCalledTimes(11);
+    await flush(1999);
+    expect(api.getHoldState).toHaveBeenCalledTimes(11);
+    await flush(1);
+    expect(api.getHoldState).toHaveBeenCalledTimes(12);
+  });
+});
+
 describe('UserRequestsPage accessibility', () => {
   beforeEach(() => {
     vi.clearAllMocks();

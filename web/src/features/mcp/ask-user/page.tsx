@@ -7,14 +7,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { cn } from '@/lib/utils';
+import { createFailureBackoff } from '@/lib/backoff';
 import { createVisibilityPoller } from '@/lib/visibility-poller';
 
 import { listRequests, submitAnswer, type AskUserRequest } from './api';
 
 /** POLL_INTERVAL_MS is the background refresh cadence for pending questions. */
 const POLL_INTERVAL_MS = 5000;
-/** POLL_RETRY_MS is the backoff after a failed refresh. */
-const POLL_RETRY_MS = 8000;
+/**
+ * POLL_FAILURE_BACKOFF spaces refreshes while they keep failing: 8 s after the first
+ * failure, doubling to one a minute, jittered so tabs do not retry in step after an outage.
+ */
+const POLL_FAILURE_BACKOFF = { baseMs: 8000, maxMs: 60_000, jitter: true } as const;
 
 /** AskUserPage lists pending ask_user questions, collects answers and shows history. */
 export function AskUserPage() {
@@ -38,6 +42,7 @@ export function AskUserPage() {
     }
 
     let disposed = false;
+    const failures = createFailureBackoff(POLL_FAILURE_BACKOFF);
 
     // The poller chains each refresh after the previous one settles, skips ticks
     // while the tab is hidden, and refreshes once when the tab becomes visible.
@@ -53,10 +58,11 @@ export function AskUserPage() {
 
         setPendingRequests(data.pending ?? []);
         setHistoryRequests(data.history ?? []);
+        failures.reset();
         return POLL_INTERVAL_MS;
       } catch {
         if (disposed || signal.aborted) return null;
-        return POLL_RETRY_MS;
+        return failures.fail();
       } finally {
         if (initial && !disposed) {
           setIsLoading(false);

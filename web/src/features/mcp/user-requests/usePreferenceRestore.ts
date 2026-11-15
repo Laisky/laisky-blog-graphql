@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { backoffDelay } from '@/lib/backoff';
 import { HttpStatusError, isRetryableRequestFailure } from '@/lib/http-error';
 import { createVisibilityPoller } from '@/lib/visibility-poller';
 
@@ -33,7 +34,7 @@ export interface PreferenceRestore {
 
 /** preferenceRetryDelay returns the backoff before the next load after `failures` consecutive failures. */
 export function preferenceRetryDelay(failures: number): number {
-  return Math.min(PREFERENCE_RETRY_BASE_MS * 2 ** Math.max(0, failures - 1), PREFERENCE_RETRY_MAX_MS);
+  return backoffDelay(failures, { baseMs: PREFERENCE_RETRY_BASE_MS, maxMs: PREFERENCE_RETRY_MAX_MS });
 }
 
 /**

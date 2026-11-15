@@ -359,6 +359,69 @@ describe('ApiKeyContext', () => {
       expect(screen.getByTestId('status').textContent).toBe('none');
     });
 
+    it.each([
+      ['in transit', () => Promise.reject(new TypeError('Failed to fetch'))],
+      ['with HTTP 503', () => Promise.resolve({ ok: false, status: 503, json: async () => ({}) } as Response)],
+    ])('backs off while the quota endpoint cannot be reached %s, and restores the cadence once it answers', async (_label, unavailable) => {
+      const fetchMock = await renderInsufficient();
+      fetchMock.mockImplementation(unavailable);
+      // Take the top of each jitter range so the schedule is exact: 10 s, then 20, 40, 80, 160 and 300 s (capped).
+      vi.spyOn(Math, 'random').mockReturnValue(0.999999);
+      vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+      const advance = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+
+      await advance(10_000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await advance(19_999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await advance(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      // 40 + 80 + 160 + 300 s later: four more checks in 580 s instead of 58 at the 10 s cadence.
+      await advance(580_000);
+      expect(fetchMock).toHaveBeenCalledTimes(6);
+      await advance(300_000);
+      expect(fetchMock).toHaveBeenCalledTimes(7);
+      expect(screen.getByTestId('status').textContent).toBe('insufficient');
+
+      // Once the endpoint answers (here: still insufficient), the regular cadence resumes.
+      fetchMock.mockResolvedValue(insufficientResponse);
+      await advance(300_000);
+      expect(fetchMock).toHaveBeenCalledTimes(8);
+      await advance(10_000);
+      expect(fetchMock).toHaveBeenCalledTimes(9);
+      await advance(10_000);
+      expect(fetchMock).toHaveBeenCalledTimes(10);
+
+      // An answer starts the backoff over: the next outage waits 20 s first, not 5 minutes.
+      fetchMock.mockImplementation(unavailable);
+      await advance(10_000);
+      expect(fetchMock).toHaveBeenCalledTimes(11);
+      await advance(19_999);
+      expect(fetchMock).toHaveBeenCalledTimes(11);
+      await advance(1);
+      expect(fetchMock).toHaveBeenCalledTimes(12);
+    });
+
+    it('keeps the 10 s cadence for answered checks that carry GraphQL errors, as an exhausted key does', async () => {
+      // An exhausted key reaches the upstream 401 relayed as a GraphQL error over HTTP 200:
+      // the endpoint answered, so this is the steady state of waiting for a top-up, not an outage.
+      const fetchMock = await renderInsufficient();
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ errors: [{ message: 'unexpected status 401', path: ['ValidateOneapiApiKey'] }], data: null }),
+      } as Response);
+      vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(6);
+      expect(screen.getByTestId('status').textContent).toBe('insufficient');
+    });
+
     it('skips checks while the tab is hidden and re-checks when it becomes visible', async () => {
       const fetchMock = await renderInsufficient();
       fetchMock.mockResolvedValue(insufficientResponse);

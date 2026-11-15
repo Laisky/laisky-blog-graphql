@@ -53,6 +53,7 @@ describe('AskUserPage background polling', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     Reflect.deleteProperty(document, 'visibilityState');
   });
 
@@ -65,6 +66,39 @@ describe('AskUserPage background polling', () => {
     await flush(5000);
     expect(api.listRequests).toHaveBeenCalledTimes(2);
     expect(vi.mocked(api.listRequests).mock.calls[1][2]).toBe('low');
+  });
+
+  it('backs off while the list keeps failing and returns to the 5 s cadence once it loads', async () => {
+    vi.mocked(api.listRequests).mockRejectedValue(new TypeError('Failed to fetch'));
+    // Take the top of each jitter range so the schedule is exact: 8, 16, 32, then 60 s (capped).
+    vi.spyOn(Math, 'random').mockReturnValue(0.999999);
+    render(<AskUserPage />);
+    await flush();
+    expect(api.listRequests).toHaveBeenCalledTimes(1);
+    await flush(8000);
+    expect(api.listRequests).toHaveBeenCalledTimes(2);
+    await flush(15_999);
+    expect(api.listRequests).toHaveBeenCalledTimes(2);
+    await flush(1);
+    expect(api.listRequests).toHaveBeenCalledTimes(3);
+    // Loads at 0, 8, 24 and 56 s, then once a minute: 13 loads in 10 minutes instead of 76.
+    await flush(600_000 - 24_000);
+    expect(api.listRequests).toHaveBeenCalledTimes(13);
+
+    vi.mocked(api.listRequests).mockResolvedValue({ pending: [pendingQuestion], history: [] });
+    await flush(60_000);
+    expect(api.listRequests).toHaveBeenCalledTimes(14);
+    await flush(5000);
+    expect(api.listRequests).toHaveBeenCalledTimes(15);
+
+    // A success starts the backoff over: the next failure is retried after 8 s again.
+    vi.mocked(api.listRequests).mockRejectedValue(new TypeError('Failed to fetch'));
+    await flush(1000);
+    expect(api.listRequests).toHaveBeenCalledTimes(16);
+    await flush(7999);
+    expect(api.listRequests).toHaveBeenCalledTimes(16);
+    await flush(1);
+    expect(api.listRequests).toHaveBeenCalledTimes(17);
   });
 
   it('stops polling while hidden and refreshes immediately when visible again', async () => {

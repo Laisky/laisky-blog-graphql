@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { normalizeApiKey, useApiKey } from '@/lib/api-key-context';
 import { readStorage, writeStorage } from '@/lib/safe-storage';
 import { cn } from '@/lib/utils';
+import { createFailureBackoff } from '@/lib/backoff';
 import { createVisibilityPoller } from '@/lib/visibility-poller';
 
 import { isImeComposingKeyDown } from '../shared/ime';
@@ -54,10 +55,19 @@ const MAX_ATTACHMENTS = 5;
 
 /** LIST_POLL_INTERVAL_MS is the background refresh cadence for the request lists. */
 const LIST_POLL_INTERVAL_MS = 5000;
-/** LIST_POLL_RETRY_MS is the backoff after a failed list refresh. */
-const LIST_POLL_RETRY_MS = 8000;
+/**
+ * LIST_POLL_FAILURE_BACKOFF spaces list refreshes while they keep failing: 8 s after the
+ * first failure, doubling to one a minute, jittered so tabs do not retry in step after an outage.
+ */
+const LIST_POLL_FAILURE_BACKOFF = { baseMs: 8000, maxMs: 60_000, jitter: true } as const;
 /** HOLD_POLL_INTERVAL_MS keeps the hold countdown accurate to the second. */
 const HOLD_POLL_INTERVAL_MS = 1000;
+/**
+ * HOLD_POLL_FAILURE_BACKOFF spaces hold-state polls while they keep failing (2 s doubling to
+ * 30 s, jittered). A failed poll cannot move the countdown anyway, so polling it every second
+ * during an outage would only add load.
+ */
+const HOLD_POLL_FAILURE_BACKOFF = { baseMs: 2000, maxMs: 30_000, jitter: true } as const;
 /** SEARCH_DEBOUNCE_MS waits for typing to pause before querying history. */
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -200,6 +210,7 @@ export function UserRequestsPage() {
     }
 
     let disposed = false;
+    const failures = createFailureBackoff(LIST_POLL_FAILURE_BACKOFF);
 
     // The poller chains each refresh after the previous one settles, skips ticks
     // while the tab is hidden, and refreshes once when the tab becomes visible.
@@ -224,10 +235,11 @@ export function UserRequestsPage() {
         setTotalConsumed(data.total_consumed ?? 0);
         setHasMoreConsumed((data.consumed?.length ?? 0) >= visibleCountRef.current);
 
+        failures.reset();
         return LIST_POLL_INTERVAL_MS;
       } catch {
         if (disposed || signal.aborted) return null;
-        return LIST_POLL_RETRY_MS;
+        return failures.fail();
       } finally {
         if (initial && !disposed) {
           setIsLoading(false);
@@ -293,6 +305,7 @@ export function UserRequestsPage() {
       return;
     }
 
+    const failures = createFailureBackoff(HOLD_POLL_FAILURE_BACKOFF);
     const poller = createVisibilityPoller(async ({ signal, priority }) => {
       const key = normalizeApiKey(apiKey);
       if (!key) return HOLD_POLL_INTERVAL_MS;
@@ -300,11 +313,12 @@ export function UserRequestsPage() {
         const state = await getHoldState(key, normalizedTaskId, signal, priority);
         if (signal.aborted) return null;
         setHoldState(state);
+        failures.reset();
         // If hold is no longer active, stop polling
         return state.active ? HOLD_POLL_INTERVAL_MS : null;
       } catch {
-        // Ignore errors during hold state polling and keep the countdown alive.
-        return signal.aborted ? null : HOLD_POLL_INTERVAL_MS;
+        // Keep the hold and its countdown, and try again after a growing pause.
+        return signal.aborted ? null : failures.fail();
       }
     });
 

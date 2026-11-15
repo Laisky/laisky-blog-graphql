@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { readStorage, removeStorage, writeStorage } from './safe-storage';
+import { createFailureBackoff } from './backoff';
 import { createVisibilityPoller } from './visibility-poller';
 
 const CURRENT_KEY_STORAGE = 'mcp_api_key';
@@ -20,6 +21,10 @@ const TOOL_CONSOLE_LOCKED_STATUSES = new Set<ApiKeyStatus>(['none', 'error', 'va
 const MIN_VALID_QUOTA = 250000;
 // QUOTA_RECHECK_INTERVAL_MS is the background re-check cadence while the quota is insufficient.
 const QUOTA_RECHECK_INTERVAL_MS = 10000;
+// QUOTA_RECHECK_UNAVAILABLE_BACKOFF spaces background re-checks while the quota endpoint itself
+// cannot answer (transport failure or non-2xx): 20 s doubling to 5 minutes, jittered so every
+// open tab does not retry in step when the backend comes back.
+const QUOTA_RECHECK_UNAVAILABLE_BACKOFF = { baseMs: 2 * QUOTA_RECHECK_INTERVAL_MS, maxMs: 5 * 60_000, jitter: true } as const;
 
 /** ApiKeyEntry stores one API key and its optional user-defined alias. */
 export interface ApiKeyEntry {
@@ -212,6 +217,16 @@ function parseRemainQuota(body: unknown): number | null {
   return typeof quota === 'number' && Number.isFinite(quota) ? quota : null;
 }
 
+/**
+ * ValidationOutcome reports how a validation ended:
+ * - 'answered': the endpoint replied with HTTP 2xx, with a quota or with GraphQL errors. An
+ *   exhausted key lands here (the upstream 401 is relayed as a GraphQL error), so it is the
+ *   steady state while waiting for a top-up, not an outage.
+ * - 'unavailable': the endpoint could not answer (transport failure or a non-2xx status).
+ * - 'superseded': a newer validation, a key change or the poller took over; nothing was applied.
+ */
+type ValidationOutcome = 'answered' | 'unavailable' | 'superseded';
+
 /** ValidationOptions selects how a validation result may change the shared key status. */
 interface ValidationOptions {
   /**
@@ -300,7 +315,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
    * re-check also by its poller's signal or a different active key.
    */
   const runValidation = useCallback(
-    async (keyToValidate: string | undefined, { background, signal }: ValidationOptions) => {
+    async (keyToValidate: string | undefined, { background, signal }: ValidationOptions): Promise<ValidationOutcome> => {
       const key = normalizeApiKey(keyToValidate ?? apiKeyRef.current);
       if (!key) {
         if (!background) {
@@ -308,7 +323,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
         }
         setStatus('none');
         setRemainQuota(null);
-        return;
+        return 'superseded';
       }
 
       let generation = validationRef.current.generation;
@@ -350,46 +365,60 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
           ...(background ? { priority: 'low' as const } : {}),
         });
         if (!isCurrent()) {
-          return;
+          return 'superseded';
         }
         if (!resp.ok) {
           fail(`http ${resp.status}`);
-          return;
+          return 'unavailable';
         }
 
         const body: unknown = await resp.json();
         if (!isCurrent()) {
-          return;
+          return 'superseded';
         }
         const quota = parseRemainQuota(body);
         if (quota === null) {
           fail('no quota in response', (body as { errors?: unknown } | null)?.errors);
-          return;
+          return 'answered';
         }
         setRemainQuota(quota);
         setStatus(quota > MIN_VALID_QUOTA ? 'valid' : 'insufficient');
+        return 'answered';
       } catch (err) {
         if (!isCurrent()) {
-          return;
+          return 'superseded';
         }
         fail('request failed', err);
+        return 'unavailable';
       }
     },
     [supersedeValidations]
   );
 
-  const validateApiKey = useCallback((keyToValidate?: string) => runValidation(keyToValidate, { background: false }), [runValidation]);
+  const validateApiKey = useCallback(
+    async (keyToValidate?: string) => {
+      await runValidation(keyToValidate, { background: false });
+    },
+    [runValidation]
+  );
 
   // Re-check the quota in the background while it is insufficient, so the console unlocks
   // once the balance is topped up. The shared poller never overlaps checks, pauses while the
-  // tab is hidden and catches up once it is shown again.
+  // tab is hidden and catches up once it is shown again. While the endpoint itself cannot
+  // answer, the re-checks back off; any answer (including the GraphQL error an exhausted key
+  // gets) restores the regular cadence, so a top-up is still noticed within one interval.
   useEffect(() => {
     if (status !== 'insufficient' || !apiKey) {
       return;
     }
 
+    const unavailable = createFailureBackoff(QUOTA_RECHECK_UNAVAILABLE_BACKOFF);
     const poller = createVisibilityPoller(async ({ signal }) => {
-      await runValidation(undefined, { background: true, signal });
+      const outcome = await runValidation(undefined, { background: true, signal });
+      if (outcome === 'unavailable') {
+        return unavailable.fail();
+      }
+      unavailable.reset();
       return QUOTA_RECHECK_INTERVAL_MS;
     });
     poller.schedule(QUOTA_RECHECK_INTERVAL_MS);
