@@ -144,49 +144,7 @@ func (s *Service) CreateRequest(ctx context.Context, auth *askuser.Authorization
 
 	taskID = normalizeTaskID(taskID)
 
-	var maxOrder int
-	err = s.queryRowContext(ctx,
-		`SELECT COALESCE(MAX(sort_order), -1)
-		 FROM mcp_user_requests
-		 WHERE api_key_hash = ? AND status = ?`,
-		auth.APIKeyHash,
-		StatusPending,
-	).Scan(&maxOrder)
-	if err != nil {
-		return nil, errors.Wrap(err, "query max sort order")
-	}
-
-	now := s.clock()
-
-	req := &Request{
-		ID:           gutils.UUID7Bytes(),
-		Content:      body,
-		Status:       StatusPending,
-		TaskID:       taskID,
-		SortOrder:    maxOrder + 1,
-		APIKeyHash:   auth.APIKeyHash,
-		KeySuffix:    auth.KeySuffix,
-		UserIdentity: auth.UserIdentity,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-
-	_, err = s.execContext(ctx,
-		`INSERT INTO mcp_user_requests
-		 (id, content, status, task_id, sort_order, api_key_hash, key_suffix, user_identity, consumed_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		req.ID.String(),
-		req.Content,
-		req.Status,
-		req.TaskID,
-		req.SortOrder,
-		req.APIKeyHash,
-		req.KeySuffix,
-		req.UserIdentity,
-		nil,
-		req.CreatedAt,
-		req.UpdatedAt,
-	)
+	req, err := s.insertPendingRequest(ctx, s.db, auth, gutils.UUID7Bytes(), body, taskID, s.clock())
 	if err != nil {
 		return nil, errors.Wrap(err, "create user request")
 	}

@@ -49,8 +49,12 @@ func TestFakeStorePresignedGet(t *testing.T) {
 func TestFakeStoreEnsureLifecycleIdempotent(t *testing.T) {
 	store := NewFakeStore()
 	ctx := context.Background()
-	require.NoError(t, store.EnsureLifecycle(ctx, "mcp/", 7))
-	require.NoError(t, store.EnsureLifecycle(ctx, "mcp/", 7))
+	wrote, err := store.EnsureLifecycle(ctx, "mcp/", 7)
+	require.NoError(t, err)
+	require.True(t, wrote)
+	wrote, err = store.EnsureLifecycle(ctx, "mcp/", 7)
+	require.NoError(t, err)
+	require.False(t, wrote, "an unchanged rule is not written again")
 
 	days, ok := store.Lifecycle("mcp/")
 	require.True(t, ok)
