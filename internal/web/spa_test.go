@@ -119,3 +119,71 @@ func TestSPAHandlerCachesFingerprintedBuildAssetsImmutably(t *testing.T) {
 	require.Equal(t, http.StatusOK, index.Code)
 	require.Equal(t, "no-store", index.Header().Get("Cache-Control"), "the entry document must always point at the current chunks")
 }
+
+// TestSPAHandlerDoesNotCacheUnhashedAssetsImmutably guards the contract with the Vite
+// build: only a content-hashed file name may be cached for a year. A stable-named file
+// that ends up under assets/ (for example web/public/assets/config.json) must revalidate.
+func TestSPAHandlerDoesNotCacheUnhashedAssetsImmutably(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "assets", "nested"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "index.html"), []byte("<html></html>"), 0o600))
+	files := map[string]string{
+		"assets/config.json":                `{"feature":true}`,
+		"assets/vendor.js":                  "export {};",
+		"assets/logo.svg":                   "<svg/>",
+		"assets/release-notes-2026.md":      "# notes",
+		"assets/nested/page-Dxeb0V0_.js":    "export {};",
+		"assets/index-Dxeb0V0_.css":         "body{}",
+		"assets/vendor-react-BRxj_2-a.js":   "export {};",
+		"assets/inter-latin-a1B2c3D4.woff2": "font",
+	}
+	for name, body := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte(body), 0o600))
+	}
+
+	handler := &spaHandler{root: root, index: []byte("<html></html>"), logger: glog.Shared}
+	cacheControl := func(path string) string {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, w.Code, path)
+		return w.Header().Get("Cache-Control")
+	}
+
+	for _, unhashed := range []string{"/assets/config.json", "/assets/vendor.js", "/assets/logo.svg", "/assets/release-notes-2026.md"} {
+		require.Empty(t, cacheControl(unhashed), "%s has no content hash and must revalidate", unhashed)
+	}
+	for _, hashed := range []string{"/assets/index-Dxeb0V0_.css", "/assets/vendor-react-BRxj_2-a.js", "/assets/inter-latin-a1B2c3D4.woff2", "/assets/nested/page-Dxeb0V0_.js"} {
+		require.Equal(t, immutableAssetCacheControl, cacheControl(hashed), hashed)
+	}
+}
+
+func TestIsFingerprintedBuildAsset(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{
+		"assets/index-Dxeb0V0_.js",
+		"assets/vendor-react-BRxj_2-a.js",
+		"assets/page-ABCDEFGH.css",
+		"assets/index--a1B2c3D.js",
+	} {
+		require.True(t, isFingerprintedBuildAsset(name), name)
+	}
+	for _, name := range []string{
+		"assets/",
+		"assets/config.json",
+		"assets/index.js",
+		"assets/-Dxeb0V0_.js",
+		"assets/page-short.js",
+		"assets/page-ABCDEFGHIJKL.css",
+		"assets/release-notes-2026.md",
+		"assets/page-Dxeb0V0_",
+		"assets/page-Dxeb0V0_.js.map",
+		"llms.txt",
+		"index-Dxeb0V0_.js",
+		"public/assets/index-Dxeb0V0_.js",
+	} {
+		require.False(t, isFingerprintedBuildAsset(name), name)
+	}
+}

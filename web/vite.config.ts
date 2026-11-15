@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { defineConfig, loadEnv, type Plugin } from 'vite';
@@ -6,6 +7,32 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { finalizePrivateSourceMaps } from './scripts/finalize-private-sourcemaps.mjs';
 
 const reactVendorModule = /[\\/]node_modules[\\/](?:react|react-dom|scheduler|react-router|react-router-dom|cookie)[\\/]/;
+
+// Build output names are a contract with internal/web/spa.go (fingerprintedAssetName): the Go
+// server sends a one-year immutable Cache-Control only for "assets/<name>-<8-char hash><ext>".
+// Keep the Rollup output names below, this pattern and the Go pattern in sync.
+const hashedAssetName = /^assets\/(?:[^/]+\/)*[^/]*[^/-]-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+(?:\.map)?$/;
+
+/**
+ * fingerprintedAssetContract fails the build when the immutable-cache contract would be
+ * broken: a public/assets directory would put stable-named files next to hashed bundles,
+ * and an emitted file under assets/ without the expected hash would silently lose caching.
+ */
+const fingerprintedAssetContract: Plugin = {
+  name: 'fingerprinted-asset-contract',
+  apply: 'build',
+  configResolved(config) {
+    if (config.publicDir && existsSync(resolve(config.publicDir, config.build.assetsDir))) {
+      throw new Error(`public/${config.build.assetsDir}/ is reserved for hashed build output; move those files elsewhere in public/`);
+    }
+  },
+  generateBundle(_options, bundle) {
+    const unhashed = Object.keys(bundle).filter((name) => name.startsWith('assets/') && !hashedAssetName.test(name));
+    if (unhashed.length > 0) {
+      this.error(`build output under assets/ must carry an 8-character content hash (see internal/web/spa.go): ${unhashed.join(', ')}`);
+    }
+  },
+};
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -33,11 +60,15 @@ export default defineConfig(({ mode }) => {
       sourcemaps: { disable: 'disable-upload' },
       telemetry: false,
       release: { inject: false, create: false, finalize: false },
-    })] : []), privateSourceMapQuarantine],
+    })] : []), fingerprintedAssetContract, privateSourceMapQuarantine],
     build: {
       sourcemap: privateSourceMaps ? 'hidden' : false,
       rollupOptions: {
         output: {
+          // Content-hashed names let internal/web/spa.go cache these files as immutable.
+          entryFileNames: 'assets/[name]-[hash:8].js',
+          chunkFileNames: 'assets/[name]-[hash:8].js',
+          assetFileNames: 'assets/[name]-[hash:8][extname]',
           // Keep the React runtime and router in their own long-lived chunk so a deploy
           // that only changes application code does not invalidate them in the cache.
           manualChunks(id) {
