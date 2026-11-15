@@ -138,10 +138,15 @@ func TestEstimateDecodeBytesBoundsActualAllocation(t *testing.T) {
 		fixture{"interlaced.gif", interlaceFirstGIFFrame(t, encodeFixture(t, "gif", patternImage("paletted", 2000, 1500)))},
 		fixture{"inflate-exact.tiff", overInflatedGrayTIFF(t, 2048, 2048, 2048*2048)},
 		fixture{"inflate-8x.tiff", overInflatedGrayTIFF(t, 2048, 2048, 2048*2048*8)},
+		// PR #94 review: a tRNS behind more than 1024 chunks, an Adobe APP14
+		// after the first scan, and lossless VP8L inside a VP8X container
+		// (vp8x_lossless.webp, 4096 x 4096) were all undercounted.
+		fixture{"gray-late-trns.png", insertPNGTRNSAfterChunks(encodeFixture(t, "png", patternImage("gray", 4096, 4096)), 1025)},
+		fixture{"late-adobe.jpg", insertJPEGBeforeEOI(t, encodeFixture(t, "jpeg", patternImage("rgba", 4096, 4096)), adobeAPP14)},
 	)
 	for _, name := range []string{
 		"progressive_444.jpg", "progressive_420.jpg", "progressive_cmyk.jpg", "progressive_gray.jpg",
-		"interlaced_rgba.png", "lossless.webp", "lossy.webp", "lossy_alpha.webp", "strips_deflate.tiff",
+		"interlaced_rgba.png", "lossless.webp", "lossy.webp", "lossy_alpha.webp", "strips_deflate.tiff", "vp8x_lossless.webp",
 	} {
 		raw, err := os.ReadFile(filepath.Join("testdata", name))
 		require.NoError(t, err)
@@ -369,6 +374,35 @@ func jpegHeader(marker byte, w, h int, adobe bool, comps ...[2]byte) []byte {
 	return append(out, 0xFF, 0xDA, 0x00, 0x02)
 }
 
+// webpChunk returns a RIFF chunk of the given type with n zero data bytes.
+func webpChunk(id string, n int) []byte {
+	out := append([]byte(id), byte(n), byte(n>>8), byte(n>>16), byte(n>>24))
+	out = append(out, make([]byte, n)...)
+	if n%2 == 1 {
+		out = append(out, 0)
+	}
+	return out
+}
+
+// webpALPH returns an ALPH chunk whose first byte selects compression.
+func webpALPH(compression byte) []byte {
+	chunk := webpChunk("ALPH", 2)
+	chunk[8] = compression
+	return chunk
+}
+
+// webpChunks wraps chunks into a RIFF WEBP container.
+func webpChunks(chunks ...[]byte) []byte {
+	var body []byte
+	for _, c := range chunks {
+		body = append(body, c...)
+	}
+	n := len(body) + 4
+	out := append([]byte("RIFF"), byte(n), byte(n>>8), byte(n>>16), byte(n>>24))
+	out = append(out, "WEBP"...)
+	return append(out, body...)
+}
+
 // TestDecodeBudgetDefaultCoversContract pins which inputs at the documented
 // 8192 x 8192 limit the default budget admits: every 8-bit-per-channel layout
 // of every format fits (as do non-interlaced 16-bit PNG, strip/tile 16-bit
@@ -403,9 +437,13 @@ func TestDecodeBudgetDefaultCoversContract(t *testing.T) {
 		{"jpeg baseline 4:4:4", jpegHeader(0xC0, edge, edge, false, ycc(0x11)...), mimeImageJpeg, with(color.YCbCrModel), true},
 		{"jpeg baseline cmyk", jpegHeader(0xC0, edge, edge, true, cmyk...), mimeImageJpeg, with(color.CMYKModel), true},
 		{"jpeg progressive 4:2:0", jpegHeader(0xC2, edge, edge, false, ycc(0x22)...), mimeImageJpeg, with(color.YCbCrModel), true},
-		{"webp lossy", nil, mimeImageWebp, with(color.YCbCrModel), true},
-		{"webp lossless", nil, mimeImageWebp, with(color.NRGBAModel), true},
-		{"webp lossy alpha", nil, mimeImageWebp, with(color.NYCbCrAModel), true},
+		// Lossy files are charged their whole declared VP8 chunk; 20 MiB is
+		// the per-image input limit.
+		{"webp lossy", webpChunks(webpChunk("VP8 ", 20<<20)), mimeImageWebp, with(color.YCbCrModel), true},
+		{"webp lossless", webpChunks(webpChunk("VP8L", 5)), mimeImageWebp, with(color.NRGBAModel), true},
+		{"webp lossless in VP8X", webpChunks(webpChunk("VP8X", 10), webpChunk("VP8L", 5)), mimeImageWebp, with(color.YCbCrModel), true},
+		{"webp lossy raw alpha", webpChunks(webpChunk("VP8X", 10), webpALPH(0), webpChunk("VP8 ", 20<<20)), mimeImageWebp, with(color.NYCbCrAModel), true},
+		{"webp lossy lossless alpha", webpChunks(webpChunk("VP8X", 10), webpALPH(1), webpChunk("VP8 ", 20<<20)), mimeImageWebp, with(color.NYCbCrAModel), true},
 		{"png rgba64 interlaced", pngHeader(edge, edge, 16, 6, 1), mimeImagePng, with(color.NRGBA64Model), false},
 		{"tiff rgba single deflate strip", tiffHeader(edge, edge, 8, edge, 2<<20), mimeImageTiff, with(color.RGBAModel), false},
 		{"tiff unparsable layout", nil, mimeImageTiff, with(color.GrayModel), false},
