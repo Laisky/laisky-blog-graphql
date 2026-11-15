@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { AppLayout } from './app-layout';
 import { useApiKey } from '@/lib/api-key-context';
+import { consolePages } from '@/lib/route-modules';
 import { useToolsConfig } from '@/lib/tools-config-context';
 
 vi.mock('@/lib/api-key-context', () => ({
@@ -192,5 +193,19 @@ describe('AppLayout navigation semantics', () => {
     });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(trigger).toHaveFocus();
+  });
+
+  it('links only to console pages that the code-split registry routes and preloads', () => {
+    mockValidKey();
+    renderLayout('/');
+
+    const registered = new Set(consolePages.map((page) => page.path));
+    const consoleLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href^="/"]'))
+      .map((link) => link.getAttribute('href') ?? '')
+      .filter((href) => href !== '/');
+    expect(consoleLinks.length).toBeGreaterThan(0);
+    for (const href of consoleLinks) {
+      expect(registered, `${href} has no entry in consolePages`).toContain(href);
+    }
   });
 });

@@ -7,7 +7,7 @@ import { ThemeProvider } from '@/components/theme/theme-provider';
 import { ApiKeyProvider } from '@/lib/api-key-context';
 import { configurePublicApiBasePath } from '@/lib/api-base';
 import { createRootErrorHandlers } from '@/lib/browser-sentry';
-import { routeModules } from '@/lib/route-modules';
+import { consolePages, ssoPageModules } from '@/lib/route-modules';
 import { configureSsoRedirectPolicy } from '@/lib/sso-redirect';
 import { defaultToolsConfig, loadRuntimeConfig, type SsoJwtConfig, type ToolsConfig } from '@/lib/runtime-config';
 import { applySiteBranding } from '@/lib/site-branding';
@@ -107,25 +107,25 @@ function buildSsoPageRoutes(
   githubOAuthEnabled: boolean,
   ssoJwt: SsoJwtConfig | null | undefined
 ): RouteObject[] {
-  const loginPage = lazyPage(routeModules.ssoLogin, ({ SsoLoginPage }) => (
+  const loginPage = lazyPage(ssoPageModules.login, ({ SsoLoginPage }) => (
     <SsoLoginPage turnstileSiteKey={turnstileSiteKey} githubOAuthEnabled={githubOAuthEnabled} />
   ));
   return [
     ...(prefix === '' ? [{ path: '/', lazy: loginPage }] : []),
     { path: `${prefix}/login`, lazy: loginPage },
-    { path: `${prefix}/github/callback`, lazy: lazyPage(routeModules.ssoGithubCallback, ({ SsoGithubCallbackPage }) => <SsoGithubCallbackPage />) },
+    { path: `${prefix}/github/callback`, lazy: lazyPage(ssoPageModules.githubCallback, ({ SsoGithubCallbackPage }) => <SsoGithubCallbackPage />) },
     {
       path: `${prefix}/profile`,
-      lazy: lazyPage(routeModules.ssoProfile, ({ SsoProfilePage }) => <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} />),
+      lazy: lazyPage(ssoPageModules.profile, ({ SsoProfilePage }) => <SsoProfilePage githubOAuthEnabled={githubOAuthEnabled} />),
     },
-    { path: `${prefix}/token`, lazy: lazyPage(routeModules.ssoTokenDetails, ({ SsoTokenDetailsPage }) => <SsoTokenDetailsPage ssoJwt={ssoJwt} />) },
+    { path: `${prefix}/token`, lazy: lazyPage(ssoPageModules.tokenDetails, ({ SsoTokenDetailsPage }) => <SsoTokenDetailsPage ssoJwt={ssoJwt} />) },
   ];
 }
 
 /**
  * buildMcpRoutes builds the router table for the MCP console experience.
  * It accepts the optional Turnstile site key and GitHub OAuth availability flag and returns the route configuration used by React Router.
- * Every page except the overview is code-split, so the landing page never downloads the tool consoles.
+ * Every page except the overview is code-split from the consolePages registry, so the landing page never downloads the tool consoles.
  */
 function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled: boolean, ssoJwt: SsoJwtConfig | null | undefined): RouteObject[] {
   return [
@@ -143,16 +143,12 @@ function buildMcpRoutes(turnstileSiteKey: string | undefined, githubOAuthEnabled
               errorElement: <RouteError />,
               children: [
                 { index: true, element: <HomePage /> },
-                { path: 'tools/ask_user', lazy: lazyPage(routeModules.askUser, ({ AskUserPage }) => <AskUserPage />) },
-                { path: 'tools/get_user_requests', lazy: lazyPage(routeModules.userRequests, ({ UserRequestsPage }) => <UserRequestsPage />) },
-                { path: 'tools/web_search', lazy: lazyPage(routeModules.webSearch, ({ WebSearchPage }) => <WebSearchPage />) },
-                { path: 'tools/web_fetch', lazy: lazyPage(routeModules.webFetch, ({ WebFetchPage }) => <WebFetchPage />) },
-                { path: 'tools/extract_key_info', lazy: lazyPage(routeModules.extractKeyInfo, ({ ExtractKeyInfoPage }) => <ExtractKeyInfoPage />) },
-                { path: 'tools/file_io', lazy: lazyPage(routeModules.fileIO, ({ FileIOPage }) => <FileIOPage />) },
-                { path: 'tools/memory', lazy: lazyPage(routeModules.memory, ({ MemoryPage }) => <MemoryPage />) },
-                { path: 'tools/call_log', lazy: lazyPage(routeModules.callLog, ({ CallLogPage }) => <CallLogPage />) },
-                { path: 'settings', lazy: lazyPage(routeModules.settings, ({ SettingsPage }) => <SettingsPage />) },
-                { path: 'debug/*', lazy: lazyPage(routeModules.inspector, ({ InspectorPage }) => <InspectorPage />) },
+                ...consolePages.map(
+                  (page): RouteObject => ({
+                    path: (page.pattern ?? page.path).slice(1),
+                    lazy: async () => ({ Component: await page.load() }),
+                  })
+                ),
                 { path: '*', element: <NotFoundPage /> },
               ],
             },

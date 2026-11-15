@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { isStaleChunkError, preloadConsoleRoute, reloadForStaleChunk } from './route-modules';
 
@@ -33,17 +33,21 @@ describe('isStaleChunkError', () => {
 });
 
 describe('reloadForStaleChunk', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('reloads once and refuses to loop within the guard window', () => {
     const storage = memoryStorage();
     const reload = vi.fn();
 
-    expect(reloadForStaleChunk(storage, 1_000_000, reload)).toBe(true);
+    expect(reloadForStaleChunk({ storage, now: 1_000_000, reload, online: true })).toBe('reloading');
     expect(reload).toHaveBeenCalledTimes(1);
 
-    expect(reloadForStaleChunk(storage, 1_005_000, reload)).toBe(false);
+    expect(reloadForStaleChunk({ storage, now: 1_005_000, reload, online: true })).toBe('unavailable');
     expect(reload).toHaveBeenCalledTimes(1);
 
-    expect(reloadForStaleChunk(storage, 1_020_000, reload)).toBe(true);
+    expect(reloadForStaleChunk({ storage, now: 1_020_000, reload, online: true })).toBe('reloading');
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
@@ -56,7 +60,40 @@ describe('reloadForStaleChunk', () => {
       setItem: () => undefined,
     };
 
-    expect(reloadForStaleChunk(blocked, 1_000_000, reload)).toBe(false);
+    expect(reloadForStaleChunk({ storage: blocked, now: 1_000_000, reload, online: true })).toBe('unavailable');
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when reading window.sessionStorage itself is refused', () => {
+    // Some privacy settings make the property getter throw, before getItem is ever reached.
+    vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
+      throw new DOMException('The operation is insecure.', 'SecurityError');
+    });
+    const reload = vi.fn();
+
+    expect(() => reloadForStaleChunk({ now: 1_000_000, reload, online: true })).not.toThrow();
+    expect(reloadForStaleChunk({ now: 1_000_000, reload, online: true })).toBe('unavailable');
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('does not reload while the browser reports being offline, and leaves the guard unarmed', () => {
+    const storage = memoryStorage();
+    const reload = vi.fn();
+
+    expect(reloadForStaleChunk({ storage, now: 1_000_000, reload, online: false })).toBe('offline');
+    expect(reload).not.toHaveBeenCalled();
+    expect(storage.getItem('route-chunk-reload-at')).toBeNull();
+
+    // Back online, the same failure may still recover through one reload.
+    expect(reloadForStaleChunk({ storage, now: 1_001_000, reload, online: true })).toBe('reloading');
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads connectivity from navigator.onLine by default', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const reload = vi.fn();
+
+    expect(reloadForStaleChunk({ storage: memoryStorage(), now: 1_000_000, reload })).toBe('offline');
     expect(reload).not.toHaveBeenCalled();
   });
 });
